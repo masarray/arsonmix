@@ -2,6 +2,7 @@
 """V54: physical WIRE truth, individual/chain FX bypass, native fail-closed."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config, toggle_wire_routes
 
 PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
 
@@ -57,13 +58,13 @@ def scenario(page,w,density):
     assert wire(page,3,"in")["arrival"]=="true",(w,density,"missing IN")
     for ch in (1,2):
         assert wire(page,ch,"out")["connected"] is None,(w,density,"MAIN should not light OUT",ch)
-    page.locator("#wireNavigatorToggle").click()
+    toggle_wire_routes(page)
     undo=page.locator("#wireWsUndo")
     assert undo.is_enabled(),(w,density,"undo not available")
     undo.click()
     assert wire(page,5,"out")["connected"] is None,(w,density,"Undo left ghost custom OUT")
     assert wire(page,3,"in")["arrival"] is None,(w,density,"ghost input after undo")
-    page.locator("#wireNavigatorToggle").click()
+    toggle_wire_routes(page)
     before=fx(page,1)
     assert before["enabled"]=="true" and len(before["slots"])==1,(w,density,before)
     # Add real second GUI demo slot using UI picker; no direct private model access.

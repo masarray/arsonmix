@@ -241,7 +241,9 @@ test('explicit device Apply restores the authored mixer after driver readback an
  assert.match(owner,/if\(refreshAsio4All\) \{[\s\S]*?openSelected\(manager,r.backend,candidate,true,phase\)/);
  assert.match(owner,/matchesRollback\(plan.before,[\s\S]*?inspectRollback\(manager\)\) &&\s*hooks.bind\(BindingMode::exact\)/);
  assert.match(main,/epoch==asioRecoveryEpoch_/);
- assert.match(main,/authorizeRetainedAsioRestart\(\)[\s\S]*?restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+ assert.match(main,/authorizeRetainedAsioRestart\(\)[\s\S]*?reattachRetainedAsioMixer\(\)/);
+ const auto=main.slice(main.indexOf('void serviceAsioMixerRestart()'),main.indexOf('void rememberSavedWasapiProfile('));
+ assert.doesNotMatch(auto,/restoreSavedMixerSession\(/);
 });
 
 test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROUP DCA',()=>{
@@ -629,7 +631,9 @@ test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verifie
   assert.match(service,/asioRecoveryGate_\.carryInternalEpoch\(engine_\.dryRoutingLabEpoch\(\)\)/);
   assert.match(service,/asioRecoveryGate_\.bindFailed\(now\)/);
   assert.match(service,/audioSetupWindow_->isVisible\(\)/);
-  assert.match(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+  assert.doesNotMatch(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+  assert.match(service,/engine_\.reattachRetainedAsioMixer\(\)/);
+  assert.match(service,/if\(retained && \(missingDevice \|\| directCallbackStalled_\)\)return/);
   assert.match(service,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
   assert.match(service,/setup\.useDefaultInputChannels=refreshWdm && !setup\.inputChannels\.isZero\(\)/);
   const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));

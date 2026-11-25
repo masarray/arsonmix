@@ -85,6 +85,19 @@ static void verifyDynamicNativeSessionPublication() {
     assert(close(mainL[0],oldExpected)&&close(mainR[0],oldExpected));
     assert(close(monL[0],.4f*center*.2f)&&close(monR[0],.4f*center*.2f));
     assert(fxCalls==6); // two inputs + Group + FX return + Main + Monitor
+    // Independent incoming WIRE sum: neither fader nor individual edge changes.
+    assert(!host.setChannelWireSumGain(22,1,group,.5f));
+    assert(!host.setChannelWireSumGain(21,0,group,.5f));
+    assert(host.setChannelWireSumGain(21,1,group,.5f));
+    for(int i=0;i<2;++i)assert(host.render(21,physical,2,mainL.data(),mainR.data(),32,
+                       false,effect,monL.data(),monR.data()));
+    const float sumExpected=(2.f*(.2f+.4f)*.5f+.25f*.2f)*center;
+    assert(close(mainL[31],sumExpected)&&close(mainR[31],sumExpected));
+    assert(close(monL[31],.4f*center*.2f));
+    assert(host.setChannelWireSumGain(21,1,group,1.f));
+    for(int i=0;i<2;++i)assert(host.render(21,physical,2,mainL.data(),mainR.data(),32,
+                       false,effect,monL.data(),monR.data()));
+    assert(close(mainL[31],oldExpected));
     // Output MUTE is a hard PCM gate: no native DSP callback, no auto-arm.
     const int processed=fxCalls;
     assert(!host.render(21,physical,2,mainL.data(),mainR.data(),32,

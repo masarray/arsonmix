@@ -28,7 +28,7 @@ async def verify_phone(browser, width: int, height: int):
         await page.evaluate("document.fonts.ready")
         info = await page.evaluate("""() => {
           const bar = document.querySelector(".command-bar");
-          const more = document.querySelector("#moreTools summary");
+          const more = document.querySelector("#moreTools > summary");
           const root = document.documentElement;
           const mixer = document.querySelector(".tracks-viewport");
           const points = [...document.querySelectorAll(
@@ -96,7 +96,7 @@ async def verify_phone(browser, width: int, height: int):
         await page.locator(".command-bar").evaluate("(bar)=>{bar.scrollLeft=bar.scrollWidth;}")
         scroll = await page.locator(".command-bar").evaluate("(bar)=>bar.scrollLeft")
         assert scroll > 90, ("toolbar overflow locked against touch scrolling", scroll)
-        await page.locator("#moreTools summary").click()
+        await page.locator("#moreTools > summary").click()
         panel = page.locator("#moreTools .more-tools-panel")
         await panel.wait_for(state="visible")
         position = await panel.evaluate("""el => {
@@ -110,7 +110,7 @@ async def verify_phone(browser, width: int, height: int):
         assert position["top"] >= 40 and position["bottom"] <= height + 1, position
         assert await panel.locator("#addTrack").is_visible()
         await page.screenshot(path=f"pages-mobile-toolbar-more-{width}.png")
-        await page.locator("#moreTools summary").click()
+        await page.locator("#moreTools > summary").click()
 
         # Player is a contextual module on the ONE approved /preview/.
         # No second runtime CSS, no second mixer or browser audio.

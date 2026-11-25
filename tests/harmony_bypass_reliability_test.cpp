@@ -26,7 +26,7 @@ static LiveChannelFxGraph::InstanceLease makeHarmony(
         double rate=48000.,int quantum=64,float wet=1.f,float space=1.f) {
     auto p=std::make_unique<ChannelHarmonyProcessor>();
     p->prepareToPlay(rate,quantum);
-    const int declaredLatency=2*static_cast<int>(std::round(rate*.016));
+    const int declaredLatency=static_cast<int>(std::round(rate*.024));
     assert(p->isReady() && p->getLatencySamples()==declaredLatency);
     // Prepared built-in host metadata drives the live FxInstance envelope.
     // A zero JUCE rate shortened 8 ms to just 64 frames at 48/96 kHz.
@@ -45,7 +45,7 @@ int main() {
     // Isolated offline reference of PRE-FIX host behavior; production never
     // disables the warm-processing contract. This must diverge on reentry.
     legacy->continuousBypassProcessing=false;
-    assert(uninterrupted->latencySamples==1536);
+    assert(uninterrupted->latencySamples==1152);
     assert(switching->latencySamples==uninterrupted->latencySamples);
     DynamicChannelFxLeaseBank::Assignment referenceRow,switchingRow,legacyRow;
     referenceRow.id=vocal;referenceRow.format=ProcessingFormat::stereo;
@@ -106,8 +106,8 @@ int main() {
              block>=860&&block<1000);
         for(int i=0;i<64;++i) {
             const int n=block*64+i;
-            const float delayed=n>=1536?singer(n-1536):0.f;
-            if(n>=1537){
+            const float delayed=n>=1152?singer(n-1152):0.f;
+            if(n>=1153){
                 // Actual post-bypass sample slope may only exceed either
                 // continuous wet or exact aligned dry slope by the 8ms ramp
                 // contribution. No block-edge impulse is allowed.
@@ -137,7 +137,7 @@ int main() {
                                std::abs(oldR[i]-baseR[i])));
             }
             if(steadyDry) {
-                const int n=block*64+i-1536;
+                const int n=block*64+i-1152;
                 const float expect=n>=0?singer(n):0.f;
                 const float d=std::max(std::abs(probeL[i]-expect),
                                        std::abs(probeR[i]-expect));

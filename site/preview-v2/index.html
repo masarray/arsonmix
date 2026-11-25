@@ -2397,8 +2397,11 @@ function finishGainDialGesture(event,cancel=false){
    // Exact restore, bypass detent; native audio remains unchanged.
    handleField({target:g.input,type:'input',shiftKey:true});
   }
-  // Cancel never emits SET_INPUT_GAIN. If a native ACK timed out while
-  // capturing, repaint from its accepted ChannelId scalar after release.
+  // Cancellation must compensate any real-time native gain changes that
+  // already reached accepted PCM; only JUCE ACK/readback can confirm undo.
+  // Browser reference never emits a native operation.
+  if(window.__JUCE__?.backend)
+   window.__ARMIX_NATIVE_GAIN_CANCEL__?.(g.input,g.start);
   window.__ARMIX_NATIVE_GAIN_RESTORE__?.();
  }else if(g.active&&Number(g.input.value)!==g.start){
   // One physical release -> one accepted native intent, no click-only write.
@@ -2524,13 +2527,13 @@ document.querySelector('.console-body').addEventListener('dblclick',e=>{
   if(!window.__JUCE__?.backend)say(t.name+' digital input gain → unity (0.0 dB)');
   return;
  }
- if(e.target.classList.contains('fader')){
+ if(e.target.closest('.fader-box')||e.target.classList.contains('fader')){
   const send=sofEnabled&&t.kind==='audio';
   if(send&&!getSofEdge(t)){say('NO SEND · patch one WIRE first');return;}
   // Never mutate t.level directly: in SOF the physical fader belongs to
   // the selected EdgeId, not MAIN. Native bridge owns the accepted write.
-  const fader=e.target;
-  if(fader.disabled)return;
+  const fader=e.target.closest('.fader-box')?.querySelector('.fader')||e.target;
+  if(!fader||fader.disabled)return;
   fader.value='0';fader.dispatchEvent(new Event('input',{bubbles:true}));
   fader.dispatchEvent(new Event('change',{bubbles:true}));
   if(!window.__JUCE__?.backend)say(t.name+(send?' SEND':' MAIN')+' fader → 0.0 dB');
@@ -2715,7 +2718,7 @@ document.querySelector('.console-body').addEventListener('wheel',e=>{
  if(!target)return;
  const input=target.matches?.('input[type="range"]')?target:
   target.querySelector?.('input[type="range"]');
- const allowed=new Set(['level','pan','wireGain','trim','sendLevel','sendPan']);
+ const allowed=new Set(['level','pan','wireGain','wireChannelLevel','trim','sendLevel','sendPan']);
  if(!input||input.disabled||!allowed.has(input.dataset.field))return;
  const min=Number(input.min),max=Number(input.max),prev=Number(input.value);
  if(![min,max,prev].every(Number.isFinite))return;
@@ -2787,10 +2790,12 @@ consoleBody.addEventListener('click',e=>{
  selectWireSource(source);
 });
 // A click elsewhere releases the source; bank navigation, WIRE workspace
-// and route-choice remain in the active routing workflow.
+// and route-choice remain in the active routing workflow. Opening the More
+// disclosure is navigation, not a decision to cancel the pinned OUT. Actual
+// unrelated menu commands still follow the ordinary click-away policy.
 document.addEventListener('click',e=>{
  if(!armedWireSource()||wireGesture||pendingBusRoute)return;
- if(e.target.closest?.('.wire-node-out,.wire-node-in,.wire-pot,.wire-disconnect,#wireWorkspace,#wireConfigWindow,#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle,[data-wire-open],#routeChoice,#bankPrev,#bankNext,#bankSelect,#viewFilter,#wireMaster,[data-wire-destination],[data-wire-jump-source],.wire-offbank-source,.wire-v34-tool'))return;
+ if(e.target.closest?.('.wire-node-out,.wire-node-in,.wire-pot,.wire-disconnect,#wireWorkspace,#wireConfigWindow,#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle,#moreTools > summary,[data-wire-open],#routeChoice,#bankPrev,#bankNext,#bankSelect,#viewFilter,#wireMaster,[data-wire-destination],[data-wire-jump-source],.wire-offbank-source,.wire-v34-tool'))return;
  clearWireIntent();
 });
 window.addEventListener('blur',()=>{

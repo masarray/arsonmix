@@ -22,7 +22,7 @@ from immersib_p102_geometry_cache_probe import MACROS, ROOT, TEST
 APPROVED_SOURCE_SHA = "3095af08b817d59a3e14874dab404bf6e243f38a"
 PATH = "engine/builtin_fx/sonku/SonKuEarlyReflections.h"
 APPROVED_BLOB = "5a6a9b48cfdc60729f130c61110c8d8590b20f35"
-CANDIDATE_BLOB = "94b90db3d699d9f26601448a38b2f489f51b5fb7"
+CANDIDATE_BLOB = "c92a1fc88cf129e606a6e7c1ba4df1e32269fc65"
 CLASS_MARKER = "class SonKuEarlyReflections final {"
 TAIL_MARKER = "} // namespace armix::sonku"
 

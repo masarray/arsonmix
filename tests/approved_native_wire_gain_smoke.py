@@ -23,7 +23,7 @@ def snapshot():
         supportedOps=["SET_WIRE_GAIN", "APPLY_WIRE_TRANSACTION"])
     g["channels"] = [
         {"id": ident, "name": name, "role": role, "processingFormat": "STEREO",
-         "controls": {"faderDb": 0, "pan": 0, "mute": False, "solo": False},
+         "controls": {"faderDb": 0, "wireSumGainDb": 0, "pan": 0, "mute": False, "solo": False},
          "inserts": [], "sends": []}
         for ident, name, role in [(SOURCE, "CH03", "INPUT"),
                                    (RECEIVER, "CH04", "INPUT"), (MAIN, "MAIN", "MAIN")]]
@@ -163,7 +163,17 @@ def verify_inspector_rejected_gain(page, out):
     # native coalescer's equality/no-op path emits no redundant intent.
     state["graph"]["edges"][1]["gainLinear"]=10**(-6/20)
     emit(page,"arMixConsoleSnapshot",state)
-    page.locator("#wireMatrixToggle").click()
+    # Operator toolbar deliberately hides legacy #wireMatrixToggle. The
+    # production Matrix entry lives in More > WIRE TOOLS. Exercise the
+    # actual visible menu, not a hidden compatibility trigger.
+    more=page.locator("#moreTools")
+    more.locator(":scope > summary").click()
+    assert more.evaluate("(el)=>el.open")
+    menu_matrix=more.locator('[data-wire-open="matrix"]')
+    assert menu_matrix.is_visible(), "More must retain accessible Matrix"
+    menu_matrix.click()
+    assert not more.evaluate("(el)=>el.open"), "Matrix should dismiss More"
+    assert page.locator("#wireWorkspace").is_visible()
     route=page.locator('[data-ws-inspect="1:2"]')
     route.wait_for(state="visible")
     route.click()
@@ -223,6 +233,30 @@ def verify_inspector_rejected_gain(page, out):
     assert slider.evaluate("el=>document.activeElement===el")
     assert not errors,errors
 
+def open_verified_audio_io(page, state, tab):
+    """Driver inventory is independent of installed native graph readback."""
+    d=state["device"]
+    page.locator("[data-native-io]").click()
+    assert page.locator('button[data-audio-tab="inputs"]').is_disabled()
+    assert page.locator('[data-audio-pins]').is_hidden()
+    def names(side):
+        ports=d[side+"Endpoints"]
+        result=[""]*(max((p["port"] for p in ports),default=-1)+1)
+        for p in ports: result[p["port"]]=p["label"]
+        return result
+    inventory={"active":{"open":True,"authorized":True,
+        "backend":d["backend"],"captureDevice":d["captureDevice"],
+        "playbackDevice":d["playbackDevice"],"deviceGeneration":int(d["epoch"]),
+        "rate":d["sampleRate"],"buffer":d["bufferFrames"],
+        "inputNames":names("input"),"outputNames":names("output"),
+        "enabledInputs":d["enabledInputs"],"enabledOutputs":d["enabledOutputs"],
+        "mainOutputs":state.get("physicalMainOutputs",[])},
+        "types":[{"name":d["backend"],"separate":True,
+            "inputs":[d["captureDevice"]],"outputs":[d["playbackDevice"]]}]}
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    page.locator('button[data-audio-tab="'+tab+'"]').click()
+    return inventory
+
 def verify_external_output(page, out):
     """Actual /preview/ native WebView: select -> native ACK -> callback readback.
 
@@ -250,7 +284,13 @@ def verify_external_output(page, out):
     state["externalOutputs"]=[]
     emit(page,"arMixConsoleSnapshot",state)
     page.wait_for_selector('#tracks .strip[data-id="2"] select[data-field="external"]',state="attached")
-    page.locator("[data-native-io]").click()
+    inventory=open_verified_audio_io(page,state,"routing")
+    inventory["namedPatches"]={"revision":1,"readOnly":False,"entries":[
+        {"id":"stream-pair","name":"Streaming","side":"output","mode":"STEREO",
+         "left":4,"right":5,"leftName":"ASIO 5","rightName":"ASIO 6","available":True},
+        {"id":"reserved-pair","name":"Reserved","side":"output","mode":"STEREO",
+         "left":0,"right":1,"leftName":"ASIO 1","rightName":"ASIO 2","available":True}]}
+    emit(page,"arMixAudioDeviceInventory",inventory)
     matrix=page.locator("[data-audio-output-matrix] .armix-output-row")
     assert matrix.count()==4,[x.inner_text() for x in matrix.all()]
     assert "MAIN" in matrix.nth(0).inner_text()
@@ -261,7 +301,9 @@ def verify_external_output(page, out):
     second=page.locator('#tracks .strip[data-id="2"] select[data-field="external"]')
     choices=first.locator("option").all_text_contents()
     choice=next(x for x in choices if x.startswith("OUT 5/6"))
-    first.select_option(label=choice)
+    preset=next(x for x in choices if x.startswith("Preset · Streaming"))
+    assert not any(x.startswith("Preset · Reserved") for x in choices)
+    first.select_option(label=preset)
     actions=page.evaluate("()=>window.__outActions.filter(x=>x.action==='routingExternalOutput')")
     assert len(actions)==1,actions
     requested=actions[0]
@@ -300,7 +342,7 @@ def verify_external_output(page, out):
     emit(page,"arMixConsoleSnapshot",state)
     assert second.get_attribute("data-status")=="LIVE"
     assert "SHARED 2 SOURCES" in first.input_value(),first.input_value()
-    page.locator("[data-native-io]").click()
+    open_verified_audio_io(page,state,"routing")
     row=page.locator("[data-audio-output-matrix] .armix-output-row").filter(has_text="OUT 5/6")
     assert "SHARED 2" in row.inner_text(),row.inner_text()
     assert "CH03" in row.inner_text() and "CH04" in row.inner_text()
@@ -347,6 +389,10 @@ def main():
                 page.goto((out / "index.html").as_uri())
                 page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
                 state = snapshot()
+                # The receiving WIRE LVL is now the receiver's post-SUM
+                # SET_WIRE_SUM_GAIN, not the selected incoming EdgeId's SEND GAIN.
+                # Exact SEND gain still has separate inspector regression.
+                state["graph"]["capabilities"]["supportedOps"].append("SET_WIRE_SUM_GAIN")
                 emit(page, "arMixConsoleSnapshot", state)
                 page.wait_for_selector('#tracks .strip[data-id="2"]')
                 if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
@@ -356,34 +402,56 @@ def main():
                 knob.wait_for(state="visible")
                 page.evaluate("""()=>{window.__heldWireInput=document.querySelector('#tracks .strip[data-id="2"] .wire-gain');
                     window.__heldStrip=document.querySelector('#tracks .strip[data-id="2"]');}""")
+                # Keyboard gesture: one native ChannelId SET_WIRE_SUM_GAIN at a time.
+                # When the first is in flight, the latest (Home) queues
+                # behind its independent native ACK and published scalar.
                 knob.focus()
+                assert knob.get_attribute("data-field")=="wireChannelLevel"
+                assert knob.is_enabled(), "accepted receiver SET_WIRE_SUM_GAIN unavailable"
                 knob.press("End")
-                page.wait_for_function("()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_GAIN').length===1")
-                first = page.evaluate("()=>window.__nativeIntents.at(-1)")
-                assert first["payload"]["edgeId"] == SEND
+                page.wait_for_function(
+                    "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_SUM_GAIN').length===1")
+                first = page.evaluate(
+                    "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_SUM_GAIN').at(-1)")
+                assert first["targetChannelId"] == RECEIVER, first
+                assert first["payload"]["valueDb"] == 6, first
+                assert page.evaluate(
+                    "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_GAIN').length")==0
                 knob.press("Home")
                 page.wait_for_timeout(70)
-                assert page.evaluate("()=>window.__nativeIntents.length") == 1, "must coalesce behind ACK"
-                state["graph"]["edges"][1]["gainLinear"] = first["payload"]["gainLinear"]
+                assert page.evaluate("()=>window.__nativeIntents.length") == 1, (
+                    "pending receiver SUM gain should coalesce behind native ACK")
+                state["graph"]["channels"][1]["controls"]["wireSumGainDb"] = first["payload"]["valueDb"]
+                state["mixerSession"]["channels"][1]["controls"]["wireSumGainDb"] = first["payload"]["valueDb"]
                 ack(page, state, first)
                 emit(page, "arMixConsoleSnapshot", state)
                 page.wait_for_function("()=>window.__nativeIntents.length===2")
-                assert page.evaluate("()=>window.__heldWireInput===document.querySelector('#tracks .strip[data-id=\"2\"] .wire-gain')"), "ACK detached held gain control"
-                latest = page.evaluate("()=>window.__nativeIntents.at(-1)")
-                # Native SOF/WIRE policy defines the bottom -60 dB
-                # detent as -infinity/silence (linear zero), not 0.001.
-                # The exact SEND EdgeId is retained; this is a scalar
-                # mute-level gain, NEVER a graph REMOVE/disconnect.
-                assert latest["payload"]["gainLinear"] == 0, latest
-                assert latest["payload"]["edgeId"] == SEND, latest
-                state["graph"]["edges"][1]["gainLinear"] = latest["payload"]["gainLinear"]
-                ack(page, state, latest)
+                assert page.evaluate(
+                    "()=>window.__heldWireInput===document.querySelector("
+                    "'#tracks .strip[data-id=\\\"2\\\"] .wire-gain')"), (
+                    "ACK detached held post-SUM receiver knob")
+                second = page.evaluate("()=>window.__nativeIntents.at(-1)")
+                assert second["operation"]=="SET_WIRE_SUM_GAIN" and second["targetChannelId"]==RECEIVER
+                assert second["payload"]["valueDb"]==-60, second
+                state["graph"]["channels"][1]["controls"]["wireSumGainDb"] = -60
+                state["mixerSession"]["channels"][1]["controls"]["wireSumGainDb"] = -60
+                ack(page, state, second)
                 emit(page, "arMixConsoleSnapshot", state)
                 knob.press("Tab")
                 emit(page, "arMixConsoleSnapshot", state)
-                assert page.evaluate("()=>window.__heldStrip===document.querySelector('#tracks .strip[data-id=\"2\"]')"), "scalar edit rebuilt strip"
-                assert float(page.locator('#tracks .strip[data-id="2"] .wire-gain').input_value()) == -60
-                # Drag the actual receiving knob with native ACKs mid-gesture.
+                assert page.evaluate(
+                    "()=>window.__heldStrip===document.querySelector("
+                    "'#tracks .strip[data-id=\\\"2\\\"]')"), (
+                    "post-SUM scalar edit rebuilt the strip")
+                assert float(knob.input_value())==-60
+                assert float(page.locator('#tracks .strip[data-id="2"] .fader').input_value())==0, "SUM must not move channel fader"
+                # Changing receiver volume cannot ever mutate the source
+                # SEND gain, even if multiple incoming wires share this SUM.
+                assert state["graph"]["edges"][1]["gainLinear"]==.5
+
+                # Real pointer drag + SHIFT fine adjustment while ACK is
+                # pending. The visual knob tracks the hand continuously;
+                # the real PCM value remains on accepted producer readback.
                 pot = knob.locator("..").bounding_box()
                 assert pot
                 x, y = pot["x"]+pot["width"]/2, pot["y"]+pot["height"]/2
@@ -392,22 +460,32 @@ def main():
                 page.mouse.move(x,y-32,steps=5)
                 page.wait_for_function("()=>window.__nativeIntents.length===3")
                 coarse = page.evaluate("()=>window.__nativeIntents.at(-1)")
-                assert float(knob.input_value()) == -56
+                assert coarse["operation"]=="SET_WIRE_SUM_GAIN", coarse
+                assert coarse["targetChannelId"]==RECEIVER, coarse
+                assert float(knob.input_value())==-56
                 page.keyboard.down("Shift")
                 page.mouse.move(x,y-56,steps=4)
                 page.keyboard.up("Shift")
-                assert float(knob.input_value()) == -55.5
-                state["graph"]["edges"][1]["gainLinear"] = coarse["payload"]["gainLinear"]
+                assert float(knob.input_value())==-55.5
+                state["graph"]["channels"][1]["controls"]["wireSumGainDb"] = coarse["payload"]["valueDb"]
+                state["mixerSession"]["channels"][1]["controls"]["wireSumGainDb"] = coarse["payload"]["valueDb"]
                 ack(page,state,coarse)
                 emit(page,"arMixConsoleSnapshot",state)
-                assert float(knob.input_value()) == -55.5
+                assert float(knob.input_value())==-55.5, "mid-drag ACK moved knob backwards"
                 page.mouse.up()
                 page.wait_for_function("()=>window.__nativeIntents.length===4")
                 final = page.evaluate("()=>window.__nativeIntents.at(-1)")
-                assert abs(final["payload"]["gainLinear"] - 10**(-55.5/20)) < 1e-8
-                state["graph"]["edges"][1]["gainLinear"] = final["payload"]["gainLinear"]
+                assert final["operation"]=="SET_WIRE_SUM_GAIN" and final["targetChannelId"]==RECEIVER
+                assert abs(final["payload"]["valueDb"] - (-55.5))<1e-7, final
+                state["graph"]["channels"][1]["controls"]["wireSumGainDb"] = final["payload"]["valueDb"]
+                state["mixerSession"]["channels"][1]["controls"]["wireSumGainDb"] = final["payload"]["valueDb"]
                 ack(page,state,final)
                 emit(page,"arMixConsoleSnapshot",state)
+                assert state["graph"]["edges"][1]["gainLinear"]==.5, (
+                    "receiver LVL incorrectly changed incoming SEND gain")
+                assert page.evaluate(
+                    "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_GAIN').length")==0
+
                 # OUT to the same INPUT is the existing exclusive native transaction.
                 page.locator('#tracks .strip[data-id="1"] select[data-field="output"]').select_option(label="CH04")
                 route = page.evaluate("()=>window.__nativeIntents.at(-1)")
@@ -422,12 +500,18 @@ def main():
                     channels=copy.deepcopy(state["graph"]["channels"]))
                 ack(page, state, route)
                 emit(page, "arMixConsoleSnapshot", state)
-                assert page.locator('#tracks .strip[data-id="2"] .wire-gain').is_disabled(), "primary OUT gain must stay unity"
+                receiver_pot=page.locator('#tracks .strip[data-id="2"] .wire-gain')
+                assert receiver_pot.is_enabled(), "receiver post-SUM level was locked after primary route"
+                assert receiver_pot.get_attribute("data-field")=="wireChannelLevel"
+                assert abs(float(receiver_pot.input_value())-(-55.5))<.11
+                assert state["graph"]["edges"][0]["primaryOutput"] is True
+                assert state["graph"]["edges"][0]["gainLinear"]==1, (
+                    "PRIMARY WIRE must remain UNITY; receiver SUM gain is separate")
                 assert not errors, errors
                 page.screenshot(path=f"native-wire-gain-{width}.png")
                 page.close()
             browser.close()
-    print("PASS native WIRE socket impact and gain: real drag and keyboard, coalesced ACK/readback, stable DOM, INPUT OUT, 3 viewports (UI only)")
+    print("PASS native WIRE receiver post-SUM ChannelId LEVEL and separate SEND GAIN: real keyboard/drag ACK/readback, stable DOM, PRIMARY unity, INPUT OUT, 3 viewports (UI only)")
 
 
 if __name__ == "__main__":

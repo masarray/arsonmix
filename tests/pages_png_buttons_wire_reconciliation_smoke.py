@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from approved_publication_fixture import published_console
+from operator_wire_menu import open_wire_config
 
 ROOT=Path(__file__).resolve().parents[1]
 REFERENCE=ROOT/"site/preview-v2"
@@ -150,7 +151,8 @@ def verify_browser(dist):
             if width==1680:
                 page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()
                 page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
-                page.locator("#wireConfigToggle").click()
+                open_wire_config(page)
+                assert page.locator("#wireConfigWindow").is_visible()
                 page.locator("#wireMode").select_option("split")
                 page.locator("#wireConfigClose").click()
                 page.locator('#tracks .strip[data-id="1"] .wire-node-out').click()

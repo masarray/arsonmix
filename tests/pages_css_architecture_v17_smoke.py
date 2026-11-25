@@ -44,7 +44,7 @@ async def plugin_compare(browser,baseline,width,height):
         await same("fast-picker-open")
         for page in (old,now):await page.locator("#fastClose").click()
         await same("fast-picker-closed")
-        for page in (old,now):await page.locator("#moreTools summary").click()
+        for page in (old,now):await page.locator("#moreTools > summary").click()
         await same("toolbar-more-open")
         assert not errors,(width,errors)
         if width==1680:await now.screenshot(path="pages-v17-plugin-owner-1680.png")

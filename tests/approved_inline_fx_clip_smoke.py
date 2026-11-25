@@ -99,6 +99,54 @@ def main():
                     if expected>width:
                         assert root.bounding_box()["x"]>=0,(width,host)
                     assert not any("TypeError" in e for e in errors),errors
+                    if host!="ArSonMixGraphicEq31":
+                        # Exercise the production shared overlay with a deterministic
+                        # accepted view fixture; no claim of native PCM/ASIO.
+                        result=page.evaluate("""({host,selector})=>{
+                          const device={epoch:"51",sampleRate:48000,bufferFrames:256,
+                            enabledInputs:[0,1],enabledOutputs:[0,1]};
+                          const id="9007199254740993",catalogId=window[host].id;
+                          const lease={authority:"CHANNEL_ID",channelId:id,slot:0,
+                            instanceId:"exact-owner",catalogId,graphRevision:"46",
+                            rosterRevision:"19",workspaceToken:null,deviceEpoch:"51",
+                            hardwareConfiguration:JSON.stringify([48000,256,[0,1],[0,1]])};
+                          const insert={id:"exact-owner",catalogId,bypassed:false};
+                          const row={id,role:"INPUT",fxRackBypassed:false,inserts:[insert]};
+                          const view={admitted:true,retained:false,device,raw:{
+                            globalFxBypassed:false,mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"51"}},
+                            graph:{revision:"46",rosterRevision:"19",
+                              capabilities:{callbackOwnsChannelIds:true},channels:[row]}};
+                          const clip=window.__ARMIX_NATIVE_INLINE_FX_CLIP__;
+                          if(!clip.openExact(window[host],host,
+                            {id:22,name:"TEST CHANNEL",slotBypass:[false]},0,"exact-owner",lease))
+                            return {error:"not-opened"};
+                          const root=document.querySelector(selector),results=[];
+                          const inspect=()=>{clip.syncBypass(view);
+                            const shades=root.querySelectorAll(".armix-native-fx-bypass");
+                            const s=shades[0];
+                            results.push([shades.length,s.textContent,
+                              getComputedStyle(s).display,getComputedStyle(s).pointerEvents]);};
+                          inspect();insert.bypassed=true;inspect();
+                          row.fxRackBypassed=true;inspect();
+                          view.raw.globalFxBypassed=true;inspect();
+                          view.raw.globalFxBypassed=false;inspect();
+                          row.fxRackBypassed=false;inspect();
+                          insert.bypassed=false;inspect();
+                          view.graph.revision="47";inspect();
+                          insert.id="replacement";inspect();
+                          return {results};
+                        }""",{"host":host,"selector":selector})
+                        assert result.get("results")==[
+                            [1,"BYPASSED","none","none"],
+                            [1,"BYPASSED","flex","none"],
+                            [1,"FX RACK BYPASSED","flex","none"],
+                            [1,"GLOBAL FX BYPASSED","flex","none"],
+                            [1,"FX RACK BYPASSED","flex","none"],
+                            [1,"BYPASSED","flex","none"],
+                            [1,"BYPASSED","none","none"],
+                            [1,"BYPASSED","none","none"],
+                            [1,"FX UNAVAILABLE","flex","auto"],
+                        ],(host,width,result)
                     page.evaluate("""name=>window[name].close()""",host)
                 root=page.locator("#mxNativeGeq31")
                 page.evaluate("""()=>window.ArSonMixGraphicEq31.open(
@@ -153,6 +201,38 @@ def main():
                 page.wait_for_timeout(80)
                 after_wheel=root.bounding_box()
                 assert after_wheel["x"]<moved["x"]-60,(width,moved,after_wheel)
+                # Real native clipped GEQ31 must NOT jump when FX Rack
+                # refocuses the same insert; unlike just reading source,
+                # this exercises the original host.open() path repeatedly.
+                clip_open="""()=>window.__ARMIX_NATIVE_INLINE_FX_CLIP__.openExact(
+                    window.ArSonMixGraphicEq31,'ArSonMixGraphicEq31',
+                    {id:22,name:'TEST CHANNEL',slotBypass:[false]},0,'geq-lease-22')"""
+                assert page.evaluate(clip_open)
+                panel=root.bounding_box()
+                page.evaluate("""()=>window.__ARMIX_NATIVE_INLINE_FX_CLIP__.move(
+                    document.getElementById('mxNativeGeq31'),-35,0)""")
+                placed=root.bounding_box()
+                assert placed["x"]<panel["x"]-20,(width,panel,placed)
+                for _ in range(3):
+                    assert page.evaluate(clip_open)
+                    again=root.bounding_box()
+                    assert abs(again["x"]-placed["x"])<1.5,(width,placed,again)
+                    assert abs(again["y"]-placed["y"])<1.5,(width,placed,again)
+                # S/M/L must resize about this location, not silently center.
+                page.evaluate("""()=>window.ArSonMixGraphicEq31.setSize('S')""")
+                scaled=root.bounding_box()
+                assert abs(scaled["x"]-placed["x"])<1.5,(width,placed,scaled)
+                page.evaluate("""()=>window.ArSonMixGraphicEq31.setSize('L')""")
+                # Plain F11 is emitted to native JUCE. Chromium itself cannot
+                # prove the OS HWND mode, which needs Windows host qualification.
+                prior=page.evaluate("""()=>window.__nativeMessages.filter(
+                    m=>m.name==='arMixWindowFullscreen').length""")
+                page.keyboard.press("F11")
+                page.keyboard.press("F11")
+                sent=page.evaluate("""()=>window.__nativeMessages.filter(
+                    m=>m.name==='arMixWindowFullscreen'&&
+                    m.payload.operation==='TOGGLE').length""")
+                assert sent==prior+2,(width,prior,sent,errors)
                 # Recover/recenter and S/M/L retain original full-sized
                 # artwork with compositor scaling, not CSS width compression.
                 page.evaluate("""()=>window.__ARMIX_NATIVE_INLINE_FX_CLIP__

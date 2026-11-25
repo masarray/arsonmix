@@ -391,6 +391,8 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
 #arsonPlayer .ap-showtools{display:flex;align-items:center;gap:8px;
  min-height:30px;padding:4px 12px;background:#172830;
  border-bottom:1px solid #2a4148;font-size:10px;color:#92b5b5}
+#arsonPlayer .ap-volume input{flex:1;min-width:48px;max-width:160px;accent-color:#83d7c4}
+#arsonPlayer .ap-volume output{min-width:54px;text-align:right;font-variant-numeric:tabular-nums;color:#cbebdf}
 #arsonPlayer .ap-showtools select{max-width:138px;padding:4px 6px;
  background:#1c353e;border:1px solid #3d5c64;border-radius:5px;
  font-size:10px;color:#cbebdf}
@@ -518,3 +520,30 @@ body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power):f
    Only raise the toolbar while the menu is open; native modal overlays retain
    their own higher blocking layer. No persistent topbar reordering. */
 .app .command-bar:has(.more-tools[open]){z-index:1200!important}
+
+/* UX-P0: prioritize frequent live controls, without removing routing.
+   The V28 hardware baseline hides More's WIRE TOOLS above 1250px. Once
+   Routes/Matrix/WIRE Setup move off the topbar, expose their *original*
+   More commands at every width; preserve V28's pinned artwork checksum. */
+.app .command-bar > :is(#wireNavigatorToggle,#wireMatrixToggle,
+  #wireConfigToggle,#mixContext){display:none!important}
+.app .more-tools-panel .wire-overflow{display:block!important}
+.app .command-bar:not(:has(#sofToggle[aria-pressed="true"])) #sofTarget{
+  display:none!important
+}
+/* Invisible forgiving click envelopes, not large visual controls: preserve
+   the 17px approved PNG sprite and 24px rack-row geometry. No delegation
+   from entire row (which would accidentally power/delete another insert). */
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]){
+    isolation:isolate;z-index:2;touch-action:manipulation
+}
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"])::before{
+    display:block!important;content:""!important;position:absolute;
+    inset:-3px;pointer-events:auto;background:transparent;border:0
+}
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]):focus-visible{
+    outline:2px solid #95d8ea!important;outline-offset:1px!important
+}

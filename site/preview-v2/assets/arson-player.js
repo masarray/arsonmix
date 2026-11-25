@@ -101,6 +101,10 @@
  $("playerNext").addEventListener("click",()=>send("playerNext"));
  $("playerAutoNext").addEventListener("click",()=>
    send("playerAutoNext",!model.autoNext));
+ const volume=$("playerVolume"),volumeDb=$("playerVolumeDb");
+ const paintVolume=percent=>{volumeDb.textContent=percent===0?"−∞ dB":(20*Math.log10(percent/100)).toFixed(1)+" dB";};
+ volume.disabled=!native;
+ volume.addEventListener("input",()=>{paintVolume(Number(volume.value));send("playerVolume",Number(volume.value));});
  $("playerFadeMs").addEventListener("change",event=>
    send("playerFadeMs",Number(event.target.value)));
  $("playerNewSetlist").addEventListener("click",()=>send("playerNewSetlist"));
@@ -381,6 +385,9 @@
    $("playerAutoNext").textContent=model.autoNext?"Auto Next · On":"Auto Next · Off";
    $("playerAutoNext").setAttribute("aria-pressed",String(model.autoNext));
    $("playerFadeMs").value=String(model.crossfadeMs??180);
+   const acceptedVolume=Number(t.volumePercent??50);
+   if(document.activeElement!==volume){volume.value=String(acceptedVolume);paintVolume(acceptedVolume);}
+   volume.title="Native source level before channel FX · "+acceptedVolume+"%";
    $("playerTransitionStatus").textContent=t.crossfading?"Crossfading…":
      t.transitionPending?"Preparing NEXT…":"";
    const detail=model.error||t.error||({

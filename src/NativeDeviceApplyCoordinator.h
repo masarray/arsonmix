@@ -19,7 +19,7 @@ class NativeDeviceApplyCoordinator final {
 public:
     // Every possible JUCE driver mutation uses the same control-thread gate:
     // explicit UI Apply, native modal selector, and bounded ASIO recovery.
-    enum class Purpose : std::uint8_t { none, explicitApply, setupDialog, asioRecovery, wasapiRecovery };
+    enum class Purpose : std::uint8_t { none, explicitApply, setupDialog, asioRecovery, wasapiRecovery, offlineFxCapture };
 
     class Lease final {
     public:
@@ -408,9 +408,14 @@ public:
         }
 
         if(sameEndpoint && priorOpen) {
-            if(r.rate>0&&!device->getAvailableSampleRates().contains(r.rate))
+            // A currently negotiated format is evidence even if a vendor
+            // omits it from its advertised alternatives. Pin-only edits must
+            // retain that exact format rather than silently requesting AUTO.
+            if(r.rate>0&&r.rate!=device->getCurrentSampleRate()&&
+               !device->getAvailableSampleRates().contains(r.rate))
                 plan.error="Requested sample rate not reported by selected device";
-            else if(r.block>0&&!device->getAvailableBufferSizes().contains(candidate.bufferSize))
+            else if(r.block>0&&candidate.bufferSize!=device->getCurrentBufferSizeSamples()&&
+                    !device->getAvailableBufferSizes().contains(candidate.bufferSize))
                 plan.error="Requested buffer size not reported by selected device";
         }
         return plan;

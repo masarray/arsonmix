@@ -118,6 +118,49 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         translated->setProperty("payload",juce::var(args.release()));
         return {juce::var(translated.release()),{}};
     }
+    if(op=="SET_WIRE_SUM_GAIN") {
+        if(!approvedHasOperation(caps.getProperty("supportedOps",{}),"SET_WIRE_SUM_GAIN")||
+           !approvedHasOperation(installedBus.getProperty("supportedOps",{}),
+                                 "NATIVE_SET_WIRE_SUM_GAIN"))
+            return reject("NATIVE_WIRE_SUM_GAIN_NOT_ADMITTED");
+        juce::var owner,producer;
+        for(const auto& row:*rows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())owner=row;
+        for(const auto& row:*nativeRows.getArray())
+            if(row.getProperty("id","").toString()==ids.toString())producer=row;
+        if(!owner.isObject()||!producer.isObject()||
+           !([](const juce::String& r){return r=="INPUT"||r=="GROUP"||r=="FX_RETURN";})(owner.getProperty("role","").toString()) ||
+           producer.getProperty("role","").toString()!=owner.getProperty("role","").toString())
+            return reject("WIRE_SUM_GAIN_SOURCE_NOT_ADMITTED");
+        double acceptedDb=0.,nativeGain=0.,requestedDb=0.;
+        const auto ownerControls=owner.getProperty("controls",{});
+        if(!ownerControls.isObject()||
+           !nativeV8Number(ownerControls.getProperty("wireSumGainDb",{}),acceptedDb)||
+           !nativeV8Number(producer.getProperty("wireSumGain",{}),nativeGain)||
+           nativeGain<0.||nativeGain>2.)
+            return reject("WIRE_SUM_GAIN_READBACK_UNAVAILABLE");
+        const double nativeDb=nativeGain>0.?std::max(-60.,20.*std::log10(nativeGain)):-60.;
+        if(std::abs(nativeDb-acceptedDb)>0.12)
+            return reject("STALE_WIRE_SUM_GAIN_READBACK");
+        const auto payload=publicIntent.getProperty("payload",{});
+        if(!payload.isObject()||
+           !nativeV8Number(payload.getProperty("valueDb",{}),requestedDb)||
+           requestedDb< -60.||requestedDb>6.)
+            return reject("INVALID_WIRE_SUM_GAIN_VALUE");
+        const double linear=requestedDb<=-60.?0.:std::pow(10.,requestedDb/20.);
+        if(!std::isfinite(linear)||linear>2.)return reject("WIRE_SUM_GAIN_UNREPRESENTABLE");
+        auto args=std::make_unique<juce::DynamicObject>();
+        args->setProperty("gain",linear);
+        auto translated=std::make_unique<juce::DynamicObject>();
+        translated->setProperty("requestId",request);
+        translated->setProperty("deviceEpoch",epoch);
+        translated->setProperty("baseGraphRevision",revision);
+        translated->setProperty("baseRosterRevision",roster);
+        translated->setProperty("targetChannelId",ids);
+        translated->setProperty("operation","NATIVE_SET_WIRE_SUM_GAIN");
+        translated->setProperty("payload",juce::var(args.release()));
+        return {juce::var(translated.release()),{}};
+    }
     if(op=="SET_PROCESSING_FORMAT") {
         if(!approvedHasOperation(caps.getProperty("supportedOps",{}),
                                  "SET_PROCESSING_FORMAT") ||
@@ -616,6 +659,14 @@ inline bool executeApprovedNativeControl(Engine& engine,
            gain<0.f||gain>16.f)return false;
         if constexpr(requires(Engine& e){e.setNativeInputGain(epoch,revision,channel,0.f);})
             return engine.setNativeInputGain(epoch,revision,channel,static_cast<float>(gain));
+        return false;
+    }
+    if(operation=="NATIVE_SET_WIRE_SUM_GAIN") {
+        double gain=0.;
+        if(!nativeV8Number(payload.getProperty("gain",{}),gain)||
+           gain<0.f||gain>2.f)return false;
+        if constexpr(requires(Engine& e){e.setNativeWireSumGain(epoch,revision,channel,0.f);})
+            return engine.setNativeWireSumGain(epoch,revision,channel,static_cast<float>(gain));
         return false;
     }
     if(operation=="NATIVE_SET_SEND_ENABLED") {

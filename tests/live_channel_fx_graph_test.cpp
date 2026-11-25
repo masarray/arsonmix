@@ -45,7 +45,12 @@ public:
         .withOutput("Main",juce::AudioChannelSet::stereo(),true)),gain_(gain),offset_(offset),delaySamples_(delay){++living;setLatencySamples(delay);}
     ~GainFx() override{--living;}
     const juce::String getName()const override{return "In-memory gain effect";}
-    void prepareToPlay(double,int)override{++prepared;assert(delay_.prepare(delaySamples_));}
+    void prepareToPlay(double rate,int frames)override{
+        // Direct in-memory fixture (not JUCE's plugin host): publish the
+        // same metadata the real host supplies before preparing playback.
+        setRateAndBufferSizeDetails(rate,frames);
+        ++prepared;assert(delay_.prepare(delaySamples_));
+    }
     void releaseResources()override{++released;}
     void processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&)override{
         for(int c=0;c<buffer.getNumChannels();++c)
@@ -1920,6 +1925,82 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+static void verifyFxTimingSampled() {
+    auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(48000,64);
+    LiveChannelFxGraph::FxInstance fx(std::move(p),"sampled","timed gain",64);
+    std::array<float,64> l{},r{};
+    const auto heap=heapCalls.load();
+    for(int i=0;i<320;++i){
+        l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
+        assert(l[0]==.25f&&r[0]==-.5f);
+    }
+    auto snap=fx.processTiming.snapshot();
+    assert(snap.samples>=7&&snap.samples<=14&&snap.frames==64*snap.samples&&
+        snap.fullyBypassed==0&&snap.totalNs>=snap.maxNs);
+    fx.bypassRequested.store(true);
+    for(int i=0;i<16;++i){l.fill(0);r.fill(0);fx.render(l.data(),r.data(),64);}
+    const auto bypassed=fx.processTiming.snapshot().samples;
+    for(int i=0;i<320;++i){
+        l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
+        assert(l[0]==.125f&&r[0]==-.25f);
+    }
+    assert(fx.processTiming.snapshot().samples==bypassed);
+    assert(heapCalls.load()==heap);
+}
+static void verifyZeroLatencyFxFastPath() {
+    // Exercise real JUCE FxInstance at device rates and irregular callback
+    // lengths; reference remains the original sample-wise envelope.
+    for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+        auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(rate,64);
+        assert(p->getSampleRate()==rate&&p->getBlockSize()==64);
+        LiveChannelFxGraph::FxInstance fx(std::move(p),"zero","zero delay",64);
+        std::array<float,64> l{},r{};
+        fx.dryLeft.assign(64,-99.f);fx.dryRight.assign(64,-88.f);
+        l.fill(.125f);r.fill(-.25f);
+        const auto before=heapCalls.load();
+        fx.render(l.data(),r.data(),64);
+        assert(heapCalls.load()==before);
+        for(int i=0;i<64;++i){
+            assert(l[i]==.25f&&r[i]==-.5f);
+            assert(fx.dryLeft[i]==-99.f&&fx.dryRight[i]==-88.f);
+        }
+        armix::dsp::FxBypassEnvelope reference;reference.prepare(false,rate,0);
+        const auto block=[&](bool insert,bool rack,int n){
+            fx.bypassRequested.store(insert);
+            reference.request(insert||rack);
+            // Nonconstant source catches stale scratch and copy-length errors.
+            for(int i=0;i<n;++i){l[i]=.125f+i*.0005f;r[i]=-.25f+i*.0007f;}
+            fx.render(l.data(),r.data(),n,rack);
+            for(int i=0;i<n;++i){
+                const auto g=reference.next();
+                const float x=.125f+i*.0005f,y=-.25f+i*.0007f;
+                assert(near(l[i],2.f*x*g.wet+x*g.dry));
+                assert(near(r[i],2.f*y*g.wet+y*g.dry));
+            }
+            assert(heapCalls.load()==before);
+        };
+        // Reverse a fade before completion, then exercise both bypass
+        // sources independently and their OR, with exact dry/wet endpoints.
+        block(true,false,31);block(false,false,17);
+        for(const auto flags: {1,3,2,0}){
+            for(int i=0;i<80;++i)block((flags&1)!=0,(flags&2)!=0,i%2?31:64);
+            assert(!reference.transitioning());
+            assert(reference.fullyBypassed()==(flags!=0));
+            assert(fx.bypassFade.fullyBypassed()==(flags!=0));
+            l.fill(.125f);r.fill(-.25f);
+            fx.render(l.data(),r.data(),64,(flags&2)!=0);
+            for(int i=0;i<64;++i){
+                assert(l[i]==(flags?.125f:.25f)&&r[i]==(flags?-.25f:-.5f));
+            }
+            assert(heapCalls.load()==before);
+        }
+        fx.processor->setLatencySamples(8);
+        assert(fx.latencyChanged.load());
+        l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
+        for(int i=0;i<64;++i)assert(l[i]==.125f&&r[i]==-.25f);
+        assert(heapCalls.load()==before);
+    }
+}
 static void verifyLatencyAlignedBypass() {
     // Real JUCE processing (not merely reporting a latency value): an impulse
     // remains at sample 7 through wet, individual bypass and rack bypass.
@@ -1977,6 +2058,9 @@ static void verifyNativeFxRackTransactions() {
         assert(heapCalls.load()==count);for(int i=0;i<64;++i)assert(near(l[i],expected)&&near(l[i],r[i]));
     };
     publish();samples(1.6f);const int prepares=GainFx::prepared;
+    const auto original=bank->findEditorLocation(a,a->instanceId);
+    assert(original && original.channel==source && original.slot==0);
+    assert(!bank->findEditorLocation(a,b->instanceId)); // no token fallback
     const auto edit=[&](ChannelId from,std::size_t slot,const juce::String& token,ChannelId to,std::size_t pos){
         DynamicChannelRoster next;DynamicChannelFxLeaseBank owners;
         assert(prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,from,slot,token,to,pos,next,owners));
@@ -1990,12 +2074,19 @@ static void verifyNativeFxRackTransactions() {
     assert(!prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,source,0,a->instanceId,dest,9,rejected,rejectedBank));
     samples(1.6f);
     edit(source,0,a->instanceId,source,1);samples(2.6f);assert(bank->retainsEditor(a));
+    const auto movedUp=bank->findEditorLocation(a,a->instanceId);
+    assert(movedUp && movedUp.channel==source && movedUp.slot==1);
+    assert(bank->ownerForControl(source,0)->get()!=a.get());
     edit(source,1,a->instanceId,dest,0);samples(1.45f);
+    const auto movedChannel=bank->findEditorLocation(a,a->instanceId);
+    assert(movedChannel && movedChannel.channel==dest && movedChannel.slot==0);
     assert(bank->retainsEditor(a)&&(*bank->ownerForControl(dest,0)).get()==a.get());
     assert(roster.find(source)->insertCatalogIds==std::vector<std::string>{"offset"});
     assert(roster.find(dest)->insertCatalogIds==std::vector<std::string>{"gain"});
     edit(source,0,b->instanceId,{},0);samples(.45f);assert(!bank->retainsEditor(b));
+    assert(!bank->findEditorLocation(b,b->instanceId));
     edit(dest,0,a->instanceId,{},0);samples(.35f);assert(!bank->retainsEditor(a));
+    assert(!bank->findEditorLocation(a,a->instanceId));
 }
 
 // Native eight-band Parametric EQ must be the exact ordered rack lease in PCM,
@@ -2604,6 +2695,8 @@ int main(int argc,char** argv) {
     verifyFirstSoundOnePinNativeSourceDraft();
     verifyNativePuzzleV8FixtureAndWire();
     verifyChannelIdGroupPreservesHostedFx();
+    verifyFxTimingSampled();
+    verifyZeroLatencyFxFastPath();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();
     verifyNativeBuiltinEqOrderedPcmAndBypassAck();

@@ -144,7 +144,7 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn("syncPower();",self.ui)
         self.assertIn('power.dataset.fxState=fxState;',self.ui)
         self.assertIn('fxState==="unknown"||fxState==="rack-off"',self.ui)
-        self.assertIn('ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on"',self.ui)
+        self.assertIn('(ch.fxRackBypassed||n?.raw?.globalFxBypassed===true)?"rack-off":insert.bypassed?"off":"on"',self.ui)
         self.assertIn("if(power.dataset.fxState===fxState)return;",self.ui)
         self.assertIn(".mx-peq-close,.mx-comp-close,.mx-harm-close",chrome)
         self.assertIn(".mx-peq-global,.mx-comp-power,.mx-harm-power",chrome)
@@ -161,6 +161,18 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn('data-voice-mode="1"',self.ui)
         self.assertIn("doubleLight:{voiceMode:1",self.ui)
         self.assertIn("doubleWide:{voiceMode:1",self.ui)
+        self.assertIn("input.setPointerCapture(e.pointerId)",self.ui)
+        self.assertIn("requestAnimationFrame(flush)",self.ui)
+        self.assertIn("move(e);flush();cancel();",self.ui)
+        for values in ("space:.58,color:.78,wet:.68,gainDb:0",
+                       "space:.88,color:.86,wet:.86,gainDb:0",
+                       "color:.78,space:.72,wet:.76,gainDb:0",
+                       "color:.82,space:.78,wet:.82,gainDb:0",
+                       "color:.88,space:.94,wet:.88,gainDb:-1",
+                       "color:.90,space:.94,wet:.90,gainDb:-1",
+                       "color:.68,space:.70,wet:.88,gainDb:-1"):
+            self.assertIn(values,self.ui)
+        self.assertIn("current?.instanceId===gesture.instance",self.ui)
         self.assertIn("Number.isInteger(s.voiceMode)",self.ui)
         self.assertIn("settings->setProperty(\"voiceMode\",s.voiceMode)",(ROOT/"src/Main.cpp").read_text("utf-8"))
         self.assertIn("stream.writeInt(3);",(ROOT/"engine/builtin_fx/ChannelHarmonyProcessor.h").read_text("utf-8"))

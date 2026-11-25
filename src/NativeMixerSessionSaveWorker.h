@@ -30,14 +30,19 @@ public:
         busy_.store(false,std::memory_order_release);
         auto completion=std::move(done_);
         done_={};readDone_={};states_.clear();
-        if(applySaveCompletion&&completion)completion(saveResult_);
+        // Archive lifecycle commits may have published HEAD just before
+        // shutdown. Never discard their authoritative workspace adoption.
+        if((applySaveCompletion||archiveMode_!=NativeMixerSessionStore::ArchiveMode::none)&&completion)
+            completion(saveResult_);
+        archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
     }
     bool save(juce::File studio,MixerSessionDocument document,
               std::vector<armix::shows::BinaryState> binary,
-              Completion completion,juce::File exportFile={}) {
+              Completion completion,juce::File exportFile={},NativeMixerSessionStore::ArchiveMode archiveMode=NativeMixerSessionStore::ArchiveMode::none) {
         if(busy_.exchange(true,std::memory_order_acq_rel))return false;
         studio_=std::move(studio);
         exportFile_=std::move(exportFile);
+        archiveMode_=archiveMode;
         doc_=std::move(document);
         states_=std::move(binary);
         done_=std::move(completion);
@@ -45,6 +50,7 @@ public:
     }
     bool load(juce::File file,ReadCompletion completion) {
         if(busy_.exchange(true,std::memory_order_acq_rel))return false;
+        archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
         exportFile_=std::move(file);
         readDone_=std::move(completion);
         return start();
@@ -64,7 +70,9 @@ private:
         try {
             NativeMixerSessionStore store(studio_);
             if(readDone_)error=NativeMixerSessionStore::readFile(exportFile_,doc_,states_);
-            else error=exportFile_==juce::File{}?store.commit(doc_,states_):
+            else error=archiveMode_!=NativeMixerSessionStore::ArchiveMode::none?
+                store.commitNewSession(doc_,states_,archiveMode_):
+                exportFile_==juce::File{}?store.commit(doc_,states_):
                 NativeMixerSessionStore::writeFile(exportFile_,doc_,states_);
         }catch(...) {error="Mixer session IO worker exception";}
         // Release potentially large VST3 binary buffers before callback.
@@ -94,6 +102,7 @@ private:
         done_={};
         auto readCallback=std::move(readDone_);
         readDone_={};
+        archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
         if(readCallback)readCallback(std::move(error),std::move(doc_),std::move(states_));
         else if(callback)callback(std::move(error));
     }
@@ -103,6 +112,7 @@ private:
     juce::String saveResult_;
     Completion done_;
     ReadCompletion readDone_;
+    NativeMixerSessionStore::ArchiveMode archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
     unsigned serial_=0;
     std::atomic<bool> busy_{false};
     std::shared_ptr<std::atomic<bool>> alive_=

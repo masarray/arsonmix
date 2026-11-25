@@ -60,7 +60,7 @@ static std::vector<float> render(int block,float space,bool wet){
     }
     for(int i=0;i<n;i+=block)e->process(l.data()+i,r.data()+i,std::min(block,n-i));
     for(float value:l)need(std::isfinite(value),"render nonfinite");
-    need(e->latencySamples()==1536,"native PDC changed");
+    need(e->latencySamples()==1152,"native PDC changed");
     return l;
 }
 
@@ -118,7 +118,40 @@ static void focusTest(double rate){
     need(f.filterSend(0.f,0.f).left==0.f&&
          f.returnGain(0.f,0.f,1.f)==1.f,"room restart stale sample");
 }
+static void verifyInactiveStageHistory(){
+    for(double rate:{32000.,48000.,96000.,192000.}){
+        BackingStageSpatial old,now;
+        need(old.prepare(rate)&&now.prepare(rate),"H25D stage prepare");
+        old.setInactiveFastForOfflineTests(false);
+        // Use the same compiled function for both policies. Comparing two
+        // separately specialized inline call sites can conflate arithmetic
+        // contraction/constant propagation with the history contract.
+        // No epsilon relaxation: both branches still require exact samples.
+        auto volatile place=&BackingStageSpatial::place;
+        int skipped=0;
+        for(int i=0;i<static_cast<int>(rate*.12);++i){
+            const float x=static_cast<float>(.3*std::sin(.017*i));
+            const bool active=(i/(static_cast<int>(rate*.02)))%2;
+            const float l=active?.2f:0.f,r=active?.7f:0.f;
+            const auto a=(old.*place)(2,x,.4f*x,-.3f*x,l,r,.8f);
+            const auto b=(now.*place)(2,x,.4f*x,-.3f*x,l,r,.8f);
+            const bool equal=a.directL==b.directL&&a.directR==b.directR&&a.earlyL==b.earlyL&&
+                 a.earlyR==b.earlyR&&a.roomL==b.roomL&&a.roomR==b.roomR;
+            if(!equal)std::cerr<<"H25D_DIFF rate="<<rate<<" sample="<<i<<" active="<<active
+                <<std::hexfloat<<" directL="<<a.directL<<'/'<<b.directL
+                <<" directR="<<a.directR<<'/'<<b.directR<<" earlyL="<<a.earlyL<<'/'<<b.earlyL
+                <<" earlyR="<<a.earlyR<<'/'<<b.earlyR<<" roomL="<<a.roomL<<'/'<<b.roomL
+                <<" roomR="<<a.roomR<<'/'<<b.roomR<<std::defaultfloat<<'\n';
+            need(equal,"H25D inactive/reentry stage PCM");
+            if(!active)need(b.directL==0.f&&b.directR==0.f&&b.earlyL==0.f&&b.earlyR==0.f&&
+                b.roomL==0.f&&b.roomR==0.f,"H25D inactive stage not silent");
+            skipped+=!active;old.advance();now.advance();
+        }
+        std::cout<<"H25D_STAGE rate="<<rate<<" inactive_samples="<<skipped<<" exact history parity\n";
+    }
+}
 int main(){
+    verifyInactiveStageHistory();
     // Space=0 is unchanged; at wide Space, HIGH retains a small direct
     // spectral/level anchor rather than drowning in the shared late room.
     need(BackingStageSpatial::directionalPresence(2,0.f)==1.f&&

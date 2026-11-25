@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 // Deterministic, bounded, single-audio-owner backing-singer individualization.
 // Prepared on non-realtime thread. No random generator, heap, mutex, worker
@@ -24,6 +25,12 @@ public:
         constexpr std::array<float,voices> vibratoHz{{4.7f,5.2f,4.9f,5.35f,4.55f}};
         constexpr std::array<float,voices> vibratoCents{{2.4f,3.0f,2.8f,2.6f,3.3f}};
         constexpr std::array<float,voices> timbre{{.93f,.86f,.96f,.89f,.83f}};
+        // Independent, deliberately subtle expression; no extra audio delay,
+        // random pitch, artificial formant claim or new voice generator.
+        constexpr std::array<float,voices> onsetMs{{55.f,85.f,45.f,110.f,72.f}};
+        constexpr std::array<float,voices> bloomMs{{145.f,175.f,125.f,210.f,160.f}};
+        constexpr std::array<float,voices> sustainCents{{4.2f,6.2f,5.4f,7.0f,6.6f}};
+        constexpr std::array<float,voices> settleMs{{26.f,32.f,22.f,38.f,29.f}};
         for(std::size_t i=0;i<sineCount;++i)
             sine_[i]=std::sin(tau*static_cast<float>(i)/sineCount);
         for(int v=0;v<voices;++v){
@@ -40,6 +47,13 @@ public:
             increment_[ix]=vibratoHz[ix]/static_cast<float>(rate);
             phase_[ix]=static_cast<float>(ix)*.197f;
             tone_[ix]=timbre[ix];
+            onset_[ix]=static_cast<float>(rate*onsetMs[ix]*.001);
+            bloomReciprocal_[ix]=static_cast<float>(1000./(rate*bloomMs[ix]));
+            personalVibrato_[ix]=sustainCents[ix]*(.69314718056f/1200.f);
+            settleAlpha_[ix]=static_cast<float>(1.-std::exp(-1000./(rate*settleMs[ix])));
+            settleSamples_[ix]=static_cast<std::uint64_t>(rate*.11);
+            noteStart_[ix]=0;
+            personalExpression_[ix]=0.f;
             reflections_[ix].fill(0.f);
         }
         // A sample-rate-stable, shallow air/room HF shading of backing
@@ -47,10 +61,21 @@ public:
         shadingAlpha_=static_cast<float>(
             1.-std::exp(-2.*3.141592653589793*4400./rate));
         distanceLowpass_.fill(0.f);
+        // Two complementary broad spectral regions, not a formant
+        // estimator. Poles are prepared in physical Hz at device start.
+        identityBodyAlpha_=static_cast<float>(
+            1.-std::exp(-2.*3.141592653589793*850./rate));
+        identityAirAlpha_=static_cast<float>(
+            1.-std::exp(-2.*3.141592653589793*2900./rate));
+        identityBody_.fill(0.f);identityAir_.fill(0.f);
+        identityGuard_.fill(0.f);
+        identityGuardAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.012)));
         ageStart_=static_cast<int>(rate*.065);
         ageRamp_=static_cast<float>(1./(rate*.165));
         expressionAlpha_=static_cast<float>(1.-std::exp(-1./(rate*.018)));
-        expression_=0.f;age_=0;cursor_=0;
+        expression_=0.f;age_=0;cursor_=0;phraseClock_=0;phraseVoiced_=false;
+        doublePhase_=0.f;doubleIncrement_=static_cast<float>(.73/rate);
+        doubleDepth_=static_cast<float>(rate*.00065);
         return true;
     }
     float shadeBacking(int v,float sample,float space) noexcept {
@@ -58,6 +83,47 @@ public:
         distanceLowpass_[i]+=shadingAlpha_*(sample-distanceLowpass_[i]);
         const float blend=.52f*std::clamp(space,0.f,1.f);
         return sample*(1.f-blend)+distanceLowpass_[i]*blend;
+    }
+    // Role-specific broad spectral identity applied AFTER synthesis and
+    // BEFORE stage/room, so all copies of a singer keep the same timbre.
+    // A pitch-up granular fallback scales formants with pitch; use a mild
+    // extra upper-band guard proportional to that actual renderer blend.
+    // No vowel estimation, formant relocation, added delay or AGC.
+    float shapeSinger(int v,float sample,float amount,float ratio,
+                      float granularShare) noexcept {
+        const auto i=static_cast<std::size_t>(v);
+        if(amount<=0.f){
+            // Exact H4 reference; discard old filter memory before
+            // re-entry after a completely disabled identity path.
+            identityBody_[i]=identityAir_[i]=identityGuard_[i]=0.f;
+            return sample;
+        }
+        constexpr std::array<float,voices> body{{.035f,-.025f,-.015f,.065f,-.02f}};
+        constexpr std::array<float,voices> presence{{-.065f,-.11f,.18f,-.12f,.085f}};
+        constexpr std::array<float,voices> air{{-.10f,.09f,-.17f,-.18f,-.045f}};
+        float& lo=identityBody_[i];float& hi=identityAir_[i];
+        lo+=identityBodyAlpha_*(sample-lo);
+        hi+=identityAirAlpha_*(sample-hi);
+        const float up=std::clamp((ratio-1.f)*1.5f,0.f,1.f);
+        const float guardTarget=.16f*up*std::clamp(granularShare,0.f,1.f);
+        float& guard=identityGuard_[i];
+        guard+=identityGuardAlpha_*(guardTarget-guard);
+        const float shaped=body[i]*lo+presence[i]*(hi-lo)+
+                           (air[i]-guard)*(sample-hi);
+        return sample+amount*shaped;
+    }
+    // Continuous unison delay modulation, independent of F0/epoch/note
+    // evidence. Interpolate the prepared sine table; no grain seam, phase
+    // reset, random noise or trig on the audio callback. +/-0.65ms at
+    // .73Hz is a bounded pitch excursion (~5.2 cents maximum).
+    float doublerOffset() noexcept {
+        const float position=doublePhase_*static_cast<float>(sineCount);
+        const auto index=static_cast<std::size_t>(position)&(sineCount-1);
+        const float fraction=position-static_cast<float>(index);
+        const float wave=sine_[index]+(sine_[(index+1)&(sineCount-1)]-sine_[index])*fraction;
+        doublePhase_+=doubleIncrement_;
+        if(doublePhase_>=1.f)doublePhase_-=1.f;
+        return offset_[0]+doubleDepth_*wave;
     }
     float arrivalSamples(int v) const noexcept {
         return offset_[static_cast<std::size_t>(v)];
@@ -70,7 +136,7 @@ public:
     }
     // All 5 LFOs have independent, deterministic phase and frequency.
     // Sustain vibrato appears gradually; no per-block reset or random jitter.
-    float pitchRatio(int v) noexcept {
+    float pitchRatio(int v,float independent=0.f) noexcept {
         const auto i=static_cast<std::size_t>(v);
         const float position=phase_[i]*static_cast<float>(sineCount);
         const auto index=static_cast<std::size_t>(position);
@@ -79,7 +145,17 @@ public:
         const float wave=sine_[index]+(sine_[following]-sine_[index])*fraction;
         phase_[i]+=increment_[i];
         if(phase_[i]>=1.f)phase_[i]-=1.f;
-        return ratio_[i]*(1.f+wave*vibratoRatio_[i]*expression_);
+        if(independent<=0.f)
+            return ratio_[i]*(1.f+wave*vibratoRatio_[i]*expression_);
+        const float age=static_cast<float>(std::min<std::uint64_t>(
+            phraseClock_-noteStart_[i],100000000));
+        const float mature=phraseVoiced_?
+            std::clamp((age-onset_[i])*bloomReciprocal_[i],0.f,1.f):0.f;
+        float& personal=personalExpression_[i];
+        personal+=expressionAlpha_*(mature-personal);
+        const float legacy=vibratoRatio_[i]*expression_;
+        const float depth=legacy+independent*(personalVibrato_[i]*personal-legacy);
+        return ratio_[i]*(1.f+wave*depth);
     }
     // Exactly one filtered early reflection from each independent singer.
     // Fixed integer tap delay: changing Space can never sweep a delay line
@@ -102,10 +178,36 @@ public:
     int secondReflectionSamples(int singer) const noexcept {
         return secondDelay_[static_cast<std::size_t>(singer)];
     }
-    void beginNote() noexcept { age_=0; }
-    void advance(bool voiced) noexcept {
+    // Lead note changes are not necessarily singer note changes. Keep the
+    // individual age of a held common tone; a new phrase restarts all roles.
+    void beginNote(unsigned changedMask=(1u<<voices)-1u) noexcept {
+        age_=0;
+        for(int i=0;i<voices;++i)
+            if(changedMask&(1u<<i))noteStart_[i]=phraseClock_;
+    }
+    // Only a newly selected singer note gets a brief, role-specific settle.
+    // During sustain return to the old tracker smoothing (preserve natural
+    // source vibrato rather than continuously forcing a quantized pitch).
+    float ratioSmoothing(int v,float legacy,float independent) const noexcept {
+        const auto i=static_cast<std::size_t>(v);
+        if(independent<=0.f||!phraseVoiced_||
+           phraseClock_-noteStart_[i]>=settleSamples_[i])return legacy;
+        return legacy+independent*(settleAlpha_[i]-legacy);
+    }
+    // Offline evidence read after processing. No atomic telemetry in AUDIO.
+    std::uint64_t noteAgeForOfflineTests(int v) const noexcept {
+        return phraseClock_-noteStart_[static_cast<std::size_t>(v)];
+    }
+    float expressionForOfflineTests(int v) const noexcept {
+        return personalExpression_[static_cast<std::size_t>(v)];
+    }
+    void advance(bool voiced) noexcept {advance(voiced,voiced);}
+    void advance(bool stableLegacyNote,bool voicedPhrase) noexcept {
         cursor_=(cursor_+1)&(reflectionCapacity-1);
-        if(!voiced)age_=0;
+        // A pending lead-note candidate is not a phrase release. Keep
+        // held singers expressive while the detector confirms a new note.
+        ++phraseClock_;phraseVoiced_=voicedPhrase;
+        if(!stableLegacyNote)age_=0;
         else if(age_<100000000)++age_;
         const float mature=std::clamp((age_-ageStart_)*ageRamp_,0.f,1.f);
         expression_+=expressionAlpha_*(mature-expression_);
@@ -115,7 +217,15 @@ private:
     std::array<std::array<float,reflectionCapacity>,voices> reflections_{};
     std::array<float,voices> offset_{},ratio_{},vibratoRatio_{};
     std::array<float,voices> increment_{},phase_{},tone_{},distanceLowpass_{};
+    std::array<float,voices> onset_{},bloomReciprocal_{},personalVibrato_{},
+        settleAlpha_{},personalExpression_{};
+    std::array<std::uint64_t,voices> noteStart_{},settleSamples_{};
+    std::uint64_t phraseClock_=0;
+    bool phraseVoiced_=false;
+    std::array<float,voices> identityBody_{},identityAir_{},identityGuard_{};
+    float identityBodyAlpha_=0.f,identityAirAlpha_=0.f,identityGuardAlpha_=0.f;
     float shadingAlpha_=0.f;
+    float doublePhase_=0.f,doubleIncrement_=0.f,doubleDepth_=0.f;
     std::array<int,voices> reflectionDelay_{},secondDelay_{};
     std::size_t cursor_=0;
     int age_=0,ageStart_=0;

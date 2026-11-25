@@ -13,6 +13,23 @@
   const scope = window.__ARMIX_NATIVE_SCOPE__ || null;
   const connected = Boolean(backend?.emitEvent && backend?.addEventListener &&
     protocol && deviceVM && stripVM && fxRackVM && wireVM);
+  // F11 belongs to the mixer HWND, not the child WebView2 document.
+  // Keep modified F11 available to existing native hotkey capture.
+  if(backend?.emitEvent && backend?.addEventListener) {
+    // WebView2 starts before the five native ViewModels finish admission.
+    // A window command must not silently disappear during that bootstrap.
+    window.addEventListener("keydown",event=>{
+      if(!(event.key==="F11"||event.code==="F11"||event.keyCode===122)||
+         event.repeat||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
+      event.preventDefault();event.stopImmediatePropagation();
+      backend.emitEvent("arMixWindowFullscreen",{operation:"TOGGLE"});
+    },true);
+    backend.addEventListener("arMixWindowFullscreenState",state=>{
+      if(typeof state?.active==="boolean")
+        document.documentElement.dataset.operatorFullscreen=
+          state.active?"true":"false";
+    });
+  }
   // Public browser preview keeps its header; the native JUCE caption replaces it.
   if (backend?.emitEvent && backend?.addEventListener)
     document.documentElement?.classList?.add?.("armix-native-desktop");
@@ -53,6 +70,8 @@
     style.textContent+="\n"+"html.armix-native-desktop #mxNativePeq .mx-peq-body{grid-template-columns:minmax(0,1fr) 143px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-title{height:36px!important;flex-basis:36px!important;gap:11px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-brand{font-size:11px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-brand::after{content:none!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-bands{gap:3px!important;padding:7px 8px 6px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-band{flex-direction:row!important;gap:4px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-select{flex-direction:row!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-band-power{height:26px!important;width:19px!important;flex:0 0 19px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativePeq .mx-peq-knob{min-height:84px!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-controls{grid-template-columns:130px minmax(0,410px) minmax(0,1fr)!important;grid-template-rows:auto!important;gap:0!important;min-height:327px!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-visual{grid-column:auto!important;grid-row:auto!important;width:auto!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-left,#mxNativeComp .mx-comp-right{grid-column:auto!important;grid-row:auto!important}\nhtml.armix-native-desktop #mxNativeComp .mx-comp-dial{width:47px!important;height:47px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-body{grid-template-columns:150px minmax(0,1fr) 234px!important;min-height:232px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-left,#mxNativeHarmony .mx-harm-control-deck,#mxNativeHarmony .mx-harm-center{grid-column:auto!important;grid-row:auto!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-instrument{display:grid!important;grid-template-columns:minmax(0,1fr) 212px minmax(0,1fr)!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-center{order:initial!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-content{grid-template-columns:minmax(0,1.42fr) minmax(270px,1fr)!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-stage{border-right:1px solid #395565!important;border-bottom:0!important}";
     style.textContent+="\n"+"html.armix-native-desktop #mxNativeVocalThrow #vtEncodersLeft,html.armix-native-desktop #mxNativeVocalThrow #vtEncodersRight{order:initial!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-throw-button{width:212px!important;height:212px!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-performance{grid-template-columns:88px minmax(0,1fr) 302px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-rotary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;min-height:190px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-center{border-top:0!important;padding:8px 12px!important}";
     const offsets=new WeakMap();
+    const identities=new WeakMap(); // exact FX owner, not its slot
+    const bypassOwners=new Map(); // max five mounted roots, navigation lease only
     let drag=null,layer=16000;
     const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
     const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
@@ -82,16 +101,59 @@
       move(root,left-r.left,top-r.top);
       return true;
     }
-    function openExact(host,key,track,slot,recenter=true) {
+    // Only rescue a panel that can no longer be reached after F11 or a
+    // display/work-area resize. Never recenter manually positioned GEQ31.
+    function keepReachable(root) {
+      if(!root||root.hidden)return;
+      const r=root.getBoundingClientRect(),handle=grip();
+      const x=limit(r.left,handle-r.width,innerWidth-handle);
+      const y=limit(r.top,Math.min(8,innerHeight-r.height+48),
+        Math.max(8,innerHeight-38));
+      if(Math.abs(x-r.left)>.5||Math.abs(y-r.top)>.5)
+        move(root,x-r.left,y-r.top);
+    }
+    function syncBypass(view){
+      const hardwareConfiguration=protocol.nativeHardwareConfiguration(view?.device);
+      for(const [root,lease] of bypassOwners){
+        if(!root.isConnected){bypassOwners.delete(root);continue;}
+        if(root.hidden)continue;
+        const value=fxRackVM.editorBypassPresentation(view,lease,{hardwareConfiguration});
+        let shade=root.querySelector(".armix-native-fx-bypass");
+        if(!shade){
+          shade=document.createElement("div");
+          shade.className="mx-geq31-bypass-overlay armix-native-fx-bypass";
+          shade.setAttribute("aria-hidden","true");
+          const header=root.querySelector(headers);
+          if(header)shade.style.top=header.offsetHeight+"px";
+          root.appendChild(shade);
+        }
+        const label={GLOBAL:"GLOBAL FX BYPASSED",RACK:"FX RACK BYPASSED",
+          SLOT:"BYPASSED",UNAVAILABLE:"FX UNAVAILABLE",ON:"BYPASSED"}[value];
+        if(shade.textContent!==label)shade.textContent=label;
+        shade.classList.toggle("is-on",value!=="ON");
+        const pointer=value==="UNAVAILABLE"?"auto":"none";
+        if(shade.style.pointerEvents!==pointer)shade.style.pointerEvents=pointer;
+      }
+    }
+    function openExact(host,key,track,slot,instanceId,lease=null) {
       const selector=selectors[key],root=document.querySelector(selector||"#__none__");
-      if(!root||typeof host?.open!=="function")return false;
-      if(root.hidden){
+      if(!root||typeof host?.open!=="function"||!instanceId)return false;
+      const identity=String(instanceId);
+      // New FX owner gets first-open placement; the same owner keeps its
+      // dragged position across rack clicks, hide/show and readback updates.
+      if(identities.get(root)!==identity || root.hidden) {
+        // Closing a wide PEQ while panned to its right edge must not
+        // strand the next opening. Visible GEQ rack refocus never moves.
         offsets.delete(root);
         root.style.removeProperty("translate");
+        identities.set(root,identity);
       }
       host.open(track,slot);
+      if(root.hidden)return false; // a no-op open is not a successful editor
+      if(lease&&key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
       root.style.zIndex=String(++layer);
-      if(recenter||!offsets.has(root))center(root);
+      if(!offsets.has(root))center(root);
+      else keepReachable(root);
       return true;
     }
     function visibleRoot(target) {
@@ -151,14 +213,14 @@
       if(!event.target.closest?.("#mxNativeGeq31 .mx-geq31-size"))return;
       requestAnimationFrame(()=>{
         const root=document.getElementById("mxNativeGeq31");
-        if(root&&!root.hidden)center(root);
+        if(root&&!root.hidden)keepReachable(root);
       });
     });
     window.addEventListener("resize",()=>{
       for(const root of document.querySelectorAll(roots))
-        if(!root.hidden)requestAnimationFrame(()=>center(root));
+        if(!root.hidden)requestAnimationFrame(()=>keepReachable(root));
     });
-    return Object.freeze({openExact,center,move});
+    return Object.freeze({openExact,center,move,syncBypass});
   })():null;
   if(inlineFxClip)window.__ARMIX_NATIVE_INLINE_FX_CLIP__=inlineFxClip;
 
@@ -370,6 +432,9 @@
   const pendingM4RackPowers=new Map();
   let controller = null;
   let logicalView=null,pendingLogical=null,logicalSerial=0,logicalRenameId=null;
+  // Disk-backed offline edits are release-only; retain one newest released
+  // value per ChannelId while the single durable logical transaction is busy.
+  const latestLogicalInputGains=new Map();
   // Retained requests prepare a control-only .smix FX editor after ACK, never
   // authorize PCM or silently rebind disconnected hardware.
   let pendingRetainedEditor=null,retainedEditorSerial=0;
@@ -439,7 +504,7 @@
     if(!logicalView.graph.capabilities.supportedOps.includes(operation))
       return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
     const requestId="logical-"+logicalClientToken+"-"+(++logicalSerial);
-    const value=["SET_FADER","SET_INPUT_GAIN"].includes(operation)?payload.valueDb:
+    const value=["SET_FADER","SET_INPUT_GAIN","SET_WIRE_SUM_GAIN"].includes(operation)?payload.valueDb:
       operation==="SET_PAN"?payload.value:
       ["SET_MUTE","SET_SOLO","SET_FX_RACK_BYPASS"].includes(operation)?
         payload.enabled:undefined;
@@ -463,7 +528,9 @@
     window.setTimeout(()=>{
       if(pendingLogical?.requestId!==requestId)return;
       pendingLogical=null;
-      status("Mixer edit not confirmed · previous saved settings retained");
+      latestLogicalInputGains.clear(); // unknown commit outcome: never blindly replay
+      lastPaintedSignature="";lastNativeTopologySignature="";
+      status("Mixer edit not confirmed · refreshing saved settings");
       controller?.subscribe();
     },8000);
     return {ok:true,requestId};
@@ -505,10 +572,10 @@
   }
   function requestWireGain(op){
     const db=Number(op.levelDb);
-    if(!Number.isFinite(db)||db< -60||db>6||
-       !admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
-    const current=controller.state().current;
+    if(!Number.isFinite(db)||db< -60||db>6)return false;
+    const current=controller?.state()?.current;
     const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
+    if(!admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
     // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
     pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
     queueWireGainFlush();return true;
@@ -517,6 +584,95 @@
     return stripVM.outputTargets(channels,nativeIdFor(t),displayNameFor);
   }
   let pendingNativeGainIntent=false;
+  const latestInputGainDrafts=new Map();
+  let gainDraftFlushScheduled=false;
+  function flushLiveInputGains(){
+    if(!controller||controller.state()?.pending||pendingLogical)return;
+    for(const [key,edit] of latestInputGainDrafts){
+      latestInputGainDrafts.delete(key);
+      if(edit.epoch!==String(hardware?.device?.epoch)||
+         nativeIdFor(edit.track)!==edit.id||!deviceReady()||
+         (edit.operation==="SET_INPUT_GAIN"?!edit.track.nativeGainAvailable:
+          wireVM.channelSumLevelPlan(controller.state()?.current,flags.acceptedGraphConnected,edit.id,edit.db).kind!=="READY")) {
+        status("GAIN gesture retired · audio owner changed");
+        continue;
+      }
+      const result=intent(edit.operation,edit.track,{valueDb:edit.db});
+      if(!result){
+        status("GAIN rejected · restoring accepted channel value");
+        if(controller.state()?.current)
+          reconcileAcceptedInputGainSnapshot(controller.state().current);
+      }else pendingNativeGainIntent=true;
+      // One owner/ACK at a time; latest other channel intents drain after
+      // installed readback instead of racing an older graph revision.
+      break;
+    }
+  }
+  function scheduleLiveInputGainFlush(){
+    if(gainDraftFlushScheduled)return;
+    gainDraftFlushScheduled=true;
+    window.setTimeout(()=>{
+      gainDraftFlushScheduled=false;
+      flushLiveInputGains();
+    },32);
+  }
+  function logicalGainRow(view,id){
+    if(!view||view.readOnly||!id||
+       !view.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN"))return null;
+    const row=view.graph.channels.find(ch=>ch.id===id);
+    return row?.role==="INPUT"&&Number.isFinite(row.controls?.inputGainDb)?row:null;
+  }
+  function flushLogicalInputGains(){
+    if(!logicalView||pendingLogical)return;
+    for(const [id,edit] of latestLogicalInputGains){
+      latestLogicalInputGains.delete(id);
+      const row=logicalGainRow(logicalView,id);
+      if(!row||edit.workspaceToken!==logicalView.workspaceToken)continue;
+      // Cancellation / release to the already saved value needs no disk write.
+      if(Math.abs(row.controls.inputGainDb-edit.db)<.001){
+        const t=scope?.tracks?.find(t=>nativeIdFor(t)===id);
+        if(t)paintAcceptedInputGain(t,row.controls.inputGainDb);
+        continue;
+      }
+      const result=logicalIntent("SET_INPUT_GAIN",id,{valueDb:edit.db});
+      if(result.ok)return; // one durable ACK + independent readback at a time
+      latestLogicalInputGains.clear();
+      lastPaintedSignature="";lastNativeTopologySignature="";
+      status("Offline GAIN not saved · refreshing accepted settings");
+      controller?.subscribe();
+      return;
+    }
+  }
+  function requestLiveInputGain(track,db,final){
+    if(!track||!Number.isFinite(db)||db< -24||db>24)return false;
+    if(logicalView){
+      const id=nativeIdFor(track);
+      if(!logicalGainRow(logicalView,id))return false;
+      if(!final)return true; // visual preview only; no intermediate .smix writes
+      latestLogicalInputGains.set(id,{db,workspaceToken:logicalView.workspaceToken});
+      flushLogicalInputGains();
+      return true;
+    }
+    const id=nativeIdFor(track);
+    if(!id||!deviceReady())return false;
+    latestInputGainDrafts.set("SET_INPUT_GAIN:"+id,{
+      id,operation:"SET_INPUT_GAIN",track,db,epoch:String(hardware?.device?.epoch)});
+    if(final&&!controller.state()?.pending)flushLiveInputGains();
+    else scheduleLiveInputGainFlush();
+    return true;
+  }
+  function requestLiveWireSumGain(track,db,final){
+    if(!track||!Number.isFinite(db)||db< -60||db>6)return false;
+    if(logicalView) return final?intent("SET_WIRE_SUM_GAIN",track,{valueDb:db}):true;
+    const id=nativeIdFor(track);
+    if(!id||!deviceReady()||wireVM.channelSumLevelPlan(controller.state()?.current,
+       flags.acceptedGraphConnected,id,db).kind!=="READY")return false;
+    latestInputGainDrafts.set("SET_WIRE_SUM_GAIN:"+id,{
+      id,operation:"SET_WIRE_SUM_GAIN",track,db,epoch:String(hardware?.device?.epoch)});
+    if(!controller.state()?.pending)flushLiveInputGains();
+    else scheduleLiveInputGainFlush();
+    return true;
+  }
   const intent = (operation,t,payload) => {
     if(logicalView)return logicalIntent(operation,nativeIdFor(t),payload).ok;
     if (!flags.acceptedGraphConnected) {
@@ -560,7 +716,7 @@
     const admitted=wireVM.sofAvailable(next,!!scope?.toggleSof);
     const toggle=document.getElementById("sofToggle"),target=document.getElementById("sofTarget");
     for(const el of [toggle,target])if(el){
-      el.style?.setProperty?.("display",admitted?"":"none","important");
+      el.style?.setProperty?.("display",el===toggle||admitted?"":"none","important");
       el.disabled=!admitted;
       el.title=admitted?"Flip channel faders to selected SEND levels":
         "Sends on Faders requires installed PCM WIRE gain, enable and tap ACK";
@@ -599,6 +755,7 @@
       if(appearance?.icon)t.icon=appearance.icon;
       t.format=ch.processingFormat.toLowerCase();
       t.level=ch.controls.faderDb;
+      t.wireSumGainDb=Number.isFinite(ch.controls?.wireSumGainDb)?ch.controls.wireSumGainDb:0;
       t.trim=Number.isFinite(ch.controls.inputGainDb)?ch.controls.inputGainDb:0;
       t.nativeGainAvailable=(native.admitted===true||native.logical===true) && kind==="audio" &&
         native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
@@ -628,10 +785,13 @@
       t.selected=previous.get(t.id)?.selected || false;
       if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
-        t.fx=Array.from({length:8},(_,i)=>ch.inserts[i]?.name||"None");
+        // Stable catalog identity, including restored sessions carrying the old name.
+        const displayFxName=fx=>fx?.catalogId==="armix.builtin.vocal-reverb.v1"?
+          "Reverb-Sis":fx?.name||"None";
+        t.fx=Array.from({length:8},(_,i)=>displayFxName(ch.inserts[i]));
         t.slotBypass=Array.from({length:8},(_,i)=>Boolean(ch.inserts[i]?.bypassed));
         t.fxInsertIds=Array.from({length:8},(_,i)=>ch.inserts[i]?
-          {name:ch.inserts[i].name,id:ch.inserts[i].id}:null);
+          {name:displayFxName(ch.inserts[i]),id:ch.inserts[i].id}:null);
       }
       if (ch.role==="MAIN") nextMaster=t;
       else nextTracks.push(t);
@@ -715,11 +875,32 @@
     }
     return true;
   }
+  // Reconcile the live SUM receiver's control availability AFTER a new
+  // native ChannelId roster has been projected and admitted. The native
+  // /preview/ render runs before flags.acceptedGraphConnected flips true,
+  // so its initial fail-closed disabled state must not become permanently
+  // latched after device repair. Never infer authority from HTML alone.
+  function syncReceiverSumLevelAdmission(next){
+    const inputs=document.querySelectorAll?.('input[data-field="wireChannelLevel"]')||[];
+    for(const input of inputs){
+      const ui=Number(input.dataset.channelId),id=nativeByUiId.get(ui);
+      const channel=next?.graph?.channels?.find(ch=>ch.id===id);
+      const plan=wireVM.channelSumLevelPlan(next,flags.acceptedGraphConnected,
+        id,channel?.controls?.wireSumGainDb);
+      const ready=Number.isSafeInteger(ui)&&plan.kind==="READY";
+      if(input.disabled===ready)input.disabled=!ready;
+      const title=ready?
+        "WIRE SUM LVL · independent of GAIN and channel fader":
+        "WIRE SUM LVL locked · verify native audio device and scalar admission";
+      if(input.title!==title)input.title=title;
+    }
+  }
+
   // One authoritative EdgeId gain projection for normal readback AND failure
   // rollback. No duplicate DSP math or synthetic accepted control state.
   function nativeWireGainReadback(next){
     return wireVM.gainReadback(next?.graph?.edges||[],
-      uiByWireId,pendingWireGains);
+      uiByWireId,pendingWireGains,next?.graph?.channels||[]);
   }
   // Paint ONLY an independently accepted ChannelId input scalar. Comparing
   // the actual DOM as well as the model also repairs a rejected/expired gain
@@ -761,6 +942,14 @@
     const state=controller?.state();
     if(state?.current&&!state.pending)
       reconcileAcceptedInputGainSnapshot(state.current);
+  };
+  // A canceled pointer is a compensating native scalar, not a fake JS
+  // rollback. It reverts any intermediate realtime gain ACK to the value
+  // at pointer-down; failure still leaves honest accepted readback.
+  window.__ARMIX_NATIVE_GAIN_CANCEL__=(input,original)=>{
+    const t=scope?.findTrack?.(input);
+    if(t?.nativeGainAvailable&&Number.isFinite(original))
+      requestLiveInputGain(t,original,true);
   };
   function projectNativeGraphWithoutFocusLoss(next) {
     // Only identity, order, processing width, source and edges are structural.
@@ -814,7 +1003,8 @@
         return true;
       }
       const c=ch.controls;
-      const gainAdmitted=next.admitted===true&&ch.role==="INPUT"&&
+      const gainAdmitted=(next.admitted===true||next.logical===true)&&
+        ch.role==="INPUT"&&
         next.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN")&&
         Number.isFinite(c.inputGainDb);
       t.nativeGainAvailable=gainAdmitted;
@@ -824,6 +1014,20 @@
       const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
       const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
       if(faderChanged)t.level=db;
+      // Independent WIRE sum scalar, never a fader or sender EdgeId.
+      const sumDb=c.wireSumGainDb;
+      if(Number.isFinite(sumDb))t.wireSumGainDb=sumDb;
+      const sumKnob=document.querySelector(
+        '.strip[data-id="'+t.id+'"] input[data-field="wireChannelLevel"]');
+      if(sumKnob){
+        // This updater paints an accepted scalar, NOT device admission.
+        // syncReceiverSumLevelAdmission owns enabling/disabling the pot.
+        if(!scope?.wireGainDragging&&Number.isFinite(sumDb)&&
+           document.activeElement!==sumKnob){
+          sumKnob.value=String(Math.max(-60,Math.min(6,sumDb)));
+          scope?.paintWireKnob?.(sumKnob,Number(sumKnob.value));
+        }
+      }
       if(Number.isFinite(pan))t.pan=pan;
       t.mute=c.mute;t.solo=c.solo;
       if(switchChanged && scope.activeFaderId!==t.id){
@@ -848,10 +1052,18 @@
       if(ui===undefined)continue;
       for(const input of document.querySelectorAll?.('.wire-gain[data-wire-id="'+ui+'"]')||[]){
         const fixed=edge.primaryOutput===true;
-        const disabled=fixed || next.retained;
+        const disabled=!!next.retained||fixed;
         if(input.disabled!==disabled)input.disabled=disabled;
-        const title="Primary OUT is unity gain · use the destination fader";
-        if(fixed&&input.title!==title)input.title=title;
+        const title=fixed?
+          "PRIMARY OUT · fixed unity; receiver WIRE SUM LVL is independent":
+          next.retained?"WIRE level locked until audio device reconnects":
+          "Parallel SEND level · editable via native EdgeId ACK/readback";
+        if(input.title!==title)input.title=title;
+        const label=input.parentElement?.querySelector(".wire-gain-caption");
+        if(label&&label.textContent!==(fixed?"UNITY":"LVL"))
+          label.textContent=fixed?"UNITY":"LVL";
+        input.parentElement?.classList.toggle("is-primary-unity",fixed);
+        input.setAttribute("aria-label",title);
       }
     }
     if (!scope?.displayMeterDbfs)return;
@@ -924,6 +1136,7 @@
     const assignments=Array.isArray(next?.raw?.externalOutputs)?
       next.raw.externalOutputs:[];
     const choices=hardwareOutputPairs();
+    const named=stripNamedChoices("output").map(p=>p.label);
     for(const t of scope?.tracks||[]) {
       const id=nativeIdFor(t);
       const row=assignments.find(p=>p.channelId===id);
@@ -934,7 +1147,7 @@
       const select=document.querySelector('.strip[data-id="'+t.id+
         '"] select[data-field="external"]');
       if(!select?.dataset)continue; // headless contract mocks may omit DOM dataset
-      const labels=choices.map(p=>p.label);
+      const labels=[...choices.map(p=>p.label),...named];
       if(!labels.includes(value))labels.push(value);
       const signature=labels.join("|");
       if(select.dataset.choices!==signature){
@@ -964,6 +1177,16 @@
     }
   };
   const inputChoicesFor=()=>deviceVM.inputChoices(hardware);
+  const sourceChoicesFor=()=>{
+    const physical=inputChoicesFor();
+    // The PLAYER source must be DISCOVERABLE on every native audio strip,
+    // including startup with zero physical capture pins. Capability is not
+    // admission: M4/offline/retained modes still fail closed on selection.
+    // Previously a transient logicalView/admission gate removed the option
+    // altogether, which looked like the product never implemented it.
+    return physical.some(p=>p?.mode==="PLAYER")?physical:[...physical,
+      {label:"Music Player",mode:"PLAYER",left:-1,right:-1,deckId:"1"}];
+  };
   const inputLabelFor=row=>deviceVM.inputLabel(hardware,row);
   // ChannelId and the existing M4 use the SAME ten native input ordinals.
   // GUI track reorder must never silently repatch a different physical lane.
@@ -1144,6 +1367,13 @@
   const pendingNativeSources=new Map();
   let activeNativeSource=null,nativeSourceSerial=0;
   // MV-14: one INPUT dispatch owner; ChannelId/M4 keep separate identity Maps.
+  function verifiedMatrixSourceChoices(choices,requested,snapshot){
+    if(!requested||requested.mode!=="STEREO")return choices;
+    const candidate=deviceVM.physicalInputChoice(snapshot,requested.mode,requested.left,requested.right);
+    if(!candidate||candidate.label!==requested.label||choices.some(x=>x.label===candidate.label))
+      return choices;
+    return [...choices,candidate];
+  }
   function dispatchSourceQueue(authority){
     const channelIdOwner=authority==="CHANNEL_ID";
     const queue=channelIdOwner?pendingNativeSources:pendingSourceQueue;
@@ -1152,7 +1382,10 @@
     while(queue.size){
       const plan=stripVM.sourceQueueHead({authority,queue,
         active:channelIdOwner?activeNativeSource:nativeUiSourcePending,
-        hardware,native:current,choices:inputChoicesFor(),
+        hardware,native:current,
+        choices:verifiedMatrixSourceChoices(
+          channelIdOwner?sourceChoicesFor():inputChoicesFor(),
+          queue.values().next().value?.choice,hardware),
         deviceReady:deviceReady()});
       if(plan.kind==="IDLE"||plan.kind==="WAIT")return;
       if(plan.kind==="DROP_ALL"){queue.clear();return;}
@@ -1212,6 +1445,7 @@
       nativeUiSourcePending=null;
       status("CH "+(pending.channel+1)+" INPUT timeout · native state preserved");
     }
+    paintPhysicalOutputs(hardware);
     controller?.subscribe(); // next source waits for authoritative callback
   }
   // MV-15: one UI settlement owner after strict per-authority native PCM
@@ -1238,6 +1472,7 @@
       if(verdict==="CONFIRMED"&&pendingSourceQueue.size)
         window.queueMicrotask(dispatchQueuedSource);
     }
+    paintPhysicalOutputs(hardware);
     return verdict;
   }
   // MV-16: one lease owner handles both SOURCE ACK formats, but neither
@@ -1262,6 +1497,7 @@
     }else{
       status("NATIVE INPUT REJECTED · "+(ack?.error||"stale routing"));
     }
+    paintPhysicalOutputs(hardware);
     controller?.subscribe();
     return true;
   }
@@ -1412,9 +1648,10 @@
       status("BUS added · native ChannelId PCM and WIRE readback verified");
     }
   }
-  function requestNativeBusCreate(track=false){
+  function requestNativeBusCreate(track=false,fxBus=false){
     if(logicalView)
-      return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,{}).ok;
+      return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,
+        track?{}:{name:(fxBus?"FX Bus ":"Aux Bus ")+(logicalView.graph.channels.length+1)}).ok;
     const accepted=controller?.state()?.current,operation=
       track?"CREATE_CHANNEL":"CREATE_GROUP";
     const plan=stripVM.rosterMutationPlan(accepted,{
@@ -1426,7 +1663,7 @@
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
     pendingBusCreate={requestId,track,...plan.pending};
     syncAddTrack(accepted);
-    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose:fxBus?"FX":"AUX"});
     const label=track?"Audio Track":"BUS";
     status("Adding "+label+" → MAIN · native PCM pending");
     window.setTimeout(()=>{
@@ -1465,13 +1702,43 @@
 
   // One original native editor transport for M4 and ChannelId vendor FX.
   // The publisher's accepted lease is checked again BEFORE calling this.
-  function dispatchPhysicalFxEditor(plan,lease,authority){
+  function dispatchPhysicalFxEditor(plan,lease,authority,retried=false){
     const requestId="fx-editor-"+(++fxEditorSerial);
-    pendingFxEditorAck={requestId,authority,lease};
+    pendingFxEditorAck={requestId,authority,lease,retried,
+      recenter:plan.payload.recenter===true};
     backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
-      if(pendingFxEditorAck?.requestId===requestId)pendingFxEditorAck=null;
+      if(pendingFxEditorAck?.requestId!==requestId||pendingFxEditorAck.retryScheduled)return;
+      if(retryPhysicalFxEditor(pendingFxEditorAck))return;
+      pendingFxEditorAck=null;
+      nativeToast("FX editor unavailable · request timed out");
     },8000);
+  }
+  function retryPhysicalFxEditor(pending){
+    if(!pending||pending.authority!=="CHANNEL_ID"||pending.retried||pending.retryScheduled)
+      return false;
+    const accepted=controller?.state()?.current;
+    if(logicalView||!fxRackVM.refreshEditorNavigationLease(accepted,pending.lease,{
+      hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)}))
+      return false;
+    pending.retryScheduled=true;
+    controller?.subscribe(); // only independent accepted readback may refresh this click
+    window.setTimeout(()=>{
+      if(pendingFxEditorAck!==pending)return; // newer click wins
+      const current=controller?.state()?.current;
+      const fresh=!logicalView&&fxRackVM.refreshEditorNavigationLease(current,pending.lease,{
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+      const plan=fresh&&fxRackVM.nativeEditorDispatchPlan(current,fresh,{
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+      if(plan?.kind==="READY"){
+        dispatchPhysicalFxEditor({...plan,payload:{...plan.payload,recenter:pending.recenter}},
+          fresh,"CHANNEL_ID",true);
+      }else{
+        pendingFxEditorAck=null;
+        nativeToast("FX editor unavailable · accepted instance changed");
+      }
+    },160);
+    return true;
   }
   function openChannelIdFxEditor(lease,recenter=false){
     if(lease?.authority!=="CHANNEL_ID"||logicalView)return false;
@@ -1484,8 +1751,21 @@
       const current=controller?.state()?.current;
       if(logicalView||fxRackVM.nativeEditorDispatchPlan(current,lease,{
         hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device),
-        offline:!!logicalView}).kind!=="READY")
-        return; // same-epoch hardware/FX replacement or offline .smix switch
+        offline:!!logicalView}).kind!=="READY"){
+        const fresh=!logicalView&&fxRackVM.refreshEditorNavigationLease(current,lease,{
+          hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+        if(fresh){
+          const refreshed=fxRackVM.nativeEditorDispatchPlan(current,fresh,{
+            hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
+          if(refreshed.kind==="READY"){
+            dispatchPhysicalFxEditor({...refreshed,payload:{...refreshed.payload,recenter}},
+              fresh,"CHANNEL_ID");
+            return;
+          }
+        }
+        nativeToast("FX editor unavailable · accepted instance changed");
+        return;
+      }
       if(recenter)dispatchPhysicalFxEditor({
         ...plan,payload:{...plan.payload,recenter:true}
       },lease,"CHANNEL_ID");
@@ -1508,8 +1788,10 @@
       const current=controller?.state()?.current;
       if(!fxRackVM.m4EditorDispatchLeaseMatches(current,lease,{
         verifiedM4:m4Verified(current),offline:!!logicalView,
-        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)}))
+        hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)})){
+        nativeToast("FX editor unavailable · accepted instance changed");
         return;
+      }
       if(recenter)dispatchPhysicalFxEditor({
         ...plan,payload:{...plan.payload,recenter:true}
       },lease,"M4");
@@ -1549,6 +1831,8 @@
       vendor:"ArSonMix",category:"EQ",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.channel-compressor.v1",name:"Compressor",
       vendor:"ArSonMix",category:"Dynamics",format:"Native",source:"builtin"}),
+    Object.freeze({id:"armix.builtin.vocal-reverb.v1",name:"Reverb-Sis",
+      vendor:"ArSonMix",category:"Reverb",format:"Native",source:"builtin"}),
     Object.freeze({id:"armix.builtin.arson-harmony.v1",name:"Harmonice",
       vendor:"ArSonMix",category:"Utility",format:"Native",source:"builtin"}),
     // Native GuitarRigProcessor is compiled and installed: no WebAudio mock.
@@ -1667,8 +1951,11 @@
       if(!context)button.title="Global FX requires admitted physical audio";
     }
   }
-  function toggleGlobalFx(){
+  function toggleGlobalFx(enableOnly=false){
     const current=controller?.state()?.current,ctx=globalFxContext();
+    // Editor recovery is an explicit ENABLE, never an accidental toggle
+    // back to bypass if accepted global state changed since its last paint.
+    if(enableOnly===true&&current?.raw?.globalFxBypassed!==true)return false;
     const plan=fxRackVM.globalPowerPlan(current,ctx,!!pendingGlobalFx);
     if(plan.kind!=="READY")return false;
     const requestId="global-fx-"+(++globalFxSerial);
@@ -2080,31 +2367,771 @@
          mixerSession()?.authority==="NONE") &&
         legacy()?.active===true &&
         safeNativeCounter(legacy()?.routingRevision)!==null));
-  function syncMonitorButton(d) {
-    const monitorButton=document.querySelector?.("[data-native-monitor]");
-    if(monitorButton){
-      monitorButton.textContent=d?.outputArmed?"Mute Output":"Unmute Output";
-      monitorButton.setAttribute("aria-pressed",String(!!d?.outputArmed));
-      monitorButton.title=d?.outputArmed?
-        "Mute actual MAIN output immediately":"Listen through verified MAIN hardware output";
-      monitorButton.disabled=!d?.outputArmed && !deviceReady();
-      monitorButton.dataset.armed=String(!!d?.outputArmed);
-    }
+  // Emergency stop is a deliberate safety action in More, never an
+  // everyday header toggle. Temporary driver mute is not a panic latch.
+  function syncEmergencyOutputControl(d) {
+    if(!muteBtn)return;
+    const panic=hardware?.raw?.operatorOutputMuted===true;
+    muteBtn.textContent=panic?"Resume after emergency stop":"Emergency stop audio";
+    muteBtn.disabled=panic?!deviceReady():d?.outputArmed!==true;
+    muteBtn.title=panic?"Resume only the verified native route":
+      "Emergency stop · normal device recovery is automatic";
   }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
+  function requestExternalOutput(t,label,el=null){
+        const previous=t.externalOutput||"None";
+        if(busOutputPending){
+          if(el)el.value=previous;
+          nativeToast("Wait for bus mapping readback");return true;
+        }
+        if(typeof label==="string"&&label.startsWith("Preset · ")){
+          const alias=stripNamedChoices("output").find(p=>p.label===label);
+          if(!alias){if(el)el.value=previous;nativeToast("I/O preset unavailable");return true;}
+          label=alias.choice.label;
+        }
+        const id=nativeIdFor(t);
+        // One pure Channel Strip preflight for ASIO port identity and
+        // shared-output confirmation; only this bridge dispatches native.
+        const plan=stripVM.externalOutputPlan({
+          native:controller?.state()?.current,hardware,channelId:id,
+          selectedLabel:label,currentLabel:previous,
+          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),
+          channelName:t.name
+        });
+        if(plan.kind==="UNAVAILABLE"){
+          if(el)el.value=previous;
+          nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
+          return true;
+        }
+        if(plan.kind==="NO_CHANGE"){if(el)el.value=previous;return true;}
+        const {left,right,epoch,revision}=plan;
+        const confirmed=!plan.requiresConfirmation || window.confirm(
+          plan.confirmation);
+        if(!confirmed){if(el)el.value=previous;return true;}
+        const requestId="out-o-"+(++externalSerial);
+        pendingExternal.set(id,{requestId,channelId:id,left,right,
+          epoch,revision,acked:false});
+        if(el)el.value=previous;el?.setAttribute("aria-busy","true");
+        backend.emitEvent("arMixAction",{action:"routingExternalOutput",
+          requestId,channelId:id,deviceEpoch:epoch,revision,
+          left,right,confirmed:true});
+        window.setTimeout(()=>{
+          if(pendingExternal.get(id)?.requestId!==requestId)return;
+          pendingExternal.delete(id);el?.removeAttribute("aria-busy");
+          paintPhysicalOutputs(hardware);
+          nativeToast("EXTERNAL OUT timed out · last PCM retained");
+          controller?.subscribe();
+        },8000);
+        status("EXTERNAL OUT pending · native validation and readback");
+        return true;
+  }
+  // Matrix edits use the same queue/lease and native dispatcher as strips.
+  // No synthetic PCM, no independent routing graph or optimistic crosspoint.
+  let busOutputPending=null,busOutputSerial=0;
+  let logicalIoPending=null,logicalIoSerial=0,logicalIoEditorOpen=false;
+  let logicalIoPort="",logicalIoChannel="";
+  let logicalOutPort="",logicalOutChannel="",logicalOutEditorOpen=false;
+  let ioDefaultsPending=null,ioDefaultsSerial=0;
+  const matrixBusy=()=>Boolean(ioDefaultsPending||logicalIoPending||busOutputPending||deviceBusy()||activeNativeSource||pendingNativeSources.size||
+    nativeUiSourcePending||pendingSourceQueue.size||pendingExternal.size);
+  function matrixReady(snapshot){
+    return deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState)&&
+      deviceVM.setupPinsApplied(deviceInventory,deviceChoice)&&
+      deviceVM.setupMatrixDeviceMatches(deviceInventory,snapshot);
+  }
+  function applyMatrixRow(side,id,label,lease,requested=null){
+    const current=controller?.state()?.current;
+    const view=deviceVM.patchMatrix(hardware,side);
+    const row=view.rows.find(x=>x.id===id&&x.editable);
+    if(!row||!view.live||!deviceReady()||!matrixReady(hardware)||matrixBusy()||namedPatchPending||
+       !lease||lease.config!==hardware.hardwareConfiguration||
+       lease.epoch!==hardware.device.epoch||
+       lease.authority!==view.authority||lease.revision!==view.revision||
+       lease.roster!==view.roster){
+      nativeToast("Routing changed · review current matrix before applying");
+      paintPhysicalOutputs(hardware);return;
+    }
+    if(side==="input"){
+      const nativeOwner=view.authority==="CHANNEL_ID";
+      const choices=verifiedMatrixSourceChoices(
+        nativeOwner?sourceChoicesFor():inputChoicesFor(),requested,hardware);
+      const choice=choices.find(x=>x.label===label);
+      if(!choice||choice.mode==="PLAYER")return;
+      const decision=stripVM.sourceQueueSelection({choice,choices,
+        epoch:hardware.device.epoch,acceptedLabel:row.selected,
+        hardwareConfiguration:hardware.hardwareConfiguration});
+      if(decision.kind!=="QUEUE")return;
+      if(nativeOwner){
+        pendingNativeSources.set(id,decision.entry);
+        dispatchNativeSource();
+      }else{
+        const channel=Number(id.slice(3));
+        if(!Number.isInteger(channel)||channel<0||channel>=10)return;
+        pendingSourceQueue.set(channel,decision.entry);
+        dispatchQueuedSource();
+      }
+    }else if(row.bus){
+      if(!requested||JSON.stringify(row.pair)!==lease.busPairs?.[id])return;
+      const choice=row.choices.find(x=>x.label===label&&x.left===requested.left&&x.right===requested.right);
+      if(!choice||choice.label===row.selected||
+         !window.confirm("Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO."))return;
+      const requestId="bus-out-"+(++busOutputSerial);
+      busOutputPending={requestId,id,epoch:lease.epoch,config:lease.config,revision:lease.revision,
+        left:choice.left,right:choice.right,acked:false};
+      backend.emitEvent("arMixAction",{action:"routingPhysicalBusOutput",requestId,
+        deviceEpoch:lease.epoch,revision:lease.revision,bus:row.name,confirmed:true,
+        previousLeft:row.pair[0],previousRight:row.pair[1],left:choice.left,right:choice.right,
+        leftName:view.pins.find(p=>p.port===choice.left)?.label,
+        rightName:view.pins.find(p=>p.port===choice.right)?.label});
+      window.setTimeout(()=>{
+        if(busOutputPending?.requestId!==requestId)return;
+        busOutputPending=null;nativeToast("Bus mapping confirmation timed out · keep output muted and reopen Audio I/O");
+        paintPhysicalOutputs(hardware);
+      },5000);
+    }else{
+      const track=scope?.tracks?.find(t=>nativeIdFor(t)===id);
+      if(!track||!current?.admitted)return;
+      requestExternalOutput(track,label);
+    }
+    paintPhysicalOutputs(hardware);
+  }
+  function settleBusOutput(next){
+    const p=busOutputPending;
+    if(!p)return;
+    if(next.device?.epoch!==p.epoch||next.hardwareConfiguration!==p.config||
+       next.graph?.revision!==p.revision||!next.admitted||next.retained){
+      busOutputPending=null;nativeToast("Bus mapping lease expired");return;
+    }
+    const pair=next.raw?.[p.id];
+    if(!p.acked||next.raw?.physicalBusOutputObserved!==true||
+       pair?.[0]!==p.left||pair?.[1]!==p.right)return;
+    busOutputPending=null;nativeToast("Bus mapping verified · output remains muted");
+    backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  }
+  function pollBusOutput(requestId,attempt=0){
+    if(busOutputPending?.requestId!==requestId||attempt>=20)return;
+    controller?.subscribe();
+    window.setTimeout(()=>pollBusOutput(requestId,attempt+1),150);
+  }
+  if(connected)backend.addEventListener("arMixPhysicalBusOutputAck",ack=>{
+    if(busOutputPending?.requestId!==ack?.requestId)return;
+    if(ack.ok!==true){
+      busOutputPending=null;nativeToast(ack.error||"Bus mapping rejected");paintPhysicalOutputs(hardware);return;
+    }
+    busOutputPending.acked=true;
+    pollBusOutput(ack.requestId);
+  });
+  let namedPatchSerial=0,namedPatchPending=null;
+  let namedProfileFileSerial=0,namedProfileFilePending=null;
+  function namedPatchChoices(side,model,next){
+    return matrixReady(next)?deviceVM.namedPatchChoices(deviceInventory,next,side):[];
+  }
+  function stripNamedChoices(side){
+    if(namedPatchPending||deviceBusy()||hardware?.retained||logicalView)return [];
+    return deviceVM.namedPatchChoices(deviceInventory,hardware,side);
+  }
+  // Update only options on mounted inputs. NativeHooks covers strips that
+  // are mounted later by bank/roster projection. Never replace a fader or
+  // an active select; stale selection still fails exact admission on change.
+  function syncNamedStripOptions(side){
+    const labels=stripNamedChoices(side).map(p=>p.label);
+    for(const t of scope?.tracks||[]){
+      if(side==="input"?t.kind!=="audio":t.kind==="master")continue;
+      const field=side==="input"?"input":"external";
+      const el=document.querySelector('.strip[data-id="'+t.id+'"] select[data-field="'+field+'"]');
+      if(!el?.options||document.activeElement===el)continue;
+      const current=[...el.options].filter(o=>o.value.startsWith("Preset · "));
+      if(current.length===labels.length&&current.every((o,i)=>o.value===labels[i]))continue;
+      for(const o of current)o.remove();
+      for(const label of labels)el.append(new Option(label,label));
+    }
+  }
+  function syncNamedOptions(){
+    syncNamedStripOptions("input");syncNamedStripOptions("output");
+  }
+  let namedInventoryLease="";
+  function requestNamedInventory(next){
+    // One cached inventory request per installed device lease, not a scan
+    // and never a polling operation. Open dialog owns its own inventory.
+    if(!connected||next?.retained||!next?.hardwareConfiguration||
+       !next.device?.epoch||(!next.admitted&&next.raw?.legacyM4?.active!==true)||
+       (devicePanel&&!devicePanel.hidden)||deviceBusy())return;
+    const lease=next.hardwareConfiguration+"|"+next.device.epoch;
+    if(namedInventoryLease===lease)return;
+    namedInventoryLease=lease;
+    if(!deviceVM.setupMatrixDeviceMatches(deviceInventory,next))
+      backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  }
+  function renderNamedPatchEditor(host,side,model,next,busy){
+    const data=deviceInventory?.namedPatches;
+    if(!data||!Array.isArray(data.entries))return; // older host, no fake storage
+    const entries=data.entries.filter(p=>p.side===side);
+    const section=document.createElement("div");section.className="armix-named-patches";
+    const title=document.createElement("strong");title.textContent="Named "+side+" presets";
+    const existing=document.createElement("select");existing.setAttribute("aria-label","Saved "+side+" preset");
+    existing.append(new Option("New preset",""));
+    for(const p of entries)existing.append(new Option(p.name+(p.available?"":" · Needs remap"),p.id));
+    const name=document.createElement("input");name.type="text";name.maxLength=48;name.placeholder="Preset name";name.setAttribute("aria-label","Preset name");
+    const mode=document.createElement("select");mode.setAttribute("aria-label","Preset format");
+    if(side==="input")mode.append(new Option("Mono","MONO"));
+    mode.append(new Option("Stereo","STEREO"));
+    const pin=(label)=>{
+      const el=document.createElement("select");el.setAttribute("aria-label","Preset "+label+" pin");
+      for(const p of model.pins)el.append(new Option(label+" · "+(p.port+1)+" "+p.label,String(p.port)));
+      return el;
+    };
+    const left=pin("L"),right=pin("R");if(model.pins.length>1)right.selectedIndex=1;
+    const save=document.createElement("button");save.type="button";save.textContent="Save preset";
+    const remove=document.createElement("button");remove.type="button";remove.textContent="Remove";
+    const hint=document.createElement("span");hint.className="armix-device-note";
+    hint.textContent=data.readOnly?data.error:"Presets do not change any mixer route until row Apply.";
+    const exchange=document.createElement("details");
+    const summary=document.createElement("summary");summary.textContent="Import / Export presets";
+    const profileText=document.createElement("textarea");
+    profileText.setAttribute("aria-label","I/O profile JSON");profileText.rows=3;
+    profileText.maxLength=262144;profileText.style.width="100%";
+    profileText.placeholder="Paste a compatible I/O profile";
+    const exportProfile=document.createElement("button");exportProfile.type="button";exportProfile.textContent="Export profile";
+    const importProfile=document.createElement("button");importProfile.type="button";importProfile.textContent="Import profile";
+    const exchangeHint=document.createElement("span");exchangeHint.className="armix-device-note";
+    exchangeHint.textContent="Copy or paste JSON. Import adds presets only; duplicate names or unavailable pins reject the entire profile.";
+    const openFile=document.createElement("button");openFile.type="button";openFile.textContent="Open .ario file";
+    const saveFile=document.createElement("button");saveFile.type="button";saveFile.textContent="Save .ario file";
+    if(data.fileExchange===true)exchange.append(summary,openFile,saveFile,exportProfile,importProfile,profileText,exchangeHint);
+    else exchange.append(summary,exportProfile,importProfile,profileText,exchangeHint);
+    const fields=["name","mode","left","right","leftName","rightName"];
+    const identity=()=>Object.fromEntries(["backend","captureDevice","playbackDevice"].map(k=>[k,deviceInventory.active[k]]));
+    const choice=()=>{
+      if(left.value===""||(mode.value==="STEREO"&&right.value===""))return null;
+      return side==="input"?deviceVM.physicalInputChoice(next,mode.value,Number(left.value),
+        mode.value==="MONO"?-1:Number(right.value)):
+        model.choices.find(x=>x.left===Number(left.value)&&x.right===Number(right.value));
+    };
+    const locked=busy||!!namedPatchPending||data.readOnly===true;
+    const update=()=>{
+      right.hidden=mode.value==="MONO";
+      const editingLocked=locked||!!namedProfileFilePending;
+      for(const el of [existing,name,mode,left,right,profileText])el.disabled=editingLocked;
+      save.disabled=editingLocked||!name.value.trim()||!choice();
+      remove.disabled=editingLocked||!existing.value;
+      exportProfile.disabled=editingLocked||!entries.length;
+      importProfile.disabled=editingLocked||!profileText.value.trim();
+      openFile.disabled=editingLocked;
+      saveFile.disabled=editingLocked||!entries.length;
+    };
+    profileText.oninput=update;
+    const chooseFile=operation=>{
+      if(locked||namedProfileFilePending||namedPatchPending||matrixBusy()||!matrixReady(hardware)||
+         deviceInventory?.namedPatches?.revision!==data.revision||
+         hardware.device.epoch!==next.device.epoch||
+         hardware.hardwareConfiguration!==next.hardwareConfiguration)return;
+      const requestId="io-file-"+(++namedProfileFileSerial);
+      const lease={...identity(),side,revision:data.revision,deviceGeneration:deviceInventory.active.deviceGeneration};
+      const unlockEditor=()=>{
+        update();
+        if(!profileText.isConnected){
+          for(const grid of devicePanel?.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]")||[])
+            delete grid.dataset.signature;
+          paintPhysicalOutputs(hardware);
+        }
+      };
+      namedProfileFilePending={requestId,operation,finish:message=>{
+        unlockEditor();
+        if(message.cancelled)return;
+        if(message.ok!==true){nativeToast(message.error||"I/O profile file operation failed");return;}
+        if(operation==="EXPORT"){nativeToast("I/O profile file saved");return;}
+        if(!profileText.isConnected||!matrixReady(hardware)||deviceInventory?.namedPatches?.revision!==lease.revision||
+           hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
+           !Object.entries(identity()).every(([k,v])=>v===lease[k])||
+           !message.profile||message.profile.side!==side||
+           !Object.entries(identity()).every(([k,v])=>message.profile[k]===v)){
+          nativeToast("I/O profile draft expired · reopen file");return;
+        }
+        profileText.value=JSON.stringify(message.profile,null,2);
+        update();
+        nativeToast("I/O profile loaded · review and Import profile");
+      }};
+      update();
+      backend.emitEvent("arMixAction",{action:"audioNamedProfileFile",requestId,operation,...lease});
+      window.setTimeout(()=>{
+        if(namedProfileFilePending?.requestId!==requestId)return;
+        namedProfileFilePending=null;unlockEditor();
+        nativeToast("I/O file dialog confirmation expired");
+      },120000);
+    };
+    openFile.onclick=()=>chooseFile("OPEN");
+    saveFile.onclick=()=>chooseFile("EXPORT");
+    exportProfile.onclick=()=>{
+      if(locked||!matrixReady(hardware))return;
+      profileText.value=JSON.stringify({schema:"arsonmix.io-profile.v1",...identity(),side,
+        entries:entries.map(p=>Object.fromEntries(fields.map(k=>[k,p[k]])))},null,2);
+      profileText.focus();profileText.select();update();
+    };
+    existing.onchange=()=>{
+      const p=entries.find(x=>x.id===existing.value);
+      name.value=p?.name||"";
+      if(p){mode.value=p.mode;left.value=String(p.left);right.value=String(p.right);}
+      update();
+    };
+    for(const el of [existing,name,mode,left,right])el.disabled=locked;
+    name.oninput=mode.onchange=left.onchange=right.onchange=update;
+    const send=(operation,profile=null)=>{
+      if(locked||namedPatchPending||namedProfileFilePending||matrixBusy()||!matrixReady(hardware)||
+         hardware.device.epoch!==next.device.epoch||
+         hardware.hardwareConfiguration!==next.hardwareConfiguration||
+         deviceInventory?.namedPatches?.revision!==data.revision)return;
+      const a=deviceInventory.active,c=choice();
+      if(operation==="SAVE"&&!c)return;
+      const requestId="io-preset-"+(++namedPatchSerial);
+      const payload={operation,revision:data.revision,deviceGeneration:a.deviceGeneration,
+        backend:a.backend,captureDevice:a.captureDevice,playbackDevice:a.playbackDevice,
+        id:existing.value,side,name:name.value.trim(),mode:mode.value,
+        left:c?.left??-1,right:c?.right??-1,
+        leftName:model.pins.find(p=>p.port===c?.left)?.label||"",
+        rightName:model.pins.find(p=>p.port===c?.right)?.label||""};
+      if(operation==="IMPORT"){payload.id="";payload.profile=profile;}
+      namedPatchPending={requestId,phase:"APPLYING",revision:data.revision,payload};
+      backend.emitEvent("arMixAction",{action:"audioNamedPatchEdit",requestId,...payload});
+      paintPhysicalOutputs(hardware);
+      window.setTimeout(()=>{
+        if(namedPatchPending?.requestId!==requestId)return;
+        namedPatchPending=null;
+        // Do not continue to offer stale choices after uncertain disk commit.
+        if(deviceInventory)deviceInventory={...deviceInventory,namedPatches:null};
+        syncNamedOptions();
+        nativeToast("I/O preset confirmation timed out · reopen Audio I/O");
+        paintPhysicalOutputs(hardware);
+      },5000);
+    };
+    save.onclick=()=>send("SAVE");
+    remove.onclick=()=>{if(existing.value&&window.confirm("Remove this routing preset? Installed routes are unchanged."))send("REMOVE");};
+    importProfile.onclick=()=>{
+      if(locked)return;
+      let profile;
+      try{profile=JSON.parse(profileText.value);}catch(_){nativeToast("Invalid I/O profile JSON");return;}
+      if(!profile||profile.schema!=="arsonmix.io-profile.v1"||profile.side!==side||
+         !Array.isArray(profile.entries)||!profile.entries.length||profile.entries.length>128||
+         !profile.entries.every(p=>p&&typeof p.name==="string"&&fields.every(k=>Object.hasOwn(p,k)))||
+         !Object.entries(identity()).every(([k,v])=>profile[k]===v)){
+        nativeToast("Incompatible I/O profile");return;
+      }
+      send("IMPORT",profile);
+    };
+    section.append(title,existing,name,mode,left,right,save,remove,hint,exchange);update();host.append(section);
+  }
+  function settleLogicalIo(next){
+    const p=logicalIoPending;
+    if(!p)return;
+    if(next?.device?.epoch!==p.epoch||next.hardwareConfiguration!==p.config){
+      logicalIoPending=null;logicalIoPort="";logicalIoChannel="";logicalOutPort="";logicalOutChannel="";
+      nativeToast("Logical I/O device changed");return;
+    }
+    const output=p.payload.action==="routingLogicalOutputEdit";
+    const data=output?next.raw?.logicalOutputRegistry:next.raw?.logicalInputRegistry;
+    if(!p.acked||data?.revision!==p.logicalRevision||next.graph?.revision!==p.graphRevision||
+       !Array.isArray(data.ports)||!Array.isArray(data.references))return;
+    const q=p.payload,port=data.ports.find(x=>x.id===q.portId);
+    let proved=false;
+    if(q.operation==="ADD"){
+      const created=data.ports.filter(x=>!p.previousIds.includes(x.id)&&x.name===q.name&&x.format===q.format);
+      proved=created.length===1;
+      if(proved){if(output)logicalOutPort=created[0].id;else logicalIoPort=created[0].id;}
+    }else if(q.operation==="RENAME")proved=port?.name===q.name;
+    else if(q.operation==="REMOVE"){proved=!port;if(proved){if(output)logicalOutPort="";else logicalIoPort="";}}
+    else if(q.operation==="BIND")proved=port?.bound===true&&
+      ["left","right","leftName","rightName"].every(k=>port[k]===q[k]);
+    else if(q.operation==="UNBIND")proved=port?.bound===false;
+    else if(q.operation==="ASSIGN")proved=data.references.some(x=>x.channelId===q.channelId&&x.portId===q.portId);
+    else if(q.operation==="CLEAR")proved=!data.references.some(x=>x.channelId===q.channelId);
+    if(proved){logicalIoPending=null;nativeToast("Logical I/O updated");}
+  }
+  // Native snapshots may replace the editor in the same task as an
+  // activation. Do not use the deferred/coalesced details toggle event:
+  // a detached old element could overwrite the operator's current choice.
+  function bindLogicalDisclosure(section,summary,open,remember){
+    section.open=open;
+    summary.onclick=event=>{
+      if(event.defaultPrevented)return;
+      event.preventDefault();
+      section.open=!section.open;
+      remember(section.open);
+    };
+  }
+  function renderLogicalInputs(host,model,next,busy){
+    const data=next.raw?.logicalInputRegistry;
+    if(model.authority!=="CHANNEL_ID"||!Array.isArray(data?.ports)||
+       !Array.isArray(data.references)||typeof data.revision!=="string")return;
+    const section=document.createElement("details");section.className="armix-named-patches";
+    const summary=document.createElement("summary");summary.textContent="Session logical inputs";
+    bindLogicalDisclosure(section,summary,logicalIoEditorOpen,open=>{logicalIoEditorOpen=open;});
+    const hint=document.createElement("span");hint.className="armix-device-note";
+    hint.textContent="Ports saved in .smix. Remapping a port updates every assigned channel.";
+    const port=document.createElement("select");port.setAttribute("aria-label","Logical input port");
+    port.append(new Option("New logical input",""));
+    for(const p of data.ports){
+      const refs=data.references.filter(r=>r.portId===p.id);
+      port.append(new Option(p.name+" · "+p.format+" · "+refs.length+" used"+
+        (refs.some(r=>r.state==="NEEDS_REMAP")?" · Needs remap":""),p.id));
+    }
+    port.value=data.ports.some(p=>p.id===logicalIoPort)?logicalIoPort:"";
+    const name=document.createElement("input");name.maxLength=48;name.placeholder="Logical input name";
+    name.setAttribute("aria-label","Logical input name");
+    const format=document.createElement("select");format.setAttribute("aria-label","Logical input format");
+    format.append(new Option("Mono","MONO"),new Option("Stereo","STEREO"));
+    const makePin=label=>{
+      const el=document.createElement("select");el.setAttribute("aria-label","Logical "+label+" pin");
+      el.append(new Option("Unselected",""));
+      for(const p of model.pins)el.append(new Option((p.port+1)+" · "+p.label,String(p.port)));
+      return el;
+    };
+    const left=makePin("L"),right=makePin("R");
+    const channel=document.createElement("select");channel.setAttribute("aria-label","Logical input channel");
+    channel.append(new Option("Choose mixer channel",""));
+    for(const row of model.rows){
+      const ref=data.references.find(r=>r.channelId===row.id);
+      const assigned=data.ports.find(p=>p.id===ref?.portId);
+      channel.append(new Option(row.name+(assigned?" · "+assigned.name:""),row.id));
+    }
+    channel.value=model.rows.some(row=>row.id===logicalIoChannel)?logicalIoChannel:"";
+    const buttons={};
+    for(const [key,label] of [["ADD","Add port"],["RENAME","Rename port"],["REMOVE","Remove port"],
+      ["BIND","Apply pin binding"],["UNBIND","Unbind port"],["ASSIGN","Assign to channel"],["CLEAR","Clear logical assignment"]]){
+      const b=document.createElement("button");b.type="button";b.textContent=label;buttons[key]=b;
+    }
+    const selected=()=>data.ports.find(p=>p.id===port.value);
+    const used=()=>data.references.some(r=>r.portId===port.value);
+    const currentPin=el=>model.pins.find(p=>String(p.port)===el.value);
+    const update=()=>{
+      const p=selected(),locked=busy||!!logicalIoPending;
+      for(const el of [port,name,format,left,right,channel])el.disabled=locked;
+      format.disabled=locked||!!p;right.hidden=format.value==="MONO";
+      buttons.ADD.disabled=locked||!!p||!name.value.trim();
+      buttons.RENAME.disabled=locked||!p||!name.value.trim();
+      buttons.REMOVE.disabled=locked||!p||used();
+      buttons.BIND.disabled=locked||!p||!currentPin(left)||
+        (format.value==="STEREO"&&(!currentPin(right)||left.value===right.value));
+      buttons.UNBIND.disabled=locked||!p||!p.bound;
+      buttons.ASSIGN.disabled=locked||!p||!channel.value;
+      buttons.CLEAR.disabled=locked||!data.references.some(r=>r.channelId===channel.value);
+    };
+    const loadPort=()=>{
+      const p=selected();logicalIoPort=port.value;
+      name.value=p?.name||"";format.value=p?.format||"MONO";
+      const d=next.device;
+      const same=p?.bound&&p.backend===d.backend&&p.capture===d.captureDevice&&p.playback===d.playbackDevice;
+      left.value=same&&model.pins.some(x=>x.port===p.left&&x.label===p.leftName)?String(p.left):"";
+      right.value=same&&model.pins.some(x=>x.port===p.right&&x.label===p.rightName)?String(p.right):"";
+      update();
+    };
+    port.onchange=loadPort;
+    name.oninput=format.onchange=left.onchange=right.onchange=update;
+    channel.onchange=()=>{logicalIoChannel=channel.value;update();};
+    const send=operation=>{
+      if(buttons[operation].disabled||busy||logicalIoPending||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
+         hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
+         hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
+         hardware.raw?.logicalInputRegistry?.revision!==data.revision)return;
+      if((operation==="BIND"||operation==="UNBIND")&&used()&&
+         !window.confirm("Update every mixer channel using this logical input?"))return;
+      const l=currentPin(left),r=format.value==="STEREO"?currentPin(right):null;
+      const requestId="logical-io-"+(++logicalIoSerial);
+      const payload={action:"routingLogicalInputEdit",requestId,operation,
+        deviceEpoch:next.device.epoch,graphRevision:model.revision,rosterRevision:model.roster,
+        logicalRevision:data.revision,portId:port.value,channelId:channel.value,
+        name:name.value.trim(),format:format.value,left:l?.port??-1,right:r?.port??-1,
+        leftName:l?.label||"",rightName:r?.label||""};
+      logicalIoPending={requestId,epoch:next.device.epoch,config:next.hardwareConfiguration,
+        payload,previousIds:data.ports.map(x=>x.id),acked:false};
+      backend.emitEvent("arMixAction",payload);
+      paintPhysicalOutputs(hardware);
+      window.setTimeout(()=>{
+        if(logicalIoPending?.requestId!==requestId)return;
+        logicalIoPending=null;paintPhysicalOutputs(hardware);controller?.subscribe();
+        nativeToast("Logical I/O confirmation timed out · verify current routing");
+      },8000);
+    };
+    for(const [key,b] of Object.entries(buttons))b.onclick=()=>send(key);
+    section.append(summary,hint,port,name,format,buttons.ADD,buttons.RENAME,buttons.REMOVE,
+      left,right,buttons.BIND,buttons.UNBIND,channel,buttons.ASSIGN,buttons.CLEAR);
+    loadPort();host.append(section);
+  }
+  function renderLogicalOutputs(host,model,next,busy){
+    const data=next.raw?.logicalOutputRegistry;
+    if(model.authority!=="CHANNEL_ID"||next.device?.backend!=="ASIO"||
+       !Array.isArray(data?.ports)||!Array.isArray(data.references)||typeof data.revision!=="string")return;
+    const section=document.createElement("details");section.className="armix-named-patches";
+    const summary=document.createElement("summary");summary.textContent="Session logical outputs";
+    bindLogicalDisclosure(section,summary,logicalOutEditorOpen,open=>{logicalOutEditorOpen=open;});
+    const hint=document.createElement("span");hint.className="armix-device-note";
+    hint.textContent="Mute MAIN and STREAM first. MAIN/MONITOR aliases must match their verified physical pair. External remap updates all assigned channels.";
+    const port=document.createElement("select");port.setAttribute("aria-label","Logical output port");
+    port.append(new Option("New logical output",""));
+    for(const p of data.ports){
+      const refs=data.references.filter(r=>r.portId===p.id);
+      port.append(new Option(p.name+" · "+refs.length+" used"+(refs.some(r=>r.state==="NEEDS_REMAP")?" · Needs remap":""),p.id));
+    }
+    port.value=data.ports.some(p=>p.id===logicalOutPort)?logicalOutPort:"";
+    const name=document.createElement("input");name.maxLength=48;name.placeholder="Logical output name";
+    name.setAttribute("aria-label","Logical output name");
+    const pair=document.createElement("select");pair.setAttribute("aria-label","Logical output stereo pair");
+    pair.append(new Option("Unselected",""));
+    const pairs=model.pins.filter(p=>p.port%2===0&&model.pins.some(q=>q.port===p.port+1))
+      .map(p=>({l:p,r:model.pins.find(q=>q.port===p.port+1)}));
+    for(const p of pairs)pair.append(new Option((p.l.port+1)+"/"+(p.r.port+1)+" · "+p.l.label+" + "+p.r.label,String(p.l.port)));
+    const channel=document.createElement("select");channel.setAttribute("aria-label","Logical output channel");
+    channel.append(new Option("Choose mixer channel",""));
+    const channels=(next.graph?.channels||[]).filter(c=>["INPUT","GROUP","FX_RETURN","MAIN","MONITOR"].includes(c.role));
+    for(const c of channels){
+      const ref=data.references.find(r=>r.channelId===c.id),assigned=data.ports.find(p=>p.id===ref?.portId);
+      channel.append(new Option(c.name+(assigned?" · "+assigned.name:""),c.id));
+    }
+    channel.value=channels.some(c=>c.id===logicalOutChannel)?logicalOutChannel:"";
+    const buttons={};
+    for(const [key,label] of [["ADD","Add port"],["RENAME","Rename port"],["REMOVE","Remove port"],["BIND","Apply output pair"],["UNBIND","Unbind port"],["ASSIGN","Assign to channel"],["CLEAR","Clear logical assignment"]]){
+      const b=document.createElement("button");b.type="button";b.textContent=label;buttons[key]=b;
+    }
+    const selected=()=>data.ports.find(p=>p.id===port.value);
+    const used=()=>data.references.some(r=>r.portId===port.value);
+    const muted=()=>next.raw?.operatorOutputMuted===true&&next.device?.outputArmed===false&&next.raw?.physicalBusSecondaryArmed===false;
+    const update=()=>{
+      const p=selected(),locked=busy||!!logicalIoPending||!muted();
+      for(const el of [port,name,pair,channel])el.disabled=locked;
+      buttons.ADD.disabled=locked||!!p||!name.value.trim();
+      buttons.RENAME.disabled=locked||!p||!name.value.trim();
+      buttons.REMOVE.disabled=locked||!p||used();
+      buttons.BIND.disabled=locked||!p||!pairs.some(q=>String(q.l.port)===pair.value);
+      buttons.UNBIND.disabled=locked||!p||!p.bound||data.references.some(r=>r.portId===p.id&&r.role!=="EXTERNAL");
+      buttons.ASSIGN.disabled=locked||!p||!channel.value;
+      buttons.CLEAR.disabled=locked||!data.references.some(r=>r.channelId===channel.value);
+    };
+    const loadPort=()=>{
+      const p=selected();logicalOutPort=port.value;name.value=p?.name||"";
+      pair.value=p?.bound&&p.backend===next.device.backend&&p.playback===next.device.playbackDevice&&
+        pairs.some(q=>q.l.port===p.left&&q.r.port===p.right&&q.l.label===p.leftName&&q.r.label===p.rightName)?String(p.left):"";
+      update();
+    };
+    port.onchange=loadPort;name.oninput=pair.onchange=update;
+    channel.onchange=()=>{logicalOutChannel=channel.value;update();};
+    const send=operation=>{
+      if(buttons[operation].disabled||busy||logicalIoPending||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
+         hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
+         hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
+         hardware.raw?.logicalOutputRegistry?.revision!==data.revision||hardware.raw?.operatorOutputMuted!==true||
+         hardware.device.outputArmed!==false||hardware.raw?.physicalBusSecondaryArmed!==false)return;
+      const confirmed=["BIND","UNBIND","ASSIGN","CLEAR"].includes(operation);
+      if(confirmed&&!window.confirm("Confirm logical output change? Verify the exact hardware destination. MAIN and STREAM must remain muted."))return;
+      const selectedPair=pairs.find(q=>String(q.l.port)===pair.value);
+      const requestId="logical-io-"+(++logicalIoSerial);
+      const payload={action:"routingLogicalOutputEdit",requestId,operation,confirmed,
+        deviceEpoch:next.device.epoch,graphRevision:model.revision,rosterRevision:model.roster,
+        logicalRevision:data.revision,portId:port.value,channelId:channel.value,
+        name:name.value.trim(),format:"STEREO",left:selectedPair?.l.port??-1,right:selectedPair?.r.port??-1,
+        leftName:selectedPair?.l.label||"",rightName:selectedPair?.r.label||""};
+      logicalIoPending={requestId,epoch:next.device.epoch,config:next.hardwareConfiguration,
+        payload,previousIds:data.ports.map(x=>x.id),acked:false};
+      backend.emitEvent("arMixAction",payload);paintPhysicalOutputs(hardware);
+      window.setTimeout(()=>{
+        if(logicalIoPending?.requestId!==requestId)return;
+        logicalIoPending=null;paintPhysicalOutputs(hardware);controller?.subscribe();
+        nativeToast("Logical output confirmation timed out · verify current routing");
+      },8000);
+    };
+    for(const [key,b] of Object.entries(buttons))b.onclick=()=>send(key);
+    section.append(summary,hint,port,name,buttons.ADD,buttons.RENAME,buttons.REMOVE,
+      pair,buttons.BIND,buttons.UNBIND,channel,buttons.ASSIGN,buttons.CLEAR);
+    loadPort();host.append(section);
+  }
+  function settleIoDefaults(next){
+    const p=ioDefaultsPending;
+    if(!p)return;
+    if(next?.device?.epoch!==p.epoch||next.hardwareConfiguration!==p.config){
+      ioDefaultsPending=null;nativeToast("I/O default device changed");return;
+    }
+    const data=next.raw?.ioDefaults,ins=next.raw?.logicalInputRegistry,outs=next.raw?.logicalOutputRegistry;
+    if(!p.ack||data?.revision!==p.ack.revision||
+       ins?.revision!==p.ack.inputRevision||outs?.revision!==p.ack.outputRevision)return;
+    const proved=p.op==="SAVE"?data.inputs===p.inputs&&data.outputs===p.outputs:
+      p.op==="CLEAR"?data.inputs===0&&data.outputs===0:
+      Array.isArray(ins.ports)&&Array.isArray(outs.ports)&&ins.ports.length===data.inputs&&outs.ports.length===data.outputs&&
+      ins.references?.length===0&&outs.references?.length===0&&data.canLoad===false;
+    if(proved){ioDefaultsPending=null;nativeToast(p.op==="LOAD"?"Default ports loaded · assign channels explicitly":"I/O default updated");}
+  }
+  function renderIoDefaults(host,model,next,busy){
+    const data=next.raw?.ioDefaults,ins=next.raw?.logicalInputRegistry,outs=next.raw?.logicalOutputRegistry;
+    if(model.authority!=="CHANNEL_ID"||typeof data?.revision!=="string"||
+       typeof ins?.revision!=="string"||typeof outs?.revision!=="string"||
+       !Array.isArray(ins.ports)||!Array.isArray(outs.ports))return;
+    const section=document.createElement("div");section.className="armix-named-patches";
+    const info=document.createElement("span");info.className="armix-device-note";
+    info.textContent=data.readOnly?(data.error||"Default storage read-only"):
+      "Default I/O · "+data.inputs+" input / "+data.outputs+" output ports · new empty mixer only";
+    section.append(info);
+    const buttons=[["SAVE","Make Default",ins.ports.length+outs.ports.length===0],
+      ["LOAD","Load Default",data.canLoad!==true],["CLEAR","Clear Default",data.inputs+data.outputs===0]];
+    for(const [op,label,unavailable] of buttons){
+      const button=document.createElement("button");button.type="button";button.textContent=label;
+      button.disabled=busy||!!ioDefaultsPending||data.readOnly||unavailable;
+      button.onclick=()=>{
+        if(button.disabled||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
+           hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
+           hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
+           hardware.raw?.ioDefaults?.revision!==data.revision||
+           hardware.raw?.logicalInputRegistry?.revision!==ins.revision||
+           hardware.raw?.logicalOutputRegistry?.revision!==outs.revision||
+           (op==="LOAD"&&hardware.raw?.ioDefaults?.canLoad!==true))return;
+        const message=op==="SAVE"?"Use the current logical input and output port definitions for future empty mixers? Channel assignments, FX and output arm are not saved.":
+          op==="LOAD"?"Load default port definitions into this empty muted mixer? No channel will be assigned or armed.":"Clear the saved I/O default? The current mixer will not change.";
+        if(!window.confirm(message))return;
+        const requestId="io-default-"+(++ioDefaultsSerial);
+        ioDefaultsPending={requestId,op,epoch:next.device.epoch,config:next.hardwareConfiguration,
+          revision:data.revision,inputRevision:ins.revision,outputRevision:outs.revision,
+          inputs:ins.ports.length,outputs:outs.ports.length,ack:null};
+        backend.emitEvent("arMixAction",{action:"audioIoDefaults",requestId,operation:op,confirmed:true,
+          deviceEpoch:next.device.epoch,graphRevision:model.revision,rosterRevision:model.roster,
+          revision:data.revision,inputRevision:ins.revision,outputRevision:outs.revision});
+        paintPhysicalOutputs(hardware);
+        window.setTimeout(()=>{
+          if(ioDefaultsPending?.requestId!==requestId)return;
+          ioDefaultsPending=null;paintPhysicalOutputs(hardware);controller?.subscribe();
+          nativeToast("I/O default confirmation timed out · verify current state");
+        },8000);
+      };
+      section.append(button);
+    }
+    host.append(section);
+  }
+  function paintRouteMatrix(next,side){
+    const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
+    if(!host)return;
+    const model=deviceVM.patchMatrix(next,side);
+    const ready=matrixReady(next),busy=matrixBusy()||Boolean(namedPatchPending);
+    const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch,
+      deviceInventory?.namedPatches,namedPatchPending,side==="input"?next?.raw?.logicalInputRegistry:next?.raw?.logicalOutputRegistry,
+      next?.raw?.operatorOutputMuted,next?.device?.outputArmed,next?.raw?.physicalBusSecondaryArmed,
+      next?.raw?.ioDefaults,next?.raw?.logicalInputRegistry?.revision,next?.raw?.logicalOutputRegistry?.revision]);
+    const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
+      revision:model.revision,roster:model.roster,
+      busPairs:Object.fromEntries(model.rows.filter(r=>r.bus).map(r=>[r.id,JSON.stringify(r.pair)]))};
+    if(host.dataset.signature===signature)return;
+    host.dataset.signature=signature;
+    host.replaceChildren();
+    if(!ready||!model.live||!model.pins.length){
+      host.textContent=!ready?"Apply device and pin changes first.":
+        "Open a verified mixer with enabled "+side+" pins.";
+      return;
+    }
+    if(side==="input")renderLogicalInputs(host,model,next,busy);
+    else renderLogicalOutputs(host,model,next,busy);
+    renderIoDefaults(host,model,next,busy);
+    renderNamedPatchEditor(host,side,model,next,busy);
+    const aliases=namedPatchChoices(side,model,next);
+    const table=document.createElement("table");table.className="armix-patch-grid";
+    const head=table.createTHead().insertRow();
+    const th=label=>{const e=document.createElement("th");e.textContent=label;head.append(e);};
+    th(side==="input"?"Mixer input":"Mixer output");
+    for(const pin of model.pins)th((pin.port+1)+" · "+pin.label);
+    th("Assignment");th(busy?"Pending":"");
+    const body=table.createTBody();
+    for(const row of model.rows){
+      const tr=body.insertRow();const name=tr.insertCell();
+      name.textContent=row.name;name.title=row.state||row.name;
+      const controls=[];
+      const select=document.createElement("select");
+      select.setAttribute("aria-label",row.name+" assignment");
+      const candidates=row.bus?row.choices:model.choices;
+      const customValue="__custom_stereo__";
+      const custom=document.createElement("div");
+      custom.className="armix-custom-stereo";custom.hidden=true;
+      const customSelect=sideName=>{
+        const control=document.createElement("select");
+        control.setAttribute("aria-label",row.name+" "+sideName+" pin");
+        for(const p of model.pins)control.append(new Option(sideName+" · "+(p.port+1)+" "+p.label,String(p.port)));
+        control.disabled=busy;custom.append(control);return control;
+      };
+      const customLeft=customSelect("L"),customRight=customSelect("R");
+      if(model.pins.length>1)customRight.selectedIndex=1;
+      if(row.selected===null){const op=new Option(row.state||"Current source", "");op.disabled=true;select.append(op);}
+      for(const choice of candidates)select.append(new Option(choice.label,choice.label));
+      if(row.editable&&!row.bus)for(const p of aliases)
+        select.append(new Option(p.name+" · "+p.choice.label,"preset:"+p.id));
+      if(side==="input"&&row.editable&&model.pins.length>1)
+        select.append(new Option("Custom stereo L/R…",customValue));
+      select.value=row.selected??"";
+      const selectedChoice=()=>select.value===customValue?
+        deviceVM.physicalInputChoice(next,"STEREO",Number(customLeft.value),Number(customRight.value)):
+        select.value.startsWith("preset:")?aliases.find(p=>"preset:"+p.id===select.value)?.choice:
+        candidates.find(x=>x.label===select.value);
+      const apply=document.createElement("button");apply.type="button";apply.textContent="Apply";
+      const update=()=>{
+        const choice=selectedChoice();
+        custom.hidden=select.value!==customValue;
+        apply.disabled=busy||!row.editable||!choice||choice.label===row.selected;
+        controls.forEach(({button,pin,index})=>{
+          const mark=row.editable&&choice?(pin.port===choice.left?(choice.mode==="MONO"?"M":"L"):pin.port===choice.right?"R":""):row.cells[index];
+          button.textContent=mark||"·";
+          button.dataset.mark=mark||"";
+          button.dataset.draft=String(Boolean(row.pending&&mark||row.editable&&mark!==row.cells[index]));
+        });
+      };
+      for(const [index,pin] of model.pins.entries()){
+        const cell=tr.insertCell(),button=document.createElement("button");
+        button.type="button";button.className="armix-patch-cell";
+        button.setAttribute("aria-label",row.name+" / "+pin.label);
+        button.disabled=busy||!row.editable;
+        button.onclick=()=>{
+          if(select.value===customValue){
+            const pinValue=String(pin.port);
+            if(customLeft.value===pinValue)return;
+            customRight.value=pinValue;update();return;
+          }
+          const current=candidates.find(x=>x.label===select.value);
+          const stereo=side==="output"||current?.mode==="STEREO"||
+            (current?.mode==="NONE"&&row.format==="STEREO");
+          const choice=candidates.find(x=>(side==="output"||x.mode===(stereo?"STEREO":"MONO"))&&
+            (x.left===pin.port||(stereo&&x.right===pin.port)));
+          if(choice){select.value=choice.label;update();}
+        };
+        cell.append(button);controls.push({button,pin,index});
+      }
+      const pick=tr.insertCell(),action=tr.insertCell();
+      if(row.editable){
+        select.disabled=busy;select.onchange=update;pick.append(select);
+        if(side==="input"){
+          customLeft.onchange=customRight.onchange=update;
+          pick.append(custom);
+        }
+        apply.onclick=()=>{
+          const choice=selectedChoice();
+          if(choice)applyMatrixRow(side,row.id,choice.label,lease,choice);
+        };
+        action.append(apply);
+      }else pick.textContent=row.state||"Read-only";
+      update();
+    }
+    host.append(table);
+  }
   function paintPhysicalOutputs(next) {
+    if(devicePanel&&!devicePanel.hidden){
+      const page=devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab;
+      if(page==="inputs")paintRouteMatrix(next,"input");
+      if(page==="routing")paintRouteMatrix(next,"output");
+    }
     const view=devicePanel?.querySelector?.("[data-audio-output-matrix]");
-    if(!view || devicePanel.hidden)return;
+    if(!view || devicePanel.hidden||
+       devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab!=="routing")return;
     const patches=protocol.physicalOutputOverview(next);
-    const signature=JSON.stringify(patches);
+    const signature=JSON.stringify([patches,String(next?.device?.backend||"")]);
     if(devicePanel.dataset.outputSignature===signature)return;
     devicePanel.dataset.outputSignature=signature;
     const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
     if(summary)summary.textContent="OUTPUTS · "+patches.length+" physical patches";
     view.replaceChildren();
     if(!patches.length){
-      view.textContent="No verified ASIO output pins · choose an ASIO device.";
+      const backendName=String(next?.device?.backend||"");
+      view.textContent=/ASIO/i.test(backendName)?
+        "No assignable ASIO pins. Verify the interface output-pair mapping in Audio Device.":
+        "Windows Audio uses the selected stereo playback endpoint. Per-pin output routing is available with a verified multichannel ASIO interface.";
       return;
     }
     for(const patch of patches){
@@ -2207,9 +3234,10 @@
       next?.raw?.waitingAsioInputs>0?"INPUT TEMPORARILY UNAVAILABLE · AUTO-RECONNECT":
       d.outputArmed?(next.admitted?"OUTPUT ENABLED":
         "CHECK AUDIO CONNECTION"):
-      !d.enabledInputs?.length?(next.admitted?"CHOOSE AN INPUT":
+      !d.enabledInputs?.length?(next.admitted?"NO ACTIVE CAPTURE PINS · AUDIO I/O":
         "CHECK AUDIO I/O SETTINGS"):
-      legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
+      next?.raw?.operatorOutputMuted===true?"EMERGENCY STOP · MORE → RESUME":
+      legacy()?.routeAccepted||next?.admitted?"OUTPUT RECOVERING · CHECK AUDIO I/O":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
     // A warning (missing input / disconnected / muted) always takes
@@ -2237,7 +3265,7 @@
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
-    syncMonitorButton(d);
+    syncEmergencyOutputControl(d);
     paintPhysicalOutputs(next);
     // Keep the SAME verified playback device for mixer master projection.
     // Footer display is independent; device identity must never be dropped.
@@ -2274,8 +3302,7 @@
     if(routeBtn && routeBtn.disabled!==routeDisabled)routeBtn.disabled=routeDisabled;
     const armDisabled=!ready || legacy()?.routeAccepted!==true || d.outputArmed;
     if(armBtn && armBtn.disabled!==armDisabled)armBtn.disabled=armDisabled;
-    const muteDisabled=!deviceOpen || !d.outputArmed;
-    if(muteBtn && muteBtn.disabled!==muteDisabled)muteBtn.disabled=muteDisabled;
+    syncEmergencyOutputControl(d);
     if(hardwareNote) {
       const evidence=protocol.diagnoseFirstSound?.(next,inputSelect.value);
       // Human-readable PCM stages from the ORIGINAL native callback only.
@@ -2309,6 +3336,30 @@
     window.clearTimeout(toastTimer);
     toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
   }
+  let lastAudioRepairAt=-Infinity;
+  function recommendAudioRepair(context) {
+    // The user explicitly attempted a live input or FX operation. Avoid
+    // disruptive startup popups, silent driver fallback or repeated overlays
+    // from the 12 Hz status/readback loop.
+    if(deviceBusy()||deviceReady())return false;
+    const now=performance.now();
+    if(now-lastAudioRepairAt<1600)return true;
+    lastAudioRepairAt=now;
+    nativeToast(context+" · Check Audio I/O");
+    status("AUDIO NOT READY · choose and Apply the correct driver and endpoint");
+    window.setTimeout(()=>{
+      if(!deviceReady()&&!deviceBusy()&&(!devicePanel||devicePanel.hidden))
+        openNativeAudioIO(); // explicit repair prompt, no automatic Apply
+    },220);
+    return true;
+  }
+  // Disabled physical inputs cannot emit a change event. Their route field
+  // still offers explicit device repair, without opening a modal on startup.
+  document.addEventListener("pointerdown",event=>{
+    const field=event.target.closest?.(".route-field");
+    if(field?.querySelector('select[data-field="input"]')&&!deviceReady())
+      recommendAudioRepair("INPUT requires an audio device");
+  },true);
   let loopbackSerial=0,loopbackId="",loopbackPending=false;
   const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
   function closeNativeAudioIO(){
@@ -2319,6 +3370,9 @@
     loopbackField("confirmed").checked=false;
     for(const side of ["input","output"])loopbackField(side).disabled=false;
     devicePanel.hidden=true;
+    syncNamedOptions();
+    for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
+      delete host.dataset.signature;
   }
   function requestLoopback(measure){
     const scope=deviceInventory?.active?.physicalLoopback;
@@ -2357,6 +3411,17 @@
     }
     loopbackField("start").disabled=deviceBusy()||loopbackPending||
       !loopbackField("confirmed").checked;
+  }
+  function selectAudioSetupPage(page){
+    if(!devicePanel)return;
+    const dialog=devicePanel.querySelector(".armix-audio-dialog");
+    dialog.dataset.audioTab=page;
+    for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
+      item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
+    const apply=devicePanel.querySelector("[data-audio-apply]");
+    apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics";
+    if(page==="inputs"||page==="routing")paintPhysicalOutputs(hardware);
+    if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
   }
   function openNativeAudioIO(){
     if(!devicePanel){
@@ -2409,23 +3474,125 @@
         .armix-audio-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;
           max-height:135px;overflow:auto;padding:5px 0}
         .armix-audio-pins label{display:flex;align-items:center;gap:5px;font-size:11px}
+        /* Audio setup uses one clearly separated Device / Output Routing
+           workspace like a DAW preferences panel; no independent audio owner. */
+        .armix-audio-dialog{width:min(672px,96vw);padding:0;gap:0;
+          background:#1a252d;border-color:#506778;border-radius:8px}
+        .armix-audio-top{padding:13px 18px;border-bottom:1px solid #344b59;
+          background:#23323d;min-height:44px}
+        .armix-audio-dialog h2{font-size:14px;font-weight:550}
+        .armix-audio-tabs{display:flex;gap:2px;padding:0 14px;
+          border-bottom:1px solid #405866;background:#1b303b}
+        .armix-audio-dialog .armix-audio-tab{background:transparent;border:0;
+          border-bottom:2px solid transparent;border-radius:0;color:#a6c1cc;
+          min-height:35px;padding:7px 15px;font-size:12px;font-weight:500}
+        .armix-audio-dialog .armix-audio-tab[aria-selected="true"]{
+          background:#335b73;border-color:#79c3e6;color:#f2fcff}
+        .armix-endpoint-fields{display:grid;gap:10px;padding:18px 20px 12px}
+        .armix-endpoint-fields label{display:grid;align-items:center;
+          grid-template-columns:minmax(110px,155px) minmax(0,1fr);
+          gap:12px;color:#d0e0e6;min-height:30px}
+        .armix-endpoint-fields select{min-width:0;min-height:33px}
+        .armix-endpoint-fields .armix-device-note{padding:9px 12px;
+          border:1px solid #3c5765;background:#10232e;border-radius:4px}
+        .armix-audio-dialog [data-audio-latency]{font-variant-numeric:tabular-nums;
+          color:#b8d5e2;line-height:1.55}
+        .armix-audio-dialog details{margin:0 20px;padding:11px 0;
+          border-top:1px solid #354b59}
+        .armix-audio-dialog .armix-output-overview{border:0;padding:15px 20px}
+        .armix-output-heading{font-size:12px;color:#d2e9ef;margin-bottom:7px}
+        .armix-output-matrix{max-height:min(46vh,360px);gap:4px}
+        .armix-output-row{grid-template-columns:92px minmax(0,1fr) auto;
+          min-height:34px;padding:8px 10px}
+        .armix-audio-dialog[data-audio-tab="inputs"],
+        .armix-audio-dialog[data-audio-tab="routing"]{width:min(1050px,96vw)}
+        .armix-input-overview{padding:15px 20px}
+        .armix-crosspoint-scroll{overflow:auto;max-height:52vh}
+        .armix-patch-grid{border-collapse:separate;border-spacing:2px;font-size:11px;width:max-content;min-width:100%}
+        .armix-patch-grid th{font-weight:500;max-width:72px;min-width:42px;vertical-align:bottom;overflow-wrap:anywhere}
+        .armix-patch-grid th:first-child,.armix-patch-grid td:first-child{position:sticky;left:0;z-index:1;background:#26343d;min-width:95px;max-width:150px;padding:5px}
+        .armix-audio-dialog .armix-patch-cell{width:100%;min-width:32px;min-height:26px;padding:2px;border-radius:1px;background:#29343d;color:#8ba2af}
+        .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
+        .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
+        .armix-patch-grid select{max-width:210px;font-size:11px}
+        .armix-custom-stereo{display:grid;gap:3px;margin-top:4px}
+        .armix-custom-stereo[hidden]{display:none!important}
+        .armix-named-patches{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:6px 0 12px}
+        .armix-named-patches select,.armix-named-patches input{width:auto;max-width:180px;min-width:72px;font:11px system-ui;color:#e9f8ff;background:#09202c;border:1px solid #476778;border-radius:3px;padding:5px}
+        .armix-named-patches .armix-device-note{flex-basis:100%}
+        .armix-audio-dialog:not([data-audio-tab="inputs"]) .armix-input-overview,
+        .armix-audio-dialog:not([data-audio-tab="routing"]) .armix-output-overview,
+        .armix-audio-dialog:not([data-audio-tab="device"]) .armix-endpoint-fields,
+        .armix-audio-dialog:not([data-audio-tab="diagnostics"]) .armix-audio-diagnostics,
+        .armix-audio-dialog:not([data-audio-tab="pins"]) .armix-driver-inventory,
+        .armix-audio-dialog:not([data-audio-tab="device"]) [data-audio-remap],
+        .armix-audio-dialog [hidden]{display:none!important}
+        .armix-audio-diagnostics{padding:12px 20px}
+        .armix-audio-dialog .armix-endpoint-fields .armix-device-note{border:0;background:transparent;padding:3px 0}
+        .armix-audio-dialog [data-audio-latency]{padding:8px 0!important;border-top:1px solid #354b59!important}
+        .armix-audio-dialog .armix-audio-pins{max-height:min(44vh,340px);gap:16px}
+        .armix-audio-dialog .armix-audio-pins label{min-height:24px}
+        .armix-audio-dialog [data-audio-tab="diagnostics"]{margin-left:auto}
+        .armix-driver-inventory{padding:12px 20px;border-top:1px solid #354b59}
+        .armix-endpoint-fields .armix-device-actions{padding:0;border:0;background:transparent}
+        .armix-audio-dialog .armix-device-actions{padding:12px 20px;
+          border-top:1px solid #344b59;background:#192a33}
+        .armix-audio-dialog .armix-device-actions button[data-audio-apply]{
+          background:#326881;border-color:#669ab2;min-width:112px}
+        .armix-audio-dialog .armix-device-progress{margin:10px 20px}
+        @media(max-width:620px){
+          .armix-endpoint-fields{padding:14px}
+          .armix-endpoint-fields label{grid-template-columns:1fr;gap:4px}
+          .armix-audio-dialog .armix-output-overview{padding:12px}
+          .armix-output-row{grid-template-columns:75px minmax(0,1fr)}
+          .armix-output-status{grid-column:2}
+        }
       `;
       document.head.appendChild(style);
       devicePanel=document.createElement("div");
       devicePanel.className="armix-audio-shade";
       devicePanel.innerHTML=`<section class="armix-audio-dialog" role="dialog"
-        aria-modal="true" aria-label="Audio hardware setup">
-        <header class="armix-audio-top"><h2>Audio I/O</h2><button class="armix-floating-close" type="button"
+        aria-modal="true" aria-label="Audio hardware setup" data-audio-tab="device">
+        <header class="armix-audio-top"><h2>Audio I/O Setup</h2><button class="armix-floating-close" type="button"
           data-audio-close aria-label="Close Audio I/O" title="Close"><svg xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path
           d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg></button></header>
-        <label>Driver<select data-audio-field="backend"></select></label>
-        <label>Input device<select data-audio-field="capture"></select></label>
-        <label>Output / monitor device<select data-audio-field="playback"></select></label>
-        <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
-        <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
-          Latency · waiting for native device readback
+        <nav class="armix-audio-tabs" aria-label="Audio setup pages" role="tablist">
+          <button type="button" class="armix-audio-tab" data-audio-tab="device"
+            role="tab" aria-selected="true">Audio Device</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="pins"
+            role="tab" aria-selected="false" disabled>Hardware Pins</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="inputs"
+            role="tab" aria-selected="false" disabled>Inputs</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="routing"
+            role="tab" aria-selected="false" disabled>Outputs</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="diagnostics"
+            role="tab" aria-selected="false">Diagnostics</button>
+        </nav>
+        <div class="armix-endpoint-fields">
+          <label>Audio driver<select data-audio-field="backend"></select></label>
+          <label>Recording / input<select data-audio-field="capture"></select></label>
+          <label>Playback / monitor<select data-audio-field="playback"></select></label>
+          <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+          <div class="armix-device-note" data-audio-signal-path role="status"></div>
+          <div class="armix-device-actions">
+            <button type="button" data-audio-copy-report>Copy Audio Report</button>
+            <button type="button" data-audio-review-capture hidden>Review capture pins</button>
+          </div>
+          <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
+            Latency · waiting for native device readback
+          </div>
+          <label>Sample rate<select data-audio-field="rate"></select></label>
+          <label>Buffer size<select data-audio-field="buffer"></select></label>
+          <div class="armix-device-actions">
+            <button type="button" data-audio-driver-panel hidden>ASIO Control Panel</button>
+          </div>
+          <div class="armix-device-note">Apply device to discover its hardware pins.</div>
         </div>
+        <section class="armix-audio-diagnostics">
+          <div class="armix-device-note" data-audio-period></div>
+          <div class="armix-device-note" data-audio-health role="status"></div>
+          <button type="button" data-audio-read-health>Refresh audio status</button>
         <details data-audio-loopback-details hidden>
           <summary>Wired round-trip calibration · ASIO</summary>
           <div class="armix-loopback-pins">
@@ -2439,6 +3606,7 @@
           <button type="button" data-audio-loopback-start disabled>Measure round-trip latency</button>
           <div class="armix-loopback-result armix-device-note" data-audio-loopback-result role="status"></div>
         </details>
+        </section>
         <div class="armix-device-progress" data-audio-progress role="status" aria-live="polite" hidden>
           <!--By Sam Herbert (@sherb), for everyone. More @ http://goo.gl/7AJzbL-->
           <svg viewBox="0 0 55 80" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true" focusable="false">
@@ -2460,27 +3628,55 @@
           <div><strong>Applying audio device…</strong>
           <span>Waiting for driver and mixer verification.</span></div>
         </div>
+        <section class="armix-input-overview">
+          <div class="armix-output-heading">INPUTS · hardware to mixer</div>
+          <div class="armix-crosspoint-scroll" data-audio-input-grid></div>
+          <div class="armix-device-note">Choose Mono or Stereo, then Apply on the row. Blue = installed; amber = draft.</div>
+        </section>
         <section class="armix-output-overview" data-audio-output-overview>
+          <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
+          <div class="armix-device-note">External stereo outputs are editable. Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
           <div class="armix-output-heading">OUTPUTS · physical routing</div>
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
         </section>
-        <details><summary>Advanced · rate, buffer and channel pins</summary>
+        <section class="armix-driver-inventory" aria-label="Driver channel inventory">
+          <div class="armix-output-heading">DRIVER CHANNELS · available / enabled</div>
+          <div class="armix-device-note" data-audio-pin-summary></div>
           <div class="armix-device-note" data-audio-asio4all-hint hidden>
             Check ASIO4ALL WDM inputs/outputs before Apply. Different device clocks may drift.
           </div>
-          <label>Sample rate<select data-audio-field="rate"></select></label>
-          <label>Buffer<select data-audio-field="buffer"></select></label>
           <div class="armix-device-pins" data-audio-pins></div>
           <button type="button" data-audio-main-pins hidden>Apply two selected playback pins as MAIN</button>
-        </details>
+          <div class="armix-device-note">Select pins, then Apply. Additional pins are not automatically patched to mixer channels or outputs.</div>
+        </section>
         <div class="armix-device-actions">
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
+      // Reuse the serialized JUCE recovery selector (including the vendor's
+      // native ASIO control-panel button), not a second driver instance.
+      devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
+        if(deviceBusy()||!deviceInventory||!deviceChoice||
+           !deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
+        deviceChoice=null;
+        closeNativeAudioIO();
+        backend.emitEvent("arMixAction",{action:"audioSetup"});
+      };
+      const readHealth=devicePanel.querySelector("[data-audio-read-health]");
+      readHealth.title="Read current driver and cumulative timing counters; discard unapplied edits. No driver rescan.";
+      readHealth.onclick=()=>{
+        if(deviceBusy())return;
+        deviceState=deviceVM.setupClearResult(deviceState);
+        backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+      };
       devicePanel.addEventListener("click",e=>{
-        if(e.target===devicePanel)closeNativeAudioIO();
+        if(e.target===devicePanel){closeNativeAudioIO();return;}
+        const tab=e.target?.closest?.("button[data-audio-tab]");
+        const dialog=devicePanel.querySelector(".armix-audio-dialog");
+        if(!tab||!dialog||deviceBusy()||tab.disabled||loopbackPending)return;
+        selectAudioSetupPage(tab.dataset.audioTab);
       });
       loopbackField("start").onclick=()=>requestLoopback(true);
       loopbackField("confirmed").onchange=e=>{
@@ -2509,6 +3705,18 @@
         deviceState=deviceVM.setupClearResult(deviceState);
         renderDevicePanel();
       });
+      devicePanel.querySelector("[data-audio-copy-report]").onclick=()=>{
+        backend.emitEvent("arMixAction",{action:"copyDiagnosticReport"});
+      };
+      devicePanel.querySelector("[data-audio-review-capture]").onclick=()=>{
+        if(deviceBusy())return;
+        const draft=deviceVM.captureRecoveryDraft(deviceInventory,deviceChoice,deviceState);
+        if(!draft)return;
+        deviceChoice=draft;
+        deviceState=deviceVM.setupClearResult(deviceState);
+        selectAudioSetupPage("pins");
+        renderDevicePanel(); // separate explicit Apply required
+      };
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
         if(!deviceBusy())sendDeviceApply();
       };
@@ -2522,6 +3730,10 @@
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
+    const dialog=devicePanel.querySelector(".armix-audio-dialog");
+    if(dialog)selectAudioSetupPage("device");
+    for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="inputs"],button[data-audio-tab="routing"]'))
+      item.disabled=true;
     paintPhysicalOutputs(hardware);
     if(deviceBusy())return;
     const active=devicePanel.querySelector("[data-audio-active]");
@@ -2550,6 +3762,14 @@
     // All draft, selection and eligibility rules live in the ONE pure VM.
     // The bridge only paints the existing approved /preview/ DOM.
     const view=deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState);
+    const routingReady=deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState);
+    const masksMatch=routingReady&&deviceVM.setupPinsApplied(deviceInventory,deviceChoice);
+    for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="inputs"],button[data-audio-tab="routing"]'))
+      item.disabled=item.dataset.audioTab==="pins"?!routingReady:!masksMatch;
+    const page=devicePanel.querySelector(".armix-audio-dialog").dataset.audioTab;
+    if(!deviceBusy()&&(!routingReady&&page==="pins"||
+       !masksMatch&&(page==="inputs"||page==="routing")))
+      selectAudioSetupPage(routingReady?"pins":"device");
     const hint=devicePanel.querySelector("[data-audio-asio4all-hint]");
     if(hint)hint.hidden=!view.asio4allHint;
     fillAudioSelect("backend",view.backendOptions,deviceChoice.backend);
@@ -2560,17 +3780,53 @@
     const rateSelect=devicePanel.querySelector('[data-audio-field="rate"]');
     const bufferSelect=devicePanel.querySelector('[data-audio-field="buffer"]');
     if(rateSelect){
-      rateSelect.options[0].textContent="Driver default";
+      rateSelect.options[0].textContent="Driver default (AUTO)";
+      for(const option of Array.from(rateSelect.options).slice(1))
+        option.textContent=option.value+" Hz"+(Number(option.value)===active.rate?" · current":"");
       rateSelect.disabled=!view.same||deviceBusy();
     }
     if(bufferSelect){
-      bufferSelect.options[0].textContent="Driver default";
+      bufferSelect.options[0].textContent="Driver default (AUTO)";
+      for(const option of Array.from(bufferSelect.options).slice(1)){
+        const ms=deviceVM.setupBufferPeriod(deviceChoice.rate,Number(option.value));
+        option.textContent=option.value+" samples"+(ms===null?"":" · "+ms.toFixed(2)+" ms")+
+          (Number(option.value)===active.buffer?" · current":"");
+      }
       bufferSelect.disabled=!view.same||deviceBusy();
+    }
+    const period=devicePanel.querySelector("[data-audio-period]");
+    if(period)period.textContent=view.draftPeriodMs===null?
+      "Requested period: driver negotiation required":
+      "Requested callback period "+view.draftPeriodMs.toFixed(2)+" ms · not round-trip latency";
+    const panel=devicePanel.querySelector("[data-audio-driver-panel]");
+    if(panel){panel.hidden=!view.driverPanelAvailable;panel.disabled=deviceBusy();}
+    const readHealth=devicePanel.querySelector("[data-audio-read-health]");
+    if(readHealth)readHealth.disabled=deviceBusy();
+    const health=devicePanel.querySelector("[data-audio-health]");
+    const h=deviceVM.setupHealthReadback(active);
+    const metric=v=>v===null?"N/A":String(v);
+    if(health)health.textContent=h?
+      (active.bitDepth>0?active.bitDepth+"-bit · ":"")+
+      "Cumulative timing snapshot · P99 budget "+h.budget+
+      " · deadline misses "+metric(h.overBudget)+" · callback gaps "+metric(h.gaps)+
+      " · driver XRUN "+metric(h.xruns)+
+      (h.discontinuities===null?"":" · capture discontinuities "+h.discontinuities)+
+      " · not a crackle-free guarantee":
+      "Audio health unavailable until a driver is verified.";
+    const pinSummary=devicePanel.querySelector("[data-audio-pin-summary]");
+    if(pinSummary){
+      const a=view.inputInventory,b=view.outputInventory;
+      pinSummary.textContent=a&&b?
+        "IN "+a.active+"/"+a.total+" enabled · OUT "+b.active+"/"+b.total+" enabled"+
+          (!a.complete||!b.complete?" · Apply supports up to 64 pins per direction":"")+
+          (active.backend==="ASIO"&&a.total===2&&b.total===2?
+            " · ASIO driver currently reports 2 × 2; separate Windows endpoints are not ASIO pins.":""):
+        "Apply the selected driver first to read its reported channels.";
     }
     const pins=devicePanel.querySelector("[data-audio-pins]");
     if(pins){
       pins.replaceChildren();
-      if(view.same){
+      if(routingReady){
         const container=document.createElement("div");
         container.className="armix-audio-pins";
         for(const [side,names,selected] of [
@@ -2580,6 +3836,21 @@
           const title=document.createElement("strong");
           title.textContent=side==="input"?"Capture pins":"Playback pins";
           group.appendChild(title);
+          const inventory=side==="input"?view.inputInventory:view.outputInventory;
+          if(active.backend==="ASIO"&&inventory?.complete&&
+             inventory.selectable>=(side==="input"?1:2)){
+            const all=document.createElement("button");
+            all.type="button";
+            all.textContent="Select all "+inventory.selectable;
+            all.disabled=deviceBusy()||selected.length===inventory.selectable;
+            all.onclick=()=>{
+              if(deviceBusy())return;
+              deviceChoice=deviceVM.setupSelectAllPins(deviceChoice,deviceInventory,side);
+              deviceState=deviceVM.setupClearResult(deviceState);
+              renderDevicePanel();
+            };
+            group.appendChild(all);
+          }
           (names||[]).forEach((name,index)=>{
             const label=document.createElement("label");
             const control=document.createElement("input");
@@ -2588,23 +3859,36 @@
             control.dataset.pinIndex=String(index);
             control.checked=selected.includes(index);
             control.disabled=deviceBusy();
-            label.append(control,document.createTextNode(String(name)));
+            label.append(control,document.createTextNode(
+              (side==="input"?"IN ":"OUT ")+(index+1)+" · "+
+              (String(name).trim()?String(name):"Unnamed by driver")));
             group.appendChild(label);
           });
           container.appendChild(group);
         }
         pins.appendChild(container);
-      }else pins.textContent="Apply this device first to inspect its real enabled pins.";
+      }else pins.textContent="Apply this device first to inspect all reported and enabled pins.";
     }
     const activeText=devicePanel.querySelector("[data-audio-active]");
     if(activeText&&!deviceBusy())activeText.textContent=view.activeText;
     const latencyText=devicePanel.querySelector("[data-audio-latency]");
     if(latencyText){
       const latency=deviceVM.setupLatencyReadback(active);
-      latencyText.textContent=latency.ready?
-        latency.line+" · "+latency.note:
-        "AUDIO LATENCY · select an active device to read driver estimates";
+      const ms=n=>n===null?"—":n.toFixed(2)+" ms";
+      latencyText.textContent=latency.ready&&view.same?
+        "Round-trip (estimated) "+ms(latency.estimatedTotalMs)+
+        " · Device "+ms(latency.driverIoHintMs)+" · FX/PDC "+ms(latency.fxMs):
+        "Round-trip latency — Apply device first";
       latencyText.title="Input and output are driver-reported. Buffer period is shown separately. Electrical round-trip requires physical loopback calibration.";
+    }
+    const pathHint=devicePanel.querySelector("[data-audio-signal-path]");
+    if(pathHint)pathHint.textContent=deviceVM.signalPathHint(active);
+    const recovery=deviceVM.captureRecoveryDraft(deviceInventory,deviceChoice,deviceState);
+    const review=devicePanel.querySelector("[data-audio-review-capture]");
+    if(review){
+      review.hidden=!recovery;
+      review.disabled=deviceBusy();
+      if(recovery)review.textContent="Review capture IN "+recovery.inputPins.map(p=>p+1).join(" + ");
     }
     renderLoopbackPins(active);
     devicePanel.querySelector("[data-audio-apply]").disabled=
@@ -2624,7 +3908,8 @@
     devicePanel.querySelector("[data-audio-active]").hidden=pending;
     devicePanel.querySelector("[data-audio-close]").disabled=pending;
     const apply=devicePanel.querySelector("[data-audio-apply]");
-    apply.textContent=pending?"Applying…":"Apply device";
+    apply.textContent=pending?"Applying…":
+      devicePanel.querySelector(".armix-audio-dialog").dataset.audioTab==="pins"?"Apply pins":"Apply device";
     apply.setAttribute("aria-busy",String(pending));
     if(pending&&!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches){
       svg.setCurrentTime?.(0);
@@ -2663,6 +3948,79 @@
       backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
     },12000);
   }
+  if(connected){
+    const onLogicalIoAck=ack=>{
+      const p=logicalIoPending;
+      if(!p||ack?.requestId!==p.requestId)return;
+      let expected="";
+      try{expected=String(BigInt(p.payload.logicalRevision)+1n);}catch(_){}
+      if(ack.ok!==true||!expected||ack.logicalRevision!==expected){
+        logicalIoPending=null;nativeToast(ack.error||"Logical I/O rejected");paintPhysicalOutputs(hardware);return;
+      }
+      logicalIoPending={...p,acked:true,logicalRevision:ack.logicalRevision,graphRevision:ack.graphRevision};
+      controller?.subscribe();
+    };
+    backend.addEventListener("arMixLogicalInputAck",onLogicalIoAck);
+    backend.addEventListener("arMixLogicalOutputAck",onLogicalIoAck);
+    backend.addEventListener("arMixIoDefaultsAck",ack=>{
+      const p=ioDefaultsPending;
+      if(!p||ack?.requestId!==p.requestId)return;
+      let expected="",inRev="",outRev="";
+      try{
+        expected=String(BigInt(p.revision)+(p.op==="LOAD"?0n:1n));
+        inRev=String(BigInt(p.inputRevision)+(p.op==="LOAD"?1n:0n));
+        outRev=String(BigInt(p.outputRevision)+(p.op==="LOAD"?1n:0n));
+      }catch(_){}
+      if(ack.ok!==true||!expected||ack.revision!==expected||ack.inputRevision!==inRev||ack.outputRevision!==outRev){
+        ioDefaultsPending=null;nativeToast(ack.error||"I/O default rejected");paintPhysicalOutputs(hardware);return;
+      }
+      ioDefaultsPending={...p,ack};controller?.subscribe();
+    });
+    backend.addEventListener("arMixNamedProfileFileResult",message=>{
+      const pending=namedProfileFilePending;
+      if(!pending||message?.requestId!==pending.requestId||message.operation!==pending.operation)return;
+      namedProfileFilePending=null;
+      pending.finish(message);
+      // Do not repaint the editor and discard a successfully loaded draft.
+    });
+    backend.addEventListener("arMixNamedPatchAck",ack=>{
+      if(namedPatchPending?.phase!=="APPLYING"||
+         ack?.requestId!==namedPatchPending.requestId)return;
+      if(ack.ok!==true){
+        namedPatchPending=null;
+        nativeToast(ack.error||"I/O preset rejected");
+        paintPhysicalOutputs(hardware);return;
+      }
+      namedPatchPending={...namedPatchPending,phase:"VERIFYING"};
+      backend.emitEvent("arMixAction",{action:"audioNamedPatchRead",requestId:ack.requestId});
+    });
+    backend.addEventListener("arMixNamedPatchReadback",message=>{
+      if(namedPatchPending?.phase!=="VERIFYING"||
+         message?.requestId!==namedPatchPending.requestId)return;
+      const a=deviceInventory?.active,b=message.active,data=message.namedPatches;
+      const same=a&&b&&["backend","captureDevice","playbackDevice","deviceGeneration","rate","buffer"]
+        .every(k=>a[k]===b[k])&&deviceVM.setupMatrixDeviceMatches({active:b},hardware);
+      if(!same||data?.revision!==namedPatchPending.revision+1||
+         !Array.isArray(data.entries))return;
+      const wanted=namedPatchPending.payload;
+      const fields=["name","mode","left","right","leftName","rightName"];
+      const matches=(p,q)=>p.side===wanted.side&&fields.every(k=>p[k]===q[k]);
+      const previous=deviceInventory?.namedPatches?.entries||[];
+      const proved=wanted.operation==="IMPORT"?
+        data.entries.length===previous.length+wanted.profile.entries.length&&
+        previous.every(old=>data.entries.some(p=>p.id===old.id&&p.side===old.side&&fields.every(k=>p[k]===old[k])))&&
+        wanted.profile.entries.every(row=>data.entries.filter(p=>matches(p,row)&&!previous.some(old=>old.id===p.id)).length===1):
+        wanted.operation==="REMOVE"?!data.entries.some(p=>p.id===wanted.id):
+        data.entries.some(p=>(!wanted.id||p.id===wanted.id)&&matches(p,wanted));
+      if(!proved)return;
+      namedPatchPending=null;
+      // Refresh only this independent metadata, not the current device draft.
+      deviceInventory={...deviceInventory,namedPatches:data};
+      nativeToast(wanted.operation==="IMPORT"?"I/O profile imported":"I/O preset saved");
+      syncNamedOptions();
+      paintPhysicalOutputs(hardware);
+    });
+  }
   function finishDeviceApplyUi(verifiedSnapshot=null){
     window.clearTimeout(deviceApplyTimer);
     deviceApplyTimer=0;
@@ -2670,7 +4028,20 @@
     showDeviceApplyProgress(false);
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
-      devicePanel.hidden=true;
+      {
+        // All successful device/pin transactions stay in setup. Never show
+        // a candidate or pre-Apply inventory as the newly installed device.
+        deviceInventory=null;
+        devicePanel.dataset.openPinsAfterInventory="true";
+        selectAudioSetupPage("device");
+        devicePanel.querySelector("[data-audio-active]").textContent=
+          "Device applied · reading hardware pins";
+        devicePanel.querySelector("[data-audio-pin-summary]").textContent=
+          "Waiting for the new driver inventory…";
+        devicePanel.querySelector("[data-audio-pins]").textContent="";
+        for(const field of devicePanel.querySelectorAll("select, [data-audio-apply], [data-audio-main-pins], [data-audio-remap], [data-audio-driver-panel]"))
+          field.disabled=true;
+      }
       // The confirmed schema-v6 readback, not the preceding Apply ACK,
       // is the only source for the device-ready status shown to operators.
       const active=verifiedSnapshot?.device;
@@ -2692,6 +4063,13 @@
       deviceInventory=inventory;
       deviceChoice=null;
       renderDevicePanel();
+      syncNamedOptions();
+      paintPhysicalOutputs(hardware);
+      if(devicePanel&&!devicePanel.hidden&&devicePanel.dataset.openPinsAfterInventory==="true"){
+        delete devicePanel.dataset.openPinsAfterInventory;
+        if(deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState))
+          selectAudioSetupPage("pins");
+      }
       if(devicePanel&&!devicePanel.hidden&&!loopbackPending)requestLoopback(false);
     });
     backend.addEventListener("arMixPhysicalLoopback",message=>{
@@ -2778,10 +4156,24 @@
         expectedEpoch:epoch,expectedRevision:revision});
       status("NATIVE: output ARM requested; awaiting JUCE ACK.");
     });
-    muteBtn=item("button","tool","Mute output");
+    muteBtn=item("button","tool","Emergency stop audio");
+    muteBtn.dataset.nativeEmergencyOutput="true";
     muteBtn.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"monitor",value:false});
-      status("NATIVE: output MUTE requested; awaiting JUCE ACK.");
+      const panic=hardware?.raw?.operatorOutputMuted===true;
+      if(!panic){
+        backend.emitEvent("arMixAction",{action:"monitor",value:false});
+        status("Emergency stop requested");
+        return;
+      }
+      if(!deviceReady()||virtualCableFeedbackPair())return;
+      const ep=safeNativeCounter(hardware?.device?.epoch),
+        rev=safeNativeCounter(mixerSession()?.authority==="CHANNEL_ID"?
+          mixerSession()?.routeRevision:legacy()?.routingRevision);
+      if(ep===null||rev===null)return;
+      backend.emitEvent("arMixAction",{action:"monitor",value:true,
+        requestId:"emergency-resume-"+(++m4RequestSerial),
+        expectedEpoch:ep,expectedRevision:rev});
+      status("Verifying audio route after emergency stop");
     });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
@@ -2960,6 +4352,7 @@
         const select=track&&document.querySelector('.strip[data-id="'+track.id+
           '"] select[data-field="external"]');
         select?.removeAttribute("aria-busy");
+        paintPhysicalOutputs(hardware);
         nativeToast(error);status(error);controller?.subscribe();return;
       }
       transaction.acked=true;
@@ -2967,17 +4360,45 @@
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
-      if(!save&&ack?.operation!=="OPEN")return;
+      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="RESET_IO"&&ack?.operation!=="ARCHIVE")return;
       if(ack.ok!==true){
         const error=String(ack.error||"Mixer file operation failed");
         status(error);nativeToast(error);
         return;
       }
-      const message=save?"Mixer saved as .smix":"Mixer opened";
+      const message=save?"Mixer saved as .smix":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":ack.operation==="ARCHIVE"?"Archived mixer opened · output remains muted":"Mixer opened";
       status(message);nativeToast(message);
       if(!save)controller?.subscribe();
     });
-    menu.append(caption,setup,muteBtn,hardwareNote,
+    const newSessionButtons=[["New empty session","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
+      const button=item("button","tool",label);
+      button.title="Offline only · previous checkpoint archived in Studio/SessionArchive";
+      button.addEventListener("click",()=>{
+        if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
+          nativeToast("Disconnect audio and finish mixer operations before New Session");return;
+        }
+        if(mode==="RESET_IO"&&hardware?.raw?.offlineResetIoAvailable!==true){
+          nativeToast("Reset requires a saved offline session with no logical port assignments");return;
+        }
+        if(!window.confirm(mode==="RESET_IO"?
+          "Replace only logical I/O port definitions? Mixer, FX and shortcuts are retained; a backup is archived.":
+          "Create a new offline mixer? The current saved session is archived. No audio output will be armed."))return;
+        backend.emitEvent("arMixAction",{action:"nativeMixerNewOffline",mode,confirmed:true,
+          workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.revision});
+      });
+      return button;
+    });
+    const archiveButton=item("button","tool","Open session archive");
+    archiveButton.title="Open an archived mixer offline; current checkpoint is backed up first";
+    archiveButton.addEventListener("click",()=>{
+      if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
+        nativeToast("Disconnect audio and finish mixer operations before opening an archive");return;
+      }
+      if(window.confirm("Open an archived session? Current saved mixer is archived first; output remains muted."))
+        backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
+          workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.revision});
+    });
+    menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
       healthTitle,tone,mark,report,advanced,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
@@ -3011,33 +4432,12 @@
         toolbar.insertBefore(addTrack,io);
       }
       syncAddTrack();
-      const monitor=item("button","tool","Unmute Output");
-      monitor.dataset.nativeMonitor="true";
-      monitor.addEventListener("click",()=>{
-        const armed=hardware?.device?.outputArmed===true;
-        if(!armed && (!deviceReady()||
-            (mixerSession()?.authority!=="CHANNEL_ID"&&legacy()?.routeAccepted!==true)||
-            virtualCableFeedbackPair())){
-          status("MONITOR OFF · select real input and safe playback device");
-          return;
-        }
-        const ep=safeNativeCounter(hardware?.device?.epoch),
-          rev=safeNativeCounter(mixerSession()?.authority==="CHANNEL_ID"?
-            mixerSession()?.routeRevision:legacy()?.routingRevision);
-        if(!armed&&(ep===null||rev===null))return;
-        backend.emitEvent("arMixAction",{action:"monitor",value:!armed,
-          requestId:"manual-monitor-"+(++m4RequestSerial),
-          ...(armed?{}:{expectedEpoch:ep,expectedRevision:rev})});
-        status(armed?"Hardware MUTE requested":"MAIN monitor verifying hardware route");
-      });
-      toolbar.insertBefore(monitor,io);
       // Fixed groups, not extra controls. Placement is DOM-only at startup;
       // no resize listeners, repaint loops or menu reparenting.
       for(const [name,element] of [
         ["files",document.getElementById("pluginsButton")],
         ["routing",document.getElementById("wireNavigatorToggle")],
-        ["channels",addTrack],
-        ["monitor",monitor]
+        ["channels",addTrack]
       ]){
         if(!element || element.parentElement!==toolbar)continue;
         const divider=document.createElement("span");
@@ -3097,6 +4497,7 @@
     pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
     pendingFxEditorAck=null; // expire old native HWND on device owner change
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
+    latestInputGainDrafts.clear();latestLogicalInputGains.clear();
     pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
     pendingWireGains.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
@@ -3105,7 +4506,7 @@
     // A same-epoch driver/endpoint replacement or M4 authority change
     // must not strand EXTERNAL OUT selects or slot-bypass edits behind
     // an old ACK/timer. Never touch persisted PCM/FX state here.
-    pendingExternal.clear();pendingSlotPowers.clear();
+    pendingExternal.clear();pendingSlotPowers.clear();busOutputPending=null;
     // Cosmetic ChannelId edits remain legal while native playback is
     // NEEDS_REMAP. They still require their own native ACK/readback proof.
     // Only physical/authority changes must invalidate those old identities.
@@ -3165,9 +4566,19 @@
     appearanceFromNative(next);
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
+    settleBusOutput(next);
+    settleLogicalIo(next);
+    settleIoDefaults(next);
+    // Reconcile pending leases before the final matrix paint. The graph
+    // can be installed while the prior paint still sees a busy SOURCE.
+    paintPhysicalOutputs(next);
+    requestNamedInventory(next);
+    syncNamedStripOptions("input");
     if(readModel.kind==="LOGICAL_ONLY"||readModel.kind==="RETAINED_OFFLINE") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
+      if(logicalView&&logicalView.workspaceToken!==offline.workspaceToken)
+        latestLogicalInputGains.clear();
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
         pendingLogical=null;
       let justInsertedLogicalFx=null;
@@ -3178,6 +4589,8 @@
         // A later unrelated revision cannot prove THIS request's exact edit.
         if(!protocol.logicalReadbackProves(p,offline.graph)){
           pendingLogical=null;
+          latestLogicalInputGains.clear();
+          lastPaintedSignature="";lastNativeTopologySignature="";
           status("Mixer change not verified · refreshing saved session");
           controller?.subscribe();
           return;
@@ -3196,7 +4609,6 @@
           scope?.closeChannelIdentity?.();
         }
         status("Mixer changes saved · audio device not connected");
-        window.queueMicrotask(flushLiveScalars);
       }
       logicalView=staged;
       const signature="logical|"+offline.workspaceToken+"|"+offline.revision+"|"+JSON.stringify(
@@ -3204,7 +4616,7 @@
         "|"+JSON.stringify(offline.graph.edges);
       if(signature!==lastPaintedSignature) {
         if(!projectNativeGraphWithoutFocusLoss(staged)){
-          logicalView=null;
+          logicalView=null;latestLogicalInputGains.clear();
           status("Saved logical mixer readback invalid · controls unchanged");
           return;
         }
@@ -3230,19 +4642,22 @@
       stopDemo();syncAddTrack(staged);
       if(pendingRetainedEditor?.acknowledged===true&&
          readModel.kind==="RETAINED_OFFLINE"&&
-         pendingRetainedEditor.epoch===offline.retainedDeviceEpoch&&
-         pendingRetainedEditor.revision===offline.retainedGraphRevision) {
+         pendingRetainedEditor.epoch===(offline.retainedCaptureDeviceEpoch??offline.retainedDeviceEpoch)&&
+         pendingRetainedEditor.revision===(offline.retainedCaptureGraphRevision??offline.retainedGraphRevision)) {
         const held=pendingRetainedEditor;
         const fx=staged.graph.channels.find(ch=>ch.id===held.channelId)
           ?.inserts?.[held.slot];
-        if(fx?.catalogId===held.catalogId) {
+        const row=staged.graph.channels.find(ch=>ch.id===held.channelId);
+        if((held.empty&&row?.inserts?.length===held.slot)||(!held.empty&&fx?.catalogId===held.catalogId)) {
           pendingRetainedEditor=null;
           window.queueMicrotask(()=>{
             if(!logicalView||logicalView.workspaceToken!==staged.workspaceToken)return;
             const uiId=uiByNativeId.get(held.channelId);
             const track=[...(scope?.tracks||[]),scope?.master]
               .find(t=>t&&t.id===uiId);
-            if(track)nativeHooks.consumeAction(track,"openPlugin",{
+            if(track&&held.action==="insertFx")
+              nativeHooks.insertPlugin(held.selectedCatalogId,{channelId:track.id,slot:held.slot});
+            else if(track)nativeHooks.consumeAction(track,held.action||"openPlugin",{
               dataset:{slot:String(held.slot),recenter:held.recenter?"true":"false"}
             });
           });
@@ -3251,19 +4666,25 @@
           status("Retained FX slot changed before offline editor could open");
         }
       }
-      const addBus=document.getElementById("addBus");
-      if(addBus){
-        addBus.hidden=readModel.kind==="RETAINED_OFFLINE";
-        addBus.disabled=!!pendingLogical||readModel.kind==="RETAINED_OFFLINE";
+      for(const id of ["addBus","addFx"]){
+        const addBus=document.getElementById(id);if(!addBus)continue;
+        addBus.hidden=false;
+        addBus.disabled=!!pendingLogical||staged.readOnly||!staged.graph.capabilities.supportedOps.includes("CREATE_GROUP");
       }
       status(staged.readOnly?
         "Saved mixer recovery required · Open a verified .smix file":
         readModel.kind==="RETAINED_OFFLINE"?
-        "FX OFFLINE · output muted · saved changes require explicit .smix Open after reconnect":
+        "FX OFFLINE · saved edits · reconnect and Apply Audio I/O":
         "Mixer ready to edit · connect Audio I/O to enable sound");
+      // Drain only AFTER projection of the independently verified revision.
+      // Never use the prior revision from the just-settled transaction.
+      if(!pendingLogical){
+        flushLogicalInputGains();
+        if(pendingNativeControl.size)window.queueMicrotask(flushLiveScalars);
+      }
       return;
     }
-    logicalView=null;
+    logicalView=null;latestLogicalInputGains.clear();
     if(pendingRetainedEditor && readModel.kind!=="NEEDS_REMAP"){
       pendingRetainedEditor=null; // never follow a newly admitted PCM owner
     }
@@ -3274,6 +4695,7 @@
     if(readModel.kind==="STALE") {
       flags.acceptedGraphConnected=false;
       flags.productionCallbackLive=false;
+      syncReceiverSumLevelAdmission(next);
       lastPaintedSignature="";
       delete document.documentElement.dataset.armixNativeRoster;
       status("AUDIO CONNECTION CHANGED · OPEN AUDIO I/O");
@@ -3309,11 +4731,10 @@
     syncAddTrack(next);
     if(pendingTrackDelete && pendingTrackDelete.epoch!==next?.device?.epoch)
       pendingTrackDelete=null;
-    const addBus=document.getElementById("addBus");
-    if(addBus){
-      addBus.hidden=!nativeAdmitted ||
-        !caps?.supportedOps?.includes("CREATE_GROUP");
-      addBus.disabled=!!pendingBusCreate||!!pendingTrackDelete;
+    for(const id of ["addBus","addFx"]){
+      const addBus=document.getElementById(id);if(!addBus)continue;
+      addBus.hidden=false;
+      addBus.disabled=!nativeAdmitted||!caps?.supportedOps?.includes("CREATE_GROUP")||!!pendingBusCreate||!!pendingTrackDelete;
     }
     if (transientPlan.drainNativeSources &&
          !activeNativeSource && pendingNativeSources.size) {
@@ -3334,10 +4755,11 @@
         lastPaintedSignature=signature;
         document.documentElement.dataset.armixNativeRoster="accepted";
       }
+      syncReceiverSumLevelAdmission(next);
       stopDemo();
       paintNativeMeters(next);
       status(next.raw?.retainedOfflineFxPending?
-        "FX offline edits saved · reconnect audio, then Open saved .smix to apply":
+        "FX offline edits saved · reconnect and Apply Audio I/O":
         "Playback unavailable · waiting for the audio device");
       return;
     }
@@ -3365,6 +4787,9 @@
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+
       JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
+      // A capability/readiness transition may retain the structural
+      // signature. Keep the WIRE receiver admission correct without repaint.
+      syncReceiverSumLevelAdmission(next);
       // Telemetry-only snapshots should not traverse all channels. But an
       // expired/rejected edit with unchanged graph values must not strand its
       // LCD at a speculative value; error status settles that separately.
@@ -3381,12 +4806,13 @@
     }
     document.documentElement.dataset.armixNativeRoster="accepted";
     flags.productionCallbackLive=next.productLive;flags.acceptedGraphConnected=true;
+    syncReceiverSumLevelAdmission(next);
     // G-MV30: first accepted ChannelId roster is projected only NOW.
     // The earlier pre-projection syncAddTrack() was fail-closed while the
     // native graph was unmounted; enable the button only after successful
     // projection, without requiring a second telemetry callback/click.
     syncAddTrack(next);
-    syncMonitorButton(next.device);
+    syncEmergencyOutputControl(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);
@@ -3407,7 +4833,7 @@
       pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
     if(next.raw?.retainedOfflineFxPending)
-      status("Saved offline FX changes pending · Open .smix before enabling output");
+      status("Saved offline FX changes pending · Apply Audio I/O before output");
     else status("Mixer settings updated");
   }
   if (connected) {
@@ -3418,17 +4844,31 @@
         const accepted=controller?.state()?.current;
         if(fxRackVM.nativeEditorAckResult(pendingFxEditorAck,null,accepted,{
           verifiedM4:m4Verified(accepted),offline:!!logicalView,
-          hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)})==="STALE")
-          pendingFxEditorAck=null;
+          hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)})==="STALE"){
+          const p=pendingFxEditorAck;
+          const fresh=p?.authority==="CHANNEL_ID"&&!logicalView&&
+            fxRackVM.refreshEditorNavigationLease(accepted,p.lease,{
+              hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)});
+          if(fresh)p.lease=fresh; // same owner only; HWND feedback is not PCM proof
+          else{
+            pendingFxEditorAck=null;
+            nativeToast("FX editor unavailable · accepted instance changed");
+          }
+        }
         syncGlobalFxReadback();
+        inlineFxClip?.syncBypass(activeView());
       },
       onStatus:state=>{
         const settledGain=pendingNativeGainIntent&&!state.pending;
         if(settledGain){
           pendingNativeGainIntent=false;
-          if(state.lastError!=="ACCEPTED_READBACK")
+          if(state.lastError!=="ACCEPTED_READBACK"){
+            latestInputGainDrafts.clear(); // invalid lease: do not replay
             reconcileAcceptedInputGainSnapshot(state.current);
+          }
         }
+        if(!state.pending&&state.lastError==="ACCEPTED_READBACK"&&
+           latestInputGainDrafts.size) scheduleLiveInputGainFlush();
         if(state.lastError==="PENDING_NATIVE_ACK"||state.lastError==="PENDING_ACCEPTED_SNAPSHOT")
           status("NATIVE "+state.lastError+" · awaiting authoritative readback");
         if(!state.pending && state.lastError==="ACCEPTED_READBACK" &&
@@ -3528,6 +4968,8 @@
          protocol.decimal(ack.revision)===null ||
          BigInt(ack.revision)<=BigInt(pending.beforeRevision)){
         pendingLogical=null;
+        latestLogicalInputGains.clear();
+        lastPaintedSignature="";lastNativeTopologySignature="";
         status("Mixer edit rejected · previous saved settings retained");
         controller?.subscribe();
         return;
@@ -3673,11 +5115,17 @@
         verifiedM4:m4Verified(accepted),offline:!!logicalView,
         hardwareConfiguration:protocol.nativeHardwareConfiguration(accepted?.device)});
       if(verdict==="IGNORE")return; // obsolete, duplicate or unrelated ACK
+      const pending=pendingFxEditorAck;
+      if(!pending||ack?.requestId!==pending.requestId||pending.retryScheduled)return;
+      if(verdict==="REJECTED"&&ack?.instanceId===pending.lease.instanceId&&
+         ack?.retryable===true&&retryPhysicalFxEditor(pending))return;
       pendingFxEditorAck=null; // first ACK wins; no accepted PCM mutation
-      if(verdict==="REJECTED")
-        status("FX editor rejected · "+String(ack?.error||"native editor unavailable"));
-      // Original JUCE emitNotice reports errors. Its HWND controls success.
-      // Never show the misleading generic "Effect settings updated" toast.
+      if(verdict!=="ACKED"){
+        const message="FX editor unavailable · "+String(ack?.error||"accepted instance changed");
+        nativeToast("FX editor unavailable · Reopen from FX Rack");
+        status(message);
+      }
+      // Success is HWND presentation, never a parameter edit.
     });
     backend.addEventListener("arMixRoutingFxInsertAck",ack=>{
       const verdict=fxRackVM.m4InsertAckResult(pendingFxInsert,ack);
@@ -3778,11 +5226,13 @@
     orbitTarget:nativeOrbitTarget,
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
-      return stripVM.inputChoices(t,inputChoicesFor(),
+      const labels=stripVM.inputChoices(t,sourceChoicesFor(),
         controller?.state()?.current?.retained,!(!logicalView),INTERNAL_BUS);
+      return t?.kind==="audio"?[...labels,...stripNamedChoices("input").map(p=>p.label)]:labels;
     },
     externalChoices(t) {
-      return stripVM.externalChoices(t,hardwareOutputPairs());
+      const labels=stripVM.externalChoices(t,hardwareOutputPairs());
+      return t?.kind!=="master"?[...labels,...stripNamedChoices("output").map(p=>p.label)]:labels;
     },
     outputChoices(t) {
       return stripVM.primaryChoices({track:t,logical:Boolean(logicalView),
@@ -3797,7 +5247,12 @@
       if (!field)return false;
       const t=scope?.findTrack?.(el) || null;
       if (!t)return true;
+      if(field==="input"&&event.type==="change"&&!deviceReady()){
+        recommendAudioRepair("INPUT requires an audio device");el.value=String(t.input);return true;
+      }
       if(controller?.state()?.current?.retained&&!logicalView){
+        if(field==="input"&&event.type==="change")
+          recommendAudioRepair("INPUT audio device disconnected");
         if(field==="output" && t.kind==="master" && event.type==="change")
           openNativeAudioIO();
         if(field==="level" || field==="pan" || field==="input" || field==="output")
@@ -3810,22 +5265,25 @@
         const raw=Number(el.value);
         if(!accepted||!Number.isFinite(raw)||raw< -24||raw>24){
           el.value=String(Number.isFinite(t.trim)?t.trim:0);
+          if(!logicalView&&!deviceReady())recommendAudioRepair("GAIN unavailable");
           status("INPUT GAIN unavailable · native PCM admission required");
           return true;
         }
         // Shared reference/native UI detent. Only accepted readback owns PCM.
         const n=window.__ARMIX_GAIN_UNITY_DETENT__?.(el,event)??raw;
-        // Gesture preview stays inside the knob; no browser-local t.trim
-        // audio authority and no phantom native ACK. Commit once on release.
+        // Input gain follows the pointer just like a DAW. Only one bounded
+        // latest-writer scalar may await the native ACK/readback at a time;
+        // the knob preview is never mistaken for confirmed PCM.
         if(event.type!=="change"){
           el.closest(".gain-dial")?.style.setProperty("--gain-rotation",
             (n*5.625).toFixed(2)+"deg");
           const lcd=el.closest(".gain-view-body")?.querySelector(".gain-readout");
           const digits=lcd?.querySelector(".gain-lcd-digits")||lcd;
           if(digits)digits.textContent=(n>=0?"+":"")+n.toFixed(1)+" dB";
+          requestLiveInputGain(t,n,false);
           return true;
         }
-        if(!intent("SET_INPUT_GAIN",t,{valueDb:n})){
+        if(!requestLiveInputGain(t,n,true)){
           const acceptedDb=Number.isFinite(t.trim)?t.trim:0;
           el.value=String(acceptedDb);
           el.closest(".gain-dial")?.style.setProperty("--gain-rotation",
@@ -3835,8 +5293,6 @@
           if(digits)digits.textContent=(acceptedDb>0?"+":"")+acceptedDb.toFixed(1)+" dB";
           status("INPUT GAIN rejected · restoring accepted PCM readback");
           controller?.subscribe?.();
-        }else if(!logicalView){
-          pendingNativeGainIntent=true;
         }
         return true;
       }
@@ -3854,6 +5310,19 @@
           status("SEND LEVEL rejected · accepted WIRE identity changed");
         return true;
       }
+      if(field==="wireChannelLevel"){
+        const db=Number(el.value);
+        if(!requestLiveWireSumGain(t,db,event.type==="change")){
+          if(!deviceReady())recommendAudioRepair("WIRE SUM LVL unavailable");
+          status("WIRE SUM LVL unavailable · verify receiver and Audio I/O");
+          if(Number.isFinite(t.wireSumGainDb)){
+            el.value=String(t.wireSumGainDb);scope?.paintWireKnob?.(el,t.wireSumGainDb);
+          }
+          return true;
+        }
+        scope?.paintWireKnob?.(el,db);
+        return true;
+      }
       if(field==="wireGain"){
         const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
         if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))
@@ -3867,12 +5336,19 @@
         // source, including the very first source in an unpatched session.
         if(event.type!=="change")return true;
         const channel=m4Index(t);
-        const choices=inputChoicesFor();
-        const choice=choices.find(x=>x.label===el.value);
         const nativeOwner=mixerSession()?.authority==="CHANNEL_ID";
+        const alias=stripNamedChoices("input").find(p=>p.label===el.value);
+        const choices=verifiedMatrixSourceChoices(
+          nativeOwner?sourceChoicesFor():inputChoicesFor(),alias?.choice,hardware);
+        const choice=choices.find(x=>x.label===(alias?.choice.label||el.value));
+        if(choice?.mode==="PLAYER"&&!nativeOwner){
+          status("Music Player INPUT requires a live admitted ChannelId mixer; no WebAudio/ASIO-pin fallback");
+          el.value=t.input;return true;
+        }
         const id=nativeOwner?nativeIdFor(t):null;
         if((nativeOwner&&(!id||!controller?.state()?.current?.admitted))||
            (!nativeOwner&&(channel<0||channel>=10))||!deviceReady()){
+          if(!deviceReady())recommendAudioRepair("INPUT unavailable");
           status("INPUT REJECTED · verify native channel and hardware pins");
           el.value=t.input;return true;
         }
@@ -3905,41 +5381,7 @@
       }
       if(field==="external"){
         if(event.type!=="change")return true;
-        const previous=t.externalOutput||"None";
-        const id=nativeIdFor(t);
-        // One pure Channel Strip preflight for ASIO port identity and
-        // shared-output confirmation; only this bridge dispatches native.
-        const plan=stripVM.externalOutputPlan({
-          native:controller?.state()?.current,hardware,channelId:id,
-          selectedLabel:el.value,currentLabel:previous,
-          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),
-          channelName:t.name
-        });
-        if(plan.kind==="UNAVAILABLE"){
-          el.value=previous;
-          nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
-          return true;
-        }
-        if(plan.kind==="NO_CHANGE"){el.value=previous;return true;}
-        const {left,right,epoch,revision}=plan;
-        const confirmed=!plan.requiresConfirmation || window.confirm(
-          plan.confirmation);
-        if(!confirmed){el.value=previous;return true;}
-        const requestId="out-o-"+(++externalSerial);
-        pendingExternal.set(id,{requestId,channelId:id,left,right,
-          epoch,revision,acked:false});
-        el.value=previous;el.setAttribute("aria-busy","true");
-        backend.emitEvent("arMixAction",{action:"routingExternalOutput",
-          requestId,channelId:id,deviceEpoch:epoch,revision,
-          left,right,confirmed:true});
-        window.setTimeout(()=>{
-          if(pendingExternal.get(id)?.requestId!==requestId)return;
-          pendingExternal.delete(id);el.removeAttribute("aria-busy");
-          nativeToast("EXTERNAL OUT timed out · last PCM retained");
-          controller?.subscribe();
-        },8000);
-        status("EXTERNAL OUT pending · native validation and readback");
-        return true;
+        return requestExternalOutput(t,el.value,el);
       }
       if(field==="output"){
         if(event.type!=="change")return true;
@@ -4055,9 +5497,27 @@
         }
         const slot=Number(btn?.dataset.slot),id=nativeIdFor(t),current=controller?.state()?.current;
         const token=current?.graph?.channels.find(ch=>ch.id===id)?.inserts?.[slot]?.id;
+        if(current?.retained===true){
+          // Reuse exact existing offline workspace handoff, then delete only
+          // after verified document readback; never change the stale PCM rack.
+          nativeHooks.consumeAction(t,"openPlugin",btn);
+          if(pendingRetainedEditor?.channelId===id&&pendingRetainedEditor.slot===slot)
+            pendingRetainedEditor.action="removeFx";
+          return true;
+        }
         editNativeFx(t,slot,null,0,token);return true;
       }
       if(action==="openPlugin"){
+        // Device-disconnected FX may have a saved retained editor lease.
+        // Do not block native offline .smix recovery with a repair modal.
+        const editorView=controller?.state()?.current;
+        // Navigation uses the accepted owner, not transient UI meter/route
+        // projection readiness. The native dispatcher still fences busy I/O.
+        if(!logicalView&&!deviceReady()&&editorView?.admitted!==true&&
+           editorView?.retained!==true){
+          recommendAudioRepair("FX editor unavailable · audio processing unavailable");
+          return true;
+        }
         const slot=Number(btn?.dataset.slot),current=activeView();
         // Position only; no parameter write or PCM change.
         const recenter=btn?.dataset.recenter==="true";
@@ -4068,9 +5528,17 @@
           // logical workspace; the UI opens it only after matching readback.
           if(!logicalView&&current?.retained===true){
             const fx=current.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
+            const row=current.graph?.channels?.find(ch=>ch.id===id);
+            const empty=Array.isArray(row?.inserts)&&slot===row.inserts.length;
             if(!id||!Number.isInteger(slot)||slot<0||slot>=8||
-               !fx?.id||!fx.catalogId){
+               (!empty&&(!fx?.id||!fx.catalogId))){
               nativeToast("Disconnect recovery requires a saved FX insert");
+              return true;
+            }
+            // Empty slot browsing is UI-only; no driver or VST state calls.
+            // Capture the retained workspace only when a choice is made.
+            if(empty){
+              scope?.openFastPicker?.(t,slot,btn);
               return true;
             }
             if(pendingRetainedEditor){
@@ -4079,11 +5547,11 @@
             }
             const requestId="retained-editor-"+(++retainedEditorSerial);
             pendingRetainedEditor={requestId,channelId:id,slot,
-              catalogId:fx.catalogId,instanceId:fx.id,
+              catalogId:fx?.catalogId||"",instanceId:fx?.id||"",empty,
               epoch:current.device.epoch,revision:current.graph.revision,
               recenter,acknowledged:false};
             backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",
-              requestId,channelId:id,slot,instanceId:fx.id,
+              requestId,channelId:id,slot,instanceId:fx?.id||"",
               deviceEpoch:current.device.epoch,graphRevision:current.graph.revision});
             window.setTimeout(()=>{
               if(pendingRetainedEditor?.requestId!==requestId)return;
@@ -4112,8 +5580,9 @@
                 hardwareConfiguration:protocol.nativeHardwareConfiguration(view?.device)});
               const host=window[surface.windowKey];
               if(!safe||!inlineFxClip?.openExact(
-                 host,surface.windowKey,t,slot,recenter))
-                nativeToast("Built-in FX changed · reopen current FX Rack");
+                 host,surface.windowKey,t,slot,editor.instanceId,editor))
+                nativeToast("Built-in FX editor unavailable · reopen current FX Rack");
+              else inlineFxClip.syncBypass(view);
             }else if(surface.kind==="LOGICAL_VENDOR"){
               backend.emitEvent("arMixAction",{action:"logicalVendorFxEditor",
                 channelId:editor.channelId,slot:editor.slot,instanceId:editor.instanceId,
@@ -4127,23 +5596,39 @@
               if(!opened)
                 nativeToast("FX editor unavailable · native instance changed");
             }else nativeToast("FX editor unavailable · accepted FX identity changed");
-          }else nativeToast("This FX is held with the disconnected audio session");
+          }else nativeToast("FX editor unavailable · disconnected audio session");
           return true;
         }
         const plan=fxRackVM.m4EditorPlan(current,{
           channel:m4Index(t),slot,verifiedM4:m4Verified(),offline:!!logicalView,
           hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
-        if(plan.kind==="OPEN")
-          openRoutedFxEditor(plan.channel,plan.slot,plan.instanceId,
+        if(plan.kind==="OPEN"){
+          if(!openRoutedFxEditor(plan.channel,plan.slot,plan.instanceId,
             plan.deviceEpoch,plan.revision,
-            protocol.nativeHardwareConfiguration(current?.device),recenter);
-        else if(plan.kind==="PICKER"){
+            protocol.nativeHardwareConfiguration(current?.device),recenter))
+            nativeToast("FX editor unavailable · accepted instance changed");
+        }else if(plan.kind==="PICKER"){
           discoverFxOnFirstPickerOpen();
           scope?.openFastPicker?.(t,slot,btn);
         }else nativeToast("VST3 editor · refresh native device and FX instance");
         return true;
       }
+      if(action==="globalFxOn"){
+        const current=controller?.state()?.current;
+        const row=current?.graph?.channels?.find(ch=>ch.id===nativeIdFor(t));
+        const slot=Number(btn?.dataset?.slot);
+        // Same native Global FX transaction as the toolbar; validate that
+        // the requesting embedded editor is still an admitted GEQ31 insert.
+        if(!logicalView&&row&&Number.isInteger(slot)&&slot>=0&&
+           row.inserts?.[slot]?.catalogId==="armix.builtin.graphic-eq31.v1"&&
+           current.raw?.globalFxBypassed===true)toggleGlobalFx(true);
+        return true; // never fall through to demo or unsupported action
+      }
       if(action==="slotPower"){
+        if(!logicalView&&!deviceReady()){
+          recommendAudioRepair("FX Power unavailable");
+          return true;
+        }
         if(logicalView){
           const id=nativeIdFor(t),row=logicalView.graph.channels.find(ch=>ch.id===id);
           const slot=Number(btn?.dataset.slot),insert=row?.inserts?.[slot];
@@ -4162,6 +5647,10 @@
         return true;
       }
       if(action==="fxOn"){
+        if(!logicalView&&!deviceReady()){
+          recommendAudioRepair("FX Rack unavailable");
+          return true;
+        }
         if(logicalView){
           const channelId=nativeIdFor(t);
           const row=logicalView.graph.channels.find(ch=>ch.id===channelId);
@@ -4194,6 +5683,17 @@
         return true;
       }
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
+    },
+    canWireChannelLevel(uiChannelId){
+      if(logicalView&&!logicalView.readOnly){
+        const id=nativeByUiId.get(uiChannelId),g=logicalView.graph;
+        return g.capabilities.supportedOps.includes("SET_WIRE_SUM_GAIN")&&g.edges.some(e=>e.to===id&&e.enabled===true);
+      }
+      const current=controller?.state()?.current;
+      const id=nativeByUiId.get(uiChannelId);
+      const row=current?.graph?.channels?.find(ch=>ch.id===id);
+      return wireVM.channelSumLevelPlan(current,
+        flags.acceptedGraphConnected,id,Number(row?.controls?.wireSumGainDb)).kind==="READY";
     },
     canWireGain(uiEdgeId,uiSourceId){
       return !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
@@ -4389,8 +5889,8 @@
            slot<0||slot>=8){
           nativeToast("Choose the next empty FX slot");return true;
         }
-        if(!logicalIntent("ADD_FX_REFERENCE",channelId,{catalogId:id}).ok)
-          nativeToast("FX selection not saved");
+        const result=logicalIntent("ADD_FX_REFERENCE",channelId,{catalogId:id});
+        if(!result.ok)nativeToast("FX settings not saved · "+result.error);
         return true;
       }
       if(pendingFxInsert){status("FX INSERT · wait for previous native ACK");return true;}
@@ -4400,6 +5900,26 @@
       const channel=m4Index(track),slot=Number(target?.slot);
       const accepted=controller?.state().current;
       const nativeId=nativeIdFor(track);
+      if(accepted?.retained===true){
+        const row=accepted.graph?.channels?.find(ch=>ch.id===nativeId);
+        if(!plugin||!row||!Number.isInteger(slot)||slot<0||slot>=8||slot!==row.inserts?.length){
+          nativeToast("Choose the next empty FX slot");return true;
+        }
+        if(pendingRetainedEditor){status("Finishing the previous offline editor request");return true;}
+        const requestId="retained-editor-"+(++retainedEditorSerial);
+        pendingRetainedEditor={requestId,channelId:nativeId,slot,empty:true,
+          epoch:accepted.device.epoch,revision:accepted.graph.revision,
+          acknowledged:false,action:"insertFx",selectedCatalogId:id};
+        status("Preparing saved mixer workspace · audio output remains safe");
+        backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",requestId,
+          channelId:nativeId,slot,instanceId:"",deviceEpoch:accepted.device.epoch,
+          graphRevision:accepted.graph.revision});
+        window.setTimeout(()=>{
+          if(pendingRetainedEditor?.requestId!==requestId)return;
+          pendingRetainedEditor=null;status("Offline FX recovery expired · refresh native mixer");
+        },10000);
+        return true;
+      }
       if(accepted?.admitted || mixerSession()?.authority==="CHANNEL_ID") {
         const hardwareConfiguration=protocol.nativeHardwareConfiguration(accepted?.device);
         const plan=fxRackVM.nativeInsertPlan(accepted,{
@@ -4448,7 +5968,7 @@
       if (!connected)return false;
       // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
       // write the main channel's SET_FADER or M4 faderDb by accident.
-      if (event.target.classList.contains("fader")){
+      if (event.target.closest?.(".fader-box")||event.target.classList.contains("fader")){
         if(scope?.sofEnabled&&t?.kind==="audio"){
           const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
           if(!edge||id===undefined||
@@ -4456,7 +5976,8 @@
             status("SOF unity reset unavailable · select one admitted SEND");
           return true;
         }
-        dispatchControlCommand("SET_FADER",t,{valueDb:0});
+        if(!streamFaderControl(t.kind==="master"?"masterGain":"faderDb",t,0,true))
+          dispatchControlCommand("SET_FADER",t,{valueDb:0});
       }
       else if(event.target.closest?.(".gain-dial")){
         if(t?.kind!=="audio"||t.nativeGainAvailable!==true)
@@ -4525,8 +6046,8 @@
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
       return;
     }
-    if(target.id==="addBus"||target.id==="addTrack"){
-      requestNativeBusCreate(target.id==="addTrack");return;
+    if(target.id==="addBus"||target.id==="addTrack"||target.id==="addFx"){
+      requestNativeBusCreate(target.id==="addTrack",target.id==="addFx");return;
     }
     status("NATIVE: "+target.id+" requires admitted engine operation");
   },true);
@@ -4593,10 +6114,13 @@
     paste:"Native channel paste not yet admitted",
     clearCue:"PFL requires dedicated physical monitoring",
     preview:"Demo meters never run inside the native audio host",
-    reset:"Demo reset must not erase a live mixer",
-    addFx:"Use a verified FX insert slot on an admitted channel"
+    reset:"Demo reset must not erase a live mixer"
   });
   function presentNativeOnlyTools(){
+    for(const [id,label] of [["addBus","+ AUX / BUS"],["addFx","+ FX Bus"]]){
+      const el=document.getElementById(id);if(el){el.textContent=label;el.hidden=false;el.disabled=true;
+        el.title="Create a receiving GROUP with independent routing and insert rack";}
+    }
     for(const [id,reason] of Object.entries(nativeReferenceOnly)){
       const el=document.getElementById(id);
       if(!el)continue;

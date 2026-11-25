@@ -15,6 +15,19 @@ class NativeMixerSessionStore final {
 public:
     explicit NativeMixerSessionStore(juce::File studio)
         : root_(studio.getChildFile("MixerSession")) {}
+    // Cold-start emergency path only, before any session worker or driver exists.
+    // Preserve even corrupt journals byte-for-byte; do not read or delete them.
+    juce::String quarantineForStartupRecovery(juce::File& archived) const {
+        archived=juce::File{};
+        if(!root_.exists())return {};
+        const auto id=juce::Uuid().toDashedString().toLowerCase();
+        if(!armix::shows::detail::uuid(id))return "Cannot allocate recovery identity";
+        const auto target=root_.getSiblingFile("MixerSession-Recovery-"+id);
+        if(target.exists()||!root_.moveFileTo(target))
+            return "Cannot archive MixerSession; close ArSonMix and verify folder access";
+        archived=target;
+        return {};
+    }
     static constexpr juce::int64 maxJson=4*1024*1024;
     static constexpr juce::int64 maxState=8*1024*1024;
     static constexpr juce::int64 maxTotal=128*1024*1024;
@@ -22,6 +35,11 @@ public:
 
     juce::String commit(const MixerSessionDocument& doc,
                         const std::vector<armix::shows::BinaryState>& states) const {
+        const auto head=root_.getChildFile("HEAD");
+        // A missing HEAD with PREVIOUS is recovery evidence, not a new
+        // workspace. A directory or invalid pointer is likewise not fresh.
+        if(!head.existsAsFile() && (head.exists()||root_.getChildFile("PREVIOUS").exists()))
+            return "Mixer checkpoint requires recovery before saving";
         if(!armix::shows::detail::uuid(doc.id)||states.size()>maxStates)
             return "Mixer session ID/state count invalid";
         const auto json=Codec::encode(doc);
@@ -74,7 +92,6 @@ public:
         const auto committed=versions.getChildFile(id);
         if(committed.exists()||!stage.moveFileTo(committed))
             return "Cannot publish immutable mixer generation";
-        const auto head=root_.getChildFile("HEAD");
         if(head.existsAsFile()) {
             const auto previous=readPointer(head);
             if(previous.isEmpty())return "Current mixer HEAD invalid; recover explicitly";
@@ -87,6 +104,53 @@ public:
             if(backupError.isNotEmpty())return backupError;
         }
         return writePointer(head,id);
+    }
+
+    // Explicit NEW replaces HEAD only after archiving the independently
+    // verified previous checkpoint. PREVIOUS alone is not enough: the next
+    // normal edit rotates it. All IO stays on the existing session worker.
+    enum class ArchiveMode { none, newSession, resetIo, reopenArchive };
+    juce::File archiveDirectory() const {return root_.getSiblingFile("SessionArchive");}
+    juce::String commitNewSession(const MixerSessionDocument& doc,
+                        const std::vector<armix::shows::BinaryState>& states,
+                        ArchiveMode mode=ArchiveMode::newSession) const {
+        const bool reset=mode==ArchiveMode::resetIo;
+        const bool reopen=mode==ArchiveMode::reopenArchive;
+        if(mode==ArchiveMode::none || doc.resumeMain.value_or(false) ||
+           (!reopen && (!doc.logicalOnly ||
+             !doc.logicalInputs.references().empty() || !doc.logicalOutputs.references().empty() ||
+             (!reset && (!states.empty() || !doc.inserts.empty() || !doc.hotkeys.empty() ||
+                         !doc.request.sources.empty())))))
+            return "New/reset session must be an unbound workspace";
+        const auto head=root_.getChildFile("HEAD");
+        if(head.exists()) {
+            MixerSessionDocument old,checked;
+            std::vector<armix::shows::BinaryState> oldStates,checkedStates;
+            auto error=load(old,oldStates);
+            if(error.isNotEmpty())return error;
+            if(reset){
+                if(old.id!=doc.id || !old.logicalOnly ||
+                   !old.logicalInputs.references().empty() || !old.logicalOutputs.references().empty())
+                    return "Reset requires the same unassigned offline session";
+                auto before=old,after=doc;
+                before.logicalInputs={};before.logicalOutputs={};
+                after.logicalInputs={};after.logicalOutputs={};
+                if(Codec::encode(before)!=Codec::encode(after))
+                    return "Reset would change mixer state outside I/O definitions";
+            }else if(!reopen&&old.id==doc.id)return "New session identity must differ";
+            const auto archive=archiveDirectory();
+            if(archive.createDirectory().failed())return "Cannot create session archive";
+            const auto file=archive.getNonexistentChildFile(old.id+"-"+juce::Uuid().toDashedString(),".smix",false);
+            error=writeFile(file,old,oldStates);
+            if(error.isNotEmpty())return error;
+            old.resumeMain.reset(); // portable archive cannot auto-arm
+            error=readFile(file,checked,checkedStates);
+            if(error.isNotEmpty() || Codec::encode(old)!=Codec::encode(checked))
+                return "Previous session archive readback failed";
+        }else if(root_.getChildFile("PREVIOUS").exists())
+            return "Previous checkpoint requires explicit recovery";
+        else if(reset)return "Save an offline session before resetting its I/O";
+        return commit(doc,states);
     }
 
     // A single portable JSON file, with content-addressed plug-in state.
@@ -180,7 +244,10 @@ public:
         out=std::move(doc);states=std::move(binary);
         return {};
     }
-    bool exists() const noexcept {return root_.getChildFile("HEAD").existsAsFile();}
+    // Presence is distinct from validity; callers must load/recover.
+    bool exists() const noexcept {
+        return root_.getChildFile("HEAD").exists()||root_.getChildFile("PREVIOUS").exists();
+    }
     // Recovery does NOT arm output or publish a graph. Valid HEAD wins.
     juce::String recoverPrevious() const {
         MixerSessionDocument recovered;

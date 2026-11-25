@@ -193,7 +193,7 @@ function updateKnobs(){
    current.track.slotBypass?.[current.slot]?"off":"on"):
   (!ch||typeof ch.fxRackBypassed!=="boolean"||!insert||
    typeof insert.bypassed!=="boolean"?"unknown":
-   ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+   (ch.fxRackBypassed||state()?.raw?.globalFxBypassed===true)?"rack-off":insert.bypassed?"off":"on");
  power.dataset.fxState=fxState;
  power.disabled=fxState==="unknown"||fxState==="rack-off";
  power.setAttribute("aria-pressed",String(fxState==="on"));

@@ -103,7 +103,7 @@ const STABLE_SCOPE_KEYS=[
   "activeInputMaskHex","activeOutputMaskHex","nativeFxGraphRevision",
   "nativeFxInstalledCount","nativeExternalCh1Leased","nativeExternalCh1InstalledCount",
   "connected","diagnosticRoute","productionRoutingState","directRouteAuthorized",
-  "backendXrunMeaning"
+  "backendXrunMeaning","callbackTimingScope"
 ];
 const MODE_KEYS=[
   "nativeFxProcessingCount","nativeGlobalFxBypassed",
@@ -121,12 +121,38 @@ const acceptedGlobalPowerTransition=(a,b)=>continuousEvidence(a,b) &&
   a.nativeGlobalFxBypassed===true && b.nativeGlobalFxBypassed===false &&
   a.nativeFxProcessingCount===0 && b.nativeFxProcessingCount>0;
 
+const CPU_SCOPE="WINDOWS_PROCESS_CPU_ALL_LOGICAL_CORES_1HZ_NOT_AUDIO_CALLBACK_OR_SYSTEM_TOTAL";
+const resourceValue=(s,key)=>typeof s[key]==="number"&&Number.isFinite(s[key])&&s[key]>=0?s[key]:null;
+const cpuValue=s=>{
+  const value=resourceValue(s,"footerProcessCpuPercent");
+  return s.footerCpuProvenance===CPU_SCOPE&&value!==null&&value<=100?value:null;
+};
+function recordResources(segment,s){
+  for(const [name,value] of [["cpu",cpuValue(s)],["workingSet",resourceValue(s,"processWorkingSetMiB")],
+    ["privateCommit",resourceValue(s,"processPrivateCommitMiB")]]){
+    if(value===null)continue;
+    const r=segment.resources[name];
+    if(r.count===0)r.first=value;
+    r.last=value;r.peak=r.count?Math.max(r.peak,value):value;r.sum+=value;r.count++;
+  }
+}
+const resourceSummary=r=>({samples:r.count,mean:r.count?Math.round(r.sum/r.count*100)/100:null,
+  peak:r.peak,delta:r.count>=2?Math.round((r.last-r.first)*100)/100:null});
 function describeSegment(segment){
   const s=segment.start, first=segment.start, last=segment.last;
   const p=p95p99FromDelta(segment.histogram);
   const callbacks=segment.delta.callbackCount, period=1000000*s.buffer/s.rate;
   const durationSeconds=Math.round(segment.durationMs/100)/10;
-  const missing=segment.intervals===0||p.samples===0;
+  const scope=s.callbackTimingScope??"LEGACY_RENDER_TIMING";
+  // For V2, require nearly complete sampled callback coverage. Independent
+  // atomics can skew by a callback at the endpoints, so allow a small margin.
+  const completeCoverage=scope!=="RENDER_THROUGH_FINAL_OUTPUT_PUBLICATION_V2" ||
+    (callbacks>0&&Math.abs(p.samples-callbacks)<=Math.max(2,callbacks*0.01));
+  const missing=segment.intervals===0||p.samples===0||!completeCoverage;
+  // A driver restart or regressed monotonic callback clock invalidates
+  // comparison even when a driver reuses its nominal device generation.
+  const stableLifecycle=segment.delta.deviceStartCount===0&&
+    segment.delta.deviceStopCount===0&&segment.delta.callbackCadenceClockRegressions===0;
   const over=segment.delta.overBudgetCount,late=segment.delta.lateCallbackIntervals;
   const gap=segment.delta.callbackGapCount;
   let diagnosis="INSUFFICIENT_EVIDENCE";
@@ -166,6 +192,11 @@ function describeSegment(segment){
     directRouteAuthorized:s.directRouteAuthorized===true,
     durationSeconds,intervals:segment.intervals,callbackCount:callbacks,
     windowHistogramSamples:p.samples,
+    callbackTimingScope:scope,
+    completeHistogramCoverage:completeCoverage,
+    // Cumulative readback atomics are not a transactional snapshot; a
+    // callback at either endpoint can contribute one sample of skew.
+    histogramCoveragePct:percent(p.samples,callbacks),
     p95BudgetUpperPct:p.p95,p99BudgetUpperPct:p.p99,
     overBudgetCallbacks:over,overBudgetPer1000:callbacks?Math.round(100000*over/callbacks)/100:null,
     slowCallbacks:segment.delta.slowCallbackCount,
@@ -175,11 +206,15 @@ function describeSegment(segment){
     pluginWorstUsCumulative:last.worstPluginUs??null,
     processWorkingSetMiB:last.processWorkingSetMiB??null,
     processPrivateCommitMiB:last.processPrivateCommitMiB??null,
+    processCpuAllCorePct:resourceSummary(segment.resources.cpu),
+    workingSetMiB:resourceSummary(segment.resources.workingSet),
+    privateCommitMiB:resourceSummary(segment.resources.privateCommit),
     backendXrunMeaning:s.backendXrunMeaning??"UNAVAILABLE",
     backendXrunDelta:nondecreasing(first,last,"backendXrunCount")?
       last.backendXrunCount-first.backendXrunCount:null,
     renderHardwareXrun:"UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE",
-    diagnosis,comparable:!missing&&durationSeconds>=30&&callbacks>0&&
+    stableLifecycle,
+    diagnosis,comparable:!missing&&stableLifecycle&&durationSeconds>=30&&callbacks>0&&
       s.connected===true&&
       s.productionRoutingState==="NATIVE_ROUTE_ACCEPTED"&&
       s.directRouteAuthorized===true,
@@ -195,16 +230,24 @@ function describeSegment(segment){
 export function analyzeHealthLog(log) {
   const {samples,warnings,rejectedLines}=parseHealthLog(log);
   const groups=[];
-  let segment=null;
-  const start=(s,invalidBefore=false)=>({start:s,last:s,intervals:0,durationMs:0,
-    delta:Object.fromEntries(COUNTERS.map(k=>[k,0])),
-    histogram:Array(13).fill(0),invalidBefore});
+  let segment=null,rejectedIndex=0;
+  const start=(s,invalidBefore=false)=>{
+    const segment={start:s,last:s,intervals:0,durationMs:0,
+      delta:Object.fromEntries(COUNTERS.map(k=>[k,0])),
+      histogram:Array(13).fill(0),invalidBefore,
+      resources:Object.fromEntries(["cpu","workingSet","privateCommit"].map(k=>[k,{count:0,first:null,last:null,peak:null,sum:0}]))};
+    recordResources(segment,s);return segment;
+  };
   for(const current of samples){
     if(!segment){segment=start(current);continue;}
     // Rejected telemetry is an absolute comparison barrier, including a
     // failed opaque vendor lease. Only an uninterrupted *accepted* global
     // bypass ON -> OFF transition may connect a DRY/FX pair.
-    const missingBetween=rejectedLines.some(line=>line>segment.last.line&&line<current.line);
+    // Rejections and samples are in source order. Visit each rejected
+    // line once instead of rescanning the whole log on every interval.
+    while(rejectedIndex<rejectedLines.length&&rejectedLines[rejectedIndex]<=segment.last.line)
+      rejectedIndex++;
+    const missingBetween=rejectedIndex<rejectedLines.length&&rejectedLines[rejectedIndex]<current.line;
     if(missingBetween || !validInterval(segment.last,current)){
       const acceptedPower=!missingBetween &&
         acceptedGlobalPowerTransition(segment.last,current);
@@ -224,6 +267,7 @@ export function analyzeHealthLog(log) {
     segment.durationMs+=current.atMs-previous.atMs;
     segment.intervals++;
     segment.last=current;
+    recordResources(segment,current);
   }
   if(segment)groups.push(describeSegment(segment));
   return {schema:"arsonmix.int1b.profile-report.v1",
@@ -233,12 +277,12 @@ export function analyzeHealthLog(log) {
 }
 
 export function compareDryFx(analysis){
-  const ready=analysis.segments.filter(s=>s.comparable&&
-    s.diagnosticRoute==="NORMAL"&&s.renderHardwareXrun==="UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
+  const ready=s=>s.comparable&&
+    s.diagnosticRoute==="NORMAL"&&s.renderHardwareXrun==="UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE";
   // Pair only an immediately preceding accepted DRY window with the next
   // accepted FX window. Never compare an earlier app session, an unrelated
   // third run, or a hours-old source recording with today's loaded inserts.
-  const fxIndex=analysis.segments.findLastIndex(s=>ready.includes(s) &&
+  const fxIndex=analysis.segments.findLastIndex(s=>ready(s) &&
     s.mode==="FX" && s.nativeFxInstalledCount>0 && s.nativeFxProcessingCount>0);
   const fx=fxIndex>=0?analysis.segments[fxIndex]:null;
   const dry=fxIndex>0?analysis.segments[fxIndex-1]:null;
@@ -252,7 +296,7 @@ export function compareDryFx(analysis){
   for(const key of ["backend","device","inputDevice","outputDevice",
                      "sessionId","deviceGeneration","nativeFxGraphRevision",
                      "inputMask","outputMask","inputChannels","outputChannels",
-                     "sampleRate","bufferFrames"]){
+                     "sampleRate","bufferFrames","callbackTimingScope"]){
     if(dry[key]!==fx[key])return {comparable:false,reason:"Mismatched "+key+": do not compare unlike hardware profiles."};
   }
   return {comparable:true,baseline:"DRY",candidate:"FX",
@@ -268,7 +312,7 @@ export function compareDryFx(analysis){
 export function markdownReport(analysis){
   const cmp=compareDryFx(analysis);
   const lines=["# ArSonMix INT-1B — Audio Reliability Profile","",
-    "This is native host timing, not physical render-XRUN, GPU, ASIO round-trip or CPU profiling.",
+    "This is native host timing and optional process resource sampling, not physical render-XRUN, GPU or ASIO round-trip.",
     "Real hardware FAT and operator listening remain separately required.","",
     "| Mode | Driver | Rate/Frames | Seconds | p95/p99 budget ceiling | Over-budget/1000 | Late callback | RAM working set / private MiB | Observation |",
     "|---|---|---|---:|---:|---:|---:|---|"];
@@ -280,7 +324,15 @@ export function markdownReport(analysis){
       " | "+(s.processWorkingSetMiB??"N/A")+" / "+(s.processPrivateCommitMiB??"N/A")+
       " | "+s.diagnosis+" |");
   }
-  lines.push("",cmp.comparable?
+  lines.push("","## Process resources (sampled, not realtime callback CPU)","",
+    "| Mode | CPU mean / peak (all cores %) | CPU samples | RAM peak MiB | Private commit peak / change MiB |",
+    "|---|---:|---:|---:|---:|");
+  const fmt=x=>x===null||x===undefined?"N/A":String(x);
+  for(const s of analysis.segments)
+    lines.push("| "+s.mode+" | "+fmt(s.processCpuAllCorePct.mean)+" / "+fmt(s.processCpuAllCorePct.peak)+
+      " | "+s.processCpuAllCorePct.samples+" | "+fmt(s.workingSetMiB.peak)+" | "+
+      fmt(s.privateCommitMiB.peak)+" / "+fmt(s.privateCommitMiB.delta)+" |");
+  lines.push("","Memory change is an observation, not proof of a leak.","",cmp.comparable?
     "**Matched actual native dry→FX comparison:** Δ over-budget per 1000 callbacks = "+cmp.deltaOverBudgetPer1000+
       "; **NOT** a hardware XRUN or causal DSP proof.":
     "**No valid matched dry/FX comparison:** "+cmp.reason);
