@@ -31,10 +31,10 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py --self-test
       - name: Pinned real recorded environments (not listening approval)
         run: python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07/anti_noiz_qualify" "$RUNNER_TEMP/an07-evidence"
-      - name: Checkout frozen AN-07D comparator
+      - name: Checkout frozen AN-07E comparator
         uses: actions/checkout@v4
         with:
-          ref: c75685b4930e5da19b637d74fe1fff6e84cd422f
+          ref: 14ffc40bae8a620785266274e4a27021c1aaadd4
           path: an07-baseline
           persist-credentials: false
       - name: Run exact baseline against same recorded corpus
