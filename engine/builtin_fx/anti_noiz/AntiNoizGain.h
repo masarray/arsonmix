@@ -21,7 +21,9 @@ public:
         // Restore high-SNR onsets without waiting for a prior-frame estimate.
         const float onset=std::clamp((gamma-4.f)/12.f,0.f,1.f);
         const float direct=instantaneous/std::max(1.f,gamma);
-        return std::sqrt(wiener+onset*(direct-wiener));
+        // Apply Wiener as an amplitude gain. Taking its square root made
+        // learned-noise attenuation needlessly shallow in noise-dominant bins.
+        return wiener+onset*(direct-wiener);
     }
 private:
     std::array<float,MaxBins> prior_{};
