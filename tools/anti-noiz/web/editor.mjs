@@ -53,7 +53,7 @@ export function mount(root,transport,options={}){
  root.innerHTML=`<section class="an-panel" aria-label="Anti Noiz">
  <header class="an-head"><div class="an-identity"><h1>ANTI<span> NOIZ</span></h1><small>ARSONMIX <span class="an-brand-divider">/</span> ADAPTIVE DENOISER</small></div><div class="an-head-actions"><button class="armix-builtin-fx-power" data-power data-fx-state="unknown" type="button" aria-label="FX state unavailable" aria-pressed="false" disabled>⏻</button><button class="armix-builtin-fx-close" data-close type="button" aria-label="Close Anti Noiz" title="Close Anti Noiz"></button></div></header>
  <div class="an-presets" hidden><span class="an-engraved">PROGRAM</span><select data-preset aria-label="Anti Noiz preset"><option value="CUSTOM">Custom</option><option value="DEFAULT">Default</option></select></div>
- <div class="an-display"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-view-switch" role="group" aria-label="Display"><button data-view="gr" type="button" aria-pressed="true" title="Gain reduction meters">GR</button><button data-view="spectrum" type="button" aria-pressed="false" title="Input and noise spectrum">SPECTRUM</button></div></div><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>12</span><span>24</span><span>36</span><span>48</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div></div>
+ <div class="an-display" data-lcd-mode="gr"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-lcd-cue" aria-hidden="true"><span data-lcd-hint>Tap for spectrum</span><span class="an-lcd-pages"><i></i><i></i></span></div></div><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>12</span><span>24</span><span>36</span><span>48</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div><button class="an-lcd-hit" data-lcd-switch type="button" aria-label="Noise spectrum display" aria-pressed="false" title="Click or tap LCD for noise spectrum"></button></div>
  <div class="an-knobs"></div><div class="an-source"><span class="an-engraved">SOURCE</span><div class="an-modes" role="group" aria-label="Source mode"></div></div>
  <footer><button data-learn data-learning="false">Learn noise</button><span data-status role="status"></span><span class="an-stereo" title="Stereo processing is linked; not a toggle">STEREO<span>LINK</span></span></footer></section>`;
  const $=s=>root.querySelector(s), controls=[];
@@ -80,7 +80,7 @@ export function mount(root,transport,options={}){
  }
  // Render only native spectra on the existing host polling cadence (~5.6 Hz).
  // Fixed SVG grid, two paths, no canvas animation or extra PCM processing.
- const grButton=$('[data-view="gr"]'),spectrumButton=$('[data-view="spectrum"]'),meterView=$('.an-meter-view'),spectrumView=$('.an-spectrum-view');
+ const lcd=$('.an-display'),lcdSwitch=$('[data-lcd-switch]'),lcdHint=$('[data-lcd-hint]'),meterView=$('.an-meter-view'),spectrumView=$('.an-spectrum-view');
  const inputPath=$('[data-input-curve]'),noisePath=$('[data-noise-curve]');
  let profileView=false,lastSpectrumKey='';
  let chartNyquist=0;
@@ -92,7 +92,15 @@ export function mount(root,transport,options={}){
   for(const [i,f] of frequencies.entries())freqAxis.children[i].style.left=(logX(f)/4.8)+'%';
  }
  chartGrid(24000);
- function showProfile(show){if(profileView===show)return;profileView=show;meterView.hidden=show;spectrumView.hidden=!show;setPressed(grButton,!show);setPressed(spectrumButton,show);setText($('[data-display-title]'),show?'NOISE SPECTRUM':'GAIN REDUCTION');setText($('[data-display-unit]'),show?'dBFS/bin':'dB');lastSpectrumKey='';}
+ function showProfile(show){if(profileView===show)return;profileView=show;meterView.hidden=show;spectrumView.hidden=!show;lcd.dataset.lcdMode=show?'spectrum':'gr';setPressed(lcdSwitch,show);setText($('[data-display-title]'),show?'NOISE SPECTRUM':'GAIN REDUCTION');setText($('[data-display-unit]'),show?'dBFS/bin':'dB');lastSpectrumKey='';}
+ function paintLcdCue(learning){
+  if(lcdSwitch.disabled!==learning)lcdSwitch.disabled=learning;
+  const locked=String(learning);
+  if(lcd.dataset.learning!==locked)lcd.dataset.learning=locked;
+  setText(lcdHint,learning?'Capturing…':profileView?'Tap for GR':'Tap for spectrum');
+  const title=learning?'Spectrum locked during noise capture':profileView?'Click or tap LCD for gain reduction':'Click or tap LCD for noise spectrum';
+  if(lcdSwitch.title!==title)lcdSwitch.title=title;
+ }
  function curvePath(a,binHz){
   if(!a?.length)return '';
   let d='';for(let k=1;k<a.length;++k){
@@ -106,7 +114,7 @@ export function mount(root,transport,options={}){
   // historical Accepted telemetry on reopen must not steal the selected view.
   const learning=phase==='Learning'&&observation.learning===true&&!hostOff;
   if(learning)showProfile(true);
-  grButton.disabled=learning;
+  paintLcdCue(learning);
   if(!profileView)return;
   const spec=live&&!hostOff?observation.spectrum:null;
   const key=spec?observation.serial+':'+phase:'none';
@@ -118,8 +126,9 @@ export function mount(root,transport,options={}){
   setText($('[data-progress]'),spec?.candidate?Math.round(spec.progress*100)+'%':phase==='Rejected'?'Rejected':phase==='Cancelled'?'Cancelled':'');
   $('[data-spectrum-empty]').hidden=!!(spec?.input.length||spec?.noise.length);
  }
- grButton.onclick=()=>{if(!grButton.disabled){showProfile(false);if(lastView)paintHost(lastView);}};
- spectrumButton.onclick=()=>{showProfile(true);if(lastView)paintHost(lastView);};
+ // A single native button covers the glass; mouse, touch, Enter and Space
+ // share one click handler. View switching never submits an audio command.
+ lcdSwitch.onclick=()=>{if(!lcdSwitch.disabled){showProfile(!profileView);if(lastView)paintHost(lastView);}};
  let lastView=null;
  function paintHost(view){
   const {accepted,pending,adjusting,observation}=view;
@@ -151,7 +160,7 @@ export function mount(root,transport,options={}){
   const powerTitle=fxState==='unknown'?'FX state unavailable':fxState==='rack-off'?'FX rack/global bypassed · enable upstream first':power==='SLOT'?'FX slot bypassed · click to enable slot':fxState==='on'?'DSP on · click to bypass':'DSP bypassed · click to enable';
   if(powerButton.title!==powerTitle){powerButton.title=powerTitle;powerButton.setAttribute('aria-label',powerTitle);}
   powerButton.disabled=pending||fxState==='unknown'||fxState==='rack-off'||(power==='SLOT'&&!options.enableSlot);
-  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-view')&&!b.hasAttribute('data-power'))b.disabled=!accepted||pending||unavailable;
+  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-lcd-switch')&&!b.hasAttribute('data-power'))b.disabled=!accepted||pending||unavailable;
   for(const c of controls){c.input.disabled=!accepted||(pending&&!adjusting)||unavailable;if(c.input.disabled){cancel(c);if(accepted){c.input.value=accepted[c.key];paintDial(c,accepted[c.key]);}}}
  }
  const model=controller(transport,view=>{

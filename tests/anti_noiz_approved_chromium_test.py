@@ -109,7 +109,7 @@ def main():
     bundle=Path(sys.argv[1]).resolve()
     with sync_playwright() as pw:
         browser=pw.chromium.launch(headless=True)
-        page=browser.new_page(viewport={"width":1366,"height":768})
+        page=browser.new_page(viewport={"width":1366,"height":768},has_touch=True)
         errors=[]
         page.on("pageerror",lambda e:errors.append(str(e)))
         page.add_init_script(BACKEND)
@@ -174,13 +174,37 @@ def main():
           eqP.dataset.fxState=state;return same;
         }"""),"shared FX chrome and loaded Inter"
         expect(root.locator('[data-power]')).to_have_attribute("data-fx-state","on")
-        expect(root.locator('[data-view="gr"]')).to_have_attribute("aria-pressed","true")
-        expect(root.locator('[data-view="spectrum"]')).to_have_attribute("aria-pressed","false")
-        root.locator('[data-view="spectrum"]').click()
+        lcd=root.locator(".an-display")
+        switch=root.locator('[data-lcd-switch]')
+        expect(root.locator('[data-view]')).to_have_count(0)
+        expect(switch).to_have_count(1)
+        expect(switch).to_have_attribute("aria-pressed","false")
+        expect(root.locator('[data-lcd-hint]')).to_have_text("Tap for spectrum")
+        # The gloss layers must not own any pointer events. The single
+        # accessible transparent hit surface must cover the entire LCD.
+        assert lcd.evaluate("""el=>{
+          const r=el.getBoundingClientRect(),b=el.querySelector('[data-lcd-switch]');
+          const s=getComputedStyle(b);
+          return ['::before','::after'].every(p=>getComputedStyle(el,p).pointerEvents==='none')&&
+            getComputedStyle(el,'::before').backgroundImage.includes('linear-gradient')&&
+            s.backgroundColor==='rgba(0, 0, 0, 0)'&&
+            [[.1,.1],[.5,.5],[.9,.9]].every(([x,y])=>document.elementFromPoint(r.left+r.width*x,r.top+r.height*y)===b);
+        }"""),"gloss and full-screen hit target"
+        writes=lambda:page.evaluate("()=>window.__actions.filter(x=>['nativeAntiNoizSet','nativeAntiNoizLearn'].includes(x.action)).length")
+        before=writes()
+        switch.click(position={"x":12,"y":12})
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         expect(root.locator('[data-spectrum-empty]')).to_be_visible()
-        root.locator('[data-view="gr"]').click()
+        expect(switch).to_have_attribute("aria-pressed","true")
+        expect(root.locator('[data-lcd-hint]')).to_have_text("Tap for GR")
+        switch.focus();page.keyboard.press("Space")
         expect(root.locator(".an-meter-view")).to_be_visible()
+        switch.tap()
+        expect(root.locator(".an-spectrum-view")).to_be_visible()
+        page.keyboard.press("Enter")
+        expect(root.locator(".an-meter-view")).to_be_visible()
+        assert writes()==before,"LCD view must not write DSP"
+        switch.evaluate("(e)=>e.blur()")
         normal_height=root.locator(".an-display").bounding_box()["height"]
         assert "is-on" not in (root.locator(".armix-native-fx-bypass").get_attribute("class") or "").split()
         # Current host power overrides stale DSP telemetry without mutating
@@ -234,8 +258,13 @@ def main():
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         expect(root.locator(".an-meter-view")).to_be_hidden()
         expect(root.locator('[data-display-title]')).to_have_text("NOISE SPECTRUM")
-        expect(root.locator('[data-view="gr"]')).to_be_disabled()
-        expect(root.locator('[data-view="spectrum"]')).to_have_attribute("aria-pressed","true")
+        expect(switch).to_be_disabled()
+        expect(switch).to_have_attribute("aria-pressed","true")
+        expect(root.locator('[data-lcd-hint]')).to_have_text("Capturing…")
+        # Physical click during Learn must not leave capture mode.
+        bounds=lcd.bounding_box()
+        page.mouse.click(bounds["x"]+bounds["width"]/2,bounds["y"]+bounds["height"]/2)
+        expect(root.locator(".an-spectrum-view")).to_be_visible()
         assert abs(root.locator(".an-display").bounding_box()["height"]-normal_height)<=1
         expect(root.locator('[data-progress]')).to_have_text("50%")
         assert root.locator('[data-input-curve]').get_attribute("d").startswith("M")
@@ -250,8 +279,8 @@ def main():
         expect(root.locator('[data-curve-label]')).to_have_text("Trusted noise")
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-profile-1366.png"))
-        expect(root.locator('[data-view="gr"]')).to_be_enabled()
-        root.locator('[data-view="gr"]').click()
+        expect(switch).to_be_enabled()
+        switch.click()
         expect(root.locator(".an-meter-view")).to_be_visible()
         expect(root.locator('[data-display-title]')).to_have_text("GAIN REDUCTION")
         expect(root.locator('[data-learn]')).to_be_enabled()
@@ -318,9 +347,14 @@ def main():
           const r=p.getBoundingClientRect();return r.left>=-1&&r.top>=-1&&
             r.right<=innerWidth+1&&r.bottom<=innerHeight+1;}""")
         assert panel.evaluate("(el)=>el.scrollWidth<=el.clientWidth+2")
-        assert root.evaluate("""el=>[...el.querySelectorAll('.an-dial input,[data-power],[data-close],[data-learn],[data-mode]')].every(c=>{
+        assert root.evaluate("""el=>[...el.querySelectorAll('.an-dial input,[data-power],[data-close],[data-learn],[data-mode],[data-lcd-switch]')].every(c=>{
           const r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
           return hit===c||c.contains(hit);})"""),"narrow editor hit targets occluded"
+        switch.tap()
+        expect(root.locator(".an-spectrum-view")).to_be_visible()
+        switch.tap()
+        expect(root.locator(".an-meter-view")).to_be_visible()
+        switch.evaluate("(e)=>e.blur()")
         assert_p1_geometry(root)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))
         assert_full_composition(root)
@@ -345,7 +379,7 @@ def main():
             assert count(preset_event)==baseline_preset_count+1
             expect(root.locator('[data-learn]')).to_be_disabled()
             readback(page,accepted,{**OBS,"serial":"8","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted","spectrum":{**SPECTRUM,"candidate":False,"progress":0}})
-            expect(root.locator('[data-view="gr"]')).to_have_attribute("aria-pressed","true")
+            expect(root.locator('[data-lcd-switch]')).to_have_attribute("aria-pressed","false")
             expect(root.locator(".an-meter-view")).to_be_visible()
         root.locator('[data-close]').click()
         assert not errors,errors
