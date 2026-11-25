@@ -46,6 +46,34 @@ int main(){try{
             t.begin();for(unsigned i=0;i<2*rate;++i)t.observe(tone(i,f),tone(i,f));
             t.commit();offline::require(std::abs(t.frequency()-f)<=1.25f,"off-grid learned line");
         }
+        t.begin();
+        for(unsigned i=0;i<2*rate;++i){
+            const float x=tone(i,50)+.7f*tone(i,100)+.55f*tone(i,150);
+            t.observe(x,x);
+        }
+        t.commit();offline::require(t.lineCount()==3&&t.frequency()==50.f&&t.frequency(1)==100.f&&t.frequency(2)==150.f,"three stable harmonic lines");
+        // Each harmonic guard is independent, including stereo union.
+        double inputPower[3]{},outputPower[3]{},rightPower[3]{};
+        double inCos[3]{},outCos[3]{},rightCos[3]{};
+        for(unsigned i=0;i<2*rate;++i){
+            const float x=tone(i,50)+.7f*tone(i,100)+.55f*tone(i,150);
+            float l=x+4.f*tone(i,100),r=x;const float original=l;
+            t.apply(l,r,1.f);
+            if(i>=rate)for(int j=0;j<3;++j){
+                const double angle=2.*std::numbers::pi*50.*(j+1)*i/rate;
+                const double si=std::sin(angle),co=std::cos(angle);
+                inputPower[j]+=original*si;inCos[j]+=original*co;
+                outputPower[j]+=l*si;outCos[j]+=l*co;
+                rightPower[j]+=r*si;rightCos[j]+=r*co;
+            }
+        }
+        for(int j=0;j<3;++j){
+            const double attenuation=20*std::log10(std::hypot(inputPower[j],inCos[j])/std::hypot(outputPower[j],outCos[j]));
+            const double rightCut=20*std::log10((.05*(j==0?1.:j==1?.7:.55)*rate/2)/std::hypot(rightPower[j],rightCos[j]));
+            offline::require(j==1?std::abs(attenuation)<.15&&std::abs(rightCut)<.15:attenuation>2.5&&attenuation<3.5&&rightCut>2.5&&rightCut<3.5,"independent harmonic guard");
+        }
+        t.begin();for(unsigned i=0;i<2*rate;++i){const float x=tone(i,50)+.7f*tone(i,137.5f);t.observe(x,x);}
+        t.commit();offline::require(t.lineCount()==1&&t.frequency()==50.f,"unrelated peak veto");
         offline::Audio noise{rate,1,std::vector<float>(rate*3)},input=noise;
         for(unsigned i=0;i<3*rate;++i){noise.samples[i]=tone(i,60);input.samples[i]=tone(i,60)+tone(i,230);}
         Core::Settings s;s.mode=Core::Mode::Voice;s.cleanDb=14;s.silenceDb=0;

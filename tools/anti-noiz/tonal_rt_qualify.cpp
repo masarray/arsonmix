@@ -47,7 +47,7 @@ int main(){try{
             for(unsigned pos=0;pos+128<=duration;pos+=128){
                 for(auto& slot:slots)for(unsigned j=0;j<128;++j){
                     const double t=2.*std::numbers::pi*(pos+j)/rate;
-                    const float line=float(.05*std::sin(2.5*29*t)); // 72.5Hz exact grid
+                    const float line=float(.05*std::sin(50.*t)+.035*std::sin(100.*t)+.0275*std::sin(150.*t));
                     const float other=phase?float(.08*std::sin(230.*t)):0.f;
                     slot.l[j]=line+other;slot.r[j]=line+other;
                 }
@@ -60,7 +60,7 @@ int main(){try{
                 else{ac+=counts;active.push_back(us);}
                 for(const auto& slot:slots)for(unsigned j=0;j<128;++j){
                     require(std::isfinite(slot.l[j])&&slot.l[j]==slot.r[j],"invalid stereo output");
-                    if(phase&&pos>=2*rate){reference+=.05*.05/2+.08*.08/2;output+=double(slot.l[j])*slot.l[j];}
+                    if(phase&&pos>=2*rate){reference+=(.05*.05+.035*.035+.0275*.0275+.08*.08)/2;output+=double(slot.l[j])*slot.l[j];}
                 }
             }
             for(auto& slot:slots)require(slot.core.hasProfile()&&!slot.core.learning()&&slot.core.latencySamples()==(rate>48000?512:256),"Learn/latency invariant");

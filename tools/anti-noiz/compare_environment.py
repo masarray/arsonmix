@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
-"""Paired frozen AN-08A.1 vs candidate; never equate render success with quality."""
+"""Paired frozen AN-08B.1 vs candidate; never equate render success with quality."""
 import json
 import math
 import sys
@@ -85,11 +85,11 @@ if __name__ == "__main__":
     base, candidate, out = map(Path, sys.argv[1:])
     report = compare(json.loads(base.read_text()), json.loads(candidate.read_text()))
     out.write_text(json.dumps(report, indent=2, allow_nan=False)+"\n")
-    print("AN08B", "paired", report["paired_rows"], "flags", report["baseline_flags"],
+    print("AN08C", "paired", report["paired_rows"], "flags", report["baseline_flags"],
           "->", report["candidate_flags"], "regressions", len(report["regressions"]))
     for row in report["band_changes"]:
-        print("AN08B_BAND", json.dumps(row, sort_keys=True))
+        print("AN08C_BAND", json.dumps(row, sort_keys=True))
     for row in report["regressions"]:
-        print("AN08B_REGRESSION", json.dumps(row, sort_keys=True))
+        print("AN08C_REGRESSION", json.dumps(row, sort_keys=True))
     if report["regressions"]:
         raise SystemExit(1)
