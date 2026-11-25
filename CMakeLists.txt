@@ -631,6 +631,13 @@ if(BUILD_TESTING)
   target_compile_features(ARMixNativeFxExtensionTests PRIVATE cxx_std_20)
   add_test(NAME M4NativeFxCatalogExtensionAndStatePreparation
       COMMAND ARMixNativeFxExtensionTests)
+  # Vocal Delay uses the same JUCE build and native editor regression in production.
+  juce_add_console_app(ARMixNativeVocalDelayTests PRODUCT_NAME "ArSonMix Vocal Delay native editor")
+  target_sources(ARMixNativeVocalDelayTests PRIVATE tests/vocal_delay_v2_juce_test.cpp)
+  target_compile_features(ARMixNativeVocalDelayTests PRIVATE cxx_std_20)
+  target_compile_definitions(ARMixNativeVocalDelayTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+  target_link_libraries(ARMixNativeVocalDelayTests PRIVATE juce::juce_audio_processors juce::juce_recommended_config_flags)
+  add_test(NAME VocalDelayV2RealJuceAdapter COMMAND ARMixNativeVocalDelayTests)
   # One user-owned, effect-scoped library; not .smix or FX-chain .armix.
   # File IO is forbidden in the realtime PCM callback.
   juce_add_console_app(ARMixBuiltInFxPresetStoreTests PRODUCT_NAME "ArSonMix Native Built-in FX User Preset Store")

@@ -1,4 +1,4 @@
-name: Vocal Delay V2 isolated DSP
+name: Vocal Delay V2 DSP and scoped production admission
 on:
   pull_request:
     paths:
@@ -61,7 +61,7 @@ jobs:
       - run: node tools/vocal-delay/parameter-sync.test.mjs
   native-juce-candidate:
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,14 +73,37 @@ jobs:
           ref: 8.0.15
           path: third_party/JUCE
           persist-credentials: false
-      - name: Build and run real JUCE adapter (not full mixer)
+      - name: Pinned WebView2 SDK
         shell: pwsh
         run: |
-          cmake -S tools/vocal-delay/native -B vd-build -G "Visual Studio 17 2022" -A x64 "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE"
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build vd-build --config Release --parallel 2
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ctest --test-dir vd-build -C Release --output-on-failure --no-tests=error
+      - name: Real production registry, JUCE editor and Main.cpp object (not full FAT)
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          if ((& git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'VD_SOURCE_MISMATCH' }
+          cmake -S . -B vd-build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
+          if ($LASTEXITCODE -ne 0) { throw 'VD_ROOT_CONFIGURE_FAILED' }
+          cmake --build vd-build --parallel 2 --target ARMixNativeFxExtensionTests ARMixNativeVocalDelayTests
+          if ($LASTEXITCODE -ne 0) { throw 'VD_NATIVE_TARGET_BUILD_FAILED' }
+          ctest --test-dir vd-build --output-on-failure --no-tests=error -R '^(M4NativeFxCatalogExtensionAndStatePreparation|VocalDelayV2RealJuceAdapter)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vocal-delay-native-faceplate
+          path: vd-build/**/vocal-delay-*.png
+          if-no-files-found: error
+
+          if ($LASTEXITCODE -ne 0) { throw 'VD_NATIVE_CTEST_FAILED' }
+          cmake --build vd-build --parallel 2 --target CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj
+          if ($LASTEXITCODE -ne 0) { throw 'VD_PRODUCTION_MAIN_COMPILE_FAILED' }
+          Write-Host "VD5_SCOPED_PRODUCTION_PASS exact=$env:EXPECTED_SHA (not full FAT)"
       - uses: actions/upload-artifact@v4
         with:
           name: vocal-delay-native-faceplate

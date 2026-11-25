@@ -610,6 +610,7 @@ static void verifyDeEzzerNativeInsert() {
 
 static void verifyVocalDelayNativeInsert() {
     namespace vd=armix::builtin_fx::vocal_delay;
+    using armix::builtin_fx::findNativeBuiltInFx;
     const auto* descriptor=findNativeBuiltInFx(vd::JuceVocalDelayProcessor::catalogIdentity);
     const auto* legacy=findNativeBuiltInFx(armix::builtin_fx::VocalThrowProcessor::catalogIdentity);
     assert(descriptor&&descriptor->showInPicker&&legacy&&!legacy->showInPicker);
@@ -656,6 +657,7 @@ static void verifyVocalDelayNativeInsert() {
 }
 
 int main() {
+    juce::ScopedJuceInitialiser_GUI init;
     verifyVocalDelayNativeInsert();
     verifyDeEzzerNativeInsert();
     verifyGraphicEq31Processor();
