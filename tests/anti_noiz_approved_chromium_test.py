@@ -99,7 +99,9 @@ def assert_full_composition(root):
     assert all(abs(rows[i+1]["y"]-rows[i]["bottom"]-8)<=1 for i in range(len(rows)-1)),g
     assert abs(g["program"]["x"]-g["source"]["x"])<=1,g
     assert abs(g["power"]["y"]-g["close"]["y"])<=1,g
-    assert all(abs(x["h"]-30)<=1 for x in g["controls"]),g
+    assert all(abs(x["h"]-24)<=1 for x in g["controls"][:2]),g
+    assert abs(g["power"]["w"]-26)<=1 and abs(g["close"]["w"]-24)<=1,g
+    assert all(abs(x["h"]-30)<=1 for x in g["controls"][2:]),g
     assert max(x["y"] for x in g["legend"])-min(x["y"] for x in g["legend"])<=1,g
     assert g["status"]["h"]==24 and not g["overflow"],g
 
@@ -156,6 +158,29 @@ def main():
         expect(root.locator('[data-spectral]')).to_have_text("6.0 dB")
         expect(root.locator('[data-residual]')).to_have_text("12.0 dB")
         expect(root.locator('[data-learn]')).to_be_enabled()
+        # Compare canonical FX chrome styles against the actual PEQ controls.
+        page.evaluate("""async()=>{await document.fonts.load('500 12px "ArSonMix Inter"');await document.fonts.ready;}""")
+        assert root.evaluate("""el=>{
+          const font=e=>getComputedStyle(e).fontFamily.includes('ArSonMix Inter');
+          const faces=[...document.fonts].filter(f=>f.family.replace(/["']/g,'')==='ArSonMix Inter');
+          if(!faces.some(f=>f.status==='loaded')||!font(el.querySelector('.an-panel'))||!font(el.querySelector('.an-control output')))return false;
+          const pair=(a,b,props,pseudo)=>{const x=getComputedStyle(a,pseudo),y=getComputedStyle(b,pseudo);return props.every(k=>x[k]===y[k]);};
+          const p=el.querySelector('[data-power]'),c=el.querySelector('[data-close]');
+          const eqP=document.querySelector('#mxNativePeq .armix-builtin-fx-power'),eqC=document.querySelector('#mxNativePeq .armix-builtin-fx-close');
+          if(!eqP||!eqC||p.textContent!==eqP.textContent)return false;
+          const state=eqP.dataset.fxState;eqP.dataset.fxState=p.dataset.fxState;
+          const props=['backgroundImage','borderRadius','borderTopColor','color','boxShadow','width','height','fontSize'];
+          const same=pair(p,eqP,props)&&pair(c,eqC,props)&&pair(c,eqC,['backgroundImage','backgroundSize'],'::after');
+          eqP.dataset.fxState=state;return same;
+        }"""),"shared FX chrome and loaded Inter"
+        expect(root.locator('[data-power]')).to_have_attribute("data-fx-state","on")
+        expect(root.locator('[data-view="gr"]')).to_have_attribute("aria-pressed","true")
+        expect(root.locator('[data-view="spectrum"]')).to_have_attribute("aria-pressed","false")
+        root.locator('[data-view="spectrum"]').click()
+        expect(root.locator(".an-spectrum-view")).to_be_visible()
+        expect(root.locator('[data-spectrum-empty]')).to_be_visible()
+        root.locator('[data-view="gr"]').click()
+        expect(root.locator(".an-meter-view")).to_be_visible()
         normal_height=root.locator(".an-display").bounding_box()["height"]
         assert "is-on" not in (root.locator(".armix-native-fx-bypass").get_attribute("class") or "").split()
         # Current host power overrides stale DSP telemetry without mutating
@@ -167,6 +192,8 @@ def main():
             state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
             emit(page,"arMixConsoleSnapshot",state)
             expect(root.locator('[data-state]')).to_have_text(label)
+            expect(root.locator('[data-power]')).to_have_attribute("data-fx-state","off" if kind=="SLOT" else "rack-off")
+            if kind!="SLOT": expect(root.locator('[data-power]')).to_be_disabled()
             expect(root.locator('[data-learn]')).to_be_disabled()
             expect(root.locator('[data-spectral]')).to_have_text("—")
             expect(root.locator('[data-residual]')).to_have_text("—")
@@ -207,6 +234,8 @@ def main():
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         expect(root.locator(".an-meter-view")).to_be_hidden()
         expect(root.locator('[data-display-title]')).to_have_text("NOISE SPECTRUM")
+        expect(root.locator('[data-view="gr"]')).to_be_disabled()
+        expect(root.locator('[data-view="spectrum"]')).to_have_attribute("aria-pressed","true")
         assert abs(root.locator(".an-display").bounding_box()["height"]-normal_height)<=1
         expect(root.locator('[data-progress]')).to_have_text("50%")
         assert root.locator('[data-input-curve]').get_attribute("d").startswith("M")
@@ -221,7 +250,8 @@ def main():
         expect(root.locator('[data-curve-label]')).to_have_text("Trusted noise")
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-profile-1366.png"))
-        root.locator('[data-view]').click()
+        expect(root.locator('[data-view="gr"]')).to_be_enabled()
+        root.locator('[data-view="gr"]').click()
         expect(root.locator(".an-meter-view")).to_be_visible()
         expect(root.locator('[data-display-title]')).to_have_text("GAIN REDUCTION")
         expect(root.locator('[data-learn]')).to_be_enabled()
@@ -232,7 +262,8 @@ def main():
         page.wait_for_function("""()=>[...document.querySelectorAll('#mxNativeAntiNoiz .an-knob-art')].every(i=>i.complete&&i.naturalWidth===96)""")
         assert root.evaluate("""el=>getComputedStyle(el.querySelector('.an-panel')).backgroundImage.includes('geq31-brushed-metal.jpg')""")
         assert (bundle/"assets"/"geq31-brushed-metal.jpg").stat().st_size>0
-        assert root.locator(".an-led-off").first.get_attribute("d").count("M")==27
+        ring=root.locator(".an-led-off").first.get_attribute("d")
+        assert ring.count("M")==27 and ring.count("A45.5 45.5")==27 and "L" not in ring
         assert root.locator(".an-led-on").first.get_attribute("d").count("M")==16
         assert root.locator(".an-knob-art").first.get_attribute("src").endswith("mixer-gain-knob-brushed-steel.png")
         knob=root.locator('input[aria-label="Clean"]')
@@ -313,6 +344,9 @@ def main():
             assert count("arMixBuiltinAntiNoizAck")==1
             assert count(preset_event)==baseline_preset_count+1
             expect(root.locator('[data-learn]')).to_be_disabled()
+            readback(page,accepted,{**OBS,"serial":"8","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted","spectrum":{**SPECTRUM,"candidate":False,"progress":0}})
+            expect(root.locator('[data-view="gr"]')).to_have_attribute("aria-pressed","true")
+            expect(root.locator(".an-meter-view")).to_be_visible()
         root.locator('[data-close]').click()
         assert not errors,errors
         browser.close()
