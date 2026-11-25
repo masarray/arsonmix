@@ -120,12 +120,43 @@ int main() {
         auto* list=dynamic_cast<juce::ComboBox*>(view->findChildWithID("armix.reverb.preset"));
         auto* save=dynamic_cast<juce::TextButton*>(view->findChildWithID("armix.reverb.preset.save"));
         assert(editor&&list&&save&&!save->isEnabled());
+        assert(save->getButtonText().isEmpty());
+        assert(save->getTitle()=="Save Reverb-Sis user preset");
+        assert(save->getTooltip().contains("My Presets"));
+        assert(static_cast<bool>(save->onClick));
+        // Test the actual LookAndFeel path for enabled/disabled/hover/press,
+        // without opening a modal dialog or modifying user preset storage.
+        const auto saveIconImage=[&](bool hover,bool down) {
+            juce::Image im(juce::Image::RGB,26,24,true);
+            juce::Graphics g(im);
+            auto& look=save->getLookAndFeel();
+            look.drawButtonBackground(g,*save,juce::Colours::black,hover,down);
+            look.drawButtonText(g,*save,hover,down);
+            return im;
+        };
+        const auto disabledSave=saveIconImage(false,false);
+        const auto inkPixels=[](const juce::Image& im) {
+            int count=0;
+            for(int y=4;y<20;++y)for(int x=5;x<21;++x) {
+                const auto c=im.getPixelAt(x,y);
+                if(c.getRed()>140&&c.getGreen()>160&&c.getBlue()>175)++count;
+            }
+            return count;
+        };
+        assert(inkPixels(disabledSave)==0);
         auto custom=vocalReverbFactoryPreset(13);custom.preset=-1;custom.values[0]=.137f;
         editor->bindUserPresetService([]{
             return std::vector<VocalReverbEditor::UserPresetEntry>{{"test-id","My Vocal"}};
         },[](const juce::String&){return juce::String{};},
         [&](const juce::String& id){return id=="test-id"&&owner->queueSettings(custom)>0;});
         assert(save->isEnabled()&&list->getItemText(reverbSisCustomItem)=="My Vocal");
+        const auto normalSave=saveIconImage(false,false);
+        const auto hoveredSave=saveIconImage(true,false);
+        const auto pressedSave=saveIconImage(true,true);
+        assert(inkPixels(normalSave)>15);
+        assert(inkPixels(hoveredSave)>15&&inkPixels(pressedSave)>15);
+        assert(normalSave.getPixelAt(3,12)!=hoveredSave.getPixelAt(3,12));
+        assert(hoveredSave.getPixelAt(3,12)!=pressedSave.getPixelAt(3,12));
         list->setSelectedId(1000,juce::sendNotificationSync);
         assert(owner->settingsPending()&&owner->desiredSettings().values==custom.values);
         owner->consumeRealtimeEdits();
@@ -222,6 +253,16 @@ int main() {
     assert(close->getBottom()<reverb_ui::FaceplateLayout::shoulderY);
     assert(!power->getBounds().intersects(presetSelect->getBounds()));
     assert(!close->getBounds().intersects(presetSelect->getBounds()));
+    const auto* saveChrome=dynamic_cast<juce::TextButton*>(
+        ui->findChildWithID("armix.reverb.preset.save"));
+    assert(saveChrome&&saveChrome->isVisible()&&saveChrome->getButtonText().isEmpty());
+    assert(saveChrome->getWidth()==26&&saveChrome->getHeight()==24);
+    assert(saveChrome->getBounds().getCentreY()==power->getBounds().getCentreY());
+    assert(saveChrome->getX()==rightChevron->getRight()+8);
+    assert(saveChrome->getRight()+8<=power->getX());
+    assert(saveChrome->getBottom()<reverb_ui::FaceplateLayout::shoulderY);
+    assert(!saveChrome->getBounds().intersects(presetSelect->getBounds()));
+    assert(!saveChrome->getBounds().intersects(rightChevron->getBounds()));
     for(int i=0;i<6;++i) {
         auto* tab=dynamic_cast<juce::TextButton*>(
             ui->findChildWithID("armix.reverb.tab."+juce::String(i)));

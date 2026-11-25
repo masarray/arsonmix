@@ -198,6 +198,25 @@ public:
                 g.fillRect(rect.getX()+13.f,rect.getBottom()-1.f,
                            rect.getWidth()-26.f,1.f);
             }
+        } else if(id=="armix.reverb.preset.save") {
+            // Compact neutral graphite action: unlike Power, Save never
+            // implies a persistent on/off state. Disabled is visibly muted.
+            const bool enabled=b.isEnabled();
+            const auto r=rect.reduced(.6f);
+            const auto top=enabled?(down?0x1c303b:hover?0x40535f:0x333d45):0x262c31;
+            const auto bottom=enabled?(down?0x17242c:hover?0x293941:0x252d34):0x20252a;
+            const auto border=enabled?(down?0x8bc2db:hover?0x7399ac:0x53636c):0x3e494f;
+            g.setGradientFill(juce::ColourGradient(graphite::colour(top),0.f,r.getY(),
+                graphite::colour(bottom),0.f,r.getBottom(),false));
+            g.fillRoundedRectangle(r,4.f);
+            g.setColour(graphite::colour(border));
+            g.drawRoundedRectangle(r,4.f,1.f);
+            g.setColour(juce::Colour(enabled?0x20ffffffu:0x0cffffffu));
+            g.drawHorizontalLine(2,4.f,r.getRight()-4.f);
+            if(enabled&&b.hasKeyboardFocus(false)) {
+                g.setColour(juce::Colour(0xff9cdbe7));
+                g.drawRoundedRectangle(r.reduced(1.f),3.f,1.f);
+            }
         } else if(id=="armix.reverb.power"||id=="armix.reverb.close") {
             // Match the authoritative /preview/ mixer-contextual-buttons.css
             // .armix-builtin-fx-power / -close, not a Reverb-specific theme.
@@ -253,6 +272,36 @@ public:
         const auto id=b.getComponentID();
         if(id=="armix.reverb.preset.previous"||
            id=="armix.reverb.preset.next")return;
+        if(id=="armix.reverb.preset.save") {
+            // Lucide Save, 24x24 viewBox, 2px rounded outline. Render at
+            // 18 logical px like the existing Power glyph; no font/SVG loader.
+            // https://lucide.dev/icons/save
+            juce::Path icon;
+            icon.startNewSubPath(19.f,21.f);
+            icon.lineTo(5.f,21.f);
+            icon.cubicTo(3.8954f,21.f,3.f,20.1046f,3.f,19.f);
+            icon.lineTo(3.f,5.f);
+            icon.cubicTo(3.f,3.8954f,3.8954f,3.f,5.f,3.f);
+            icon.lineTo(16.f,3.f);
+            icon.lineTo(21.f,8.f);
+            icon.lineTo(21.f,19.f);
+            icon.cubicTo(21.f,20.1046f,20.1046f,21.f,19.f,21.f);
+            icon.closeSubPath();
+            icon.startNewSubPath(17.f,21.f);
+            icon.lineTo(17.f,13.f);
+            icon.lineTo(7.f,13.f);
+            icon.lineTo(7.f,21.f);
+            icon.startNewSubPath(7.f,3.f);
+            icon.lineTo(7.f,8.f);
+            icon.lineTo(15.f,8.f);
+            const auto ink=!b.isEnabled()?0x75828a:down?0xe7f8ff:hover?0xb1e6ff:0xc2d5e0;
+            g.setColour(graphite::colour(ink));
+            g.strokePath(icon,juce::PathStrokeType(2.f,
+                juce::PathStrokeType::curved,juce::PathStrokeType::rounded),
+                juce::AffineTransform::scale(18.f/24.f)
+                    .translated((b.getWidth()-18.f)*.5f,(b.getHeight()-18.f)*.5f));
+            return;
+        }
         if(id=="armix.reverb.close") {
             // Exact CSS / GEQ31 Close SVG, rendered at the approved 22px.
             juce::Path x;
@@ -437,7 +486,7 @@ public:
         preset_.setComponentID("armix.reverb.preset");
         addAndMakeVisible(preset_);
         save_.setComponentID("armix.reverb.preset.save");
-        save_.setButtonText("SAVE");
+        save_.setButtonText(""); // Icon only; retain accessible title + tooltip.
         save_.setTitle("Save Reverb-Sis user preset");
         save_.setTooltip("Save current confirmed settings to My Presets");
         save_.setLookAndFeel(&dial_);
@@ -702,7 +751,7 @@ public:
         preset_.setBounds(424,17,272,34);
         prev_.setBounds(383,17,33,34);
         next_.setBounds(getWidth()-383-33,17,33,34);
-        save_.setBounds(next_.getRight()+8,F::chromeCentreY-12,54,24);
+        save_.setBounds(next_.getRight()+8,F::chromeCentreY-12,26,24);
         algorithm_.setBounds(F::algorithmCentreX-F::algorithmWidth/2,78,F::algorithmWidth,28);
         for(std::size_t i=0;i<tabs_.size();++i)
             tabs_[i].setBounds(F::tabLeft+static_cast<int>(i)*F::tabPitch,
