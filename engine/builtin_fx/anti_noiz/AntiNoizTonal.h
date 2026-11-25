@@ -28,7 +28,7 @@ public:
             auto& k=filter_[i];k.b=alpha/(1.+alpha);
             k.a1=-2.*std::cos(w)/(1.+alpha);k.a2=(1.-alpha)/(1.+alpha);
         }
-        selected_=-1;trustedPower_={};begin();
+        selected_=-1;trustedInverse_={};begin();
     }
     void begin() noexcept {
         votes_={};score_={};candidatePower_={};windows_=0;phase_=0;partial_={};clearWindow();resetSignal();
@@ -74,11 +74,11 @@ public:
     // Accepted broadband Learn is the sole commit fence. Cancel/reject keeps
     // both trusted frequency and level. No coefficient design on audio thread.
     void commit() noexcept {
-        selected_=-1;trustedPower_={};double best=0.;
+        selected_=-1;trustedInverse_={};double best=0.;
         if(windows_>=8)for(int i=0;i<count;++i)
             if(votes_[i]*10>=windows_*8&&score_[i]>best){selected_=i;best=score_[i];}
         if(selected_>=0)for(int c=0;c<channels_;++c)
-            trustedPower_[c]=candidatePower_[selected_][c]/votes_[selected_];
+            trustedInverse_[c]=1./std::max(1e-15,candidatePower_[selected_][c]/votes_[selected_]);
         resetSignal();
     }
     int selected() const noexcept {return selected_;}
@@ -95,7 +95,7 @@ public:
         for(int c=0;c<channels_;++c){
             auto& p=livePower_[c];p+=guardAlpha_*(y[c]*y[c]-p);
             if(p<1e-25)p=0.;
-            excess=std::max(excess,p/std::max(1e-15,trustedPower_[c]));
+            excess=std::max(excess,p*trustedInverse_[c]);
         }
         const double confidence=1.-std::clamp((excess-1.5)/2.5,0.,1.);
         const double target=.292893218*std::clamp(double(amount),0.,1.)*confidence;
@@ -119,7 +119,7 @@ private:
     std::array<Coeff,count> filter_{};
     std::array<State,2> states_{};
     std::array<std::array<std::array<double,2>,bank>,2> go_{};
-    std::array<double,2> energy_{},partial_{},trustedPower_{},livePower_{};
+    std::array<double,2> energy_{},partial_{},trustedInverse_{},livePower_{};
     std::array<int,count> votes_{};
     std::array<double,count> score_{};
     std::array<std::array<double,2>,count> candidatePower_{};
