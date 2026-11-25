@@ -6,9 +6,9 @@
 #include <string>
 int main(int argc,char** argv){
     try{
-        if(argc!=9)throw std::runtime_error("usage: de_ezzer_render input.wav wet.wav delta.wav auto|voice amount sensitivity rangeDb block");
+        if(argc!=9)throw std::runtime_error("usage: de_ezzer_render input.wav wet.wav delta.wav auto|voice|auto-focused|voice-focused amount sensitivity rangeDb block");
         using namespace dez_render;Settings s;
-        const std::string mode=argv[4];dez_wav::require(mode=="auto"||mode=="voice","invalid mode");s.mode=mode=="voice"?Mode::Voice:Mode::Auto;
+        const std::string mode=argv[4];dez_wav::require(mode=="auto"||mode=="voice"||mode=="auto-focused"||mode=="voice-focused","invalid mode");s.mode=(mode=="voice"||mode=="voice-focused")?Mode::Voice:Mode::Auto;s.shape=(mode=="auto-focused"||mode=="voice-focused")?Shape::Focused:Shape::Shelf;
         auto number=[](const char* x){std::size_t end=0;float v=std::stof(x,&end);dez_wav::require(end==std::strlen(x)&&std::isfinite(v),"invalid number");return v;};
         s.amount=number(argv[5]);s.sensitivity=number(argv[6]);s.rangeDb=number(argv[7]);const float b=number(argv[8]);dez_wav::require(b>=1&&b<=65536&&std::floor(b)==b,"invalid block");
         namespace fs=std::filesystem;const auto wet=fs::weakly_canonical(argv[2]),delta=fs::weakly_canonical(argv[3]);
