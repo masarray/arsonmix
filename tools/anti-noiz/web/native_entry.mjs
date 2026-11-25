@@ -36,7 +36,7 @@ import {nativeTransport} from './native_transport.mjs';
   if(!(n?.admitted||n?.logical)||insert?.catalogId!==ID||!insert.id)return;
   current={track,slot,instanceId:insert.id};root.hidden=false;
   transport=nativeTransport(backend,context);
-  view=mount(root,transport,{onClose:close,hostPower,onState(state){
+  view=mount(root,transport,{nativeAssets:true,onClose:close,hostPower,onState(state){
    latest=state;
    if(state.accepted&&!state.pending){presets?.onAccepted(state.accepted,state.appliedId);presets?.refresh();}
    presets?.paint();

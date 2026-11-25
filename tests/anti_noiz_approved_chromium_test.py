@@ -154,6 +154,12 @@ def main():
         expect(root.locator('[data-observation]')).to_contain_text("Profile ready")
         expect(root.locator('[data-learn]')).to_be_enabled()
         # Actual rotary drag with delayed ACK, stale readback and coalescing.
+        # Original approved artwork must actually load in the native bundle;
+        # a missing asset must never silently degrade to a decorative circle.
+        expect(root.locator(".an-knob-art")).to_have_count(3)
+        page.wait_for_function("""()=>[...document.querySelectorAll('#mxNativeAntiNoiz .an-knob-art')].every(i=>i.complete&&i.naturalWidth===192)""")
+        assert root.evaluate("""el=>getComputedStyle(el.querySelector('.an-panel')).backgroundImage.includes('geq31-brushed-metal.jpg')""")
+        assert (bundle/"assets"/"geq31-brushed-metal.jpg").stat().st_size>0
         knob=root.locator('input[aria-label="Clean"]')
         bounds=knob.bounding_box()
         assert bounds and bounds["width"]>=54
