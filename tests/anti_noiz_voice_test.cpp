@@ -14,6 +14,26 @@ int main(){try{
         const float v=G::restore(g,100.f,100.f,100.f,100.f);
         offline::require(v>=g&&v<=1.f&&v-g<=.150001f,"bounded restoration");
     }
+    using B=BroadbandEstimate<64>;
+    B broad;broad.prepare(48000,128);
+    B::Powers anchor{},power{};
+    for(int c=0;c<2;++c)for(int k=0;k<64;++k)anchor[c][k]=power[c][k]=1.f;
+    const std::array<float,2> variable{1.f,1.f};
+    for(int k=0;k<8;++k)power[0][k]=8.f;
+    for(int i=0;i<200;++i)broad.update(power,anchor,2,64,variable,true);
+    offline::require(!broad.active(),"isolated band cannot raise broadband estimate");
+    for(int k=0;k<64;++k)power[0][k]=2.f;
+    for(int i=0;i<200;++i)broad.update(power,anchor,2,64,variable,true);
+    offline::require(broad.active()&&broad.scale(0)>1.55f&&broad.scale(0)<=1.6f&&broad.scale(1)==1.f,"bounded coherent scale");
+    offline::require(B::corrected(2.f,2.f,1.6f)<1.3f,"dominant local correction");
+    offline::require(B::corrected(4.f,2.f,1.6f)==4.f,"onset veto");
+    offline::require(B::corrected(2.f,.1f,1.6f)==2.f,"quiet learned band veto");
+    broad.update(anchor,anchor,2,64,variable,true);
+    offline::require(!broad.active(),"immediate release");
+    broad.update(power,anchor,2,64,{0.f,0.f},true);
+    offline::require(!broad.active(),"stationary profile parity");
+    broad.update(power,anchor,2,64,variable,false);
+    offline::require(!broad.active(),"ineligible parity");
     constexpr unsigned rate=48000;
     std::mt19937 gen(2026);std::uniform_real_distribution<float> noiseDist(-.003f,.003f),unit(-1.f,1.f);
     offline::Audio learn{rate,2,std::vector<float>(rate*6)},input=learn,clean=learn;
