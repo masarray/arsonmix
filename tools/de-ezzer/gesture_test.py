@@ -67,7 +67,9 @@ with sync_playwright() as pw:
     assert page.locator('.dial-face').first.evaluate('(e)=>getComputedStyle(e).boxShadow') != 'none'
     assert page.locator('.lcd-glass').evaluate('(e)=>getComputedStyle(e).pointerEvents') == 'none'
     assert page.locator('.lcd-glass').evaluate('(e)=>getComputedStyle(e,"::before").clipPath').startswith('polygon(')
-    assert page.locator('.lcd-glass').evaluate('(e)=>getComputedStyle(e,"::before").backgroundColor') == 'rgba(255, 255, 255, 0.085)'
+    # CSSOM serializes 8-bit alpha (0.085 is rendered as 22/255 = 0.086).
+    rgba = page.locator('.lcd-glass').evaluate("""e=>getComputedStyle(e,'::before').backgroundColor.match(/[0-9.]+/g).map(Number)""")
+    assert rgba[:3] == [255,255,255] and abs(rgba[3]-.085) <= .5/255+0.0005, rgba
     # Worst-case contrast after the real white overlay is composited on the LCD.
     assert page.evaluate("""() => {
       const l=c=>{let v=c.match(/[0-9.]+/g).slice(0,3).map(Number).map(n=>n/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);return .2126*v[0]+.7152*v[1]+.0722*v[2]};
