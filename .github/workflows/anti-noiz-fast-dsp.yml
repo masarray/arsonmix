@@ -161,6 +161,30 @@ jobs:
         if: ${{ !cancelled() && steps.build_matched.outcome == 'success' }}
         run: python3 tools/anti-noiz/compare_rt.py "$RUNNER_TEMP/rt-bridge-old" "$RUNNER_TEMP/rt-bridge-new" --capture-evidence "$RUNNER_TEMP/rt-exact-evidence.json"
 
+  native-host:
+    name: Anti Noiz actual JUCE FxInstance (opt-in, no installer)
+    if: contains(github.event.pull_request.labels.*.name, 'anti-noiz-native-smoke')
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Configure isolated real JUCE adapter and graph fixture
+        shell: pwsh
+        run: cmake -S tools/anti-noiz/native -B build-an-native -G "Visual Studio 17 2022" -A x64 "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE"
+      - name: Build only native fixture
+        run: cmake --build build-an-native --config Release --parallel 2 --target AntiNoizNativeHostTests
+      - name: Run exact native PCM and state gate
+        run: ctest --test-dir build-an-native -C Release --output-on-failure --verbose --no-tests=error
+
   web-contract:
     name: Anti Noiz Web UX contract (Node, no Windows)
     runs-on: ubuntu-latest

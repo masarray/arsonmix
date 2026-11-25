@@ -18,6 +18,7 @@ namespace armix::builtin_fx::anti_noiz {
 class Core {
 public:
     enum class Mode { AutoProtect, Voice, Singing, Music };
+    enum class LearnStatus { Idle, Learning, Accepted, Rejected, Cancelled };
     // Host-provided source intent, not inferred from hardware or classified PCM.
     enum class SourceRole { Unknown, SpeechMic, SingingMic, Music, Mixed };
     struct Settings {
@@ -80,6 +81,7 @@ public:
         for(auto& a:out_)a.fill(0);
         profile_.prepare(rate_,hop_,channels_,hop_+1);
         mask_.fill(1); pos_=ticks_=0; expansion_=1;
+        hostBypassed_=false;learnStatus_=LearnStatus::Idle;
         applyGains(prepareSettings(settings_));
         ready_=true; return true;
     }
@@ -89,7 +91,7 @@ public:
         if(!p.valid_)return false;
         const auto s=p.settings_;
         const auto next=resolveMode(s.mode,sourceRole_);
-        if(!s.enabled||next==Mode::Music)profile_.cancel();
+        if(!s.enabled||next==Mode::Music)cancelLearn();
         // Extended Voice-only PSD authority must not leak into musical modes
         // or survive an explicit disable. Keep the learned anchor and modest
         // idle tracking. Existing overlap and gain smoothing remain intact.
@@ -100,16 +102,26 @@ public:
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
-        if(!ready_||!profile_.begin())return false;
+        if(!ready_||hostBypassed_||!profile_.begin())return false;
+        learnStatus_=LearnStatus::Learning;
         context_.reset(); voiceGain_.reset(); return true;
     }
+    // AUDIO only: rack bypass does not change the user's durable Power.
+    // Keep the wet timeline warm, but do not learn or adapt from a bypassed source.
+    void setHostBypass(bool bypass) noexcept {
+        if(bypass==hostBypassed_)return;
+        hostBypassed_=bypass;
+        if(bypass)cancelLearn();
+        context_.reset();
+    }
+    LearnStatus learnStatus() const noexcept {return learnStatus_;}
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
         pos_=ticks_=0;
-        profile_.cancel(); context_.reset(); voiceGain_.reset();
+        cancelLearn(); context_.reset(); voiceGain_.reset();
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -146,6 +158,10 @@ private:
         cleanFloor_=p.clean_;singingFloor_=p.singing_;
         silenceFloor_=p.silence_;autoFloor_=p.auto_;
     }
+    void cancelLearn() noexcept {
+        if(profile_.learning())learnStatus_=LearnStatus::Cancelled;
+        profile_.cancel();
+    }
     void renderUnity() noexcept {
         // Algebraically equivalent unity WOLA, with the same delay and overlap.
         for(int c=0;c<channels_;++c)for(int i=0;i<n_;++i) {
@@ -167,13 +183,16 @@ private:
             }
         }
         const auto result=profile_.observe(power_);
-        if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
+        if(result!=NoiseProfile<maxBins>::LearnResult::waiting){
+            learnStatus_=result==NoiseProfile<maxBins>::LearnResult::accepted?LearnStatus::Accepted:LearnStatus::Rejected;
+            context_.reset();voiceGain_.reset();
+        }
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect);
         // Only explicit Voice or source-aware SpeechMic permits independently
         // qualified coherent drift. Unknown/Mixed and musical policies keep
         // the original confirmed-idle tracking; anchor-based guards unchanged.
-        profile_.track(power_,idle,!protect&&effectiveMode_==Mode::Voice,
+        if(!hostBypassed_)profile_.track(power_,idle,!protect&&effectiveMode_==Mode::Voice,
                        context_.broadbandRatio(),context_.subbandPeakRatio());
         const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
@@ -224,7 +243,8 @@ private:
     Mode effectiveMode_=Mode::AutoProtect;
     double rate_=48000.;
     int channels_=0,n_=256,hop_=128,ringMask_=255,pos_=0,ticks_=0;
-    bool ready_=false;
+    bool ready_=false,hostBypassed_=false;
+    LearnStatus learnStatus_=LearnStatus::Idle;
     float expansion_=1;
     std::array<float,maxN> win_{};
     FftPlan fft_{};
