@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
 """Matched callback timing on one runner, exact PCM hashes; no scheduling certification."""
+import argparse
 import csv
+import json
 import statistics
 import subprocess
 import sys
@@ -22,12 +24,42 @@ def run(binary, capture=None):
         if key in rows or len(a) != 17:
             raise RuntimeError("invalid or duplicate result")
         rows[key] = (int(a[4]), *map(float, a[5:10]), *map(int, a[10:16]), float(a[16]))
-    if len(rows) != 60:
-        raise RuntimeError(f"expected 60 cases, got {len(rows)}")
+    expected={(rate,block,mode) for rate in (44100,48000,88200,96000)
+              for block in (32,64,128,256,1024) for mode in ("weak-auto","coherent","spectral")}
+    if set(rows)!=expected:
+        raise RuntimeError(f"incorrect benchmark case set: {set(rows)^expected}")
     return rows
 
+def legacy_report(baseline, candidate):
+    a,b=run(baseline),run(candidate)
+    different=0
+    for key in sorted(a):
+        x,y=a[key],b[key]
+        if x[0]!=y[0] or any(x[7:11]) or any(y[7:11]):
+            raise RuntimeError(f"legacy callback count or allocation mismatch {key}")
+        if x[11]!=y[11]:
+            different+=1
+            print(f"LEGACY_HASH_MISMATCH,{key},old={x[11]},new={y[11]}",flush=True)
+    print(f"LEGACY_HASH_REPORT,exact={60-different}/60,mismatch={different}/60,allocations=0,diagnostic_only",flush=True)
+
 def main():
-    baseline, candidate = sys.argv[1:]
+    parser=argparse.ArgumentParser()
+    parser.add_argument("baseline")
+    parser.add_argument("candidate")
+    group=parser.add_mutually_exclusive_group()
+    group.add_argument("--legacy-hash-report",action="store_true")
+    group.add_argument("--capture-evidence")
+    args=parser.parse_args()
+    baseline,candidate=args.baseline,args.candidate
+    if args.legacy_hash_report:
+        legacy_report(baseline,candidate)
+        return
+    evidence=None
+    if args.capture_evidence:
+        with open(args.capture_evidence,encoding="utf-8") as file:
+            evidence=json.load(file)
+        if evidence["gate"]!="exact" or len(evidence["hashes"])!=60:
+            raise RuntimeError("invalid exact capture evidence")
     # Alternating order limits systematic warmup/scheduling bias.
     a, b = [], []
     for i in range(3):
@@ -39,6 +71,10 @@ def main():
         mismatches = []
         for key in sorted(a[-1]):
             old, new = a[-1][key], b[-1][key]
+            if evidence is not None:
+                expected=evidence["hashes"][",".join(map(str,key))]
+                if [old[11],new[11]]!=expected:
+                    raise RuntimeError(f"capture vs noncapture fingerprint mismatch {key}")
             if old[0] != new[0] or old[11] != new[11]:
                 mismatches.append(key)
                 print(f"PCM_MISMATCH,{key},old_hash={old[11]},new_hash={new[11]},old_atten={old[12]},new_atten={new[12]}", flush=True)
