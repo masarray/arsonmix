@@ -35,11 +35,20 @@ with sync_playwright() as pw:
     page.evaluate('''()=>{window.s={id:{instance:'9',epoch:'3'},appliedSequence:'0',frames:'0',settings:{...ArSonMixNativeDeEzzer.defaults,enabled:false},audition:'Normal',gainReductionDb:2.5,lowerWeight:.7};ArSonMixNativeDeEzzer.open({nativeId:'42'},0);const r=events.find(p=>p.action==='nativeDeEzzerSnapshot');listeners.arMixBuiltinDeEzzerSnapshot({...r,ok:true,snapshot:s});}''')
     dial = page.locator('.dial').first
     output = page.locator('.knobs output').first
+    # Production faceplate geometry and no external asset dependency.
+    assert page.locator('.dial-art').count() == 3
+    assert page.locator('.dial-art line').count() == 57
+    assert page.locator('.dial-art defs [id]').count() == 6
+    assert page.locator('.dial-art defs [id]').evaluate_all('(nodes)=>new Set(nodes.map(n=>n.id)).size') == 6
+    assert dial.bounding_box()['width'] == 82
+    assert page.locator('.knobs output').first.evaluate('(e)=>getComputedStyle(e).backgroundColor') == 'rgb(17, 27, 27)'
     box = dial.bounding_box(); x=box['x']+box['width']/2; y=box['y']+box['height']/2
     page.mouse.move(x,y);page.mouse.down();page.mouse.move(x,y-32)
     assert page.evaluate('commands().length') == 1 # must apply before mouseup
     assert output.inner_text() == '70%' # requested display; accepted separately
     assert page.locator('.draft').first.inner_text() == 'Applied 50%'
+    assert dial.locator('.draft-pointer').is_visible()
+    assert dial.evaluate('(e)=>getComputedStyle(e).getPropertyValue("--accepted-angle").trim()') == '0deg'
     assert page.locator('input[type=range]').count()==0
     assert page.locator('[data-power-label]').inner_text()=='OFF'
     page.mouse.move(x,y-64);page.mouse.move(x,y-80)
@@ -84,6 +93,13 @@ with sync_playwright() as pw:
     page.wait_for_timeout(70)
     page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerSnapshot').at(-1);s={...s,frames:String(BigInt(s.frames)+2400n),cue:{available:true,requested:'Mix',applied:'Mix'}};listeners.arMixBuiltinDeEzzerSnapshot({...req,ok:true,snapshot:s});}''')
     assert page.locator('#mxNativeDeEzzer').bounding_box()['height'] <= 600
+    panel = page.locator('#mxNativeDeEzzer')
+    assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
+    assert panel.evaluate('(e)=>e.scrollHeight<=e.clientHeight+1')
+    page.set_viewport_size({'width': 400, 'height': 640})
+    assert panel.evaluate('(e)=>e.scrollWidth<=e.clientWidth+1')
+    assert page.locator('.dial').count()==3
+    page.set_viewport_size({'width': 800, 'height': 600})
     page.locator('[data-cue="Ess"]').click()
     page.evaluate('''()=>{let req=events.filter(p=>p.action==='nativeDeEzzerCue').at(-1);listeners.arMixBuiltinDeEzzerCue({...req,ok:true,cue:{available:true,requested:'Ess',applied:'Mix'}});}''')
     assert page.locator('[data-cue="Ess"]').get_attribute('data-pending')=='true'
