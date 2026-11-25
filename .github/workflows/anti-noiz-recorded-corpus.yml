@@ -1,10 +1,12 @@
-name: Anti Noiz recorded environment baseline (AN-07A)
+name: Anti Noiz recorded environment paired qualification
 on:
   pull_request:
     types: [opened, reopened, synchronize]
     paths:
       - 'tools/anti-noiz/recorded_environment.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
+      - 'tools/anti-noiz/compare_environment.py'
+      - 'engine/builtin_fx/anti_noiz/**'
       - '.github/workflows/anti-noiz-recorded-corpus.yml'
 permissions:
   contents: read
@@ -14,7 +16,7 @@ concurrency:
 jobs:
   corpus:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,6 +30,19 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py --self-test
       - name: Pinned real recorded environments (not listening approval)
         run: python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07/anti_noiz_qualify" "$RUNNER_TEMP/an07-evidence"
+      - name: Checkout frozen AN-07B comparator
+        uses: actions/checkout@v4
+        with:
+          ref: ff24b1c93a84dc4c8c10980eba50d35365e26315
+          path: an07-baseline
+          persist-credentials: false
+      - name: Run exact baseline against same recorded corpus
+        run: |
+          cmake -S an07-baseline/tools/anti-noiz -B "$RUNNER_TEMP/an07-base" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/an07-base" --parallel 2 --target anti_noiz_qualify
+          python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07-base/anti_noiz_qualify" "$RUNNER_TEMP/an07-base-evidence"
+      - name: Compare paired quality metrics without weakening original gates
+        run: python3 tools/anti-noiz/compare_environment.py "$RUNNER_TEMP/an07-base-evidence/report.json" "$RUNNER_TEMP/an07-evidence/report.json" "$RUNNER_TEMP/an07-comparison.json"
       - name: Preserve machine-readable evidence only
         if: always()
         uses: actions/upload-artifact@v4
@@ -35,6 +50,8 @@ jobs:
           name: anti-noiz-an07-recorded-environment-report
           path: |
             ${{ runner.temp }}/an07-evidence/report.json
+            ${{ runner.temp }}/an07-base-evidence/report.json
+            ${{ runner.temp }}/an07-comparison.json
             ${{ runner.temp }}/an07-evidence/*/provenance.tsv
             ${{ runner.temp }}/an07-evidence/*/segments.tsv
           if-no-files-found: warn

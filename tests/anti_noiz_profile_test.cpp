@@ -117,6 +117,7 @@ int main(){
             check(result==(i==frames-1?Profile::LearnResult::accepted:Profile::LearnResult::waiting),"short-frame variation");
         }
         check(p.valid()&&p.lastAttemptQualified(),"colored profile accepted");
+        check(p.variability()[0]>.8f,"learned frame variability");
         // A complete contaminated window may be skipped, but its spectral
         // contribution must be absent from every bin and count.
         check(p.begin(),"window discard");
@@ -130,7 +131,8 @@ int main(){
         }
         check(p.lastAttemptQualified()&&p.valid(),"coverage-qualified learn");
         for(float x:p.anchor()[0])check(std::abs(x-.1f)<2e-6f,"contaminated window excluded");
-        const auto safe=p.anchor();
+        check(p.variability()[0]<.01f,"discarded window excluded from variability");
+        const auto safe=p.anchor();const auto safeVariability=p.variability();
         check(p.begin(),"persistent contamination");
         for(int i=0;i<2;++i)p.observe(base);
         for(int i=0;i<frames&&p.learning();++i){
@@ -138,7 +140,7 @@ int main(){
             if(i>=4*learnWindow)for(float& x:v[0])x*=10.f;
             p.observe(v);
         }
-        check(!p.learning()&&!p.lastAttemptQualified()&&p.anchor()==safe,"coverage rejection preserves anchor");
+        check(!p.learning()&&!p.lastAttemptQualified()&&p.anchor()==safe&&p.variability()==safeVariability,"coverage rejection preserves trusted statistics");
         check(p.begin(),"extreme sustained contamination");
         for(int i=0;i<2;++i)p.observe(base);
         for(int i=0;i<learnWindow;++i)p.observe(base);

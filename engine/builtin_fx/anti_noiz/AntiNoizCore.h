@@ -183,7 +183,13 @@ private:
         const auto result=profile_.observe(power_);
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
-        const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect);
+        // Only Voice with nonzero Silence may use the extra residual label.
+        // Strict idle remains the sole authority for profile and spectral DSP.
+        const auto* variability=!protect&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f?
+            &profile_.variability():nullptr;
+        const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
+        const float expTarget=idle?silenceFloor_:context_.adaptiveIdle()?
+            std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
         // Only explicit Voice or source-aware SpeechMic permits independently
         // qualified coherent drift. Unknown/Mixed and musical policies keep
         // the original confirmed-idle tracking; anchor-based guards unchanged.
@@ -201,7 +207,7 @@ private:
         if(protect||idle)voiceGain_.reset();
         // Analysis remains live, but when both gains are exactly unity no
         // inverse FFT is needed. Preserve the context and profile histories.
-        if(floor==1.f&&(!idle||silenceFloor_==1.f)){renderUnity();return;}
+        if(floor==1.f&&expTarget==1.f){renderUnity();return;}
         for(int k=0;k<bins;++k) {
             float evidence=0;
             for(int c=0;c<channels_;++c)
@@ -220,7 +226,6 @@ private:
             const float g=std::max(selective||reserve>0.f?target_[k]:floor,smooth);
             mask_[k]=g>=mask_[k]?g:mask_[k]+maskClose_*(g-mask_[k]);
         }
-        const float expTarget=idle?silenceFloor_:1.f;
         // Immediate opening in the next overlap; slow closure. No hard gate.
         expansion_=expTarget>=expansion_?expTarget:expansion_+expandClose_*(expTarget-expansion_);
         for(int c=0;c<channels_;++c) {
