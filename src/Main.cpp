@@ -4408,7 +4408,37 @@ private:
         o->setProperty("ok",ok);if(key)o->setProperty(key,payload);
         if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(event,juce::var(o.release()));
     }
+    // Ephemeral editor session. Not saved to .smix, presets or automation.
+    juce::String deEzzerEditorToken_;
+    armix::mixer::FxCueKey deEzzerEditorKey_{};
+    static const char* deEzzerCueName(armix::mixer::FxCueMode mode) noexcept {
+        using M=armix::mixer::FxCueMode;
+        switch(mode){case M::Ess:return "Ess";case M::Sidechain:return "Sidechain";case M::Delta:return "Delta";case M::Mix:break;}
+        return "Mix";
+    }
+    static bool validDeEzzerEditorToken(const juce::var& value) {
+        if(!value.isString())return false;
+        const auto t=value.toString();
+        return t.startsWith("dez-")&&t.length()==40&&t.substring(4).containsOnly("0123456789abcdefABCDEF-");
+    }
+    armix::mixer::FxCueKey deEzzerCueKey(const armix::builtin_fx::NativeFxControlRequest& r,
+                                         armix::builtin_fx::DeEzzerProcessor* proc) const noexcept {
+        if(!proc||!r.valid||r.unbound)return {};
+        const auto id=proc->identity();
+        return {r.epoch,r.revision,engine_.deEzzerCueRoute(r.epoch,r.revision,armix::mixer::ChannelId{r.channel}),id.instance,id.epoch};
+    }
+    juce::var deEzzerCueReadback(armix::mixer::FxCueKey key,bool enabled) {
+        const auto st=engine_.deEzzerCueControl().state(key);
+        auto o=std::make_unique<juce::DynamicObject>();
+        o->setProperty("available",key.valid()&&enabled);
+        o->setProperty("requested",deEzzerCueName(st.requested));
+        o->setProperty("applied",deEzzerCueName(st.applied));
+        return juce::var(o.release());
+    }
     void servicePendingNativeDeEzzer() {
+        auto& cue=engine_.deEzzerCueControl();
+        if(!engine_.privateDeEzzerCueAllowed())cue.cancel(false);
+        else cue.expire(juce::Time::getMillisecondCounter());
         auto& p=pendingNativeDeEzzer_;
         if(!p.owner)return;
         auto* proc=dynamic_cast<armix::builtin_fx::DeEzzerProcessor*>(p.owner->processor.get());
@@ -6885,7 +6915,7 @@ private:
             return;
         }
 
-        if(action=="nativeDeEzzerSnapshot"||action=="nativeDeEzzerSet") {
+        if(action=="nativeDeEzzerSnapshot"||action=="nativeDeEzzerSet"||action=="nativeDeEzzerCue") {
             const auto request=armix::builtin_fx::NativeFxControlRequest::parse(
                 args,LiveDryRoutingLab::maxFxPerLane);
             auto owner=deEzzerLease(request);
@@ -6897,9 +6927,46 @@ private:
                 armix::builtin_fx::de_ezzer::Ack abandoned;
                 for(int i=0;i<armix::builtin_fx::de_ezzer::Control::ackCapacity&&proc->pollAck(abandoned);++i){}
             }
+            const auto rawEditor=args.getProperty("editorToken",{});
+            const bool tokenOk=validDeEzzerEditorToken(rawEditor);
+            const auto editorToken=tokenOk?rawEditor.toString():juce::String{};
+            const auto key=deEzzerCueKey(request,proc);
+            auto& cue=engine_.deEzzerCueControl();
             if(action=="nativeDeEzzerSnapshot") {
+                if(proc)proc->requestAnalysis(); // exact current lease; expires without polling
+                const auto state=proc?proc->readback():armix::builtin_fx::de_ezzer::Snapshot{};
+                if(proc&&tokenOk){
+                    if(editorToken!=deEzzerEditorToken_||key!=deEzzerEditorKey_){
+                        cue.cancel(false);deEzzerEditorToken_=editorToken;deEzzerEditorKey_=key;
+                    }else if(key.valid()&&state.settings.enabled&&!owner->bypassRequested.load(std::memory_order_acquire))
+                        (void)cue.renew(key,juce::Time::getMillisecondCounter());
+                    else cue.cancel(false);
+                }
+                auto payload=proc?armix::builtin_fx::de_ezzer::bridge::encode(state):juce::var{};
+                if(auto* o=payload.getDynamicObject())o->setProperty("cue",deEzzerCueReadback(key,state.settings.enabled&&
+                    !owner->bypassRequested.load(std::memory_order_acquire)));
                 emitDeEzzerReply("arMixBuiltinDeEzzerSnapshot",request,proc!=nullptr,
-                    proc?"snapshot":nullptr,proc?armix::builtin_fx::de_ezzer::bridge::encode(proc->readback()):juce::var{});
+                    proc?"snapshot":nullptr,payload);
+                return;
+            }
+            if(action=="nativeDeEzzerCue"){
+                using M=armix::mixer::FxCueMode;
+                const auto raw=args.getProperty("mode",{});
+                const bool sameEditor=proc&&tokenOk&&editorToken==deEzzerEditorToken_&&
+                    key.instance==deEzzerEditorKey_.instance&&key.instanceEpoch==deEzzerEditorKey_.instanceEpoch&&
+                    key.epoch==deEzzerEditorKey_.epoch&&key.revision==deEzzerEditorKey_.revision;
+                const bool enabled=proc&&proc->readback().settings.enabled&&!owner->bypassRequested.load(std::memory_order_acquire);
+                bool ok=false;M mode=M::Mix;
+                if(sameEditor&&raw.isString()){
+                    if(raw==juce::var("Mix")){cue.cancel(key.valid()&&key==deEzzerEditorKey_);ok=true;}
+                    else if(key.valid()&&key==deEzzerEditorKey_&&enabled&&!nativeShowBusy_&&!studioBackupBusy_){
+                        if(raw==juce::var("Ess"))mode=M::Ess;
+                        else if(raw==juce::var("Sidechain"))mode=M::Sidechain;
+                        else if(raw==juce::var("Delta"))mode=M::Delta;
+                        if(mode!=M::Mix)ok=cue.start(key,mode,proc->getSampleRate(),juce::Time::getMillisecondCounter());
+                    }
+                }
+                emitDeEzzerReply("arMixBuiltinDeEzzerCue",request,ok,"cue",deEzzerCueReadback(key,enabled));
                 return;
             }
             armix::builtin_fx::de_ezzer::Command command{};

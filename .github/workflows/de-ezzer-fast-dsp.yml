@@ -38,8 +38,85 @@ jobs:
       - name: Regression
         run: ctest --test-dir /tmp/de-ezzer-build --output-on-failure
 
+      - name: Release callback profile (informational, not ASIO FAT)
+        if: matrix.compiler == 'g++'
+        run: |
+          cmake -S tools/de-ezzer -B /tmp/de-ezzer-build -DDE_EZZER_BENCHMARK=ON
+          cmake --build /tmp/de-ezzer-build --target de_ezzer_rt_profile
+          /tmp/de-ezzer-build/de_ezzer_rt_profile | tee /tmp/de-ezzer-profile.txt
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        if: matrix.compiler == 'g++' && success()
+        with:
+          name: de-ezzer-release-callback-profile
+          path: /tmp/de-ezzer-profile.txt
+          retention-days: 7
       - name: Editor control regression
         if: matrix.compiler == 'g++'
         run: |
           node tools/de-ezzer/ui_test.cjs
           node tools/de-ezzer/host_test.cjs
+  chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install browser test dependency
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Actual editor gesture and audition transport fixture
+        env:
+          DE_EZZER_SCREENSHOT: /tmp/de-ezzer-v2-editor.png
+        run: python tools/de-ezzer/gesture_test.py
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: de-ezzer-v2-editor-fixture
+          path: /tmp/de-ezzer-v2-editor.png
+          retention-days: 7
+
+  recorded:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: c6f02c05358526ccb16c2e02b0113c4da18903de
+          path: baseline-p2e
+          sparse-checkout: |
+            engine/builtin_fx/de_ezzer
+            tools/de-ezzer
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build actual candidate and approved baseline renderers
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/de-ezzer/render.cpp -o /tmp/dez-current
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror baseline-p2e/tools/de-ezzer/render.cpp -o /tmp/dez-baseline
+          python -m pip install numpy==2.2.6 scipy==1.15.3
+          python tools/de-ezzer/qualify_test.py /tmp/dez-current
+      - name: Pinned recorded-source paired protection screen
+        run: python tools/de-ezzer/recorded_qualification.py --renderer /tmp/dez-current --baseline-renderer /tmp/dez-baseline --source-sha ${{ github.event.pull_request.head.sha }} --output /tmp/dez-recorded
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: de-ezzer-recorded-evidence
+          path: /tmp/dez-recorded/evidence/
+          if-no-files-found: warn
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: de-ezzer-blind-listening
+          path: /tmp/dez-recorded/blind/
+          if-no-files-found: warn
+          retention-days: 7

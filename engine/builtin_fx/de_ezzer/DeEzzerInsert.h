@@ -71,7 +71,9 @@ public:
         return actual_;
     }
     Identity identity() const noexcept {return actual_.id;}
+    void requestAnalysis() noexcept {if(prepared_)control_.requestAnalysis();}
     void consumeRealtimeEdits() noexcept {control_.consumeRealtimeEdits();}
+    bool processAudioWithCue(float* l,float* r,int n,CueMode mode,float* cueL,float* cueR) noexcept {return prepared_&&n<=maximumBlock_&&control_.processAudioWithCue(l,r,n,mode,cueL,cueR);}
     bool processAudio(float* l,float* r,int n) noexcept {return prepared_&&n<=maximumBlock_&&control_.processAudio(l,r,n);}
 private:
     Control control_;Snapshot actual_{};unsigned outstanding_=0;

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
 const assert=require('node:assert/strict');
-const {createModel,defaults}=require(process.argv[2]||'../../site/preview-v2/assets/mixer-native-de-ezzer.js');
+const {createModel,defaults,observationOf}=require(process.argv[2]||'../../site/preview-v2/assets/mixer-native-de-ezzer.js');
 const id={instance:'9007199254740993',epoch:'1'};
 const snap=(n='0',frames='0',settings=defaults,extra={})=>({id,appliedSequence:n,frames,settings,audition:'Normal',gainReductionDb:0,lowerWeight:.5,...extra});
 let time=0,commands=[];const make=(monitorSafe=false,send=c=>commands.push(c))=>createModel({send,now:()=>time,monitorSafe});
@@ -12,3 +12,10 @@ const full=make(false,()=>false);assert(full.attach(snap()));assert(!full.reques
 const monitor=make(true);assert(monitor.attach(snap()));assert(monitor.request({},'Detect'));assert(monitor.ack({requested:id,sequence:'1',code:'Applied',actual:snap('1','64',defaults,{audition:'Detect'})}));assert(monitor.ingest(snap('1','144064')));assert.equal(monitor.view().actual.audition,'Normal');assert(monitor.request({enabled:false}));assert(monitor.ack({requested:id,sequence:'2',code:'Invalid',actual:snap('1','144064')}));assert(!monitor.view().editable);monitor.disconnect();assert.equal(monitor.view().actual,null);
 const exhausted=make();assert(exhausted.attach(snap('18446744073709551615')));assert(!exhausted.request({amount:.9}));assert(!make().attach(snap('18446744073709551616')));
 console.log('PASS: uint64 precision, authoritative ACK, sequence/epoch, stale/timeout, queue refusal, monitor safety, lease telemetry, rejection and disconnect');
+const o={inputDb:[-60,-35,-12,-20,-41],wetDb:[-61,-37,-20,-25,-42],essDb:-20,sidechainDb:-16,deltaDb:-24};
+assert.equal(observationOf({observation:o}),o);
+assert.equal(observationOf({observation:{...o,inputDb:[1,2,3]}}),null);
+assert.equal(observationOf({observation:{...o,essDb:NaN}}),null);
+assert.equal(observationOf({observation:{...o,wetDb:[0,0,0,0,121]}}),null);
+assert.equal(observationOf({}),null);
+console.log('PASS: measured observation schema and unavailable-data handling');

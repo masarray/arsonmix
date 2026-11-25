@@ -12,14 +12,16 @@ function contextFor(view,channelId,slot){
  return {channelId,deviceEpoch:view.device.epoch,graphRevision:view.graph.revision,instanceId:insert.id,slot};
 }
 function createTransport({backend,context,initialContext,token,now=()=>performance.now(),onInitial,onFault}){
- let listener=null,presetListener=null,read=null,write=null,serial=0,closed=false;
+ let listener=null,presetListener=null,read=null,write=null,cueRequest=null,serial=0,closed=false;
  const current=()=>same(context(),initialContext);
- const emit=(action,requestId,extra={})=>backend.emitEvent("arMixAction",{...initialContext,action,requestId,...extra});
- function fault(){if(closed)return;closed=true;listener?.disconnect();onFault?.();}
+ const emit=(action,requestId,extra={})=>backend.emitEvent("arMixAction",{...initialContext,action,requestId,editorToken:token,...extra});
+ function cancelAudition(){if(!closed&&current()){try{emit("nativeDeEzzerCue",token+"-c"+(++serial),{mode:"Mix"});}catch{}}cueRequest=null;}
+ function fault(){if(closed)return;cancelAudition();closed=true;listener?.disconnect?.();onFault?.();}
  function tick(){
   if(closed)return;
   if(!current()){fault();return;}
   if(read&&now()-read.at>1000){fault();return;}
+  if(cueRequest&&now()-cueRequest.at>1000){cancelAudition();listener?.cue?.({available:false,requested:"Mix",applied:"Mix"});}
   if(!read){read={id:token+"-r"+(++serial),at:now()};try{emit("nativeDeEzzerSnapshot",read.id);}catch{fault();}}
  }
  function send(command){
@@ -27,26 +29,33 @@ function createTransport({backend,context,initialContext,token,now=()=>performan
   write=token+"-w"+command.sequence;
   try{emit("nativeDeEzzerSet",write,{command});return true;}catch{write=null;fault();return false;}
  }
+ function setCue(mode){
+  if(closed||!current()||!["Mix","Ess","Sidechain","Delta"].includes(mode)||(cueRequest&&mode!=="Mix"))return false;
+  cueRequest={id:token+"-c"+(++serial),at:now()};
+  try{emit("nativeDeEzzerCue",cueRequest.id,{mode});return true;}catch{cueRequest=null;fault();return false;}
+ }
  function receive(kind,payload){
   if(closed||!same(initialContext,payload)||!current())return false;
   if(kind==="snapshot"&&read?.id===payload.requestId){
    read=null;if(payload.ok!==true||!payload.snapshot){fault();return false;}
-   if(onInitial){const initial=onInitial;onInitial=null;initial(payload.snapshot);}else listener?.telemetry(payload.snapshot);
+   if(onInitial){const initial=onInitial;onInitial=null;initial(payload.snapshot);}else listener?.telemetry?.(payload.snapshot);
+   listener?.cue?.(payload.snapshot.cue);
    return true;
   }
+  if(kind==="cue"&&cueRequest?.id===payload.requestId){cueRequest=null;listener?.cue?.(payload.cue);return payload.ok===true;}
   if(kind==="queue"&&write===payload.requestId){if(payload.ok!==true){write=null;fault();}return true;}
-  if(kind==="ack"&&write===payload.requestId){write=null;if(payload.ok!==true||!payload.ack){fault();return false;}listener?.ack(payload.ack);return true;}
+  if(kind==="ack"&&write===payload.requestId){write=null;if(payload.ok!==true||!payload.ack){fault();return false;}listener?.ack?.(payload.ack);return true;}
   return false;
  }
- return Object.freeze({send,tick,receive,receivePreset(p){if(!closed&&current()&&same(initialContext,{...p,slot:initialContext.slot}))presetListener?.(p);},subscribePresetResult(fn){presetListener=fn;},subscribe(s){listener=s;return ()=>{listener=null;presetListener=null;closed=true;};},cancelAudition(){/* Native product route never admits audition. */}});
+ return Object.freeze({send,setCue,tick,receive,receivePreset(p){if(!closed&&current()&&same(initialContext,{...p,slot:initialContext.slot}))presetListener?.(p);},subscribePresetResult(fn){presetListener=fn;},subscribe(s){listener=s;return ()=>{listener=null;presetListener=null;closed=true;};},cancelAudition});
 }
 if(typeof module==="object"&&module.exports){module.exports={contextFor,createTransport};return;}
 const api=root.ArSonMixNativeDeEzzer,backend=root.__JUCE__?.backend;
 if(!api||!backend?.emitEvent||!backend?.addEventListener)return;
 const doc=root.document,host=doc.createElement("div");host.id="mxNativeDeEzzerHost";host.hidden=true;
-Object.assign(host.style,{position:"fixed",left:"0",top:"0",width:"min(540px,100%)",zIndex:"16000"});doc.body.append(host);
+Object.assign(host.style,{position:"fixed",left:"0",top:"0",width:"min(640px,100%)",zIndex:"16000"});doc.body.append(host);
 let active=null;
-for(const [kind,event] of [["snapshot","arMixBuiltinDeEzzerSnapshot"],["queue","arMixBuiltinDeEzzerQueue"],["ack","arMixBuiltinDeEzzerAck"]])backend.addEventListener(event,p=>active?.transport.receive(kind,p));
+for(const [kind,event] of [["snapshot","arMixBuiltinDeEzzerSnapshot"],["queue","arMixBuiltinDeEzzerQueue"],["ack","arMixBuiltinDeEzzerAck"],["cue","arMixBuiltinDeEzzerCue"]])backend.addEventListener(event,p=>active?.transport.receive(kind,p));
 backend.addEventListener("arMixBuiltinFxPresetResult",p=>active?.transport.receivePreset(p));
 function close(){active?.editor.dispose();}
 function open(track,slot){
@@ -56,7 +65,7 @@ function open(track,slot){
  const token="dez-"+root.crypto.randomUUID();let editor,timer;
  const transport=createTransport({backend,context,initialContext,token,onInitial:s=>editor.model.attach(s)});
  editor=api.mount(host,{transport,monitorSafe:false,presetContext:()=>same(context(),initialContext)?initialContext:null,close:()=>{clearInterval(timer);host.hidden=true;active=null;}});
- active={editor,transport};timer=setInterval(()=>transport.tick(),100);transport.tick();return true;
+ active={editor,transport};timer=setInterval(()=>transport.tick(),50);transport.tick();return true;
 }
 root.ArSonMixNativeDeEzzer=Object.freeze({...api,open,close});
 })(globalThis);

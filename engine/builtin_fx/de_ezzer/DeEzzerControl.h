@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DeEzzerCore.h"
+#include "DeEzzerMonitor.h"
 #include "../FxSpsc.h"
 #include <limits>
 #include <type_traits>
@@ -13,6 +14,7 @@ struct Snapshot {
     Identity id; std::uint64_t appliedSequence=0,frames=0;
     Settings settings; Audition audition=Audition::Normal;
     float gainReductionDb=0,lowerWeight=.5f; std::uint32_t droppedTelemetry=0;
+    Observation observation{};
 };
 struct Ack { Identity requested; std::uint64_t sequence=0; AckCode code=AckCode::Invalid; Snapshot actual; };
 static_assert(std::is_trivially_copyable_v<Command>&&std::is_trivially_copyable_v<Ack>&&std::is_trivially_copyable_v<Snapshot>);
@@ -27,6 +29,8 @@ public:
         Core candidate;if(!candidate.setSettings(settings)||!candidate.prepare(rate,channels))return false;
         Command cmd;Ack ack;Snapshot snap;
         while(commands_.pop(cmd)){}while(acks_.pop(ack)){}while(telemetry_.pop(snap)){}
+        if(!observer_.prepare(rate,channels))return false;
+        analysisRequested_.store(false,std::memory_order_relaxed);analysisRemaining_=0;analysisLease_=static_cast<int>(rate*.5);
         core_=candidate;id_=id;channels_=channels;lastSeen_=applied_=frames_=0;drops_=0;
         audition_=Audition::Normal;deltaMix_=detectMix_=0;lease_=0;
         leaseFrames_=static_cast<int>(rate*3);fadeFrames_=std::max(1,static_cast<int>(rate*.005));
@@ -51,10 +55,36 @@ public:
             const auto code=apply(cmd);(void)acks_.push({cmd.id,cmd.sequence,code,snapshot()});
         }
     }
+    // CONTROL renews while an exact-lease editor polls; no persistent toggle.
+    void requestAnalysis() noexcept {analysisRequested_.store(true,std::memory_order_release);}
     bool processAudio(float* l,float* r,int n) noexcept {
         if(!channels_||!l||n<=0||n>maxFrames||(channels_==2&&(!r||l==r)))return false;
-        if(audition_==Audition::Normal&&deltaMix_==0&&detectMix_==0)core_.process(l,r,n);
-        else monitor(l,r,n);
+        renewAnalysis();
+        if(audition_==Audition::Normal&&deltaMix_==0&&detectMix_==0){
+            if(analysisRemaining_>0){if(!observer_.render(core_,l,channels_==2?r:nullptr,n))return false;}
+            else core_.process(l,r,n);
+        }else {analysisRemaining_=0;monitor(l,r,n);}
+        finishBlock(n);return true;
+    }
+    // Future graph-authorized operator destination. Caller must supply separate
+    // PCM buffers, and must not call processAudio a second time on this block.
+    bool processAudioWithCue(float* l,float* r,int n,CueMode mode,float* cueL,float* cueR) noexcept {
+        if(!channels_||!cueL||!core_.settings().enabled||audition_!=Audition::Normal||deltaMix_!=0||detectMix_!=0)return false;
+        if(analysisRemaining_<=0){observer_.reset();core_.resetEssTap();}
+        if(!observer_.render(core_,l,channels_==2?r:nullptr,n,mode,cueL,cueR))return false;
+        analysisRemaining_=analysisLease_;finishBlock(n);return true;
+    }
+    // Both owners stopped: only for host prepare/restart, never UI polling.
+    Snapshot quiescentSnapshot() const noexcept {return snapshot();}
+private:
+    void renewAnalysis() noexcept {
+        if(analysisRequested_.load(std::memory_order_acquire)&&analysisRequested_.exchange(false,std::memory_order_acq_rel)){
+            if(analysisRemaining_<=0){observer_.reset();core_.resetEssTap();}
+            analysisRemaining_=analysisLease_;
+        }
+    }
+    void finishBlock(int n) noexcept {
+        analysisRemaining_=std::max(0,analysisRemaining_-n);
         frames_+=static_cast<unsigned>(n);
         untilTelemetry_-=n;
         if(untilTelemetry_<=0){
@@ -62,11 +92,7 @@ public:
             // One snapshot maximum per callback; no catch-up bursts.
             untilTelemetry_=telemetryPeriod_;
         }
-        return true;
     }
-    // Both owners stopped: only for host prepare/restart, never UI polling.
-    Snapshot quiescentSnapshot() const noexcept {return snapshot();}
-private:
     AckCode apply(const Command& cmd) noexcept {
         if(cmd.id!=id_)return AckCode::WrongIdentity;
         if(cmd.sequence==0||cmd.sequence<=lastSeen_)return AckCode::StaleSequence;
@@ -77,7 +103,7 @@ private:
         applied_=cmd.sequence;audition_=cmd.audition;lease_=audition_==Audition::Normal?0:leaseFrames_;
         return AckCode::Applied;
     }
-    Snapshot snapshot() const noexcept {return {id_,applied_,frames_,core_.settings(),audition_,core_.bandReductionDb(),core_.focusLowerWeight(),drops_};}
+    Snapshot snapshot() const noexcept {return {id_,applied_,frames_,core_.settings(),audition_,core_.bandReductionDb(),core_.focusLowerWeight(),drops_,analysisRemaining_>0?observer_.read():Observation{}};}
     static double clean(float x) noexcept {return std::isfinite(x)?static_cast<double>(x):0.;}
     static float finiteFloat(double x) noexcept {constexpr double m=std::numeric_limits<float>::max();return static_cast<float>(std::clamp(x,-m,m));}
     void monitor(float* l,float* r,int n) noexcept {
@@ -102,7 +128,9 @@ private:
             pos+=count;
         }
     }
-    Core core_;Identity id_{};int channels_=0;
+    Core core_;Monitor observer_;Identity id_{};int channels_=0;
+    std::atomic<bool> analysisRequested_{false};int analysisRemaining_=0,analysisLease_=0;
+    static_assert(std::atomic<bool>::is_always_lock_free);
     std::uint64_t lastSeen_=0,applied_=0,frames_=0;std::uint32_t drops_=0;
     Audition audition_=Audition::Normal;int lease_=0,leaseFrames_=0,fadeFrames_=1,telemetryPeriod_=1,untilTelemetry_=0;
     double deltaMix_=0,detectMix_=0,step_=1;

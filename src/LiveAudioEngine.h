@@ -410,7 +410,7 @@ public:
     void setMonitorEnabled (bool value) noexcept {
         mainOutputIntent_.operatorRequested(value);
         monitor_.store(value,std::memory_order_release);
-        if (!value) resumeMainAfterAsioReset_.store(false,std::memory_order_release);
+        if (!value) {dryRoutingLab_.deEzzerCueControl().revokePublished();resumeMainAfterAsioReset_.store(false,std::memory_order_release);}
     }
     bool isMonitorEnabled() const noexcept { return monitor_.load(std::memory_order_acquire); }
     bool wantsMainContinuation() const noexcept { return mainOutputIntent_.desired(); }
@@ -419,7 +419,7 @@ public:
         return callbackCount_.load(std::memory_order_relaxed);
     }
     // Emergency output mute, not a prerequisite for receiving audio.
-    void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); }
+    void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); if(mute)dryRoutingLab_.deEzzerCueControl().revokePublished(); }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
     bool allOutputsDisarmed() const noexcept {
         return isOutputMuted() && !secondaryOutput_.armed();
@@ -934,7 +934,7 @@ public:
             channelPan_.store (juce::jlimit (-1.f, 1.f, value), std::memory_order_relaxed);
     }
     void setChannelMuted (bool value) noexcept { channelMute_.store (value); }
-    void setMasterMuted (bool value) noexcept { masterMute_.store (value); }
+    void setMasterMuted (bool value) noexcept { masterMute_.store (value); if(value)dryRoutingLab_.deEzzerCueControl().revokePublished(); }
     void setMasterMono (bool value) noexcept { masterMono_.store (value, std::memory_order_relaxed); }
 
     int chainSize() const noexcept { return graphOwned_->count; }
@@ -2441,6 +2441,17 @@ public:
             epoch,revision,id,slot,token);
     }
 
+    bool privateDeEzzerCueAllowed() const noexcept {
+        return isMonitorEnabled()&&directFence_.permitted()&&!independent_.active()&&
+            !masterMute_.load(std::memory_order_acquire)&&!routeReconfiguring_.load(std::memory_order_acquire)&&
+            !topologyPublicationMute_.load(std::memory_order_acquire)&&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal;
+    }
+    std::uint64_t deEzzerCueRoute(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId channel) const noexcept {
+        return privateDeEzzerCueAllowed()?dryRoutingLab_.deEzzerCueRoute(ep,rev,channel):0;
+    }
+    armix::mixer::NativeFxCueBus& deEzzerCueControl() noexcept {return dryRoutingLab_.deEzzerCueControl();}
+
     LiveDryRoutingLab::NativeBusResult createNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,const std::string& name,
@@ -3776,7 +3787,9 @@ private:
                      !routeReconfiguring_.load(std::memory_order_acquire) &&
                      !topologyPublicationMute_.load(std::memory_order_acquire),
                      std::span<const armix::mixer::DynamicPlayerPcmBlock>(
-                         deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease);
+                         deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease,
+                     outputGate.hardware&&!mainOnlyMuted&&!cycle.fadeOut&&!cycle.fadeIn&&
+                     fxMovePhase_.load(std::memory_order_acquire)==0&&privateDeEzzerCueAllowed());
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const auto nativeMain=armix::mixer::NativeOutputPairTap::select(

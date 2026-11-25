@@ -73,10 +73,11 @@ public:
         controlPeriod_=std::max(1,static_cast<int>(std::round(rate/6000.)));
         memoryDecay_=std::exp(-controlPeriod_/(rate*.085));
         adapt_= -std::expm1(-controlPeriod_/(rate*.12));
-        for(auto& c:ch_){c.witness.prepare(rate,600,1.5);c.body.prepare(rate,950,.55);c.lower.prepare(rate,4600,1.1);c.upper.prepare(rate,8000,1.1);c.lowerStage.prepare(rate,4600,1.1);c.upperStage.prepare(rate,8000,1.1);}
+        const int quietResetTicks=static_cast<int>(std::ceil(rate*.5/controlPeriod_));
+        for(auto& c:ch_){c.context.prepare(quietResetTicks);c.witness.prepare(rate,600,1.5);c.body.prepare(rate,950,.55);c.lower.prepare(rate,4600,1.1);c.upper.prepare(rate,8000,1.1);c.lowerStage.prepare(rate,4600,1.1);c.upperStage.prepare(rate,8000,1.1);}
         reset();return true;
     }
-    void reset() noexcept {for(auto& c:ch_)c.reset();gain_=target_=1;focus_=settings_.shape==Shape::Focused?1.:0.;weight_=weightTarget_=.5;depth_=std::max(0.,2.*settings_.amount-1.);phase_=0;warmup_=warmupSamples_;}
+    void reset() noexcept {for(auto& c:ch_)c.reset();gain_=target_=1;targetDb_=0;focus_=settings_.shape==Shape::Focused?1.:0.;weight_=weightTarget_=.5;depth_=std::max(0.,2.*settings_.amount-1.);phase_=0;warmup_=warmupSamples_;essTarget_=essGate_=0;}
     bool setSettings(Settings s) noexcept {
         if(!std::isfinite(s.amount)||!std::isfinite(s.sensitivity)||!std::isfinite(s.rangeDb)||s.amount<0||s.amount>1||s.sensitivity<0||s.sensitivity>1||s.rangeDb<0||s.rangeDb>18)return false;
         if(s.mode!=Mode::Auto&&s.mode!=Mode::Voice)return false;
@@ -107,9 +108,20 @@ public:
             if(channels_==2)processBlock<false,2,true>(l,r,n,dl,dr);else processBlock<false,1,true>(l,r,n,dl,nullptr);
         }
     }
+    // Observer-owned nonaliasing scratch; no additional render or dry delay.
+    // ESS is evidence-gated detector PCM, not a separated phoneme stem.
+    void processWithTaps(float* l,float* r,int n,float* dl,float* dr,float* el,float* er) noexcept {
+        if(!channels_||!l||!dl||!el||n<=0||(channels_==2&&(!r||!dr||!er||r==l)))return;
+        if(settings_.mode==Mode::Voice){
+            if(channels_==2)processBlock<true,2,true>(l,r,n,dl,dr,el,er);else processBlock<true,1,true>(l,r,n,dl,nullptr,el,nullptr);
+        }else{
+            if(channels_==2)processBlock<false,2,true>(l,r,n,dl,dr,el,er);else processBlock<false,1,true>(l,r,n,dl,nullptr,el,nullptr);
+        }
+    }
+    void resetEssTap() noexcept {essGate_=0;}
 private:
     template<bool Voice,int Channels,bool Tap>
-    void processBlock(float* l,float* r,int n,float* dl,float* dr) noexcept {
+    void processBlock(float* l,float* r,int n,float* dl,float* dr,float* el=nullptr,float* er=nullptr) noexcept {
         const double shapeTarget=settings_.shape==Shape::Focused?1.:0.;
         // Default Voice threshold retained; high sensitivity no longer plateaus.
         const double voiceLimit=thresholdRatio_/.3981071705534972;
@@ -148,21 +160,27 @@ private:
                     }
                 }
                 if(totalEvidence>0)weightTarget_=std::clamp(weightedLower/totalEvidence,0.,1.);
+                essTarget_=std::clamp(excess/6.,0.,1.);
                 const double db=settings_.enabled?std::min<double>(settings_.rangeDb,drive*excess):0;
-                target_=db>0?std::pow(10.,-db/20):1.;
+                // Capped or quiet detector targets commonly repeat. Reuse the
+                // exact conversion only on identical dB; no approximation.
+                if(db!=targetDb_){targetDb_=db;target_=db>0?std::pow(10.,-db/20):1.;}
             }
             if(++phase_==controlPeriod_)phase_=0;
-            gain_+=(target_<gain_?attack_:release_)*(target_-gain_);
-            if(std::abs(target_-gain_)<1e-7)gain_=target_;
+            if(gain_!=target_){
+                gain_+=(target_<gain_?attack_:release_)*(target_-gain_);
+                if(std::abs(target_-gain_)<1e-7)gain_=target_;
+            }
             if(focus_!=shapeTarget){focus_+=focusSmooth_*(shapeTarget-focus_);if(std::abs(shapeTarget-focus_)<1e-7){focus_=shapeTarget;if(focus_==0)for(auto& c:ch_){c.lowerStage.reset();c.upperStage.reset();}}}
             if(depth_!=depthTarget){depth_+=focusSmooth_*(depthTarget-depth_);if(std::abs(depthTarget-depth_)<1e-7)depth_=depthTarget;}
             if(focus_>0&&weight_!=weightTarget_){weight_+=targetSmooth_*(weightTarget_-weight_);if(std::abs(weightTarget_-weight_)<1e-7)weight_=weightTarget_;}
             if constexpr(Tap){
                 dl[i]=detect(ch_[0]);if constexpr(Channels==2)dr[i]=detect(ch_[1]);
+                if(el){essGate_+=(essTarget_>essGate_?attack_:release_)*(essTarget_-essGate_);el[i]=static_cast<float>(essGate_*dl[i]);if constexpr(Channels==2)er[i]=static_cast<float>(essGate_*dr[i]);}
             }
             // Split the requested dB budget over two fixed stable sections at high Amount.
             // Shared linked gains; no extra lookahead, coefficient modulation or callback.
-            const double second=focus_>0&&depth_>0?1.+depth_*(std::sqrt(gain_)-1.):1.;
+            const double second=gain_!=1&&focus_>0&&depth_>0?1.+depth_*(std::sqrt(gain_)-1.):1.;
             const double first=second==1.?gain_:gain_/second;
             l[i]=output(x[0],ch_[0],first,second);if constexpr(Channels==2)r[i]=output(x[1],ch_[1],first,second);
         }
@@ -186,10 +204,11 @@ private:
         }
         return static_cast<float>(std::clamp(y,-static_cast<double>(3.402823466e38f),static_cast<double>(3.402823466e38f)));
     }
+    double essTarget_=0,essGate_=0;
     Settings settings_{};
     std::array<detail::Channel,2> ch_{};
     int channels_=0,phase_=0,controlPeriod_=8,warmup_=0,warmupSamples_=0;
     double focusSmooth_=0,targetSmooth_=0,focus_=0,weight_=.5,weightTarget_=.5,depth_=0;
-    double memoryDecay_=0,adapt_=0,envelope_=0,attack_=0,release_=0,lowPass_=0,thresholdRatio_=.3981071705534972,gain_=1,target_=1;
+    double memoryDecay_=0,adapt_=0,envelope_=0,attack_=0,release_=0,lowPass_=0,thresholdRatio_=.3981071705534972,gain_=1,target_=1,targetDb_=0;
 };
 } // namespace armix::builtin_fx::de_ezzer
