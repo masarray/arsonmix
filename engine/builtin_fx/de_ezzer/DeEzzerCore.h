@@ -82,7 +82,8 @@ public:
         if(s.mode!=Mode::Auto&&s.mode!=Mode::Voice)return false;
         if(s.shape!=Shape::Shelf&&s.shape!=Shape::Focused)return false;
         if(s.mode!=settings_.mode)for(auto& c:ch_)c.resetVoice();
-        settings_=s;thresholdRatio_=std::pow(10.,(2-12*s.sensitivity)/10.);return true;
+        if(s.sensitivity!=settings_.sensitivity)thresholdRatio_=std::pow(10.,(2-12*s.sensitivity)/10.);
+        settings_=s;return true;
     }
     Settings settings() const noexcept {return settings_;}
     static constexpr int latencySamples() noexcept {return 0;}
@@ -90,25 +91,40 @@ public:
     float bandReductionDb() const noexcept {return static_cast<float>(-20*std::log10(gain_));}
     void process(float* l,float* r,int n) noexcept {
         if(!channels_||!l||n<=0||(channels_==2&&(!r||r==l)))return;
+        // Dispatch once per block; no runtime mode/channel branch inside the sample loop.
+        if(settings_.mode==Mode::Voice){
+            if(channels_==2)processBlock<true,2>(l,r,n);else processBlock<true,1>(l,r,n);
+        }else{
+            if(channels_==2)processBlock<false,2>(l,r,n);else processBlock<false,1>(l,r,n);
+        }
+    }
+private:
+    template<bool Voice,int Channels>
+    void processBlock(float* l,float* r,int n) noexcept {
+        const double shapeTarget=settings_.shape==Shape::Focused?1.:0.;
+        const double voiceLimit=std::max(1.,thresholdRatio_);
         for(int i=0;i<n;++i){
-            std::array<double,2> x{sanitize(l[i]),channels_==2?sanitize(r[i]):0};
-            for(int c=0;c<channels_;++c){
+            std::array<double,2> x{sanitize(l[i]),Channels==2?sanitize(r[i]):0};
+            for(int c=0;c<Channels;++c){
                 ch_[c].analyze(x[c],envelope_,lowPass_);
-                if(settings_.mode==Mode::Voice)ch_[c].voice(x[c],envelope_);
+                if constexpr(Voice)ch_[c].voice(x[c],envelope_);
             }
             if(warmup_>0)--warmup_;
             if(phase_==0&&warmup_==0){
                 double excess=0;
-                const bool trackFocus=settings_.shape==Shape::Focused||focus_>0;
+                const bool trackFocus=shapeTarget>0||focus_>0;
                 double totalEvidence=0,weightedLower=0;
-                for(int c=0;c<channels_;++c){
+                for(int c=0;c<Channels;++c){
                     auto& a=ch_[c];const double hf=std::max(a.eLower,a.eUpper);
                     double channelExcess=a.context.excess(a.eBody,hf,a.eWitness,thresholdRatio_,memoryDecay_,adapt_);
-                    if(settings_.mode==Mode::Voice){
-                        const double authority=a.voiceAuthority(hf);
-                        const double limit=std::max(1.,thresholdRatio_);
-                        const double ratio=hf/(a.eBody+1e-10);
-                        if(authority>0&&ratio>limit)channelExcess=std::max(channelExcess,authority*std::min(12.,10*std::log10(ratio/limit)));
+                    if constexpr(Voice){
+                        if(hf>1e-7){
+                            const double authority=a.voiceAuthority(hf);
+                            if(authority>0){
+                                const double ratio=hf/(a.eBody+1e-10);
+                                if(ratio>voiceLimit)channelExcess=std::max(channelExcess,authority*std::min(12.,10*std::log10(ratio/voiceLimit)));
+                            }
+                        }
                     }
                     excess=std::max(excess,channelExcess);
                     if(trackFocus&&channelExcess>0){
@@ -126,13 +142,11 @@ public:
             if(++phase_==controlPeriod_)phase_=0;
             gain_+=(target_<gain_?attack_:release_)*(target_-gain_);
             if(std::abs(target_-gain_)<1e-7)gain_=target_;
-            const double shapeTarget=settings_.shape==Shape::Focused?1.:0.;
             if(focus_!=shapeTarget){focus_+=focusSmooth_*(shapeTarget-focus_);if(std::abs(shapeTarget-focus_)<1e-7)focus_=shapeTarget;}
             if(focus_>0&&weight_!=weightTarget_){weight_+=targetSmooth_*(weightTarget_-weight_);if(std::abs(weightTarget_-weight_)<1e-7)weight_=weightTarget_;}
-            l[i]=output(x[0],ch_[0]);if(channels_==2)r[i]=output(x[1],ch_[1]);
+            l[i]=output(x[0],ch_[0]);if constexpr(Channels==2)r[i]=output(x[1],ch_[1]);
         }
     }
-private:
     static double sanitize(float x) noexcept {return std::isfinite(x)?static_cast<double>(x):0.;}
     float output(double x,const detail::Channel& c) const noexcept {
         // Complementary residual: exact dry at unity, no delayed dry path.
