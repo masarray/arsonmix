@@ -2176,6 +2176,8 @@ private:
         if(error.isEmpty()) {
             try {
                 if(auto editor=armix::ui::createHostedAudioEditor(*prepared.processor)) {
+                    const juce::Component::SafePointer<armix::builtin_fx::vocal_delay::SingerEditor> preparedDelay(
+                        dynamic_cast<armix::builtin_fx::vocal_delay::SingerEditor*>(editor.get()));
                     const juce::Component::SafePointer<armix::builtin_fx::VocalReverbEditor> preparedReverb(
                         dynamic_cast<armix::builtin_fx::VocalReverbEditor*>(editor.get()));
                     prepared.window=std::make_unique<PluginEditorWindow>(
@@ -2186,6 +2188,14 @@ private:
                     prepared.instanceId=requestedInstance;
                     const bool visible=prepared.window->presentationConfirmed();
                     logicalVendorEditor_=std::move(prepared);
+                    if(auto* delay=preparedDelay.getComponent()) {
+                        auto* identity=logicalVendorEditor_->processor.get();
+                        delay->bindHostAccess([this,identity]{return logicalVendorEditor_&&
+                            logicalVendorEditor_->processor.get()==identity&&
+                            logicalVendorEditor_->workspaceToken==logicalMixer_.workspace().workspaceToken()&&
+                            !mixerSessionWorker_.busy()&&!logicalMixer_.readOnly()&&
+                            !studioBackupBusy_&&!nativeShowBusy_&&logicalVendorSourceCurrent(*logicalVendorEditor_);});
+                    }
                     if(auto* reverb=preparedReverb.getComponent()) {
                         auto* identity=logicalVendorEditor_->processor.get();
                         bindReverbUserPresets(*reverb,[this,identity]() -> armix::builtin_fx::VocalReverbProcessor* {
@@ -2231,6 +2241,13 @@ private:
                 // an empty Reverb-Sis blob; restore requires a valid packet.
                 if(!reverb->captureDetachedState(bytes)) {
                     emitNotice("Reverb-Sis settings not captured; previous saved state retained",true);
+                    if(!shutdown)fx.window->setVisible(true);
+                    return;
+                }
+            } else if(auto* delay=dynamic_cast<armix::builtin_fx::vocal_delay::JuceVocalDelayProcessor*>(fx.processor.get())) {
+                delay->getStateInformation(bytes);
+                if(!delay->isDetached()||bytes.getSize()!=48) {
+                    emitNotice("Vocal Delay settings not captured; previous saved state retained",true);
                     if(!shutdown)fx.window->setVisible(true);
                     return;
                 }
@@ -8432,6 +8449,14 @@ private:
                                     },readPower);
                             }
 #endif
+                            // Vocal Delay owns only internal wet power/TAIL. Rack
+                            // bypass remains the existing independent hard safety gate.
+                            if(auto* delay=dynamic_cast<armix::builtin_fx::vocal_delay::SingerEditor*>(editor)) {
+                                auto held=owner;
+                                delay->bindHostAccess([this,held,retainedEpoch]{return held&&
+                                    !nativeShowBusy_&&!studioBackupBusy_&&!engine_.independentClockActive()&&
+                                    !engine_.isGraphSwitchPending()&&engine_.retainsRoutedFxEditor(retainedEpoch,held);});
+                            }
                             // REVERB-SIS uses the same retained lease readback
                             // as GEQ31. The indicator never owns another gate.
                             if(auto* reverb=dynamic_cast<

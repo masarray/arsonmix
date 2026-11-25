@@ -5,12 +5,15 @@
 #include "../../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 namespace armix::builtin_fx::vocal_delay {
-// Candidate host adapter. The mixer must bind a fresh graph lease while
-// stopped before prepareToPlay; no implicit identity or autonomous routing.
-// AVTH v1 is still dispatched to the original VocalThrowProcessor.
+// Host adapter: published graph ownership is held by FxInstance and the
+// host's exact retained-editor guard. The private mailbox is scoped to
+// this processor object and its stopped generation, NOT a graph identity.
+// Explicit leases remain available for standalone contract tests. AVTH v1
+// stays with the legacy VocalThrowProcessor and its original catalog ID.
 class JuceVocalDelayProcessor final : public juce::AudioProcessor,
                                      public armix::mixer::RealtimeNativeFxControl,private juce::Timer {
 public:
+    static constexpr const char* catalogIdentity="armix.builtin.vocal-delay.v2";
     JuceVocalDelayProcessor():AudioProcessor(BusesProperties()
       .withInput("Input",juce::AudioChannelSet::stereo(),true)
       .withOutput("Output",juce::AudioChannelSet::stereo(),true)){setLatencySamples(0);initial_.continuous=presetSettings(0);}
@@ -33,17 +36,29 @@ public:
     }
     // CONTROL, only before publication or after the audio graph is stopped.
     bool bindLeaseStopped(Lease l) noexcept{
-        if(active_||!l.valid())return false;
+        if(active_||localMailbox_||!l.valid())return false;
         next_=l;return true;
     }
-    void prepareToPlay(double rate,int) override{
-        if(active_)return; // host must stop first
+    // CONTROL-only factory opt-in before prepare. No graph ID is invented.
+    // Local tickets are never exposed as mixer ChannelId/InsertId or accepted
+    // by public submit(); only the retained native editor may use them.
+    bool useHostLocalMailbox() noexcept{
+        if(active_||prepared_||next_.valid())return false;
+        localMailbox_=true;return true;
+    }
+    void prepareToPlay(double rate,int frames) override{
+        if(active_||!validRate(rate)||frames<16)return;
+        if(localMailbox_){if(generation_==std::numeric_limits<std::uint64_t>::max())return;
+            next_={1,1,++generation_,1};} // object-local namespace only
         if(!next_.valid())return;
+        setRateAndBufferSizeDetails(rate,frames);
         active_=prepared_?session_.restartStopped(rate,next_):session_.prepareStopped(rate,next_,initial_);
         if(active_)prepared_=true;
         next_={};
     }
-    void releaseResources() override{active_=false;}
+    // Host retires/stops PCM before release. Discard unconsumed UI intent;
+    // restartStopped preserves audio-applied state, even if ACK was unpolled.
+    void releaseResources() override{stopTimer();active_=false;singer_.reset();editorOpen_=false;}
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override{
         juce::ScopedNoDenormals noDenormals;
         if(active_&&pcm.getNumChannels()==2&&pcm.getNumSamples()>0)
@@ -58,20 +73,24 @@ public:
     void sealForRealtime() noexcept override{published_=true;}
     bool stateSnapshotQuiescent() const noexcept override{return active_&&session_.quiescent()&&!singer_.pending()&&!singer_.fault();}
     Submit submit(const Edit& edit) noexcept{
+        if(localMailbox_)return Submit::invalid;
         if(editorOpen_||singer_.pending()||singer_.fault())return Submit::busy;
         return active_?session_.submit(edit):Submit::notReady;
     }
-    bool poll(Receipt& receipt) noexcept{return active_&&!singer_.pending()&&session_.poll(receipt);}
+    bool poll(Receipt& receipt) noexcept{return !localMailbox_&&active_&&!singer_.pending()&&session_.poll(receipt);}
     // All editor calls and timer callbacks share the JUCE message thread.
     bool beginSingerEditor(){
         if(editorOpen_||!active_||singer_.fault()||(!session_.quiescent()&&!singer_.pending())||!singer_.attach(session_.acceptedSnapshot()))return false;
-        editorOpen_=true;startTimerHz(30);return true;
+        editorOpen_=true;if(!isDetached())startTimerHz(30);return true;
     }
     void endSingerEditor() noexcept{editorOpen_=false;serviceSingerControl();}
     bool offerSinger(const Parameters& p) noexcept{
-        return editorOpen_&&active_&&singer_.offer(session_.acceptedSnapshot(),p);
+        if(!editorOpen_||!active_||!valid(p))return false;
+        if(isDetached())return session_.applyDetached(p);
+        return singer_.offer(session_.acceptedSnapshot(),p);
     }
     Parameters singerDisplay() const noexcept{return singer_.display(session_.acceptedSnapshot());}
+    bool isDetached() const noexcept{return localMailbox_&&!published_;}
     bool singerPending() const noexcept{return singer_.pending();}
     bool singerFault() const noexcept{return singer_.fault();}
     void serviceSingerControl() noexcept{
@@ -100,7 +119,8 @@ private:
     bool editorOpen_=false;
     State initial_{};
     Lease next_{};
-    bool active_=false,prepared_=false,published_=false;
+    bool active_=false,prepared_=false,published_=false,localMailbox_=false;
+    std::uint64_t generation_=0;
 };
 } // namespace armix::builtin_fx::vocal_delay
 #include "SingerEditor.h"

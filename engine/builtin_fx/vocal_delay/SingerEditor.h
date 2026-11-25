@@ -2,6 +2,7 @@
 #pragma once
 #include "JuceVocalDelayProcessor.h"
 #include "VocalDelayHardwareSkin.h"
+#include <functional>
 namespace armix::builtin_fx::vocal_delay {
 class SingerEditor final:public juce::AudioProcessorEditor,private juce::Timer{
 public:
@@ -69,6 +70,9 @@ public:
         for(auto* c:{&preset_,&mode_,&division_,&algorithm_})c->setLookAndFeel(nullptr);
         for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_})b->setLookAndFeel(nullptr);
     }
+    // Host owns the exact retained FxInstance/workspace guard. No captured
+    // slot ordinal is trusted after MOVE. UI may not edit a retired owner.
+    void bindHostAccess(std::function<bool()> guard){hostAccess_=std::move(guard);refresh();}
     void paint(juce::Graphics& g) override{
         hardware::chassis(g,getWidth(),getHeight());
         hardware::inset(g,{174,15,424,39},5);
@@ -95,7 +99,7 @@ public:
         const auto p=processor_.singerDisplay();
         const auto tempo=tempoNotice_.isNotEmpty()?tempoNotice_:(p.bpmQuarter?"SYNCED / MANUAL-TAP":"FREE TIME");
         g.setColour(juce::Colour(0xff829ca4));g.drawText(tempo,180,266,195,18,juce::Justification::centredLeft);
-        g.setColour(juce::Colour(0xff5fd7c3));g.drawText(!admitted_?"OFFLINE":processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":"DSP READY",375,266,221,18,juce::Justification::centredRight);
+        g.setColour(juce::Colour(0xff5fd7c3));g.drawText(!admitted_||!hostAvailable()?"UNAVAILABLE":processor_.isDetached()?"OFFLINE EDIT":processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":"DSP READY",375,266,221,18,juce::Justification::centredRight);
     }
     void resized() override{
         preset_.setBounds(180,19,178,31);mode_.setBounds(366,19,92,31);
@@ -112,7 +116,7 @@ public:
         hit_.setBounds(484,235,52,25);tail_.setBounds(542,235,54,25);bpm_.setBounds(24,265,148,22);
     }
     void refresh(){
-        const bool available=admitted_&&processor_.isReady()&&!processor_.singerFault();
+        const bool available=admitted_&&hostAvailable()&&processor_.isReady()&&!processor_.singerFault();
         const auto p=processor_.singerDisplay();
         setDial(time_,p.timeMs);setDial(feedback_,p.feedback*100);setDial(echo_,p.echo*100);
         setDial(duck_,p.duck*100);setDial(hp_,p.highPassHz);setDial(lp_,p.lowPassHz);
@@ -120,7 +124,7 @@ public:
         const auto style=styleIndex(p);
         preset_.setSelectedId(style<0?99:style+1,juce::dontSendNotification);
         smart_.setEnabled(available);
-        hit_.setEnabled(available&&p.enabled);hit_.setButtonText(p.hit?"HIT ON":"HIT");
+        hit_.setEnabled(available&&p.enabled&&!processor_.isDetached());hit_.setButtonText(p.hit?"HIT ON":"HIT");
         hit_.setColour(juce::TextButton::buttonColourId,hardware::col(p.hit?0x88652d:0x41494d));
         tail_.setEnabled(available);tail_.setButtonText(p.spillover?"TAIL ON":"TAIL");
         tail_.setColour(juce::TextButton::buttonColourId,hardware::col(p.spillover?0x27695c:0x41494d));
@@ -147,7 +151,8 @@ private:
     void setupCombo(juce::ComboBox& c,const char* id){c.setComponentID(id);c.setTitle(id);c.setLookAndFeel(&look_);c.setColour(juce::ComboBox::textColourId,hardware::col(0xb2e7d3));addAndMakeVisible(c);}
     void setupButton(juce::TextButton& b,const char* id){b.setComponentID(id);b.setTitle(id);b.setLookAndFeel(&look_);b.setColour(juce::TextButton::buttonColourId,hardware::col(0x41494d));addAndMakeVisible(b);}
     static void setDial(juce::Slider& d,double v){if(!d.isMouseButtonDown(true)&&!(d.hasKeyboardFocus(true)&&!d.hasKeyboardFocus(false)))d.setValue(v,juce::dontSendNotification);}
-    void offer(const Parameters& p){if(processor_.offerSinger(p))refresh();}
+    bool hostAvailable() const{return !hostAccess_||hostAccess_();}
+    void offer(const Parameters& p){if(hostAvailable()&&processor_.offerSinger(p))refresh();}
     void applyTempo(double bpm){
         auto p=processor_.singerDisplay();
         const int d=division_.getSelectedId();
@@ -172,7 +177,7 @@ private:
         meterFresh_=processor_.isReady()&&lastMeterMs_>=0&&now-lastMeterMs_<250.;
         refresh();
     }
-    JuceVocalDelayProcessor& processor_;hardware::Look look_;
+    JuceVocalDelayProcessor& processor_;hardware::Look look_;std::function<bool()> hostAccess_;
     juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_,bpm_;juce::ComboBox preset_,mode_,division_,algorithm_;
     juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_;
     ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double noticeUntil_=0;juce::String tempoNotice_;bool admitted_=false,expertMode_=false;

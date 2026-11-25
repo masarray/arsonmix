@@ -5,9 +5,11 @@
 #include "../FxSpsc.h"
 #include <cstdint>
 #include <type_traits>
+#include <limits>
 namespace armix::builtin_fx::vocal_delay {
-// Host supplies immutable identity from the accepted graph. Never use UI
-// slot numbers as an identity. All lifecycle operations are stopped-only.
+// Mailbox tickets: explicit test/host lease or private processor-local
+// generation. Never a substitute for the host's retained FxInstance fence.
+// All lifecycle operations are stopped-only.
 struct Lease final {
     std::uint64_t channel=0,instance=0,epoch=0,graph=0;
     bool valid() const noexcept{return channel&&instance&&epoch&&graph;}
@@ -66,6 +68,15 @@ public:
     void processStereo(float* l,float* r,std::size_t n) noexcept{
         consumeRealtimeEdits();
         if(ready_&&!fullyBypassed_)core_.processStereo(l,r,n);
+    }
+    // CONTROL only, exclusively for an unpublished detached editor with
+    // no PCM reader. No dummy render or optimistic audio ACK. Same prepared
+    // settings and accepted state are updated transactionally.
+    bool applyDetached(Parameters p) noexcept{
+        if(!ready_||pending_||lastSubmitted_==std::numeric_limits<std::uint32_t>::max())return false;
+        p.hit=false; // no live performance in an offline editor
+        ContinuousDelayCore::Prepared q;if(!core_.prepareEdit(p,rate_,q)||!core_.applyPrepared(q))return false;
+        accepted_=audioAccepted_=p;acceptedRevision_=audioRevision_=++lastSubmitted_;return true;
     }
     // CONTROL only. Accepted settings do not advance until AUDIO applied.
     bool poll(Receipt& receipt) noexcept{

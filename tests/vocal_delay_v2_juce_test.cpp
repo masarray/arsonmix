@@ -90,5 +90,21 @@ int main(){
         CHECK(p.stateSnapshotQuiescent()&&sameParameters(p.acceptedSnapshot().accepted,smartVoicing(musical)));
         p.getStateInformation(saved);CHECK(saved.getSize()==48&&StateCodec::decode(saved.getData(),saved.getSize(),restored)&&restored.continuous.adaptiveFocus);
     }
-    std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart, stale lease and native singer editor");
+    {
+        JuceVocalDelayProcessor hosted;CHECK(hosted.useHostLocalMailbox());
+        hosted.prepareToPlay(48000,128);CHECK(hosted.isReady()&&hosted.isDetached());
+        std::unique_ptr<juce::AudioProcessorEditor> editor(hosted.createEditor());
+        auto* singer=dynamic_cast<SingerEditor*>(editor.get());CHECK(singer);
+        auto* echo=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.echo"));CHECK(echo);
+        bool access=true;singer->bindHostAccess([&]{return access;});
+        echo->setValue(27,juce::sendNotificationSync);
+        CHECK(!hosted.singerPending()&&std::abs(hosted.acceptedSnapshot().accepted.echo-.27f)<1.e-6f);
+        access=false;singer->refresh();CHECK(!echo->isEnabled());
+        echo->setValue(81,juce::sendNotificationSync);CHECK(std::abs(hosted.singerDisplay().echo-.27f)<1.e-6f);
+        editor.reset();juce::MemoryBlock detached;hosted.getStateInformation(detached);CHECK(detached.getSize()==48);
+        CHECK(hosted.submit({{1,1,1,1},1,{}})==Submit::invalid);
+        hosted.sealForRealtime();CHECK(!hosted.isDetached());hosted.releaseResources();
+        hosted.prepareToPlay(96000,128);CHECK(hosted.isReady()&&std::abs(hosted.singerDisplay().echo-.27f)<1.e-6f);
+    }
+    std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart, stale lease, detached native editor and retained access guard");
 }
