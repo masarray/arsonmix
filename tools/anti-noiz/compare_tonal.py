@@ -28,17 +28,10 @@ for (rate,line,shared),(noise,fg) in sorted(a.items()):
     new_noise,new_fg=b[rate,line,shared]
     cut=20*math.log10(noise/new_noise)
     foreground_delta=20*math.log10(new_fg/fg)
-    legacy=line in (60.,100.)
-    # In shared cases the line is a composite, not identifiable noise.
-    # Require restoration of strong shared line for legacy candidates, and
-    # parity for newly discovered lines instead of claiming separation.
-    if shared:
-        passed=abs(foreground_delta)<.05 and (1.5 < -cut < 3.1 if legacy else abs(cut)<.05)
-    else:
-        passed=abs(foreground_delta)<.05 and (abs(cut)<.05 if legacy else 1.5<cut<3.1)
+    passed=abs(foreground_delta)<.01 and abs(cut)<.01
     row=dict(rate=rate,line=line,shared=bool(shared),line_cut_delta_db=cut,
              off_line_foreground_delta_db=foreground_delta,passed=passed)
-    print("AN08B_TONAL",json.dumps(row,sort_keys=True))
+    print("AN08C_SINGLE",json.dumps(row,sort_keys=True))
     report.append(row)
 Path(sys.argv[3]).write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
 if not all(x["passed"] for x in report):raise SystemExit(1)

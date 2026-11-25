@@ -5,12 +5,12 @@
 #include <cmath>
 #include <numbers>
 namespace armix::builtin_fx::anti_noiz {
-// Past-only Learn search, fixed grid, one linked line. The fine grid is
+// Past-only Learn search, fixed grid, up to three related linked lines. The fine grid is
 // oversampled relative to the 200ms analysis resolution, not super-resolution.
 // At runtime a level guard releases attenuation on strong coincident energy.
 class TonalNoise final {
 public:
-    static constexpr int side=6, count=65, bank=count+2*side;
+    static constexpr int side=6, count=65, bank=count+2*side, maxLines=3;
     static constexpr float step=2.5f;
     static constexpr float hz(int i) noexcept {return 40.f+step*float(i-side);}
     void prepare(double rate,int channels) noexcept {
@@ -28,12 +28,12 @@ public:
             auto& k=filter_[i];k.b=alpha/(1.+alpha);
             k.a1=-2.*std::cos(w)/(1.+alpha);k.a2=(1.-alpha)/(1.+alpha);
         }
-        selected_=-1;trustedInverse_={};begin();
+        lineCount_=0;lines_={};begin();
     }
     void begin() noexcept {
-        votes_={};score_={};candidatePower_={};windows_=0;phase_=0;partial_={};clearWindow();resetSignal();
+        votes_={};harmonicVotes_={};score_={};primaryScore_={};candidatePower_={};primaryPower_={};windows_=0;phase_=0;partial_={};clearWindow();resetSignal();
     }
-    void resetSignal() noexcept {states_={};livePower_={};mix_=0.;}
+    void resetSignal() noexcept {for(auto& line:lines_){line.state={};line.livePower={};line.mix=0.;}}
     void observe(float l,float r) noexcept {
         partial_[0]+=l;if(channels_==2)partial_[1]+=r;
         if(++phase_<stride_)return;
@@ -57,16 +57,21 @@ public:
             for(int c=0;c<channels_;++c){
                 const auto& p=power[c];const double center=p[k],sides=std::max(p[k-side],p[k+side]);
                 const double fraction=2.*center/std::max(1e-18,double(window_)*energy_[c]);
-                qualified&=energy_[c]>1e-8&&fraction>=.35&&center>=8.*std::max(sides,1e-15);
+                qualified&=energy_[c]>1e-8&&fraction>=.12&&center>=8.*std::max(sides,1e-15);
                 // Suppress side-lobe votes; tolerate neighboring grid ties
                 // for a line between grid points without treating it as drift.
                 qualified&=center>=.8*std::max(p[k-1],p[k+1]);
                 strength=std::min(strength,fraction);
             }
             if(qualified){
-                ++votes_[i];score_[i]+=strength;
-                for(int c=0;c<channels_;++c)
-                    candidatePower_[i][c]+=2.*power[c][k]/(double(window_)*window_);
+                ++harmonicVotes_[i];score_[i]+=strength;
+                const bool primary=strength>=.35;
+                if(primary){++votes_[i];primaryScore_[i]+=strength;}
+                for(int c=0;c<channels_;++c){
+                    const double p=2.*power[c][k]/(double(window_)*window_);
+                    candidatePower_[i][c]+=p;
+                    if(primary)primaryPower_[i][c]+=p;
+                }
             }
         }
         clearWindow();
@@ -74,54 +79,99 @@ public:
     // Accepted broadband Learn is the sole commit fence. Cancel/reject keeps
     // both trusted frequency and level. No coefficient design on audio thread.
     void commit() noexcept {
-        selected_=-1;trustedInverse_={};double best=0.;
+        lineCount_=0;lines_={};double best=0.;int primary=-1;
         if(windows_>=8)for(int i=0;i<count;++i)
-            if(votes_[i]*10>=windows_*8&&score_[i]>best){selected_=i;best=score_[i];}
-        if(selected_>=0)for(int c=0;c<channels_;++c)
-            trustedInverse_[c]=1./std::max(1e-15,candidatePower_[selected_][c]/votes_[selected_]);
+            if(votes_[i]*10>=windows_*8&&primaryScore_[i]>best){primary=i;best=primaryScore_[i];}
+        if(primary>=0){
+            addLine(primary,true);
+            // Only a persistent integer-related peak can supplement the
+            // strong primary. No unrelated peaks or adjacent grid copies.
+            while(lineCount_<maxLines){
+                int next=-1;double strength=0.;
+                for(int i=0;i<count;++i){
+                    if(harmonicVotes_[i]*10<windows_*8||score_[i]<=strength||
+                       !related(hz(primary+side),hz(i+side)))continue;
+                    bool distinct=true;
+                    for(int j=0;j<lineCount_;++j)
+                        distinct&=std::abs(i-lines_[j].index)*step>=20.f;
+                    if(distinct){next=i;strength=score_[i];}
+                }
+                if(next<0)break;
+                addLine(next,false);
+            }
+        }
         resetSignal();
     }
-    int selected() const noexcept {return selected_;}
-    float frequency() const noexcept {return selected_>=0?hz(selected_+side):0.f;}
+    int selected() const noexcept {return lineCount_?lines_[0].index:-1;}
+    int lineCount() const noexcept {return lineCount_;}
+    float frequency(int line=0) const noexcept {
+        return line>=0&&line<lineCount_?hz(lines_[line].index+side):0.f;
+    }
     // Strong line excess may be a note rather than noise. Use the maximum
     // channel evidence for linked release; never reinterpret it as a pitch
     // classifier or adapt the trusted learned level during playback.
     void apply(float& l,float& r,float amount) noexcept {
-        if(selected_<0)return;
-        const double y0=bandpass(l,0);
-        const double y1=channels_==2?bandpass(r,1):0.;
-        const std::array<double,2> y{y0,y1};
-        double excess=0.;
-        for(int c=0;c<channels_;++c){
-            auto& p=livePower_[c];p+=guardAlpha_*(y[c]*y[c]-p);
-            if(p<1e-25)p=0.;
-            excess=std::max(excess,p*trustedInverse_[c]);
+        if(!lineCount_)return;
+        // Parallel filters see identical original PCM; one guard release
+        // must not reduce suppression of another independent learned line.
+        const double scale=.292893218*std::clamp(double(amount),0.,1.);
+        double cutL=0.,cutR=0.;
+        for(int i=0;i<lineCount_;++i){
+            auto& line=lines_[i];
+            const double y0=bandpass(l,line,0);
+            const double y1=channels_==2?bandpass(r,line,1):0.;
+            const std::array<double,2> y{y0,y1};
+            double excess=0.;
+            for(int c=0;c<channels_;++c){
+                auto& p=line.livePower[c];p+=guardAlpha_*(y[c]*y[c]-p);
+                if(p<1e-25)p=0.;
+                excess=std::max(excess,p*line.inverse[c]);
+            }
+            const double confidence=1.-std::clamp((excess-1.5)/2.5,0.,1.);
+            const double target=scale*confidence;
+            line.mix+=mixAlpha_*(target-line.mix);
+            cutL+=line.mix*y0;cutR+=line.mix*y1;
         }
-        const double confidence=1.-std::clamp((excess-1.5)/2.5,0.,1.);
-        const double target=.292893218*std::clamp(double(amount),0.,1.)*confidence;
-        mix_+=mixAlpha_*(target-mix_);
-        l=float(double(l)-mix_*y0);
-        if(channels_==2)r=float(double(r)-mix_*y1);
+        l=float(double(l)-cutL);
+        if(channels_==2)r=float(double(r)-cutR);
     }
 private:
     struct Coeff {double b=0.,a1=0.,a2=0.;};
     struct State {double x1=0.,x2=0.,y1=0.,y2=0.;};
-    double bandpass(float x,int c) noexcept {
-        auto& s=states_[c];const auto& k=filter_[selected_];
+    struct Line {
+        int index=-1;
+        double mix=0.;
+        std::array<double,2> inverse{},livePower{};
+        std::array<State,2> state{};
+    };
+    static bool related(float a,float b) noexcept {
+        const float lo=std::min(a,b),hi=std::max(a,b);
+        for(int m=2;m<=4;++m)if(std::abs(hi-float(m)*lo)<=2.5f)return true;
+        return false;
+    }
+    void addLine(int i,bool primary) noexcept {
+        auto& line=lines_[lineCount_++];line.index=i;
+        const auto& powers=primary?primaryPower_[i]:candidatePower_[i];
+        const int votes=primary?votes_[i]:harmonicVotes_[i];
+        for(int c=0;c<channels_;++c)
+            line.inverse[c]=1./std::max(1e-15,powers[c]/votes);
+    }
+    double bandpass(float x,Line& line,int c) noexcept {
+        auto& s=line.state[c];const auto& k=filter_[line.index];
         const double y=k.b*(double(x)-s.x2)-k.a1*s.y1-k.a2*s.y2;
         s.x2=s.x1;s.x1=x;s.y2=s.y1;s.y1=std::abs(y)<1e-25?0.:y;
         return y;
     }
     void clearWindow() noexcept {frames_=0;energy_={};go_={};}
-    int channels_=1,stride_=24,window_=400,frames_=0,phase_=0,windows_=0,selected_=-1;
-    double mix_=0.,mixAlpha_=0.,guardAlpha_=0.;
+    int channels_=1,stride_=24,window_=400,frames_=0,phase_=0,windows_=0,lineCount_=0;
+    double mixAlpha_=0.,guardAlpha_=0.;
     std::array<double,bank> coef_{};
     std::array<Coeff,count> filter_{};
-    std::array<State,2> states_{};
+    std::array<Line,maxLines> lines_{};
     std::array<std::array<std::array<double,2>,bank>,2> go_{};
-    std::array<double,2> energy_{},partial_{},trustedInverse_{},livePower_{};
-    std::array<int,count> votes_{};
-    std::array<double,count> score_{};
-    std::array<std::array<double,2>,count> candidatePower_{};
+    std::array<double,2> energy_{},partial_{};
+    std::array<int,count> votes_{},harmonicVotes_{};
+    std::array<double,count> score_{},primaryScore_{};
+    std::array<std::array<double,2>,count> candidatePower_{},primaryPower_{};
 };
 } // namespace armix::builtin_fx::anti_noiz

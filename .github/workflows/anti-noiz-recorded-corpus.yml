@@ -8,6 +8,8 @@ on:
       - 'tools/anti-noiz/compare_environment.py'
       - 'tools/anti-noiz/tonal_benchmark.cpp'
       - 'tools/anti-noiz/compare_tonal.py'
+      - 'tools/anti-noiz/harmonic_benchmark.cpp'
+      - 'tools/anti-noiz/compare_harmonic.py'
       - 'tools/anti-noiz/spectral_diagnostics.py'
       - 'engine/builtin_fx/anti_noiz/**'
       - '.github/workflows/anti-noiz-recorded-corpus.yml'
@@ -33,10 +35,10 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py --self-test
       - name: Pinned real recorded environments (not listening approval)
         run: python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07/anti_noiz_qualify" "$RUNNER_TEMP/an07-evidence"
-      - name: Checkout frozen AN-08A.1 comparator
+      - name: Checkout frozen AN-08B.1 comparator
         uses: actions/checkout@v4
         with:
-          ref: cb65b788631bd26a076b23b8314b4a51d3e99a9e
+          ref: 0fdeb8b0b923147f46e15c1aee3b4f5982f5a797
           path: an07-baseline
           persist-credentials: false
       - name: Run exact baseline against same recorded corpus
@@ -46,7 +48,7 @@ jobs:
           python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07-base/anti_noiz_qualify" "$RUNNER_TEMP/an07-base-evidence"
       - name: Compare paired quality metrics without weakening original gates
         run: python3 tools/anti-noiz/compare_environment.py "$RUNNER_TEMP/an07-base-evidence/report.json" "$RUNNER_TEMP/an07-evidence/report.json" "$RUNNER_TEMP/an07-comparison.json"
-      - name: Matched grid and coincident-line qualification against exact A.1
+      - name: Preserve 40 single-line cases against exact B.1
         if: ${{ always() && hashFiles('an07-baseline/tools/anti-noiz/OfflineAudio.h') != '' }}
         run: |
           cp tools/anti-noiz/tonal_benchmark.cpp an07-baseline/tools/anti-noiz/tonal_benchmark.cpp
@@ -55,6 +57,15 @@ jobs:
           "$RUNNER_TEMP/an08a-candidate" > "$RUNNER_TEMP/an08a-candidate.csv"
           "$RUNNER_TEMP/an08a-baseline" > "$RUNNER_TEMP/an08a-baseline.csv"
           python3 tools/anti-noiz/compare_tonal.py "$RUNNER_TEMP/an08a-baseline.csv" "$RUNNER_TEMP/an08a-candidate.csv" "$RUNNER_TEMP/an08a-tonal.json"
+      - name: Matched harmonic stack and per-line guard
+        if: ${{ always() && hashFiles('an07-baseline/tools/anti-noiz/OfflineAudio.h') != '' }}
+        run: |
+          cp tools/anti-noiz/harmonic_benchmark.cpp an07-baseline/tools/anti-noiz/harmonic_benchmark.cpp
+          g++ -std=c++20 -O3 -Wall -Wextra -Werror tools/anti-noiz/harmonic_benchmark.cpp -o "$RUNNER_TEMP/an08c-candidate"
+          g++ -std=c++20 -O3 -Wall -Wextra -Werror an07-baseline/tools/anti-noiz/harmonic_benchmark.cpp -o "$RUNNER_TEMP/an08c-baseline"
+          "$RUNNER_TEMP/an08c-candidate" > "$RUNNER_TEMP/an08c-candidate.csv"
+          "$RUNNER_TEMP/an08c-baseline" > "$RUNNER_TEMP/an08c-baseline.csv"
+          python3 tools/anti-noiz/compare_harmonic.py "$RUNNER_TEMP/an08c-baseline.csv" "$RUNNER_TEMP/an08c-candidate.csv" "$RUNNER_TEMP/an08c-harmonic.json"
       - name: Preserve machine-readable evidence only
         if: always()
         uses: actions/upload-artifact@v4
@@ -67,6 +78,9 @@ jobs:
             ${{ runner.temp }}/an08a-baseline.csv
             ${{ runner.temp }}/an08a-candidate.csv
             ${{ runner.temp }}/an08a-tonal.json
+            ${{ runner.temp }}/an08c-baseline.csv
+            ${{ runner.temp }}/an08c-candidate.csv
+            ${{ runner.temp }}/an08c-harmonic.json
             ${{ runner.temp }}/an07-evidence/*/provenance.tsv
             ${{ runner.temp }}/an07-evidence/*/segments.tsv
           if-no-files-found: warn
