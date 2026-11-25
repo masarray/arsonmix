@@ -28,5 +28,24 @@ int main(){
     CHECK(p.submit({lease,2,q})==Submit::stale);
     pcm.setSize(2,4000);pcm.clear();pcm.setSample(0,0,.8f);pcm.setSample(1,0,.8f);
     p.processBlock(pcm,midi);CHECK(std::abs(pcm.getSample(0,2880)-.4f)<1.e-6f);
-    std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart and stale lease");
+    {
+        std::unique_ptr<juce::AudioProcessorEditor> editor(p.createEditor());
+        CHECK(editor&&editor->getWidth()==620&&editor->getHeight()==300);
+        auto* time=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.time"));
+        auto* echo=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.echo"));
+        auto* preset=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.preset"));
+        CHECK(time&&echo&&preset&&time->isEnabled());
+        preset->setSelectedId(4,juce::sendNotificationSync);
+        p.serviceSingerControl();
+        time->setValue(850,juce::sendNotificationSync);
+        echo->setValue(33,juce::sendNotificationSync);
+        CHECK(p.singerDisplay().timeMs==850&&p.singerPending());
+        pcm.clear();p.processBlock(pcm,midi);p.serviceSingerControl();
+        CHECK(p.singerDisplay().timeMs==850);
+        editor.reset(); // final desired values survive closing
+        pcm.clear();p.processBlock(pcm,midi);p.serviceSingerControl();
+        CHECK(p.stateSnapshotQuiescent()&&p.acceptedSnapshot().accepted.timeMs==850);
+        CHECK(std::abs(p.acceptedSnapshot().accepted.echo-.33f)<1.e-6f);
+    }
+    std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart, stale lease and native singer editor");
 }

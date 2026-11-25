@@ -37,6 +37,13 @@ jobs:
           /tmp/vd1
           ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror -pthread ${{ matrix.flags }} tests/vocal_delay_v2_session_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vd2session
           /tmp/vd2session
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_singer_test.cpp -o /tmp/vd2singer
+          /tmp/vd2singer
+      - name: Report synthetic callback profile (not ASIO FAT)
+        if: matrix.cxx == 'g++'
+        run: |
+          g++ -std=c++17 -O3 tools/vocal-delay/rt-profile.cpp -o /tmp/vdprofile
+          /tmp/vdprofile
   ui-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 5

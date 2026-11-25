@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "NativeSession.h"
+#include "SingerWorkflow.h"
 #include "../../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 namespace armix::builtin_fx::vocal_delay {
@@ -8,7 +9,7 @@ namespace armix::builtin_fx::vocal_delay {
 // stopped before prepareToPlay; no implicit identity or autonomous routing.
 // AVTH v1 is still dispatched to the original VocalThrowProcessor.
 class JuceVocalDelayProcessor final : public juce::AudioProcessor,
-                                     public armix::mixer::RealtimeNativeFxControl {
+                                     public armix::mixer::RealtimeNativeFxControl,private juce::Timer {
 public:
     JuceVocalDelayProcessor():AudioProcessor(BusesProperties()
       .withInput("Input",juce::AudioChannelSet::stereo(),true)
@@ -23,8 +24,9 @@ public:
     void setCurrentProgram(int) override{}
     const juce::String getProgramName(int) override{return "Current";}
     void changeProgramName(int,const juce::String&) override{}
-    bool hasEditor() const override{return false;}
-    juce::AudioProcessorEditor* createEditor() override{return nullptr;}
+    bool hasEditor() const override{return true;}
+    juce::AudioProcessorEditor* createEditor() override;
+    ~JuceVocalDelayProcessor() override{stopTimer();}
     bool isBusesLayoutSupported(const BusesLayout& b) const override{
         return b.getMainInputChannelSet()==juce::AudioChannelSet::stereo()&&
                b.getMainOutputChannelSet()==juce::AudioChannelSet::stereo();
@@ -54,9 +56,28 @@ public:
         if(active_)session_.onRealtimeBypass(requested,fully);
     }
     void sealForRealtime() noexcept override{published_=true;}
-    bool stateSnapshotQuiescent() const noexcept override{return active_&&session_.quiescent();}
-    Submit submit(const Edit& edit) noexcept{return active_?session_.submit(edit):Submit::notReady;}
-    bool poll(Receipt& receipt) noexcept{return active_&&session_.poll(receipt);}
+    bool stateSnapshotQuiescent() const noexcept override{return active_&&session_.quiescent()&&!singer_.pending()&&!singer_.fault();}
+    Submit submit(const Edit& edit) noexcept{
+        if(editorOpen_||singer_.pending()||singer_.fault())return Submit::busy;
+        return active_?session_.submit(edit):Submit::notReady;
+    }
+    bool poll(Receipt& receipt) noexcept{return active_&&!singer_.pending()&&session_.poll(receipt);}
+    // All editor calls and timer callbacks share the JUCE message thread.
+    bool beginSingerEditor(){
+        if(editorOpen_||!active_||!session_.quiescent()||!singer_.attach(session_.acceptedSnapshot()))return false;
+        editorOpen_=true;startTimerHz(30);return true;
+    }
+    void endSingerEditor() noexcept{editorOpen_=false;serviceSingerControl();}
+    bool offerSinger(const Parameters& p) noexcept{
+        return editorOpen_&&active_&&singer_.offer(session_.acceptedSnapshot(),p);
+    }
+    Parameters singerDisplay() const noexcept{return singer_.display(session_.acceptedSnapshot());}
+    bool singerPending() const noexcept{return singer_.pending();}
+    bool singerFault() const noexcept{return singer_.fault();}
+    void serviceSingerControl() noexcept{
+        if(active_&&(editorOpen_||singer_.pending()))singer_.service(session_);
+        if(!editorOpen_&&!singer_.pending())stopTimer();
+    }
     Snapshot acceptedSnapshot() const noexcept{return session_.acceptedSnapshot();}
     bool isReady() const noexcept{return active_;}
     bool restoreUnpublishedState(const void* data,int bytes) noexcept{
@@ -68,13 +89,17 @@ public:
     void setStateInformation(const void* data,int bytes) override{(void)restoreUnpublishedState(data,bytes);}
     void getStateInformation(juce::MemoryBlock& out) override{
         StateCodec::Bytes bytes{};out.reset();
-        const bool ok=prepared_?(active_&&session_.save(bytes)):StateCodec::encode(initial_,bytes);
+        const bool ok=prepared_?(stateSnapshotQuiescent()&&session_.save(bytes)):StateCodec::encode(initial_,bytes);
         if(ok)out.append(bytes.data(),bytes.size());
     }
 private:
+    void timerCallback() override{serviceSingerControl();}
     NativeSession session_{};
+    SingerControl singer_{};
+    bool editorOpen_=false;
     State initial_{};
     Lease next_{};
     bool active_=false,prepared_=false,published_=false;
 };
 } // namespace armix::builtin_fx::vocal_delay
+#include "SingerEditor.h"

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(VocalDelayNativeCandidate LANGUAGES C CXX)
+project(VocalDelayNativeCandidate VERSION 2.0.0 LANGUAGES C CXX)
 enable_testing()
 if(NOT DEFINED JUCE_ROOT)
   message(FATAL_ERROR "Pass -DJUCE_ROOT")
