@@ -7257,3 +7257,14 @@ test("P0 native busy guard and all physical presentations produce explicit recei
  assert.equal(protocol.operatorMessage("This VST3 has no native editor"),
   "FX editor unavailable · Reopen from FX Rack");
 });
+
+
+test("RTR closes affected inline FX editors before rack mutation",()=>{
+ const b=read("web/approved-native-bridge.js");
+ const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
+ assert.ok(edit.indexOf('decision.kind!=="READY"')<edit.indexOf("inlineFxClip?.closeRackEditors("));
+ assert.ok(edit.indexOf("inlineFxClip?.closeRackEditors(")<edit.indexOf("controller.intent("));
+ assert.match(b,/editorOwners\.set\(root,\{key,lease\}\)/);
+ assert.match(b,/affected\.has\(String\(owner\.lease\.channelId\)\)/);
+ assert.match(b,/bypassOwners\.delete\(root\)/);
+});

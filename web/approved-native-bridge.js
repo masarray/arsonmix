@@ -72,7 +72,8 @@
     style.textContent+="\n"+"html.armix-native-desktop #mxNativeVocalThrow #vtEncodersLeft,html.armix-native-desktop #mxNativeVocalThrow #vtEncodersRight{order:initial!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-throw-button{width:212px!important;height:212px!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-performance{grid-template-columns:88px minmax(0,1fr) 302px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-rotary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;min-height:190px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-center{border-top:0!important;padding:8px 12px!important}";
     const offsets=new WeakMap();
     const identities=new WeakMap(); // exact FX owner, not its slot
-    const bypassOwners=new Map(); // max five mounted roots, navigation lease only
+    const bypassOwners=new Map(); // navigation lease only
+    const editorOwners=new Map(); // includes GEQ, whose bypass UI is internal
     let drag=null,layer=16000;
     const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
     const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
@@ -166,6 +167,21 @@
         if(shade.style.pointerEvents!==pointer)shade.style.pointerEvents=pointer;
       }
     }
+    function closeRackEditors(channelIds=null){
+      const affected=channelIds===null?null:new Set(channelIds.map(String));
+      for(const [root,owner] of editorOwners){
+        if(affected&&!affected.has(String(owner.lease.channelId)))continue;
+        editorOwners.delete(root);
+        bypassOwners.delete(root);
+        if(drag?.root===root){
+          try{drag.capture.releasePointerCapture?.(drag.pointerId);}catch(_){}
+          drag=null;
+        }
+        if(root.isConnected&&!root.hidden){
+          try{window[owner.key]?.close?.();}finally{root.hidden=true;}
+        }
+      }
+    }
     function openExact(host,key,track,slot,instanceId,lease=null) {
       const selector=selectors[key],root=document.querySelector(selector||"#__none__");
       if(!root||typeof host?.open!=="function"||!instanceId)return false;
@@ -181,7 +197,10 @@
       }
       if(host.open(track,slot)===false)return false;
       if(root.hidden)return false; // a no-op open is not a successful editor
-      if(lease&&key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
+      if(lease){
+        editorOwners.set(root,{key,lease});
+        if(key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
+      }
       root.style.zIndex=String(++layer);
       if(!offsets.has(root))center(root);
       else keepReachable(root);
@@ -251,7 +270,7 @@
       for(const root of document.querySelectorAll(roots))
         if(!root.hidden)requestAnimationFrame(()=>keepReachable(root));
     });
-    return Object.freeze({openExact,center,move,syncBypass});
+    return Object.freeze({openExact,center,move,syncBypass,closeRackEditors});
   })():null;
   if(inlineFxClip)window.__ARMIX_NATIVE_INLINE_FX_CLIP__=inlineFxClip;
 
@@ -1904,6 +1923,9 @@
         status("FX edit unavailable · refresh accepted native instance");
       return false;
     }
+    // Close affected slot-bound panels before MOVE/REMOVE invalidates their
+    // leases. The source and destination racks can both shift slot indices.
+    inlineFxClip?.closeRackEditors(target?[id,nativeIdFor(target)]:[id]);
     const result=controller.intent(decision.operation,decision.channelId,
                                    decision.payload);
     if(!result.ok){status("FX edit rejected · "+result.error);return false;}
