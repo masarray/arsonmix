@@ -14,14 +14,20 @@ public:
     void prepare(double rate,int hop,int channels,int bins) noexcept {
         channels_=channels;bins_=bins;
         target_=int(std::ceil(2.*rate/hop));
+        // 50 ms: aggregate multiple overlapping FFT frames before deciding
+        // a learned noise estimate is unstable. Keep the 2 s wall clock.
+        learnWindow_=int(std::ceil(.05*rate/hop));
+        maximumDiscarded_=target_*15/100;
         trackHold_=int(std::ceil(.5*rate/hop));
         alpha_=float(1.-std::exp(-double(hop)/(rate*2.)));
         drift_.prepare(rate,hop,channels,bins);
-        valid_=false;anchor_={};working_={};cancel();
+        valid_=false;qualified_=false;anchor_={};working_={};cancel();
     }
     bool begin() noexcept {
         if(learning_)return false;
-        candidate_={};energy_={};count_=0;warmup_=2;learning_=true;idle_=0;drift_.reset();return true;
+        candidate_={};checkpoint_={};energy_={};checkpointEnergy_={};windowEnergy_={};
+        count_=observed_=checkpointCount_=0;warmup_=2;qualified_=false;
+        learning_=true;idle_=0;drift_.reset();return true;
     }
     void cancel() noexcept {learning_=false;idle_=0;drift_.reset();}
     // Revoke the extra Voice authority at a policy boundary, not on each
@@ -34,8 +40,7 @@ public:
     // Native lifecycle readback, only queried on the AUDIO owner after a
     // running attempt stops. Uses the existing Learn transaction evidence.
     bool lastAttemptQualified() const noexcept {
-        return !learning_&&count_>=target_&&
-            (energy_[0]+energy_[1])/float(count_)>1e-9f;
+        return !learning_&&qualified_;
     }
     bool learning() const noexcept {return learning_;}
     bool valid() const noexcept {return valid_;}
@@ -47,24 +52,58 @@ public:
         // preceding the command. No dependence on callback partition.
         if(warmup_>0){--warmup_;return LearnResult::waiting;}
         std::array<float,2> total{};
-        for(int c=0;c<channels_;++c){
+        for(int c=0;c<channels_;++c)
             for(int k=0;k<bins_;++k)total[c]+=power[c][k];
-            if(count_>=8){
+        // Retain a narrow fail-closed protection for a previously learned
+        // extremely quiet stereo leg: broadband stereo summing must not
+        // hide a new source on that leg. This preserves the original
+        // quiet-channel regression without penalizing mono colored noise.
+        if(valid_&&channels_==2&&count_>=8)
+            for(int c=0;c<2;++c){
                 const float mean=energy_[c]/float(count_);
-                if(total[c]>4.f*std::max(mean,1e-12f)||total[c]<.1f*mean){cancel();return LearnResult::rejected;}
+                const float other=energy_[1-c]/float(count_);
+                if(mean<.01f*other&&total[c]>4.f*std::max(mean,1e-12f)){
+                    cancel();return LearnResult::rejected;
+                }
             }
-        }
+        // Preserve per-frame accumulation order exactly for a wholly
+        // accepted learning attempt. At a window boundary take a checkpoint;
+        // a contaminated window rolls back, rather than entering the PSD.
         for(int c=0;c<channels_;++c){
-            energy_[c]+=total[c];
+            energy_[c]+=total[c];windowEnergy_[c]+=total[c];
             for(int k=0;k<bins_;++k)candidate_[c][k]+=power[c][k];
         }
-        if(++count_<target_)return LearnResult::waiting;
+        ++count_;++observed_;
+        if(observed_%learnWindow_==0||observed_==target_){
+            const int frames=count_-checkpointCount_;
+            bool discard=false;
+            if(checkpointCount_>0){
+                for(int c=0;c<channels_;++c){
+                    const float mean=checkpointEnergy_[c]/float(checkpointCount_);
+                    const float current=windowEnergy_[c]/float(frames);
+                    // Large sustained changes are not a trustworthy room
+                    // noise profile. Fail immediately for extreme windows.
+                    if(current>32.f*std::max(mean,1e-12f)){
+                        cancel();return LearnResult::rejected;
+                    }
+                    discard|=current>4.f*std::max(mean,1e-12f)||current<.1f*mean;
+                }
+            }
+            if(discard){
+                candidate_=checkpoint_;energy_=checkpointEnergy_;count_=checkpointCount_;
+            }else{
+                checkpoint_=candidate_;checkpointEnergy_=energy_;checkpointCount_=count_;
+            }
+            windowEnergy_={};
+            if(observed_-count_>maximumDiscarded_){cancel();return LearnResult::rejected;}
+        }
+        if(observed_<target_)return LearnResult::waiting;
         cancel();
-        if((energy_[0]+energy_[1])/float(count_)<=1e-9f)return LearnResult::rejected;
+        if(count_<=0||(energy_[0]+energy_[1])/float(count_)<=1e-9f)return LearnResult::rejected;
         const float inv=1.f/float(count_);
         for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k)
             anchor_[c][k]=working_[c][k]=candidate_[c][k]*inv;
-        valid_=true;return LearnResult::accepted;
+        qualified_=valid_=true;return LearnResult::accepted;
     }
     // Ordinary confirmed-idle tracking retains the original 70-130% bounds.
     // An independently qualified coherent upward drift may extend working PSD,
@@ -96,11 +135,12 @@ public:
         }
     }
 private:
-    Powers anchor_{},working_{},candidate_{};
+    Powers anchor_{},working_{},candidate_{},checkpoint_{};
     NoiseDriftGuard<MaxBins> drift_{};
-    std::array<float,2> energy_{};
+    std::array<float,2> energy_{},checkpointEnergy_{},windowEnergy_{};
     int channels_=0,bins_=0,target_=1,trackHold_=1,count_=0,warmup_=0,idle_=0;
+    int learnWindow_=1,maximumDiscarded_=0,observed_=0,checkpointCount_=0;
     float alpha_=0;
-    bool valid_=false,learning_=false;
+    bool valid_=false,learning_=false,qualified_=false;
 };
 } // namespace armix::builtin_fx::anti_noiz
