@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from 'node:assert/strict';
-import {nativeTransport} from './native_transport.mjs';
+import {nativeTransport,validSpectrum} from './native_transport.mjs';
 import {controller,defaults} from './editor.mjs';
 const listeners=new Map(),sent=[];
 const backend={addEventListener(name,fn){listeners.set(name,fn);return name;},
@@ -45,3 +45,7 @@ model2.adjust('cleanDb',16);const first=sent2.at(-1);model2.adjust('cleanDb',19)
 emit2('arMixBuiltinAntiNoizAck',first,{status:'APPLIED',settings:first.settings});
 const writes=sent2.filter(x=>x.action==='nativeAntiNoizSet');assert.equal(writes.length,2);assert.equal(writes[1].settings.cleanDb,19);assert.equal(writes[1].settings.silenceDb,12);assert(latest.pending);
 emit2('arMixBuiltinAntiNoizAck',writes[1],{status:'APPLIED',settings:writes[1].settings});assert.equal(latest.accepted.cleanDb,19);assert(!latest.pending);model2.dispose();console.log('ANTI_NOIZ_NATIVE_CONTINUOUS_ACK PASS');
+
+// Spectrum extension is optional, bounded and rejects malformed data.
+const spec={bins:129,binHz:187.5,candidate:true,progress:.4,input:Array(129).fill(-45),noise:Array(129).fill(-65)};
+assert.equal(validSpectrum(spec,256),spec);assert.equal(validSpectrum({...spec,input:[0]},256),null);assert.equal(validSpectrum({...spec,noise:Array(129).fill(NaN)},256),null);assert.equal(validSpectrum({...spec,binHz:300},256),null);assert.equal(validSpectrum(spec,512),null);assert.equal(validSpectrum({...spec,input:[],noise:[]},256).bins,129);console.log('ANTI_NOIZ_SPECTRUM_SCHEMA PASS');

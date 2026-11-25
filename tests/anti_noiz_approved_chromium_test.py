@@ -15,6 +15,10 @@ DEFAULTS = dict(mode="Auto", cleanDb=14, silenceDb=32, musicProtect=1, enabled=T
 OBS = dict(serial="1", profile=False, learning=False, learnStatus="Idle",
            rackBypassed=False, effectiveMode="Auto", latency=256,
            spectralGain=0.5, residualGain=0.25)
+# Explicit mock-IPC fixture, NOT measured audio. Distinct curves exercise UI.
+SPECTRUM = dict(bins=129, binHz=187.5, candidate=True, progress=.5,
+                input=[-28-abs(i-17)*.4 for i in range(129)],
+                noise=[-48-abs(i-4)*.25 for i in range(129)])
 BACKEND = """(()=>{
  const subs=new Map(), dispatch=new Map(); let counter=0;
  window.__nativeListeners=dispatch;window.__nativeIntents=[];window.__actions=[];
@@ -195,24 +199,38 @@ def main():
         learn=last_action(page,"nativeAntiNoizLearn")
         assert learn["instanceId"]==INSTANCE
         respond(page,learn,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=accepted)
-        readback(page,accepted,{**OBS,"serial":"3","effectiveMode":"Voice","learning":True,"learnStatus":"Learning"})
+        readback(page,accepted,{**OBS,"serial":"3","effectiveMode":"Voice","learning":True,"learnStatus":"Learning","spectrum":SPECTRUM})
         expect(root.locator('[data-learn]')).to_be_disabled()
         expect(root.locator('[data-observation]')).to_contain_text("Learning")
         expect(root.locator('[data-learn]')).to_have_attribute("data-learning","true")
+        expect(root.locator(".an-spectrum-view")).to_be_visible()
+        expect(root.locator(".an-meter-view")).to_be_hidden()
+        expect(root.locator('[data-progress]')).to_have_text("50%")
+        assert root.locator('[data-input-curve]').get_attribute("d").startswith("M")
+        assert root.locator('[data-noise-curve]').get_attribute("d").startswith("M")
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-learning-1366.png"))
         page.wait_for_timeout(210)
-        readback(page,accepted,{**OBS,"serial":"4","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted"})
+        readback(page,accepted,{**OBS,"serial":"4","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted","spectrum":{**SPECTRUM,"candidate":False,"progress":0}})
         expect(root.locator('[data-observation]')).to_contain_text("Profile ready")
         expect(root.locator('[data-learn]')).to_have_attribute("data-learning","false")
         expect(root.locator('[data-profile]')).to_have_attribute("data-ready","true")
         expect(root.locator('[data-latency]')).to_have_text("256 samples")
+        expect(root.locator('[data-curve-label]')).to_have_text("Trusted noise")
+        expect(root.locator(".an-spectrum-view")).to_be_visible()
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-profile-1366.png"))
+        root.locator('[data-view]').click()
+        expect(root.locator(".an-meter-view")).to_be_visible()
         expect(root.locator('[data-learn]')).to_be_enabled()
         # Actual rotary drag with delayed ACK, stale readback and coalescing.
         # Original approved artwork must actually load in the native bundle;
         # a missing asset must never silently degrade to a decorative circle.
         expect(root.locator(".an-knob-art")).to_have_count(3)
-        page.wait_for_function("""()=>[...document.querySelectorAll('#mxNativeAntiNoiz .an-knob-art')].every(i=>i.complete&&i.naturalWidth===192)""")
+        page.wait_for_function("""()=>[...document.querySelectorAll('#mxNativeAntiNoiz .an-knob-art')].every(i=>i.complete&&i.naturalWidth===96)""")
         assert root.evaluate("""el=>getComputedStyle(el.querySelector('.an-panel')).backgroundImage.includes('geq31-brushed-metal.jpg')""")
         assert (bundle/"assets"/"geq31-brushed-metal.jpg").stat().st_size>0
+        assert root.locator(".an-led-off").first.get_attribute("d").count("M")==27
+        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==16
+        assert root.locator(".an-knob-art").first.get_attribute("src").endswith("mixer-gain-knob-brushed-steel.png")
         knob=root.locator('input[aria-label="Clean"]')
         bounds=knob.bounding_box()
         assert bounds and bounds["width"]>=54
@@ -224,6 +242,7 @@ def main():
         page.mouse.move(x,y-65,steps=7);page.wait_for_timeout(70)
         desired=float(knob.input_value())
         assert desired>first["settings"]["cleanDb"]
+        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==1+int(26*desired/24)
         expect(knob).to_be_enabled()
         # Require a new snapshot request, rather than silently responding
         # to the previously consumed request.
@@ -252,8 +271,8 @@ def main():
         readback(page,accepted,{**OBS,"serial":"7","effectiveMode":"Voice","profile":True})
         # Capture actual approved UI, not an illustrative mockup.
         assert_p1_geometry(root)
-        assert_full_composition(root)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-1366.png"))
+        assert_full_composition(root)
         # Narrow viewport: exercise actual responsive layout, not a mockup.
         page.set_viewport_size({"width":360,"height":720})
         panel=root.locator(".an-panel")
@@ -267,8 +286,8 @@ def main():
           const r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
           return hit===c||c.contains(hit);})"""),"narrow editor hit targets occluded"
         assert_p1_geometry(root)
-        assert_full_composition(root)
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))
+        assert_full_composition(root)
         page.set_viewport_size({"width":1366,"height":768})
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
