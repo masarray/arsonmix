@@ -4339,7 +4339,7 @@
         status(error);nativeToast(error);
         return;
       }
-      const message=save?"Mixer saved as .smix":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":"Mixer opened";
+      const message=save?"Mixer saved as .smix":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":ack.operation==="ARCHIVE"?"Archived mixer opened · output remains muted":"Mixer opened";
       status(message);nativeToast(message);
       if(!save)controller?.subscribe();
     });
@@ -4368,7 +4368,8 @@
         nativeToast("Disconnect audio and finish mixer operations before opening an archive");return;
       }
       if(window.confirm("Open an archived session? Current saved mixer is archived first; output remains muted."))
-        backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive"});
+        backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
+          workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.revision});
     });
     menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
       healthTitle,tone,mark,report,advanced,

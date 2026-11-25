@@ -5210,7 +5210,7 @@ private:
         if(logicalVendorEditor_)return emitMixerSessionAck(save?"SAVE":"OPEN",
             "Close the vendor FX editor to save its settings first");
         if(mixerFileDialogOpen_)return;
-        const auto operation=save?"SAVE":"OPEN";
+        const auto operation=archived?"ARCHIVE":save?"SAVE":"OPEN";
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_)
             return emitMixerSessionAck(operation,"Mixer file operation already in progress");
         auto start=archived?armix::session::NativeMixerSessionStore(settingsDirectory()).archiveDirectory():lastMixerFile_;
@@ -8453,6 +8453,14 @@ private:
         }
 
         if(action=="nativeMixerOpenArchive") {
+            ensureLogicalWorkspace();
+            bool confirmed=false;
+            std::uint64_t revision=0;
+            if(!armix::session::strictBool(args.getProperty("confirmed",{}),confirmed)||!confirmed||
+               !armix::session::parseDecimal(args.getProperty("baseRevision",{}),revision,true)||
+               args.getProperty("workspaceToken","").toString()!=logicalMixer_.workspace().workspaceToken()||
+               revision!=logicalMixer_.workspace().revision())
+                return emitMixerSessionAck("ARCHIVE","Offline session changed; select the archive again");
             chooseMixerFile(false,true);
             return;
         }

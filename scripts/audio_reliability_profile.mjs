@@ -123,8 +123,10 @@ const acceptedGlobalPowerTransition=(a,b)=>continuousEvidence(a,b) &&
 
 const CPU_SCOPE="WINDOWS_PROCESS_CPU_ALL_LOGICAL_CORES_1HZ_NOT_AUDIO_CALLBACK_OR_SYSTEM_TOTAL";
 const resourceValue=(s,key)=>typeof s[key]==="number"&&Number.isFinite(s[key])&&s[key]>=0?s[key]:null;
-const cpuValue=s=>s.footerCpuProvenance===CPU_SCOPE&&resourceValue(s,"footerProcessCpuPercent")<=100
-  ?resourceValue(s,"footerProcessCpuPercent"):null;
+const cpuValue=s=>{
+  const value=resourceValue(s,"footerProcessCpuPercent");
+  return s.footerCpuProvenance===CPU_SCOPE&&value!==null&&value<=100?value:null;
+};
 function recordResources(segment,s){
   for(const [name,value] of [["cpu",cpuValue(s)],["workingSet",resourceValue(s,"processWorkingSetMiB")],
     ["privateCommit",resourceValue(s,"processPrivateCommitMiB")]]){

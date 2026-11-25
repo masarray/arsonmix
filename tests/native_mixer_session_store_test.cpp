@@ -2457,6 +2457,7 @@ int main(){
     assert(checkpoint.source==Recovery::Source::previous&&checkpoint.error.isEmpty());
     assert(head.loadFileAsString().trim()==firstId);
     assert(head.replaceWithText(secondId+"\n")); // restore original test pointer
+    assert(store.load(loaded,readback).isEmpty()&&loaded.masterGain==.35f);
     const auto vendor=studio.getChildFile("MixerSession").getChildFile("versions")
         .getChildFile(secondId).getChildFile("blobs")
         .getChildFile(binary.sha256+".bin");
