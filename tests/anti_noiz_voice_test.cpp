@@ -4,6 +4,18 @@
 #include <random>
 using namespace armix::builtin_fx::anti_noiz;
 int main(){try{
+    // Direct policy bounds: noise peaks cannot manufacture foreground;
+    // quiet bands, persistent foreground and strong onsets retain authority.
+    using G=VoiceGain<Core::maxBins>;
+    offline::require(G::conditionedEvidence(8.f,1.f,4.f)==2.75f,"dominant isolated peak");
+    offline::require(G::conditionedEvidence(8.f,1.f,1.f)==8.f,"quiet learned band");
+    offline::require(G::conditionedEvidence(8.f,3.1f,4.f)==8.f,"persistent foreground");
+    offline::require(G::conditionedEvidence(40.f,1.f,4.f)==40.f,"strong fresh onset");
+    for(float gamma:{0.f,.5f,1.f,2.f,4.f,8.f,16.f,24.f,40.f,100.f}){
+        const float x=G::conditionedEvidence(gamma,1.f,5.f);
+        offline::require(std::isfinite(x)&&x>=0&&x<=gamma,"bounded evidence");
+        offline::require(G::conditionedEvidence(gamma,2.f,5.f)>=x,"corroboration monotonicity");
+    }
     constexpr unsigned rate=48000;
     std::mt19937 gen(2026);std::uniform_real_distribution<float> noiseDist(-.003f,.003f),unit(-1.f,1.f);
     offline::Audio learn{rate,2,std::vector<float>(rate*6)},input=learn,clean=learn;

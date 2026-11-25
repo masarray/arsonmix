@@ -12,6 +12,17 @@ public:
         memory_=float(std::exp(-double(hop)/(rate*.025)));reset();
     }
     void reset() noexcept {prior_.fill(0);}
+    // Experimental AN-07C: a learned dominant band needs corroboration
+    // before a moderate isolated PSD peak can open the Voice gain.
+    // Strong fresh onsets and quiet learned bands retain legacy authority.
+    // Ratios come from the existing linked stereo ContextGuard.
+    static float conditionedEvidence(float gamma,float temporal,float relativeNoise) noexcept {
+        const float dominance=std::clamp((relativeNoise-1.5f)*.4f,0.f,1.f);
+        const float persistence=std::clamp((temporal-1.4f)/1.6f,0.f,1.f);
+        const float strongOnset=std::clamp((gamma-12.f)/24.f,0.f,1.f);
+        const float uncertainty=dominance*(1.f-std::max(persistence,strongOnset));
+        return gamma>1.f?1.f+(gamma-1.f)*(1.f-.75f*uncertainty):gamma;
+    }
     float estimate(int bin,float gamma) noexcept {
         gamma=std::clamp(gamma,0.f,1e8f);
         const float instantaneous=std::max(0.f,gamma-1.f);

@@ -206,6 +206,14 @@ private:
             float evidence=0;
             for(int c=0;c<channels_;++c)
                 evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
+            // Voice-only uncertainty conditioning for noise-dominant bands.
+            // Reuse the existing temporal neighborhood, immutable anchor and
+            // stereo union; no extra FFT, delay, allocation or user parameter.
+            if(!protect&&effectiveMode_==Mode::Voice&&evidence>1.f) {
+                const float relative=context_.relativeNoise(profile_.anchor(),channels_,k);
+                if(relative>1.5f)evidence=VoiceGain<maxBins>::conditionedEvidence(
+                    evidence,context_.temporalRatio(profile_.anchor(),channels_,bins,k),relative);
+            }
             // Only explicit Voice opts into the stronger causal estimator.
             const float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
                 activeVoice?voiceGain_.estimate(k,evidence):
