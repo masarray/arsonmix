@@ -27,9 +27,9 @@ for (rate,base,shared,line),(old,fg) in sorted(a.items()):
     change=20*math.log10(new_fg/fg)
     # Primary parity, independent suppression of additional lines, no
     # additional strong same-line cut, off-line foreground parity.
-    passed=abs(change)<.05 and (abs(cut)<.1 if line==1 or (shared and line==2) else 1.5<cut<3.3)
+    passed=abs(change)<.01 and abs(cut)<.01
     row=dict(rate=rate,base=base,shared=bool(shared),harmonic=line,extra_cut_db=cut,foreground_delta_db=change,passed=passed)
-    print("AN08C_HARMONIC",json.dumps(row,sort_keys=True))
+    print("AN08D_HARMONIC",json.dumps(row,sort_keys=True))
     report.append(row)
 Path(sys.argv[3]).write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
 if not all(x["passed"] for x in report):raise SystemExit(1)

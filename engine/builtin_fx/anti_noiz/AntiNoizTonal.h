@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <numbers>
+#include "AntiNoizTonalDrift.h"
 namespace armix::builtin_fx::anti_noiz {
 // Past-only Learn search, fixed grid, up to three related linked lines. The fine grid is
 // oversampled relative to the 200ms analysis resolution, not super-resolution.
@@ -20,6 +21,8 @@ public:
         stride_=std::max(1,int(std::lround(rate/2000.)));
         const double reduced=rate/stride_;
         window_=std::max(1,int(std::lround(.2*reduced)));
+        drift_.prepare(stride_,std::max(1,int(std::lround(.4*reduced))));
+        fadeStep_=1./(.1*rate);
         for(int i=0;i<bank;++i)
             coef_[i]=2.*std::cos(2.*std::numbers::pi*hz(i)/reduced);
         for(int i=0;i<count;++i){
@@ -33,7 +36,10 @@ public:
     void begin() noexcept {
         votes_={};harmonicVotes_={};score_={};primaryScore_={};candidatePower_={};primaryPower_={};windows_=0;phase_=0;partial_={};clearWindow();resetSignal();
     }
-    void resetSignal() noexcept {for(auto& line:lines_){line.state={};line.livePower={};line.mix=0.;}}
+    void resetSignal() noexcept {
+        for(auto& line:lines_){line.index=line.anchor;line.state={};line.livePower={};line.mix=0.;}
+        drift_.reset();previous_={};fade_=1.;
+    }
     void observe(float l,float r) noexcept {
         partial_[0]+=l;if(channels_==2)partial_[1]+=r;
         if(++phase_<stride_)return;
@@ -107,6 +113,16 @@ public:
     float frequency(int line=0) const noexcept {
         return line>=0&&line<lineCount_?hz(lines_[line].index+side):0.f;
     }
+    // Single-line only: multi-line coherence needs its own qualification.
+    // Raw input is authorized by the preceding strict-idle WOLA frame.
+    void track(float l,float r,bool strictIdle) noexcept {
+        if(lineCount_!=1)return;
+        auto& line=lines_[0];
+        const int next=drift_.observe(l,r,channels_,strictIdle&&fade_>=1.,
+            line.anchor,line.index,count,coef_.data()+side,line.inverse);
+        if(next<0)return;
+        previous_=line;line.index=next;line.state={};fade_=0.;
+    }
     // Strong line excess may be a note rather than noise. Use the maximum
     // channel evidence for linked release; never reinterpret it as a pitch
     // classifier or adapt the trusted learned level during playback.
@@ -118,8 +134,13 @@ public:
         double cutL=0.,cutR=0.;
         for(int i=0;i<lineCount_;++i){
             auto& line=lines_[i];
-            const double y0=bandpass(l,line,0);
-            const double y1=channels_==2?bandpass(r,line,1):0.;
+            double y0=bandpass(l,line,0);
+            double y1=channels_==2?bandpass(r,line,1):0.;
+            if(i==0&&fade_<1.){
+                const double oldL=bandpass(l,previous_,0),oldR=channels_==2?bandpass(r,previous_,1):0.;
+                y0=oldL+(y0-oldL)*fade_;y1=oldR+(y1-oldR)*fade_;
+                fade_=std::min(1.,fade_+fadeStep_);
+            }
             const std::array<double,2> y{y0,y1};
             double excess=0.;
             for(int c=0;c<channels_;++c){
@@ -139,7 +160,7 @@ private:
     struct Coeff {double b=0.,a1=0.,a2=0.;};
     struct State {double x1=0.,x2=0.,y1=0.,y2=0.;};
     struct Line {
-        int index=-1;
+        int index=-1,anchor=-1;
         double mix=0.;
         std::array<double,2> inverse{},livePower{};
         std::array<State,2> state{};
@@ -150,7 +171,7 @@ private:
         return false;
     }
     void addLine(int i,bool primary) noexcept {
-        auto& line=lines_[lineCount_++];line.index=i;
+        auto& line=lines_[lineCount_++];line.index=line.anchor=i;
         const auto& powers=primary?primaryPower_[i]:candidatePower_[i];
         const int votes=primary?votes_[i]:harmonicVotes_[i];
         for(int c=0;c<channels_;++c)
@@ -168,6 +189,9 @@ private:
     std::array<double,bank> coef_{};
     std::array<Coeff,count> filter_{};
     std::array<Line,maxLines> lines_{};
+    Line previous_{};
+    TonalDrift drift_{};
+    double fade_=1.,fadeStep_=0.;
     std::array<std::array<std::array<double,2>,bank>,2> go_{};
     std::array<double,2> energy_{},partial_{};
     std::array<int,count> votes_{},harmonicVotes_{};

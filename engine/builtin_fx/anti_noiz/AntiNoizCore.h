@@ -77,7 +77,7 @@ public:
         prepareTiming();
         context_.prepare(rate_,hop_);
         voiceGain_.prepare(rate_,hop_);
-        tonal_.prepare(rate_,channels_);
+        tonal_.prepare(rate_,channels_);tonalIdle_=false;
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         profile_.prepare(rate_,hop_,channels_,hop_+1);
@@ -97,14 +97,14 @@ public:
         // idle tracking. Existing overlap and gain smoothing remain intact.
         if(effectiveMode_==Mode::Voice&&(next!=Mode::Voice||(!s.enabled&&settings_.enabled)))
             profile_.limitToIdleBounds();
-        if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();}
+        if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();tonalIdle_=false;}
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        context_.reset(); voiceGain_.reset(); tonal_.begin(); return true;
+        context_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false; return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
@@ -112,7 +112,7 @@ public:
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
         pos_=ticks_=0;
-        profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();
+        profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -133,6 +133,7 @@ public:
             }
             if(profile_.learning())tonal_.observe(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
             else if(settings_.enabled&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&tonal_.selected()>=0){
+                tonal_.track(in_[0][pos_],channels_==2?in_[1][pos_]:0.f,tonalIdle_);
                 // Apply to the already latency-aligned WOLA output.
                 float unused=0.f;
                 tonal_.apply(left[i],channels_==2?right[i]:unused,1.f-cleanFloor_);
@@ -144,7 +145,7 @@ public:
     // Native host lifecycle only. Keep the qualified stationary DSP path,
     // coefficient preparation and all Core layout unchanged.
     void cancelNativeLearn() noexcept {
-        if(profile_.learning()){profile_.cancel();context_.reset();voiceGain_.reset();tonal_.resetSignal();}
+        if(profile_.learning()){profile_.cancel();context_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
     }
     bool lastNativeLearnQualified() const noexcept {return profile_.lastAttemptQualified();}
     void processNativeDry(float* left,float* right,int samples) noexcept {
@@ -152,7 +153,7 @@ public:
         // no second delay. Existing disabled WOLA path advances the timeline.
         const bool enabled=settings_.enabled;
         settings_.enabled=false;
-        tonal_.resetSignal();
+        tonal_.resetSignal();tonalIdle_=false;
         process(left,right,samples);
         settings_.enabled=enabled;
     }
@@ -180,7 +181,7 @@ private:
     }
     void frame() noexcept {
         if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
-            context_.reset();profile_.track(power_,false);renderUnity(); return;
+            context_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
         for(int c=0;c<channels_;++c) {
@@ -199,6 +200,7 @@ private:
         const auto* variability=!protect&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f?
             &profile_.variability():nullptr;
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
+        tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
         const float expTarget=idle?silenceFloor_:context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
         // Only explicit Voice or source-aware SpeechMic permits independently
@@ -277,6 +279,7 @@ private:
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
     TonalNoise tonal_{};
+    bool tonalIdle_=false;
     float maskClose_=0.18f,expandClose_=0.035f;
     float cleanFloor_=1,singingFloor_=1,silenceFloor_=1,autoFloor_=1;
     std::array<std::array<float,maxN>,2> in_{},out_{};
