@@ -14,6 +14,21 @@ int main(){try{
         const float v=G::restore(g,100.f,100.f,100.f,100.f);
         offline::require(v>=g&&v<=1.f&&v-g<=.150001f,"bounded restoration");
     }
+    // Synthetic common-mode noise shape; a strong local foreground or
+    // uncertain stereo leg must immediately release local residual cut.
+    ResidualShape<32> rs;rs.prepare(48000,128);
+    ResidualShape<32>::Powers anchor{},power{};
+    for(int c=0;c<2;++c)for(int k=0;k<32;++k){
+        anchor[c][k]=k<8?4.f:.1f;power[c][k]=2.f*anchor[c][k];
+    }
+    const std::array<float,2> variable{1.f,1.f};
+    for(int i=0;i<600;++i)rs.update(power,anchor,2,32,variable,.025f,true);
+    offline::require(rs.gain(3)<.55f&&rs.gain(20)==1.f,"shape selective residual authority");
+    power[1][3]=100.f;
+    rs.update(power,anchor,2,32,variable,.025f,true);
+    offline::require(rs.gain(3)==1.f,"local stereo foreground release");
+    rs.update(power,anchor,2,32,variable,.025f,false);
+    offline::require(rs.gain(3)==1.f,"ineligible unity");
     constexpr unsigned rate=48000;
     std::mt19937 gen(2026);std::uniform_real_distribution<float> noiseDist(-.003f,.003f),unit(-1.f,1.f);
     offline::Audio learn{rate,2,std::vector<float>(rate*6)},input=learn,clean=learn;
