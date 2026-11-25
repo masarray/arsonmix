@@ -6,9 +6,11 @@
 #include <numbers>
 #include "DeEzzerContext.h"
 namespace armix::builtin_fx::de_ezzer {
+enum class Mode { Auto, Voice };
 struct Settings {
     float amount = .5f, sensitivity = .5f, rangeDb = 8.f;
     bool enabled = true;
+    Mode mode = Mode::Auto;
 };
 namespace detail {
 struct Band {
@@ -29,8 +31,22 @@ struct Band {
 struct Channel {
     Band body,lower,upper,witness;
     Context context;
+    // Causal two-lag residual prediction error, evaluated only in explicit Voice.
+    double prev=0,prev2=0,ep=0,es=0,cross=0;
+    void resetVoice() noexcept {prev=prev2=ep=es=cross=0;}
+    void voice(double x,double a) noexcept {
+        const double h=x-low, sum=h+prev2;
+        ep=energy(ep,prev,a);es=energy(es,sum,a);
+        cross+=a*(prev*sum-cross);if(std::abs(cross)<1e-25)cross=0;
+        prev2=prev;prev=h;
+    }
+    double voiceAuthority(double hf) const noexcept {
+        if(ep<=1e-10||es<=1e-10)return 0;
+        const double residual=std::clamp((es-cross*cross/ep)/(ep+1e-10),0.,4.);
+        return std::clamp((residual-.12)/.35,0.,1.)*std::clamp((hf-1e-7)/9e-7,0.,1.);
+    }
     double eBody=0,eLower=0,eUpper=0,eWitness=0,low=0;
-    void reset() noexcept {body.reset();lower.reset();upper.reset();witness.reset();context.reset();eBody=eLower=eUpper=eWitness=low=0;}
+    void reset() noexcept {body.reset();lower.reset();upper.reset();witness.reset();context.reset();resetVoice();eBody=eLower=eUpper=eWitness=low=0;}
     static double energy(double prior,double x,double a) noexcept {
         const double v=prior+a*(x*x-prior);return v<1e-25?0:v;
     }
@@ -60,6 +76,8 @@ public:
     void reset() noexcept {for(auto& c:ch_)c.reset();gain_=target_=1;phase_=0;warmup_=warmupSamples_;}
     bool setSettings(Settings s) noexcept {
         if(!std::isfinite(s.amount)||!std::isfinite(s.sensitivity)||!std::isfinite(s.rangeDb)||s.amount<0||s.amount>1||s.sensitivity<0||s.sensitivity>1||s.rangeDb<0||s.rangeDb>18)return false;
+        if(s.mode!=Mode::Auto&&s.mode!=Mode::Voice)return false;
+        if(s.mode!=settings_.mode)for(auto& c:ch_)c.resetVoice();
         settings_=s;thresholdRatio_=std::pow(10.,(2-12*s.sensitivity)/10.);return true;
     }
     Settings settings() const noexcept {return settings_;}
@@ -69,13 +87,22 @@ public:
         if(!channels_||!l||n<=0||(channels_==2&&(!r||r==l)))return;
         for(int i=0;i<n;++i){
             std::array<double,2> x{sanitize(l[i]),channels_==2?sanitize(r[i]):0};
-            for(int c=0;c<channels_;++c)ch_[c].analyze(x[c],envelope_,lowPass_);
+            for(int c=0;c<channels_;++c){
+                ch_[c].analyze(x[c],envelope_,lowPass_);
+                if(settings_.mode==Mode::Voice)ch_[c].voice(x[c],envelope_);
+            }
             if(warmup_>0)--warmup_;
             if(phase_==0&&warmup_==0){
                 double excess=0;
                 for(int c=0;c<channels_;++c){
                     auto& a=ch_[c];const double hf=std::max(a.eLower,a.eUpper);
                     excess=std::max(excess,a.context.excess(a.eBody,hf,a.eWitness,thresholdRatio_,memoryDecay_,adapt_));
+                    if(settings_.mode==Mode::Voice){
+                        const double authority=a.voiceAuthority(hf);
+                        const double limit=std::max(1.,thresholdRatio_);
+                        const double ratio=hf/(a.eBody+1e-10);
+                        if(authority>0&&ratio>limit)excess=std::max(excess,authority*std::min(12.,10*std::log10(ratio/limit)));
+                    }
                 }
                 const double db=settings_.enabled?std::min<double>(settings_.rangeDb,1.35*settings_.amount*excess):0;
                 target_=db>0?std::pow(10.,-db/20):1.;

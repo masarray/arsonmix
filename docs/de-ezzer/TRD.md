@@ -6,3 +6,6 @@ Limits: no adaptive reference, harmonic/phoneme classifier, source-role modes, t
 
 ## DS-02 amendment (supersedes DS-01 clock/threshold)
 Independent narrow 600Hz Q1.5 witness, 85ms decaying peak memory, 120ms bounded relative reference. Control period round(rate/6000), persisted; sensitivity threshold cached linear; adaptive threshold max(user threshold,min(user threshold+5dB, reference+2dB in dB domain)). Authority ramps with bodyMemory/HF .012..04. Adapt only HF/body<=1.3 and current witness>=.08 HF. See DS-02-EVIDENCE.md. No trained classifier, adaptive frequency or source modes yet.
+
+## DS-03A amendment
+Settings adds validated Mode::Auto (default) and Mode::Voice (explicit vocal intent, not classification). Voice adds a bounded two-lag prediction-error cue to allow HF-dominant noise-like bursts without prior body. Baseline Auto unchanged. Predictor states reset on mode change/reset, gain remains smoothed. See DS-03A-EVIDENCE.md for equations, measurements and limitations. No additional sample delay or mandatory FFT. Offline float32 wet/Delta export implemented; native live audition and source-role selection pending.
