@@ -18,6 +18,13 @@ struct AutoGain final {
         const float local=std::clamp((subbandPeak-5.f)*(1.f/15.f),0.f,1.f);
         return std::min(activeFloor(floor,broadbandRatio),1.f-local*(1.f-floor));
     }
+    // Uncertain low-energy foreground deserves a bounded dry reserve.
+    // Apply only to active Voice/Auto frames, never confirmed idle.
+    // No new history: use the immutable-anchor broadband ratio already measured.
+    static float detailFloor(float floor,float broadbandRatio,float reserve) noexcept {
+        const float uncertainty=std::clamp((4.f-broadbandRatio)/3.f,0.f,1.f);
+        return floor+(1.f-floor)*uncertainty*reserve;
+    }
     static float target(float floor,float temporalRatio,float instantaneousRatio) noexcept {
         // Temporal neighboring evidence protects tonal sustain; a fresh
         // strong bin opens immediately even before the temporal guard catches up.

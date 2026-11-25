@@ -144,8 +144,14 @@ private:
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect);
         profile_.track(power_,idle);
         const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
-        const float floor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
-            effectiveMode_==Mode::Singing?singingFloor_:AutoGain::activeFloor(autoFloor_,context_.broadbandRatio(),context_.subbandPeakRatio());
+        const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
+        const float ratio=context_.broadbandRatio();
+        const float baseFloor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
+            effectiveMode_==Mode::Singing?singingFloor_:AutoGain::activeFloor(autoFloor_,ratio,context_.subbandPeakRatio());
+        // Reserve desired detail only when foreground evidence is uncertain.
+        // High-evidence active benefit, true-idle suppression and Music are unchanged.
+        const float floor=activeVoice?AutoGain::detailFloor(baseFloor,ratio,.75f):
+            selective?AutoGain::detailFloor(baseFloor,ratio,.25f+.35f*settings_.musicProtect):baseFloor;
         if(protect||idle)voiceGain_.reset();
         // Analysis remains live, but when both gains are exactly unity no
         // inverse FFT is needed. Preserve the context and profile histories.
@@ -156,7 +162,7 @@ private:
                 evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
             // Only explicit Voice opts into the stronger causal estimator.
             const float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
-                !protect&&!idle&&effectiveMode_==Mode::Voice?voiceGain_.estimate(k,evidence):
+                activeVoice?voiceGain_.estimate(k,evidence):
                 std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
             target_[k]=std::max(floor,gain);
         }

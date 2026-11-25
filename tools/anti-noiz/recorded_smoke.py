@@ -162,21 +162,27 @@ def main():
                           "clean_only_error_dB=" + row["clean_only_error_db_relative"],
                           "idle_dB=" + row["idle_attenuation_db"], flush=True)
     if args.compare_an03f:
-        # Fixed reference measurements from exact 39267bf job 139039330124.
-        # Exploratory candidate criteria; prior CTest gates remain mandatory.
+        # Fixed measurements from exact 37dbd983 job 139047031814.
+        # Predeclared paired fixture limits; no change to existing CTest gates.
+        # Stage 2 Voice parity is superseded only by stronger weak-detail targets.
         checks = (
-            ("speech", "auto-14-1", "recorded_clip", "error_improvement_db", .988065544469, 2.0, "min"),
-            ("sung-note", "auto-14-1", "recorded_clip", "error_improvement_db", 2.48512011297, 2.385, "min"),
-            ("acoustic-guitar", "auto-14-1", "recorded_clip", "error_improvement_db", 1.80764484338, 1.707, "min"),
-            # Voice experimental guard was rejected. Preserve measured baseline, not a weak-voice quality pass.
-            ("speech", "auto-mic-14-1", "recorded_clip", "error_improvement_db", 9.60616316337, 9.60616316337, "same"),
-            ("speech", "auto-mic-14-1", "low_energy_window", "desired_projection", .940004356549, .940004356549, "same"),
-            ("speech", "auto-mic-14-1", "low_energy_window", "clean_only_error_db_relative", -13.4446952838, -13.4446952838, "same"),
+            ("speech", "auto-14-1", "recorded_clip", "error_improvement_db", 4.718063, 4.0, "min"),
+            ("sung-note", "auto-14-1", "recorded_clip", "error_improvement_db", 4.111540, 3.4, "min"),
+            ("acoustic-guitar", "auto-14-1", "recorded_clip", "error_improvement_db", 5.782089, 5.0, "min"),
+            ("speech", "auto-14-1", "low_energy_window", "error_improvement_db", 4.029345, 2.0, "min"),
+            ("speech", "auto-14-1", "low_energy_window", "desired_projection", .989284, .98, "min"),
+            ("acoustic-guitar", "auto-14-1", "low_energy_window", "error_improvement_db", 3.634821, 1.8, "min"),
+            ("acoustic-guitar", "auto-14-1", "low_energy_window", "desired_projection", .966647, .98, "min"),
+            ("acoustic-guitar", "auto-14-1", "low_energy_window", "clean_only_error_db_relative", -18.245153, -20.0, "max"),
+            ("speech", "auto-mic-14-1", "recorded_clip", "error_improvement_db", 9.606163, 8.8, "min"),
+            ("speech", "auto-mic-14-1", "low_energy_window", "error_improvement_db", 12.913659, 8.0, "min"),
+            ("speech", "auto-mic-14-1", "low_energy_window", "desired_projection", .940004, .955, "min"),
+            ("speech", "auto-mic-14-1", "low_energy_window", "clean_only_error_db_relative", -13.444695, -14.5, "max"),
         )
         failures = []
         for name, tag, label, metric, baseline, limit, direction in checks:
             value = float(observations[(name, tag, label)][metric])
-            passed = math.isfinite(value) and (value >= limit if direction == "min" else abs(value-limit) <= .002)
+            passed = math.isfinite(value) and (value >= limit if direction == "min" else value <= limit)
             print(f"CANDIDATE {name} {tag} {label} {metric}: baseline={baseline:.6f} candidate={value:.6f} limit={direction}:{limit} {'PASS' if passed else 'FAIL'}", flush=True)
             if not passed:
                 failures.append((name, tag, label, metric))
@@ -192,7 +198,7 @@ def main():
                 failures.append((name, tag, "unity"))
         if failures:
             raise RuntimeError(f"AN-03F recorded candidate regression: {failures}")
-        print("AN-03F targeted recorded Auto acceptance and unchanged Voice baseline PASS (not full corpus qualification)")
+        print("AN-03F3 targeted musical-detail acceptance PASS (not full corpus qualification)")
     print("Recorded-audio smoke completed; synthetic added noise; no subjective or release qualification.")
 
 
