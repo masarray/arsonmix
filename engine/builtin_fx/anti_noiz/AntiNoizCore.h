@@ -18,6 +18,8 @@ public:
         Mode mode=Mode::AutoProtect;
         float cleanDb=14.f;
         float silenceDb=32.f;
+        float musicProtect=1.f;
+        bool enabled=true;
     };
     static constexpr int maxN=FftPlan::maxN, maxBins=maxN/2+1;
     bool prepare(double rate,int channels) noexcept {
@@ -40,7 +42,7 @@ public:
     }
     bool setSettings(Settings s) noexcept {
         if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>24||
-           s.silenceDb<0||s.silenceDb>48||static_cast<unsigned>(s.mode)>3U)return false;
+           s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U)return false;
         settings_=s; prepareGains(); return true;
     }
     bool beginLearn() noexcept {
@@ -50,6 +52,9 @@ public:
         learnTarget_=static_cast<int>(std::ceil(2.*rate_/hop_));
         quiet_=0; return true;
     }
+    Settings settings() const noexcept {return settings_;}
+    float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
+    float residualGain() const noexcept {return expansion_;}
     bool ready() const noexcept {return ready_;}
     bool hasProfile() const noexcept {return valid_;}
     bool learning() const noexcept {return learning_;}
@@ -81,7 +86,7 @@ private:
     }
     void prepareGains() noexcept {
         cleanFloor_=gainDb(settings_.cleanDb);
-        singingFloor_=gainDb(std::min(6.f,settings_.cleanDb));
+        singingFloor_=gainDb(std::min(12.f-6.f*settings_.musicProtect,settings_.cleanDb));
         silenceFloor_=gainDb(settings_.silenceDb);
     }
     void renderUnity() noexcept {
@@ -94,7 +99,7 @@ private:
     }
     void frame() noexcept {
         if(frames_<2)++frames_;
-        if(!learning_&&(!valid_||settings_.mode==Mode::Music)) {
+        if(!learning_&&(!valid_||!settings_.enabled||settings_.mode==Mode::Music)) {
             renderUnity(); return;
         }
         const int bins=hop_+1;
@@ -144,7 +149,7 @@ private:
                 peakRatio=std::max(peakRatio,p/std::max(q,eps));
             }
         }
-        const bool protect=learning_||!valid_||settings_.mode==Mode::Music;
+        const bool protect=learning_||!valid_||!settings_.enabled||settings_.mode==Mode::Music;
         const bool noiseLike=!protect&&ratio<1.65f&&peakRatio<5.f;
         quiet_=noiseLike?std::min(quiet_+1,hold_):0;
         const bool idle=quiet_>=hold_;
