@@ -127,9 +127,12 @@ private:
         for(int c=0;c<channels_;++c) {
             ratio=std::max(ratio,total[c]/std::max(noise[c],eps));
             // Aggregate groups to avoid triggering on random single FFT bins.
-            for(int k=0;k<bins;k+=8) {
+            for(int k=0;k<bins;) {
+                const int end=std::min(k+8,bins);
+                const int stop=bins-end<4?bins:end;
                 float p=0,q=0;
-                for(int j=k;j<std::min(k+8,bins);++j){p+=power_[c][j];q+=profile_[c][j];}
+                for(int j=k;j<stop;++j){p+=power_[c][j];q+=profile_[c][j];}
+                k=stop;
                 peakRatio=std::max(peakRatio,p/std::max(q,eps));
             }
         }
