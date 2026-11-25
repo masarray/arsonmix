@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#pragma once
+#include <algorithm>
+#include <array>
+#include <cmath>
+namespace armix::builtin_fx::anti_noiz {
+// Single audio owner. Candidate, trusted anchor and bounded working estimate
+// are distinct: a rejected learning transaction never replaces trusted noise.
+template<int MaxBins> class NoiseProfile final {
+public:
+    using Powers=std::array<std::array<float,MaxBins>,2>;
+    enum class LearnResult { waiting, accepted, rejected };
+    void prepare(double rate,int hop,int channels,int bins) noexcept {
+        channels_=channels;bins_=bins;
+        target_=int(std::ceil(2.*rate/hop));
+        trackHold_=int(std::ceil(.5*rate/hop));
+        alpha_=float(1.-std::exp(-double(hop)/(rate*2.)));
+        valid_=false;anchor_={};working_={};cancel();
+    }
+    bool begin() noexcept {
+        if(learning_)return false;
+        candidate_={};energy_={};count_=0;warmup_=2;learning_=true;idle_=0;return true;
+    }
+    void cancel() noexcept {learning_=false;idle_=0;}
+    bool learning() const noexcept {return learning_;}
+    bool valid() const noexcept {return valid_;}
+    const Powers& powers() const noexcept {return working_;}
+    const Powers& anchor() const noexcept {return anchor_;}
+    LearnResult observe(const Powers& power) noexcept {
+        if(!learning_)return LearnResult::waiting;
+        // Exclude the two first overlapping frames, which may include PCM
+        // preceding the command. No dependence on callback partition.
+        if(warmup_>0){--warmup_;return LearnResult::waiting;}
+        std::array<float,2> total{};
+        for(int c=0;c<channels_;++c){
+            for(int k=0;k<bins_;++k)total[c]+=power[c][k];
+            if(count_>=8){
+                const float mean=energy_[c]/float(count_);
+                if(total[c]>4.f*std::max(mean,1e-12f)||total[c]<.1f*mean){cancel();return LearnResult::rejected;}
+            }
+        }
+        for(int c=0;c<channels_;++c){
+            energy_[c]+=total[c];
+            for(int k=0;k<bins_;++k)candidate_[c][k]+=power[c][k];
+        }
+        if(++count_<target_)return LearnResult::waiting;
+        cancel();
+        if((energy_[0]+energy_[1])/float(count_)<=1e-9f)return LearnResult::rejected;
+        const float inv=1.f/float(count_);
+        for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k)
+            anchor_[c][k]=working_[c][k]=candidate_[c][k]*inv;
+        valid_=true;return LearnResult::accepted;
+    }
+    // Adapt only after sustained confirmed idle. Bound every bin around the
+    // explicit anchor; large drift needs a new deliberate Learn transaction.
+    void track(const Powers& power,bool idle) noexcept {
+        if(!valid_||learning_||!idle){idle_=0;return;}
+        if(idle_<trackHold_){++idle_;return;}
+        for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k){
+            const float anchor=anchor_[c][k];auto& v=working_[c][k];
+            const float observed=std::min(power[c][k],8.f*anchor);
+            v=std::clamp(v+alpha_*(observed-v),.7f*anchor,1.3f*anchor);
+        }
+    }
+private:
+    Powers anchor_{},working_{},candidate_{};
+    std::array<float,2> energy_{};
+    int channels_=0,bins_=0,target_=1,trackHold_=1,count_=0,warmup_=0,idle_=0;
+    float alpha_=0;
+    bool valid_=false,learning_=false;
+};
+} // namespace armix::builtin_fx::anti_noiz

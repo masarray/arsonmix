@@ -9,6 +9,7 @@
 #include "AntiNoizFft.h"
 #include "AntiNoizContext.h"
 #include "AntiNoizGain.h"
+#include "AntiNoizProfile.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -37,25 +38,20 @@ public:
         voiceGain_.prepare(rate_,hop_);
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
-        for(auto& a:profile_)a.fill(0);
-        for(auto& a:candidate_)a.fill(0);
-        mask_.fill(1); pos_=ticks_=frames_=learnCount_=learnTarget_=0;
-        candidateEnergy_=0; learning_=valid_=false; expansion_=1;
+        profile_.prepare(rate_,hop_,channels_,hop_+1);
+        mask_.fill(1); pos_=ticks_=0; expansion_=1;
         prepareGains();
         ready_=true; return true;
     }
     bool setSettings(Settings s) noexcept {
         if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>24||
            s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U)return false;
-        if(!s.enabled||s.mode==Mode::Music)learning_=false;
+        if(!s.enabled||s.mode==Mode::Music)profile_.cancel();
         if(s.mode!=settings_.mode||s.enabled!=settings_.enabled)voiceGain_.reset();
         settings_=s; prepareGains(); return true;
     }
     bool beginLearn() noexcept {
-        if(!ready_||learning_)return false;
-        for(auto& a:candidate_)a.fill(0);
-        candidateEnergy_=0; learnCount_=0; learning_=true;
-        learnTarget_=static_cast<int>(std::ceil(2.*rate_/hop_));
+        if(!ready_||!profile_.begin())return false;
         context_.reset(); voiceGain_.reset(); return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
@@ -63,15 +59,15 @@ public:
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
-        pos_=ticks_=frames_=learnCount_=learnTarget_=0;
-        candidateEnergy_=0; learning_=false; context_.reset(); voiceGain_.reset();
+        pos_=ticks_=0;
+        profile_.cancel(); context_.reset(); voiceGain_.reset();
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
     float residualGain() const noexcept {return expansion_;}
     bool ready() const noexcept {return ready_;}
-    bool hasProfile() const noexcept {return valid_;}
-    bool learning() const noexcept {return learning_;}
+    bool hasProfile() const noexcept {return profile_.valid();}
+    bool learning() const noexcept {return profile_.learning();}
     int latencySamples() const noexcept {return ready_?n_:0;}
     // In-place mono/stereo, arbitrary partitions. Invalid layout leaves audio unchanged.
     void process(float* left,float* right,int samples) noexcept {
@@ -108,54 +104,35 @@ private:
             const int j=(pos_+i)%n_;
             out_[c][j]+=in_[c][j]*win_[i]*win_[i];
         }
-        mask_.fill(1); expansion_=1; context_.reset();
+        mask_.fill(1); expansion_=1;
     }
     void frame() noexcept {
-        if(frames_<2)++frames_;
-        if(!learning_&&(!valid_||!settings_.enabled||settings_.mode==Mode::Music)) {
-            renderUnity(); return;
+        if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||settings_.mode==Mode::Music)) {
+            context_.reset();profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
-        float energy=0;
         for(int c=0;c<channels_;++c) {
-            float total=0;
             for(int i=0;i<n_;++i)work_[c][i]={in_[c][(pos_+i)%n_]*win_[i],0};
             fft_.transform(work_[c],false);
             for(int k=0;k<bins;++k) {
                 power_[c][k]=std::norm(work_[c][k]);
-                total+=power_[c][k];
-            }
-            energy+=total;
-        }
-        // Transactional manual learn. Reject gross energy jumps; previous
-        // profile remains valid. Stationary music cannot be ruled out here.
-        if(learning_&&frames_>=2) {
-            const float mean=learnCount_?candidateEnergy_/float(learnCount_):energy;
-            if(learnCount_>=8 && (energy>mean*4.f || energy<mean*0.1f)) {
-                learning_=false;
-            } else {
-                candidateEnergy_+=energy;
-                for(int c=0;c<channels_;++c)for(int k=0;k<bins;++k)candidate_[c][k]+=power_[c][k];
-                if(++learnCount_>=learnTarget_) {
-                    if(candidateEnergy_/float(learnCount_)>1e-9f) {
-                        for(int c=0;c<channels_;++c)for(int k=0;k<bins;++k)
-                            profile_[c][k]=candidate_[c][k]/float(learnCount_);
-                        valid_=true;
-                    }
-                    learning_=false;
-                    context_.reset(); voiceGain_.reset();
-                }
             }
         }
-        const bool protect=learning_||!valid_||!settings_.enabled||settings_.mode==Mode::Music;
-        const bool idle=context_.update(power_,profile_,channels_,bins,!protect);
+        const auto result=profile_.observe(power_);
+        if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
+        const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||settings_.mode==Mode::Music;
+        const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect);
+        profile_.track(power_,idle);
         const float floor=protect?1.f:idle||settings_.mode==Mode::Voice?cleanFloor_:
             settings_.mode==Mode::Singing?singingFloor_:1.f;
         if(protect||idle)voiceGain_.reset();
+        // Analysis remains live, but when both gains are exactly unity no
+        // inverse FFT is needed. Preserve the context and profile histories.
+        if(floor==1.f&&(!idle||silenceFloor_==1.f)){renderUnity();return;}
         for(int k=0;k<bins;++k) {
             float evidence=0;
             for(int c=0;c<channels_;++c)
-                evidence=std::max(evidence,power_[c][k]/std::max(profile_[c][k],eps));
+                evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
             // Only explicit Voice opts into the stronger causal estimator.
             const float gain=!protect&&!idle&&settings_.mode==Mode::Voice?voiceGain_.estimate(k,evidence):
                 std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
@@ -181,9 +158,9 @@ private:
     }
     Settings settings_{};
     double rate_=48000.;
-    int channels_=0,n_=256,hop_=128,pos_=0,ticks_=0,frames_=0,learnCount_=0,learnTarget_=0;
-    bool ready_=false,valid_=false,learning_=false;
-    float candidateEnergy_=0,expansion_=1;
+    int channels_=0,n_=256,hop_=128,pos_=0,ticks_=0;
+    bool ready_=false;
+    float expansion_=1;
     std::array<float,maxN> win_{};
     FftPlan fft_{};
     ContextGuard<maxBins> context_{};
@@ -192,7 +169,8 @@ private:
     float cleanFloor_=1,singingFloor_=1,silenceFloor_=1;
     std::array<std::array<float,maxN>,2> in_{},out_{};
     std::array<std::array<Complex,maxN>,2> work_{};
-    std::array<std::array<float,maxBins>,2> profile_{},candidate_{},power_{};
+    NoiseProfile<maxBins> profile_{};
+    std::array<std::array<float,maxBins>,2> power_{};
     std::array<float,maxBins> mask_{},target_{};
 };
 } // namespace armix::builtin_fx::anti_noiz
