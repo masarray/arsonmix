@@ -32,9 +32,9 @@ public:
             f(p.wet);f(p.decay);f(p.ducking);
         }else if(s.kind==State::Kind::continuous){
             const auto& p=s.continuous;if(!valid(p))return false;
-            u(p.style==EchoStyle::classic?2u:3u);f(p.timeMs);f(p.feedback);f(p.echo);f(p.highPassHz);f(p.lowPassHz);
+            u(p.adaptiveFocus?4u:(p.style==EchoStyle::classic?2u:3u));f(p.timeMs);f(p.feedback);f(p.echo);f(p.highPassHz);f(p.lowPassHz);
             f(p.duck);f(p.duckAttackMs);f(p.duckReleaseMs);
-            u(std::uint32_t(p.mode)|(std::uint32_t(p.style)<<8));u(p.enabled?1u:0u);
+            u(std::uint32_t(p.mode)|(std::uint32_t(p.style)<<8)|(p.adaptiveFocus?0x10000u:0u));u(p.enabled?1u:0u);
         }else return false;
         if(n!=b.size())return false;
         out=b;return true;
@@ -55,13 +55,15 @@ public:
             p.captureMs=f();p.silenceMs=f();p.thresholdDb=f();
             p.wet=f();p.decay=f();p.ducking=f();
             if(!VocalThrow::validSettings(p))return false;
-        }else if(version==2||version==3){
+        }else if(version==2||version==3||version==4){
             auto& p=s.continuous;
             p.timeMs=f();p.feedback=f();p.echo=f();p.highPassHz=f();p.lowPassHz=f();
             p.duck=f();p.duckAttackMs=f();p.duckReleaseMs=f();
-            const auto word=u(),enabled=u();const auto mode=word&255u,style=word>>8;
-            if(mode>2||enabled>1||(version==2&&style!=0)||(version==3&&(style<1||style>4)))return false;
+            const auto word=u(),enabled=u();const auto mode=word&255u,style=(word>>8)&255u,flags=word>>16;
+            if(mode>2||enabled>1||style>4||(version==2&&(style!=0||flags!=0))||
+               (version==3&&(style<1||flags!=0))||(version==4&&flags!=1))return false;
             p.mode=static_cast<StereoMode>(mode);p.style=static_cast<EchoStyle>(style);p.enabled=enabled==1;
+            p.adaptiveFocus=flags==1;
             if(!valid(p))return false;
         }else return false;
         if(n!=size)return false;

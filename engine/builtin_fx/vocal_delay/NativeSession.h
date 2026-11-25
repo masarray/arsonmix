@@ -76,6 +76,7 @@ public:
         }
         return true;
     }
+    ContinuousDelayCore::Meter meter() const noexcept{return core_.meter();}
     bool quiescent() const noexcept{return ready_&&!pending_;}
     Snapshot acceptedSnapshot() const noexcept{return {lease_,acceptedRevision_,lastSubmitted_,accepted_,quiescent()};}
     bool save(StateCodec::Bytes& out) const noexcept{

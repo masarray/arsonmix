@@ -12,6 +12,7 @@ struct Parameters final {
     StereoMode mode=StereoMode::stereo;
     bool enabled=true;
     EchoStyle style=EchoStyle::classic; // V2 exact PCM until explicit new style
+    bool adaptiveFocus=false; // V2/V3 retain their original detector
 };
 inline bool validRate(double rate) noexcept {
     return std::isfinite(rate)&&rate>=8000.&&rate<=192000.;

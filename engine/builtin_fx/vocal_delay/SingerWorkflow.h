@@ -24,13 +24,13 @@ inline constexpr std::array<SingerPreset,13> singerPresets{{
 inline Parameters presetSettings(std::size_t index,bool enabled=true) noexcept{
     Parameters p{};p.enabled=enabled;if(index>=singerPresets.size())return p;
     const auto& v=singerPresets[index];p.timeMs=v.time;p.feedback=v.feedback;
-    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;return p;
+    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.adaptiveFocus=true;return p;
 }
 inline bool sameParameters(const Parameters& a,const Parameters& b) noexcept{
     return a.timeMs==b.timeMs&&a.feedback==b.feedback&&a.echo==b.echo&&
        a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&
-       a.mode==b.mode&&a.enabled==b.enabled&&a.style==b.style;
+       a.mode==b.mode&&a.enabled==b.enabled&&a.style==b.style&&a.adaptiveFocus==b.adaptiveFocus;
 }
 // A style describes voicing, not the user's three performance knobs.
 // Exact expert edits make the style Custom; editing Time/Repeats/Level
@@ -59,6 +59,7 @@ inline Parameters smartVoicing(const Parameters& p) noexcept{
     q.duck=.12f+.55f*load;
     q.duckAttackMs=8.f+7.f*load;
     q.duckReleaseMs=100.f+180.f*load;
+    q.adaptiveFocus=true;
     return q;
 }
 inline constexpr std::array<double,7> beatMultipliers{{.25,.5,.75,1,1.5,2,4}};

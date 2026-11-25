@@ -13,7 +13,7 @@ int main(){
     StateCodec::Bytes bytes{};CHECK(StateCodec::encode(s,bytes));
     CHECK(p.restoreUnpublishedState(bytes.data(),int(bytes.size())));
     Lease lease{1,2,3,4};CHECK(p.bindLeaseStopped(lease));p.prepareToPlay(48000,128);
-    CHECK(p.isReady()&&p.getLatencySamples()==0);p.sealForRealtime();
+    CHECK(p.isReady()&&p.getLatencySamples()==0&&!p.acceptedSnapshot().accepted.adaptiveFocus);p.sealForRealtime();
     CHECK(!p.restoreUnpublishedState(bytes.data(),int(bytes.size())));
     juce::AudioBuffer<float> pcm(2,2000);juce::MidiBuffer midi;
     pcm.clear();pcm.setSample(0,0,.8f);pcm.setSample(1,0,.8f);
@@ -45,6 +45,7 @@ int main(){
         auto* echo=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.echo"));
         auto* preset=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.preset"));
         CHECK(time&&echo&&preset&&time->isEnabled());
+        auto* focus=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.focus"));CHECK(focus&&focus->isVisible()&&focus->getButtonText()=="Focus OFF");
         auto* expert=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.expert"));
         auto* duck=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.duck"));
         auto* attack=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.attack"));
@@ -55,7 +56,8 @@ int main(){
         CHECK(editor->findChildWithID("vd.algorithm")->isVisible());capture("vocal-delay-expert.png");
         expert->onClick();CHECK(!duck->isVisible()&&smart->isVisible());
         CHECK(sameParameters(before,p.singerDisplay())&&!p.singerPending()&&p.acceptedSnapshot().revision==rev);
-        preset->setSelectedId(4,juce::sendNotificationSync);
+        preset->setSelectedId(4,juce::sendNotificationSync);CHECK(p.singerDisplay().adaptiveFocus);
+        focus->onClick();CHECK(!p.singerDisplay().adaptiveFocus);focus->onClick();CHECK(p.singerDisplay().adaptiveFocus);
         p.serviceSingerControl();
         time->setValue(850,juce::sendNotificationSync);
         echo->setValue(33,juce::sendNotificationSync);
@@ -75,6 +77,7 @@ int main(){
         CHECK(sameParameters(p.singerDisplay(),smartVoicing(musical)));
         editor.reset();pcm.clear();p.processBlock(pcm,midi);p.serviceSingerControl();
         CHECK(p.stateSnapshotQuiescent()&&sameParameters(p.acceptedSnapshot().accepted,smartVoicing(musical)));
+        p.getStateInformation(saved);CHECK(saved.getSize()==48&&StateCodec::decode(saved.getData(),saved.getSize(),restored)&&restored.continuous.adaptiveFocus);
     }
     std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart, stale lease and native singer editor");
 }

@@ -32,6 +32,8 @@ public:
         setupButton(power_,"vd.power");setupButton(tap_,"vd.tap");tap_.setButtonText("TAP");
         setupButton(expert_,"vd.expert");expert_.setButtonText("Expert");
         setupButton(smart_,"vd.smart");smart_.setButtonText("Smart voicing");
+        setupButton(focus_,"vd.focus");focus_.setTooltip("Adaptive wet echo reduction follows vocal activity. Off restores the classic detector.");
+        focus_.onClick=[this]{auto p=processor_.singerDisplay();p.adaptiveFocus=!p.adaptiveFocus;offer(p);};
         smart_.setTooltip("Balance echo tone and ducking for your current time, repeats and level. Dry vocal stays unchanged.");
         expert_.setTooltip("Show precise controls without changing your sound.");
         expert_.onClick=[this]{expertMode_=!expertMode_;resized();refresh();};
@@ -57,7 +59,7 @@ public:
         stopTimer();if(admitted_)processor_.endSingerEditor();
         for(auto* d:dials())d->setLookAndFeel(nullptr);
         for(auto* c:{&preset_,&mode_,&division_,&algorithm_})c->setLookAndFeel(nullptr);
-        for(auto* b:{&power_,&tap_,&expert_,&smart_})b->setLookAndFeel(nullptr);
+        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_})b->setLookAndFeel(nullptr);
     }
     void paint(juce::Graphics& g) override{
         hardware::chassis(g,getWidth(),getHeight());
@@ -73,21 +75,14 @@ public:
         }else{
             const std::array<const char*,3> names{{"TIME","REPEATS","ECHO LEVEL"}};
             for(int i=0;i<3;++i)g.drawText(names[std::size_t(i)],24+i*132,78,122,18,juce::Justification::centred);
-            // Instrument LCD, not a decorative card or fake signal meter.
+            // Read actual block telemetry; no inferred or decorative waveform.
             hardware::inset(g,{426,79,172,138},5);
             g.setColour(hardware::col(0x9be7cf));g.setFont(hardware::font(11.f));
-            g.drawText("ECHO RESPONSE",438,88,148,16,juce::Justification::centredLeft);
-            const auto p=processor_.singerDisplay();
-            g.setColour(hardware::col(0x39544f));g.drawHorizontalLine(154,439,585);
-            float level=p.echo;
-            for(int i=0;i<8;++i){
-                const float height=(i==0?1.f:level)*34.f;
-                g.setColour(hardware::col(i==0?0xadb8b4:0x7adbbd));
-                g.fillRoundedRectangle(440.f+float(i)*19.f,154.f-height,6.f,height,1.5f);
-                if(i>0)level*=p.feedback;
-            }
+            g.drawText("VOCAL FOCUS",438,87,148,16,juce::Justification::centredLeft);
+            drawMeter(g,"DUCK",meterFresh_?meter_.duckReduction:0.f,108);
+            drawMeter(g,"WET",meterFresh_?meter_.wetPeak:0.f,140);
             g.setColour(hardware::col(0x91aaa3));g.setFont(hardware::font(9.f));
-            g.drawText("PREDICTED REPEATS",438,158,148,13,juce::Justification::centredLeft);
+            g.drawText(meterFresh_?"LIVE BLOCK PEAK":"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
         }
         g.setColour(juce::Colour(0xff829ca4));g.drawText(tempoStatus_,24,266,220,18,juce::Justification::centredLeft);
         g.setColour(juce::Colour(0xff5fd7c3));g.drawText(!admitted_?"OFFLINE":processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":"DSP READY",375,266,221,18,juce::Justification::centredRight);
@@ -95,7 +90,7 @@ public:
     void resized() override{
         preset_.setBounds(180,19,178,31);mode_.setBounds(366,19,92,31);
         expert_.setBounds(466,19,67,31);power_.setBounds(541,19,53,31);
-        mode_.setVisible(expertMode_);algorithm_.setVisible(expertMode_);algorithm_.setBounds(250,235,110,25);expert_.setButtonText(expertMode_?"Singer":"Expert");
+        mode_.setVisible(expertMode_);focus_.setBounds(expertMode_?366:250,235,110,25);algorithm_.setVisible(expertMode_);algorithm_.setBounds(250,235,110,25);expert_.setButtonText(expertMode_?"Singer":"Expert");
         auto ds=dials();
         for(std::size_t i=0;i<ds.size();++i){
             ds[i]->setVisible(expertMode_||i<3);
@@ -114,6 +109,8 @@ public:
         const auto style=styleIndex(p);
         preset_.setSelectedId(style<0?99:style+1,juce::dontSendNotification);
         smart_.setEnabled(available);
+        focus_.setEnabled(available);focus_.setButtonText(p.adaptiveFocus?"Focus ON":"Focus OFF");
+        focus_.setColour(juce::TextButton::buttonColourId,hardware::col(p.adaptiveFocus?0x27695c:0x41494d));
         mode_.setSelectedId(int(p.mode)+1,juce::dontSendNotification);
         algorithm_.setSelectedId(int(p.style)+1,juce::dontSendNotification);algorithm_.setEnabled(available);
         power_.setButtonText(p.enabled?"ON":"OFF");
@@ -140,10 +137,25 @@ private:
         if(d<=0||!beatTime(bpm_,std::size_t(d-1),ms)){tempoStatus_="TIME OUT OF RANGE";repaint();return;}
         auto p=processor_.singerDisplay();p.timeMs=ms;tempoStatus_=juce::String(bpm_,1)+" BPM";offer(p);
     }
-    void timerCallback() override{refresh();}
+    void drawMeter(juce::Graphics& g,const char* name,float value,int y){
+        g.setFont(hardware::font(9.f));g.setColour(hardware::col(0xa9bcb5));g.drawText(name,438,y,38,12,juce::Justification::centredLeft);
+        for(int i=0;i<14;++i){
+            const bool lit=value>0.f&&value>=float(i+1)/14.f;
+            g.setColour(hardware::col(lit?0x75dab6:0x283d37));
+            g.fillRoundedRectangle(478.f+float(i)*7.5f,float(y)+1.f,5.5f,10.f,1.f);
+        }
+    }
+    void timerCallback() override{
+        const auto now=juce::Time::getMillisecondCounterHiRes();
+        const auto observed=processor_.meter();
+        if(observed.sequence!=meter_.sequence){meter_=observed;lastMeterMs_=now;}
+        meterFresh_=processor_.isReady()&&lastMeterMs_>=0&&now-lastMeterMs_<250.;
+        refresh();
+    }
     JuceVocalDelayProcessor& processor_;hardware::Look look_;
     juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_;juce::ComboBox preset_,mode_,division_,algorithm_;
-    juce::TextButton power_,tap_,expert_,smart_;TapTempo taps_;double bpm_=0;juce::String tempoStatus_="FREE TIME";bool admitted_=false,expertMode_=false;
+    juce::TextButton power_,tap_,expert_,smart_,focus_;
+    ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double bpm_=0;juce::String tempoStatus_="FREE TIME";bool admitted_=false,expertMode_=false;
 };
 inline juce::AudioProcessorEditor* JuceVocalDelayProcessor::createEditor(){return new SingerEditor(*this);}
 } // namespace armix::builtin_fx::vocal_delay

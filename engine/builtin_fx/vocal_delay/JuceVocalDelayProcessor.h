@@ -13,7 +13,7 @@ class JuceVocalDelayProcessor final : public juce::AudioProcessor,
 public:
     JuceVocalDelayProcessor():AudioProcessor(BusesProperties()
       .withInput("Input",juce::AudioChannelSet::stereo(),true)
-      .withOutput("Output",juce::AudioChannelSet::stereo(),true)){setLatencySamples(0);}
+      .withOutput("Output",juce::AudioChannelSet::stereo(),true)){setLatencySamples(0);initial_.continuous=presetSettings(0);}
     const juce::String getName() const override{return "Vocal Delay";}
     bool acceptsMidi() const override{return false;}
     bool producesMidi() const override{return false;}
@@ -80,6 +80,7 @@ public:
     }
     Snapshot acceptedSnapshot() const noexcept{return session_.acceptedSnapshot();}
     bool isReady() const noexcept{return active_;}
+    ContinuousDelayCore::Meter meter() const noexcept{return active_?session_.meter():ContinuousDelayCore::Meter{};}
     bool restoreUnpublishedState(const void* data,int bytes) noexcept{
         if(published_||prepared_||active_||bytes<0)return false;
         State s{};if(!StateCodec::decode(data,static_cast<std::size_t>(bytes),s)||

@@ -2,6 +2,8 @@
 #pragma once
 #include "Parameters.h"
 #include "DelayLine.h"
+#include "AdaptiveVocalFocus.h"
+#include <atomic>
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -20,7 +22,7 @@ public:
         Taps taps_{};
         float feedback_=0,echo_=0,hp_=0,lp_=1,duckDepth_=0;
         float attack_=0,release_=0,mono_=0,cross_=0;
-        bool enabled_=true;
+        bool enabled_=true,adaptiveFocus_=false;
     public:
         Prepared()=default;
     };
@@ -45,7 +47,7 @@ public:
         q.release_=timeCoefficient(rate,p.duckReleaseMs);
         q.mono_=p.mode==StereoMode::mono?1.f:0.f;
         q.cross_=p.mode==StereoMode::pingPong?1.f:0.f;
-        q.enabled_=p.enabled;
+        q.enabled_=p.enabled;q.adaptiveFocus_=p.adaptiveFocus;
         out=q;return true;
     }
     bool prepare(double rate,const Parameters& p=Parameters{}) {
@@ -63,6 +65,7 @@ public:
         mono_=q.mono_;cross_=q.cross_;depth_=q.duckDepth_;
         wetTone_=q.taps_.style==EchoStyle::classic?0.f:1.f;
         tape_=q.taps_.style==EchoStyle::tape?1.f:0.f;
+        focus_.prepare(rate);focusBlend_=q.adaptiveFocus_?1.f:0.f;
         power_=q.enabled_?1.f:0.f;ready_=true;
         invalidate();return true;
     }
@@ -73,15 +76,23 @@ public:
     // AUDIO only, or CONTROL on an unpublished instance.
     void invalidate() noexcept {
         left_.invalidate();right_.invalidate();
-        toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;
+        toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;focus_.reset();publishMeter(0,0);
         active_=next_=target_.taps_;fadePosition_=fadeLength_;
     }
     std::size_t ringBytes() const noexcept {
         return (left_.capacity()+right_.capacity())*sizeof(float);
     }
+    // One coherent block observation, packed in a lock-free word. 10 bits each
+    // for wet peak and fractional attenuation, 12-bit rolling block sequence.
+    struct Meter {float wetPeak=0,duckReduction=0;std::uint32_t sequence=0;};
+    Meter meter() const noexcept{
+        const auto w=meterWord_.load(std::memory_order_relaxed);
+        return {float(w&1023u)/1023.f,float((w>>10)&1023u)/1023.f,w>>20};
+    }
     void processStereo(float* l,float* r,std::size_t frames) noexcept {
-        if(!ready_||!l||!r)return;
+        if(!ready_||!l||!r||frames==0)return;
         const bool monoBuffer=l==r;
+        float blockWet=0,blockReduction=0;
         for(std::size_t i=0;i<frames;++i) {
             const float dryL=finite(l[i]),dryR=monoBuffer?dryL:finite(r[i]);
             // Dry is never buffered, filtered, or limited by the echo engine.
@@ -134,18 +145,34 @@ public:
             const float peak=std::min(1.f,std::max(std::abs(dryL),std::abs(dryR)));
             env_=tiny(env_+(peak-env_)*(peak>env_?target_.attack_:target_.release_));
             // Soft activity ramp: full duck at ~-18 dBFS, never hard-gate echo.
-            const float activity=std::clamp((env_-.015f)/.11f,0.f,1.f);
-            const float gain=echo_*power_*(1.f-depth_*activity);
+            float activity=std::clamp((env_-.015f)/.11f,0.f,1.f);
+            move(focusBlend_,target_.adaptiveFocus_?1.f:0.f);
+            if(focusBlend_>0.f){
+                const float adaptive=focus_.tick(peak,target_.attack_,target_.release_);
+                activity+=(adaptive-activity)*focusBlend_;
+            }else focus_.reset();
+            const float reduction=depth_*activity;
+            const float gain=echo_*power_*(1.f-reduction);
             const float mid=.5f*(wL+wR);
             if(gain==0.f) { l[i]=dryL;if(!monoBuffer)r[i]=dryR; }
-            else if(monoBuffer)l[i]=dryL+gain*mid;
-            else {
-                l[i]=dryL+gain*(wL+(mid-wL)*mono_);
-                r[i]=dryR+gain*(wR+(mid-wR)*mono_);
+            else if(monoBuffer){
+                const float wet=gain*mid;l[i]=dryL+wet;
+                blockWet=std::max(blockWet,std::abs(wet));
+            }else {
+                const float wetL=gain*(wL+(mid-wL)*mono_),wetR=gain*(wR+(mid-wR)*mono_);
+                l[i]=dryL+wetL;r[i]=dryR+wetR;
+                blockWet=std::max(blockWet,std::max(std::abs(wetL),std::abs(wetR)));
             }
+            if(gain>0.f)blockReduction=std::max(blockReduction,reduction);
         }
+        publishMeter(blockWet,blockReduction);
     }
 private:
+    void publishMeter(float wet,float reduction) noexcept{
+        const auto quant=[](float v){return static_cast<std::uint32_t>(std::clamp(v,0.f,1.f)*1023.f+.5f);};
+        meterSequence_=(meterSequence_+1u)&4095u;
+        meterWord_.store((meterSequence_<<20)|(quant(reduction)<<10)|quant(wet),std::memory_order_relaxed);
+    }
     static float finite(float v) noexcept { return std::isfinite(v)?v:0.f; }
     static float bounded(float v,float limit) noexcept {return std::clamp(v,-limit,limit);}
     static float tiny(float v) noexcept {return std::abs(v)<1.e-20f?0.f:v;}
@@ -190,7 +217,10 @@ private:
     std::uint32_t fadeLength_=1,fadePosition_=1;
     float slew_=0,powerStep_=0,power_=0;
     float feedback_=0,echo_=0,hp_=0,lp_=1,mono_=0,cross_=0,depth_=0,env_=0;
-    float wetTone_=0.f,tape_=0.f;
+    float wetTone_=0.f,tape_=0.f,focusBlend_=0.f;
+    AdaptiveVocalFocus focus_{};
+    static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
+    std::atomic<std::uint32_t> meterWord_{0};std::uint32_t meterSequence_=0;
     bool ready_=false;
 };
 } // namespace armix::builtin_fx::vocal_delay
