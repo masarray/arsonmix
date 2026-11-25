@@ -15,6 +15,19 @@ class NativeMixerSessionStore final {
 public:
     explicit NativeMixerSessionStore(juce::File studio)
         : root_(studio.getChildFile("MixerSession")) {}
+    // Cold-start emergency path only, before any session worker or driver exists.
+    // Preserve even corrupt journals byte-for-byte; do not read or delete them.
+    juce::String quarantineForStartupRecovery(juce::File& archived) const {
+        archived=juce::File{};
+        if(!root_.exists())return {};
+        const auto id=juce::Uuid().toDashedString().toLowerCase();
+        if(!armix::shows::detail::uuid(id))return "Cannot allocate recovery identity";
+        const auto target=root_.getSiblingFile("MixerSession-Recovery-"+id);
+        if(target.exists()||!root_.moveFileTo(target))
+            return "Cannot archive MixerSession; close ArSonMix and verify folder access";
+        archived=target;
+        return {};
+    }
     static constexpr juce::int64 maxJson=4*1024*1024;
     static constexpr juce::int64 maxState=8*1024*1024;
     static constexpr juce::int64 maxTotal=128*1024*1024;

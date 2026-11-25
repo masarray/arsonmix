@@ -10600,7 +10600,7 @@ public:
             window_->grabKeyboardFocus();
         }
     }
-    void initialise (const juce::String&) override
+    void initialise (const juce::String& commandLine) override
     {
 #if defined(_WIN32)
         // Per-user-session installer handshake. An Inno update requests the
@@ -10612,6 +10612,30 @@ public:
         installerShutdownEvent_ = ::CreateEventW (nullptr, TRUE, FALSE,
             L"Local\\ArSonMix.InstallShutdown.v1");
 #endif
+        // Cold-start archive only: never open a device, WebView or mixer worker.
+        // No implicit destructive reset or auto-updater after this invocation.
+        if(commandLine.trim()=="--archive-mixer-session" && !isAutoUpdateHealthProbe()) {
+            recoveryOnly_=true;
+            juce::NativeMessageBox::showAsync(
+                juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::WarningIcon)
+                    .withTitle("ArSonMix - recover mixer session")
+                    .withMessage("Archive the saved mixer checkpoint, including any corrupt FX state? The original files are preserved. No audio device opens. Restart ArSonMix normally after recovery.")
+                    .withButton("Cancel").withButton("Archive session"),
+                [this](int choice) {
+                    if(choice!=1){systemRequestedQuit();return;}
+                    juce::File archived;
+                    const auto error=armix::session::NativeMixerSessionStore(settingsDirectory()).quarantineForStartupRecovery(archived);
+                    const juce::String message=error.isNotEmpty()?error:
+                        archived.exists()?"Saved mixer archived: "+archived.getFullPathName()+"\nStart ArSonMix normally.":
+                        juce::String("No saved mixer checkpoint found.");
+                    writeStartupDiagnostic(error.isEmpty()?"MIXER_SESSION_ARCHIVED":"MIXER_SESSION_ARCHIVE_FAILED",message);
+                    juce::NativeMessageBox::showAsync(
+                        juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::InfoIcon)
+                            .withTitle("ArSonMix - recovery result").withMessage(message).withButton("Close"),
+                        [this](int){systemRequestedQuit();});
+                });
+            return;
+        }
         // Paint the approved dark native splash BEFORE browser cache I/O,
         // WebView2 initialization, device scan or native console construction.
         if (!isAutoUpdateHealthProbe())
@@ -10749,7 +10773,7 @@ public:
         // Avoid starting setup while Windows is signing out/shutting down:
         // Windows may terminate installer midway through file replacement.
         // A staged transaction remains available on the next normal exit.
-        if (!innoIsClosing && !isAutoUpdateHealthProbe() &&
+        if (!recoveryOnly_ && !innoIsClosing && !isAutoUpdateHealthProbe() &&
             ::GetSystemMetrics (SM_SHUTTINGDOWN) == 0)
             launchSmartUpdater (true);
         if (installerShutdownEvent_ != nullptr)
@@ -10797,6 +10821,7 @@ private:
         window_->grabKeyboardFocus();
     }
     bool startupMixerPresented_ = false;
+    bool recoveryOnly_ = false;
 
 #if defined(_WIN32)
     void serviceSmartUpdateAcknowledgement()

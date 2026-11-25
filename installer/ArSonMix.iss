@@ -91,6 +91,7 @@ Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{a
 Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixAutoUpdate.ps1"" -RecoveryMode"; WorkingDir: "{app}"
 Name: "{autoprograms}\Diagnose ArSonMix Startup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixStartupDiagnostics.ps1"" -ShowReport"; WorkingDir: "{app}"
 Name: "{autoprograms}\Start ArSonMix with Recovery Profile"; Filename: "{app}\ArSonMix.exe"; Parameters: "--safe-webview-profile"; WorkingDir: "{app}"
+Name: "{autoprograms}\Archive ArSonMix Mixer Session"; Filename: "{app}\ArSonMix.exe"; Parameters: "--archive-mixer-session"; WorkingDir: "{app}"
 ; VB-CABLE is optional. Its signed vendor setup requires an Administrator
 ; approval and an explicit Install Driver click. Offer a discoverable action
 ; instead of blocking installation or launching driver UI without consent.

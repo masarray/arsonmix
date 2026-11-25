@@ -2564,6 +2564,20 @@ int main(){
     assert(rejectedRecovery.masterGain==.12f &&
            rejectedStates.size()==1 && rejectedStates[0].bytes==binary.bytes);
     assert(head.loadFileAsString().trim()==firstId);
+    // Preserve complete damaged journal, not just HEAD, and unrelated data.
+    const auto keep=studio.getChildFile("unrelated-user-preset");
+    assert(keep.replaceWithText("preserve"));
+    juce::File archived;
+    assert(store.quarantineForStartupRecovery(archived).isEmpty());
+    assert(archived.isDirectory()&&!store.exists());
+    assert(archived.getChildFile("HEAD").loadFileAsString().trim()==firstId);
+    assert(archived.getChildFile("PREVIOUS").existsAsFile());
+    assert(archived.getChildFile("versions").getChildFile(firstId).getChildFile("blobs")
+        .getChildFile(binary.sha256+".bin").existsAsFile());
+    assert(keep.loadFileAsString()=="preserve");
+    juce::File again;
+    assert(store.quarantineForStartupRecovery(again).isEmpty()&&again==juce::File{});
+    assert(archived.isDirectory());
     assert(base.deleteRecursively());
     std::cout<<"PASS: dynamic ChannelId/EdgeId graph, persistent vendor blobs and"
                 " explicit verified HEAD recovery\n";
