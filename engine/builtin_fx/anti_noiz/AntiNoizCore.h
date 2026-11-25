@@ -11,6 +11,7 @@
 #include "AntiNoizGain.h"
 #include "AntiNoizProfile.h"
 #include "AntiNoizAutoGain.h"
+#include "AntiNoizTonal.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -76,6 +77,7 @@ public:
         prepareTiming();
         context_.prepare(rate_,hop_);
         voiceGain_.prepare(rate_,hop_);
+        tonal_.prepare(rate_,channels_);
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
         profile_.prepare(rate_,hop_,channels_,hop_+1);
@@ -95,13 +97,14 @@ public:
         // idle tracking. Existing overlap and gain smoothing remain intact.
         if(effectiveMode_==Mode::Voice&&(next!=Mode::Voice||(!s.enabled&&settings_.enabled)))
             profile_.limitToIdleBounds();
+        if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();}
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        context_.reset(); voiceGain_.reset(); return true;
+        context_.reset(); voiceGain_.reset(); tonal_.begin(); return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
@@ -109,7 +112,7 @@ public:
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
         pos_=ticks_=0;
-        profile_.cancel(); context_.reset(); voiceGain_.reset();
+        profile_.cancel(); context_.reset(); voiceGain_.reset(); tonal_.resetSignal();
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -128,6 +131,12 @@ public:
                 in_[c][pos_]=std::isfinite(x)?std::clamp(x,-64.f,64.f):0.f;
                 p[c][i]=out_[c][pos_];out_[c][pos_]=0.f;
             }
+            if(profile_.learning())tonal_.observe(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
+            else if(settings_.enabled&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&tonal_.selected()>=0){
+                // Apply to the already latency-aligned WOLA output.
+                float unused=0.f;
+                tonal_.apply(left[i],channels_==2?right[i]:unused,1.f-cleanFloor_);
+            }
             if(++pos_==n_)pos_=0;
             if(++ticks_==hop_){ticks_=0; frame();}
         }
@@ -135,7 +144,7 @@ public:
     // Native host lifecycle only. Keep the qualified stationary DSP path,
     // coefficient preparation and all Core layout unchanged.
     void cancelNativeLearn() noexcept {
-        if(profile_.learning()){profile_.cancel();context_.reset();voiceGain_.reset();}
+        if(profile_.learning()){profile_.cancel();context_.reset();voiceGain_.reset();tonal_.resetSignal();}
     }
     bool lastNativeLearnQualified() const noexcept {return profile_.lastAttemptQualified();}
     void processNativeDry(float* left,float* right,int samples) noexcept {
@@ -143,6 +152,7 @@ public:
         // no second delay. Existing disabled WOLA path advances the timeline.
         const bool enabled=settings_.enabled;
         settings_.enabled=false;
+        tonal_.resetSignal();
         process(left,right,samples);
         settings_.enabled=enabled;
     }
@@ -181,6 +191,7 @@ private:
             }
         }
         const auto result=profile_.observe(power_);
+        if(result==NoiseProfile<maxBins>::LearnResult::accepted)tonal_.commit();
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         // Only Voice with nonzero Silence may use the extra residual label.
@@ -265,6 +276,7 @@ private:
     FftPlan fft_{};
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
+    TonalNoise tonal_{};
     float maskClose_=0.18f,expandClose_=0.035f;
     float cleanFloor_=1,singingFloor_=1,silenceFloor_=1,autoFloor_=1;
     std::array<std::array<float,maxN>,2> in_{},out_{};

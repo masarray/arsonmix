@@ -108,3 +108,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANTI_NOIZ_SANITIZERS)
 endif()
 add_test(NAME AntiNoizNativeSession COMMAND anti_noiz_native_session_test)
 set_tests_properties(AntiNoizNativeSession PROPERTIES TIMEOUT 60)
+
+anti_noiz_target(anti_noiz_tonal_test tests/anti_noiz_tonal_test.cpp)
+add_test(NAME AntiNoizTonal COMMAND anti_noiz_tonal_test)
+set_tests_properties(AntiNoizTonal PROPERTIES TIMEOUT 60)
