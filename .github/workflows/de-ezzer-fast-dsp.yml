@@ -1,0 +1,37 @@
+name: de-Ezzer focused DSP
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/de_ezzer/**'
+      - 'tools/de-ezzer/**'
+      - '.github/workflows/de-ezzer-fast-dsp.yml'
+permissions:
+  contents: read
+concurrency:
+  group: de-ezzer-dsp-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  dsp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: g++
+            config: Release
+            sanitizers: 'OFF'
+          - compiler: clang++
+            config: Debug
+            sanitizers: 'ON'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Configure and compile isolated DSP
+        run: |
+          cmake -S tools/de-ezzer -B /tmp/de-ezzer-build -G Ninja -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} -DCMAKE_BUILD_TYPE=${{ matrix.config }} -DDE_EZZER_SANITIZERS=${{ matrix.sanitizers }}
+          cmake --build /tmp/de-ezzer-build --parallel
+      - name: Regression
+        run: ctest --test-dir /tmp/de-ezzer-build --output-on-failure
