@@ -4,14 +4,15 @@
 #include "../core/RealtimeNativeFxControl.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 namespace armix::builtin_fx {
-// Actual JUCE adapter; not admitted to production catalog until the native
-// lease/editor/readback integration is qualified. No new render graph.
+// Actual JUCE adapter for the existing native FX registry and approved
+// inline editor. No new render graph or private audio callback.
 class AntiNoizProcessor final : public juce::AudioProcessor,
                                public armix::mixer::RealtimeNativeFxControl {
 public:
     static constexpr const char* catalogIdentity="armix.builtin.anti-noiz.v1";
     using Core=anti_noiz::Core;
     using Control=anti_noiz::Control;
+    using Completion=Control::Completion;
     using Snapshot=anti_noiz::NativeSession::Snapshot;
     using LearnStatus=anti_noiz::NativeSession::LearnStatus;
     AntiNoizProcessor():juce::AudioProcessor(BusesProperties()
@@ -61,6 +62,12 @@ public:
     bool queueLearn(std::uint64_t id) noexcept {return session_.submit({id,Control::Kind::learn,{}});}
     bool pollCompletion(Control::Completion& c) noexcept {return session_.poll(c);}
     bool pollTelemetry(Snapshot& s) noexcept {return session_.pollTelemetry(s);}
+    // CONTROL-only bounded drain. No DSP state read on this thread.
+    Snapshot readObservation() noexcept {
+        Snapshot s;
+        for(int i=0;i<2;++i)if(!session_.pollTelemetry(s))break;
+        return session_.observed();
+    }
     void getStateInformation(juce::MemoryBlock& out) override {
         out.reset();if(!session_.quiescent())return;
         const auto bytes=anti_noiz::NativeState::encode(session_.acceptedSettings());

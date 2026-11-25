@@ -12,6 +12,7 @@ public:
     struct Snapshot : Control::Snapshot {
         LearnStatus learnStatus=LearnStatus::Idle;
         bool rackBypassed=false;
+        std::uint64_t serial=0;
     };
     bool prepare(double rate,int channels,Core::SourceRole role=Core::SourceRole::Unknown) {
         if(sealed_||pending_)return false;
@@ -21,7 +22,7 @@ public:
         Snapshot stale;while(telemetry_.pop(stale)){}
         fx_=std::move(next);rate_=rate;channels_=channels;
         status_=LearnStatus::Idle;rackBypassed_=fully_=preConsumed_=false;
-        interval_=static_cast<int>(rate/20.);remaining_=1;
+        interval_=static_cast<int>(rate/20.);remaining_=1;serial_=0;
         observed_=nativeSnapshot();ready_=true;return true;
     }
     void release() noexcept {ready_=false;}
@@ -81,12 +82,13 @@ public:
             status_=fx_->lastNativeLearnQualified()?LearnStatus::Accepted:LearnStatus::Rejected;
         if(n>=remaining_){
             remaining_=interval_-(n-remaining_)%interval_;
+            ++serial_;
             if(telemetry_.canPush())(void)telemetry_.push(nativeSnapshot());
         }else remaining_-=n;
     }
 private:
     Snapshot nativeSnapshot() const noexcept {
-        return {fx_->snapshot(),status_,rackBypassed_};
+        return {fx_->snapshot(),status_,rackBypassed_,serial_};
     }
     std::unique_ptr<Control> fx_;
     Core::Settings accepted_{};
@@ -94,7 +96,7 @@ private:
     // Native path uses this extended telemetry queue instead of Control's
     // standalone queue; no duplicate publication or readback authority.
     FxSpsc<Snapshot,2> telemetry_{};
-    std::uint64_t pending_=0;
+    std::uint64_t pending_=0,serial_=0;
     double rate_=0.;
     int channels_=0,interval_=2400,remaining_=1;
     LearnStatus status_=LearnStatus::Idle;

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/builtin_fx/AntiNoizProcessor.h"
+#include "../src/AntiNoizNativeBinding.h"
+#include "../src/NativeBuiltInFx.h"
 #include "../engine/core/LiveChannelFxGraph.h"
 #include <array>
 #include <cmath>
@@ -12,10 +14,21 @@ using Instance=armix::mixer::LiveChannelFxGraph::FxInstance;
 void check(bool ok,const char* why){if(!ok){std::cerr<<why<<'\n';std::abort();}}
 int main(){
     juce::ScopedJuceInitialiser_GUI gui;
+    using Binding=armix::builtin_fx::AntiNoizNativeBinding;
+    const auto* entry=armix::builtin_fx::findNativeBuiltInFx(AntiNoizProcessor::catalogIdentity);
+    check(entry&&entry->showInPicker&&entry->minimumLiveRate==44100.&&entry->maximumLiveRate==96000.,"native catalog");
+    check(!entry->prepare(32000.,128,nullptr,0),"reject unsupported rate");
+    Core::Settings typed;auto v=Binding::settings(typed);
+    check(Binding::parseSettings(v,typed),"typed native settings");
+    v.getDynamicObject()->setProperty("cleanDb","14");
+    check(!Binding::parseSettings(v,typed),"reject coerced parameter");
+    v=Binding::settings(typed);v.getDynamicObject()->setProperty("mode","Unknown");
+    check(!Binding::parseSettings(v,typed),"reject unknown mode");
     for(double rate:{44100.,48000.,88200.,96000.}){
-        auto p=std::make_unique<AntiNoizProcessor>();auto* fx=p.get();
-        p->prepareToPlay(rate,128);const int latency=rate>48000?512:256;
-        check(p->isReady()&&p->getLatencySamples()==latency&&p->getSampleRate()==rate,"JUCE prepare");
+        auto p=entry->prepare(rate,128,nullptr,0);
+        auto* fx=dynamic_cast<AntiNoizProcessor*>(p.get());
+        check(fx!=nullptr,"actual registry preparation");const int latency=rate>48000?512:256;
+        check(fx->isReady()&&p->getLatencySamples()==latency&&p->getSampleRate()==rate,"JUCE prepare");
         juce::MemoryBlock saved;p->getStateInformation(saved);
         check(saved.getSize()==28,"state size");
         Instance lease(std::move(p),AntiNoizProcessor::catalogIdentity,"Anti Noiz",128);

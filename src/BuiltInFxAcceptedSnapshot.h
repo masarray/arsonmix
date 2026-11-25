@@ -6,6 +6,7 @@
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "AntiNoizNativeBinding.h"
 
 // CONTROL THREAD ONLY. One portable, catalog-scoped snapshot adapter for all
 // built-in insert types. A native lease + quiescent accepted DSP state MUST be
@@ -16,6 +17,10 @@ namespace armix::storage {
 struct BuiltInFxAcceptedSnapshot final {
     static bool matchesReady(juce::AudioProcessor* p,const juce::String& catalog) noexcept {
         if(!p)return false;
+        if(catalog==armix::builtin_fx::AntiNoizProcessor::catalogIdentity) {
+            const auto* an=dynamic_cast<armix::builtin_fx::AntiNoizProcessor*>(p);
+            return an&&an->isReady();
+        }
         if(catalog==armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
             const auto* eq=dynamic_cast<armix::builtin_fx::ChannelEqProcessor*>(p);
             return eq&&eq->isReady();
@@ -42,6 +47,9 @@ struct BuiltInFxAcceptedSnapshot final {
     static juce::var acceptedSettings(juce::AudioProcessor* p,
                                       const juce::String& catalog) {
         if(!matchesReady(p,catalog))return {};
+        if(catalog==armix::builtin_fx::AntiNoizProcessor::catalogIdentity)
+            return armix::builtin_fx::AntiNoizNativeBinding::settings(
+                static_cast<armix::builtin_fx::AntiNoizProcessor*>(p)->acceptedSettings());
         auto data=std::make_unique<juce::DynamicObject>();
         if(catalog==armix::builtin_fx::ChannelEqProcessor::catalogIdentity) {
             const auto bands=static_cast<armix::builtin_fx::ChannelEqProcessor*>(p)

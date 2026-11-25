@@ -27,6 +27,7 @@ ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></scri
                   '<script defer src="assets/approved-fx-rack-view-model.js"></script>\n'
                   '<script defer src="assets/approved-wire-view-model.js"></script>\n'
                   '<script defer src="assets/approved-native-bridge.js"></script>\n'
+                  '<script defer src="assets/anti-noiz-native.js"></script>\n'
                   '<script defer src="assets/approved-native-context-menu.js"></script>\n'
                   '<script defer src="assets/approved-native-legal.js"></script>\n')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
@@ -415,6 +416,20 @@ def stage(out: Path) -> dict:
                      out / "assets" / "approved-wire-view-model.js")
         shutil.copy2(ROOT / "web" / "approved-floating-fx-bridge.js",
                      out / "assets" / "approved-floating-fx-bridge.js")
+        # One canonical Anti Noiz editor (also used by its isolated harness).
+        # Bundle ES module exports as a classic script for the native resource
+        # provider. Scope CSS to its panel; never modify approved Pages CSS.
+        an = ROOT / "tools" / "anti-noiz" / "web"
+        sources = [(an / name).read_text("utf-8") for name in
+                   ("editor.mjs", "native_transport.mjs", "native_entry.mjs")]
+        parts = [re.sub(r"^import .*?;\s*$", "", source, flags=re.M)
+                 for source in sources]
+        code = "\n".join(re.sub(r"^export ", "", part, flags=re.M)
+                         for part in parts)
+        style = json.dumps((an / "editor.css").read_text("utf-8"))
+        (out / "assets" / "anti-noiz-native.js").write_text(
+            "(()=>{\\n'use strict';\\nconst antiNoizStyle=" + style +
+            ";\\n" + code + "\\n})();\\n", encoding="utf-8")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
         (out / "fx-window.html").write_text(floating_fx_html(),encoding="utf-8")

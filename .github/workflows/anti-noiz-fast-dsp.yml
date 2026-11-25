@@ -195,3 +195,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - run: node tools/anti-noiz/web/contract.test.mjs
+      - run: node tools/anti-noiz/web/native_transport.test.mjs
+      - name: Build approved native resource bundle
+        run: |
+          python3 scripts/build_approved_native_gui.py --out "$RUNNER_TEMP/anti-noiz-approved"
+          node --check "$RUNNER_TEMP/anti-noiz-approved/assets/anti-noiz-native.js"

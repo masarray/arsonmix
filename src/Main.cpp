@@ -55,6 +55,7 @@
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
 #include "NativeFxControlRequest.h"
+#include "AntiNoizNativeBinding.h"
 #include "SonKuNativeBridgeContract.h"
 #include "NativeDeviceApplyCoordinator.h"
 #if defined(_WIN32)
@@ -861,6 +862,14 @@ private:
         juce::String request,channelId,deviceEpoch,revision,instanceId;
         juce::uint32 started=0;
     } pendingNativeComp_;
+    struct PendingNativeAntiNoiz {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::var identity; // CONTROL only, exact original request envelope
+        std::uint64_t id=0,epoch=0,revision=0,channel=0;
+        int slot=-1;
+        juce::uint32 started=0;
+        bool timeoutReported=false;
+    } pendingNativeAntiNoiz_;
     juce::String lastNativeCompRequest_,lastNativeCompInstance_;
     juce::String lastNativeCompEpoch_,lastNativeCompRevision_;
     struct PendingNativeHarmony {
@@ -3821,6 +3830,69 @@ private:
             "arMixBuiltinGeqAck",juce::var(ack.release()));
     }
 
+    // Anti Noiz uses the same exact native lease and one CONTROL producer.
+    // No snapshot/ACK is constructed by the browser; telemetry is drained
+    // only here on CONTROL, never from audio-owned fields.
+    void emitAntiNoizReply(const char* event,const juce::var& identity,
+            const char* status,const char* error,
+            armix::builtin_fx::AntiNoizProcessor* p=nullptr,bool observe=false) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        for(const auto* key:{"requestId","channelId","deviceEpoch","graphRevision","instanceId","slot","workspaceToken"})
+            reply->setProperty(key,identity.getProperty(key,{}));
+        reply->setProperty("status",status);reply->setProperty("errorCode",error);
+        if(p){
+            using Binding=armix::builtin_fx::AntiNoizNativeBinding;
+            reply->setProperty("settings",Binding::settings(p->acceptedSettings()));
+            reply->setProperty("sampleRate",p->getSampleRate());
+            reply->setProperty("addedLatencySamples",p->getLatencySamples());
+            if(observe)reply->setProperty("observation",Binding::observation(p->readObservation()));
+        }
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(event,juce::var(reply.release()));
+    }
+    void servicePendingNativeAntiNoiz() {
+        auto& job=pendingNativeAntiNoiz_;
+        if(!job.owner)return;
+        auto* p=dynamic_cast<armix::builtin_fx::AntiNoizProcessor*>(job.owner->processor.get());
+        if(!p){job={};return;}
+        armix::builtin_fx::AntiNoizProcessor::Completion ack;
+        if(p->pollCompletion(ack)){
+            const auto current=engine_.leaseNativeVst3Editor(job.epoch,job.revision,
+                armix::mixer::ChannelId{job.channel},static_cast<std::size_t>(job.slot),
+                job.identity.getProperty("instanceId",{}).toString());
+            const bool applied=ack.id==job.id&&ack.applied&&current==job.owner;
+            if(!job.timeoutReported)
+                emitAntiNoizReply("arMixBuiltinAntiNoizAck",job.identity,
+                    applied?"APPLIED":"REJECTED",applied?"NONE":"DSP_EDIT_NOT_APPLIED_OR_STALE",
+                    current==job.owner?p:nullptr);
+            job={};return;
+        }
+        if(juce::Time::getMillisecondCounter()-job.started<3000u)return;
+        // Timeout is not cancellation. Keep draining the original mailbox
+        // until ACK or actual epoch/instance retirement; never strand it
+        // by dropping the lease while its queued edit can still be applied.
+        if(!job.timeoutReported){
+            job.timeoutReported=true;
+            emitAntiNoizReply("arMixBuiltinAntiNoizAck",job.identity,
+                "REJECTED","DSP_ACK_TIMEOUT_OUTCOME_UNKNOWN");
+        }
+        const auto now=approvedNativeSnapshot();
+        const auto device=now.getProperty("device",{}),graph=now.getProperty("graph",{});
+        if(device.getProperty("epoch",{}).toString()!=
+           job.identity.getProperty("deviceEpoch",{}).toString()){job={};return;}
+        if(engine_.isGraphSwitchPending())return;
+        const auto rows=graph.getProperty("channels",{});
+        if(const auto* channels=rows.getArray()){
+            bool found=false;
+            for(const auto& row:*channels){
+                const auto inserts=row.getProperty("inserts",{});
+                if(const auto* list=inserts.getArray())for(const auto& item:*list)
+                    if(item.getProperty("id",{}).toString()==
+                        job.identity.getProperty("instanceId",{}).toString())found=true;
+            }
+            if(!found)job={}; // removed/retired, no future same-instance writes
+        }
+    }
+
     // Native compressor readback is CONTROL-thread-only for accepted settings.
     // The gain-reduction meter is one atomic block summary from AUDIO.
     void emitNativeCompSnapshot(const juce::String& request,
@@ -5752,6 +5824,8 @@ private:
                          static_cast<bool>(pendingNativeGeq_.owner))||
                     (catalog==armix::builtin_fx::ChannelCompressorProcessor::catalogIdentity&&
                          static_cast<bool>(pendingNativeComp_.owner))||
+                    (catalog==armix::builtin_fx::AntiNoizProcessor::catalogIdentity&&
+                         static_cast<bool>(pendingNativeAntiNoiz_.owner))||
                     (catalog==armix::builtin_fx::ChannelHarmonyProcessor::catalogIdentity&&
                          static_cast<bool>(pendingNativeHarmony_.owner))||
                     (catalog==armix::builtin_fx::VocalThrowProcessor::catalogIdentity&&
@@ -6098,6 +6172,48 @@ private:
                 pendingNativeGeq_.owner?"GEQ_CONTROL_BUSY":"STALE_OR_INVALID_GEQ");
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixBuiltinGeqQueue",juce::var(receipt.release()));
+            return;
+        }
+
+        if(action=="nativeAntiNoizSnapshot"||action=="nativeAntiNoizSet"||action=="nativeAntiNoizLearn") {
+            using P=armix::builtin_fx::AntiNoizProcessor;
+            using Binding=armix::builtin_fx::AntiNoizNativeBinding;
+            const auto request=armix::builtin_fx::NativeFxControlRequest::parse(
+                args,LiveDryRoutingLab::maxFxPerLane);
+            armix::session::StoredInsert stored;
+            auto offline=request.valid&&request.unbound?
+                openLogicalBuiltinFx(args,stored,P::catalogIdentity):nullptr;
+            auto owner=request.valid&&!request.unbound?
+                engine_.leaseNativeVst3Editor(request.epoch,request.revision,
+                    armix::mixer::ChannelId{request.channel},static_cast<std::size_t>(request.slot),
+                    request.rawInstance.toString()):armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* p=dynamic_cast<P*>(request.unbound?offline.get():owner?owner->processor.get():nullptr);
+            if(p&&!p->isReady())p=nullptr;
+            if(action=="nativeAntiNoizSnapshot"){
+                emitAntiNoizReply("arMixBuiltinAntiNoizSnapshot",args,
+                    p?"ACCEPTED":"REJECTED",p?"NONE":"INVALID_OR_STALE_ANTI_NOIZ",p,p&&!request.unbound);
+                return;
+            }
+            const auto id=request.sequence("an-");
+            const bool learn=action=="nativeAntiNoizLearn";
+            P::Core::Settings settings;
+            const bool typed=learn||Binding::parseSettings(args.getProperty("settings",{}),settings);
+            bool queued=false;
+            if(p&&id&&typed&&!pendingNativeAntiNoiz_.owner&&!deviceApply_.busy()&&
+               !nativeShowBusy_&&!studioBackupBusy_&&!engine_.independentClockActive()&&
+               !engine_.isGraphSwitchPending()&&(!learn||!request.unbound)){
+                queued=learn?p->queueLearn(id):p->queueSettings(settings,id);
+                if(queued&&!request.unbound){
+                    pendingNativeAntiNoiz_={owner,args,id,request.epoch,request.revision,
+                        request.channel,request.slot,juce::Time::getMillisecondCounter(),false};
+                }
+            }
+            if(request.unbound&&!learn)
+                return completeLogicalFxEdit(args,std::move(stored),p,queued,"arMixBuiltinAntiNoizAck");
+            emitAntiNoizReply("arMixBuiltinAntiNoizQueue",args,queued?"QUEUED":"REJECTED",
+                queued?"NONE":learn&&request.unbound?"LEARN_REQUIRES_LIVE_PCM":
+                pendingNativeAntiNoiz_.owner?"ANTI_NOIZ_CONTROL_BUSY":"INVALID_OR_STALE_ANTI_NOIZ",
+                p);
             return;
         }
 
@@ -9016,6 +9132,7 @@ private:
         servicePendingNativeEq();
         servicePendingNativeGeq();
         servicePendingNativeComp();
+        servicePendingNativeAntiNoiz();
         servicePendingNativeSonKu();
         servicePendingNativeHarmony();
         servicePendingNativeThrow();
