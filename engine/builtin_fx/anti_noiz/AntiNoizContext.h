@@ -14,11 +14,21 @@ public:
         hold_=std::max(1,int(std::ceil(.18*rate/hop)));
         reset();
     }
-    void reset() noexcept {quiet_=0;initialized_=false;}
+    void reset() noexcept {quiet_=0;initialized_=false;broadband_=0;}
+    float broadbandRatio() const noexcept {return broadband_;}
+    float temporalRatio(const Powers& profile,int channels,int bins,int bin) const noexcept {
+        float ratio=0;
+        for(int c=0;c<channels;++c){
+            float p=0,q=0;
+            for(int k=std::max(0,bin-1);k<=std::min(bins-1,bin+1);++k){p+=average_[c][k];q+=profile[c][k];}
+            ratio=std::max(ratio,p/std::max(q,eps));
+        }
+        return ratio;
+    }
     bool update(const Powers& power,const Powers& profile,int channels,int bins,
                 bool eligible) noexcept {
         if(!eligible){reset();return false;}
-        bool foreground=false;
+        bool foreground=false;broadband_=0;
         for(int c=0;c<channels;++c){
             float total=0,noise=0;
             for(int k=0;k<bins;++k){
@@ -28,6 +38,8 @@ public:
                 const float bounded=std::min(p,8.f*std::max(profile[c][k],eps));
                 auto& a=average_[c][k];a=initialized_?a+alpha_*(bounded-a):profile[c][k];
             }
+            const float ratio=total/std::max(noise,eps);
+            broadband_=std::max(broadband_,ratio);
             foreground|=total>=1.65f*std::max(noise,eps);
             // Existing broadband onset guard. Merge short terminal group.
             for(int k=0;k<bins;){
@@ -52,7 +64,7 @@ private:
     static constexpr float eps=1e-16f;
     Powers average_{};
     int quiet_=0,hold_=1;
-    float alpha_=1;
+    float alpha_=1,broadband_=0;
     bool initialized_=false;
 };
 } // namespace armix::builtin_fx::anti_noiz

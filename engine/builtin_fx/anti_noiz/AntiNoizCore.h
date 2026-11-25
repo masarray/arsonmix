@@ -10,6 +10,7 @@
 #include "AntiNoizContext.h"
 #include "AntiNoizGain.h"
 #include "AntiNoizProfile.h"
+#include "AntiNoizAutoGain.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -115,6 +116,7 @@ private:
         cleanFloor_=gainDb(settings_.cleanDb);
         singingFloor_=gainDb(std::min(12.f-6.f*settings_.musicProtect,settings_.cleanDb));
         silenceFloor_=gainDb(settings_.silenceDb);
+        autoFloor_=gainDb(std::min(12.f-4.f*settings_.musicProtect,settings_.cleanDb));
     }
     void renderUnity() noexcept {
         // Algebraically equivalent unity WOLA, with the same delay and overlap.
@@ -141,8 +143,9 @@ private:
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect);
         profile_.track(power_,idle);
+        const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const float floor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
-            effectiveMode_==Mode::Singing?singingFloor_:1.f;
+            effectiveMode_==Mode::Singing?singingFloor_:AutoGain::activeFloor(autoFloor_,context_.broadbandRatio());
         if(protect||idle)voiceGain_.reset();
         // Analysis remains live, but when both gains are exactly unity no
         // inverse FFT is needed. Preserve the context and profile histories.
@@ -152,13 +155,14 @@ private:
             for(int c=0;c<channels_;++c)
                 evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
             // Only explicit Voice opts into the stronger causal estimator.
-            const float gain=!protect&&!idle&&effectiveMode_==Mode::Voice?voiceGain_.estimate(k,evidence):
+            const float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
+                !protect&&!idle&&effectiveMode_==Mode::Voice?voiceGain_.estimate(k,evidence):
                 std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
             target_[k]=std::max(floor,gain);
         }
         for(int k=0;k<bins;++k) {
             const float smooth=0.25f*target_[std::max(0,k-1)]+0.5f*target_[k]+0.25f*target_[std::min(bins-1,k+1)];
-            const float g=std::max(floor,smooth);
+            const float g=std::max(selective?target_[k]:floor,smooth);
             mask_[k]=g>=mask_[k]?g:mask_[k]+maskClose_*(g-mask_[k]);
         }
         const float expTarget=idle?silenceFloor_:1.f;
@@ -186,7 +190,7 @@ private:
     ContextGuard<maxBins> context_{};
     VoiceGain<maxBins> voiceGain_{};
     float maskClose_=0.18f,expandClose_=0.035f;
-    float cleanFloor_=1,singingFloor_=1,silenceFloor_=1;
+    float cleanFloor_=1,singingFloor_=1,silenceFloor_=1,autoFloor_=1;
     std::array<std::array<float,maxN>,2> in_{},out_{};
     std::array<std::array<Complex,maxN>,2> work_{};
     NoiseProfile<maxBins> profile_{};

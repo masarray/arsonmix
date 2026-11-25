@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#pragma once
+#include <algorithm>
+namespace armix::builtin_fx::anti_noiz {
+// Bounded heuristic confidence, not a calibrated signal-presence probability.
+// No state, allocation, transcendental calls, or per-sample work.
+struct AutoGain final {
+    static float activeFloor(float floor,float broadbandRatio) noexcept {
+        // Weak foreground stays transparent; increase selective authority only
+        // with substantial broadband evidence above the learned reference.
+        const float authority=std::clamp((broadbandRatio-4.f)*.125f,0.f,1.f);
+        return 1.f-authority*(1.f-floor);
+    }
+    static float target(float floor,float temporalRatio,float instantaneousRatio) noexcept {
+        // Temporal neighboring evidence protects tonal sustain; a fresh
+        // strong bin opens immediately even before the temporal guard catches up.
+        const float noiseConfidence=std::clamp((2.6f-temporalRatio)/1.4f,0.f,1.f);
+        const float onset=std::clamp((instantaneousRatio-3.f)*.25f,0.f,1.f);
+        return 1.f-(1.f-floor)*noiseConfidence*(1.f-onset);
+    }
+};
+} // namespace armix::builtin_fx::anti_noiz
