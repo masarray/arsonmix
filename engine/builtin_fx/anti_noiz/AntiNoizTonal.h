@@ -31,7 +31,7 @@ public:
         lineCount_=0;lines_={};begin();
     }
     void begin() noexcept {
-        votes_={};harmonicVotes_={};score_={};candidatePower_={};windows_=0;phase_=0;partial_={};clearWindow();resetSignal();
+        votes_={};harmonicVotes_={};score_={};primaryScore_={};candidatePower_={};primaryPower_={};windows_=0;phase_=0;partial_={};clearWindow();resetSignal();
     }
     void resetSignal() noexcept {for(auto& line:lines_){line.state={};line.livePower={};line.mix=0.;}}
     void observe(float l,float r) noexcept {
@@ -64,9 +64,14 @@ public:
                 strength=std::min(strength,fraction);
             }
             if(qualified){
-                ++harmonicVotes_[i];if(strength>=.35)++votes_[i];score_[i]+=strength;
-                for(int c=0;c<channels_;++c)
-                    candidatePower_[i][c]+=2.*power[c][k]/(double(window_)*window_);
+                ++harmonicVotes_[i];score_[i]+=strength;
+                const bool primary=strength>=.35;
+                if(primary){++votes_[i];primaryScore_[i]+=strength;}
+                for(int c=0;c<channels_;++c){
+                    const double p=2.*power[c][k]/(double(window_)*window_);
+                    candidatePower_[i][c]+=p;
+                    if(primary)primaryPower_[i][c]+=p;
+                }
             }
         }
         clearWindow();
@@ -76,9 +81,9 @@ public:
     void commit() noexcept {
         lineCount_=0;lines_={};double best=0.;int primary=-1;
         if(windows_>=8)for(int i=0;i<count;++i)
-            if(votes_[i]*10>=windows_*8&&score_[i]>best){primary=i;best=score_[i];}
+            if(votes_[i]*10>=windows_*8&&primaryScore_[i]>best){primary=i;best=primaryScore_[i];}
         if(primary>=0){
-            addLine(primary);
+            addLine(primary,true);
             // Only a persistent integer-related peak can supplement the
             // strong primary. No unrelated peaks or adjacent grid copies.
             while(lineCount_<maxLines){
@@ -92,7 +97,7 @@ public:
                     if(distinct){next=i;strength=score_[i];}
                 }
                 if(next<0)break;
-                addLine(next);
+                addLine(next,false);
             }
         }
         resetSignal();
@@ -144,10 +149,12 @@ private:
         for(int m=2;m<=4;++m)if(std::abs(hi-float(m)*lo)<=2.5f)return true;
         return false;
     }
-    void addLine(int i) noexcept {
+    void addLine(int i,bool primary) noexcept {
         auto& line=lines_[lineCount_++];line.index=i;
+        const auto& powers=primary?primaryPower_[i]:candidatePower_[i];
+        const int votes=primary?votes_[i]:harmonicVotes_[i];
         for(int c=0;c<channels_;++c)
-            line.inverse[c]=1./std::max(1e-15,candidatePower_[i][c]/harmonicVotes_[i]);
+            line.inverse[c]=1./std::max(1e-15,powers[c]/votes);
     }
     double bandpass(float x,Line& line,int c) noexcept {
         auto& s=line.state[c];const auto& k=filter_[line.index];
@@ -164,7 +171,7 @@ private:
     std::array<std::array<std::array<double,2>,bank>,2> go_{};
     std::array<double,2> energy_{},partial_{};
     std::array<int,count> votes_{},harmonicVotes_{};
-    std::array<double,count> score_{};
-    std::array<std::array<double,2>,count> candidatePower_{};
+    std::array<double,count> score_{},primaryScore_{};
+    std::array<std::array<double,2>,count> candidatePower_{},primaryPower_{};
 };
 } // namespace armix::builtin_fx::anti_noiz
