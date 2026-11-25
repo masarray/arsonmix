@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#include "../engine/builtin_fx/vocal_delay/JuceVocalDelayProcessor.h"
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+using namespace armix::builtin_fx::vocal_delay;
+#define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL:%d %s\n",__LINE__,#x);std::abort();}}while(false)
+int main(){
+    juce::ScopedJuceInitialiser_GUI init;
+    JuceVocalDelayProcessor p;State s{};s.continuous.timeMs=20;s.continuous.echo=.5f;
+    s.continuous.feedback=0;s.continuous.duck=0;s.continuous.highPassHz=0;s.continuous.lowPassHz=0;
+    StateCodec::Bytes bytes{};CHECK(StateCodec::encode(s,bytes));
+    CHECK(p.restoreUnpublishedState(bytes.data(),int(bytes.size())));
+    Lease lease{1,2,3,4};CHECK(p.bindLeaseStopped(lease));p.prepareToPlay(48000,128);
+    CHECK(p.isReady()&&p.getLatencySamples()==0);p.sealForRealtime();
+    CHECK(!p.restoreUnpublishedState(bytes.data(),int(bytes.size())));
+    juce::AudioBuffer<float> pcm(2,2000);juce::MidiBuffer midi;
+    pcm.clear();pcm.setSample(0,0,.8f);pcm.setSample(1,0,.8f);
+    p.processBlock(pcm,midi);CHECK(pcm.getSample(0,0)==.8f&&std::abs(pcm.getSample(0,960)-.4f)<1.e-6f);
+    auto q=s.continuous;q.timeMs=30;CHECK(p.submit({lease,1,q})==Submit::queued);
+    juce::MemoryBlock saved;p.getStateInformation(saved);CHECK(saved.getSize()==0);
+    p.onRealtimeBypass(true,true);p.consumeRealtimeEdits();
+    Receipt r{};CHECK(p.poll(r)&&r.applied&&r.accepted.timeMs==30);
+    p.getStateInformation(saved);CHECK(saved.getSize()==48);State restored{};
+    CHECK(StateCodec::decode(saved.getData(),saved.getSize(),restored)&&restored.continuous.timeMs==30);
+    p.releaseResources();CHECK(p.bindLeaseStopped({1,2,4,5}));p.prepareToPlay(96000,128);
+    CHECK(p.isReady()&&p.acceptedSnapshot().accepted.timeMs==30);
+    CHECK(p.submit({lease,2,q})==Submit::stale);
+    pcm.setSize(2,4000);pcm.clear();pcm.setSample(0,0,.8f);pcm.setSample(1,0,.8f);
+    p.processBlock(pcm,midi);CHECK(std::abs(pcm.getSample(0,2880)-.4f)<1.e-6f);
+    std::puts("PASS real JUCE continuous PCM, state ACK, bypass, restart and stale lease");
+}

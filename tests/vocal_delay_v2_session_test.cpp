@@ -43,7 +43,7 @@ static void session(){
     CHECK(n.submit({l,1,p})==Submit::queued);
     CHECK(n.submit({l,2,p})==Submit::busy);
     StateCodec::Bytes bytes{};CHECK(!n.save(bytes));
-    CHECK(n.acceptedSnapshot().revision==0);
+    CHECK(n.acceptedSnapshot().revision==0&&n.acceptedSnapshot().lastSubmitted==1&&!n.acceptedSnapshot().quiescent);
     noHeap=true;n.consumeRealtimeEdits();noHeap=false;
     CHECK(!n.save(bytes)); // applied but receipt has not reached control
     Receipt r{};CHECK(n.poll(r)&&r.applied&&r.revision==1&&r.accepted.timeMs==30);
@@ -63,7 +63,7 @@ static void session(){
     std::array<float,4000> a{},b{};a[0]=b[0]=.8f;
     noHeap=true;n.processStereo(a.data(),b.data(),a.size());noHeap=false;
     CHECK(a[0]==.8f&&a[2400]>.39f&&a[2400]<.41f);
-    CHECK(!n.prepareStopped(48000,third,s)); // cannot reset revision on same lease
+    CHECK(!n.restartStopped(48000,l));CHECK(!n.prepareStopped(48000,third,s)); // cannot reset revision on same lease
 }
 static void concurrent(){
     NativeSession n;State s{};Lease l{9,8,7,6};CHECK(n.prepareStopped(48000,l,s));

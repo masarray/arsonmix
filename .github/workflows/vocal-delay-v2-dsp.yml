@@ -46,3 +46,25 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - run: node tools/vocal-delay/parameter-sync.test.mjs
+  native-juce-candidate:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Build and run real JUCE adapter (not full mixer)
+        shell: pwsh
+        run: |
+          cmake -S tools/vocal-delay/native -B vd-build -G "Visual Studio 17 2022" -A x64 "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build vd-build --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir vd-build -C Release --output-on-failure --no-tests=error

@@ -13,16 +13,18 @@ const leaseKeys=["channel","instance","epoch","graph"];
 const leaseValid=l=>!!l&&leaseKeys.every(k=>typeof l[k]==="string"&&/^[1-9][0-9]*$/.test(l[k])&&l[k].length<=20&&BigInt(l[k])<=18446744073709551615n);
 const sameLease=(a,b)=>leaseValid(a)&&leaseValid(b)&&leaseKeys.every(k=>a[k]===b[k]);
 const revisionValid=r=>Number.isInteger(r)&&r>=0&&r<=0xffffffff;
+const snapshotValid=s=>leaseValid(s?.lease)&&revisionValid(s.revision)&&revisionValid(s.lastSubmitted)&&s.lastSubmitted>=s.revision&&typeof s.quiescent==="boolean"&&valid(s.accepted);
 export class ParameterSync {
   constructor(send,{interval=34,timeout=3500}={}){
     this.send=send;this.interval=interval;this.timeout=timeout;this.close();
   }
-  close(){this.lease=null;this.accepted=clean(defaults);this.desired=clean(defaults);this.dirty=new Map();this.gestures=new Set();this.clock=0;this.rev=0;this.next=0;this.flight=null;this.blocked="";this.lastSent=-Infinity;}
+  close(){this.lease=null;this.accepted=clean(defaults);this.desired=clean(defaults);this.dirty=new Map();this.gestures=new Set();this.clock=0;this.rev=0;this.next=0;this.flight=null;this.blocked="";this.lastSent=-Infinity;this.flushRequested=false;}
   open(snapshot){
-    if(!leaseValid(snapshot?.lease)||!revisionValid(snapshot.revision)||!valid(snapshot.accepted))return false;
+    if(!snapshotValid(snapshot))return false;
     // Reopening same instance cannot silently forget an unresolved edit.
     if(this.lease&&sameLease(this.lease,snapshot.lease))return this.snapshot(snapshot);
-    this.close();this.lease={...snapshot.lease};this.rev=this.next=snapshot.revision;
+    if(!snapshot.quiescent)return false; // reopen only after native queue drained
+    this.close();this.lease={...snapshot.lease};this.rev=snapshot.revision;this.next=snapshot.lastSubmitted;
     this.accepted=this.desired=clean(snapshot.accepted);this.desired={...this.accepted};return true;
   }
   begin(key){if(!this.lease||!keys.includes(key))return false;this.gestures.add(key);return true;}
@@ -32,18 +34,22 @@ export class ParameterSync {
     return true;
   }
   preset(values){if(!this.lease||!valid(values))return false;for(const k of keys)this.edit(k,values[k]);return true;}
-  end(key,now){this.gestures.delete(key);return this.tick(now,true);}
+  end(key,now){
+    this.gestures.delete(key);
+    if(!this.dirty.has(key))this.desired[key]=this.accepted[key];
+    this.flushRequested=true;return this.tick(now,true);
+  }
   // One in flight, latest desired is never discarded while waiting.
   tick(now,force=false){
     if(!this.lease||!Number.isFinite(now))return false;
     if(this.flight&&now-this.flight.sent>=this.timeout){this.blocked="ACK_TIMEOUT";return false;}
-    if(this.flight||this.blocked||(!force&&now-this.lastSent<this.interval))return false;
+    if(this.flight||this.blocked||(!force&&!this.flushRequested&&now-this.lastSent<this.interval))return false;
     for(const [k] of this.dirty)if(same(this.desired[k],this.accepted[k]))this.dirty.delete(k);
-    if(!this.dirty.size)return false;
+    if(!this.dirty.size){this.flushRequested=false;return false;}
     if(this.next===0xffffffff){this.blocked="REVISION_EXHAUSTED";return false;}
     const revision=++this.next,settings=clean(this.desired);
     const flight={revision,sent:now,versions:new Map(this.dirty)};
-    this.flight=flight;this.lastSent=now;
+    this.flight=flight;this.lastSent=now;this.flushRequested=false;
     try{
       if(this.send({lease:{...this.lease},revision,settings})===false&&this.flight===flight){
         this.flight=null;this.blocked="QUEUE_REJECTED";return false;
@@ -66,20 +72,20 @@ export class ParameterSync {
       }else if(generation===undefined&&!this.gestures.has(k))this.desired[k]=this.accepted[k];
     }
     // Never wait until the next pointer-up to deliver the final value.
-    this.tick(now,true);return true;
+    this.tick(now,this.flushRequested);return true;
   }
   snapshot(s){
-    if(!sameLease(this.lease,s?.lease)||!revisionValid(s.revision)||s.revision<this.rev||!valid(s.accepted))return false;
+    if(!snapshotValid(s)||!sameLease(this.lease,s.lease)||s.revision<this.rev)return false;
     // In-flight state may be newer than snapshot; only exact receipts resolve it.
     if(this.flight)return false;
-    this.rev=s.revision;this.next=Math.max(this.next,this.rev);this.accepted=clean(s.accepted);
+    this.rev=s.revision;this.next=Math.max(this.next,s.lastSubmitted);this.accepted=clean(s.accepted);
     for(const k of keys)if(!this.dirty.has(k)&&!this.gestures.has(k))this.desired[k]=this.accepted[k];
     return true;
   }
   // Called only after host proves queue drained or lease changed; never
   // pretend timeout means the audio thread did not apply the command.
   recover(snapshot,queueQuiescent){
-    if(queueQuiescent!==true||!sameLease(this.lease,snapshot?.lease)||!revisionValid(snapshot.revision)||snapshot.revision<this.rev||!valid(snapshot.accepted))return false;
+    if(queueQuiescent!==true||!snapshotValid(snapshot)||!snapshot.quiescent||!sameLease(this.lease,snapshot.lease)||snapshot.revision<this.rev)return false;
     this.flight=null;this.blocked="";return this.snapshot(snapshot);
   }
   stable(){return !!this.lease&&!this.flight&&!this.blocked&&!this.dirty.size&&!this.gestures.size;}

@@ -17,6 +17,7 @@ struct Lease final {
 };
 struct Edit final {Lease lease{};std::uint32_t revision=0;Parameters settings{};};
 struct Receipt final {Lease lease{};std::uint32_t revision=0;Parameters accepted{};bool applied=false;};
+struct Snapshot final {Lease lease{};std::uint32_t revision=0,lastSubmitted=0;Parameters accepted{};bool quiescent=false;};
 enum class Submit { queued, stale, invalid, busy, notReady };
 class NativeSession final {
 public:
@@ -25,7 +26,7 @@ public:
         if(!lease.valid()||!validRate(rate)||state.kind!=State::Kind::continuous||
            !valid(state.continuous))return false;
         // Same lease must never reset revision or replay a stale packet.
-        if(ready_&&lease==lease_)return false;
+        if(ready_&&!newerLease(lease))return false;
         ready_=false;clearStopped();
         if(!core_.prepare(rate,state.continuous))return false;
         lease_=lease;rate_=rate;accepted_=audioAccepted_=state.continuous;
@@ -35,7 +36,7 @@ public:
     // Preserve applied-but-not-yet-polled settings on a stopped device restart.
     // Old unconsumed edits are discarded, never replayed on the next epoch.
     bool restartStopped(double rate,Lease lease){
-        if(!ready_||lease==lease_||lease.channel!=lease_.channel||lease.instance!=lease_.instance)return false;
+        if(!ready_||!newerLease(lease))return false;
         State s{};s.continuous=audioAccepted_;
         return prepareStopped(rate,lease,s);
     }
@@ -76,12 +77,16 @@ public:
         return true;
     }
     bool quiescent() const noexcept{return ready_&&!pending_;}
-    Receipt acceptedSnapshot() const noexcept{return {lease_,acceptedRevision_,accepted_,ready_};}
+    Snapshot acceptedSnapshot() const noexcept{return {lease_,acceptedRevision_,lastSubmitted_,accepted_,quiescent()};}
     bool save(StateCodec::Bytes& out) const noexcept{
         if(!quiescent())return false;
         State s{};s.continuous=accepted_;return StateCodec::encode(s,out);
     }
 private:
+    bool newerLease(const Lease& l) const noexcept{
+        return l.channel==lease_.channel&&l.instance==lease_.instance&&
+            (l.epoch>lease_.epoch||(l.epoch==lease_.epoch&&l.graph>lease_.graph));
+    }
     struct Command {Edit edit{};ContinuousDelayCore::Prepared prepared{};};
     static_assert(std::is_trivially_copyable<Command>::value);
     static_assert(std::is_trivially_copyable<Receipt>::value);
