@@ -3155,10 +3155,10 @@ public:
             if(enable){
                 if(old.monitorEnabled)return "DMX: existing physical MONITOR is reserved";
                 if(!monitor.value){
-                    ChannelEdit edit;edit.kind=ChannelEdit::Kind::add;
+                    armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::add;
                     edit.position=roster.channels().size();edit.role=ChannelRole::monitor;
                     edit.format=ProcessingFormat::stereo;edit.text="MONITOR";
-                    const auto changed=roster.edit(rosterRev,std::span<const ChannelEdit>(&edit,1));
+                    const auto changed=roster.edit(rosterRev,std::span<const armix::mixer::ChannelEdit>(&edit,1));
                     if(!changed.ok()||changed.createdIds.size()!=1)return "DMX: MONITOR creation rejected";
                     monitor=changed.createdIds.front();
                 }
@@ -3170,8 +3170,8 @@ public:
                     return "DMX: MONITOR is not removable";
                 // Refuse destructive mode changes: preserve all send IDs
                 // and monitor mix until the operator disconnects WIREs.
-                ChannelEdit edit;edit.kind=ChannelEdit::Kind::remove;edit.id=monitor;
-                if(!roster.edit(rosterRev,std::span<const ChannelEdit>(&edit,1)).ok())
+                armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::remove;edit.id=monitor;
+                if(!roster.edit(rosterRev,std::span<const armix::mixer::ChannelEdit>(&edit,1)).ok())
                     return "DMX: disconnect MONITOR WIREs before restoring physical MAIN";
                 monitor={};
                 next={2,old.monitorL,old.monitorR,-1,-1,false};
