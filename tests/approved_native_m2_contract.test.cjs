@@ -7728,3 +7728,17 @@ test("U3 Stop supersedes native opens and approved output selection pins invento
  assert.match(b,/inventoryId:extraInventoryId/);
  assert.match(b,/selectAudioSetupPage\("device"\)/);
 });
+
+
+test("U3 same-device Apply suspends and restores the verified stream without manual Stop",()=>{
+ const n=read("src/Main.cpp");
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
+ assert.doesNotMatch(a,/Stop STREAM and finish/);
+ assert.match(a,/captureSecondaryResumeIntent\(\)/);
+ assert.match(a,/requested.playback==prepared.before.outputDeviceName/);
+ assert.match(a,/resumeStream\(false\)/);
+ assert.match(a,/if\(restored\)resumeStream\(true\)/);
+ assert.match(a,/streamGeneration!=secondaryRetry_\.generation\(\)/);
+ assert.match(a,/engine_\.beginManualAudioSetup\(\)/);
+ assert.match(a,/pendingVendorStream_=PendingVendorStream/);
+});

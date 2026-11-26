@@ -3983,16 +3983,17 @@ private:
            engine_.isGraphSwitchPending()||
             static_cast<bool>(nativeRoute.getProperty("pending",false))||
             engine_.independentClockActive()||
-            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal||
-            engine_.secondaryArmed())
+            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)
             return send(false,"REJECTED",
-                "Stop STREAM and finish Show/FX/diagnostic/clock transition first");
+                "Finish active Show/FX/diagnostic/clock transition first");
         using Apply=armix::device::NativeDeviceApplyCoordinator;
         const auto prepared=Apply::prepare(engine_.devices(),args.getProperty("config",{}));
         if(prepared.error.isNotEmpty())return send(false,"REJECTED",prepared.error);
 
         const auto& typeName=prepared.requested.backend;
         if(prepared.requested.confirmRetainedPinMapping) {
+            if(engine_.secondaryArmed())return send(false,"NEEDS_REMAP",
+                "Disconnect additional output before confirming a changed physical pin mapping.");
             if(retainedOfflineFxActive_)return send(false,"NEEDS_REMAP",
                 "Offline mixer edits pending. Apply the original verified audio device first.");
             if(!prepared.canConfirmRetainedPins || !engine_.confirmRetainedWasapiPortMapping())
@@ -4009,6 +4010,30 @@ private:
 
         const bool previousMixerBound=engine_.hasBoundMixerRoute();
         const bool previousMonitor=engine_.isMonitorEnabled();
+        const auto streamIntent=engine_.captureSecondaryResumeIntent();
+        const auto streamGeneration=secondaryRetry_.generation();
+        // Apply is itself consent to the requested device transaction. Pause
+        // the secondary sink inside the existing suspend hook, rather than
+        // demanding a manual Stop/Apply/Enable sequence.
+        const auto resumeStream=[&](bool rollback) {
+            if(!streamIntent||streamGeneration!=secondaryRetry_.generation()||pendingSecondaryStop_)return;
+            const auto& requested=prepared.requested;
+            const bool sameAsio=prepared.previousBackend=="ASIO"&&
+                (rollback||(requested.backend=="ASIO"&&
+                    requested.capture==prepared.before.inputDeviceName&&
+                    requested.playback==prepared.before.outputDeviceName));
+            if(!sameAsio) {
+                engine_.disconnectSecondaryOutput();
+                emitNotice("Additional output paused after device change · choose Enable when ready",false);
+                return;
+            }
+            auto* liveDevice=engine_.devices().getCurrentAudioDevice();
+            if(!liveDevice||liveDevice->getName()!=streamIntent->driver||
+               engine_.devices().getCurrentAudioDeviceType()!="ASIO")return;
+            pendingVendorStream_=PendingVendorStream{*streamIntent,engine_.dryRoutingLabEpoch(),
+                engine_.outputArmRevision(),static_cast<std::uint64_t>(monotonicMilliseconds()+5000),
+                previousMonitor&&!operatorOutputMuted_};
+        };
         const auto start=monotonicMilliseconds();
         const auto result=deviceApply_.execute(engine_.devices(),prepared,{
             [this] {
@@ -4052,6 +4077,7 @@ private:
             diagnostics_.record("CUSTOM_AUDIO_APPLY_OK",
                 typeName+" | "+juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
             requestAutomaticMain();
+            resumeStream(false);
             send(true,engine_.isMonitorEnabled()?"ACCEPTED_LIVE":"ACCEPTED_MUTED",{});
             break;
         case Apply::Outcome::topologyChanged:
@@ -4065,6 +4091,7 @@ private:
                 (restored?"RESTORED":"RECOVERY_REQUIRED")+" | "+
                 juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
             if(restored&&previousMonitor)requestAutomaticMain();
+            if(restored)resumeStream(true);
             send(false,restored?(engine_.isMonitorEnabled()?"RESTORED_LIVE":"RESTORED_MUTED"):
                 "RECOVERY_REQUIRED",result.error);
             break;
@@ -4413,9 +4440,16 @@ private:
             cancelSecondaryContinuity();
             return;
         }
-        diagnostics_.record(error.isEmpty()?"SECONDARY_AUTO_RESTORED":"SECONDARY_AUTO_RESTORE_REJECTED",
-                            error.isEmpty()?intent.name:error);
-        emitNotice(error.isEmpty()?"Additional output restored":error,error.isNotEmpty());
+        if(error.isNotEmpty()) {
+            // The route is verified but the sink might still be temporarily
+            // absent. Hand off to the same bounded continuity scheduler.
+            secondaryContinuity_=SecondaryContinuity{intent,epoch,revision};
+            secondaryRetry_.fault(static_cast<std::uint64_t>(monotonicMilliseconds()));
+            diagnostics_.record("SECONDARY_AUTO_RESTORE_WAITING",error);
+            return;
+        }
+        diagnostics_.record("SECONDARY_AUTO_RESTORED",intent.name);
+        emitNotice("Additional output restored",false);
     }
     void showAsioControlPanel(const juce::var& args)
     {
