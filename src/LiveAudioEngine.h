@@ -1542,7 +1542,7 @@ public:
            acceptedMixerBinding_->outputNames!=live.outputNames||
            deviceManager_.getCurrentAudioDevice()!=device)
             return "DMX: verified playback identity changed";
-        return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins);
+        return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins,allOutputsDisarmed());
     }
 
     juce::String patchPhysicalBusOutput(std::uint64_t ep,std::uint64_t rev,

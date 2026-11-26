@@ -2072,8 +2072,9 @@ static void verifyDmxSplitNativePcm(){
     };
     render(true);
     auto rev=revisions();
-    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0]+1,rev[1],true,pins).isNotEmpty());
-    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],true,pins).isEmpty());
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],true,pins,false).isNotEmpty());
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0]+1,rev[1],true,pins,true).isNotEmpty());
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],true,pins,true).isEmpty());
     assert(mixer.nativeBusPatchAwaitingCallback());render(true);
     assert(!mixer.nativeBusPatchAwaitingCallback()&&!tap[0]&&!tap[1]);
     render(false);
@@ -2090,7 +2091,7 @@ static void verifyDmxSplitNativePcm(){
     render(false);render(false);
     assert(outL.back()>.01f&&outL.back()<tap[0][479]);
     rev=revisions();
-    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],false,pins).isNotEmpty());
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],false,pins,true).isNotEmpty());
     render(false);assert(outL.back()>.01f);
     assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
     saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;

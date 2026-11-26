@@ -4,6 +4,7 @@
   const api = window.__JUCE__?.backend;
   if (!api?.emitEvent || !api?.addEventListener) return;
   let state = {};
+  let streamPending=false;
   let catalogItems = []; // native VST3 catalog, never a WebView file path
   const catalogNames=new Map();
   const css = document.createElement("style");
@@ -2057,7 +2058,6 @@
     }
     repaint(d);
   });
-  let streamPending=false;
   const requestStreamInventory=()=>
     api.emitEvent("arMixAction",{action:"audioDeviceInventory"});
   api.addEventListener("arMixAudioDeviceInventory",data=>{

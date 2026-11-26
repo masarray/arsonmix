@@ -3022,8 +3022,9 @@ public:
     // The new monitor is intentionally unpatched (silence) until WIRE/SOF.
     juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
             std::uint64_t rosterRev,bool enable,
-            const armix::device::JuceActivePortSnapshot& pins) {
+            const armix::device::JuceActivePortSnapshot& pins,bool outputsDisarmed) {
         using namespace armix::mixer;
+        if(!outputsDisarmed)return "DMX: both outputs must be disarmed";
         if(!ready()||!channelIdPhysicalPcmActive()||pins.epoch!=ep||
            pins.typeName!="ASIO"||pins.outputCount!=2||!matchesSessionDevice(pins)||
            !nativeAccepted_.matches(nativePublisher_,ep,rev)||
@@ -3034,7 +3035,9 @@ public:
             return "DMX: requested output mode is unchanged or unavailable";
         // Do not steal a saved amplifier or logical output binding. The
         // operator must explicitly clear those intentions first.
-        if(!externalOutputAssignments_.empty()||!logicalOutputs_.empty())
+        if(!externalOutputAssignments_.empty()||!logicalOutputs_.references().empty()||
+           std::any_of(logicalOutputs_.ports().begin(),logicalOutputs_.ports().end(),
+               [](const auto& port){return port.binding.has_value();}))
             return "DMX: clear existing external/logical output bindings first";
         for(int i=0;i<2;++i){
             const int pin=pins.outputPhysicalPort(i);
@@ -3234,6 +3237,14 @@ public:
            document.outputs.activeOutputChannels!=pins.outputCount ||
            !document.outputs.valid())
             return "NEEDS_REMAP: verified callback layout changed";
+        if(document.outputs.secondaryMain()){
+            const auto* monitor=document.roster.find(document.legacyIds.monitor);
+            if(pins.typeName!="ASIO"||document.binding.backend!="ASIO"||
+               pins.deviceName!=document.binding.playback||
+               pins.outputNames!=document.binding.outputNames||
+               !monitor||monitor->role!=ChannelRole::monitor)
+                return "NEEDS_REMAP: split MAIN/MONITOR requires exact named ASIO binding";
+        }
         if(document.request.maxFrames<32 || document.request.maxFrames>Block::hardFrameLimit)
             return "Invalid native mixer quantum";
         try {
