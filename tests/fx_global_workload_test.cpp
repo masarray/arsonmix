@@ -26,7 +26,8 @@ static void workload(){
         assert(s.worstPermille>=1499&&s.worstPermille<=1500);
     }
     FxWorkloadEvidence e;e.prepare(0.);
-    e.observe(999999,16);assert(!e.snapshot().validRate&&e.snapshot().calls==0);
+    e.observe(999999,16);e.observeSilence(true);
+    assert(!e.snapshot().validRate&&e.snapshot().calls==0&&e.snapshot().silenceObserved==0);
     FxWorkloadEvidence f;f.prepare(48000.);
     f.observe(1,0);assert(f.snapshot().calls==0);
     f.observe(1000000,16);assert(f.snapshot().overBudget==1&&f.snapshot().worstPermille>=3000);

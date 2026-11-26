@@ -8,7 +8,7 @@
 namespace armix::rt {
 // Vendor-independent evidence, never an automatic bypass/sleep authority.
 // One audio writer under the existing FX lease gate. Exact counts published
-// in batches, plus immediate publication on a new worst or deadline miss.
+// in batches, plus immediate publication on a new worst or FIRST deadline miss.
 // An invocation budget is frames/rate, NOT an actual hardware callback xrun.
 class FxWorkloadEvidence final {
 public:
@@ -19,6 +19,9 @@ public:
     };
     // CONTROL only, unpublished or device-stopped graph. New evidence epoch.
     void prepare(double rate) noexcept {
+        // Device-stop reprepare may overlap a read-only status poll. The
+        // callback-local rate stays private; publish validity atomically.
+        publishedValidRate_.store(false,std::memory_order_release);
         calls_=over_=silenceObserved_=silentInOut_=0;worst_=0;
         publishedCalls_.store(0,std::memory_order_relaxed);
         publishedOver_.store(0,std::memory_order_relaxed);
@@ -27,6 +30,7 @@ public:
         publishedSilentInOut_.store(0,std::memory_order_relaxed);
         validRate_=std::isfinite(rate)&&rate>=8000.&&rate<=384000.;
         nsPerFrame_=validRate_?1.e9/rate:0.;
+        publishedValidRate_.store(validRate_,std::memory_order_release);
     }
     void observe(std::uint64_t ns,int frames) noexcept {
         if(!validRate_||frames<=0)return;
@@ -37,7 +41,7 @@ public:
         // Compare without dividing on the ordinary hot path. Divide only
         // when a new normalized maximum actually occurs.
         const double scaled=static_cast<double>(ns)*1000.;
-        bool newWorst=scaled>budget*worst_;
+        const bool newWorst=worst_!=std::numeric_limits<std::uint32_t>::max()&&scaled>budget*worst_;
         if(newWorst){
             const double ratio=scaled/budget;
             constexpr auto ceiling=std::numeric_limits<std::uint32_t>::max();
@@ -52,6 +56,7 @@ public:
         }
     }
     void observeSilence(bool inputAndOutputSilent) noexcept {
+        if(!validRate_)return;
         ++silenceObserved_;
         if(inputAndOutputSilent)++silentInOut_;
         publishedSilentInOut_.store(silentInOut_,std::memory_order_relaxed);
@@ -61,7 +66,7 @@ public:
         // Approximate lifetime counters; a final quiet batch may lag <=31
         // calls. Never combine this with another lease or device rate.
         Snapshot s;
-        s.validRate=validRate_;
+        s.validRate=publishedValidRate_.load(std::memory_order_acquire);
         s.calls=publishedCalls_.load(std::memory_order_acquire);
         s.overBudget=publishedOver_.load(std::memory_order_relaxed);
         s.worstPermille=publishedWorst_.load(std::memory_order_relaxed);
@@ -71,7 +76,8 @@ public:
     }
 private:
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
-    bool validRate_=false;
+    bool validRate_=false; // AUDIO owner, configured while stopped
+    std::atomic<bool> publishedValidRate_{false};
     double nsPerFrame_=0.;
     std::uint64_t calls_=0,over_=0,silenceObserved_=0,silentInOut_=0;
     std::uint32_t worst_=0;

@@ -16,6 +16,15 @@ int main() {
     juce::ScopedJuceInitialiser_GUI gui;
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
+    // Direct native factory must publish the actual device format even
+    // for processors whose prepareToPlay only initializes their own core.
+    for(const char* id:{ChannelEqProcessor::catalogIdentity,ChannelCompressorProcessor::catalogIdentity}){
+        const auto* factory=findNativeBuiltInFx(id);assert(factory);
+        for(double rate:{44100.,96000.}){
+            auto processor=factory->prepare(rate,64,nullptr,0);
+            assert(processor&&processor->getSampleRate()==rate&&processor->getBlockSize()==64);
+        }
+    }
     for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
     static_assert(reverbSisPresetCount==19 && reverbSisCustomItem==20);
     for(int i=0;i<reverbSisPresetCount;++i)assert(vocalReverbFactoryPreset(i).voicing==(i>=8&&i<=12?4:5));

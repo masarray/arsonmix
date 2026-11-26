@@ -59,6 +59,11 @@ std::unique_ptr<juce::AudioProcessor> prepareNativeBuiltInFx(
        (state==nullptr && bytes!=0) || (state!=nullptr && bytes==0))
         return {};
     auto processor=std::make_unique<Processor>();
+    // Direct native construction does not pass through JUCE's plug-in
+    // format wrapper. Some processors implement prepareToPlay without
+    // publishing base metadata; the host must supply the verified rate.
+    // Used by the shared bypass envelope and normalized workload budget.
+    processor->setRateAndBufferSizeDetails(rate,frames);
     processor->prepareToPlay(rate,frames);
     if(!processor->isReady() || (state && !processor->restoreUnpublishedState(state,bytes)))
         return {};

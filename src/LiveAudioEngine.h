@@ -2842,6 +2842,7 @@ public:
             workloadReviews.add(juce::var(item.release()));
         };
         double workloadWorst=-1.;
+        bool workloadWorstSampledOnly=false;
         juce::String workloadWorstName,workloadWorstInstance;
         int exactIdleCount=0, nativeLatentCount=0, nativeLatentBypassedCount=0, nativeMaxInsertLatency=0;
         juce::String nativeMaxLatencyName,nativeMaxLatencyInstance;
@@ -2873,6 +2874,7 @@ public:
                             const double ratio=static_cast<double>(insert.getProperty("workloadWorstPermille",0.));
                             if(ratio>workloadWorst){
                                 workloadWorst=ratio;
+                                workloadWorstSampledOnly=false;
                                 workloadWorstName=insert.getProperty("name","").toString();
                                 workloadWorstInstance=insert.getProperty("instanceId","").toString();
                             }
@@ -2977,6 +2979,7 @@ public:
                     if(evidence.overBudget)++workloadOverBudget;
                     if(static_cast<double>(evidence.worstPermille)>workloadWorst){
                         workloadWorst=static_cast<double>(evidence.worstPermille);
+                        workloadWorstSampledOnly=true;
                         workloadWorstName=slot.name;workloadWorstInstance=identity;
                     }
                 }
@@ -2997,6 +3000,7 @@ public:
         o->setProperty("nativeFxWorkloadWorstPermille",workloadWorst>=0.?juce::var(workloadWorst):juce::var());
         o->setProperty("nativeFxWorkloadWorstName",workloadWorstName);
         o->setProperty("nativeFxWorkloadWorstInstance",workloadWorstInstance);
+        o->setProperty("nativeFxWorkloadWorstSampledOnly",workloadWorstSampledOnly);
         o->setProperty("nativeFxWorkloadLegacySampledLeases",workloadLegacyMeasured);
         o->setProperty("nativeFxWorkloadReviewCount",workloadReviewCount);
         o->setProperty("nativeFxWorkloadReviews",juce::var(workloadReviews));
