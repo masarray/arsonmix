@@ -485,6 +485,11 @@ def main():
             expect(root.locator(f'[data-pro-page="{name}"]')).to_be_visible()
             assert root.locator(".an-panel").evaluate("el=>el.scrollWidth<=el.clientWidth+2")
             assert root.locator(f'[data-pro-page="{name}"]').evaluate("el=>el.scrollWidth<=el.clientWidth+2")
+            assert root.evaluate("""el=>{const panel=el.querySelector('.an-panel'),p=panel.getBoundingClientRect();
+              return ['.an-head','footer','.an-pro-tabs'].every(s=>{const r=el.querySelector(s).getBoundingClientRect();
+                return r.top>=p.top-.5&&r.bottom<=p.bottom+.5;})&&panel.scrollTop===0;
+            }"""),"professional chrome and Learn must remain inside the face"
+
             root.screenshot(path=str(bundle.parent/f"anti-noiz-operator-pro-{name}-360.png"))
         root.locator('[data-pro-tab="sidechain"]').focus();page.keyboard.press("Home")
         expect(root.locator('[data-pro-tab="expander"]')).to_have_attribute("aria-selected","true")
