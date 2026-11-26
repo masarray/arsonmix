@@ -13,18 +13,39 @@ int main(){
         for(int c=0;c<2;++c)for(int k=0;k<bins;++k)anchor[c][k]=k>=first&&k<last?1.f:.001f;
         g.configure(anchor);require(g.eligible(),"learned broad band eligible");
         p=anchor;for(auto& channel:p)for(float& v:channel)v*=2.f;
-        for(int i=0;i<100;++i)g.update(p,anchor,true);
+        for(int i=0;i<100;++i)g.update(p,anchor,true,true);
         const int k=first+8;
         require(g.cap(k,p,.063f)<.35f,"scaled noise capped");
+        require(g.residualIdle(),"qualified steady scaled noise closes residual");
+        // Residual authority uses independent stereo foreground, not just
+        // the dominant profile band. A brief uncertain frame is not an onset.
+        p[0][1]=.045f;g.update(p,anchor,true,true);
+        require(g.residualIdle(),"isolated uncertain frame preserves hold");
+        p[0][1]=2.f;g.update(p,anchor,true,true);
+        require(!g.residualIdle(),"low foreground opens immediately");
+        p=anchor;for(auto& channel:p)for(float& v:channel)v*=2.f;
+        const int hold=int(std::ceil(.075*rate/(fft/2)));
+        for(int i=0;i<hold-1;++i)g.update(p,anchor,true,true);
+        require(!g.residualIdle(),"foreground requires new hold");
+        for(int i=0;i<100;++i)g.update(p,anchor,true,true);
+        require(g.residualIdle(),"rearm after fresh evidence");
+        p[1][first+8]=200.f;g.update(p,anchor,true,true);
+        require(!g.residualIdle(),"high-band transient opens immediately");
+        p=anchor;for(auto& channel:p)for(float& v:channel)v*=2.f;
+        for(int i=0;i<100;++i)g.update(p,anchor,true,false);
+        require(!g.residualIdle(),"Silence zero disables residual authority");
+        require(g.cap(k,p,.063f)<.35f,"Silence zero preserves spectral estimator");
         require(g.cap(1,p,.063f)==1.f&&g.cap(last,p,.063f)==1.f,"low and high out of scope");
         require(g.cap(k,p,1.f)==1.f,"zero Clean unity");
         p[1][k]=100.f;require(g.cap(k,p,.063f)==1.f,"independent stereo onset immediately opens");
-        g.update(p,anchor,false);require(g.cap(k,p,.063f)==1.f,"disabled resets");
+        g.update(p,anchor,false,true);require(g.cap(k,p,.063f)==1.f&&!g.residualIdle(),"disabled resets");
         p=anchor;for(auto& channel:p)for(float& v:channel)v*=.01f;
-        for(int i=0;i<100;++i)g.update(p,anchor,true);
+        for(int i=0;i<100;++i)g.update(p,anchor,true,true);
         require(g.cap(k,p,.063f)==1.f,"missing noise evidence returns unity");
         for(auto& c:anchor)c.fill(1.f);
         g.configure(anchor);require(!g.eligible(),"flat profile excluded");
+        for(int i=0;i<100;++i)g.update(p,anchor,true,true);
+        require(!g.residualIdle()&&g.cap(k,p,.063f)==1.f,"ineligible profile cannot grant authority");
     }
     std::cout<<"Broadband profile, rate, stereo, onset, lifecycle and scope PASS\n";
 }

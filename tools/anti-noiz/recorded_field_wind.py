@@ -52,8 +52,7 @@ def aggregate(rows, label, key):
     return float(next(r[key] for r in rows if r["label"]==label and r["channel_minus1_all"]=="-1"))
 
 
-def compare(old, new, failures, case):
-    rows = {}
+def foreground_pairs(old, new, failures, case):
     for tag in ("spectral", "max"):
         a,b=old[tag]["rows"],new[tag]["rows"]
         def idx(items):
@@ -69,7 +68,10 @@ def compare(old, new, failures, case):
                 clean=float(y["clean_only_error_db_relative"])-float(x["clean_only_error_db_relative"])
                 if loss>(.03 if key[0]=="weak" else .02) or error<(-1 if key[0]=="weak" else -.5) or clean>1:
                     failures.append([case,tag,key,"foreground regression",loss,error,clean])
-        rows[tag]=aggregate(b,"idle","idle_attenuation_db")
+
+def compare(old, new, failures, case):
+    foreground_pairs(old, new, failures, case)
+    rows={tag:aggregate(new[tag]["rows"],"idle","idle_attenuation_db") for tag in ("spectral","max")}
     active=aggregate(new["max"]["rows"],"active","error_improvement_db")
     old_active=aggregate(old["max"]["rows"],"active","error_improvement_db")
     active_delta=active-old_active
@@ -89,17 +91,37 @@ def compare(old, new, failures, case):
     print("FIELD_WIND",case,"idle",rows["max"],"residual",residual,"active",active,"projection",retain,flush=True)
 
 
+def compare_residual(prior, new, failures, case, spectral_pcm_exact):
+    # Separate incremental idle gate. Never replace absolute P0/active gates.
+    foreground_pairs(prior, new, failures, case)
+    before=aggregate(prior["max"]["rows"],"idle","idle_attenuation_db")
+    after=aggregate(new["max"]["rows"],"idle","idle_attenuation_db")
+    residual=after-aggregate(new["spectral"]["rows"],"idle","idle_attenuation_db")
+    a,b=prior["max"]["windows"],new["max"]["windows"]
+    if not spectral_pcm_exact or prior["spectral"]["rows"]!=new["spectral"]["rows"]:
+        failures.append([case,"Silence zero PCM changed"])
+    if after<12 or residual<3 or after-before<3:
+        failures.append([case,"incremental residual target",before,after,residual])
+    if b["p10_db"]<6 or b["p10_db"]<a["p10_db"] or b["longest_under_6db_ms"]>a["longest_under_6db_ms"]:
+        failures.append([case,"residual exposed-noise regression",a,b])
+    print("FIELD_RESIDUAL",case,"idle",before,after,"residual",residual,
+          "p10",a["p10_db"],b["p10_db"],"longest_ms",a["longest_under_6db_ms"],b["longest_under_6db_ms"],
+          "spectral_exact",spectral_pcm_exact,flush=True)
+
+
 def run():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("old",type=Path,nargs="?")
     p.add_argument("new",type=Path,nargs="?")
     p.add_argument("output",type=Path,nargs="?")
     p.add_argument("--self-test",action="store_true")
+    p.add_argument("--prior",type=Path,help="exact pre-residual broadband comparator")
     args=p.parse_args()
     self_test()
     if args.self_test:return
     if not args.old or not args.new or not args.output:raise ValueError("old,new,output required")
     binaries={"old":args.old.resolve(strict=True),"new":args.new.resolve(strict=True)}
+    if args.prior:binaries["prior"]=args.prior.resolve(strict=True)
     root=args.output.resolve();root.mkdir(parents=True,exist_ok=False)
     download("README.md",README_SHA,root/"SOURCE-README.md")
     stereo,credit=recorded_noise(SOURCE,root/SOURCE[3])
@@ -137,6 +159,10 @@ def run():
             report["cases"][key]=results
             if all(len(v)==2 for v in results.values()):
                 compare(results["old"],results["new"],report["failures"],key)
+                if "prior" in results:
+                    parity=(case/"prior-spectral-processed.wav").read_bytes()==(case/"new-spectral-processed.wav").read_bytes()
+                    report["cases"][key]["spectral_pcm_exact"]=parity
+                    compare_residual(results["prior"],results["new"],report["failures"],key,parity)
     if len(report["cases"])!=4:raise ValueError("incomplete cases")
     (root/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
     for fail in report["failures"]:print("FIELD_WIND_FAIL",fail,flush=True)

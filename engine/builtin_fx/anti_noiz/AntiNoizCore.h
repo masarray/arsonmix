@@ -244,9 +244,10 @@ private:
         const bool coherenceEnabled=windEnabled&&tonal_.selected()<0;
         coherence_.update(work_,coherenceEnabled);
         const bool broadEnabled=!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&broadband_.eligible()&&tonal_.selected()<0;
-        broadband_.update(power_,profile_.anchor(),broadEnabled);
+        broadband_.update(power_,profile_.anchor(),broadEnabled,silenceFloor_<1.f);
         tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
-        const float expTarget=idle?silenceFloor_:context_.adaptiveIdle()?
+        const bool broadIdle=broadEnabled&&broadband_.residualIdle();
+        const float expTarget=idle?silenceFloor_:broadIdle?std::max(silenceFloor_,.12589254f):context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
         // Only explicit Voice or source-aware SpeechMic permits independently
         // qualified coherent drift. Unknown/Mixed and musical policies keep
@@ -318,9 +319,9 @@ private:
             mask_[k]=g>=mask_[k]?g:mask_[k]+maskClose_*(g-mask_[k]);
         }
         // Immediate opening in the next overlap; slow closure. No hard gate.
-        // Only the original, strictly confirmed idle state may close faster.
-        // Keep the more ambiguous adaptive residual timing unchanged.
-        const float close=idle&&effectiveMode_==Mode::Voice?voiceExpandClose_:expandClose_;
+        // One shared expander envelope; use faster closure only with strict
+        // idle or independently confirmed broadband noise shape.
+        const float close=(idle||broadIdle)&&effectiveMode_==Mode::Voice?voiceExpandClose_:expandClose_;
         expansion_=expTarget>=expansion_?expTarget:expansion_+close*(expTarget-expansion_);
         for(int c=0;c<channels_;++c) {
             for(int k=0;k<bins;++k) {
