@@ -219,13 +219,11 @@ root.innerHTML=[
 
  '</div><aside class="sk-controls">',
  '<button type="button" id="skUpgrade" class="sk-upgrade" hidden title="Switch the saved legacy sound to the current engine. Audio will change only after native acceptance.">Use current spatial sound</button>',
- '<label class="sk-space-slider sk-yaw" id="skYawRow" for="skHeadYaw" hidden>HEAD YAW <output id="skYawValue">0°</output>',
- '<input id="skHeadYaw" type="range" min="-180" max="180" step="5" value="0"/></label>',
  '<div class="sk-buttons"><button type="button" id="skMotion">ORBIT</button><button type="button" id="skDirection">CLOCKWISE</button></div>',
  '<div class="sk-rotary-grid">',
  '<label class="sk-rotary"><span class="sk-param-name">REVOLUTION</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpeed" type="range" min="0.5" max="30" step="0.1" value="12" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpeedValue">12.0 s</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">SPREAD</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpread" type="range" min="0" max="180" step="1" value="60" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpreadValue">60°</output></label>',
- '<label class="sk-rotary"><span class="sk-param-name">SPATIAL MIX</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skMix" type="range" min="0" max="100" step="1" value="100" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skMixValue">100%</output></label>',
+ '<label class="sk-rotary"><span class="sk-param-name">HEAD YAW</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skHeadYaw" type="range" min="-180" max="180" step="1" value="0" title="Turn listener left/right; double-click to center" aria-label="Head yaw"/></span><output id="skYawValue">0°</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">OUTPUT GAIN</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skTrim" type="range" min="-24" max="12" step="0.5" value="-2.5" title="Gain in dB (-24 to +12). Double-click for unity 0 dB."/></span><output id="skTrimValue">-2.5 dB</output></label>',
  '</div><div class="sk-space-panel" aria-label="Room simulation controls">',
  '<div class="sk-space-head"><span>SPACE</span><output id="skSpaceText">DIRECT ONLY</output></div>',
@@ -346,11 +344,12 @@ function render(){
  // on a capable host. Never silently change saved audio or expose test menus.
  $("skUpgrade").hidden=!(p90Capable&&s.renderMode!==9);
  $("skUpgrade").disabled=Boolean(pending)||!context();
- $("skYawRow").hidden=!(p83Capable||p84Capable||p90Capable);
- if(!$("skYawRow").hidden){
-  $("skHeadYaw").value=String(s.headYawDegrees);
-  $("skYawValue").textContent=Math.round(s.headYawDegrees)+"°";
- }
+ // Mode 0 has no world/head transform.
+ $("skHeadYaw").disabled=native() && (!(p83Capable||p84Capable||p90Capable)||s.renderMode===0);
+ $("skHeadYaw").title=$("skHeadYaw").disabled?
+  "Head yaw requires the current spatial renderer":"Turn listener left/right; double-click to center";
+ const rawYaw=s.headYawDegrees??0;
+ const yaw=rawYaw>=-180&&rawYaw<=180?rawYaw:((rawYaw+540)%360)-180;
  speakerNodes[1].style.display=p83Capable&&s.renderMode===1?"none":"";
  $("skMotion").textContent=s.moving?"ORBIT":"STATIC";
  $("skMotion").setAttribute("aria-pressed",String(s.moving));
@@ -358,7 +357,7 @@ function render(){
  $("skDirection").setAttribute("aria-pressed",String(s.clockwise));
  const vals=[["skSpeed",s.revolutionSeconds,"skSpeedValue",s.revolutionSeconds.toFixed(1)+" s"],
   ["skSpread",s.stereoSpreadDegrees,"skSpreadValue",Math.round(s.stereoSpreadDegrees)+"°"],
-  ["skMix",s.spatialMix*100,"skMixValue",Math.round(s.spatialMix*100)+"%"],
+  ["skHeadYaw",yaw,"skYawValue",Math.round(yaw)+"°"],
   ["skTrim",toDb(s.outputTrim),"skTrimValue",dbLabel(toDb(s.outputTrim))]];
  for(const [input,value,out,label] of vals){
   const el=$(input);el.value=String(value);$(out).textContent=label;
@@ -595,6 +594,7 @@ const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
    a.musicCompatibleLowFrequency===b.musicCompatibleLowFrequency &&
    a.headYawDegrees===b.headYawDegrees));
 function send(next,continuous=false){
+ next={...next,spatialMix:1};
  if(pending?.timedOut){render();return false;}
  if(!valid(next))return false;
  draft={...next};
@@ -621,6 +621,7 @@ function cancelLiveTimer(){
  if(liveTimer!==null){clearTimeout(liveTimer);liveTimer=null;}
 }
 function liveInput(next){
+ next={...next,spatialMix:1};
  if(pending?.timedOut){render();return false;}
  if(!valid(next))return false;
  const now=performance.now(),wait=LIVE_INTERVAL_MS-(now-lastLiveAt);
@@ -859,10 +860,6 @@ $("skUpgrade").addEventListener("click",()=>{
    outputTrim:1,spacePreset:3,sourceDistanceMeters:1.6,roomAmount:.78,ambience:.33});
  if(!send(scene))render();
 });
-$("skHeadYaw").addEventListener("change",()=>{
- if(!(p83Capable||p84Capable||p90Capable))return;
- if(!send({...draft,headYawDegrees:Number($("skHeadYaw").value)}))render();
-});
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
 root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click",()=>{
@@ -912,24 +909,25 @@ for(const [id,key,convert] of [
 for(const [id,key,convert] of [
  ["skSpeed","revolutionSeconds",v=>v],
  ["skSpread","stereoSpreadDegrees",v=>v],
- ["skMix","spatialMix",v=>v/100],
+ ["skHeadYaw","headYawDegrees",v=>v],
  ["skTrim","outputTrim",v=>fromDb(v)]]) {
  const input=$(id);
- input.addEventListener("input",()=>{const v=Number(input.value);
+ input.addEventListener("input",()=>{if(input.disabled)return;const v=Number(input.value);
   if(Number.isFinite(v))liveInput({...draft,[key]:convert(v)});
  });
  input.addEventListener("change",()=>{
+  if(input.disabled)return;
   const value=Number(input.value);
   if(Number.isFinite(value))commitInput({...draft,[key]:convert(value)});
  });
 }
 // Tactile dials use the SAME bounded live gesture publisher as acoustic
 // sliders. Keyboard, mouse and touch all have one native PCM authority.
-for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim",0]]){
+for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skHeadYaw",0],["skTrim",0]]){
  const input=$(id),dial=input.closest(".sk-dial");
  const min=Number(input.min),max=Number(input.max),step=Number(input.step)||1;
  dial.addEventListener("pointerdown",e=>{
-  if(e.button!==0)return;
+  if(e.button!==0||input.disabled)return;
   e.preventDefault();input.focus({preventScroll:true});
   dialDrag={id,pointer:e.pointerId,startY:e.clientY,origin:Number(input.value),moved:false};
   dial.setPointerCapture(e.pointerId);
@@ -959,6 +957,7 @@ for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim
   input.dispatchEvent(new Event("change",{bubbles:true}));
  });
  dial.addEventListener("dblclick",e=>{
+  if(input.disabled)return;
   e.preventDefault();input.value=String(initial);
   input.dispatchEvent(new Event("input",{bubbles:true}));
   input.dispatchEvent(new Event("change",{bubbles:true}));

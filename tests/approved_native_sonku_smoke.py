@@ -616,13 +616,12 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skDistance").is_disabled()
     assert editor.locator("#skAmbience").is_disabled()
     assert editor.locator("#skReflections").is_disabled()
-    # Every remaining SonKu rotary (4/4 total) is tested with INPUT ALONE,
+    # Every schema-v2 compatible rotary is tested with INPUT ALONE,
     # not a synthetic input+change pair that could hide release-only audio.
     sceneState={**sceneState,"spacePreset":0}
     for control,value,key in [
         ("skSpeed",18.0,"revolutionSeconds"),
         ("skSpread",45,"stereoSpreadDegrees"),
-        ("skMix",65,"spatialMix"),
         ("skTrim",3.0,"outputTrim"),
     ]:
         before=command_count()
@@ -649,6 +648,25 @@ def exercise(browser,out,width,height):
         "hrtfElevationTrimDegrees":0.0}
     page.wait_for_timeout(300)
     accepted_snapshot(page,state,room11,schema=11)
+    assert editor.locator("#skMix").count()==0
+    assert editor.locator("#skYawRow").count()==0
+    yaw=editor.locator("#skHeadYaw")
+    assert yaw.is_enabled()
+    assert yaw.locator("xpath=ancestor::label").get_attribute("class")=="sk-rotary"
+    before=command_count()
+    yaw.evaluate("""n=>{n.value='-47';n.dispatchEvent(new Event('input',{bubbles:true}));}""")
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Yaw must stream before release"
+    yaw_cmd=last_action(page,"nativeSonKuSet")
+    assert yaw_cmd["settings"]["headYawDegrees"]==-47
+    assert yaw_cmd["settings"]["spatialMix"]==1
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":yaw_cmd["requestId"],"status":"APPLIED"})
+    room11=yaw_cmd["settings"]
+    accepted_snapshot(page,state,room11,applied=yaw_cmd["requestId"],schema=11)
+    assert yaw.input_value()=="-47"
+    assert editor.locator("#skYawValue").inner_text()=="-47°"
+    yaw.evaluate("n=>n.dispatchEvent(new Event('change',{bubbles:true}))")
+    assert command_count()==before+1
     factory=editor.locator("#skPreset")
     assert factory.is_enabled(),"Valid P9.1+P9.2 native capability must unlock presets"
     assert factory.input_value()=="CUSTOM","Saved non-factory scene was overwritten"

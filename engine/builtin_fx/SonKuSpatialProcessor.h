@@ -151,7 +151,9 @@ public:
            (next.settings.renderMode!=audioSettings_.renderMode ||
             next.settings.musicCompatibleLowFrequency!=
                 audioSettings_.musicCompatibleLowFrequency ||
-            next.settings.headYawDegrees!=audioSettings_.headYawDegrees)){
+            (next.settings.headYawDegrees!=audioSettings_.headYawDegrees &&
+             // P90 already slews FIR targets. SonKu yaw is a geometry edit.
+             !(sonkuProduct_ && next.settings.renderMode==9)))){
             stagedModeEdit_=next;
             modeTransitionPending_.store(true,std::memory_order_release);
             modePhase_=ModePhase::FadingOut;
@@ -167,8 +169,11 @@ public:
     // Control thread: returns QUEUED, not accepted/applied. Host native ACK
     // is permitted only after corresponding completion/readback.
     bool queueSettings(const armix::sonku::Settings& next,std::uint64_t requestId) noexcept {
-        return ready_&&requestId&&armix::sonku::valid(next)
-            &&admitQueuedScene(next)&&queue_.push(Edit{requestId,next});
+        if(!ready_||!requestId||!armix::sonku::valid(next)||!admitQueuedScene(next))
+            return false;
+        auto canonical=next;
+        if(sonkuProduct_)canonical.spatialMix=1.f;
+        return queue_.push(Edit{requestId,canonical});
     }
     bool pollCompletion(Completion& done) noexcept {
         if(!complete_.pop(done))return false;
@@ -448,6 +453,8 @@ public:
         // Never accept a partial or malformed native FX state.
         if(!in.isExhausted())return false;
         if(!armix::sonku::valid(next)||!admitQueuedScene(next))return false;
+        // Preserve SONK v1..v12 layout; migrate only a valid legacy mix.
+        if(sonkuProduct_)next.spatialMix=1.f;
         if(ready_&&!core_.setSettings(next))return false;
         accepted_=next;
         return true;
@@ -484,7 +491,7 @@ protected:
         : juce::AudioProcessor(BusesProperties()
             .withInput("Input",juce::AudioChannelSet::stereo(),true)
             .withOutput("Output",juce::AudioChannelSet::stereo(),true)),
-          accepted_(initial) {}
+          accepted_(initial), sonkuProduct_(false) {}
 
     // Only unpublished native instances may restore their own branded
     // state; never overwrite an active PCM graph or queued transaction.
@@ -519,6 +526,8 @@ private:
     std::atomic<bool> modeTransitionPending_{false};
     float modeFade_=1.f,modeStep_=0.f;
 #endif
+    // Derived branded products keep their existing mix and yaw policy.
+    const bool sonkuProduct_=true;
     bool ready_=false;
     bool published_=false;
 };
