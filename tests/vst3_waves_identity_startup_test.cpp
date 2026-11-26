@@ -6,8 +6,33 @@
 #include "../src/StartupVst3RecoveryGuard.h"
 #include <cassert>
 #include <memory>
+#include <chrono>
+#include <string>
 
-int main() {
+int main(int argc,char** argv) {
+    using Isolation=armix::vst::ScanIsolation;
+    using Outcome=Isolation::Outcome;
+    if(argc==2 && std::string(argv[1])=="--fixture-ok")return 0;
+    if(argc==2 && std::string(argv[1])=="--fixture-fail")return 7;
+    if(argc==2 && std::string(argv[1])=="--fixture-hang") {
+        juce::Thread::sleep(4000);
+        return 0;
+    }
+    const auto self=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getFullPathName();
+    assert(Isolation::launchAndWait({self,"--fixture-ok"},5000)==Outcome::ok);
+    assert(Isolation::launchAndWait({self,"--fixture-fail"},5000)==Outcome::failed);
+    const auto before=std::chrono::steady_clock::now();
+    assert(Isolation::launchAndWait({self,"--fixture-hang"},150)==Outcome::timeout);
+    assert(std::chrono::steady_clock::now()-before<std::chrono::seconds(3));
+    const auto cancelStart=std::chrono::steady_clock::now();
+    assert(Isolation::launchAndWait({self,"--fixture-hang"},5000,[&]{
+        return std::chrono::steady_clock::now()-cancelStart>=std::chrono::milliseconds(150);
+    })==Outcome::cancelled);
+    // Real installed application entrypoint must reject malformed helper
+    // arguments without opening the mixer or running the updater.
+    if(argc==2) {
+        assert(Isolation::launchAndWait({juce::String::fromUTF8(argv[1]),Isolation::workerFlag},5000)==Outcome::failed);
+    }
     using armix::vst::DescriptionCache;
     DescriptionCache::Descriptions shell;
     auto add=[&](const juce::String& name,int uid) {
@@ -65,5 +90,35 @@ int main() {
     assert(retryAfterCrash.arm());
     assert(retryAfterCrash.complete());
     assert(session.loadFileAsString()=="PRESERVE_USER_SESSION");
+    // Machine-local quarantine survives a new object/process and is keyed
+    // by module identity. A changed file can be scanned again.
+    const auto module=temp.getChildFile("Synthetic plugin.vst3");
+    assert(module.replaceWithText("fake VST3 bytes"));
+    const auto modulePath=module.getFullPathName();
+    const auto quarantine=temp.getChildFile("quarantine");
+    const auto stamp=Isolation::moduleStamp(module);
+    assert(stamp.isNotEmpty());
+    assert(!Isolation::blocked(modulePath,quarantine));
+    assert(Isolation::markFailure(modulePath,stamp,quarantine));
+    assert(Isolation::blocked(modulePath,quarantine));
+    assert(module.appendText("changed"));
+    assert(!Isolation::blocked(modulePath,quarantine));
+    // Strict receipt binding and schema checks, preserving WaveShell index
+    // and both UID fields through the real JUCE descriptor serializer.
+    const auto receipt=temp.getChildFile("result.xml");
+    juce::PluginDescription d;
+    d.name="Test stereo";d.pluginFormatName="VST3";d.fileOrIdentifier=modulePath;
+    d.uniqueId=42;d.deprecatedUid=17;d.numInputChannels=2;d.numOutputChannels=2;
+    juce::XmlElement response("ARSONMIX_VST3_SCAN_V1");
+    response.setAttribute("nonce","abc");response.setAttribute("path",modulePath);
+    response.addChildElement(d.createXml().release());
+    assert(receipt.replaceWithText(response.toString()));
+    Isolation::Descriptions parsed;
+    assert(Isolation::readReceipt(receipt,"abc",modulePath,parsed));
+    assert(parsed.size()==1&&parsed[0]->uniqueId==42&&parsed[0]->deprecatedUid==17);
+    assert(!Isolation::readReceipt(receipt,"wrong",modulePath,parsed));
+    assert(!Isolation::readReceipt(receipt,"abc",modulePath+"other",parsed));
+    assert(receipt.replaceWithText("<!DOCTYPE x [<!ENTITY bad SYSTEM 'file:///no'>]><x/>"));
+    assert(!Isolation::readReceipt(receipt,"abc",modulePath,parsed));
     assert(temp.deleteRecursively());
 }

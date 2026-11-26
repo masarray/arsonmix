@@ -37,7 +37,7 @@ function fakeApi({refSha=SHA,comments=[],runs=[],released=false,notesReady=true,
 test('Windows publisher distinguishes absent tag HTTP 404 from auth/error and does not leak gh exit 1',()=>{
   const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
   const first=workflow.split('      - name: Verify release identity and immutable source')[1]
-    ?.split('      - uses: actions/setup-python@v5')[0]||'';
+    ?.split(/      - uses: actions\/setup-python@[a-f0-9]{40}/)[0]||'';
   assert.match(first,/Invoke-WebRequest -Method Get -Uri \$releaseUri -SkipHttpErrorCheck/);
   assert.match(first,/\$releaseProbe\.StatusCode -eq 200/);
   assert.match(first,/\$releaseProbe\.StatusCode -ne 404/);
@@ -71,7 +71,8 @@ test('Verified release tag is stamped into the native window, not a fake version
 test('Published Windows alpha may dispatch exactly one authorized Pages refresh',()=>{
   const release=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
   const pages=readFileSync(new URL('../.github/workflows/pages-publish.yml',import.meta.url),'utf8');
-  assert.ok(release.includes('permissions:\n  contents: write\n') && release.includes('  actions: write\n'));
+  assert.match(release,/permissions:\n  contents: read\n/);
+  assert.match(release,/publish:[\s\S]*?permissions:\n      contents: write\n      actions: write\n      id-token: write\n      attestations: write/);
   const first=pages.split('  push:')[1]?.split('  workflow_dispatch:')[0]||'';
   assert.ok(first.includes("'.github/workflows/alpha-preview-publish.yml'"));
   assert.ok(first.includes("'tests/release_ci_dispatch_contract.test.mjs'"));
@@ -227,6 +228,7 @@ test('Public OS publishing rejects SHA mismatch, missing Windows, duplicate and 
   for(const fixture of [
     {release:{tag_name:TAG,target_commitish:'b'.repeat(40),assets:[]},message:/PORT_RELEASE_SOURCE_SHA_MISMATCH/},
     {release:{tag_name:TAG,target_commitish:SHA,assets:[]},message:/PORT_WINDOWS_ASSET_MISSING/},
+    {release:{tag_name:TAG,target_commitish:SHA,immutable:true,assets:[]},message:/PORT_IMMUTABLE_RELEASE_CANNOT_APPEND/},
   ]){
     const calls=[];
     const api=async(path,method='GET',data)=>{
@@ -320,7 +322,7 @@ test('Windows public release ZIP is a verifiable wrapper of the same exact Inno 
   assert.match(publish,/python scripts\/verify_release_setup_zip\.py --exe \$releasedExe --zip \$releasedZip/);
   assert.match(publish,/Installer ZIP failed byte-for-byte verification/);
   assert.match(publish,/if \(\$assets.Count -ne 3\)/);
-  assert.match(publish,/if \(\$assets.Count -ne 7\)/);
+  assert.match(publish,/if \(\$assets.Count -ne 8\)/);
   assert.match(publish,/SHA256SUMS\.txt/);
 });
 

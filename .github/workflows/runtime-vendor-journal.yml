@@ -1,0 +1,39 @@
+name: Runtime vendor crash journal (native process)
+on:
+  pull_request:
+    paths:
+      - 'src/RuntimeVendorCrashJournal.h'
+      - 'src/PortableWorkspace.h'
+      - 'tests/runtime_vendor_crash_journal_test.cpp'
+      - '.github/workflows/runtime-vendor-journal.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/RuntimeVendorCrashJournal.h'
+      - 'src/PortableWorkspace.h'
+      - 'tests/runtime_vendor_crash_journal_test.cpp'
+      - '.github/workflows/runtime-vendor-journal.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vendor-journal-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  process-fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: juce-framework/JUCE
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # 8.0.15
+          path: journal-juce
+          persist-credentials: false
+      - name: Compile exact production journal against JUCE core only
+        run: |
+          g++ -std=c++20 -O1 -pthread -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 -DJUCE_STANDALONE_APPLICATION=1 -DJUCE_USE_CURL=0 -I journal-juce/modules tests/runtime_vendor_crash_journal_test.cpp journal-juce/modules/juce_core/juce_core.cpp journal-juce/modules/juce_core/juce_core_CompilationTime.cpp -ldl -lrt -o /tmp/arsonmix-vendor-journal
+          timeout 30 /tmp/arsonmix-vendor-journal

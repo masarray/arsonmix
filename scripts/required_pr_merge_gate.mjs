@@ -75,6 +75,8 @@ export function requiredLanes(files) {
      "scripts/verify_embedded_legal.py","scripts/build_approved_native_gui.py",
      "scripts/build_release_catalog.py","scripts/verify_release_setup_zip.py",
      "scripts/release_ci_dispatch.mjs","scripts/check_platform_portability.py",
+     "scripts/release_trust_manifest.py","tests/test_release_trust_manifest.py",
+     ".github/workflows/release-attestation-probe.yml",
      "tests/license_distribution_contract.test.mjs",
      "tests/test_release_catalog.py","tests/test_release_setup_zip.py",
      "tests/test_platform_portability.py","tests/downloads_runtime_contract.test.mjs",

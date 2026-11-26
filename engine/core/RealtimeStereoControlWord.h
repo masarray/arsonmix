@@ -2,6 +2,7 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include <cmath>
 // One canonical packed stereo gain / MUTE / SOLO word for M4 and ChannelId.
 // Only serialized CONTROL encodes; AUDIO loads once/block. 31+31-bit gains
 // and 2 bits of gating state; 64-bit lock-free atomics prevent torn decisions.
@@ -18,6 +19,10 @@ struct RealtimeStereoControlWord final {
         bool mute=false,solo=false;
     };
     static std::uint64_t quantize(float value) noexcept {
+        // CONTROL-only defensive conversion. Non-finite/negative gain is
+        // silent; oversized finite values saturate without corrupting flags.
+        if (!std::isfinite(value) || value<=0.f) return 0;
+        if (value>=4.f) return gainMask;
         return static_cast<std::uint64_t>(
             static_cast<double>(value)*(static_cast<double>(gainMask)/4.)+.5);
     }

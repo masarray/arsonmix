@@ -1420,11 +1420,17 @@ if(BUILD_TESTING)
   juce_add_console_app(ARMixVst3StartupSafetyTests PRODUCT_NAME "ArSonMix Waves VST3 Identity and Recovery Tests")
   target_sources(ARMixVst3StartupSafetyTests PRIVATE
       tests/vst3_waves_identity_startup_test.cpp
-      src/Vst3DescriptionCache.h src/StartupVst3RecoveryGuard.h)
+      src/Vst3DescriptionCache.h src/Vst3ScanIsolation.h src/StartupVst3RecoveryGuard.h)
   target_link_libraries(ARMixVst3StartupSafetyTests PRIVATE
-      juce::juce_audio_processors juce::juce_recommended_config_flags)
+      juce::juce_audio_processors juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixVst3StartupSafetyTests PRIVATE cxx_std_20)
-  add_test(NAME WavesVst3IdentityAndStartupCrashRecovery COMMAND ARMixVst3StartupSafetyTests)
+  add_test(NAME WavesVst3IdentityAndStartupCrashRecovery COMMAND ARMixVst3StartupSafetyTests $<TARGET_FILE:ARMixConsole>)
+  juce_add_console_app(ARMixRuntimeVendorJournalTests PRODUCT_NAME "ArSonMix Runtime Vendor Recovery Tests")
+  target_sources(ARMixRuntimeVendorJournalTests PRIVATE tests/runtime_vendor_crash_journal_test.cpp
+      src/RuntimeVendorCrashJournal.h)
+  target_link_libraries(ARMixRuntimeVendorJournalTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
+  target_compile_features(ARMixRuntimeVendorJournalTests PRIVATE cxx_std_20)
+  add_test(NAME RuntimeVendorCrashJournalAndSafeRecovery COMMAND ARMixRuntimeVendorJournalTests)
   add_test(NAME Vst3WaveShellHostContextOrderingFixture
       COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_waveshell_juce_patch.py")
   add_executable(ARMixLiveRoutingEpochTests tests/live_port_epoch_publisher_test.cpp)

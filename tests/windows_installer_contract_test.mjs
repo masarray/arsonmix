@@ -562,3 +562,19 @@ test('P0 Windows 10 fresh install needs no VC redistributable and reports missin
   assert.match(pe,/msvcp/);
   assert.match(pe,/WEBVIEW2_RUNTIME_REQUIRED_SEPARATELY_NOT_PROVEN/);
 });
+
+test('ZBSH08 all installer execution requires independent cryptographic identity',()=>{
+  const source=read('installer/ArSonMixAutoUpdate.ps1');
+  const run=source.slice(source.indexOf('function Run-Installer('),source.indexOf('function Launch-WithHealth('));
+  assert.match(run,/Assert-InstallerAttestation \$file \$tag \$sha/);
+  assert.ok(run.indexOf('Assert-InstallerAttestation')<run.indexOf('[Diagnostics.Process]::Start'));
+  assert.match(run,/\[IO.FileShare\]::Read/);
+  assert.match(source,/--signer-workflow masarray\/arsonmix\/\.github\/workflows\/alpha-preview-publish\.yml/);
+  assert.match(source,/--source-digest/);
+  assert.match(source,/--signer-digest/);
+  assert.match(source,/--deny-self-hosted-runners/);
+  assert.match(source,/Test-ReleaseTransition \$state.operation \$baselineRelease \$candidateRelease/);
+  assert.match(source,/ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS/);
+  assert.doesNotMatch(source,/AllowAutoRedirect=\$true/);
+  assert.match(source,/Assert-InstallerAttestation \$oldPath/);
+});

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "PortableWorkspace.h"
+#include "Vst3ScanIsolation.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include <map>
@@ -32,12 +33,12 @@ public:
     static std::optional<juce::PluginDescription> resolve(
             juce::AudioPluginFormat& format,const juce::String& path,int uid,
             const juce::String& expectedName={}) {
-        if(!format.fileMightContainThisPluginType(path))return {};
+        if(!format.fileMightContainThisPluginType(path)||ScanIsolation::blocked(path))return {};
         DescriptionCache cache;
         if(auto saved=cache.find(path,uid,expectedName))return saved;
         const auto stamp=moduleStamp(juce::File(path));
         Descriptions discovered;
-        format.findAllTypesForFile(discovered,path);
+        if(ScanIsolation::inspect(path,discovered)!=ScanIsolation::Outcome::ok)return {};
         // A module updated while scanning must not seed a warm cache.
         if(stamp.isNotEmpty()&&stamp==moduleStamp(juce::File(path)))
             cache.remember(discovered);
@@ -56,7 +57,7 @@ public:
         for(const auto& [path,items]:modules) {
             const auto stamp=moduleStamp(juce::File(path));
             if(stamp.isEmpty())continue;
-            juce::XmlElement root("VST3_DESCRIPTIONS_V1");
+            juce::XmlElement root("VST3_DESCRIPTIONS_V2");
             root.setAttribute("stamp",stamp);
             for(const auto* item:items)root.addChildElement(item->createXml().release());
             if(!root_.createDirectory().wasOk())return;
@@ -73,18 +74,21 @@ public:
 
     Descriptions read(const juce::String& path) const {
         Descriptions descriptions;
-        if(!juce::File::isAbsolutePath(path))return descriptions;
+        if(!juce::File::isAbsolutePath(path)||ScanIsolation::blocked(path))return descriptions;
         const auto file=fileFor(path);
         if(!file.existsAsFile()||file.getSize()>maxBytes)return descriptions;
         const auto stamp=moduleStamp(juce::File(path));
         if(stamp.isEmpty())return descriptions;
-        const auto root=juce::XmlDocument::parse(file);
-        if(!root||!root->hasTagName("VST3_DESCRIPTIONS_V1")||
+        const auto text=file.loadFileAsString();
+        if(text.contains("<!")||text.getNumBytesAsUTF8()>maxBytes||
+           text.retainCharacters("<").length()>ScanIsolation::maxDescriptions*2+4)return descriptions;
+        const auto root=juce::XmlDocument::parse(text);
+        if(!root||!root->hasTagName("VST3_DESCRIPTIONS_V2")||
            root->getStringAttribute("stamp")!=stamp)return descriptions;
         for(auto* child:root->getChildIterator()) {
             auto item=std::make_unique<juce::PluginDescription>();
-            if(!item->loadFromXml(*child) || item->fileOrIdentifier!=path ||
-               item->pluginFormatName!="VST3")return {};
+            if(child->getNumChildElements()!=0||!item->loadFromXml(*child) || item->fileOrIdentifier!=path ||
+               !ScanIsolation::validDescription(*item,path)||descriptions.size()>=ScanIsolation::maxDescriptions)return {};
             descriptions.add(item.release());
         }
         return descriptions;
@@ -100,25 +104,7 @@ private:
     }
 
     static juce::String moduleStamp(const juce::File& module) {
-        if(!module.hasFileExtension("vst3")||!module.exists())return {};
-        juce::StringArray parts;
-        const auto add=[&](const juce::File& file) {
-            parts.add(file.getFullPathName()+"|"+juce::String(file.getSize())+"|"+
-                juce::String(file.getLastModificationTime().toMilliseconds())+"|"+
-                juce::String(file.getCreationTime().toMilliseconds()));
-        };
-        if(module.existsAsFile())add(module);
-        else {
-            // Only known VST3 binary/manifest paths, not vendor asset trees.
-            const auto contents=module.getChildFile("Contents");
-            const auto binary=contents.getChildFile("x86_64-win").getChildFile(module.getFileName());
-            if(!binary.existsAsFile())return {};
-            add(binary);
-            const auto manifest=contents.getChildFile("Resources").getChildFile("moduleinfo.json");
-            if(manifest.existsAsFile())add(manifest);
-        }
-        const auto stamp=parts.joinIntoString("\n");
-        return juce::SHA256(stamp.toRawUTF8(),stamp.getNumBytesAsUTF8()).toHexString();
+        return ScanIsolation::moduleStamp(module);
     }
 };
 }

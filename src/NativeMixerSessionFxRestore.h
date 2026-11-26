@@ -3,6 +3,7 @@
 #include "NativeMixerSessionDocument.h"
 #include "VstBusLayout.h"
 #include "Vst3DescriptionCache.h"
+#include "RuntimeVendorCrashJournal.h"
 #include "NativeBuiltInFx.h"
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <memory>
@@ -37,6 +38,9 @@ public:
         auto* format=formats.getFormat(0);
         if(!format || !format->fileMightContainThisPluginType(insert.path))
             return "Saved VST3 unavailable: "+insert.catalogId;
+        armix::startup::RuntimeVendorCrashJournal::Operation vendorGuard(
+            armix::startup::RuntimeVendorCrashJournal::process(),insert.path,"SESSION_OR_EDITOR_PREPARE");
+        if(!vendorGuard)return "VST3 recovery journal unavailable or vendor operation busy";
         const auto chosen=armix::vst::DescriptionCache::resolve(*format,insert.path,insert.uid,insert.name);
         if(!chosen)return "Saved VST3 identity not found: "+insert.catalogId;
         juce::String pluginError;

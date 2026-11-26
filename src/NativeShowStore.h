@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "NativeShowSchema.h"
+#include "BoundedDataInput.h"
 #include <juce_cryptography/juce_cryptography.h>
 #include <vector>
 #include <set>
@@ -233,12 +234,12 @@ public:
             const auto file=generation.getChildFile("blobs").getChildFile(hash+".bin");
             if(!file.existsAsFile()||file.getSize()<0||
                file.getSize()>maxBlobBytes)return "Vendor state missing or oversized";
-            total+=file.getSize();
-            if(total>maxGenerationBytes)return "Vendor state exceeds Show budget";
             BinaryState state;state.sha256=hash;
-            if(!file.loadFileAsData(state.bytes) ||
+            if(!armix::storage::BoundedDataInput::managedPath(generation,file)||
+               !armix::storage::BoundedDataInput::read(file,std::min(maxBlobBytes,maxGenerationBytes-total),state.bytes,true) ||
                juce::SHA256(state.bytes).toHexString()!=hash)
                 return "Vendor binary changed during readback";
+            total+=static_cast<juce::int64>(state.bytes.getSize());
             verified.push_back(std::move(state));
         }
         if(currentGeneration(id)!=generation)return "Show pointer changed during read";
@@ -283,18 +284,24 @@ private:
         const auto header=dir.getChildFile("show.json");
         if(!header.existsAsFile()||header.getSize()>maxJsonBytes)return "Show JSON missing/oversized";
         ShowV2 tmp;
-        if(!Codec::decode(header.loadFileAsString(),tmp) ||
+        juce::String headerText;
+        if(!armix::storage::BoundedDataInput::managedPath(dir,header)||
+           !armix::storage::BoundedDataInput::text(header,maxJsonBytes,headerText)||
+           !Codec::decode(headerText,tmp) ||
            tmp.snapshotOrder.size()>maxSnapshotsPerCommit)return "Invalid Show JSON";
         std::vector<SnapshotV2> candidate;
-        juce::int64 total=header.getSize();
+        juce::int64 total=headerText.getNumBytesAsUTF8();
         std::set<juce::String> verifiedHashes;
         for(const auto& id:tmp.snapshotOrder) {
             const auto file=dir.getChildFile("snapshots").getChildFile(id.toLowerCase()+".json");
             if(!file.existsAsFile()||file.getSize()>maxJsonBytes)return "Snapshot JSON missing/oversized";
             SnapshotV2 snap;
-            if(!Codec::decode(file.loadFileAsString(),snap) ||
+            juce::String snapshotText;
+            if(!armix::storage::BoundedDataInput::managedPath(dir,file)||
+               !armix::storage::BoundedDataInput::text(file,maxJsonBytes,snapshotText)||
+               !Codec::decode(snapshotText,snap) ||
                !snap.id.equalsIgnoreCase(id))return "Invalid snapshot metadata";
-            total+=file.getSize();
+            total+=snapshotText.getNumBytesAsUTF8();
             if(total>maxGenerationBytes)return "Generation too large";
             // The same hash verification policy applies to INPUT and AUX FX.
             // No partially readable Show is ever returned to the caller.
@@ -305,9 +312,12 @@ private:
                 if(!blobFile.existsAsFile()||blobFile.getSize()>maxBlobBytes)
                     return "Missing/oversized vendor state";
                 if(verifiedHashes.insert(fx.stateSha256.toLowerCase()).second) {
-                    total+=blobFile.getSize();
-                    if(total>maxGenerationBytes) return "Generation exceeds read budget";
-                    if(!juce::SHA256(blobFile).toHexString().equalsIgnoreCase(fx.stateSha256))
+                    juce::MemoryBlock bounded;
+                    if(!armix::storage::BoundedDataInput::managedPath(dir,blobFile)||
+                       !armix::storage::BoundedDataInput::read(blobFile,std::min(maxBlobBytes,maxGenerationBytes-total),bounded,true))
+                        return "Generation exceeds read budget";
+                    total+=static_cast<juce::int64>(bounded.getSize());
+                    if(!juce::SHA256(bounded).toHexString().equalsIgnoreCase(fx.stateSha256))
                         return "Vendor binary hash mismatch";
                 }
                 return {};
