@@ -917,6 +917,8 @@
        accepted.device.epoch!==String(live.deviceGeneration)||
        accepted.device.sampleRate!==live.rate ||
        accepted.device.bufferFrames!==live.buffer ||
+       !accepted.graph?.revision ||
+       accepted.graph.revision!==live.nativeFxGraphRevision ||
        !(finite(live.periodUs)>0))
       return unavailable("No matching verified native render / device epoch");
     const seq=integer(live.footerHealthSequence);
@@ -924,9 +926,10 @@
     if(!seq||!Array.isArray(counts)||counts.length!==13||
        !counts.every(n=>integer(n)!==null))
       return unavailable("Waiting for the native 1 Hz callback histogram");
-    const epoch=accepted.device.epoch;
-    const cursor=Object.freeze({epoch,seq,buckets:Object.freeze([...counts])});
-    const same=prior?.epoch===epoch&&integer(prior.seq)!==null&&prior.seq<seq&&
+    const epoch=accepted.device.epoch,graphRevision=accepted.graph.revision;
+    const cursor=Object.freeze({epoch,graphRevision,seq,buckets:Object.freeze([...counts])});
+    const same=prior?.epoch===epoch&&prior.graphRevision===graphRevision&&
+      integer(prior.seq)!==null&&prior.seq<seq&&
       Array.isArray(prior.buckets)&&prior.buckets.length===13&&
       prior.buckets.every(n=>integer(n)!==null);
     const delta=same?counts.map((n,i)=>n-prior.buckets[i]):null;
