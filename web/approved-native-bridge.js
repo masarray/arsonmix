@@ -3360,7 +3360,9 @@
        devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab!=="performance")return;
     const p=lastM4Performance;
     const epoch=hardware?.device?.epoch||"";
-    const valid=p?.cursor?.epoch===epoch&&hardware?.admitted===true&&!hardware.retained;
+    const valid=p?.cursor?.epoch===epoch&&
+      p?.cursor?.graphRevision===hardware?.graph?.revision&&
+      hardware?.admitted===true&&!hardware.retained;
     const key=(valid?p.cursor.epoch+":"+p.cursor.seq:"unavailable:"+epoch);
     if(!force&&key===m4PaintKey)return;
     m4PaintKey=key;
