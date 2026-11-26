@@ -7274,11 +7274,12 @@ test("M3 MONITOR timing requires admitted physical pairs, disarm and observed re
 // cumulative bucket deltas, provenance, and no automated DSP/device changes.
 const m4Accepted=(armed=true)=>({
   admitted:true,retained:false,
-  device:{epoch:"42",sampleRate:48000,bufferFrames:128,outputArmed:armed}
+  device:{epoch:"42",sampleRate:48000,bufferFrames:128,outputArmed:armed},
+  graph:{revision:"9"}
 });
 const m4Live=(sequence,buckets,extra={})=>({
   connected:true,directRouteAuthorized:true,deviceGeneration:42,
-  rate:48000,buffer:128,periodUs:2666.667,
+  rate:48000,buffer:128,periodUs:2666.667,nativeFxGraphRevision:"9",
   footerHealthSequence:sequence,callbackBudgetBuckets:buckets,...extra
 });
 const m4Buckets=(values={})=>Array.from({length:13},(_,i)=>values[i]||0);
@@ -7321,6 +7322,10 @@ test("M4 rejects stale device, retained graph, broken interval and counter reset
   assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:63})),
     m4Accepted(),first.cursor).state,"COLLECTING");
   assert.equal(protocol.smartPerformanceView(m4Live(2,[1,2]),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128}),
+    {nativeFxGraphRevision:"10"}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),graph:{revision:"10"}},first.cursor).state,"UNAVAILABLE");
   assert.equal(protocol.smartPerformanceView(m4Live(1,m4Buckets({6:128})),
     m4Accepted(),first.cursor).state,"COLLECTING");
 });
