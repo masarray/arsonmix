@@ -3672,7 +3672,7 @@
     const mix=protocol.secondaryMixMode(hardware,live);
     const modeButton=extraField("mix");
     modeButton.hidden=!mix.available&&!split;
-    modeButton.disabled=busy||!mix.available;
+    modeButton.disabled=busy||!allowed||!mix.available;
     const modeLabel=split?"Use same mix":"Separate headphone mix";
     if(modeButton.textContent!==modeLabel)modeButton.textContent=modeLabel;
     const mixHint=extraField("mix-hint");
@@ -3680,7 +3680,9 @@
     if(mixHint.textContent!==mix.reason)mixHint.textContent=mix.reason;
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
-    const message=extraPending?(extraPending.acked?"Verifying output…":"Applying output…"):
+    const message=extraPending?(extraPending.action==="secondaryOutputSplit"?
+      (extraPending.acked?"Restoring audio in the selected mix…":"Changing headphone mix…"):
+      (extraPending.acked?"Verifying output…":"Applying output…")):
       busy?"Audio device is applying…":!live?"Reading audio engine status…":
       recovering?"Reconnecting to "+name+" automatically · Disconnect to stop":
       fault?"Output disconnected unexpectedly. Enable the selected device again or disconnect.":

@@ -7760,3 +7760,16 @@ test("U4 independent headphone mix uses admitted two-pin native scope and correl
  assert.match(n,/engine_.disarmSecondaryOutput\(\);\s*error=engine_.patchDmxSplitOutput/);
  assert.match(b,/live.dryRoutingLab\?\.busOutputObserved===true&&live.secondaryOutputArmed===true/);
 });
+
+
+test("U4 preserves authored monitor WIREs and reuses healthy prepared render after graph-only mode change",()=>{
+ const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[0,1]},graph:{revision:"19",rosterRevision:"23",channels:[{id:"8",role:"MONITOR",inserts:[]}],edges:[{from:"3",to:"8"}]},raw:{physicalBusOutputObserved:true,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1],externalOutputs:[]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.equal(protocol.secondaryMixMode(s,live).available,false);
+ assert.match(protocol.secondaryMixMode(s,live).reason,/preserved/);
+ assert.equal(protocol.secondaryMixMode({...s,graph:{...s.graph,edges:[]}},live).available,true);
+ const e=read("src/LiveAudioEngine.h");const f=e.slice(e.indexOf("juce::String restoreSecondaryOutput("),e.indexOf("void disarmSecondaryOutput()"));
+ assert.match(f,/secondaryOutput_\.ready\(\)&&!secondaryOutput_\.faulted\(\)/);
+ assert.match(f,/current.selection.id!=intent.endpointId/);
+ assert.ok(f.indexOf("return armSecondaryOutput(true);")<f.indexOf("connectSecondaryOutput(intent.name,intent.endpointId)"));
+});

@@ -300,9 +300,14 @@
       return {available:false,split,reason:"Existing output assignments are preserved."};
     if(!split&&(raw.physicalMainOutputs.length!==2||raw.physicalMonitorOutputs.length!==0))
       return {available:false,split,reason:"Existing monitor mapping is preserved."};
+    if(split){
+      const monitor=g.channels?.find(ch=>ch.role==="MONITOR");
+      if(monitor&&(monitor.inserts?.length||g.edges?.some(edge=>edge.from===monitor.id||edge.to===monitor.id)))
+        return {available:false,split,reason:"Your headphone mix has its own routing or effects. These are preserved; remove them only if you want to return to same mix."};
+    }
     if(!output.armed||output.recovering)
       return {available:false,split,reason:"Enable the additional output first."};
-    return {available:true,split,reason:split?"Headphones use MONITOR sends; OBS receives MAIN.":"OBS and headphones receive the same MAIN mix.",
+    return {available:true,split,reason:split?"OBS receives MAIN. Add MONITOR sends in the mixer to hear your headphone mix.":"Separate mix starts silent until MONITOR sends are added.",
       value:{enabled:!split,smart:true,deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision}};
   }
   function secondaryOutputSelection(options,{active="",selected="",preferred="",hasSaved=false}={}) {

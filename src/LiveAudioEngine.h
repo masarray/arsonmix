@@ -411,6 +411,21 @@ public:
     juce::String restoreSecondaryOutput(const SecondaryResumeIntent& intent) {
         if(!secondaryResumeReady()||!secondarySourceMatches(intent))
             return "Additional output could not verify the previous audio route";
+        // A graph-only mode change has not invalidated the prepared clock.
+        // Reuse the exact healthy render device, without closing/reopening it.
+        // Source stop/start invalidates ready(), so driver/rate changes still
+        // go through full preparation and two-phase identity verification.
+        if(secondaryOutput_.ready()&&!secondaryOutput_.faulted()&&
+           secondaryOutput_.name()==intent.name&&secondaryOutput_.endpointId()==intent.endpointId) {
+            const auto setup=deviceManager_.getAudioDeviceSetup();
+            if(knownVirtualCableFeedbackPair(setup.inputDeviceName,intent.name))
+                return "Additional output would feed the same virtual cable back into the mixer";
+            const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(intent.name);
+            if(!current.ok())return current.error;
+            if(current.selection.id!=intent.endpointId)
+                return "Additional output device identity changed; choose the device again";
+            return armSecondaryOutput(true);
+        }
         const auto error=connectSecondaryOutput(intent.name,intent.endpointId);
         if(error.isNotEmpty())return error;
         const auto armed=armSecondaryOutput(true);

@@ -9971,13 +9971,13 @@ private:
                 // existing native graph transaction. Never mutate PCM in JS.
                 auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
                 const auto intent=engine_.captureSecondaryResumeIntent();
-                const bool monitorWasActive=engine_.isMonitorEnabled();
-                const bool monitorWanted=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+                const bool resumeHardware=!operatorOutputMuted_&&
+                    (engine_.isMonitorEnabled()||engine_.wantsMainContinuation());
                 const auto generation=secondaryRetry_.generation();
                 if(!lease||!intent||!engine_.secondarySourceMatches(*intent)||
                    !engine_.secondaryResumeReady()||ep!=engine_.dryRoutingLabEpoch()||
                    rev!=engine_.outputArmRevision()||mixerSessionWorker_.busy()||
-                   pendingRetainedFxCapture_||retainedOfflineFxActive_||engine_.hasRuntimeFxFault())
+                   pendingSecondaryStop_||pendingRetainedFxCapture_||retainedOfflineFxActive_||engine_.hasRuntimeFxFault())
                     error="Connect the additional output and wait for audio to be ready";
                 else {
                     autoMainEpoch_=0;
@@ -9990,11 +9990,10 @@ private:
                        (error.isEmpty()||acceptedRevision==rev)) {
                         // On rejection restore the prior verified route; on
                         // success wait for callback mapping before restoring.
-                        if(monitorWanted||monitorWasActive)
-                            requestAutomaticMain(false);
+                        if(resumeHardware)requestAutomaticMain(false);
                         pendingVendorStream_=PendingVendorStream{*intent,ep,acceptedRevision,
                             static_cast<std::uint64_t>(monotonicMilliseconds()+5000),
-                            monitorWanted||monitorWasActive};
+                            resumeHardware};
                     }
                     emitApprovedNativeSnapshot();
                 }

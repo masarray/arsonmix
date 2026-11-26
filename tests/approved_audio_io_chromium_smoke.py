@@ -567,6 +567,66 @@ def verify_additional_output(page,out):
     assert not errors,errors
 
 
+def verify_independent_output(page,out):
+    """Two-pin native fixture: one mode action, no manual mute/arm ritual."""
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    errors=[]
+    page.on("pageerror",lambda error:errors.append(str(error)))
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        outputArmed=True,enabledOutputs=[0,1],
+        outputEndpoints=[{"id":"out:"+str(i),"port":i,"callback":i,
+            "label":"ASIO "+str(i+1),"active":True} for i in range(2)])
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],externalOutputs=[],
+                 physicalBusPatchSupported=True,physicalBusOutputObserved=True,physicalBusSecondaryArmed=True,
+                 secondaryMainOnly=False,externalRevision="2")
+    emit(page,"arMixConsoleSnapshot",state)
+    live={"monitor":True,"directRouteAuthorized":True,"adaptiveClockActive":False,
+          "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True,"busOutputObserved":True,
+          "secondaryMainOnly":False,"epoch":state["device"]["epoch"]},
+          "secondaryOutputReady":True,"secondaryOutputArmed":True,"secondaryOutputName":"CABLE Input"}
+    emit(page,"arMixStatus",live)
+    page.locator("[data-native-extra-output]").click()
+    panel=page.get_by_role("dialog",name="Additional Output")
+    req=page.evaluate("()=>window.__actions.at(-1)")
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":req["requestId"],"outputs":["CABLE Input"]})
+    button=panel.get_by_role("button",name="Separate headphone mix")
+    assert button.is_enabled()
+    button.click()
+    req=page.evaluate("()=>window.__actions.at(-1)")
+    assert req["action"]=="secondaryOutputSplit"
+    assert req["value"]=={"enabled":True,"smart":True,"deviceEpoch":state["device"]["epoch"],
+        "graphRevision":"2","rosterRevision":"2"}
+    emit(page,"arMixSecondaryOutputAck",{"requestId":"foreign","action":req["action"],"ok":False})
+    assert button.is_disabled()
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    assert button.is_disabled()
+    live["dryRoutingLab"].update(secondaryMainOnly=True,busOutputObserved=False)
+    live.update(secondaryOutputArmed=False,secondaryOutputRecovering=True,secondaryOutputRecoveryName="CABLE Input")
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Use same mix").is_disabled()
+    assert panel.get_by_role("button",name="Disconnect").is_enabled()
+    state.update(secondaryMainOnly=True,physicalMainOutputs=[],physicalMonitorOutputs=[0,1])
+    state["graph"].update(revision="3",rosterRevision="3")
+    emit(page,"arMixConsoleSnapshot",state)
+    live["dryRoutingLab"]["busOutputObserved"]=True
+    live.update(secondaryOutputArmed=True,secondaryOutputRecovering=False)
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Use same mix").is_enabled()
+    assert panel.locator("[data-extra-status]").inner_text().startswith("Enabled")
+    panel.get_by_role("button",name="Use same mix").click()
+    req=page.evaluate("()=>window.__actions.at(-1)")
+    assert req["value"]["enabled"] is False
+    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
+    assert not errors,errors
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -581,6 +641,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_additional_output(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_independent_output(page,out)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_bus_remap(page,out)
