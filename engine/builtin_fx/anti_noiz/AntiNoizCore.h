@@ -151,7 +151,6 @@ public:
         // never reuse stale idle classification after returning to Auto.
         if(needsContext(s)!=needsContext(settings_)){context_.reset();voiceGain_.reset();profile_.track(power_,false);}
         if(s.spectralManual!=settings_.spectralManual)profile_.track(power_,false);
-        if(next!=effectiveMode_||s.enabled!=settings_.enabled){manual_.reset();manualActive_=false;}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
@@ -222,8 +221,12 @@ public:
             if(useManual){
                 const float gain=manual_.step(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
                 left[i]*=gain;if(channels_==2)right[i]*=gain;
-            }else if(manualActive_)manual_.reset();
-            manualActive_=useManual;
+                manualActive_=true;
+            }else if(manualActive_){
+                const float gain=manual_.releaseToUnity();
+                left[i]*=gain;if(channels_==2)right[i]*=gain;
+                if(gain==1.f){manual_.reset();manualActive_=false;}
+            }
             if(preview){
                 const float target=auditionRemaining_>0?1.f:0.f,step=200.f/float(rate_);
                 auditionMix_=target>auditionMix_?std::min(target,auditionMix_+step):std::max(target,auditionMix_-step);
@@ -245,6 +248,8 @@ public:
         // no second delay. Existing disabled WOLA path advances the timeline.
         const bool enabled=settings_.enabled;
         cancelAudition();settings_.enabled=false;
+        // Fully bypassed host owns the preceding fade; dry must be unity.
+        if(manualActive_){manual_.reset();manualActive_=false;}
         tonal_.resetSignal();tonalIdle_=false;
         process(left,right,samples);
         settings_.enabled=enabled;

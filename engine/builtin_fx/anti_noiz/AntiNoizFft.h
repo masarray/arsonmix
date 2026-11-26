@@ -26,18 +26,25 @@ public:
         }
     }
     void transform(std::array<Complex,maxN>& a,bool inverse) noexcept {
+        if(inverse)run<true>(a);else run<false>(a);
+    }
+private:
+    template<bool inverse> void run(std::array<Complex,maxN>& a) noexcept {
         for(int i=0;i<n_;++i)if(i<rev_[i])std::swap(a[i],a[rev_[i]]);
         for(int len=2;len<=n_;len*=2) {
             const int half=len/2, step=n_/len;
             for(int base=0;base<n_;base+=len)for(int j=0;j<half;++j) {
                 const auto w=inverse?std::conj(twiddle_[j*step]):twiddle_[j*step];
-                const auto u=a[base+j],v=a[base+j+half]*w;
+                const auto u=a[base+j],x=a[base+j+half];
+                // Core sanitizes and bounds PCM; a 512-point FFT cannot
+                // overflow. Avoid generic complex NaN/Inf recovery branches.
+                const Complex v{x.real()*w.real()-x.imag()*w.imag(),
+                                x.real()*w.imag()+x.imag()*w.real()};
                 a[base+j]=u+v;a[base+j+half]=u-v;
             }
         }
         if(inverse)for(int i=0;i<n_;++i)a[i]/=float(n_);
     }
-private:
     int n_=256;
     std::array<int,maxN> rev_{};
     std::array<Complex,maxN/2> twiddle_{};

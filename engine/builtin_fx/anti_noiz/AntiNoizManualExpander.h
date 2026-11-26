@@ -33,21 +33,25 @@ public:
         clearReference();reset();apply(p_);
     }
     void apply(const Prepared& p) noexcept {
-        const bool toggled=p.s.enabled!=p_.s.enabled;
+        const bool timingChanged=p.s.attackMs!=p_.s.attackMs||p.s.releaseMs!=p_.s.releaseMs;
         const bool filterChanged=p.s.hpHz!=p_.s.hpHz||p.s.lpHz!=p_.s.lpHz;
         p_=p;
-        if(filterChanged){clearReference();resetDetector();}
+        if(filterChanged)clearReference();
         updateThreshold();
         const auto& s=p.s;
         hp_=1.f/(1.f+rate_/(2.f*std::numbers::pi_v<float>*s.hpHz));
         lp_=1.f/(1.f+rate_/(2.f*std::numbers::pi_v<float>*s.lpHz));
         decay_=1.f/(1.f+rate_*.008f);
         attack_=1000.f/(rate_*s.attackMs);release_=1000.f/(rate_*s.releaseMs);
+        attackFollow_=6.907755f*attack_/(1.f+6.907755f*attack_);
+        releaseFollow_=6.907755f*release_/(1.f+6.907755f*release_);
         holdSamples_=int(rate_*s.holdMs*.001f)+delay_;
-        if(toggled)reset();
+        // Parameter changes retain the current gain. Re-time only when the
+        // selected attack/release changes; no reset-to-unity on a slider edit.
+        if(timingChanged){phase_=1.f;segmentTarget_=gain_;}
         hold_=std::min(hold_,holdSamples_);ticks_=0;
     }
-    void reset() noexcept {resetDetector();gain_=target_=1;hold_=ticks_=0;open_=true;}
+    void reset() noexcept {resetDetector();gain_=target_=segmentStart_=segmentTarget_=phase_=1;hold_=ticks_=0;open_=true;}
     void beginReference() noexcept {cancelReference();capture_=true;referenceLow_={};referenceBand_={};referenceEnv_=0;}
     void cancelReference() noexcept {capture_=false;window_={};accepted_={};sampleTick_=0;}
     void clearReference() noexcept {cancelReference();referenceValid_=false;noisePeak_=0;updateThreshold();}
@@ -103,11 +107,34 @@ public:
             target_=std::pow(10.f,-cut(db,s)/20.f);
         }
         ticks_=(ticks_+1)&15;
-        if(target_>gain_)gain_=std::min(target_,gain_+attack_);
-        else gain_=std::max(target_,gain_-release_);
-        return gain_;
+        // Gate transitions have finite duration and zero slope at their
+        // endpoints. Expansion follows the same static dB curve with a
+        // continuous one-pole target follower; no restarted ramp per bin.
+        return envelope(target_,s.gate);
+    }
+    float releaseToUnity() noexcept {
+        target_=1.f;hold_=ticks_=0;open_=true;
+        return envelope(1.f,true);
     }
 private:
+    float envelope(float target,bool gate) noexcept {
+        if(gate){
+            if(target!=segmentTarget_){segmentStart_=gain_;segmentTarget_=target;phase_=0.f;}
+            if(phase_<1.f){
+                phase_=std::min(1.f,phase_+(segmentTarget_>segmentStart_?attack_:release_));
+                const float u=phase_*phase_*(3.f-2.f*phase_);
+                gain_=phase_>=1.f?segmentTarget_:segmentStart_+(segmentTarget_-segmentStart_)*u;
+            }
+        }else{
+            // Approximate 60 dB settling over the selected time. A fixed
+            // epsilon snap removes asymptotic tails and denormal work.
+            const float difference=target-gain_;
+            const float speed=difference>0.f?attackFollow_:releaseFollow_;
+            gain_=std::abs(difference)<=1e-6f?target:gain_+difference*speed;
+            segmentTarget_=gain_;phase_=1.f;
+        }
+        return gain_;
+    }
     void resetDetector() noexcept {low_={};band_={};env_=0;}
     void updateThreshold() noexcept {
         effectiveThreshold_=p_.threshold;effectiveClose_=p_.closeThreshold;effectiveKnee_=p_.kneeOpen;
@@ -132,6 +159,8 @@ private:
     float noisePeak_=0,effectiveThreshold_=.01f,effectiveClose_=.007079458f,effectiveKnee_=.01f;
     int sampleEvery_=48,sampleTick_=0;bool capture_=false,referenceValid_=false;
     float rate_=48000,hp_=0,lp_=0,decay_=0,attack_=1,release_=1,env_=0,gain_=1,target_=1;
+    float attackFollow_=1.f,releaseFollow_=1.f;
+    float segmentStart_=1.f,segmentTarget_=1.f,phase_=1.f;
     int channels_=1,delay_=256,holdSamples_=0,hold_=0,ticks_=0;bool open_=true;
 };
 }
