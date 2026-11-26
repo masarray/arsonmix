@@ -119,6 +119,8 @@ int main(int argc,char** argv){
             const auto prefix=std::to_string(i+2);
             render(dir,dry,(prefix.size()==1?"0":"")+prefix+" "+singerPresets[i].name,presetSettings(i),csv,argc==2);
         }
+        for(std::size_t i=0;i<concertPresetCount;++i)
+            render(dir,dry,std::to_string(i+14)+" "+singerPresets[concertPresetStart+i].name,presetSettings(concertPresetStart+i),csv,argc==2);
         if(!csv)throw std::runtime_error("cannot write metrics");
         std::ofstream notes(dir/"README.txt");
         notes<<(argc==3?"User supplied PCM16 dry voice.":"Synthetic harmonic excitation, NOT a human singer.")

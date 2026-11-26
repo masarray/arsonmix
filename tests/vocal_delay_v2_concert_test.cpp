@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#include "../engine/builtin_fx/vocal_delay/SingerWorkflow.h"
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+using namespace armix::builtin_fx::vocal_delay;
+extern std::atomic<bool> noHeap;
+#define CHECK(x) do{if(!(x)){std::fprintf(stderr,"FAIL:%d %s\n",__LINE__,#x);std::abort();}}while(false)
+static void run(ContinuousDelayCore& c,float* l,float* r,std::size_t n){noHeap=true;c.processStereo(l,r,n);noHeap=false;}
+static void scenario(double rate,std::size_t preset){
+    const auto p=presetSettings(concertPresetStart+preset);
+    const auto n=std::size_t(rate*6);
+    std::vector<float> dry(n),l(n),r(n),a(n),b(n);
+    // Ordinary syllables, short breath, lone impulse, strong terminal note,
+    // then next lyric. Synthetic, not human corpus.
+    for(std::size_t i=0;i<n;++i){
+        const auto t=double(i)/rate;float amp=0;
+        if(t<1.2&&std::fmod(t,.24)<.18)amp=.07f;
+        if(t>=1.65&&t<2.10)amp=.075f;
+        if(t>=2.10&&t<2.55)amp=.34f;
+        if(t>=4.2&&t<4.8)amp=.06f;
+        dry[i]=amp*float(std::sin(6.283185307179586*190*t));
+    }
+    dry[std::size_t(rate*1.4)]=.8f;l=r=a=b=dry;
+    ContinuousDelayCore x,z;CHECK(x.prepare(rate,p)&&z.prepare(rate,p));
+    for(std::size_t i=0;i<n;){const auto k=std::min<std::size_t>(64,n-i);run(x,l.data()+i,r.data()+i,k);i+=k;}
+    for(std::size_t i=0;i<n;){const auto k=std::min<std::size_t>(251,n-i);run(z,a.data()+i,b.data()+i,k);i+=k;}
+    double tail=0,side=0;std::size_t first=n;
+    for(std::size_t i=0;i<n;++i){
+        CHECK(l[i]==a[i]&&r[i]==b[i]&&std::isfinite(l[i])&&std::abs(l[i])<=1.00001f&&std::abs(r[i])<=1.00001f);
+        if(i<std::size_t(rate*2.55)||p.throwMode==ThrowMode::manual)CHECK(l[i]==dry[i]&&r[i]==dry[i]);
+        if(l[i]!=dry[i]||r[i]!=dry[i])first=std::min(first,i);
+        if(i>=std::size_t(rate*2.55)&&i<std::size_t(rate*4.2)){tail+=std::abs(l[i])+std::abs(r[i]);side+=std::abs(l[i]-r[i]);}
+    }
+    if(p.throwMode!=ThrowMode::manual){CHECK(tail>rate*.0005&&side>rate*.0001);CHECK(first>=std::size_t(rate*2.65));}
+    else CHECK(tail==0);
+    std::printf("VD_THROW rate=%.0f preset=%s first_ms=%.1f tail=%.6f side=%.6f\n",rate,singerPresets[concertPresetStart+preset].name,1000.*first/rate,tail,side);
+}
+static void manualAndReset(){
+    constexpr double rate=48000;auto p=presetSettings(concertPresetStart+7);ContinuousDelayCore c;
+    CHECK(c.prepare(rate,p));std::vector<float> l(24000),r(24000);
+    for(std::size_t i=0;i<l.size();++i)l[i]=r[i]=.15f*std::sin(float(i)*.025f);
+    run(c,l.data(),r.data(),l.size());
+    p.hit=true;ContinuousDelayCore::Prepared q;CHECK(ContinuousDelayCore::prepareEdit(p,rate,q));CHECK(c.applyPrepared(q));
+    l.assign(l.size(),0);r=l;run(c,l.data(),r.data(),l.size());
+    double sum=0;for(float v:l)sum+=std::abs(v);CHECK(sum>1.);
+    c.invalidate();l.assign(l.size(),0);r=l;run(c,l.data(),r.data(),l.size());for(float v:l)CHECK(v==0.f);
+}
+int main(){
+    for(double rate:{8000.,44100.,48000.,96000.,192000.})for(std::size_t i=0;i<concertPresetCount;++i)scenario(rate,i);
+    manualAndReset();std::puts("PASS 40 concert cases, dry identity, selected tail, stereo, manual/reset, block invariance, no heap");
+}

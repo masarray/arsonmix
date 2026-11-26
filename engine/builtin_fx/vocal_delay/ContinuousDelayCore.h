@@ -3,6 +3,7 @@
 #include "Parameters.h"
 #include "DelayLine.h"
 #include "AdaptiveVocalFocus.h"
+#include "ConcertThrow.h"
 #include <atomic>
 #include <algorithm>
 #include <cmath>
@@ -22,7 +23,8 @@ public:
         Taps taps_{};
         float feedback_=0,echo_=0,hp_=0,lp_=1,duckDepth_=0;
         float attack_=0,release_=0,mono_=0,cross_=0;
-        bool enabled_=true,adaptiveFocus_=false,spillover_=false,smartStage_=false;
+        bool enabled_=true,adaptiveFocus_=false,spillover_=false,smartStage_=false,hit_=false;
+        ThrowMode throwMode_=ThrowMode::off;
     public:
         Prepared()=default;
     };
@@ -48,7 +50,7 @@ public:
         q.release_=timeCoefficient(rate,p.duckReleaseMs);
         q.mono_=p.mode==StereoMode::mono?1.f:0.f;
         q.cross_=p.mode==StereoMode::pingPong?1.f:0.f;
-        q.enabled_=p.enabled;q.adaptiveFocus_=p.adaptiveFocus;q.spillover_=p.spillover;q.smartStage_=p.smartStage;
+        q.enabled_=p.enabled;q.adaptiveFocus_=p.adaptiveFocus;q.spillover_=p.spillover;q.smartStage_=p.smartStage;q.throwMode_=p.throwMode;q.hit_=p.hit;
         out=q;return true;
     }
     bool prepare(double rate,const Parameters& p=Parameters{}) {
@@ -56,7 +58,8 @@ public:
         if(!prepareEdit(p,rate,q))return false;
         ready_=false;
         const auto capacity=static_cast<std::size_t>(std::ceil(rate*4.))+2;
-        left_.prepare(capacity);right_.prepare(capacity);
+        left_.prepare(capacity);right_.prepare(capacity);throw_.prepare(rate);
+        activeThrow_=q.throwMode_;switchGain_=1.f;
         rate_=rate;target_=q;active_=next_=q.taps_;
         fadeLength_=static_cast<std::uint32_t>(std::ceil(rate*.03));
         fadePosition_=fadeLength_;
@@ -83,19 +86,19 @@ public:
     }
     // AUDIO only, or CONTROL on an unpublished instance.
     void invalidate() noexcept {
-        left_.invalidate();right_.invalidate();tailRemaining_=0;
+        left_.invalidate();right_.invalidate();throw_.reset();tailRemaining_=0;
         toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;sustain_=0.f;headroom_=1.f;focus_.reset();publishMeter(0,0);
         active_=next_=target_.taps_;fadePosition_=fadeLength_;
     }
     std::size_t ringBytes() const noexcept {
-        return (left_.capacity()+right_.capacity())*sizeof(float);
+        return (left_.capacity()+right_.capacity())*sizeof(float)+throw_.ringBytes();
     }
     // One coherent block observation, packed in a lock-free word. 10 bits each
-    // for wet peak and fractional attenuation, 12-bit rolling block sequence.
-    struct Meter {float wetPeak=0,duckReduction=0;std::uint32_t sequence=0;};
+    // for wet peak and fractional attenuation, 10-bit rolling block sequence, 2-bit throw status.
+    struct Meter {float wetPeak=0,duckReduction=0;std::uint32_t sequence=0;ConcertThrow::Status throwStatus=ConcertThrow::Status::armed;};
     Meter meter() const noexcept{
         const auto w=meterWord_.load(std::memory_order_relaxed);
-        return {float(w&1023u)/1023.f,float((w>>10)&1023u)/1023.f,w>>20};
+        return {float(w&1023u)/1023.f,float((w>>10)&1023u)/1023.f,(w>>20)&1023u,static_cast<ConcertThrow::Status>(w>>30)};
     }
     void processStereo(float* l,float* r,std::size_t frames) noexcept {
         if(!ready_||!l||!r||frames==0)return;
@@ -108,6 +111,15 @@ public:
         float blockWet=0,blockReduction=0;
         for(std::size_t i=0;i<frames;++i) {
             const float dryL=finite(l[i]),dryR=monoBuffer?dryL:finite(r[i]);
+            const bool switching=activeThrow_!=target_.throwMode_;
+            if(switching){
+                switchGain_=std::max(0.f,switchGain_-powerStep_);
+                if(switchGain_==0.f){
+                    // Wet-only fade before O(1) retirement; no prior lyrics leak into throw mode.
+                    left_.invalidate();right_.invalidate();throw_.reset();toneL_={};toneR_={};wetL_={};wetR_={};
+                    activeThrow_=target_.throwMode_;
+                }
+            }else switchGain_=std::min(1.f,switchGain_+powerStep_);
             // Dry is never buffered, filtered, or limited by the echo engine.
             if(!target_.enabled_&&power_==0.f) {
                 l[i]=dryL;if(!monoBuffer)r[i]=dryR;continue;
@@ -149,9 +161,16 @@ public:
             // Convex cross-feedback; wet safety bound, not a dry limiter.
             // Mono input/return folds with an average, never +6 dB summation.
             const float safeL=bounded(dryL,4.f),safeR=bounded(dryR,4.f);
-            const float fold=.5f*(safeL+safeR);
-            float inL=safeL+(fold-safeL)*mono_;
-            float inR=safeR+(fold-safeR)*mono_;
+            float srcL=safeL,srcR=safeR;
+            if(activeThrow_!=ThrowMode::off){
+                if(target_.enabled_&&!switching){
+                    const auto captured=throw_.tick(safeL,safeR,activeThrow_,target_.hit_);
+                    srcL=captured.l;srcR=captured.r;
+                }else{throw_.reset();srcL=srcR=0.f;}
+            }
+            const float fold=.5f*(srcL+srcR);
+            float inL=srcL+(fold-srcL)*mono_;
+            float inR=srcR+(fold-srcR)*mono_;
             if(target_.smartStage_||stageBlend_!=0.f)move(stageBlend_,target_.smartStage_?1.f:0.f);
             // Seed one delay line, even for identical stereo microphone PCM.
             // Average fold avoids a +6 dB mono sum; old sessions retain their topology.
@@ -160,7 +179,7 @@ public:
             const float fL=toneL_.tick(dL+(dR-dL)*cross_,hp_,lp_);
             const float fR=toneR_.tick(dR+(dL-dR)*cross_,hp_,lp_);
             // Stop feeding new audio on OFF; ramp the wet return, then invalidate.
-            const float feed=target_.enabled_?power_:0.f;
+            const float feed=target_.enabled_&&!switching?power_:0.f;
             const float peak=std::min(1.f,std::max(std::abs(dryL),std::abs(dryR)));
             env_=tiny(env_+(peak-env_)*(peak>env_?target_.attack_:target_.release_));
             // Soft activity ramp: full duck at ~-18 dBFS, never hard-gate echo.
@@ -176,13 +195,13 @@ public:
             const float stageFocus=stageBlend_*focusBlend_;
             if(stageFocus>0.f)sustain_=tiny(sustain_+(activity-sustain_)*(activity>sustain_?sustainAttack_:sustainRelease_));
             else sustain_=0.f;
-            const float budget=stageFocus*depth_*sustain_;
+            const float budget=activeThrow_==ThrowMode::off?stageFocus*depth_*sustain_:0.f;
             const float send=feed*(1.f-.45f*budget); // retain more phrase-end energy
             const float regen=feedback_*(1.f-.45f*budget);
             left_.push(bounded(inL*send+regen*fL,8.f));
             right_.push(bounded(inR*send+regen*fR,8.f));
             const float reduction=depth_*activity;
-            const float gain=echo_*power_*(1.f-reduction);
+            const float gain=echo_*power_*(1.f-reduction)*switchGain_;
             const float mid=.5f*(wL+wR);
             if(gain==0.f) {
                 l[i]=dryL;if(!monoBuffer)r[i]=dryR;
@@ -209,8 +228,8 @@ public:
 private:
     void publishMeter(float wet,float reduction) noexcept{
         const auto quant=[](float v){return static_cast<std::uint32_t>(std::clamp(v,0.f,1.f)*1023.f+.5f);};
-        meterSequence_=(meterSequence_+1u)&4095u;
-        meterWord_.store((meterSequence_<<20)|(quant(reduction)<<10)|quant(wet),std::memory_order_relaxed);
+        meterSequence_=(meterSequence_+1u)&1023u;
+        meterWord_.store((std::uint32_t(throw_.status())<<30)|(meterSequence_<<20)|(quant(reduction)<<10)|quant(wet),std::memory_order_relaxed);
     }
     static float wetAllowance(float dry,float wet) noexcept {
         // Do not allow wet to increase an existing over-ceiling peak.
@@ -268,6 +287,7 @@ private:
     float stageBlend_=0.f,sustain_=0.f,sustainAttack_=0.f,sustainRelease_=0.f;
     float headroom_=1.f,headroomRelease_=0.f;
     AdaptiveVocalFocus focus_{};
+    ConcertThrow throw_{};ThrowMode activeThrow_=ThrowMode::off;float switchGain_=1.f;
     static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
     std::atomic<std::uint32_t> meterWord_{0};std::uint32_t meterSequence_=0;
     bool ready_=false;

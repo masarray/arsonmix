@@ -21,6 +21,7 @@ public:
         preset_.addSectionHeading("Ready to Sing");
         for(std::size_t i=0;i<singerPresets.size();++i){
             if(i==stagePresetCount)preset_.addSectionHeading("Classic Presets");
+            if(i==concertPresetStart)preset_.addSectionHeading("Concert Throw");
             preset_.addItem(singerPresets[i].name,int(i+1));
         }
         mode_.addItem("Mono",1);mode_.addItem("Stereo",2);mode_.addItem("Ping Pong",3);
@@ -49,7 +50,7 @@ public:
             const auto id="vd.stage."+juce::String(int(i));
             auto& b=stageButtons_[i];setupButton(b,id.toRawUTF8());
             b.setTitle(singerPresets[i].name);b.setButtonText(singerPresets[i].name);
-            b.setTooltip(singerPresets[i].description);b.onClick=[this,i]{recallFactory(i);};
+            b.setTooltip(singerPresets[i].description);b.onClick=[this,i]{if(!concertBank_||i<concertPresetCount)recallFactory(concertBank_?concertPresetStart+i:i);};
         }
         setupButton(hit_,"vd.hit");hit_.setTooltip("Chorus highlight: more wet echo and repeats. Click again to return to base sound.");
         hit_.onClick=[this]{auto p=processor_.singerDisplay();p.hit=!p.hit;offer(p);};
@@ -64,7 +65,7 @@ public:
         smart_.setTooltip("Balance echo tone and ducking for your current time, repeats and level. Dry vocal stays unchanged.");
         expert_.setTooltip("Show precise controls without changing your sound.");
         expert_.onClick=[this]{expertMode_=!expertMode_;resized();refresh();};
-        smart_.onClick=[this]{offer(smartVoicing(processor_.singerDisplay()));};
+        smart_.onClick=[this]{if(stageView_){concertBank_=!concertBank_;resized();refresh();}else offer(smartVoicing(processor_.singerDisplay()));};
         attack_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckAttackMs=float(attack_.getValue());offer(p);};
         release_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckReleaseMs=float(release_.getValue());offer(p);};
         power_.onClick=[this]{auto p=processor_.singerDisplay();p.enabled=!p.enabled;if(p.enabled)p.hit=false;offer(p);};
@@ -91,7 +92,7 @@ public:
         duck_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duck=float(duck_.getValue())*.01f;offer(p);};
         hp_.onValueChange=[this]{auto p=processor_.singerDisplay();const auto v=float(hp_.getValue());p.highPassHz=v<20?0.f:std::max(40.f,v);offer(p);};
         lp_.onValueChange=[this]{auto p=processor_.singerDisplay();const auto v=float(lp_.getValue());p.lowPassHz=v<500?0.f:std::max(1000.f,v);offer(p);};
-        admitted_=processor_.beginSingerEditor();stageView_=processor_.singerDisplay().smartStage;resized();refresh();startTimerHz(30);
+        admitted_=processor_.beginSingerEditor();stageView_=processor_.singerDisplay().smartStage;concertBank_=processor_.singerDisplay().throwMode!=ThrowMode::off;resized();refresh();startTimerHz(30);
     }
     ~SingerEditor() override{
         stopTimer();if(admitted_)processor_.endSingerEditor();
@@ -130,7 +131,8 @@ public:
             for(int i=0;i<8;++i)g.drawText(names[std::size_t(i)],14+i*74,78,74,18,juce::Justification::centred);
         }else{
             if(stageView_){
-                g.setColour(hardware::col(0xb2e7d3));g.drawText("READY TO SING  /  SELECT A SOUND",24,72,386,16,juce::Justification::centredLeft);
+                g.setColour(hardware::col(0xb2e7d3));g.drawText(concertBank_?"CONCERT THROW  /  SELECT A MOMENT":"READY TO SING  /  SELECT A SOUND",24,72,386,16,juce::Justification::centredLeft);
+                if(concertBank_){g.setColour(hardware::col(0xa1afb1));g.drawText("Ordinary lyrics stay dry. Selected endings echo.",24,191,386,16,juce::Justification::centredLeft);}
             }else{
                 const std::array<const char*,3> names{{"TIME","REPEATS","ECHO LEVEL"}};
                 for(int i=0;i<3;++i)g.drawText(names[std::size_t(i)],24+i*132,78,122,18,juce::Justification::centred);
@@ -142,7 +144,10 @@ public:
             drawMeter(g,"DUCK",meterFresh_?meter_.duckReduction:0.f,108);
             drawMeter(g,"WET",meterFresh_?meter_.wetPeak:0.f,140);
             g.setColour(hardware::col(0x91aaa3));g.setFont(hardware::font(9.f));
-            g.drawText(meterFresh_?(processor_.singerDisplay().smartStage&&processor_.singerDisplay().adaptiveFocus?"SMART STAGE / LIVE":"LIVE BLOCK PEAK"):"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
+            const auto mode=processor_.singerDisplay().throwMode;
+            const char* status="ARMED / WAITING";
+            switch(meter_.throwStatus){case ConcertThrow::Status::tracking:status="TRACKING PHRASE";break;case ConcertThrow::Status::capture:status="THROW CAPTURE";break;case ConcertThrow::Status::cooldown:status="THROW COOLDOWN";break;default:break;}
+            g.drawText(meterFresh_?(mode!=ThrowMode::off?status:(processor_.singerDisplay().smartStage&&processor_.singerDisplay().adaptiveFocus?"SMART STAGE / LIVE":"LIVE BLOCK PEAK")):"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
         }
         const auto p=processor_.singerDisplay();
         const auto tempo=tempoNotice_.isNotEmpty()?tempoNotice_:tempoLabel(p);
@@ -163,7 +168,7 @@ public:
         stageToggle_.setVisible(!expertMode_);stageToggle_.setBounds(515,177,69,27);
         stageToggle_.setButtonText(stageView_?"Controls":"Presets");
         for(std::size_t i=0;i<stagePresetCount;++i){
-            auto& b=stageButtons_[i];b.setVisible(!expertMode_&&stageView_);
+            auto& b=stageButtons_[i];b.setVisible(!expertMode_&&stageView_&&(!concertBank_||i<concertPresetCount));
             b.setBounds(24+int(i%3)*132,91+int(i/3)*31,126,26);
         }
         tap_.setBounds(24,235,74,25);division_.setBounds(108,235,130,25);
@@ -183,12 +188,17 @@ public:
         preset_.setSelectedId(presetId,juce::dontSendNotification);
         save_.setEnabled(available&&processor_.stateSnapshotQuiescent()&&bool(saveUserPreset_));
         smart_.setEnabled(available);stageToggle_.setEnabled(available);
+        smart_.setButtonText(stageView_?(concertBank_?"Stage":"Concert"):"Smart");
+        smart_.setTooltip(stageView_?"Switch between continuous stage sounds and selective concert throws":"Balance echo tone and ducking");
         for(std::size_t i=0;i<stagePresetCount;++i){auto& b=stageButtons_[i];b.setEnabled(available);
-            const bool selected=style==int(i)&&p.enabled&&selectedUserId_.isEmpty();
+            const auto idx=concertBank_&&i<concertPresetCount?concertPresetStart+i:i;
+            b.setButtonText(singerPresets[idx].name);b.setTitle(singerPresets[idx].name);b.setTooltip(singerPresets[idx].description);
+            const bool selected=style==int(idx)&&p.enabled&&selectedUserId_.isEmpty();
             b.setColour(juce::TextButton::textColourOffId,hardware::col(selected?0xc8f5e4:0xc5cccd));
             b.setColour(juce::TextButton::buttonColourId,hardware::col(selected?0x27695c:0x41494d));
         }
-        hit_.setEnabled(available&&p.enabled&&!processor_.isDetached()&&hostBypass()==HostBypass::none);hit_.setButtonText(p.hit?"HIT ON":"HIT");
+        hit_.setEnabled(available&&p.enabled&&!processor_.isDetached()&&hostBypass()==HostBypass::none);hit_.setButtonText(p.throwMode!=ThrowMode::off?(p.hit?"ARM OFF":"THROW"):(p.hit?"HIT ON":"HIT"));
+        hit_.setTooltip(p.throwMode!=ThrowMode::off?"One-shot recent vocal capture on rising edge; click to rearm":"Chorus highlight: more wet echo and repeats");
         hit_.setColour(juce::TextButton::buttonColourId,hardware::col(p.hit?0x88652d:0x41494d));
         tail_.setEnabled(available);tail_.setButtonText(p.spillover?"TAIL ON":"TAIL");
         tail_.setColour(juce::TextButton::buttonColourId,hardware::col(p.spillover?0x27695c:0x41494d));
@@ -254,8 +264,10 @@ private:
     }
     void recallFactory(std::size_t index){
         if(!hostAvailable()||index>=singerPresets.size())return;
-        const auto p=presetSettings(index,index<stagePresetCount||processor_.singerDisplay().enabled);
+        const auto p=presetSettings(index,index<stagePresetCount||index>=concertPresetStart||processor_.singerDisplay().enabled);
         if(processor_.offerSinger(p)){
+            if(p.throwMode!=ThrowMode::off){concertBank_=true;stageView_=true;resized();}
+            else if(index<stagePresetCount&&concertBank_){concertBank_=false;resized();}
             processor_.armStageTempo(p);selectedUserId_.clear();taps_.reset();tempoNotice_.clear();
         }
         refresh();
@@ -267,6 +279,7 @@ private:
         preset_.addSectionHeading("Ready to Sing");
         for(std::size_t i=0;i<singerPresets.size();++i){
             if(i==stagePresetCount)preset_.addSectionHeading("Classic Presets");
+            if(i==concertPresetStart)preset_.addSectionHeading("Concert Throw");
             preset_.addItem(singerPresets[i].name,int(i+1));
         }
         if(!userPresets_.empty())preset_.addSectionHeading("My Presets");
@@ -334,7 +347,7 @@ private:
     std::function<std::vector<UserPresetEntry>()> listUserPresets_;
     std::function<juce::String(const juce::String&)> saveUserPreset_;
     std::function<std::optional<Parameters>(const juce::String&)> recallUserPreset_;
-    ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double noticeUntil_=0;juce::String tempoNotice_;bool admitted_=false,expertMode_=false,stageView_=false;
+    ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double noticeUntil_=0;juce::String tempoNotice_;bool admitted_=false,expertMode_=false,stageView_=false,concertBank_=false;
 };
 inline juce::AudioProcessorEditor* JuceVocalDelayProcessor::createEditor(){return new SingerEditor(*this);}
 } // namespace armix::builtin_fx::vocal_delay
