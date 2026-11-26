@@ -37,7 +37,7 @@ function fakeApi({refSha=SHA,comments=[],runs=[],released=false,notesReady=true,
 test('Windows publisher distinguishes absent tag HTTP 404 from auth/error and does not leak gh exit 1',()=>{
   const workflow=readFileSync(new URL('../.github/workflows/alpha-preview-publish.yml',import.meta.url),'utf8');
   const first=workflow.split('      - name: Verify release identity and immutable source')[1]
-    ?.split('      - uses: actions/setup-python@v5')[0]||'';
+    ?.split(/      - uses: actions\/setup-python@[a-f0-9]{40}/)[0]||'';
   assert.match(first,/Invoke-WebRequest -Method Get -Uri \$releaseUri -SkipHttpErrorCheck/);
   assert.match(first,/\$releaseProbe\.StatusCode -eq 200/);
   assert.match(first,/\$releaseProbe\.StatusCode -ne 404/);

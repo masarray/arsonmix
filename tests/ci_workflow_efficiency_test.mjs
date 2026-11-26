@@ -204,7 +204,7 @@ test('Windows realtime CTest is explicit for PR milestones; packaging requires d
   assert.match(native,/FAT_EXACT_PR_HEAD_CHECKOUT/);
   assert.match(native,/ctest --test-dir build -C Release --output-on-failure/);
   assert.ok(native.indexOf('scripts/verify_native_windows_artifact.ps1 -OutputDir dist') <
-            native.indexOf('uses: actions/upload-artifact@v4'));
+            native.search(/uses: actions\/upload-artifact@[a-f0-9]{40}/));
 });
 
 test('Pages is single guarded downstream publisher, never triggered by PR completion', () => {
