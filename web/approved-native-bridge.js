@@ -1135,6 +1135,7 @@
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
   let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
+  let lastM4Performance=null,m4PaintKey="";
   let externalSerial=0;
   const pendingExternal=new Map(); // each ChannelId independent; no mixer-wide lock
   let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
@@ -3351,6 +3352,65 @@
     if(warning?.dataset && warning.dataset.telemetry!==healthMode)
       warning.dataset.telemetry=healthMode;
   }
+  // M4: presentation-only. Only the native 1 Hz status event calculates new
+  // evidence; accepted graph snapshot changes merely invalidate stale display.
+  function paintSmartPerformance(force=false) {
+    const panel=devicePanel?.querySelector("[data-m4-performance]");
+    if(!panel||devicePanel.hidden ||
+       devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab!=="performance")return;
+    const p=lastM4Performance;
+    const epoch=hardware?.device?.epoch||"";
+    const valid=p?.cursor?.epoch===epoch&&hardware?.admitted===true&&!hardware.retained;
+    const key=(valid?p.cursor.epoch+":"+p.cursor.seq:"unavailable:"+epoch);
+    if(!force&&key===m4PaintKey)return;
+    m4PaintKey=key;
+    const put=(field,value)=>{
+      const el=panel.querySelector("[data-m4-"+field+"]");
+      if(el&&el.textContent!==value)el.textContent=value;
+    };
+    const status=valid?p.state:"UNAVAILABLE";
+    const stateLabel={UNAVAILABLE:"No verified live evidence",
+      COLLECTING:"Collecting 1-second evidence",PRESSURE:"Render budget pressure",
+      TIGHT:"Limited render headroom",OBSERVED_MARGIN:"Measured headroom",
+      MUTED:"Outputs disarmed"}[status]||"Evidence pending";
+    const state=panel.querySelector("[data-m4-state]");
+    if(state)state.dataset.state=status;
+    put("state",stateLabel);
+    put("budget",valid&&p.headroom?
+      "P99 "+p.headroom.p99+" of deadline · margin "+p.headroom.margin:
+      "P99 — · one-second evidence unavailable");
+    put("over",valid&&p.callbacks!==null?
+      p.over+" / "+p.callbacks+" host render blocks over budget":
+      "Deadline events —");
+    put("fx",valid&&p.fxPeak?p.fxPeak.name+" · historical max "+
+      p.fxPeak.percent+" of period"+(p.fxPeak.sampled?" · sampled":""):
+      "No attributable FX peak");
+    put("latency",valid&&p.latency?
+      "MAIN "+(p.latency.main||"—")+" · MONITOR "+(p.latency.monitor||"—")+
+      " · "+p.latency.policy:"Graph latency —");
+    put("correlation",valid&&p.correlation?
+      "Last 64 pairs: "+p.correlation.withinLate+" late after in-budget · "+
+        p.correlation.overLate+" late after over-budget":
+      "Callback pairing not available");
+    const rows=panel.querySelector("[data-m4-reviews]");
+    const advice=panel.querySelector("[data-m4-advice]");
+    const addRows=(host,items)=>{
+      if(!host)return;
+      host.replaceChildren(...items.map(value=>{
+        const row=document.createElement("div");
+        row.className="armix-m4-line";
+        row.textContent=value; // Plugin names are data, never markup.
+        return row;
+      }));
+    };
+    addRows(rows,valid&&p.reviews.length?p.reviews.map(x=>
+      x.name+" · "+(x.channel||"FX")+" · "+x.action+
+      (x.window!=="—"?" · last 32 mean "+x.window:"")+
+      (x.sampled?" · sampled":"")):["No FX requires review from available evidence"]);
+    addRows(advice,valid?p.recommendations:
+      ["Open a verified native audio device; no risk rating is inferred from demo or stale data."]);
+  }
+
   function updateHardwarePanel(next) {
     hardware=next || null;
     refreshRealM4Inputs(next);
@@ -3368,6 +3428,7 @@
       if(!next?.admitted && !next?.retained)scope.render?.();
     }
     paintAudioHealthFooter(next);
+    paintSmartPerformance();
     if(!inputSelect)return;
     const pins=deviceOpen?d.inputEndpoints.filter(p=>
       p.active===true && d.enabledInputs.includes(p.port)):[];
@@ -3511,8 +3572,9 @@
     for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
       item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
     const apply=devicePanel.querySelector("[data-audio-apply]");
-    apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics";
+    apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics"||page==="performance";
     if(page==="inputs"||page==="routing")paintPhysicalOutputs(hardware);
+    if(page==="performance")paintSmartPerformance(true);
     if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
   }
   function openNativeAudioIO(){
@@ -3616,10 +3678,31 @@
         .armix-audio-dialog:not([data-audio-tab="routing"]) .armix-output-overview,
         .armix-audio-dialog:not([data-audio-tab="device"]) .armix-endpoint-fields,
         .armix-audio-dialog:not([data-audio-tab="diagnostics"]) .armix-audio-diagnostics,
+        .armix-audio-dialog:not([data-audio-tab="performance"]) .armix-m4-performance,
         .armix-audio-dialog:not([data-audio-tab="pins"]) .armix-driver-inventory,
         .armix-audio-dialog:not([data-audio-tab="device"]) [data-audio-remap],
         .armix-audio-dialog [hidden]{display:none!important}
         .armix-audio-diagnostics{padding:12px 20px}
+        .armix-m4-performance{padding:14px 20px 18px;font-size:11px;line-height:1.5}
+        .armix-m4-head{display:flex;gap:12px;align-items:center;justify-content:space-between;
+          border-bottom:1px solid #354c59;padding-bottom:10px;margin-bottom:10px}
+        .armix-m4-head strong{font-size:13px;font-weight:550;color:#def2f8}
+        .armix-m4-meta{font-size:10px;color:#9db6c3}
+        .armix-m4-status{font-size:11px;color:#b7cad4}
+        .armix-m4-status[data-state="PRESSURE"]{color:#f3b78d}
+        .armix-m4-status[data-state="TIGHT"]{color:#ebd09b}
+        .armix-m4-status[data-state="OBSERVED_MARGIN"]{color:#a9dcc7}
+        .armix-m4-metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+        .armix-m4-metric{padding:7px 10px;border:1px solid #34505e;border-radius:4px;
+          min-width:0;background:#122630}
+        .armix-m4-metric small{display:block;color:#9fb9c5;font-size:10px}
+        .armix-m4-metric span{display:block;color:#e0eef3;font-variant-numeric:tabular-nums}
+        .armix-m4-section{border-top:1px solid #344b59;margin-top:10px;padding-top:8px}
+        .armix-m4-section strong{font-size:11px;font-weight:550;color:#c6e5ed}
+        .armix-m4-line{margin-top:4px;padding-left:9px;border-left:2px solid #486978;
+          color:#c6d8e0;overflow-wrap:anywhere}
+        .armix-m4-note{color:#9fb6c1;font-size:10px;margin-top:10px}
+        @media(max-width:620px){.armix-m4-metrics{grid-template-columns:1fr}}
         .armix-audio-dialog .armix-endpoint-fields .armix-device-note{border:0;background:transparent;padding:3px 0}
         .armix-audio-dialog [data-audio-latency]{padding:8px 0!important;border-top:1px solid #354b59!important}
         .armix-audio-dialog .armix-audio-pins{max-height:min(44vh,340px);gap:16px}
@@ -3658,6 +3741,8 @@
             role="tab" aria-selected="false" disabled>Inputs</button>
           <button type="button" class="armix-audio-tab" data-audio-tab="routing"
             role="tab" aria-selected="false" disabled>Outputs</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="performance"
+            role="tab" aria-selected="false">Performance</button>
           <button type="button" class="armix-audio-tab" data-audio-tab="diagnostics"
             role="tab" aria-selected="false">Diagnostics</button>
         </nav>
@@ -3681,6 +3766,31 @@
           </div>
           <div class="armix-device-note">Apply device to discover its hardware pins.</div>
         </div>
+        <section class="armix-m4-performance" data-m4-performance role="region" aria-label="Smart Performance Assistant">
+          <div class="armix-m4-head">
+            <div><strong>Smart Performance Assistant</strong>
+              <div class="armix-m4-meta">Native DSP evidence · advisory only · 1 Hz</div></div>
+            <span class="armix-m4-status" data-m4-state>Waiting for native audio</span>
+          </div>
+          <div class="armix-m4-metrics">
+            <div class="armix-m4-metric"><small>RENDER HEADROOM</small><span data-m4-budget>—</span></div>
+            <div class="armix-m4-metric"><small>DEADLINE PRESSURE</small><span data-m4-over>—</span></div>
+            <div class="armix-m4-metric"><small>HIGHEST OBSERVED FX PEAK</small><span data-m4-fx>—</span></div>
+            <div class="armix-m4-metric"><small>DECLARED GRAPH PDC</small><span data-m4-latency>—</span></div>
+          </div>
+          <div class="armix-m4-section"><strong>Callback timing context</strong>
+            <div class="armix-m4-line" data-m4-correlation>—</div>
+          </div>
+          <div class="armix-m4-section"><strong>FX to review</strong>
+            <div data-m4-reviews></div>
+          </div>
+          <div class="armix-m4-section"><strong>Recommended next steps</strong>
+            <div data-m4-advice></div>
+          </div>
+          <div class="armix-m4-note">P99 is a bucket ceiling from the latest 1-second host render interval.
+            FX peaks are historical; callback lateness is not proven driver XRUN.
+            No setting, plugin or audio buffer is changed automatically.</div>
+        </section>
         <section class="armix-audio-diagnostics">
           <div class="armix-device-note" data-audio-period></div>
           <div class="armix-device-note" data-audio-health role="status"></div>
@@ -5033,7 +5143,8 @@
       const health=protocol.footerHealthFromLive(live);
       if(!health || health.sequence===lastFooterHealth?.sequence)return;
       lastFooterHealth=health;
-      if(hardware)paintAudioHealthFooter(hardware);
+      lastM4Performance=protocol.smartPerformanceView(live,hardware,lastM4Performance?.cursor);
+      if(hardware){paintAudioHealthFooter(hardware);paintSmartPerformance();}
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
       // Only the sole v6 controller may admit a PCM snapshot. Its
