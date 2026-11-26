@@ -71,6 +71,13 @@ def compare(old, new, failures, case):
                     failures.append([case,tag,key,"foreground regression",loss,error,clean])
         rows[tag]=aggregate(b,"idle","idle_attenuation_db")
     active=aggregate(new["max"]["rows"],"active","error_improvement_db")
+    old_active=aggregate(old["max"]["rows"],"active","error_improvement_db")
+    active_delta=active-old_active
+    # Additional incremental-benefit gate; absolute P0 thresholds below
+    # remain binding. Never promote just because this delta passes.
+    if active_delta<1.:
+        failures.append([case,"incremental active benefit",active_delta])
+    print("FIELD_WIND_INCREMENTAL",case,"old",old_active,"new",active,"delta",active_delta,flush=True)
     retain=aggregate(new["max"]["rows"],"active","desired_projection")
     residual=rows["max"]-rows["spectral"]
     if rows["max"]<12 or residual<3:

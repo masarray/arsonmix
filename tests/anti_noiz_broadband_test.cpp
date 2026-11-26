@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#include "../engine/builtin_fx/anti_noiz/AntiNoizBroadband.h"
+#include <cstdlib>
+#include <iostream>
+using armix::builtin_fx::anti_noiz::BroadbandNoise;
+static void require(bool b,const char* message){if(!b){std::cerr<<message<<'\n';std::exit(1);}}
+int main(){
+    for(double rate:{44100.,48000.,88200.,96000.}){
+        const int fft=rate>48000.?512:256,bins=fft/2+1;
+        const int first=int(std::ceil(3000.*fft/rate)),last=int(std::ceil(12000.*fft/rate));
+        BroadbandNoise<257> g;g.prepare(rate,fft/2,fft,2);
+        BroadbandNoise<257>::Powers anchor{},p{};
+        for(int c=0;c<2;++c)for(int k=0;k<bins;++k)anchor[c][k]=k>=first&&k<last?1.f:.001f;
+        g.configure(anchor);require(g.eligible(),"learned broad band eligible");
+        p=anchor;for(auto& channel:p)for(float& v:channel)v*=2.f;
+        for(int i=0;i<100;++i)g.update(p,anchor,true);
+        const int k=first+8;
+        require(g.cap(k,p,.063f)<.35f,"scaled noise capped");
+        require(g.cap(1,p,.063f)==1.f&&g.cap(last,p,.063f)==1.f,"low and high out of scope");
+        require(g.cap(k,p,1.f)==1.f,"zero Clean unity");
+        p[1][k]=100.f;require(g.cap(k,p,.063f)==1.f,"independent stereo onset immediately opens");
+        g.update(p,anchor,false);require(g.cap(k,p,.063f)==1.f,"disabled resets");
+        p=anchor;for(auto& channel:p)for(float& v:channel)v*=.01f;
+        for(int i=0;i<100;++i)g.update(p,anchor,true);
+        require(g.cap(k,p,.063f)==1.f,"missing noise evidence returns unity");
+        for(auto& c:anchor)c.fill(1.f);
+        g.configure(anchor);require(!g.eligible(),"flat profile excluded");
+    }
+    std::cout<<"Broadband profile, rate, stereo, onset, lifecycle and scope PASS\n";
+}
