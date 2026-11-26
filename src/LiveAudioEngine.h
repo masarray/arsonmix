@@ -336,16 +336,41 @@ public:
     // Route MAIN to a user-selected secondary playback device
     // (hardware or software). No second MIX/FX engine.
     juce::String connectSecondaryOutput(const juce::String& selected) {
-        if(!isOutputMuted() || independent_.active() ||
-           !directFence_.permitted() || !dryRoutingLab_.hasExplicitRoute() ||
+        if(independent_.active() || routeReconfiguring_.load(std::memory_order_acquire) ||
+           handoff_.busy() || !directFence_.permitted() || !dryRoutingLab_.hasExplicitRoute() ||
            diagnosticRoute_.load(std::memory_order_acquire)
                 !=armix::diagnostics::Route::normal)
-            return "MUTE hardware OUTPUT, APPLY real input routing and use verified DIRECT before secondary device setup";
+            return "Additional output needs a ready audio device and accepted mixer routing";
         auto* device=deviceManager_.getCurrentAudioDevice();
-        if(!device)return "Direct capture/output hardware is not available";
-        return secondaryOutput_.open(selected,device->getName(),
-                                  device->getCurrentSampleRate(),
-                                  device->getCurrentBufferSizeSamples());
+        if(!device||!device->isOpen())return "Direct capture/output hardware is not available";
+        const auto setup=deviceManager_.getAudioDeviceSetup();
+        if(knownVirtualCableFeedbackPair(setup.inputDeviceName,selected))
+            return "Additional output would feed the same virtual cable back into the mixer";
+        const auto epoch=dryRoutingLab_.epoch();
+        const auto rate=device->getCurrentSampleRate();
+        const auto period=device->getCurrentBufferSizeSamples();
+        const auto error=secondaryOutput_.open(selected,device->getName(),rate,period);
+        if(error.isNotEmpty())return error;
+        auto* current=deviceManager_.getCurrentAudioDevice();
+        if(!current || current!=device || dryRoutingLab_.epoch()!=epoch ||
+           !directFence_.permitted() || current->getCurrentSampleRate()!=rate ||
+           current->getCurrentBufferSizeSamples()!=period){
+            secondaryOutput_.stop();return "Primary audio changed during connection; choose the output again";
+        }
+        return {};
+    }
+    // One explicit destination selection is consent to open and send MAIN.
+    // Never manipulate primary output intent or its ASIO clock.
+    juce::String enableSecondaryOutput(const juce::String& selected) {
+        if(dryRoutingLab_.nativeBusPatchAwaitingCallback())
+            return "Wait for the mixer output mapping to finish";
+        if(secondaryOutput_.ready()&&!secondaryOutput_.faulted()&&secondaryOutput_.name()==selected)
+            return secondaryOutput_.armed()?juce::String{}:armSecondaryOutput(true);
+        const auto error=connectSecondaryOutput(selected);
+        if(error.isNotEmpty())return error;
+        const auto armed=armSecondaryOutput(true);
+        if(armed.isNotEmpty())secondaryOutput_.stop();
+        return armed;
     }
     juce::String armSecondaryOutput(bool wanted) {
         if(wanted&&dryRoutingLab_.nativeBusPatchAwaitingCallback())

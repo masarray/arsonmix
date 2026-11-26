@@ -462,7 +462,7 @@ def verify_additional_output(page,out):
     state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],
                  externalRevision="2",externalOutputs=[])
     emit(page,"arMixConsoleSnapshot",state)
-    live={"monitor":False,"directRouteAuthorized":True,"adaptiveClockActive":False,
+    live={"monitor":True,"directRouteAuthorized":True,"adaptiveClockActive":False,
           "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True},
           "secondaryOutputReady":False,"secondaryOutputArmed":False}
     emit(page,"arMixStatus",live)
@@ -472,32 +472,38 @@ def verify_additional_output(page,out):
     assert page.evaluate("()=>typeof window.__arMixOpenAdditionalOutput")== "undefined"
     emit(page,"arMixAudioDeviceInventory",{"types":[{"name":"Windows Audio","outputs":["CABLE Input","Speakers"]}]})
     panel.get_by_label("Windows playback device").select_option("CABLE Input")
-    panel.get_by_role("button",name="Connect",exact=True).click()
-    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputConnect').at(-1)")
+    panel.get_by_role("button",name="Enable output",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
     assert req["value"]=="CABLE Input" and req["requestId"]
     emit(page,"arMixSecondaryOutputAck",{"requestId":"wrong","action":req["action"],"ok":False})
-    assert panel.get_by_role("button",name="Connect",exact=True).is_disabled()
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
     emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":False,"error":"Endpoint rejected"})
     assert panel.get_by_role("alert").inner_text()=="Endpoint rejected"
-    panel.get_by_role("button",name="Connect",exact=True).click()
-    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputConnect').at(-1)")
+    panel.get_by_role("button",name="Enable output",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
     emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
-    assert panel.get_by_role("button",name="Arm output").is_disabled()
-    assert panel.get_by_role("button",name="Connect",exact=True).is_disabled()
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
     live.update(secondaryOutputReady=True,secondaryOutputName="CABLE Input")
     emit(page,"arMixStatus",live)
-    panel.get_by_role("button",name="Arm output").click()
-    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputArm').at(-1)")
-    assert req["value"] is True
-    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
     live["secondaryOutputArmed"]=True
     emit(page,"arMixStatus",live)
-    assert panel.get_by_role("button",name="Disarm output").is_enabled()
+    assert panel.get_by_role("button",name="Disconnect").is_enabled()
+    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
     panel.get_by_role("button",name="Close Additional Output").click()
     # The Audio I/O entry opens the very same dialog, not legacy monitor.js.
-    open_verified_audio_io(page,state,"routing")
+    inventory=open_verified_audio_io(page,state,"routing")
     page.locator("[data-audio-extra-output]").click()
     assert panel.is_visible()
+    panel.get_by_role("button",name="Close Additional Output").click()
+    inventory["active"]["hasControlPanel"]=True
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    page.locator('button[data-audio-tab="device"]').click()
+    page.locator("[data-audio-driver-panel]").click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='audioDriverPanel').at(-1)")
+    assert req["driver"]==inventory["active"]["playbackDevice"]
+    assert req["deviceGeneration"]==inventory["active"]["deviceGeneration"]
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='audioSetup').length")==0
     assert not errors,errors
 
 

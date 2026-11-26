@@ -7591,3 +7591,21 @@ test("U1 reserved logical pairs are not offered as direct outputs but installed 
  assert.equal(stripVM.externalOutputPlan({...input,hardware:{device,raw:{...raw,logicalOutputRegistry:{ports:[],references:[]}}}}).kind,"READY");
  assert.equal(stripVM.externalOutputPlan({...input,hardware:{device,raw:{...raw,logicalOutputRegistry:{ports:[],references:[]}}},native:{...native,graph:{...native.graph,revision:"10"}}}).kind,"UNAVAILABLE");
 });
+
+
+test("FAST workflow directly opens active ASIO vendor panel and one native secondary enable",()=>{
+ const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp"),
+  e=read("src/LiveAudioEngine.h"),s=read("engine/device/LiveSecondaryOutputDevice.h");
+ const panel=b.slice(b.indexOf('querySelector("[data-audio-driver-panel]").onclick'),b.indexOf('const readHealth=devicePanel'));
+ assert.match(panel,/action:"audioDriverPanel"/);
+ assert.doesNotMatch(panel,/action:"audioSetup"/);
+ const vendor=n.slice(n.indexOf("void showAsioControlPanel("),n.indexOf("void showDeviceSetup()"));
+ assert.match(vendor,/deviceApply_\.tryBegin/);assert.match(vendor,/device->showControlPanel\(\)/);
+ assert.match(vendor,/finishAudioSetupAndRecoverMixer\(\)/);
+ assert.doesNotMatch(vendor,/AudioSetupWindow|setMonitorEnabled\(true\)/);
+ const enable=e.slice(e.indexOf("juce::String enableSecondaryOutput("),e.indexOf("juce::String armSecondaryOutput("));
+ assert.match(enable,/connectSecondaryOutput\(selected\)/);assert.match(enable,/armSecondaryOutput\(true\)/);
+ assert.doesNotMatch(enable,/setMonitorEnabled|setOutputMuted/);
+ assert.match(s,/createAudioIODeviceType_WASAPI\(juce::WASAPIDeviceMode::shared\)/);
+ assert.match(s,/createDevice\(target,\{\}\)/);assert.doesNotMatch(s,/manager_\.initialise/);
+});

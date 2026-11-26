@@ -64,7 +64,6 @@ public:
     juce::String open(const juce::String& target,
                       const juce::String& directOutput,
                       double sourceRate,int sourcePeriod) {
-        stop(); // CONTROL thread; consumer unregistered before bridge reprepare
         if(target.trim().isEmpty() || target==directOutput)
             return "Select a separate, explicit user-selected playback device";
         if(!std::isfinite(sourceRate) || sourceRate<8000 || sourceRate>384000 ||
@@ -72,33 +71,30 @@ public:
             return "Invalid source device sample rate or buffer period";
         const auto selected=WasapiEndpointIdentityGuard::resolveRender(target);
         if(!selected.ok())return selected.error;
-        auto error=manager_.initialise(0,2,nullptr,false);
-        if(error.isNotEmpty()){stop();return error;}
-        manager_.setCurrentAudioDeviceType("Windows Audio",false);
-        if(manager_.getCurrentAudioDeviceType()!="Windows Audio"){
-            stop();return "Windows Audio output-only endpoint backend unavailable";
+        // Create ONLY the selected shared-mode render endpoint. A second
+        // DeviceManager initialise/setType may transiently open default hardware.
+        // Keep all vendor enumeration/open off the primary callback.
+        stop();
+        type_.reset(juce::AudioIODeviceType::createAudioIODeviceType_WASAPI(juce::WASAPIDeviceMode::shared));
+        if(!type_)return "Windows Audio output-only endpoint backend unavailable";
+        type_->scanForDevices();
+        if(!type_->getDeviceNames(false).contains(target)){
+            stop();return "Selected Windows playback endpoint unavailable";
         }
-        auto setup=manager_.getAudioDeviceSetup();
-        setup.inputDeviceName.clear();
-        setup.outputDeviceName=target;
-        setup.useDefaultInputChannels=false;
-        setup.useDefaultOutputChannels=false;
-        setup.inputChannels.clear();
-        setup.outputChannels.clear();
-        setup.outputChannels.setBit(0);
-        setup.outputChannels.setBit(1);
-        error=manager_.setAudioDeviceSetup(setup,false);
+        device_.reset(type_->createDevice(target,{}));
+        if(!device_){stop();return "Cannot create selected Windows playback endpoint";}
+        auto* device=device_.get();
+        const auto rates=device->getAvailableSampleRates();
+        if(rates.isEmpty()){stop();return "Playback endpoint reports no sample rates";}
+        const double requestedRate=rates.contains(sourceRate)?sourceRate:rates[0];
+        juce::BigInteger in,out;out.setBit(0);out.setBit(1);
+        auto error=device->open(in,out,requestedRate,device->getDefaultBufferSize());
         if(error.isNotEmpty()){stop();return error;}
-        auto* device=manager_.getCurrentAudioDevice();
-        auto opened=manager_.getAudioDeviceSetup();
-        if(!device || opened.outputDeviceName!=target ||
-           opened.inputDeviceName.isNotEmpty() ||
-           !device->getActiveInputChannels().isZero() ||
-           device->getActiveOutputChannels().countNumberOfSetBits()!=2){
-            stop();return "WASAPI secondary output silently changed endpoint or channel mask";
+        if(!device->isOpen() || !device->getActiveInputChannels().isZero() ||
+           device->getActiveOutputChannels()!=out){
+            stop();return "WASAPI secondary output changed channel mask";
         }
-        error=WasapiEndpointIdentityGuard::verifyRender(selected.selection,
-                                                        device->getName());
+        error=WasapiEndpointIdentityGuard::verifyRender(selected.selection,device->getName());
         if(error.isNotEmpty()){stop();return error;}
         const auto rate=device->getCurrentSampleRate();
         const int block=device->getCurrentBufferSizeSamples();
@@ -113,8 +109,10 @@ public:
         renderRate_=rate;targetMs_=sizing.targetMs;
         fault_.store(false,std::memory_order_release);
         ready_.store(true,std::memory_order_release);
-        manager_.addAudioCallback(&render_);
-        attached_=true;
+        device->start(&render_);
+        if(!device->isPlaying()||faulted()){
+            stop();return "Selected playback endpoint could not start";
+        }
         return {};
     }
 
@@ -125,8 +123,8 @@ public:
         // refcount gate ensures no concurrent push while bridge is reclaimed.
         while(publishers_.load(std::memory_order_acquire)!=0)
             std::this_thread::yield();
-        if(attached_){manager_.removeAudioCallback(&render_);attached_=false;}
-        manager_.closeAudioDevice();
+        if(device_){device_->stop();device_->close();device_.reset();}
+        type_.reset();
         name_.clear();endpointHash_.clear();targetMs_=renderRate_=0;
         fault_.store(false,std::memory_order_release);
     }
@@ -179,11 +177,12 @@ public:
         return ready()?bridge_.status():AdaptiveClockBridge::Status{};
     }
 private:
-    juce::AudioDeviceManager manager_;
+    // Device must be destroyed before its owning backend type.
+    std::unique_ptr<juce::AudioIODeviceType> type_;
+    std::unique_ptr<juce::AudioIODevice> device_;
     AdaptiveClockBridge bridge_;
     Render render_;
-    bool attached_=false; // CONTROL ONLY
-    juce::String name_,endpointHash_;
+     juce::String name_,endpointHash_;
     double renderRate_=0,targetMs_=0;
     std::atomic<bool> ready_{false},armed_{false},fault_{false};
     std::atomic<unsigned> publishers_{0},consumers_{0};

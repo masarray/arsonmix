@@ -4065,6 +4065,52 @@ private:
         emitApprovedNativeSnapshot();
     }
 
+    // Direct driver settings, not the generic JUCE AudioDeviceSelector.
+    // Reuse the same device transaction lease and verified mixer recovery.
+    void showAsioControlPanel(const juce::var& args)
+    {
+        const auto active=currentDeviceSnapshot();
+        auto& manager=engine_.devices();
+        auto* device=manager.getCurrentAudioDevice();
+        if(setupLaunching_ || nativeShowBusy_ || studioBackupBusy_ ||
+           mixerSessionWorker_.busy() || pendingRetainedFxCapture_ || retainedOfflineFxActive_ ||
+           engine_.independentClockActive() || engine_.hasTemporaryDiagnosticDevice() ||
+           engine_.isGraphSwitchPending() || !device || !device->isOpen() ||
+           manager.getCurrentAudioDeviceType()!="ASIO" || !device->hasControlPanel() ||
+           args.getProperty("driver",{}).toString()!=device->getName() ||
+           args.getProperty("deviceGeneration",{})!=active.getProperty("deviceGeneration",{}))
+            return emitNotice("ASIO control panel unavailable · refresh Audio I/O and try again",true);
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
+        if(!lease)return emitNotice("Audio device is busy · try again",true);
+        const bool resume=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+        const bool streamWasArmed=engine_.secondaryArmed();
+        autoMainEpoch_=0;
+        engine_.beginManualAudioSetup(true);
+        bool panelError=false;
+        try {
+            // JUCE's own selector uses this driver API and restarts when it
+            // requests a refresh. Never instantiate a second ASIO driver.
+            const bool refresh=device->showControlPanel();
+            if(refresh && manager.getCurrentAudioDevice()==device){
+                manager.closeAudioDevice();
+                manager.restartLastAudioDevice();
+            }
+        } catch(...) {panelError=true;}
+        const bool recovered=finishAudioSetupAndRecoverMixer();
+        if(recovered){
+            deviceSettingsDirty_=true;startupError_.clear();
+            if(resume&&!operatorOutputMuted_)requestAutomaticMain(false);
+        }
+        diagnostics_.record(recovered&&!panelError?"ASIO_PANEL_RETURN":"ASIO_PANEL_RECOVERY_REQUIRED",
+            recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery");
+        emitApprovedNativeSnapshot();
+        emitDeviceInventory(false);
+        if(!recovered||panelError)
+            emitNotice("ASIO settings returned · check Audio I/O; mixer settings retained",true);
+        else if(streamWasArmed)
+            emitNotice("ASIO settings updated · reconnect Additional Output to verify the new clock",false);
+    }
+
     void showDeviceSetup()
     {
         diagnostics_.record ("SETUP", "Open audio device setup");
@@ -6443,6 +6489,16 @@ private:
                 emitRoutingFxEditorReceipt(args,false,true,"FX editor unavailable: Audio I/O is applying");
             else if(editorNavigation)
                 emitNotice("FX editor unavailable: Audio I/O is applying",true);
+            else if(action=="audioDriverPanel")
+                emitNotice("Audio device is busy · try again",true);
+            else if(action=="secondaryOutputEnable"||action=="secondaryOutputConnect"||
+                    action=="secondaryOutputArm"||action=="secondaryOutputStop"){
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",args.getProperty("requestId",{}));
+                ack->setProperty("action",action);ack->setProperty("ok",false);
+                ack->setProperty("error","Audio device is busy · try again");
+                if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputAck",juce::var(ack.release()));
+            }
             return;
         }
         const auto value = args.getProperty ("value", {});
@@ -9635,15 +9691,16 @@ private:
                 (bool(enable)?"DMX: MAIN to STREAM, ASIO to MONITOR. Patch MONITOR sends, then arm each output explicitly.":
                 "DMX: physical MAIN restored. Outputs remain muted."),error.isNotEmpty());
         }
-        if(action=="secondaryOutputConnect" ||
+        if(action=="secondaryOutputEnable" || action=="secondaryOutputConnect" ||
            action=="secondaryOutputArm" || action=="secondaryOutputStop") {
             juce::String error;
             if(studioBackupBusy_ || nativeShowBusy_)
                 error="Complete active Show/backup operation before editing secondary output";
-            else if(action=="secondaryOutputConnect") {
-                if(!value.isString() || value.toString().length()>240)
+            else if(action=="secondaryOutputConnect" || action=="secondaryOutputEnable") {
+                if(!value.isString() || value.toString().isEmpty() || value.toString().length()>240)
                     error="Select a real named Windows playback endpoint";
-                else error=engine_.connectSecondaryOutput(value.toString());
+                else error=action=="secondaryOutputEnable"?engine_.enableSecondaryOutput(value.toString()):
+                    engine_.connectSecondaryOutput(value.toString());
             } else if(action=="secondaryOutputArm") {
                 if(!value.isBool()) error="Expected explicit Secondary output ARM true/false";
                 else error=engine_.armSecondaryOutput(bool(value));
@@ -9663,6 +9720,7 @@ private:
                 error.isNotEmpty()?error:action);
             return emitNotice(error.isNotEmpty()?error:
                 (action=="secondaryOutputStop"?"Additional playback output disconnected":
+                 action=="secondaryOutputEnable"?"Additional output enabled · verify audio in receiving app":
                  action=="secondaryOutputArm"?(engine_.secondaryArmed()
                     ?"SECONDARY OUTPUT ARMED — MAIN mapped to selected playback endpoint":
                      "SECONDARY OUTPUT DISARMED"):
@@ -9767,6 +9825,10 @@ private:
         else if (action == "audioDeviceApply")
         {
             applyCustomAudioDevice(args);
+        }
+        else if (action == "audioDriverPanel")
+        {
+            showAsioControlPanel(args);
         }
         else if (action == "audioSetup")
         {

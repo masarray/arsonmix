@@ -3605,8 +3605,8 @@
   function settleAdditionalOutput(live){
     const p=extraPending;
     if(!p?.acked||!live)return;
-    const matches=p.action==="secondaryOutputConnect"?
-      live.secondaryOutputReady===true&&live.secondaryOutputArmed===false&&live.secondaryOutputName===p.value:
+    const matches=p.action==="secondaryOutputEnable"?
+      live.secondaryOutputReady===true&&live.secondaryOutputArmed===true&&live.secondaryOutputName===p.value:
       p.action==="secondaryOutputArm"?live.secondaryOutputArmed===p.value:
       live.secondaryOutputReady===false&&live.secondaryOutputArmed===false&&!live.secondaryOutputName&&!live.secondaryOutputFault;
     if(matches)extraPending=null;
@@ -3627,22 +3627,18 @@
     }
     const allowed=live?.directRouteAuthorized===true&&live?.adaptiveClockActive!==true&&
       live?.dryRoutingLab?.hasAcceptedRoute===true&&live?.diagnosticRoute==="NORMAL";
-    const hardwareMuted=live?.monitor===false;
     select.disabled=busy||armed;
     extraField("refresh").disabled=busy;
-    extraField("connect").disabled=busy||!allowed||!hardwareMuted||armed||!options.includes(select.value);
-    extraField("arm").disabled=busy||(!armed&&(!ready||fault||!allowed));
-    extraField("arm").textContent=armed?"Disarm output":"Arm output";
+    extraField("connect").disabled=busy||!allowed||armed||!options.includes(select.value);
     extraField("stop").disabled=busy||(!ready&&!fault&&!live?.secondaryOutputName);
     const message=busy?(extraPending.acked?"Waiting for native output state…":"Waiting for native output response…"):!live?"Reading audio engine status…":
       fault?"Output fault · disconnect and reconnect the same endpoint.":
       armed?"Output armed · "+live.secondaryOutputName+" · receiving app must verify audio":
-      ready?"Connected · "+live.secondaryOutputName+" · arm to send MAIN":
-      !allowed?"Apply verified input routing and use DIRECT audio mode first.":
-      !hardwareMuted?"Mute hardware output before connecting (close this dialog and Audio I/O, then use the mixer output mute).":
+      ready?"Connected · "+live.secondaryOutputName+" · Enable to send MAIN":
+      !allowed?"Audio device or mixer routing is not ready. Check Audio I/O.":
       !extraInventoryKnown?"Reading Windows playback devices…":
       !options.length?"No Windows playback endpoint found. Install/enable a virtual cable, then Refresh.":
-      "Select a playback endpoint, then Connect.";
+      "Choose where to send MAIN, then Enable output.";
     const status=extraField("status");
     if(status.textContent!==message)status.textContent=message;
     const error=extraField("error");
@@ -3671,7 +3667,7 @@
       panel.style.cssText="width:min(510px,90vw);box-sizing:border-box;background:#192b36;color:#dcebf2;border:1px solid #527889;border-radius:7px;padding:16px;font:12px system-ui,sans-serif;box-shadow:0 16px 56px #0009";
       panel.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Additional Output · OBS / Virtual Cable</strong><button type="button" data-extra-close aria-label="Close Additional Output">×</button></div>
         <label style="display:grid;gap:5px">Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0"><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-connect>Connect</button><button type="button" data-extra-arm>Arm output</button><button type="button" data-extra-stop>Disconnect</button></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0"><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button></div>
         <div data-extra-status role="status"></div><div data-extra-error role="alert" hidden style="color:#ffb7a5;margin-top:8px"></div>
         <div style="margin-top:10px;color:#9fb9c8">MAIN post-FX → Windows playback. In OBS select the corresponding recording endpoint (for VB-CABLE: CABLE Output). ASIO remains the primary audio device.</div>`;
       for(const el of panel.querySelectorAll("button,select"))el.style.cssText="background:#102631;color:#e1eff6;border:1px solid #527889;border-radius:4px;padding:6px 9px;font:inherit";
@@ -3680,8 +3676,7 @@
       extraField("close").onclick=()=>panel.close();
       extraField("refresh").onclick=()=>{extraError="";backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});paintAdditionalOutput();};
       extraField("device").onchange=paintAdditionalOutput;
-      extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputConnect",extraField("device").value);
-      extraField("arm").onclick=()=>requestAdditionalOutput("secondaryOutputArm",extraLive?.secondaryOutputArmed!==true);
+      extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
       extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
     }
     if(!extraPanel.open)extraPanel.showModal();
@@ -4037,14 +4032,13 @@
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
-      // Reuse the serialized JUCE recovery selector (including the vendor's
-      // native ASIO control-panel button), not a second driver instance.
+      // Vendor settings are distinct from choosing a different audio device.
       devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
         if(deviceBusy()||!deviceInventory||!deviceChoice||
            !deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
-        deviceChoice=null;
-        closeNativeAudioIO();
-        backend.emitEvent("arMixAction",{action:"audioSetup"});
+        const active=deviceInventory.active;
+        backend.emitEvent("arMixAction",{action:"audioDriverPanel",driver:active.playbackDevice,
+          deviceGeneration:active.deviceGeneration});
       };
       const readHealth=devicePanel.querySelector("[data-audio-read-health]");
       readHealth.title="Read current driver and cumulative timing counters; discard unapplied edits. No driver rescan.";
