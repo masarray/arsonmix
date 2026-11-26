@@ -382,6 +382,7 @@ test("P0 manual VST3 Open fences vendor preparation and retains Hotkey session",
 });
 
 test('ZBSH09 vendor lifetime survives initial startup and protects automatic restore/MAIN/checkpoint',()=>{
+  const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8');
   const journal=read('src/RuntimeVendorCrashJournal.h');
   const app=read('src/Main.cpp');
   for(const path of ['src/LiveAudioEngine.h','src/LiveDryRoutingLab.h','src/NativeMixerSessionFxRestore.h']){
