@@ -7800,6 +7800,24 @@ test("U5 first sound is a contextual shortcut to a verified empty ChannelId inpu
  const f=b.slice(b.indexOf("function connectFirstSound("),b.indexOf("function openFirstSound("));
  assert.match(f,/pendingNativeSources.set/);assert.match(f,/dispatchNativeSource/);assert.doesNotMatch(f,/emitEvent/);
  const h=n.slice(n.indexOf('if(action=="routingNativeSourcePatch"){',n.indexOf('if(action=="routingNativeSourcePatch"){')+1),n.indexOf('if(action=="routingNativeBusCreate"'));
- assert.match(h,/engine_.disarmSecondaryOutput/);assert.match(h,/engine_.patchNativeInputSource/);
- assert.match(h,/pendingVendorStream_=PendingVendorStream/);assert.match(h,/requestAutomaticMain/);
+ assert.match(h,/withNativeTopologyContinuity/);assert.match(h,/engine_.patchNativeInputSource/);
+ const gate=n.slice(n.indexOf("NativeBusResult withNativeTopologyContinuity("),n.indexOf("void serviceSecondaryContinuity()"));
+ assert.match(gate,/engine_.disarmSecondaryOutput/);
+ assert.match(gate,/pendingVendorStream_=PendingVendorStream/);assert.match(gate,/requestAutomaticMain/);
+});
+
+
+test("U5 ordinary topology edits share one secondary continuity owner, no duplicated gate",()=>{
+ const n=read("src/Main.cpp");const h=n.slice(n.indexOf("NativeBusResult withNativeTopologyContinuity("),n.indexOf("void serviceSecondaryContinuity()"));
+ assert.match(h,/deviceApply_\.tryBegin/);
+ assert.match(h,/rev!=engine_\.outputArmRevision\(\)/);
+ assert.match(h,/generation==secondaryRetry_\.generation\(\)/);
+ assert.match(h,/result.accepted\|\|acceptedRevision==rev/);
+ assert.match(h,/engine_\.secondarySourceMatches/);
+ assert.match(h,/pendingSecondaryStop_/);
+ assert.equal((n.match(/result=withNativeTopologyContinuity\(ep,rev,/g)||[]).length,5);
+ for(const action of ["routingNativeBusCreate","routingNativeTrackDelete","routingNativeBusDelete"]){
+   const start=n.lastIndexOf('if(action=="'+action+'"');
+   assert.ok(start>=0);assert.match(n.slice(start,start+8500),/withNativeTopologyContinuity/);
+ }
 });

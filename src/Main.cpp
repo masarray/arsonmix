@@ -4355,6 +4355,44 @@ private:
         if(pendingVendorStream_)return pendingVendorStream_->intent.name;
         return secondaryRetry_.pending()&&secondaryContinuity_?secondaryContinuity_->intent.name:juce::String{};
     }
+    // CONTROL thread: one continuity owner for ordinary native mixer
+    // topology edits. The existing engine still owns late publication
+    // gates, native graph validation and retirement. Do not restart ASIO.
+    template<class Edit>
+    LiveDryRoutingLab::NativeBusResult withNativeTopologyContinuity(
+            std::uint64_t ep,std::uint64_t rev,bool startOnSuccess,Edit&& edit) {
+        LiveDryRoutingLab::NativeBusResult result;
+        result.error="Audio configuration is finishing";
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
+        if(!lease||mixerSessionWorker_.busy()||pendingRetainedFxCapture_||
+           retainedOfflineFxActive_||pendingSecondaryStop_||engine_.hasRuntimeFxFault()||
+           nativeShowBusy_||studioBackupBusy_||ep!=engine_.dryRoutingLabEpoch()||
+           rev!=engine_.outputArmRevision())return result;
+        auto stream=engine_.captureSecondaryResumeIntent();
+        if(!stream&&pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
+           pendingVendorStream_->revision==rev)stream=pendingVendorStream_->intent;
+        if(!stream&&secondaryContinuity_&&secondaryContinuity_->epoch==ep&&
+           secondaryContinuity_->revision==rev&&secondaryRetry_.pending())
+            stream=secondaryContinuity_->intent;
+        if(engine_.secondaryArmed()&&!stream)return result;
+        pendingVendorStream_.reset();
+        cancelSecondaryContinuity();
+        const auto generation=secondaryRetry_.generation();
+        const bool hardwareWanted=!operatorOutputMuted_&&
+            (engine_.isMonitorEnabled()||engine_.wantsMainContinuation());
+        if(stream)engine_.disarmSecondaryOutput();
+        result=edit();
+        const auto acceptedRevision=engine_.outputArmRevision();
+        if(generation==secondaryRetry_.generation()&&!pendingSecondaryStop_&&
+           engine_.dryRoutingLabEpoch()==ep&&(result.accepted||acceptedRevision==rev)) {
+            if(hardwareWanted||(result.accepted&&startOnSuccess&&!operatorOutputMuted_))
+                requestAutomaticMain(!hardwareWanted);
+            if(stream&&engine_.secondarySourceMatches(*stream))
+                pendingVendorStream_=PendingVendorStream{*stream,ep,acceptedRevision,
+                    static_cast<std::uint64_t>(monotonicMilliseconds()+5000),hardwareWanted};
+        }
+        return result;
+    }
     void serviceSecondaryContinuity() {
         if(pendingVendorStream_||deviceApply_.busy())return; // existing transaction owns recovery
         const auto epoch=engine_.dryRoutingLabEpoch(),revision=engine_.outputArmRevision();
@@ -6775,6 +6813,16 @@ private:
                 ack->setProperty("ok",false);
                 ack->setProperty("error","Audio configuration is finishing");
                 if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNativeSourceAck",juce::var(ack.release()));
+            } else if(action=="routingNativeTrackCreate"||action=="routingNativeBusCreate"||
+                      action=="routingNativeTrackDelete"||action=="routingNativeBusDelete"){
+                const bool create=action=="routingNativeTrackCreate"||action=="routingNativeBusCreate";
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",args.getProperty("requestId",{}));
+                ack->setProperty("channelId",args.getProperty("channelId",{}));
+                ack->setProperty("ok",false);
+                ack->setProperty("error","Audio configuration is finishing");
+                if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                    create?"arMixNativeBusAck":"arMixNativeTrackDeleteAck",juce::var(ack.release()));
             }
             else if(action=="secondaryOutputEnable"||action=="secondaryOutputConnect"||
                     action=="secondaryOutputArm"||action=="secondaryOutputStop"||
@@ -8739,37 +8787,11 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
-                // Input patching is a normal mixer operation, not a reason
-                // to require the operator to disconnect a healthy STREAM.
-                auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
-                if(lease&&!mixerSessionWorker_.busy()&&!pendingRetainedFxCapture_&&
-                   !retainedOfflineFxActive_&&!engine_.hasRuntimeFxFault()) {
-                    auto stream=engine_.captureSecondaryResumeIntent();
-                    if(!stream&&pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
-                       pendingVendorStream_->revision==rev)stream=pendingVendorStream_->intent;
-                    if(!stream&&secondaryContinuity_&&secondaryContinuity_->epoch==ep&&
-                       secondaryContinuity_->revision==rev&&secondaryRetry_.pending())
-                        stream=secondaryContinuity_->intent;
-                    pendingVendorStream_.reset();
-                    cancelSecondaryContinuity();
-                    const auto generation=secondaryRetry_.generation();
-                    const bool hardwareWanted=!operatorOutputMuted_&&
-                        (engine_.isMonitorEnabled()||engine_.wantsMainContinuation());
-                    if(stream)engine_.disarmSecondaryOutput();
-                    result=engine_.patchNativeInputSource(ep,rev,roster,
+                result=withNativeTopologyContinuity(ep,rev,mode!="NONE",[&]{
+                    return engine_.patchNativeInputSource(ep,rev,roster,
                         armix::mixer::ChannelId{id},left,right,
                         mode=="STEREO"||player,player);
-                    const auto acceptedRevision=engine_.outputArmRevision();
-                    if(generation==secondaryRetry_.generation()&&!pendingSecondaryStop_&&
-                       engine_.dryRoutingLabEpoch()==ep&&(result.accepted||acceptedRevision==rev)) {
-                        if(hardwareWanted||(result.accepted&&mode!="NONE"&&!operatorOutputMuted_))
-                            requestAutomaticMain(!hardwareWanted);
-                        if(stream&&engine_.secondarySourceMatches(*stream))
-                            pendingVendorStream_=PendingVendorStream{*stream,ep,acceptedRevision,
-                                static_cast<std::uint64_t>(monotonicMilliseconds()+5000),
-                                hardwareWanted};
-                    }
-                }else result.error="Audio configuration is finishing";
+                });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
@@ -8852,16 +8874,20 @@ private:
                     juce::String name;
                     do { name="Track "+juce::String(++inputs); }
                     while(names.contains(name,true));
-                    result=engine_.createNativeInputChannel(ep,rev,roster,
-                        name.toStdString(),armix::mixer::ProcessingFormat::stereo);
+                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                        return engine_.createNativeInputChannel(ep,rev,roster,
+                            name.toStdString(),armix::mixer::ProcessingFormat::stereo);
+                    });
                 } else if(!track) {
                     int count=0;
                     if(rows)for(const auto& row:*rows)
                         if(row.getProperty("role","").toString()=="GROUP")++count;
-                    result=engine_.editNativeBus(ep,rev,roster,
-                        armix::mixer::ChannelRole::group,
-                        std::span<const armix::mixer::ChannelId>{},
-                        (args.getProperty("purpose","").toString()=="FX"?"FX Bus ":"Aux Bus ")+std::to_string(count+1),1.f);
+                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                        return engine_.editNativeBus(ep,rev,roster,
+                            armix::mixer::ChannelRole::group,
+                            std::span<const armix::mixer::ChannelId>{},
+                            (args.getProperty("purpose","").toString()=="FX"?"FX Bus ":"Aux Bus ")+std::to_string(count+1),1.f);
+                    });
                 }
             }
             auto ack=std::make_unique<juce::DynamicObject>();
@@ -8926,8 +8952,10 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
-                result=engine_.removeNativeInputChannel(ep,rev,roster,
-                    armix::mixer::ChannelId{id});
+                result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                    return engine_.removeNativeInputChannel(ep,rev,roster,
+                        armix::mixer::ChannelId{id});
+                });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
@@ -8997,9 +9025,11 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
-                result=engine_.editNativeBus(ep,rev,roster,role,
-                    std::span<const armix::mixer::ChannelId>{},"",1.f,
-                    armix::mixer::ChannelId{id});
+                result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                    return engine_.editNativeBus(ep,rev,roster,role,
+                        std::span<const armix::mixer::ChannelId>{},"",1.f,
+                        armix::mixer::ChannelId{id});
+                });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
