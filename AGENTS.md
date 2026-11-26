@@ -1,6 +1,10 @@
 # ArSonMix — SINGLE APPROVED GUI: /preview/
 **BINDING OWNER CORRECTION 2026-11-04 — overrides prior incorrect /preview-v2/ target.**
 
+<!-- ARSONMIX_FX_FREEZE_20261127 -->
+**BINDING OWNER FX FREEZE (27 Nov 2026):** Anti Noiz and all previously accepted FX development are CLOSED. Read the current owner policy in [INT-1 #837](https://github.com/masarray/arsonmix/issues/837). Do not reopen old FX development, listening, benchmark, corpus or research milestones as product-delivery dependencies. Preserve approved sound, presets, GUI and native bindings. Only an explicit owner request or a newly demonstrated real product regression warrants narrowly scoped FX work. Shared mixer/bridge/CMake edits alone do not justify isolated FX research qualification; keep direct-change correctness and integrated PCM/native/GUI/security/installer tests. Specialist research corpus is opt-in; shared-runner CPU headroom is advisory, not a global blocker. No fabricated PASS or bypass of real correctness, safety, protected merge or physical release gates. Prioritize P0 LIVE-OPS, Smart I/O, canonical RC, and the one verified installer.
+<!-- END_ARSONMIX_FX_FREEZE_20261127 -->
+
 <!-- ARSONMIX_INT1_AGENT_BRIDGE_20261120 -->
 **CURRENT CROSS-THREAD DELIVERY TARGET (2026-11-20):** [INT-1 — one user-testable Windows integration preview](https://github.com/masarray/arsonmix/issues/837). Agents resuming G-MV, N-MOD, multi-device I/O, Graphic EQ or relevant FX/GUI PRs should read this living GitHub coordination issue, refresh actual `main` and PR/check/review heads, fix the nearest meaningful blocker, and deliver an exact-SHA integrated Windows preview as soon as the *qualified* primary ASIO/GUI/session paths permit. This is a coordination link **not a new approval gate, branch/file lock, CI waiver or automatic message to other chats**. Do not delay a safe single-ASIO alpha for unproven multi-vendor hardware or unaccepted Guitar FX visuals; do not merge stale drafts wholesale, invent FAT results or bypass existing protected release controls.
 

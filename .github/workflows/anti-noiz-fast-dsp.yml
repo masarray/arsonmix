@@ -6,8 +6,8 @@ on:
       - 'engine/builtin_fx/anti_noiz/**'
       - 'tests/anti_noiz_*.cpp'
       - 'tests/anti_noiz_approved_chromium_test.py'
-      - 'web/approved-native-bridge.js'
-      - 'scripts/build_approved_native_gui.py'
+      - 'src/AntiNoizNativeBinding.h'
+      - 'src/AntiNoizPortableSettings.h'
       - 'tools/anti-noiz/**'
       - '.github/workflows/anti-noiz-fast-dsp.yml'
 

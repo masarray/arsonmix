@@ -1,6 +1,7 @@
 name: Vocal Delay VD16 controlled human vowel corpus
 on:
   pull_request:
+    types: [opened, reopened, synchronize, labeled]
     paths:
       - 'engine/builtin_fx/vocal_delay/**'
       - 'tools/vocal-delay/**'
@@ -12,6 +13,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   controlled-corpus:
+    # Archived controlled corpus: explicit specialist opt-in only.
+    if: contains(github.event.pull_request.labels.*.name, 'vocal-delay-corpus-smoke')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:

@@ -1,7 +1,7 @@
 name: Anti Noiz recorded environment paired qualification
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, labeled]
     paths:
       - 'tools/anti-noiz/recorded_environment.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
@@ -20,6 +20,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   corpus:
+    # Archived research corpus: explicit specialist opt-in, never routine integration.
+    if: contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:

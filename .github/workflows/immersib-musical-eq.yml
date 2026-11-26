@@ -15,7 +15,6 @@ on:
       - 'engine/builtin_fx/SonKuSpatialProcessor.h'
       - 'engine/builtin_fx/ImerSipP92Processor.h'
       - 'tests/immersib_fixed_stage_monitor_test.cpp'
-      - 'CMakeLists.txt'
       - 'config/immersib_approved_pcm_sources.json'
       - 'config/spatial_audio_authority.json'
   workflow_dispatch:
