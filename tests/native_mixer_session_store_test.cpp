@@ -1245,7 +1245,10 @@ static void verifyLogicalControlTransactions() {
     const auto reject=[&](const char* reason){
         const auto ack=acks.getLast();
         assert(ack.getProperty("status",{}).toString()=="REJECTED");
-        assert(ack.getProperty("errorCode",{}).toString()==reason);
+        const auto actual=ack.getProperty("errorCode",{}).toString();
+        if(actual!=reason)std::cerr<<"Logical rejection expected "<<reason
+                                  <<" actual "<<actual.toStdString()<<std::endl;
+        assert(actual==reason);
         assert(ack.getProperty("revision",{})==control.readback().getProperty("revision",{}));
     };
     const auto accept=[&](const juce::var& request){
@@ -1301,10 +1304,23 @@ static void verifyLogicalControlTransactions() {
     const auto capacity=armix::mixer::ChannelRosterBudget{}.maximumInsertSlotsPerChannel;
     assert(capacity>=2 && armix::builtin_fx::nativeBuiltInFx.size()<=2*capacity);
     std::size_t catalogIndex=0;
+    std::vector<const armix::builtin_fx::NativeBuiltInFx*> ordinaryCatalog;
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
         auto payload=std::make_unique<juce::DynamicObject>();
         payload->setProperty("catalogId",fx.id);
         const juce::var value(payload.release());
+        // Wet-return catalog identities are role-restricted. They are tested
+        // on a real FX_RETURN in verifyDmxWetReturnSession, not an INPUT/GROUP.
+        if(juce::String(fx.id)==armix::builtin_fx::VocalReverbProcessor::wetReturnIdentity){
+            const auto revision=control.readback().getProperty("revision",{});
+            submit(command("logical-wet-wrong-group","ADD_FX_REFERENCE",bus,value));
+            reject("WET_RETURN_REQUIRES_FX_RETURN_CHANNEL");
+            submit(command("logical-wet-wrong-input","ADD_FX_REFERENCE",channel,value));
+            reject("WET_RETURN_REQUIRES_FX_RETURN_CHANNEL");
+            assert(!worker.busy() && control.readback().getProperty("revision",{})==revision);
+            continue;
+        }
+        ordinaryCatalog.push_back(&fx);
         if(catalogIndex==capacity){
             const auto revision=control.readback().getProperty("revision",{});
             submit(command("logical-fx-overflow","ADD_FX_REFERENCE",bus,value));
@@ -1329,7 +1345,8 @@ static void verifyLogicalControlTransactions() {
     const ChannelId busId{static_cast<std::uint64_t>(bus.getLargeIntValue())};
     assert(saved.roster.find(trackId)->name=="Lead Vox");
     assert(saved.roster.find(trackId)->sends.front().destination==busId);
-    assert(saved.inserts.size()==armix::builtin_fx::nativeBuiltInFx.size());
+    assert(saved.inserts.size()==ordinaryCatalog.size());
+    assert(ordinaryCatalog.size()+1==armix::builtin_fx::nativeBuiltInFx.size());
     const auto bypassed=std::find_if(saved.inserts.begin(),saved.inserts.end(),[&](const auto& f){return f.channel==busId&&f.slot==1;});
     assert(bypassed!=saved.inserts.end()&&bypassed->bypass&&saved.rackBypassed.front()==busId);
     assert(saved.roster.find(busId)->insertCatalogIds.size()==std::min(capacity,catalogIndex));
@@ -1339,7 +1356,7 @@ static void verifyLogicalControlTransactions() {
     for(std::size_t i=0;i<catalogIndex;++i) {
         const auto expectedChannel=i<capacity?busId:trackId;
         const auto expectedSlot=i<capacity?i:i-capacity;
-        const auto& fx=armix::builtin_fx::nativeBuiltInFx[i];
+        const auto& fx=*ordinaryCatalog[i];
         const auto* row=saved.roster.find(expectedChannel);
         assert(row && row->insertCatalogIds[expectedSlot]==juce::String(fx.id).toStdString());
         assert(std::count_if(saved.inserts.begin(),saved.inserts.end(),[&](const auto& insert){
