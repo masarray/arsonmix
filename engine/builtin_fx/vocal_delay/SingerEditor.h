@@ -170,7 +170,7 @@ public:
         smart_.setVisible(!expertMode_);smart_.setBounds(440,177,69,27);
         stageToggle_.setVisible(!expertMode_);stageToggle_.setBounds(515,177,69,27);
         stageToggle_.setButtonText(stageView_?"Controls":"Presets");
-        concertToggle_.setBounds(250,235,110,25);concertToggle_.setVisible(!expertMode_&&stageView_);
+        concertToggle_.setBounds(366,235,110,25);concertToggle_.setVisible(!expertMode_&&stageView_);
         for(std::size_t i=0;i<stagePresetCount;++i){
             auto& b=stageButtons_[i];b.setVisible(!expertMode_&&stageView_&&(!concertBank_||i<concertPresetCount));
             b.setBounds(24+int(i%3)*132,91+int(i/3)*31,126,26);
