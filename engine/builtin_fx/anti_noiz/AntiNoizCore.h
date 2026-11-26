@@ -315,7 +315,7 @@ private:
             // A protected band must not be pulled down by neighboring bins.
             float g=std::max(selective||reserve>0.f?target_[k]:floor,smooth);
             if(windEnabled&&k==0)g=std::min(g,wind_.cap(k,floor));
-            if(broadEnabled)g=std::min(g,broadband_.cap(k,power_,floor));
+            if(broadEnabled&&broadband_.mayLimit(k,g,floor))g=std::min(g,broadband_.cap(k,power_,floor));
             mask_[k]=g>=mask_[k]?g:mask_[k]+maskClose_*(g-mask_[k]);
         }
         // Immediate opening in the next overlap; slow closure. No hard gate.

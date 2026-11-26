@@ -146,3 +146,6 @@ anti_noiz_target(anti_noiz_broadband_pcm_test tests/anti_noiz_broadband_pcm_test
 target_include_directories(anti_noiz_broadband_pcm_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 add_test(NAME AntiNoizBroadbandPCM COMMAND anti_noiz_broadband_pcm_test)
 set_tests_properties(AntiNoizBroadbandPCM PROPERTIES TIMEOUT 90)
+anti_noiz_target(anti_noiz_broadband_fastpath_test tests/anti_noiz_broadband_fastpath_test.cpp)
+add_test(NAME AntiNoizBroadbandFastpath COMMAND anti_noiz_broadband_fastpath_test)
+set_tests_properties(AntiNoizBroadbandFastpath PROPERTIES TIMEOUT 60)

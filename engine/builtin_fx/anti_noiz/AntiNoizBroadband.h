@@ -23,7 +23,9 @@ public:
             float all=0,high=0;for(int k=0;k<bins_;++k){all+=anchor[c][k];if(k>=first_&&k<last_)high+=anchor[c][k];}
             valid_&=all>eps&&high>.80f*all;
             total_[c]=all;
-            for(int k=0,g=0;k<first_;++g){float q=0;const int end=std::min(k+4,first_);for(;k<end;++k)q+=anchor[c][k];lowRef_[c][g]=q;}
+            float low=0;
+            for(int k=0,g=0;k<first_;++g){float q=0;const int end=std::min(k+4,first_);for(;k<end;++k)q+=anchor[c][k];lowRef_[c][g]=q;low+=q;}
+            lowTotal_[c]=low;
             float upper=0;for(int k=last_;k<bins_;++k)upper+=anchor[c][k];upperRef_[c]=upper;
             for(int k=first_;k<last_;++k){
                 const float q=anchor[c][k];
@@ -40,6 +42,10 @@ public:
     void reset() noexcept {initialized_=false;quiet_=0;engaged_=false;}
     bool eligible() const noexcept {return valid_;}
     bool residualIdle() const noexcept {return engaged_;}
+    // The cap cannot lower a gain at or below this exact bound.
+    bool mayLimit(int k,float gain,float floor) const noexcept {
+        return initialized_&&k>=first_&&k<last_&&gain>std::max(floor,.20f);
+    }
     void update(const Powers& p,const Powers& anchor,bool enabled,bool residualEnabled) noexcept {
         if(!enabled||!valid_){reset();return;}
         // Specialize the spectral-only loop: no residual collection or
@@ -68,16 +74,23 @@ private:
                 // Independent lower and upper frequency evidence, with no
                 // authority to modify the trusted learned PSD.
                 if constexpr(Residual){
+                    // A strong event on either leg already vetoes residual.
+                    // Always update both spectral histories above, but avoid
+                    // the remaining detector work once the outcome is known.
+                    if(strong)continue;
                     const float level=std::clamp(middle,1.f,12.f);
                     // Immediate novel high-band event veto, independent of the
                     // smoothed estimate. Group power avoids single-bin jitter.
                     for(int g=0,k=first_;k<last_;++g,k+=8)
-                        if(instantGroups[g]>8.f*level*groupRef_[c][g]+(invGroup_[c][g]>0.f?0.f:.02f*total_[c]))strong=true;
-                    float low=0,lowRef=0,upperPower=0;
-                    for(int k=0,g=0;k<first_;++g){float q=0;const int end=std::min(k+4,first_);for(;k<end;++k)q+=p[c][k];const float ref=lowRef_[c][g];low+=q;lowRef+=ref;
-                        if(q>8.f*level*ref+.005f*total_[c])strong=true;}
+                        if(instantGroups[g]>8.f*level*groupRef_[c][g]+(invGroup_[c][g]>0.f?0.f:.02f*total_[c])){strong=true;break;}
+                    if(strong)continue;
+                    float low=0,upperPower=0;
+                    const float lowRef=lowTotal_[c];
+                    for(int k=0,g=0;k<first_;++g){float q=0;const int end=std::min(k+4,first_);for(;k<end;++k)q+=p[c][k];const float ref=lowRef_[c][g];low+=q;
+                        if(q>8.f*level*ref+.005f*total_[c]){strong=true;break;}}
+                    if(strong||low>3.5f*level*lowRef){strong=true;continue;}
                     for(int k=last_;k<bins_;++k)upperPower+=p[c][k];
-                    if(low>3.5f*level*lowRef||upperPower>5.f*level*upperRef_[c])strong=true;
+                    if(upperPower>5.f*level*upperRef_[c])strong=true;
                     if(low>2.2f*level*lowRef||upperPower>3.f*level*upperRef_[c]||upper>2.5f*std::max(middle,eps)||middle>4.f||lower<.5f*middle)idle=false;
                 }
             }else {inverseScale_[c]=1.f;confidence_[c]=0.f;idle=false;}
@@ -96,12 +109,13 @@ public:
         for(int c=0;c<channels_;++c){
             if(invBin_[c][k]==0.f||confidence_[c]==0.f)return 1.f;
             const float inv=invBin_[c][k]*inverseScale_[c];
-            const float gamma=average_[c][k]*inv;
             const float instant=p[c][k]*inv;
+            if(instant>=13.f)return 1.f; // stereo union: the onset cap is unity
+            const float gamma=average_[c][k]*inv;
             // Strong local excess restores immediately; statistical floor
             // avoids opening every random periodogram peak.
-            const float estimate=std::clamp(1.f-1.25f/std::max(gamma,1.f),0.f,1.f);
-            const float onset=std::clamp((instant-5.f)/8.f,0.f,1.f);
+            const float estimate=gamma>1.25f?std::clamp(1.f-1.25f/gamma,0.f,1.f):0.f;
+            const float onset=instant>5.f?std::min((instant-5.f)/8.f,1.f):0.f;
             g=std::max(g,1.f-confidence_[c]*(1.f-std::max(estimate,onset)));
         }
         return std::max(floor,.20f+.80f*g);
@@ -110,7 +124,7 @@ private:
     static constexpr float eps=1e-16f;
     Powers average_{},invBin_{};
     std::array<std::array<float,(MaxBins+7)/8>,2> invGroup_{},groupRef_{};
-    std::array<float,2> inverseScale_{},confidence_{},total_{},upperRef_{};
+    std::array<float,2> inverseScale_{},confidence_{},total_{},upperRef_{},lowTotal_{};
     std::array<std::array<float,(MaxBins+3)/4>,2> lowRef_{};
     int hold_=1,quiet_=0;
     int channels_=0,bins_=0,first_=1,last_=2;float alpha_=1;

@@ -91,6 +91,23 @@ jobs:
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-pre-p1/tools/anti-noiz tests/anti_noiz_p0_response_test.cpp -o "$RUNNER_TEMP/anti-noiz-p1-old"
           "$RUNNER_TEMP/anti-noiz-p1-old" > "$RUNNER_TEMP/p1-base.csv"
           python3 tools/anti-noiz/compare_field_p1.py "$RUNNER_TEMP/p1-base.csv" "$RUNNER_TEMP/p0-candidate.csv"
+      - name: Checkout exact pre-optimization reference (GCC only)
+        if: matrix.benchmark == 'ON'
+        uses: actions/checkout@v4
+        with:
+          ref: d72ed4bf9ead70b081ac30ddad850288bb36ffd1
+          path: .anti-noiz-pre-fastpath
+          persist-credentials: false
+      - name: Matched broadband cap and residual decision fingerprint
+        if: matrix.benchmark == 'ON'
+        run: |
+          cp tests/anti_noiz_broadband_fastpath_test.cpp .anti-noiz-pre-fastpath/tests/
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror .anti-noiz-pre-fastpath/tests/anti_noiz_broadband_fastpath_test.cpp -o "$RUNNER_TEMP/cap-old"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tests/anti_noiz_broadband_fastpath_test.cpp -o "$RUNNER_TEMP/cap-new"
+          "$RUNNER_TEMP/cap-old" > "$RUNNER_TEMP/cap-old.txt"
+          "$RUNNER_TEMP/cap-new" > "$RUNNER_TEMP/cap-new.txt"
+          cat "$RUNNER_TEMP/cap-old.txt" "$RUNNER_TEMP/cap-new.txt"
+          cmp "$RUNNER_TEMP/cap-old.txt" "$RUNNER_TEMP/cap-new.txt"
       - name: Run all regression gates (wind remains hard failure)
         if: ${{ !cancelled() && steps.build_p0.outcome == 'success' }}
         run: ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure --verbose
