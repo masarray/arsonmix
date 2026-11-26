@@ -13,7 +13,7 @@ from pathlib import Path
 from verify_sonku_p104_externalization import ROOT, FX, FLAGS, candidate_copy
 from verify_sonku_p108_acoustic_callback import identities
 from verify_sonku_p11_motion import static_copy
-from verify_sonku_p12_musical import musical_copy, source_identities
+from verify_sonku_p12_musical import musical_copy, source_identities, CHANGED
 
 CASES = [(0,48000,b,s) for b in (64,128) for s in range(3)] + [
     (brand,48000,64,s) for brand in (1,2) for s in (1,2)]
@@ -123,7 +123,7 @@ def main():
         (musical_copy if a.musical else static_copy if a.motion else candidate_copy)(tmp/"candidate")
         candidate=identify(tmp/"candidate")
         if a.musical:
-            assert [k for k in baseline if baseline[k]!=candidate[k]]==["sonku/SonKuP99MusicalVocalDepth.h"]
+            assert sorted(k for k in baseline if baseline[k]!=candidate[k])==CHANGED
         else:
             assert all(baseline[k]!=candidate[k] for k in baseline)
         exes={}

@@ -20,6 +20,8 @@ DRIVER=ROOT/"tests/sonku_p12_musical.cpp"
 CASES=("continuous-orbit","front","rear","orbit-static")
 DURATION=30
 PROFILE="sonku/SonKuP99MusicalVocalDepth.h"
+CORE="sonku/SonKuSpatialCore.h"
+CHANGED=sorted((PROFILE,CORE))
 
 def require(ok, message):
     if not ok: raise ValueError(message)
@@ -33,12 +35,24 @@ def musical_copy(root):
     shutil.copytree(FX/"sonku",root/"sonku")
     shutil.copy2(FX/"ImerSipP92Scene.h",root)
     p=root/PROFILE
+    t=p.read_text()
+    # ImmerSIB shares the donor class; globally changing its Signature
+    # profile FAILED the protected MSVC PCM gate. Keep the donor alias
+    # on the original specialization; only SonKu's instance opts in.
+    t=replace_once(t,"class MusicalVocalDepth final {",
+        "template<bool P12=false> class MusicalVocalDepthT final {")
+    t=replace_once(t,"{{.112f,.200f,.105f,.108f,.55f,.25f}}",
+        "{{.112f,.200f,.105f,P12?.135f:.108f,.55f,.25f}}")
+    t=replace_once(t,"} // namespace armix::sonku::p99",
+        "using MusicalVocalDepth=MusicalVocalDepthT<false>;\n} // namespace armix::sonku::p99")
+    p.write_text(t)
+    p=root/CORE
     p.write_text(replace_once(p.read_text(),
-        "{{.112f,.200f,.105f,.108f,.55f,.25f}}",
-        "{{.112f,.200f,.105f,.135f,.55f,.25f}}"))
+        "p99::MusicalVocalDepth p99VocalDepth_{};",
+        "p99::MusicalVocalDepthT<true> p99VocalDepth_{};"))
     before,after=source_identities(FX),source_identities(root)
     require(before.keys()==after.keys(),"source inventory changed")
-    require([k for k in before if before[k]!=after[k]]==[PROFILE],"unexpected acoustic source change")
+    require(sorted(k for k in before if before[k]!=after[k])==CHANGED,"unexpected acoustic source change")
 
 def geometry(path):
     rows=list(csv.DictReader(path.open(encoding="utf-8",newline="")))
