@@ -60,7 +60,7 @@ int main(){
         CHECK(editor->findChildWithID("vd.algorithm")->isVisible());capture("vocal-delay-expert.png");
         expert->onClick();CHECK(!duck->isVisible()&&smart->isVisible());
         CHECK(sameParameters(before,p.singerDisplay())&&!p.singerPending()&&p.acceptedSnapshot().revision==rev);
-        preset->setSelectedId(4,juce::sendNotificationSync);CHECK(p.singerDisplay().adaptiveFocus&&p.singerDisplay().spillover);
+        preset->setSelectedId(4,juce::sendNotificationSync);CHECK(p.singerDisplay().adaptiveFocus&&p.singerDisplay().spillover&&p.singerDisplay().smartStage);
         bpm->setValue(100,juce::sendNotificationSync);CHECK(p.singerDisplay().bpmQuarter==400&&p.singerDisplay().timeMs==600);
         const auto base=p.singerDisplay();hit->onClick();CHECK(p.singerDisplay().hit&&p.singerDisplay().echo==base.echo);
         hit->onClick();CHECK(sameParameters(base,p.singerDisplay()));
@@ -127,7 +127,7 @@ int main(){
         auto bypass=SingerEditor::HostBypass::global;
         singer->bindHostBypass([&]{return bypass;});CHECK(!hit->isEnabled());
         bypass=SingerEditor::HostBypass::none;singer->refresh();CHECK(hit->isEnabled());
-        CHECK(live.setMusicFollow(true));MusicObservation o{7,1,2,100,120,.8f,true};
+        CHECK(live.musicFollowing());CHECK(live.setMusicFollow(true));MusicObservation o{7,1,2,100,120,.8f,true};
         live.publishMusicObservation(o,9,0);o.frame=200;live.publishMusicObservation(o,9,500);
         CHECK(live.singerPending());pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();
         CHECK(live.acceptedSnapshot().accepted.timeMs==500);

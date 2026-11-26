@@ -37,7 +37,7 @@ public:
         configure(attack_,"vd.attack","DUCK ATTACK",2,100,1," ms");
         configure(release_,"vd.release","DUCK RELEASE",40,1000,1," ms");
         setupButton(power_,"vd.power");setupButton(tap_,"vd.tap");tap_.setButtonText("TAP");
-        setupButton(music_,"vd.music");music_.setButtonText("MUSIC");music_.setTooltip("Choose shared backing music source or return to manual timing. Never selects automatically.");
+        setupButton(music_,"vd.music");music_.setButtonText("MUSIC");music_.setTooltip("Choose shared backing music source or return to manual timing. Stage presets follow an existing shared clock; no source is guessed.");
         music_.onClick=[this]{chooseMusicSource();};
         setupButton(save_,"vd.save");save_.setButtonText("SAVE");save_.setTooltip("Save the accepted sound to My Presets");
         save_.onClick=[this]{promptSavePreset();};
@@ -66,7 +66,9 @@ public:
             if(id>0&&id<=int(singerPresets.size())){
                 processor_.setMusicFollow(false);selectedUserId_.clear();taps_.reset();tempoNotice_.clear();
                 const auto index=std::size_t(id-1);
-                offer(presetSettings(index,index<stagePresetCount||processor_.singerDisplay().enabled));
+                const auto p=presetSettings(index,index<stagePresetCount||processor_.singerDisplay().enabled);
+                if(processor_.offerSinger(p))processor_.armStageTempo(p);
+                refresh();
             }else if(id>=1000&&std::size_t(id-1000)<userPresets_.size()&&recallUserPreset_){
                 const auto entry=userPresets_[std::size_t(id-1000)];
                 if(const auto p=recallUserPreset_(entry.id);p&&processor_.offerSinger(*p)){
@@ -131,7 +133,7 @@ public:
             drawMeter(g,"DUCK",meterFresh_?meter_.duckReduction:0.f,108);
             drawMeter(g,"WET",meterFresh_?meter_.wetPeak:0.f,140);
             g.setColour(hardware::col(0x91aaa3));g.setFont(hardware::font(9.f));
-            g.drawText(meterFresh_?"LIVE BLOCK PEAK":"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
+            g.drawText(meterFresh_?(processor_.singerDisplay().smartStage?"SMART STAGE / LIVE":"LIVE BLOCK PEAK"):"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
         }
         const auto p=processor_.singerDisplay();
         const auto tempo=tempoNotice_.isNotEmpty()?tempoNotice_:tempoLabel(p);
@@ -198,12 +200,12 @@ private:
             case HostBypass::unavailable:return "UNAVAILABLE";
             default:break;
         }
-        return processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":meterFresh_?"DSP READY":"NO LIVE PCM";
+        return processor_.singerFault()?"REOPEN REQUIRED":processor_.singerPending()?"APPLYING":meterFresh_?(processor_.singerDisplay().enabled?"READY TO SING":"WET OFF"):"NO LIVE PCM";
     }
     juce::String tempoLabel(const Parameters& p) const{
         using Status=MusicFollow::Status;
         switch(processor_.musicStatus()){
-            case Status::listening:return "LISTENING / HOLD";
+            case Status::listening:return p.bpmQuarter?"LISTENING / HOLD":"AUTO / SAFE TIME";
             case Status::holding:return "TEMPO HOLD";
             case Status::range:return "DIVISION LIMIT";
             case Status::locked:return processor_.singerPending()?"AUTO APPLYING":"AUTO LOCK";

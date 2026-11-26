@@ -105,6 +105,43 @@ static void invalidAndDucking(){
     std::array<float,4> bad{{NAN,INFINITY,-INFINITY,0}},badR=bad;
     process(c,bad.data(),badR.data(),bad.size());for(float x:bad)CHECK(std::isfinite(x));
 }
+static void stagePingPong(double rate){
+    auto p=transparent();p.smartStage=true;p.mode=StereoMode::pingPong;
+    ContinuousDelayCore c;CHECK(c.prepare(rate,p));
+    const auto d=std::size_t(rate*.1);std::vector<float> l(d*5+1),r(l);
+    l[0]=r[0]=.8f;process(c,l.data(),r.data(),l.size());
+    CHECK(l[0]==.8f&&r[0]==.8f);
+    for(std::size_t k=1;k<=5;++k){
+        const float v=.4f*std::pow(.5f,int(k-1));
+        CHECK(near(l[k*d],k%2?v:0)&&near(r[k*d],k%2?0:v));
+    }
+    // A true mono output fold must stay positive, never cancel.
+    CHECK(c.prepare(rate,p));l.assign(d*3+1,0.f);l[0]=.8f;
+    process(c,l.data(),l.data(),l.size());
+    CHECK(near(l[d],.2f)&&near(l[2*d],.1f));
+}
+static void stagePhrase(double rate){
+    auto p=transparent();p.duck=.95f;p.adaptiveFocus=true;p.duckAttackMs=5;p.duckReleaseMs=110;
+    ContinuousDelayCore prior,stage;CHECK(prior.prepare(rate,p));p.smartStage=true;CHECK(stage.prepare(rate,p));
+    const auto n=std::size_t(rate*2.),end=std::size_t(rate*1.2),gap=std::size_t(rate*.04);
+    std::vector<float> l(n),r(n),a(n),b(n),dry(n);
+    for(std::size_t i=0;i<end;++i){
+        if(i>=std::size_t(rate*.8)&&i<std::size_t(rate*.8)+gap)continue;
+        dry[i]=.2f*std::sin(float(i)*.071f);
+    }
+    l=r=a=b=dry;
+    for(std::size_t i=0;i<n;){const auto k=std::min<std::size_t>(127,n-i);
+        process(prior,l.data()+i,r.data()+i,k);process(stage,a.data()+i,b.data()+i,k);i+=k;}
+    double oldWet=0,newWet=0,shortGap=0,tail=0;
+    for(std::size_t i=std::size_t(rate*.5);i<n;++i){
+        CHECK(std::isfinite(a[i])&&std::isfinite(b[i]));
+        if(i<end){oldWet+=std::abs(l[i]-dry[i]);newWet+=std::abs(a[i]-dry[i]);}
+        if(i>=std::size_t(rate*.8)&&i<std::size_t(rate*.8)+gap)shortGap+=std::abs(a[i]);
+        if(i>=end&&i<end+std::size_t(rate*.3))tail+=std::abs(a[i]);
+    }
+    CHECK(newWet<oldWet*.75&&tail>0.001&&shortGap<tail);
+    p.echo=0;CHECK(stage.prepare(rate,p));a=b=dry;process(stage,a.data(),b.data(),n);CHECK(a==dry&&b==dry);
+}
 int main(){
     CHECK(ContinuousDelayCore::addedLatencySamples==0);
     for(double rate:{8000.,44100.,48000.,96000.,192000.}){
@@ -112,6 +149,7 @@ int main(){
         impulse(rate,StereoMode::stereo,0,100);
         impulse(rate,StereoMode::mono,.5f,100);
         impulse(rate,StereoMode::pingPong,.5f,100);
+        stagePingPong(rate);stagePhrase(rate);
         continuousVsLegacy(rate);
     }
     impulse(8000,StereoMode::stereo,.5f,4000);

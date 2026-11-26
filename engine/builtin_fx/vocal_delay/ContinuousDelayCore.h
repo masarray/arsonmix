@@ -22,7 +22,7 @@ public:
         Taps taps_{};
         float feedback_=0,echo_=0,hp_=0,lp_=1,duckDepth_=0;
         float attack_=0,release_=0,mono_=0,cross_=0;
-        bool enabled_=true,adaptiveFocus_=false,spillover_=false;
+        bool enabled_=true,adaptiveFocus_=false,spillover_=false,smartStage_=false;
     public:
         Prepared()=default;
     };
@@ -48,7 +48,7 @@ public:
         q.release_=timeCoefficient(rate,p.duckReleaseMs);
         q.mono_=p.mode==StereoMode::mono?1.f:0.f;
         q.cross_=p.mode==StereoMode::pingPong?1.f:0.f;
-        q.enabled_=p.enabled;q.adaptiveFocus_=p.adaptiveFocus;q.spillover_=p.spillover;
+        q.enabled_=p.enabled;q.adaptiveFocus_=p.adaptiveFocus;q.spillover_=p.spillover;q.smartStage_=p.smartStage;
         out=q;return true;
     }
     bool prepare(double rate,const Parameters& p=Parameters{}) {
@@ -66,6 +66,8 @@ public:
         mono_=q.mono_;cross_=q.cross_;depth_=q.duckDepth_;
         wetTone_=q.taps_.style==EchoStyle::classic?0.f:1.f;
         tape_=q.taps_.style==EchoStyle::tape?1.f:0.f;
+        stageBlend_=q.smartStage_?1.f:0.f;
+        sustainAttack_=timeCoefficient(rate,200.f);sustainRelease_=timeCoefficient(rate,90.f);
         focus_.prepare(rate);focusBlend_=q.adaptiveFocus_?1.f:0.f;
         power_=q.enabled_?1.f:0.f;tailLimit_=static_cast<std::uint32_t>(std::ceil(rate*30.));ready_=true;
         invalidate();return true;
@@ -81,7 +83,7 @@ public:
     // AUDIO only, or CONTROL on an unpublished instance.
     void invalidate() noexcept {
         left_.invalidate();right_.invalidate();tailRemaining_=0;
-        toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;focus_.reset();publishMeter(0,0);
+        toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;sustain_=0.f;focus_.reset();publishMeter(0,0);
         active_=next_=target_.taps_;fadePosition_=fadeLength_;
     }
     std::size_t ringBytes() const noexcept {
@@ -141,23 +143,36 @@ public:
             // Convex cross-feedback; wet safety bound, not a dry limiter.
             // Mono input/return folds with an average, never +6 dB summation.
             const float fold=.5f*(bounded(dryL,4.f)+bounded(dryR,4.f));
-            const float inL=bounded(dryL,4.f)+(fold-bounded(dryL,4.f))*mono_;
-            const float inR=bounded(dryR,4.f)+(fold-bounded(dryR,4.f))*mono_;
+            float inL=bounded(dryL,4.f)+(fold-bounded(dryL,4.f))*mono_;
+            float inR=bounded(dryR,4.f)+(fold-bounded(dryR,4.f))*mono_;
+            move(stageBlend_,target_.smartStage_?1.f:0.f);
+            // Seed one delay line, even for identical stereo microphone PCM.
+            // Average fold avoids a +6 dB mono sum; old sessions retain their topology.
+            const float seed=stageBlend_*cross_;
+            inL+=(fold-inL)*seed;inR*=1.f-seed;
             const float fL=toneL_.tick(dL+(dR-dL)*cross_,hp_,lp_);
             const float fR=toneR_.tick(dR+(dL-dR)*cross_,hp_,lp_);
             // Stop feeding new audio on OFF; ramp the wet return, then invalidate.
             const float feed=target_.enabled_?power_:0.f;
-            left_.push(bounded(inL*feed+feedback_*fL,8.f));
-            right_.push(bounded(inR*feed+feedback_*fR,8.f));
             const float peak=std::min(1.f,std::max(std::abs(dryL),std::abs(dryR)));
             env_=tiny(env_+(peak-env_)*(peak>env_?target_.attack_:target_.release_));
             // Soft activity ramp: full duck at ~-18 dBFS, never hard-gate echo.
             float activity=std::clamp((env_-.015f)/.11f,0.f,1.f);
             move(focusBlend_,target_.adaptiveFocus_?1.f:0.f);
             if(focusBlend_>0.f){
-                const float adaptive=focus_.tick(peak,target_.attack_,target_.release_);
+                const float adaptive=focus_.tick(peak,target_.attack_,target_.release_,target_.smartStage_);
                 activity+=(adaptive-activity)*focusBlend_;
             }else focus_.reset();
+            // A causal sustained-phrase budget, not lyric recognition. Attenuate
+            // injection and recirculation while singing, retain fresh phrase energy.
+            // No hard gate or buffer clear at phrase boundaries; dry stays untouched.
+            const float stageFocus=stageBlend_*focusBlend_;
+            sustain_=tiny(sustain_+(activity-sustain_)*(activity>sustain_?sustainAttack_:sustainRelease_));
+            const float budget=stageFocus*depth_*sustain_;
+            const float send=feed*(1.f-.62f*budget);
+            const float regen=feedback_*(1.f-.45f*budget);
+            left_.push(bounded(inL*send+regen*fL,8.f));
+            right_.push(bounded(inR*send+regen*fR,8.f));
             const float reduction=depth_*activity;
             const float gain=echo_*power_*(1.f-reduction);
             const float mid=.5f*(wL+wR);
@@ -225,6 +240,7 @@ private:
     float slew_=0,powerStep_=0,power_=0;
     float feedback_=0,echo_=0,hp_=0,lp_=1,mono_=0,cross_=0,depth_=0,env_=0;
     float wetTone_=0.f,tape_=0.f,focusBlend_=0.f;
+    float stageBlend_=0.f,sustain_=0.f,sustainAttack_=0.f,sustainRelease_=0.f;
     AdaptiveVocalFocus focus_{};
     static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
     std::atomic<std::uint32_t> meterWord_{0};std::uint32_t meterSequence_=0;

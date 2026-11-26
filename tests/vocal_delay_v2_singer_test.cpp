@@ -17,11 +17,13 @@ int main(){
     CHECK(stagePresetCount==12&&singerPresets.size()==25);
     for(std::size_t i=0;i<stagePresetCount;++i){
         const auto p=presetSettings(i);
-        CHECK(p.enabled&&p.adaptiveFocus&&p.spillover&&p.style!=EchoStyle::classic);
+        CHECK(p.enabled&&p.adaptiveFocus&&p.spillover&&p.smartStage&&p.style!=EchoStyle::classic);
         CHECK(p.feedback<=.42f&&p.echo<=.28f&&p.duckAttackMs<=8.f);
         if(i!=4&&i!=10)CHECK(p.duck>=.83f);
         State s{};s.continuous=p;StateCodec::Bytes bytes{};State out{};
-        CHECK(StateCodec::encode(s,bytes)&&StateCodec::decode(bytes.data(),bytes.size(),out)&&sameParameters(p,out.continuous));
+        CHECK(StateCodec::encode(s,bytes)&&bytes[4]==6&&StateCodec::decode(bytes.data(),bytes.size(),out)&&sameParameters(p,out.continuous));
+        auto invalid=bytes;invalid[4]=5;CHECK(!StateCodec::decode(invalid.data(),invalid.size(),out));
+        invalid=bytes;invalid[43]&=0x7f;CHECK(!StateCodec::decode(invalid.data(),invalid.size(),out));
     }
     CHECK(presetSettings(0).style==EchoStyle::dual&&presetSettings(0).duck>=.9f);
     auto quiet=presetSettings(1),heavy=quiet;heavy.echo=.9f;heavy.feedback=.9f;heavy.timeMs=4000;
@@ -53,6 +55,14 @@ int main(){
         o.bpm=40;o.frame=900;CHECK(!follow.update(o,9,3000,base,next));o.frame=1000;
         CHECK(!follow.update(o,9,3500,base,next)&&follow.status()==MusicFollow::Status::range);
         follow.enable(false);CHECK(follow.status()==MusicFollow::Status::manual);
+    }
+    {
+        MusicFollow autoTempo;autoTempo.enable(true,300.f);auto base=presetSettings(0);Parameters next{};
+        MusicObservation o{7,2,3,100,120,.5f,true};
+        CHECK(!autoTempo.update(o,9,0,base,next));o.confidence=.9f;o.frame=200;
+        CHECK(!autoTempo.update(o,9,100,base,next));o.frame=300;
+        CHECK(autoTempo.update(o,9,600,base,next)&&next.timeMs==250&&next.division==1&&next.smartStage);
+        o.locked=false;CHECK(!autoTempo.update(o,9,700,next,base)&&autoTempo.status()==MusicFollow::Status::holding);
     }
     NativeSession session;State s{};Lease l{1,2,3,4};CHECK(session.prepareStopped(48000,l,s));
     SingerControl c;CHECK(c.attach(session.acceptedSnapshot()));

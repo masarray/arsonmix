@@ -39,21 +39,21 @@ inline constexpr std::array<SingerPreset,25> singerPresets{{
 inline Parameters presetSettings(std::size_t index,bool enabled=true) noexcept{
     Parameters p{};p.enabled=enabled;if(index>=singerPresets.size())return p;
     const auto& v=singerPresets[index];p.timeMs=v.time;p.feedback=v.feedback;
-    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.duckAttackMs=v.attack;p.duckReleaseMs=v.release;p.adaptiveFocus=true;p.spillover=true;return p;
+    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.duckAttackMs=v.attack;p.duckReleaseMs=v.release;p.adaptiveFocus=true;p.spillover=true;p.smartStage=index<stagePresetCount;return p;
 }
 inline bool sameParameters(const Parameters& a,const Parameters& b) noexcept{
     return a.timeMs==b.timeMs&&a.feedback==b.feedback&&a.echo==b.echo&&
        a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&
        a.mode==b.mode&&a.enabled==b.enabled&&a.style==b.style&&a.adaptiveFocus==b.adaptiveFocus&&a.spillover==b.spillover&&
-       a.hit==b.hit&&a.bpmQuarter==b.bpmQuarter&&a.division==b.division;
+       a.smartStage==b.smartStage&&a.hit==b.hit&&a.bpmQuarter==b.bpmQuarter&&a.division==b.division;
 }
 // A style describes voicing, not the user's three performance knobs.
 // Exact expert edits make the style Custom; editing Time/Repeats/Level
 // keeps the selected style identifiable even after state restore.
 inline bool sameVoicing(const Parameters& a,const Parameters& b) noexcept{
     return a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
-        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style;
+        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style&&a.smartStage==b.smartStage;
 }
 inline int styleIndex(const Parameters& p) noexcept{
     for(std::size_t i=0;i<singerPresets.size();++i)
