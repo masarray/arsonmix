@@ -145,7 +145,7 @@ public:
             const float fold=.5f*(bounded(dryL,4.f)+bounded(dryR,4.f));
             float inL=bounded(dryL,4.f)+(fold-bounded(dryL,4.f))*mono_;
             float inR=bounded(dryR,4.f)+(fold-bounded(dryR,4.f))*mono_;
-            move(stageBlend_,target_.smartStage_?1.f:0.f);
+            if(target_.smartStage_||stageBlend_!=0.f)move(stageBlend_,target_.smartStage_?1.f:0.f);
             // Seed one delay line, even for identical stereo microphone PCM.
             // Average fold avoids a +6 dB mono sum; old sessions retain their topology.
             const float seed=stageBlend_*cross_;
@@ -167,7 +167,8 @@ public:
             // injection and recirculation while singing, retain fresh phrase energy.
             // No hard gate or buffer clear at phrase boundaries; dry stays untouched.
             const float stageFocus=stageBlend_*focusBlend_;
-            sustain_=tiny(sustain_+(activity-sustain_)*(activity>sustain_?sustainAttack_:sustainRelease_));
+            if(stageFocus>0.f)sustain_=tiny(sustain_+(activity-sustain_)*(activity>sustain_?sustainAttack_:sustainRelease_));
+            else sustain_=0.f;
             const float budget=stageFocus*depth_*sustain_;
             const float send=feed*(1.f-.62f*budget);
             const float regen=feedback_*(1.f-.45f*budget);

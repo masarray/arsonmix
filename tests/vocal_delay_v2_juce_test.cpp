@@ -97,6 +97,15 @@ int main(){
         auto* singer=dynamic_cast<SingerEditor*>(editor.get());CHECK(singer);
         auto* echo=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.echo"));CHECK(echo);
         bool access=true;singer->bindHostAccess([&]{return access;});
+        auto* liveButton=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stage.0"));
+        auto* ballad=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stage.2"));
+        auto* stageToggle=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stageView"));
+        auto* stagePower=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.power"));
+        CHECK(liveButton&&ballad&&stageToggle&&stagePower&&liveButton->isVisible()&&!echo->isVisible());
+        stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);
+        ballad->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(2))&&!hosted.singerPending());
+        liveButton->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(0)));
+        stageToggle->onClick();CHECK(echo->isVisible()&&!liveButton->isVisible());
         echo->setValue(27,juce::sendNotificationSync);
         CHECK(!hosted.singerPending()&&std::abs(hosted.acceptedSnapshot().accepted.echo-.27f)<1.e-6f);
         auto* preset=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.preset"));CHECK(preset);

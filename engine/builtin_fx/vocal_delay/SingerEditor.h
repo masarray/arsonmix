@@ -42,7 +42,15 @@ public:
         setupButton(save_,"vd.save");save_.setButtonText("SAVE");save_.setTooltip("Save the accepted sound to My Presets");
         save_.onClick=[this]{promptSavePreset();};
         setupButton(expert_,"vd.expert");expert_.setButtonText("Expert");
-        setupButton(smart_,"vd.smart");smart_.setButtonText("Smart voicing");
+        setupButton(smart_,"vd.smart");smart_.setButtonText("Smart");
+        setupButton(stageToggle_,"vd.stageView");stageToggle_.setTooltip("Switch between one-click stage sounds and manual controls");
+        stageToggle_.onClick=[this]{stageView_=!stageView_;resized();refresh();};
+        for(std::size_t i=0;i<stagePresetCount;++i){
+            const auto id="vd.stage."+juce::String(int(i));
+            auto& b=stageButtons_[i];setupButton(b,id.toRawUTF8());
+            b.setTitle(singerPresets[i].name);b.setButtonText(singerPresets[i].name);
+            b.setTooltip(singerPresets[i].description);b.onClick=[this,i]{recallFactory(i);};
+        }
         setupButton(hit_,"vd.hit");hit_.setTooltip("Chorus highlight: more wet echo and repeats. Click again to return to base sound.");
         hit_.onClick=[this]{auto p=processor_.singerDisplay();p.hit=!p.hit;offer(p);};
         setupButton(tail_,"vd.tail");tail_.setTooltip("Keep existing echo tails when effect power is switched off. Rack bypass remains immediate.");
@@ -64,11 +72,7 @@ public:
             if(!hostAvailable())return;
             const int id=preset_.getSelectedId();
             if(id>0&&id<=int(singerPresets.size())){
-                processor_.setMusicFollow(false);selectedUserId_.clear();taps_.reset();tempoNotice_.clear();
-                const auto index=std::size_t(id-1);
-                const auto p=presetSettings(index,index<stagePresetCount||processor_.singerDisplay().enabled);
-                if(processor_.offerSinger(p))processor_.armStageTempo(p);
-                refresh();
+                recallFactory(std::size_t(id-1));
             }else if(id>=1000&&std::size_t(id-1000)<userPresets_.size()&&recallUserPreset_){
                 const auto entry=userPresets_[std::size_t(id-1000)];
                 if(const auto p=recallUserPreset_(entry.id);p&&processor_.offerSinger(*p)){
@@ -87,13 +91,14 @@ public:
         duck_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duck=float(duck_.getValue())*.01f;offer(p);};
         hp_.onValueChange=[this]{auto p=processor_.singerDisplay();const auto v=float(hp_.getValue());p.highPassHz=v<20?0.f:std::max(40.f,v);offer(p);};
         lp_.onValueChange=[this]{auto p=processor_.singerDisplay();const auto v=float(lp_.getValue());p.lowPassHz=v<500?0.f:std::max(1000.f,v);offer(p);};
-        admitted_=processor_.beginSingerEditor();resized();refresh();startTimerHz(30);
+        admitted_=processor_.beginSingerEditor();stageView_=processor_.singerDisplay().smartStage;resized();refresh();startTimerHz(30);
     }
     ~SingerEditor() override{
         stopTimer();if(admitted_)processor_.endSingerEditor();
         for(auto* d:dials())d->setLookAndFeel(nullptr);bpm_.setLookAndFeel(nullptr);
         for(auto* c:{&preset_,&mode_,&division_,&algorithm_})c->setLookAndFeel(nullptr);
-        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_,&save_,&music_})b->setLookAndFeel(nullptr);
+        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_,&save_,&music_,&stageToggle_})b->setLookAndFeel(nullptr);
+        for(auto& b:stageButtons_)b.setLookAndFeel(nullptr);
     }
     // Host owns the exact retained FxInstance/workspace guard. No captured
     // slot ordinal is trusted after MOVE. UI may not edit a retired owner.
@@ -124,8 +129,12 @@ public:
             const std::array<const char*,8> names{{"TIME","REPEATS","ECHO","DUCK","LOW CUT","HIGH CUT","ATTACK","RELEASE"}};
             for(int i=0;i<8;++i)g.drawText(names[std::size_t(i)],14+i*74,78,74,18,juce::Justification::centred);
         }else{
-            const std::array<const char*,3> names{{"TIME","REPEATS","ECHO LEVEL"}};
-            for(int i=0;i<3;++i)g.drawText(names[std::size_t(i)],24+i*132,78,122,18,juce::Justification::centred);
+            if(stageView_){
+                g.setColour(hardware::col(0xb2e7d3));g.drawText("READY TO SING  /  SELECT A SOUND",24,72,386,16,juce::Justification::centredLeft);
+            }else{
+                const std::array<const char*,3> names{{"TIME","REPEATS","ECHO LEVEL"}};
+                for(int i=0;i<3;++i)g.drawText(names[std::size_t(i)],24+i*132,78,122,18,juce::Justification::centred);
+            }
             // Read actual block telemetry; no inferred or decorative waveform.
             hardware::inset(g,{426,79,172,138},5);
             g.setColour(hardware::col(0x9be7cf));g.setFont(hardware::font(11.f));
@@ -146,11 +155,17 @@ public:
         mode_.setVisible(expertMode_);focus_.setBounds(expertMode_?366:250,235,110,25);algorithm_.setVisible(expertMode_);algorithm_.setBounds(250,235,110,25);expert_.setButtonText(expertMode_?"Singer":"Expert");
         auto ds=dials();
         for(std::size_t i=0;i<ds.size();++i){
-            ds[i]->setVisible(expertMode_||i<3);
+            ds[i]->setVisible(expertMode_||(!stageView_&&i<3));
             if(expertMode_){ds[i]->setBounds(14+int(i)*74,98,74,120);ds[i]->setTextBoxStyle(juce::Slider::TextBoxBelow,false,68,23);}
             else if(i<3){ds[i]->setBounds(24+int(i)*132,98,122,120);ds[i]->setTextBoxStyle(juce::Slider::TextBoxBelow,false,94,23);}
         }
-        smart_.setVisible(!expertMode_);smart_.setBounds(440,177,144,27);
+        smart_.setVisible(!expertMode_);smart_.setBounds(440,177,69,27);
+        stageToggle_.setVisible(!expertMode_);stageToggle_.setBounds(515,177,69,27);
+        stageToggle_.setButtonText(stageView_?"Controls":"Presets");
+        for(std::size_t i=0;i<stagePresetCount;++i){
+            auto& b=stageButtons_[i];b.setVisible(!expertMode_&&stageView_);
+            b.setBounds(24+int(i%3)*132,91+int(i/3)*31,126,26);
+        }
         tap_.setBounds(24,235,74,25);division_.setBounds(108,235,130,25);
         hit_.setBounds(484,235,52,25);tail_.setBounds(542,235,54,25);bpm_.setBounds(24,265,148,22);music_.setBounds(180,265,68,22);
     }
@@ -167,7 +182,11 @@ public:
         }else selectedUserId_.clear();
         preset_.setSelectedId(presetId,juce::dontSendNotification);
         save_.setEnabled(available&&processor_.stateSnapshotQuiescent()&&bool(saveUserPreset_));
-        smart_.setEnabled(available);
+        smart_.setEnabled(available);stageToggle_.setEnabled(available);
+        for(std::size_t i=0;i<stagePresetCount;++i){auto& b=stageButtons_[i];b.setEnabled(available);
+            const bool selected=style==int(i)&&p.enabled&&selectedUserId_.isEmpty();
+            b.setColour(juce::TextButton::buttonColourId,hardware::col(selected?0x27695c:0x41494d));
+        }
         hit_.setEnabled(available&&p.enabled&&!processor_.isDetached()&&hostBypass()==HostBypass::none);hit_.setButtonText(p.hit?"HIT ON":"HIT");
         hit_.setColour(juce::TextButton::buttonColourId,hardware::col(p.hit?0x88652d:0x41494d));
         tail_.setEnabled(available);tail_.setButtonText(p.spillover?"TAIL ON":"TAIL");
@@ -231,6 +250,14 @@ private:
     }
     static bool sameSound(Parameters a,Parameters b) noexcept{
         a.hit=b.hit=false;a.enabled=b.enabled=true;return sameParameters(a,b);
+    }
+    void recallFactory(std::size_t index){
+        if(!hostAvailable()||index>=singerPresets.size())return;
+        const auto p=presetSettings(index,index<stagePresetCount||processor_.singerDisplay().enabled);
+        if(processor_.offerSinger(p)){
+            processor_.armStageTempo(p);selectedUserId_.clear();taps_.reset();tempoNotice_.clear();
+        }
+        refresh();
     }
     void refreshPresetList(){
         userPresets_=listUserPresets_?listUserPresets_():std::vector<UserPresetEntry>{};
@@ -297,7 +324,8 @@ private:
     }
     JuceVocalDelayProcessor& processor_;hardware::Look look_;std::function<bool()> hostAccess_;
     juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_,bpm_;juce::ComboBox preset_,mode_,division_,algorithm_;
-    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_,save_,music_;
+    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_,save_,music_,stageToggle_;
+    std::array<juce::TextButton,stagePresetCount> stageButtons_{};
     std::function<HostBypass()> readBypass_;
     std::function<std::vector<MusicSource>()> listMusic_;
     std::function<bool(const MusicSource&)> selectMusic_;
@@ -305,7 +333,7 @@ private:
     std::function<std::vector<UserPresetEntry>()> listUserPresets_;
     std::function<juce::String(const juce::String&)> saveUserPreset_;
     std::function<std::optional<Parameters>(const juce::String&)> recallUserPreset_;
-    ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double noticeUntil_=0;juce::String tempoNotice_;bool admitted_=false,expertMode_=false;
+    ContinuousDelayCore::Meter meter_{};double lastMeterMs_=-1.;bool meterFresh_=false;TapTempo taps_;double noticeUntil_=0;juce::String tempoNotice_;bool admitted_=false,expertMode_=false,stageView_=false;
 };
 inline juce::AudioProcessorEditor* JuceVocalDelayProcessor::createEditor(){return new SingerEditor(*this);}
 } // namespace armix::builtin_fx::vocal_delay

@@ -76,9 +76,9 @@ public:
         if(active_)session_.onRealtimeBypass(requested,fully);
     }
     void sealForRealtime() noexcept override{
-        published_=true;
+        const bool first=!published_;published_=true;
         // Only new/unlocked stage sounds auto-follow an already routed shared clock.
-        if(active_&&localMailbox_){const auto p=singerDisplay();
+        if(first&&active_&&localMailbox_){const auto p=singerDisplay();
             if(p.smartStage&&!p.bpmQuarter&&p.timeMs>=140.f)follow_.enable(true,p.timeMs);
         }
     }
