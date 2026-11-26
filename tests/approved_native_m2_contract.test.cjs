@@ -7599,3 +7599,10 @@ test("LIVE-OPS accepted fader repaints a stale range, cap and readout without em
  assert.equal(range.value,"-9");assert.equal(lcd.textContent,"-9 dB");
  assert.equal(db.textContent,"-9");assert.equal(css.get("--fader-y"),"49%");
 });
+
+test("P0-B unsafe live topology requests explain the explicit safe fallback",()=>{
+ assert.equal(protocol.operatorMessage("Delete rejected · DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"),
+   "Delete not applied · Mute outputs before changing this routing");
+ assert.match(protocol.operatorMessage("DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED"),/outputs muted/);
+ assert.match(protocol.operatorMessage("COMPRESSOR_INSERT_REQUIRES_STABLE_LIVE_GRAPH"),/not added/);
+});

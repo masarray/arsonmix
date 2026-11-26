@@ -457,8 +457,8 @@ public:
         std::vector<std::pair<std::size_t,std::size_t>> lanes,edges; // new, old
     };
     // CONTROL: only identical surviving topology and PDC are admissible.
-    // Inbound wires to a retiring channel can alter upstream schedules/solo
-    // closure; require an explicit stopped edit rather than guessing.
+    // Inbound wires may be removed with their already faded destination;
+    // live SOLO topology and changed PDC still require an explicit stopped edit.
     bool prepareContinuity(const DynamicPreparedMixerBlock& old,ChannelId removed,
                            ContinuityPlan& plan) {
         if(capacity_!=old.capacity_||physicalInputs_!=old.physicalInputs_||
@@ -469,12 +469,9 @@ public:
         if(removed.value){
             const auto found=old.controlIndex_.find(removed.value);
             if(found==old.controlIndex_.end()||controlIndex_.contains(removed.value))return false;
-            for(std::size_t i=0;i<old.lanes_.size();++i){
+            for(std::size_t i=0;i<old.lanes_.size();++i)
                 if(Word::decode(old.channelTargets_[i].state.load(std::memory_order_acquire)).solo)
                     return false;
-                for(std::size_t e=old.lanes_[i].first;e<old.lanes_[i].last;++e)
-                    if(old.edges_[e].destination==found->second)return false;
-            }
         }
         const auto delayEqual=[](const auto& a,std::size_t i,const auto& b,std::size_t j){
             return i<a.size()&&j<b.size()&&a[i].samples()==b[j].samples();
@@ -489,8 +486,11 @@ public:
                (n.inputL>=0)!=(o.inputL>=0))return false;
             // A fresh zero-latency Compressor may activate an unpatched
             // dormant lane. It has no physical/player input or prior history.
-            // Never silently drop a previously active surviving lane.
+            // A downstream lane which becomes dormant has no physical/player
+            // source or FX by compiler construction. Its removed contribution
+            // has drained before publication; no live processor tail is lost.
             if(!wasScheduled&&nowScheduled&&!removed.value&&n.inputL<0&&!n.playerDeckId)continue;
+            if(wasScheduled&&!nowScheduled&&removed.value&&n.inputL<0&&!n.playerDeckId)continue;
             if(wasScheduled!=nowScheduled||
                !delayEqual(physicalDelays_,i,old.physicalDelays_,j)||
                !delayEqual(sinkDelays_,i,old.sinkDelays_,j)||
@@ -499,7 +499,10 @@ public:
             if(channelTargets_[i].state.load()!=old.channelTargets_[j].state.load()||
                channelTargets_[i].inputGain.load()!=old.channelTargets_[j].inputGain.load()||
                channelTargets_[i].wireSumGain.load()!=old.channelTargets_[j].wireSumGain.load())return false;
-            if(n.last-n.first!=o.last-o.first)return false;
+            std::size_t survivingEdges=0;
+            for(std::size_t k=o.first;k<o.last;++k)
+                if(old.lanes_[old.edges_[k].destination].id!=removed)++survivingEdges;
+            if(n.last-n.first!=survivingEdges)return false;
             plan.lanes.emplace_back(i,j);
             externalTargets_[i].store(old.externalTargets_[j].load(std::memory_order_acquire));
             for(std::size_t e=n.first;e<n.last;++e){

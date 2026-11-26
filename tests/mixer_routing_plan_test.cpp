@@ -1238,9 +1238,9 @@ static void verifyContinuousLiveEditPcm() {
         const float* inputs[]{a.data(),b.data(),c.data(),d.data()};
         float* outputs[]{l.data(),r.data(),ml.data(),mr.data(),xl.data(),xr.data(),yl.data(),yr.data()};
         const auto noFx=[](ChannelId,float*,float*,int) noexcept {};
-        const auto render=[&](int frames){
+        const auto render=[&](int frames,std::uint64_t* revision=nullptr){
             return host.render(41,inputs,4,l.data(),r.data(),frames,false,noFx,
-                ml.data(),mr.data(),{},{},{},outputs,8);
+                ml.data(),mr.data(),{},{},{},outputs,8,{},0,revision);
         };
         assert(render(512));assert(render(512));
         assert(close(l[511],.6f)&&close(ml[511],.3f)&&close(xl[511],.4f)&&close(yl[511],.2f));
@@ -1264,7 +1264,7 @@ static void verifyContinuousLiveEditPcm() {
         // dedicated external tap and unaffected surviving signal.
         auto next=roster;assert(next.removeInputAndDisconnect(next.revision(),gone).ok());
         auto nextReq=req;nextReq.sources.erase(nextReq.sources.begin());
-        std::atomic<bool> stop{false},failed{false};
+        std::atomic<bool> stop{false},failed{false},newRendered{false};
         float maxStep=0.f,maxUnrelated=0.f,maxPreError=0.f,old=.5f,tail=.5f;
         bool heardRamp=false;
         std::thread audio([&]{
@@ -1272,24 +1272,28 @@ static void verifyContinuousLiveEditPcm() {
             unsigned block=0;
             while(!stop.load(std::memory_order_acquire)){
                 const int n=blocks[block++%6];
-                if(!render(n)){failed.store(true);break;}
+                std::uint64_t revision=0;
+                if(!render(n,&revision)){failed.store(true);break;}
                 for(int j=0;j<n;++j){
                     maxStep=std::max(maxStep,std::abs(l[j]-old));old=l[j];tail=l[j];
                     maxUnrelated=std::max(maxUnrelated,std::abs(yl[j]-.1f));
                     maxPreError=std::max(maxPreError,std::abs(ml[j]-(l[j]-.1f)*.5f-.1f));
                     if(l[j]>.1001f&&l[j]<.4999f)heardRamp=true;
                 }
+                if(revision==3)newRendered.store(true,std::memory_order_release);
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         });
         const int fade=static_cast<int>(std::ceil(rate*.008));
         const auto removed=host.commit(next,nextReq,2,41,41,false,fxPlan(3),
             false,false,nullptr,nullptr,false,gone,fade);
-        // Let the exact new revision render, but never use timing as a fade
-        // completion criterion in the production path.
-        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        // Wait for the actual revision receipt, not an assumed sleep duration.
+        const auto until=std::chrono::steady_clock::now()+std::chrono::milliseconds(250);
+        while(!newRendered.load(std::memory_order_acquire)&&!failed.load()&&
+              std::chrono::steady_clock::now()<until)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         stop.store(true,std::memory_order_release);audio.join();
-        assert(removed.ok()&&!failed.load()&&heardRamp);
+        assert(removed.ok()&&newRendered.load()&&!failed.load()&&heardRamp);
         assert(close(tail,.1f)&&maxUnrelated<2.e-5f);
         assert(maxStep<=.4f/static_cast<float>(fade)+2.e-5f);
         assert(maxPreError<2.e-5f);
@@ -1302,7 +1306,46 @@ static void verifyContinuousLiveEditPcm() {
             false,true,nullptr,nullptr,true);
         assert(reject.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable);
         assert(host.acceptedRevision()==3&&render(16)&&close(l[0],.1f));
+        // Cancellation with no callback progress must keep the original
+        // roster and leave its audio intact on the next callback.
+        auto last=next;assert(last.removeInputAndDisconnect(last.revision(),keep).ok());
+        auto lastReq=nextReq;lastReq.sources.clear();
+        // A same-latency candidate is impossible after deleting the last
+        // delayed path; rejection must occur before the fade starts.
+        const auto finalRejected=host.commit(last,lastReq,3,41,41,false,fxPlan(4),
+            false,false,nullptr,nullptr,false,keep,fade);
+        assert(finalRejected.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable);
+        assert(host.acceptedRevision()==3&&render(64)&&close(l[63],.1f));
     }
+    // Direct cancellation test: no user mute or fader mutation; a partially
+    // applied retirement ramps back to its original audible level.
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,2> rows{};
+    for(int i=0;i<2;++i){
+        rows[i].kind=Kind::add;rows[i].position=i;
+        rows[i].role=i==0?ChannelRole::input:ChannelRole::main;
+        rows[i].format=ProcessingFormat::stereo;
+    }
+    const auto made=roster.edit(0,rows);assert(made.ok());
+    ChannelEdit route;route.kind=Kind::setPrimaryOutput;route.id=made.createdIds[0];route.target=made.createdIds[1];
+    assert(roster.edit(roster.revision(),std::span<const ChannelEdit>(&route,1)).ok());
+    DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=512;
+    req.sources={{made.createdIds[0],0,1,true}};
+    DynamicPreparedMixerBlock graph;DynamicGraphError error;
+    assert(DynamicPreparedMixerBlock::compile(roster,req,graph,error));
+    assert(graph.prepareLatency([](ChannelId) noexcept {return 0;},req.maxScratchBytes,error));
+    std::array<float,512> in{},l{},r{};in.fill(.5f);
+    const float* pins[]{in.data(),in.data()};
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    assert(graph.process(pins,2,l.data(),r.data(),64,fx));
+    assert(graph.beginRetirement(made.createdIds[0],384));
+    assert(graph.process(pins,2,l.data(),r.data(),64,fx));
+    const float partial=l[63];assert(partial<.5f&&partial>0.f);
+    assert(!graph.retirementComplete(made.createdIds[0]));
+    graph.cancelRetirement(made.createdIds[0]);
+    assert(graph.process(pins,2,l.data(),r.data(),512,fx));
+    assert(l[0]>partial&&l[0]-partial<.002f&&close(l[511],.5f));
+    assert(!graph.retirementComplete(made.createdIds[0]));
 }
 
 int main() {
