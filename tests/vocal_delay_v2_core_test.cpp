@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/builtin_fx/vocal_delay/ContinuousDelayCore.h"
+#include "../engine/builtin_fx/vocal_delay/SingerWorkflow.h"
 #include "../engine/builtin_fx/VocalThrow.h"
 #include <array>
 #include <atomic>
@@ -140,7 +141,35 @@ static void stagePhrase(double rate){
         if(i>=end&&i<end+std::size_t(rate*.3))tail+=std::abs(a[i]);
     }
     CHECK(newWet<oldWet*.75&&tail>0.001&&shortGap<tail);
+    std::printf("VD7_PHRASE rate=%.0f active_wet_ratio=%.4f tail_sum=%.5f\n",rate,newWet/oldWet,tail);
     p.echo=0;CHECK(stage.prepare(rate,p));a=b=dry;process(stage,a.data(),b.data(),n);CHECK(a==dry&&b==dry);
+}
+static void stageBank(){
+    for(double rate:{44100.,48000.,96000.})for(std::size_t preset=0;preset<stagePresetCount;++preset){
+        auto p=presetSettings(preset);ContinuousDelayCore a,b;
+        CHECK(a.prepare(rate,p)&&b.prepare(rate,p));
+        const auto n=std::size_t(rate*1.5),end=std::size_t(rate*.8);
+        std::vector<float> l(n),r(n),x(n),y(n),dry(n);
+        for(std::size_t i=0;i<end;++i){
+            const auto amp=i<end/2?.025f:.3f;
+            const auto phase=6.283185307179586*180.*double(i)/rate;
+            dry[i]=amp*float(std::sin(phase)+.2*std::sin(phase*3.));
+        }
+        l=r=x=y=dry;
+        for(std::size_t i=0;i<n;){const auto k=std::min<std::size_t>(64,n-i);process(a,l.data()+i,r.data()+i,k);i+=k;}
+        for(std::size_t i=0;i<n;){const auto k=std::min<std::size_t>(251,n-i);process(b,x.data()+i,y.data()+i,k);i+=k;}
+        double wet=0,side=0;
+        for(std::size_t i=0;i<n;++i){
+            CHECK(l[i]==x[i]&&r[i]==y[i]&&std::isfinite(l[i])&&std::isfinite(r[i]));
+            CHECK(std::abs(l[i])<1.f&&std::abs(r[i])<1.f);
+            wet+=std::abs(l[i]-dry[i])+std::abs(r[i]-dry[i]);side+=std::abs(l[i]-r[i]);
+        }
+        CHECK(wet>.001);
+        if(p.mode!=StereoMode::mono)CHECK(side>.001);
+        else CHECK(side==0.);
+        p.echo=0;CHECK(a.prepare(rate,p));l=r=dry;process(a,l.data(),r.data(),n);CHECK(l==dry&&r==dry);
+    }
+    std::puts("PASS VD7 36 stage preset/rate cases: weak/loud, stereo, finite headroom, dry identity, block partitions and no heap");
 }
 int main(){
     CHECK(ContinuousDelayCore::addedLatencySamples==0);
@@ -153,7 +182,7 @@ int main(){
         continuousVsLegacy(rate);
     }
     impulse(8000,StereoMode::stereo,.5f,4000);
-    fractionalAndWrap();blocksAndEdits();bypassAndReset();invalidAndDucking();
+    stageBank();fractionalAndWrap();blocksAndEdits();bypassAndReset();invalidAndDucking();
     ContinuousDelayCore c;CHECK(c.prepare(192000));CHECK(c.ringBytes()==(768000+2)*2*sizeof(float));
     std::puts("PASS Vocal Delay V2 continuous PCM, legacy contrast, timing, stereo, no-heap, bypass, block invariance");
 }

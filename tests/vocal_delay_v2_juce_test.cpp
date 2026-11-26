@@ -61,6 +61,9 @@ int main(){
         expert->onClick();CHECK(!duck->isVisible()&&smart->isVisible());
         CHECK(sameParameters(before,p.singerDisplay())&&!p.singerPending()&&p.acceptedSnapshot().revision==rev);
         preset->setSelectedId(4,juce::sendNotificationSync);CHECK(p.singerDisplay().adaptiveFocus&&p.singerDisplay().spillover&&p.singerDisplay().smartStage);
+        auto* stageView=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stageView"));CHECK(stageView);
+        stageView->onClick();CHECK(editor->findChildWithID("vd.stage.0")->isVisible()&&!time->isVisible());capture("vocal-delay-stage.png");
+        stageView->onClick();CHECK(time->isVisible());
         bpm->setValue(100,juce::sendNotificationSync);CHECK(p.singerDisplay().bpmQuarter==400&&p.singerDisplay().timeMs==600);
         const auto base=p.singerDisplay();hit->onClick();CHECK(p.singerDisplay().hit&&p.singerDisplay().echo==base.echo);
         hit->onClick();CHECK(sameParameters(base,p.singerDisplay()));

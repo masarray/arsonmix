@@ -325,7 +325,7 @@ private:
     JuceVocalDelayProcessor& processor_;hardware::Look look_;std::function<bool()> hostAccess_;
     juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_,bpm_;juce::ComboBox preset_,mode_,division_,algorithm_;
     juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_,save_,music_,stageToggle_;
-    std::array<juce::TextButton,stagePresetCount> stageButtons_{};
+    std::array<juce::TextButton,stagePresetCount> stageButtons_;
     std::function<HostBypass()> readBypass_;
     std::function<std::vector<MusicSource>()> listMusic_;
     std::function<bool(const MusicSource&)> selectMusic_;
