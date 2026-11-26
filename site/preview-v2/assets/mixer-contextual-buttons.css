@@ -557,3 +557,9 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
   button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]):focus-visible{
     outline:2px solid #95d8ea!important;outline-offset:1px!important
 }
+
+/* FX workspace is a modeless layer below real operator dialogs. Preserve
+   each popup's original layout/visibility and never use global TOPMOST. */
+:is(#fastPicker,#routeChoice,#channelIdentity,#nativeFxSelector,#nativePluginManager,#nativeMySounds,#nativeOrbit){
+ z-index:12000!important;
+}

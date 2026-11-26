@@ -364,14 +364,21 @@
   '#mxNativeAntiNoiz':'ArSonMixNativeAntiNoiz','#mxNativeDeEzzerHost':'ArSonMixNativeDeEzzer'
  });
  const selectors=Object.keys(owners),rootSelector=selectors.join(',');
- const layerBase=16000;
+ // Reserve 9000..9007 for FX; native context/hotkey panels start at
+ // 10018 and modal/confirmation surfaces remain above this band.
+ const layerBase=9000;
  let order=[];
- const popupSelector='.mx-fxp-form,.mx-fxp-menu,#mxHPresetMenu';
- const modalSelector='[aria-modal="true"],dialog[open],#fastPicker,#routeChoice,#channelIdentity,#nativeFxSelector,#nativePluginManager,#nativeMySounds,#nativeOrbit';
+ const popupSelector='.mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu';
+ const modalSelector='[aria-modal="true"],dialog[open],#fastPicker,#routeChoice,#channelIdentity,#nativeFxSelector,#nativePluginManager,#nativeMySounds,#nativeOrbit,#armixContext,#armixOrbit,#armixFxParamBrowse,#armixHotkeyCard,#armixHotkeyRegister';
+ const isVisible=el=>el&&!el.hidden&&!el.closest('[hidden]')&&
+   el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
  const activeModal=()=>Array.from(document.querySelectorAll(modalSelector)).find(isVisible);
  const popupIn=root=>Array.from(root?.querySelectorAll(popupSelector)||[]).find(isVisible);
  function paintOrder(){
-  order=order.filter(isVisible);
+  order=order.filter(panel=>{
+   if(isVisible(panel))return true;
+   delete panel.dataset.fxActive;return false;
+  });
   for(let i=0;i<order.length;i++){
    const panel=order[i],layer=String(layerBase+i);
    if(panel.style.zIndex!==layer)panel.style.zIndex=layer;
@@ -391,10 +398,16 @@
   paintOrder();
   return order.at(-1)||visibleEditors().at(-1)?.el||null;
  }
- function focusInsert(trackId,slot){
-  const matched=visibleEditors().find(({el})=>el.dataset.fxTrackId===String(trackId)&&
-    el.dataset.fxSlot===String(slot));
-  return matched?raise(matched.el):false;
+ function focusInsert(trackId,slot,rootId,instance){
+  const panel=document.getElementById(rootId);
+  // Preview only: exact local insert identity, not a stale occupied slot.
+  return !!instance&&isVisible(panel)&&panel.dataset.fxTrackId===String(trackId)&&
+    panel.dataset.fxSlot===String(slot)&&panel.dataset.fxPreviewInstance===String(instance)&&raise(panel);
+ }
+ function openedPreview(panel,instance){
+  if(!panel)return false;
+  panel.dataset.fxPreviewInstance=String(instance||'');
+  return raise(panel);
  }
  function closeActive(){
   const panel=activeEditor();
@@ -421,11 +434,22 @@
   const panel=activeEditor();
   // Let the editor's own preset form/menu consume Escape before the editor.
   // Native menus and dialogs retain their established close behavior.
-  if(!panel||popupIn(panel)||event.target?.closest?.(popupSelector))return;
+  if(document.querySelector('.fx-drag-ghost'))return; // rack drag cancellation has precedence
+  if(window.__ARMIX_NATIVE_INLINE_FX_CLIP__?.cancelDrag?.()){
+   event.preventDefault();event.stopImmediatePropagation();return;
+  }
+  if(!panel)return;
+  const popup=popupIn(panel);
+  if(popup){
+   // Use the existing cancel lifecycle. Menus have no pending edit; hiding
+   // just their menu never affects the accepted DSP or the editor identity.
+   const cancel=popup.querySelector('.mx-fxp-cancel,#mxHPresetCancel');
+   if(cancel)cancel.click();
+   else if(popup.matches('.mx-fxp-menu,#mxHPresetMenu'))popup.hidden=true;
+   event.preventDefault();event.stopImmediatePropagation();return;
+  }
   if(closeActive()){event.preventDefault();event.stopImmediatePropagation();}
  },true);
- const isVisible=el=>el&&!el.hidden&&!el.closest('[hidden]')&&
-   el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
  const center=el=>{
   if(!isVisible(el))return false;
   // The native mixer has ONE overlay geometry owner. The old Pages
@@ -491,7 +515,7 @@
   if(focus){raise(focus.el);center(focus.el);}
  });
  window.ArSonMixFxWorkspace=Object.freeze({
-  raise,focusInsert,activeEditor,closeActive,
+  raise,focusInsert,openedPreview,activeEditor,closeActive,
   centerVisible:()=>{const panel=activeEditor();return panel?center(panel):false;},
   recenter:center,
   centerInsert:(trackId,slot)=>{

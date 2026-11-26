@@ -29,6 +29,95 @@ BACKEND="""(()=>{
     }};
 })();"""
 
+def verify_overlapping_editor_focus(page):
+    """Real hit-testing, not only style/z-index or fake DOM clicks."""
+    page.evaluate("""()=>{
+      const clip=window.__ARMIX_NATIVE_INLINE_FX_CLIP__;
+      const track={id:22,name:'TEST CHANNEL',slotBypass:[false,false]};
+      const comp={authority:"CHANNEL_ID",channelId:"22",slot:0,
+        instanceId:"focus-comp",deviceEpoch:"51",graphRevision:"46"};
+      const geq={...comp,slot:1,instanceId:"focus-geq"};
+      if(!clip.openExact(window.ArSonMixNativeCompressor,'ArSonMixNativeCompressor',track,0,comp.instanceId,comp)||
+         !clip.openExact(window.ArSonMixGraphicEq31,'ArSonMixGraphicEq31',track,1,geq.instanceId,geq))
+        throw Error("Unable to open both exact editor surfaces");
+      const place=(id,x,y)=>{const root=document.getElementById(id),r=root.getBoundingClientRect();
+        clip.move(root,x-r.left,y-r.top);};
+      place('mxNativeComp',160,205);place('mxNativeGeq31',240,125);
+    }""")
+    comp=page.locator("#mxNativeComp")
+    geq=page.locator("#mxNativeGeq31")
+    def active():
+        return page.evaluate("()=>window.ArSonMixFxWorkspace.activeEditor()?.id")
+    def at(x,y):
+        return page.evaluate("""([x,y])=>document.elementFromPoint(x,y)
+          ?.closest('#mxNativeComp,#mxNativeGeq31')?.id""",[x,y])
+    assert active()=="mxNativeGeq31"
+    cb,gb=comp.bounding_box(),geq.bounding_box()
+    x=max(cb["x"],gb["x"])+25
+    y=max(cb["y"],gb["y"])+65
+    assert at(x,y)=="mxNativeGeq31",(cb,gb,x,y)
+    # Click an exposed inert section of the real Compressor face, not its
+    # header or a knob that would intentionally generate a DSP request.
+    def exposed(root):
+        return page.evaluate("""id=>{
+          const panel=document.getElementById(id),r=panel.getBoundingClientRect();
+          for(let y=Math.max(5,r.top+55);y<Math.min(innerHeight-5,r.bottom-5);y+=9)
+            for(let x=Math.max(5,r.left+5);x<Math.min(innerWidth-5,r.right-5);x+=9){
+              const el=document.elementFromPoint(x,y);
+              if(el&&el.closest('#'+id)&&!el.closest('button,input,select,textarea,svg,a,label,[role=slider]'))
+                return [x,y];
+            }
+          return null;
+        }""",root)
+    point=exposed("mxNativeComp");assert point
+    before=page.evaluate("""()=>window.__nativeMessages.filter(m=>
+        m.name==='arMixConsoleIntent'||/Set$/.test(m.payload?.action||'')).length""")
+    page.mouse.click(*point)
+    assert active()=="mxNativeComp" and at(x,y)=="mxNativeComp"
+    assert comp.bounding_box()==cb and geq.bounding_box()==gb
+    # Keyboard focus of a control in the lower editor raises the exact root.
+    geq.locator(".mx-geq31-size").first.focus()
+    assert active()=="mxNativeGeq31" and at(x,y)=="mxNativeGeq31"
+    # Repeat exact rack open must NOT call host.open or reset DSP drafts.
+    assert page.evaluate("""()=>{
+      const clip=window.__ARMIX_NATIVE_INLINE_FX_CLIP__;
+      const lease={authority:"CHANNEL_ID",channelId:"22",slot:0,
+        instanceId:"focus-comp",deviceEpoch:"51",graphRevision:"46"};
+      return clip.openExact({open(){throw Error("same instance reinitialized")}},
+        'ArSonMixNativeCompressor',{id:22,name:'TEST CHANNEL'},0,lease.instanceId,lease);
+    }""")
+    assert active()=="mxNativeComp" and comp.bounding_box()==cb
+    # Bounded z-order after repeated actual focus transfers.
+    for _ in range(32):
+        geq.locator(".mx-geq31-size").first.focus()
+        comp.locator(".mx-comp-close").focus()
+    layers=page.evaluate("""()=>['mxNativeComp','mxNativeGeq31'].map(id=>
+      Number(getComputedStyle(document.getElementById(id)).zIndex))""")
+    assert min(layers)>=9000 and max(layers)<=9007 and layers[0]>layers[1],layers
+    # Real preset cancellation precedes editor close.
+    comp.locator(".mx-fxp-form").evaluate("el=>el.hidden=false")
+    page.keyboard.press("Escape")
+    assert comp.locator(".mx-fxp-form").is_hidden() and comp.is_visible() and geq.is_visible()
+    # A higher operator modal keeps focus and Escape out of the FX manager.
+    page.evaluate("""()=>{
+      const el=document.getElementById('fastPicker');el.hidden=false;
+      el.style.setProperty('position','fixed','important');
+      el.style.setProperty('left','320px','important');
+      el.style.setProperty('top','255px','important');
+    }""")
+    assert page.evaluate("""()=>document.elementFromPoint(340,270)?.closest('#fastPicker')!==null""")
+    page.keyboard.press("Escape")
+    assert comp.is_visible() and geq.is_visible()
+    page.evaluate("document.getElementById('fastPicker').hidden=true")
+    page.keyboard.press("Escape")
+    assert comp.is_hidden() and geq.is_visible()
+    page.keyboard.press("Escape")
+    assert geq.is_hidden()
+    after=page.evaluate("""()=>window.__nativeMessages.filter(m=>
+        m.name==='arMixConsoleIntent'||/Set$/.test(m.payload?.action||'')).length""")
+    assert after==before,(before,after)
+    print("PASS P0-C overlap hit-testing, pointer/focus/rack refocus, 64 raises, popup Escape, zero control writes")
+
 def main():
     spec=importlib.util.spec_from_file_location("bundle",ROOT/"scripts/build_approved_native_gui.py")
     bundle=importlib.util.module_from_spec(spec)
@@ -269,6 +358,9 @@ def main():
                 assert not page.evaluate("""()=>window.__nativeMessages.some(
                     x=>x.name==='arMixAction'&&
                     x.payload?.action==='floatingBuiltinOpen')""")
+                if width==1680:
+                    page.evaluate("window.ArSonMixGraphicEq31.close()")
+                    verify_overlapping_editor_focus(page)
                 assert not errors,(width,errors)
                 page.close()
             print("PASS FUX-1 exact one-WebView clipped overlay, six native faces, "

@@ -96,3 +96,37 @@ test('All floating closes and compact FX picker actions use one token family',()
   assert.match(css,/min-height:28px!important/);
   assert.match(css,/cursor:grab;touch-action:none;user-select:none/);
 });
+
+test('P0-C shared FX workspace raises existing nodes, bounds z-order and closes only active',()=>{
+ const marker='/* FX RACK workstation recovery';
+ const source=code.slice(code.indexOf(marker));
+ const handlers={},winHandlers={},panels=new Map(),closed=[];
+ const roots=['mxNativeComp','mxNativeGeq31','mxNativePeq'];
+ for(const id of roots){
+  const panel={id,hidden:false,dataset:{},style:{zIndex:'0'},
+    getClientRects:()=>[{}],matches:()=>true,closest:()=>null,querySelectorAll:()=>[]};
+  panels.set('#'+id,panel);
+ }
+ const document={querySelector:s=>panels.get(s)||null,querySelectorAll:()=>[],
+   getElementById:id=>panels.get('#'+id),
+   addEventListener:(type,fn)=>handlers[type]=fn};
+ const window={addEventListener:(type,fn)=>winHandlers[type]=fn};
+ for(const [key,id] of [['ArSonMixNativeCompressor',roots[0]],['ArSonMixGraphicEq31',roots[1]],['ArSonMixNativeEq',roots[2]]])
+   window[key]={close(){closed.push(id);panels.get('#'+id).hidden=true;}};
+ vm.runInNewContext(source,{window,document,getComputedStyle:el=>({visibility:'visible',zIndex:el.style.zIndex})});
+ const ws=window.ArSonMixFxWorkspace;
+ const c=panels.get('#'+roots[0]),g=panels.get('#'+roots[1]),e=panels.get('#'+roots[2]);
+ assert.ok(ws.raise(g));assert.ok(ws.raise(c));
+ assert.equal(ws.activeEditor(),c);
+ const pointer=panel=>handlers.pointerdown({isTrusted:true,button:0,isPrimary:true,target:{closest:()=>panel}});
+ const focus=panel=>handlers.focusin({isTrusted:true,target:{closest:()=>panel}});
+ for(let i=0;i<1000;i++){pointer(g);focus(c);}
+ assert.equal(ws.activeEditor(),c);
+ assert.equal(c.style.zIndex,'9002');
+ assert.ok(Number(c.style.zIndex)>Number(g.style.zIndex));
+ let consumed=0;
+ winHandlers.keydown({key:'Escape',preventDefault(){consumed++},stopImmediatePropagation(){consumed++}});
+ assert.deepEqual(closed,[roots[0]]);assert.equal(consumed,2);
+ assert.equal(ws.activeEditor(),g);
+ assert.ok(!g.hidden&&!e.hidden);
+});

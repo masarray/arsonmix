@@ -188,44 +188,44 @@ OPEN=" if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);retur
 OPEN_NEW=""" if(a==='openPlugin'){
   const index=Number(btn.dataset.slot);
   if(t.fx[index]==='Parametric EQ'){
-   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativePeq',t.fxInsertIds?.[index]?.id)){
     window.ArSonMixNativeEq?.open(t,index);
-    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativePeq'));
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativePeq'),t.fxInsertIds?.[index]?.id);
    }
    return;
   }
   if(t.fx[index]==='Graphic EQ 31'){
-   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeGeq31',t.fxInsertIds?.[index]?.id)){
     window.ArSonMixGraphicEq31?.open(t,index);
-    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeGeq31'));
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeGeq31'),t.fxInsertIds?.[index]?.id);
    }
    return;
   }
   if(t.fx[index]==='Compressor'){
-   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeComp',t.fxInsertIds?.[index]?.id)){
     window.ArSonMixNativeCompressor?.open(t,index);
-    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeComp'));
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeComp'),t.fxInsertIds?.[index]?.id);
    }
    return;
   }
   if(t.fx[index]==='Harmonice'||t.fx[index]==='ArSon Harmony'){
-   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeHarmony',t.fxInsertIds?.[index]?.id)){
     window.ArSonMixNativeHarmony?.open(t,index);
-    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeHarmony'));
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeHarmony'),t.fxInsertIds?.[index]?.id);
    }
    return;
   }
   if(t.fx[index]==='Vocal Delay'||t.fx[index]==='ArSon Vocal Throw'){
-   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeVocalThrow',t.fxInsertIds?.[index]?.id)){
     window.ArSonMixNativeVocalThrow?.open(t,index);
-    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeVocalThrow'));
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeVocalThrow'),t.fxInsertIds?.[index]?.id);
    }
    return;
   }
   if(t.fx[index]==='8D-SonKu'){
-   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeSonKu',t.fxInsertIds?.[index]?.id)){
     window.ArSonMixNativeSonKu?.open(t,index);
-    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeSonKu'));
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeSonKu'),t.fxInsertIds?.[index]?.id);
    }
    return;
   }

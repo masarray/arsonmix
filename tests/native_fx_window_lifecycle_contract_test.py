@@ -376,7 +376,16 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("event.stopImmediatePropagation(); // prevent old viewport-clamped",bridge)
         self.assertIn("event.altKey",bridge)
         self.assertIn("event.shiftKey",bridge)
-        self.assertIn("root.style.zIndex=String(++layer)",bridge)
+        # The old unbounded per-open layer was the field defect. Verify
+        # the shared manager, including pointer/focus refocus and bounded order.
+        self.assertNotIn("root.style.zIndex=String(++layer)",bridge)
+        self.assertIn("window.ArSonMixFxWorkspace?.raise(root)",bridge)
+        shared=(ROOT/"site/preview-v2/assets/mixer-contextual-buttons.js").read_text(encoding="utf-8")
+        self.assertIn("const layerBase=9000",shared)
+        self.assertIn("String(layerBase+i)",shared)
+        self.assertIn("document.addEventListener('pointerdown'",shared)
+        self.assertIn("document.addEventListener('focusin'",shared)
+        self.assertIn("if(!root.hidden&&sameBinding)",bridge)
 
     def test_all_editor_paths_use_one_host(self):
         self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),4)

@@ -274,7 +274,7 @@ public:
         // The RAII owner notifies the processor before deletion, including
         // exceptions during construction. JUCE window is presentation only.
         setContentNonOwned (editor, true);
-        addMouseListener(this,true); // descendant JUCE controls, not a new editor owner
+        editor->addMouseListener(this,true); // descendant JUCE controls, not a new editor owner
         // Do not offer false host resizing for fixed-geometry built-in FX.
         setResizable (editor->isResizable(), false);
         if(reverbFaceplate)centreWithSize(getWidth(),getHeight());
@@ -298,7 +298,7 @@ public:
         toFront (true);
     }
     void mouseDown(const juce::MouseEvent& event) override {
-        juce::DocumentWindow::mouseDown(event);
+        if(event.eventComponent==this)juce::DocumentWindow::mouseDown(event);
         if(event.mods.isLeftButtonDown())
             (void)armix::ui::raiseOwnedFloatingWindow(*this,mixer_);
     }
@@ -310,7 +310,7 @@ public:
         return juce::DocumentWindow::keyPressed(key);
     }
     ~PluginEditorWindow() override {
-        removeMouseListener(this);
+        if(auto* editor=ownedEditor_.get())editor->removeMouseListener(this);
         clearContentComponent();
         ownedEditor_.reset(); // unregister active editor before the lease is released
     }

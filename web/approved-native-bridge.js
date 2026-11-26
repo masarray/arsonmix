@@ -180,6 +180,7 @@
         if(root.isConnected&&!root.hidden){
           try{window[owner.key]?.close?.();}finally{root.hidden=true;}
         }
+        if(channelIds===null){identities.delete(root);offsets.delete(root);root.style.removeProperty("translate");}
       }
     }
     function openExact(host,key,track,slot,instanceId,lease=null) {
@@ -247,19 +248,20 @@
       move(drag.root,x-r.left,y-r.top);
       event.preventDefault();event.stopImmediatePropagation();
     },true);
+    function cancelDrag(){
+      if(!drag)return false;
+      const held=drag;drag=null;
+      try{held.capture.releasePointerCapture?.(held.id);}catch(_){}
+      return true;
+    }
     function finishDrag(event){
       if(!drag||drag.id!==event.pointerId)return;
-      const held=drag;drag=null;
-      try{held.capture.releasePointerCapture?.(event.pointerId);}catch(_){}
+      cancelDrag();
       event.stopImmediatePropagation();
     }
     document.addEventListener("pointerup",finishDrag,true);
     document.addEventListener("pointercancel",finishDrag,true);
-    window.addEventListener("blur",()=>{
-      if(!drag)return;
-      const held=drag;drag=null;
-      try{held.capture.releasePointerCapture?.(held.id);}catch(_){}
-    });
+    window.addEventListener("blur",cancelDrag);
     // When the whole header is cropped into its right-side control buttons,
     // Shift+wheel still slides the exact same FX; Alt+drag works anywhere.
     document.addEventListener("wheel",event=>{
@@ -288,7 +290,7 @@
       for(const root of document.querySelectorAll(roots))
         if(!root.hidden)requestAnimationFrame(()=>keepReachable(root));
     });
-    return Object.freeze({openExact,center,move,syncBypass,closeRackEditors});
+    return Object.freeze({openExact,center,move,syncBypass,closeRackEditors,cancelDrag});
   })():null;
   if(inlineFxClip)window.__ARMIX_NATIVE_INLINE_FX_CLIP__=inlineFxClip;
 

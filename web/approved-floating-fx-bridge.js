@@ -58,9 +58,9 @@
   window.addEventListener("keydown",event=>{
     if(event.key!=="Escape"||event.repeat||event.defaultPrevented||!identity||
        event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||
-       event.target.closest?.(".mx-fxp-form,.mx-fxp-menu,#mxHPresetMenu"))return;
+       event.target.closest?.(".mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu"))return;
     const entry=registry[identity.catalogId],root=document.querySelector(entry[2]);
-    if(!root||root.hidden||Array.from(root.querySelectorAll(".mx-fxp-form,.mx-fxp-menu,#mxHPresetMenu"))
+    if(!root||root.hidden||Array.from(root.querySelectorAll(".mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu"))
        .some(el=>!el.hidden&&el.getClientRects().length))return;
     window[entry[1]]?.close?.();
     if(root.hidden){event.preventDefault();event.stopImmediatePropagation();}
