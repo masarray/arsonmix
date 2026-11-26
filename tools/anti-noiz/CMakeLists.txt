@@ -160,3 +160,7 @@ set_tests_properties(AntiNoizManual PROPERTIES TIMEOUT 60)
 anti_noiz_target(anti_noiz_manual_spectral_test tests/anti_noiz_manual_spectral_test.cpp)
 add_test(NAME AntiNoizManualSpectral COMMAND anti_noiz_manual_spectral_test)
 set_tests_properties(AntiNoizManualSpectral PROPERTIES TIMEOUT 90)
+
+anti_noiz_target(anti_noiz_smart_voice_test tests/anti_noiz_smart_voice_test.cpp)
+add_test(NAME AntiNoizSmartVoice COMMAND anti_noiz_smart_voice_test)
+set_tests_properties(AntiNoizSmartVoice PROPERTIES TIMEOUT 90)

@@ -143,7 +143,7 @@ public:
         cancelAudition();
         const auto s=p.settings_;
         const auto next=resolveMode(s.mode,sourceRole_);
-        if(!s.enabled||next==Mode::Music)profile_.cancel();
+        if(!s.enabled||next==Mode::Music){profile_.cancel();manual_.cancelReference();}
         // Extended Voice-only PSD authority must not leak into musical modes
         // or survive an explicit disable. Keep the learned anchor and modest
         // idle tracking. Existing overlap and gain smoothing remain intact.
@@ -158,13 +158,13 @@ public:
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        cancelAudition();manual_.reset();manualActive_=false;
+        cancelAudition();manual_.reset();manual_.beginReference();manualActive_=false;
         context_.reset(); wind_.reset();coherence_.reset();broadband_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
     }
     // Audio-owned transient commands; preserve WOLA timeline on reset.
     bool clearProfile() noexcept {
         if(!ready_)return false;
-        cancelAudition();profile_.clear();tonal_.clear();tonalIdle_=false;
+        cancelAudition();profile_.clear();manual_.clearReference();tonal_.clear();tonalIdle_=false;
         context_.reset();wind_.reset();coherence_.reset();broadband_.reset();voiceGain_.reset();powerValid_=false;
         return true;
     }
@@ -182,12 +182,15 @@ public:
         for(auto& a:out_)a.fill(0);
         cancelAudition();mask_.fill(1); expansion_=1;manual_.reset();manualActive_=false;
         pos_=ticks_=0;powerValid_=false;
-        profile_.cancel(); context_.reset(); wind_.reset();coherence_.reset();broadband_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
+        profile_.cancel();manual_.cancelReference(); context_.reset(); wind_.reset();coherence_.reset();broadband_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
     float residualGain() const noexcept {return manualActive_?manual_.gain():expansion_;}
     float detectorLevel() const noexcept {return manualActive_?manual_.detector():0.f;}
+    bool sidechainReferenceValid() const noexcept {return manual_.referenceValid();}
+    float sidechainNoisePeak() const noexcept {return manual_.noisePeak();}
+    float sidechainThreshold() const noexcept {return manual_.effectiveThreshold();}
     bool ready() const noexcept {return ready_;}
     bool hasProfile() const noexcept {return profile_.valid();}
     bool learning() const noexcept {return profile_.learning();}
@@ -205,7 +208,10 @@ public:
                 in_[c][pos_]=std::isfinite(x)?std::clamp(x,-64.f,64.f):0.f;
                 p[c][i]=out_[c][pos_];out_[c][pos_]=0.f;
             }
-            if(profile_.learning())tonal_.observe(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
+            if(profile_.learning()){
+                tonal_.observe(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
+                manual_.observeReference(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
+            }
             else if(settings_.enabled&&!settings_.spectralManual&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&tonal_.selected()>=0){
                 tonal_.track(in_[0][pos_],channels_==2?in_[1][pos_]:0.f,tonalIdle_);
                 // Apply to the already latency-aligned WOLA output.
@@ -232,7 +238,7 @@ public:
     // Native host lifecycle only. Keep the qualified stationary DSP path,
     // coefficient preparation and signal arithmetic unchanged.
     void cancelNativeLearn() noexcept {
-        if(profile_.learning()){profile_.cancel();context_.reset();wind_.reset();coherence_.reset();broadband_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
+        if(profile_.learning()){profile_.cancel();manual_.cancelReference();context_.reset();wind_.reset();coherence_.reset();broadband_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
     }
     bool lastNativeLearnQualified() const noexcept {return profile_.lastAttemptQualified();}
     void processNativeDry(float* left,float* right,int samples) noexcept {
@@ -280,7 +286,12 @@ private:
             }
         }
         powerValid_=true;
+        const int beforeCheckpoint=profile_.checkpointFrameCount();
         const auto result=profile_.observe(power_);
+        if(result==NoiseProfile<maxBins>::LearnResult::accepted||profile_.atCheckpointBoundary())
+            manual_.checkpointReference(profile_.checkpointFrameCount()>beforeCheckpoint);
+        if(result!=NoiseProfile<maxBins>::LearnResult::waiting)
+            manual_.finishReference(result==NoiseProfile<maxBins>::LearnResult::accepted);
         if(result==NoiseProfile<maxBins>::LearnResult::accepted){tonal_.commit();wind_.configure(profile_.anchor());broadband_.configure(profile_.anchor());}
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();wind_.reset();coherence_.reset();broadband_.reset();voiceGain_.reset();}
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;

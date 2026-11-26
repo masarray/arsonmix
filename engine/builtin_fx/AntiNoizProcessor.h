@@ -76,7 +76,7 @@ public:
         out.append(bytes.data(),bytes.size());
     }
     bool restoreUnpublishedState(const void* data,int bytes) noexcept {
-        if(!data||(bytes!=static_cast<int>(anti_noiz::NativeState::size)&&bytes!=static_cast<int>(anti_noiz::NativeState::legacySize)&&bytes!=static_cast<int>(anti_noiz::NativeState::v2Size)))return false;
+        if(!data||(bytes!=static_cast<int>(anti_noiz::NativeState::size)&&bytes!=static_cast<int>(anti_noiz::NativeState::legacySize)&&bytes!=static_cast<int>(anti_noiz::NativeState::v2Size)&&bytes!=static_cast<int>(anti_noiz::NativeState::v3Size)))return false;
         return session_.restore({static_cast<const std::uint8_t*>(data),static_cast<std::size_t>(bytes)});
     }
     void setStateInformation(const void* data,int bytes) override {(void)restoreUnpublishedState(data,bytes);}
