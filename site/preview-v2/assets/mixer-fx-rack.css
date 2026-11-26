@@ -1207,9 +1207,9 @@
 /* Mechanical controls: dark socket, raised cap, latched recess, momentary travel.
    aria-pressed is still the existing product state; :active is only physical feedback. */
 .mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-upgrade,.sk-close){
- --sk-button-raised:inset 0 1px 0 #ffffff38,inset 0 -2px 1px #080e16a0,0 0 0 1px #0a1117,0 2px 0 #0a1117,0 3px 4px #0009;
+ --sk-button-raised:inset 0 1px 1px #141e2570,inset 0 -2px 1px #080e16a0,0 0 0 1px #0a1117,0 2px 0 #0a1117,0 3px 4px #0009;
  --sk-button-latched:inset 0 2px 4px #000b,inset 0 -1px 0 #82c6d36b,0 0 0 1px #090f15,0 1px 0 #ffffff16;
- position:relative;border:1px solid #66727a;border-bottom-color:#18242b;border-radius:3px;
+ position:relative;border:1px solid #202b32;border-bottom-color:#10191f;border-radius:3px;
  background:linear-gradient(180deg,#46525a 0%,#343f47 12%,#2b363e 78%,#222c34 100%);
  box-shadow:var(--sk-button-raised);color:#d0dce1;text-shadow:0 1px 1px #091118;
 }

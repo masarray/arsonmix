@@ -450,6 +450,18 @@ def exercise(browser,out,width,height):
     room=editor.locator('[data-sk-room="2"]')
     room.scroll_into_view_if_needed()
     assert room.get_attribute("aria-pressed")=="false"
+    # Dark released cap: no white bevel or bright border, even under shared chrome.
+    def assert_dark_released(locator):
+        style=locator.evaluate("""n=>{
+          const s=getComputedStyle(n);
+          return {borders:[s.borderTopColor,s.borderRightColor,
+            s.borderBottomColor,s.borderLeftColor],shadow:s.boxShadow};
+        }""")
+        assert all(c in ("rgb(32, 43, 50)","rgb(16, 25, 31)")
+                   for c in style["borders"]),style
+        assert "255, 255, 255" not in style["shadow"],style
+    assert_dark_released(room)
+    assert_dark_released(editor.locator("#skClose"))
     released=room.evaluate("n=>getComputedStyle(n).boxShadow")
     bounds=room.bounding_box()
     assert bounds
@@ -667,6 +679,7 @@ def exercise(browser,out,width,height):
     page.wait_for_function("""()=>
       document.getElementById('skPower')?.dataset.fxState==='off'""")
     assert editor.locator("#skPower").is_enabled()
+    assert_dark_released(editor.locator("#skPower"))
     state["graph"]["channels"][0]["fxRackBypassed"]=True
     emit(page,"arMixConsoleSnapshot",state)
     page.wait_for_function("""()=>
