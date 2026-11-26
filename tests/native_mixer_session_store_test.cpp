@@ -2042,6 +2042,69 @@ static void checkLogicalOutputSession(){
     assert(Codec::encode(loaded)==encoded&&states.empty());
     assert(dir.deleteRecursively());
 }
+// Exercise actual JUCE ChannelId render with two active ASIO output pins.
+static void verifyDmxSplitNativePcm(){
+    FixtureDevice device(true);device.outputMask.clear();device.outputMask.setRange(0,2,true);
+    LiveDryRoutingLab mixer;mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto d=makeSession();
+    d.binding={"ASIO","Verified ASIO","Verified ASIO","3","3",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    d.request.maxFrames=480;d.rackBypassed.clear();
+    juce::AudioPluginFormatManager formats;std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(d,{},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(mixer.restoreNativeMixerSession(d,std::move(bank),pins,true).isEmpty());
+    std::array<float,480> inputL{},inputR{},outL{},outR{};inputL.fill(.2f);
+    const float* in[]={inputL.data(),inputR.data()};float* out[]={outL.data(),outR.data()};
+    std::array<float*,2> tap{};std::array<int,2> physicalMain{},physicalMonitor{};
+    auto render=[&](bool muted){
+        assert(mixer.process(in,2,out,2,480,1.f,muted,nullptr,nullptr,false,
+            &physicalMain,&physicalMonitor,true,{},false,nullptr,false,&tap));
+    };
+    auto revisions=[&](){
+        auto state=mixer.nativeBusStatus();std::uint64_t rev=0,roster=0;
+        assert(parseDecimal(state.getProperty("graphRevision",{}),rev));
+        assert(parseDecimal(state.getProperty("rosterRevision",{}),roster));
+        return std::array<std::uint64_t,2>{rev,roster};
+    };
+    render(true);
+    auto rev=revisions();
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0]+1,rev[1],true,pins).isNotEmpty());
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],true,pins).isEmpty());
+    assert(mixer.nativeBusPatchAwaitingCallback());render(true);
+    assert(!mixer.nativeBusPatchAwaitingCallback()&&!tap[0]&&!tap[1]);
+    render(false);
+    assert(tap[0]&&tap[1]&&tap[0]!=out[0]&&tap[1]!=out[1]);
+    assert((physicalMain==std::array<int,2>{-1,-1}));
+    assert((physicalMonitor==std::array<int,2>{0,1}));
+    assert(tap[0][479]>.05f&&outL.back()==0.f&&outR.back()==0.f);
+    MixerSessionDocument saved;std::vector<BinaryState> blobs;
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    const auto monitor=saved.legacyIds.monitor;assert(monitor.value);
+    rev=revisions();
+    const std::array<WireChange,1> wire{{{WireChange::Kind::connect,{1},monitor,0,.25f}}};
+    assert(mixer.applyNativeWireTransaction(pins.epoch,rev[0],rev[1],wire).accepted);
+    render(false);render(false);
+    assert(outL.back()>.01f&&outL.back()<tap[0][479]);
+    rev=revisions();
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],false,pins).isNotEmpty());
+    render(false);assert(outL.back()>.01f);
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;
+    MixerSessionDocument decoded;assert(Codec::decode(Codec::encode(saved),decoded));
+    assert(decoded.outputs.secondaryMain()&&decoded.legacyIds.monitor==monitor);
+    auto changed=decoded.binding;changed.outputNames.set(0,"Wrong pin");
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(decoded,changed,2).valid());
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(decoded,decoded.binding,2,BindingMode::verifiedMainPinApply).valid());
+    assert(MixerDeviceBindingPolicy::proposedOutputs(decoded,decoded.binding,2).secondaryMain());
+    Recovery::Context context{BindingMode::exact,Recovery::Source::head,true,false,true,true,false};
+    assert(!Recovery::plan(decoded,context).resumeMain);
+    render(true);assert(!tap[0]&&!tap[1]&&outL.back()==0.f&&outR.back()==0.f);
+    std::cout<<"DMX_SPLIT_NATIVE_PCM_AND_BINDING_PASS\n";
+}
 static void verifyLogicalOutputNativePcm(){
     using R=armix::device::LogicalOutputRegistry;
     using P=LogicalOutputProjection;
@@ -2213,6 +2276,7 @@ int main(){
         if(armix::mixer::isWetReturnCatalog(fx.id))verifyDmxWetReturnSession(fx);
     verifyIoDefaults();
     checkLogicalOutputSession();
+    verifyDmxSplitNativePcm();
     verifyLogicalOutputNativePcm();
     checkLogicalInputSession();
     verifyLogicalInputNativePcm();

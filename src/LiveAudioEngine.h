@@ -3352,6 +3352,7 @@ private:
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
     armix::device::LiveSecondaryOutputDevice secondaryOutput_;
+    std::atomic_flag primaryCallbackLease_=ATOMIC_FLAG_INIT;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
     // Strong ownership stays on CONTROL. The admitted native ChannelId
@@ -3665,6 +3666,14 @@ private:
         int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
     {
         if (samples <= 0) return;
+        // Hold the primary callback lease through the post-render MAIN
+        // scratch tap and FIFO publication, not just the graph render.
+        armix::rt::RealtimeRenderPermit primaryLease(primaryCallbackLease_);
+        if(!primaryLease){
+            for(int c=0;c<outputChannels;++c)
+                if(outputs&&outputs[c])juce::FloatVectorOperations::clear(outputs[c],samples);
+            return;
+        }
         // Fail closed if JUCE silently rerouted ASIO/WASAPI after hotplug or
         // while the user is changing devices. Atomic gate only: no name hash,
         // allocations, OS calls or device restart on the realtime callback.

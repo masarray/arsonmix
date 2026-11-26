@@ -206,7 +206,7 @@ public:
         const bool restoreAllowed=!context.nativeAlreadyActive || replace;
         const bool resume=restoreAllowed && !context.firstBinding && context.startupOnSavedDevice &&
             (mode==BindingMode::exact || mode==BindingMode::verifiedAsioRestart) &&
-            context.source==Source::head && doc.resumeMain.value_or(true);
+            context.source==Source::head && !doc.outputs.secondaryMain() && doc.resumeMain.value_or(true);
         return {mode,replace,restoreAllowed,resume};
     }
 };
