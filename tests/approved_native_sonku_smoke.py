@@ -149,19 +149,30 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
     assert editor.locator("#skMap ellipse#skOrbitRail").count()==1
     assert editor.locator("#skMap #skFarArc, #skMap #skNearArc").count()==0
-    # Single complete geometry; foreground is a masked reference, not an arc.
+
+    # Exactly one painted ellipse; only far silhouette subtracts alpha.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
       const rail=map.querySelector('#skOrbitRail');
       const art=map.querySelector('#skListenerArt');
-      const front=map.querySelector('#skOrbitForeground');
-      return Boolean((rail.compareDocumentPosition(art)&Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     (art.compareDocumentPosition(front)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+      const near=map.querySelector('#skNearSources');
+      return Boolean((art.compareDocumentPosition(rail)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (rail.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING) &&
                      rail.getAttribute('rx')==='148' && rail.getAttribute('ry')==='83' &&
-                     front.getAttribute('href')==='#skOrbitRail' &&
-                     front.getAttribute('mask')==='url(#skListenerCoverage)' &&
-                     getComputedStyle(map.querySelector('#skRail')).display!=='none');
-    }"""), "Continuous rail or foreground occlusion incorrect"
+                     rail.getAttribute('mask')==='url(#skRailOcclusion)' &&
+                     rail.getAttribute('stroke-width')==='1.7' &&
+                     !map.querySelector('use[href="#skOrbitRail"]') &&
+                     getComputedStyle(map.querySelector('#skGlass')).display!=='none');
+    }"""), "Single-pass rail / optical stack incorrect"
+    assert editor.locator("#skRenderMode, .sk-control-title, .sk-guide").count()==0
+    assert editor.locator(".sk-stage .sk-rotary-grid .sk-dial").count()==4
+    assert editor.locator(".sk-dial-cap").first.evaluate(
+        """n=>getComputedStyle(n).backgroundImage.includes('mixer-gain-knob-brushed-steel.png')""")
+    assert page.evaluate("""async()=>{const im=new Image();
+      im.src='assets/mixer-gain-knob-brushed-steel.png';
+      await im.decode();return im.naturalWidth>0&&im.naturalHeight>0;
+    }"""),"Shared metal PNG missing from compiled bundle"
+    assert editor.locator("#skMap .sk-glass").get_attribute("pointer-events")=="none"
     # Each moving speaker is depth-sorted against the listener alpha silhouette.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
@@ -204,7 +215,7 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skListenerArt").get_attribute("pointer-events")=="none"
     assert editor.locator("#skMotion").inner_text()=="ORBIT"
     assert editor.locator("#skDirection").inner_text()=="CLOCKWISE"
-    assert editor.locator("#skMode").inner_text()=="NATIVE HRTF"
+    assert editor.locator("#skMode").text_content()=="NATIVE HRTF"
     # 250ms visualization timer must not overwrite an unacknowledged
     # snapshot request (real JUCE message thread can be temporarily busy).
     count=page.evaluate(
@@ -306,8 +317,8 @@ def exercise(browser,out,width,height):
     # ellipse, not a flattened physical/acoustic source orbit.
     for x,y in ((200,91),(348,174),(200,257),(52,174)):
         assert abs(((x-200)/148)**2+((y-174)/83)**2-1)<.001
-    assert editor.locator(".sk-stage > .sk-space-panel").count()==1,(
-        "SPACE controls must be below the motion field, not inside rotary column")
+    assert editor.locator(".sk-controls > .sk-space-panel").count()==1,(
+        "SPACE has one owner on the right; primary dials occupy the LCD deck")
     assert editor.locator("#skPreset").count()==1
     assert editor.locator("#skPower.armix-builtin-fx-power").count()==1
     assert front["depth"]=="far" and rear["depth"]=="near"
