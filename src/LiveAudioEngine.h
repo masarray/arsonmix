@@ -5,6 +5,7 @@
 #include "StereoPan.h"
 #include "NativePresetArchive.h"
 #include "VstBusLayout.h"
+#include "RuntimeVendorCrashJournal.h"
 #include "LiveGraphHandoff.h"
 #include "../engine/diagnostics/PhysicalLoopback.h"
 #include "LiveDryRoutingLab.h"
@@ -1069,6 +1070,9 @@ public:
         const auto frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
         if(!(rate>0.0) || frames>maxFrames)
             return "Unsupported device sample rate or buffer quantum";
+        armix::startup::RuntimeVendorCrashJournal::Operation vendorGuard(
+            armix::startup::RuntimeVendorCrashJournal::process(),filename,"ADD");
+        if(!vendorGuard)return "VST3 recovery journal unavailable or vendor operation busy";
         const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,filename,uid,expectedName);
         if(!chosen)return "Effect identity not found inside VST3 module";
         juce::String error;
@@ -1177,6 +1181,9 @@ public:
             if (fx.binary.getSize() > armix::storage::NativePresetArchive::maxStateBytes ||
                 !juce::File (fx.path).exists() || !fx.path.endsWithIgnoreCase (".vst3"))
                 return "Plugin is missing or invalid: " + fx.name;
+            armix::startup::RuntimeVendorCrashJournal::Operation vendorGuard(
+                armix::startup::RuntimeVendorCrashJournal::process(),fx.path,"PRESET_RESTORE");
+            if(!vendorGuard)return "VST3 recovery journal unavailable or vendor operation busy";
             const auto match=armix::vst::DescriptionCache::resolve(*fmt,fx.path,fx.uid,fx.name);
             if (!match) return "VST3 plugin identity missing: " + fx.name;
 
@@ -2231,6 +2238,9 @@ public:
         if(!fmt||!fmt->fileMightContainThisPluginType(path))
             {fail.error="NATIVE_VST3_MODULE_NOT_FOUND";return fail;}
         try {
+            armix::startup::RuntimeVendorCrashJournal::Operation vendorGuard(
+                armix::startup::RuntimeVendorCrashJournal::process(),path,"CHANNEL_ADD");
+            if(!vendorGuard){fail.error="NATIVE_VST3_RECOVERY_JOURNAL_UNAVAILABLE";return fail;}
             const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,path,uid,expectedName);
             if(!chosen){fail.error="NATIVE_VST3_IDENTITY_NOT_FOUND";return fail;}
             juce::String pluginError;

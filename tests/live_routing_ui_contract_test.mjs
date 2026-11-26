@@ -380,3 +380,22 @@ test("P0 manual VST3 Open fences vendor preparation and retains Hotkey session",
   assert.match(open,/startupFxGuard_=std::move\(explicitRecovery\)/);
   assert.match(open,/hotkeys_\.activateSession\(id,&importedHotkeys\)/);
 });
+
+test('ZBSH09 vendor lifetime survives initial startup and protects automatic restore/MAIN/checkpoint',()=>{
+  const journal=read('src/RuntimeVendorCrashJournal.h');
+  const app=read('src/Main.cpp');
+  for(const path of ['src/LiveAudioEngine.h','src/LiveDryRoutingLab.h','src/NativeMixerSessionFxRestore.h']){
+    const source=read(path);
+    assert.equal((source.match(/RuntimeVendorCrashJournal::Operation vendorGuard/g)||[]).length,
+                 (source.match(/formats_?\.createPluginInstance\s*\(/g)||[]).length);
+  }
+  assert.match(journal,/vendor-runtime\.pending/);
+  assert.match(journal,/vendor-control\.pending/);
+  assert.match(journal,/if\(active_\|\|recovery_\|\|ioFailure_\)return false/);
+  assert.match(app,/if\(automatic && vendorSafeRecoveryActive\(\)\)return/);
+  assert.match(app,/if\(vendorSafeRecoveryActive\(\)\)\{autoMainEpoch_=0;return;\}/);
+  assert.match(app,/acknowledgeExplicitRecovery\(\)/);
+  const shutdown=app.slice(app.indexOf('    void shutdown() override'));
+  assert.ok(shutdown.indexOf('window_.reset();')<shutdown.indexOf('finishCleanExit()'));
+  assert.match(read('tests/runtime_vendor_crash_journal_test.cpp'),/std::_Exit\(77\)/);
+});

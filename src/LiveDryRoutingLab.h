@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "Vst3DescriptionCache.h"
+#include "RuntimeVendorCrashJournal.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
@@ -400,6 +401,10 @@ public:
                 auto* fmt=formats.getFormat(0);
                 if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
                     return label+": VST3 module unavailable; rescan catalog";
+                armix::startup::RuntimeVendorCrashJournal::Operation vendorGuard(
+                    armix::startup::RuntimeVendorCrashJournal::process(),req.path,
+                    restores?"SHOW_RESTORE":"ROUTING_ADD");
+                if(!vendorGuard)return label+": VST3 recovery journal unavailable or vendor operation busy";
                 const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,req.path,req.uid);
                 if(!chosen)
                     return label+": selected effect identity is unavailable or instrument";
