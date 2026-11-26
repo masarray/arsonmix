@@ -1303,7 +1303,7 @@ static void verifyLogicalControlTransactions() {
     // insert on one rack; still explicitly prove overflow is rejected.
     const auto capacity=armix::mixer::ChannelRosterBudget{}.maximumInsertSlotsPerChannel;
     assert(capacity>=2 && armix::builtin_fx::nativeBuiltInFx.size()<=2*capacity);
-    std::size_t catalogIndex=0;
+    std::size_t catalogIndex=0,wetCatalogCount=0;
     std::vector<const armix::builtin_fx::NativeBuiltInFx*> ordinaryCatalog;
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
         auto payload=std::make_unique<juce::DynamicObject>();
@@ -1311,11 +1311,12 @@ static void verifyLogicalControlTransactions() {
         const juce::var value(payload.release());
         // Wet-return catalog identities are role-restricted. They are tested
         // on a real FX_RETURN in verifyDmxWetReturnSession, not an INPUT/GROUP.
-        if(juce::String(fx.id)==armix::builtin_fx::VocalReverbProcessor::wetReturnIdentity){
+        if(armix::mixer::isWetReturnCatalog(fx.id)){
+            ++wetCatalogCount;
             const auto revision=control.readback().getProperty("revision",{});
-            submit(command("logical-wet-wrong-group","ADD_FX_REFERENCE",bus,value));
+            submit(command((juce::String("logical-wet-group-")+fx.id).toRawUTF8(),"ADD_FX_REFERENCE",bus,value));
             reject("WET_RETURN_REQUIRES_FX_RETURN_CHANNEL");
-            submit(command("logical-wet-wrong-input","ADD_FX_REFERENCE",channel,value));
+            submit(command((juce::String("logical-wet-input-")+fx.id).toRawUTF8(),"ADD_FX_REFERENCE",channel,value));
             reject("WET_RETURN_REQUIRES_FX_RETURN_CHANNEL");
             assert(!worker.busy() && control.readback().getProperty("revision",{})==revision);
             continue;
@@ -1346,7 +1347,7 @@ static void verifyLogicalControlTransactions() {
     assert(saved.roster.find(trackId)->name=="Lead Vox");
     assert(saved.roster.find(trackId)->sends.front().destination==busId);
     assert(saved.inserts.size()==ordinaryCatalog.size());
-    assert(ordinaryCatalog.size()+1==armix::builtin_fx::nativeBuiltInFx.size());
+    assert(wetCatalogCount==2&&ordinaryCatalog.size()+wetCatalogCount==armix::builtin_fx::nativeBuiltInFx.size());
     const auto bypassed=std::find_if(saved.inserts.begin(),saved.inserts.end(),[&](const auto& f){return f.channel==busId&&f.slot==1;});
     assert(bypassed!=saved.inserts.end()&&bypassed->bypass&&saved.rackBypassed.front()==busId);
     assert(saved.roster.find(busId)->insertCatalogIds.size()==std::min(capacity,catalogIndex));
@@ -2164,27 +2165,26 @@ static void verifyIoDefaults(){
     assert(dir.deleteRecursively());
 }
 // Exact durable AVRB state and independent PRE EdgeId survive .smix.
-static void verifyDmxWetReturnSession(){
-    using Reverb=armix::builtin_fx::VocalReverbProcessor;
+static void verifyDmxWetReturnSession(const armix::builtin_fx::NativeBuiltInFx& fx){
     auto d=makeSession();
     auto rows=d.roster.channels();
     auto* wet=&*std::find_if(rows.begin(),rows.end(),[](const auto& row){return row.id.value==11;});
-    wet->insertCatalogIds.push_back(Reverb::wetReturnIdentity);
+    wet->insertCatalogIds.push_back(fx.id);
     // Existing legacy source -> AUX PRE edge stays exact. Return -> MAIN
     // and preserved physical binding use the original .smix schema.
     assert(d.roster.restoreExact(d.acceptedRevision,rows));
-    auto processor=armix::builtin_fx::prepareNativeVocalReverbReturn(48000.,256,nullptr,0);
+    auto processor=fx.prepare(48000.,256,nullptr,0);
     assert(processor);
     BinaryState state;processor->getStateInformation(state.bytes);
     assert(!state.bytes.isEmpty());
     state.sha256=juce::SHA256(state.bytes).toHexString();
-    d.inserts.push_back({{11},0,Reverb::wetReturnIdentity,{},state.sha256,
-                         "Reverb-Sis Return",0,true,"g5c-96011"});
+    d.inserts.push_back({{11},0,fx.id,{},state.sha256,
+                         fx.name,0,true,"g5c-96011"});
     MixerSessionDocument reopened;
     const auto json=Codec::encode(d);
     assert(Codec::decode(json,reopened)&&Codec::encode(reopened)==json);
     assert(reopened.roster.find({1})->sends[1].edgeId==101);
-    assert(reopened.roster.find({11})->insertCatalogIds[0]==Reverb::wetReturnIdentity);
+    assert(reopened.roster.find({11})->insertCatalogIds[0]==fx.id);
     assert(reopened.inserts.front().instanceId=="g5c-96011"&&reopened.inserts.front().bypass);
     juce::AudioPluginFormatManager formats;
     std::shared_ptr<DynamicChannelFxLeaseBank> bank;
@@ -2209,7 +2209,8 @@ static void verifyDmxWetReturnSession(){
     std::cout<<"DMX_RETURN_SMIX_ROUNDTRIP_PASS\n";
 }
 int main(){
-    verifyDmxWetReturnSession();
+    for(const auto& fx:armix::builtin_fx::nativeBuiltInFx)
+        if(armix::mixer::isWetReturnCatalog(fx.id))verifyDmxWetReturnSession(fx);
     verifyIoDefaults();
     checkLogicalOutputSession();
     verifyLogicalOutputNativePcm();

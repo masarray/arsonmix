@@ -18,6 +18,31 @@ int main() {
     juce::ScopedJuceInitialiser_GUI gui;
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
+    // Catalog/lease, not preset bytes, owns the wet-only routing authority.
+    {
+        using Delay=vocal_delay::JuceVocalDelayProcessor;
+        const auto* ret=findNativeBuiltInFx(Delay::wetReturnIdentity);
+        assert(ret&&ret->showInPicker);
+        auto p=ret->prepare(48000.,128,nullptr,0);
+        assert(p&&p->getName()=="Vocal Delay Return");
+        juce::MemoryBlock state;p->getStateInformation(state);
+        assert(state.getSize()==48);
+        auto old=findNativeBuiltInFx(Delay::catalogIdentity)->prepare(
+            48000.,128,state.getData(),static_cast<int>(state.getSize()));
+        assert(old&&!dynamic_cast<Delay*>(old.get())->bypassToSilence());
+        armix::mixer::LiveChannelFxGraph::FxInstance lease(std::move(p),ret->id,ret->name,128);
+        assert(lease.silenceBypass&&lease.latencySamples==0);
+        std::array<float,128> l{},r{};
+        const auto render=[&](bool bypass){l.fill(.1f);r.fill(.1f);lease.render(l.data(),r.data(),128,bypass);};
+        render(false);
+        assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+        double energy=0.;
+        for(int i=0;i<500;++i){render(false);for(float v:l)energy+=std::abs(v);}
+        assert(energy>1.);
+        for(int i=0;i<12;++i)render(true);
+        assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+        assert(std::all_of(r.begin(),r.end(),[](float v){return v==0.f;}));
+    }
     // DMX native production registry -> real lease -> bypass and state.
     {
         const auto* ret=findNativeBuiltInFx(VocalReverbProcessor::wetReturnIdentity);

@@ -4,6 +4,7 @@
 #include <bitset>
 #include <optional>
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
+#include "../engine/core/WetReturnCatalog.h"
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/device/NamedDevicePins.h"
 #include "../engine/device/LogicalInputRegistry.h"
@@ -1258,8 +1259,8 @@ public:
         // attach to a different processor or channel.
         for(const auto& ch:doc.roster.channels()) {
             if(ch.role!=ChannelRole::fxReturn&&
-               std::find(ch.insertCatalogIds.begin(),ch.insertCatalogIds.end(),
-                         "armix.builtin.vocal-reverb-return.v1")!=ch.insertCatalogIds.end())
+               std::any_of(ch.insertCatalogIds.begin(),ch.insertCatalogIds.end(),
+                         armix::mixer::isWetReturnCatalog))
                 return false;
             std::size_t slot=0;
             const bool legacyMarker=ch.insertCatalogIds.size()==1 &&
