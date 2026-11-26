@@ -81,7 +81,7 @@ public:
         const int captured=profile_.capturedFrames();
         out.candidate=capturing;
         out.noiseValid=capturing?captured>0:profile_.valid();
-        if(capturing)out.progress=std::clamp(float(profile_.observedFrames())/float(std::max(1,profile_.targetFrames())),0.f,1.f);
+        if(capturing)out.progress=std::clamp(float(profile_.observedFrames())/float(std::max(1,profile_.targetFrames())),0.f,.99f);
         if(!out.inputValid&&!out.noiseValid)return out;
         const auto& noise=capturing?profile_.captured():profile_.anchor();
         const float normal=4.f/(float(n_)*float(n_)*float(channels_));
@@ -157,7 +157,7 @@ public:
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        cancelAudition();manual_.reset();manual_.beginReference();manualActive_=false;
+        cancelAudition();manual_.beginReference();
         context_.reset();  voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
     }
     // Audio-owned transient commands; preserve WOLA timeline on reset.
@@ -218,7 +218,7 @@ public:
                 tonal_.apply(left[i],channels_==2?right[i]:unused,1.f-cleanFloor_);
             }
             if(preview)for(int c=0;c<channels_;++c)dry[c]-=p[c][i];
-            const bool useManual=settings_.enabled&&settings_.manual.enabled&&effectiveMode_!=Mode::Music&&!profile_.learning();
+            const bool useManual=settings_.enabled&&settings_.manual.enabled&&effectiveMode_!=Mode::Music;
             if(useManual){
                 const float gain=manual_.step(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
                 left[i]*=gain;if(channels_==2)right[i]*=gain;

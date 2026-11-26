@@ -34,6 +34,16 @@ int main(){
   double power=0;for(int i=rate+rate/10;i<rate+rate/4;++i){const float x=ch==1?l[i]:r[i];power+=x*x;}
   check(power>.001*rate*.15,"core voice opens");
   check(core.residualGain()==0,"actual manual GR");
+  // Raw capture must not bypass an already closed gate or reset its live envelope.
+  auto during=core,without=core;
+  check(during.beginLearn(),"learn while gate closed");
+  std::vector<float> quiet(rate*3),otherQuiet(quiet.size());
+  for(int i=0;i<int(quiet.size());++i)quiet[i]=otherQuiet[i]=.001f*std::sin(2*std::numbers::pi_v<float>*500*i/rate);
+  auto copyL=quiet,copyR=otherQuiet;
+  during.process(quiet.data(),ch==2?otherQuiet.data():nullptr,int(quiet.size()));
+  without.process(copyL.data(),ch==2?copyR.data():nullptr,int(copyL.size()));
+  check(during.hasProfile()&&!during.learning(),"capture completes behind closed gate");
+  check(quiet==copyL&&otherQuiet==copyR&&during.residualGain()==0,"Learn does not open or reset live gate");
   s.gate=false;s.rangeDb=60;s.ratio=4;e.apply(ManualExpander::prepareSettings(s));
   check(ManualExpander::cut(-50,s)==30&&ManualExpander::cut(-80,s)==60,"static curve");
   s.kneeDb=12;check(std::abs(ManualExpander::cut(-40,s)-4.5f)<1e-6,"knee");

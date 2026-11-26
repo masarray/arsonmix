@@ -48,15 +48,15 @@ public:
         hold_=std::min(hold_,holdSamples_);ticks_=0;
     }
     void reset() noexcept {resetDetector();gain_=target_=1;hold_=ticks_=0;open_=true;}
-    void beginReference() noexcept {cancelReference();capture_=true;resetDetector();}
+    void beginReference() noexcept {cancelReference();capture_=true;referenceLow_={};referenceBand_={};referenceEnv_=0;}
     void cancelReference() noexcept {capture_=false;window_={};accepted_={};sampleTick_=0;}
     void clearReference() noexcept {cancelReference();referenceValid_=false;noisePeak_=0;updateThreshold();}
     void observeReference(float left,float right) noexcept {
         if(!capture_)return;
-        detect(left,right);
+        detect(left,right,referenceLow_,referenceBand_,referenceEnv_);
         if(++sampleTick_<sampleEvery_)return;
         sampleTick_=0;
-        const auto i=std::lower_bound(edges_.begin(),edges_.end(),env_)-edges_.begin();
+        const auto i=std::lower_bound(edges_.begin(),edges_.end(),referenceEnv_)-edges_.begin();
         ++window_[std::min<std::size_t>(std::size_t(i),edges_.size()-1)];
     }
     // The spectral Learn transaction owns acceptance of each window.
@@ -75,7 +75,7 @@ public:
                 for(unsigned i=0;i<accepted_.size();++i){cumulative+=accepted_[i];if(cumulative>=rank){noisePeak_=edges_[i];break;}}}
             updateThreshold();
         }
-        cancelReference();resetDetector();
+        cancelReference();
     }
     bool referenceValid() const noexcept {return referenceValid_;}
     float noisePeak() const noexcept {return noisePeak_;}
@@ -90,7 +90,7 @@ public:
     }
     float step(float left,float right) noexcept {
         if(!p_.s.enabled)return 1;
-        detect(left,right);
+        detect(left,right,low_,band_,env_);
         const auto& s=p_.s;
         const bool above=env_>=(s.gate?(open_?effectiveClose_:effectiveThreshold_):effectiveKnee_);
         if(above){hold_=holdSamples_;open_=true;}
@@ -116,17 +116,18 @@ private:
         const float scale=effectiveThreshold_/p_.threshold;
         effectiveClose_*=scale;effectiveKnee_*=scale;
     }
-    void detect(float left,float right) noexcept {
+    void detect(float left,float right,std::array<float,2>& low,std::array<float,2>& band,float& env) noexcept {
         const float raw[2]={left,right};float peak=0;
         for(int c=0;c<channels_;++c){
             const float x=std::isfinite(raw[c])?std::clamp(raw[c],-64.f,64.f):0.f;
-            low_[c]+=hp_*(x-low_[c]);band_[c]+=lp_*(x-low_[c]-band_[c]);
-            peak=std::max(peak,std::abs(band_[c]));
+            low[c]+=hp_*(x-low[c]);band[c]+=lp_*(x-low[c]-band[c]);
+            peak=std::max(peak,std::abs(band[c]));
         }
-        env_=std::max(peak,env_*(1.f-decay_));
-        if(env_<1e-15f)env_=0;
+        env=std::max(peak,env*(1.f-decay_));
+        if(env<1e-15f)env=0;
     }
-    Prepared p_{};std::array<float,2> low_{},band_{};
+    Prepared p_{};std::array<float,2> low_{},band_{},referenceLow_{},referenceBand_{};
+    float referenceEnv_=0;
     std::array<float,53> edges_{};std::array<unsigned,53> window_{},accepted_{};
     float noisePeak_=0,effectiveThreshold_=.01f,effectiveClose_=.007079458f,effectiveKnee_=.01f;
     int sampleEvery_=48,sampleTick_=0;bool capture_=false,referenceValid_=false;

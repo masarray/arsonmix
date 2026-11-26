@@ -60,7 +60,8 @@ public:
     bool checkpointReset() const noexcept {return seedReset_;}
     bool tonalCaptureSafe() const noexcept {return !seedRetried_&&count_*100>=observed_*85;}
     int observedFrames() const noexcept {return learning_?observed_:0;}
-    int targetFrames() const noexcept {return observed_>=target_&&learning_?maximumFrames_:target_;}
+    // Nominal progress never goes backwards on bounded extension.
+    int targetFrames() const noexcept {return target_;}
     // Coefficient of variation of accepted FFT-frame broadband power.
     // Trusted only on successful Learn; rejected windows and attempts cannot replace it.
     const std::array<float,2>& variability() const noexcept {return variability_;}

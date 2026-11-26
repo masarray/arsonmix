@@ -275,6 +275,8 @@ def main():
         expect(root.locator('[data-learn]')).to_be_disabled()
         expect(root.locator('[data-observation]')).to_contain_text("Learning")
         expect(root.locator('[data-learn]')).to_have_attribute("data-learning","true")
+        expect(root.locator('[data-learn]')).to_have_attribute("aria-busy","true")
+        expect(root.locator('[data-learn]')).to_have_text("Capturing…")
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         expect(root.locator(".an-meter-view")).to_be_hidden()
         expect(root.locator('[data-display-title]')).to_have_text("NOISE SPECTRUM")
@@ -300,9 +302,11 @@ def main():
         readback(page,accepted,{**OBS,"serial":"4","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted","spectrum":{**SPECTRUM,"candidate":False,"progress":0}})
         expect(root.locator('[data-observation]')).to_contain_text("Profile ready")
         expect(root.locator('[data-learn]')).to_have_attribute("data-learning","false")
+        expect(root.locator('[data-learn]')).to_have_attribute("aria-busy","false")
+        expect(root.locator('[data-learn]')).to_have_text("Learn noise")
         expect(root.locator('[data-profile]')).to_have_attribute("data-ready","true")
         expect(root.locator('[data-latency]')).to_have_text("256 samples")
-        expect(root.locator('[data-curve-label]')).to_have_text("Trusted noise")
+        expect(root.locator('[data-curve-label]')).to_have_text("Noise reference")
         assert root.locator('[data-noise-curve]').get_attribute("d")==captured_noise_path
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         assert_lcd_fixed(root,gr_baseline)
@@ -403,6 +407,7 @@ def main():
         accepted=edit["settings"]
         expect(manual).to_be_checked()
         expect(root.locator('input[aria-label="Silence"]')).to_be_disabled()
+        assert root.evaluate("""el=>{const i=el.querySelector('input[aria-label="Silence"]'),d=i.closest('.an-dial');return getComputedStyle(i).opacity==='0'&&getComputedStyle(d).opacity==='1'&&getComputedStyle(i).pointerEvents==='none'}"""),"disabled knob exposes native range overlay"
         threshold=root.locator('input[aria-label="Threshold"]')
         expect(threshold).to_be_enabled()
         # Real slider key gestures with delayed native ACK. Observe attribute

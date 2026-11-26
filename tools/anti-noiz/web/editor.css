@@ -118,7 +118,12 @@
 .an-dial i::before{content:"";position:absolute;top:18%;left:calc(50% - 2.5px);width:5px;height:5px;border-radius:50%;background:#e5fff7;box-shadow:0 0 0 1px #29473f,0 0 5px #83ecd2}
 .an-dial input{position:absolute;inset:0;margin:0;width:100%;height:100%;opacity:0;cursor:ns-resize;touch-action:none}
 .an-dial:focus-within{outline:2px solid var(--mint);outline-offset:2px;border-radius:50%}
-.an-dial:has(input:disabled){opacity:.45;cursor:default}
+.an-dial:has(input:disabled){cursor:default}
+/* The native range is only a hit target, never artwork. Keep the steel
+   opaque even when disabled; mute the indicator, not the dial. */
+.an-panel .an-dial input:disabled{opacity:0;pointer-events:none}
+.an-dial:has(input:disabled) .an-led-on{stroke:#536c6d}
+.an-dial:has(input:disabled) i::before{background:#899c9c;box-shadow:none}
 .an-readout{display:grid;place-items:center;width:min(88px,90%);height:26px;border-radius:var(--an-radius);border:1px solid var(--an-edge);border-bottom-color:var(--an-recess-edge);
  background:var(--an-recess);box-shadow:var(--an-recess-shadow)}
 .an-control output{color:#b5f5de;font:500 var(--an-value-size) var(--an-mono);white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -137,7 +142,7 @@
 .an-panel footer{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;border-top:1px solid #0b151b;padding-top:8px;box-shadow:0 -1px #778b912b;min-height:40px}
 .an-panel footer [data-learn]{position:relative;padding:0 12px 0 22px;color:#e8ddbd;border-top-color:var(--an-rim);white-space:nowrap;font-size:11px}
 .an-panel footer [data-learn]::before{left:9px;background:#596052;box-shadow:inset 0 1px #0008}
-.an-panel footer [data-learn]:not(:disabled)::before{background:#d6b470;box-shadow:0 0 3px #b88f5577}
+.an-panel footer [data-learn]:not(:disabled)::before{background:#596052;box-shadow:inset 0 1px #0008}
 .an-panel footer [data-learn][data-learning=true]{opacity:1;color:#f0d9a9}
 .an-panel footer [data-learn][data-learning=true]::before{background:#f8d78d;box-shadow:0 0 4px #e3b86d}
 .an-panel footer [data-status]{min-width:0;min-height:24px;max-height:24px;overflow:auto;overflow-wrap:anywhere;color:#e0c28d;font-size:10px;line-height:12px;scrollbar-width:thin}
