@@ -698,11 +698,17 @@ def exercise(browser,out,width,height):
     page.wait_for_function("""id=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').at(-1).requestId!==id""",
                            arg=stale_read,timeout=2500)
     accepted_snapshot(page,state,lost_ack["settings"],applied=lost_ack["requestId"],schema=11)
+    assert editor.get_attribute("data-recovering")=="true","Snapshot alone cannot substitute for ACK"
+    assert factory.is_disabled()
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":lost_ack["requestId"],"status":"APPLIED"})
+    assert editor.get_attribute("data-recovering")=="true","ACK alone cannot unlock recovery"
+    assert factory.is_disabled()
+    accepted_snapshot(page,state,lost_ack["settings"],applied=lost_ack["requestId"],schema=11)
     assert editor.get_attribute("data-recovering")=="false"
-    assert editor.locator("#skHint").inner_text()=="DSP READBACK RECOVERED"
+    assert editor.locator("#skHint").inner_text()=="DSP APPLIED · ACCEPTED"
     assert factory.is_enabled()
     emit(page,"arMixBuiltinSonKuAck",{"requestId":lost_ack["requestId"],"status":"APPLIED"})
-    assert editor.locator("#skHint").inner_text()=="DSP READBACK RECOVERED"
+    assert editor.locator("#skHint").inner_text()=="DSP APPLIED · ACCEPTED"
     assert command_count()==before+1
     # New transaction after recovery remains ACK+readback gated.
     editor.locator("#skMotion").click()

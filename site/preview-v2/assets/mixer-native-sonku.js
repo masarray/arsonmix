@@ -627,6 +627,9 @@ function liveInput(next){
  if(wait<=0){
   cancelLiveTimer();lastLiveAt=now;return send(next,true);
  }
+ // The deferred timer owns the newest draft, superseding any older
+ // coalesced command. A readback must not flush that older value first.
+ latest=null;
  draft={...next};render();
  if(liveTimer===null)liveTimer=setTimeout(()=>{
   liveTimer=null;lastLiveAt=performance.now();
@@ -639,6 +642,7 @@ function commitInput(next){
  return send(next,false);
 }
 function flushLatest(){
+ if(liveTimer!==null)return;
  if(latest){const next=latest;latest=null;
   if(!sameSettings(next,accepted))send(next,true);
  }
@@ -661,7 +665,7 @@ function enterRecovery(){
  cancelLiveTimer();latest=null;
  drag=null;dialDrag=null;rangeEdits.clear();gestureStart.clear();
  draft={...accepted};
- hint("DSP TIMEOUT · RECOVERING READBACK");
+ hint(pending.ack?"DSP TIMEOUT · RECOVERING READBACK":"DSP TIMEOUT · WAITING FOR ACK");
  render();requestSnapshot(true);
 }
 function finishFailure(reason){
@@ -681,6 +685,30 @@ backend()?.addEventListener?.("arMixBuiltinSonKuAck",r=>{
  hint(pending.timedOut?"DSP TIMEOUT · VERIFYING READBACK":"DSP APPLIED · VERIFYING READBACK");
  requestSnapshot(true);
 });
+function acceptSettingsReadback(incoming,appliedRequestId,c){
+ // A scheduled keyboard/slider edit owns draft just like a held pointer.
+ const ownsDraft=liveTimer!==null||latest!==null||drag||dialDrag||rangeEdits.size!==0;
+ if(pending){
+  // Strict native contract even after timeout: matching ACK, THEN a
+  // subsequent snapshot of the same graph/device/insert and request.
+  const sent=pending.context;
+  if(!pending.ack||appliedRequestId!==pending.requestId||
+     sent.channelId!==c.channelId||sent.instanceId!==c.instanceId||
+     String(sent.deviceEpoch)!==String(c.deviceEpoch)||
+     String(sent.graphRevision)!==String(c.graphRevision)||
+     sent.workspaceToken!==c.workspaceToken)return false;
+  const recovered=pending.timedOut;
+  accepted={...incoming};pending=null;
+  if(recovered||!ownsDraft)draft={...incoming};
+  hint("DSP APPLIED · ACCEPTED");
+  if(!recovered)flushLatest();
+ }else{
+  // Advance accepted even while a throttled gesture owns the display.
+  accepted={...incoming};
+  if(!ownsDraft)draft={...incoming};
+ }
+ return true;
+}
 backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  if(r?.requestId!==readId||!current)return;
  const c=context();if(!c||r.status!=="ACCEPTED"||
@@ -744,27 +772,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  p8TransparentBass=musicSafeStereo && r.p8TransparentBass===true;
  p82MultibandRoom=p8TransparentBass && r.p82MultibandRoom===true;
  readId="";readSentAt=0;
- if(pending) {
-  // No synchronous recursive polling on stale readbacks. The heartbeat
-  // retries at a bounded cadence. Before timeout both ACK and readback
-  // remain mandatory; afterwards an exact applied ID from the validated
-  // native snapshot is sufficient to recover, not a fabricated ACK.
-  if(r.appliedRequestId!==pending.requestId ||
-     (!pending.ack&&!pending.timedOut))return;
-  const recovered=pending.timedOut;
-  const acknowledged=pending.ack;
-  accepted={...incoming};pending=null;
-  if(recovered||(!latest&&!drag&&!dialDrag&&rangeEdits.size===0))
-   draft={...incoming};
-  hint(acknowledged?"DSP APPLIED · ACCEPTED":"DSP READBACK RECOVERED");
-  if(!recovered)flushLatest();
- }else if(!drag&&!dialDrag&&rangeEdits.size===0){
-  accepted={...incoming};draft={...incoming};
- }else if(!pending){
-  // Preserve live thumb ownership, yet advance the accepted mirror so a
-  // later failure/reopen never restores a stale value.
-  accepted={...incoming};
- }
+ if(!acceptSettingsReadback(incoming,r.appliedRequestId,c))return;
  if(Number.isFinite(r.observedAzimuthDegrees) && root.dataset.fxState==="on"){
   // Disabled PCM has no running phase: never oscillate around stale native
   // readbacks or repeatedly restart a non-existent bypassed audio orbit.
