@@ -21,7 +21,7 @@ const pr=(head=sha)=>({
 });
 
 test('owner command parser requires a single bounded command and lowercase SHA',()=>{
-  for(const lane of ['check','fast','full','ui','native','fat','field','feature','immersib','stop'])
+  for(const lane of ['check','fast','full','resume','qualify','ui','native','fat','field','feature','immersib','stop'])
     assert.deepEqual(parseMilestoneCommand('/arsonmix-ci '+lane+' '+sha),{lane,sha});
   for(const bad of ['/arsonmix-ci all '+sha,'/arsonmix-ci fat main',
     '/arsonmix-ci fat '+sha+'; rm -rf .','/arsonmix-ci fat '+sha+'\necho unsafe',
@@ -570,4 +570,39 @@ test('STOP owner command cancels only active matching PR+exact-SHA, never create
   assert.equal(got.kind,'cancelled');
   assert.deepEqual(calls.filter(c=>c.method==='POST').map(c=>c.path),
     ['/actions/runs/51/cancel','/actions/runs/54/cancel']);
+});
+
+
+test('QUALIFY chooses one FAT package lane in place of NATIVE and keeps GUI qualification',()=>{
+  assert.deepEqual(planSmartMilestone(['src/Main.cpp','web/mixer.js'],'qualify').targets,['ui','fat']);
+  assert.deepEqual(planSmartMilestone(['docs/readme.md'],'qualify').targets,[]);
+  assert.deepEqual(planSmartMilestone(['web/mixer.js'],'qualify').targets,['ui']);
+  assert.deepEqual(planSmartMilestone(['src/Main.cpp'],'resume').targets,['native']);
+});
+
+test('RESUME fills missing lane despite prior comment, never duplicates active or red UI',async()=>{
+  for(const uiState of ['missing','active','red','green']){
+    const calls=[];
+    const req=event('/arsonmix-ci resume '+sha);
+    const api=async(path,method,data)=>{
+      calls.push({path,method,data});
+      if(path.startsWith('/pulls/418/files'))return [{filename:'web/mixer-layout.js'}];
+      if(path.startsWith('/pulls/418'))return pr();
+      if(path.startsWith('/issues/418/comments'))return [
+        {id:47,body:req.comment.body,author_association:'OWNER',user:{login:'masarray'}},
+        {id:46,body:'/arsonmix-ci ui '+sha,author_association:'OWNER',user:{login:'masarray'}}
+      ];
+      if(path.includes('/runs?event=pull_request'))return {workflow_runs:[{id:102,head_sha:sha,event:'pull_request'}]};
+      if(path.startsWith('/actions/runs/102/jobs'))return {jobs:[{name:'Fast UI contracts (every relevant PR commit)',conclusion:'success'}]};
+      if(path.includes('event=workflow_dispatch'))return {workflow_runs:uiState==='missing'?[]:[{
+        id:103,event:'workflow_dispatch',head_sha:sha,status:uiState==='active'?'in_progress':'completed',
+        conclusion:uiState==='red'?'failure':uiState==='green'?'success':null
+      }]};
+      if(path.endsWith('/dispatches'))return null;
+      throw Error('UNEXPECTED_API '+path);
+    };
+    const out=await performSmartMilestone({event:req,repo,api});
+    assert.equal(out.results[0].kind,uiState==='missing'?'dispatched':'skipped');
+    assert.equal(calls.filter(c=>c.method==='POST').length,uiState==='missing'?1:0);
+  }
 });
