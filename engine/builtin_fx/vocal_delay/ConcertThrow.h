@@ -11,7 +11,7 @@ namespace armix::builtin_fx::vocal_delay {
 // confirmed silence, cooldown. No per-trigger copy, search or allocation.
 class ConcertThrow final {
 public:
-    struct Capture{float l=0,r=0;};
+    struct Capture{float l=0,r=0;bool retire=false;};
     enum class Status:std::uint32_t { armed=0, tracking=1, capture=2, cooldown=3 };
     void prepare(double rate){
         frame_=std::max(1u,std::uint32_t(std::lround(rate*.01)));
@@ -21,7 +21,7 @@ public:
     std::size_t ringBytes()const noexcept{return (left_.capacity()+right_.capacity())*sizeof(float);}
     void reset() noexcept{
         left_.invalidate();right_.invalidate();count_=phrase_=gap_=high_=lastHigh_=learned_=cooldown_=remaining_=length_=age_=0;
-        energy_=difference_=reference_=previous_=0;held_=false;recent_=sinceVoice_=0;status_=Status::armed;
+        energy_=difference_=reference_=previous_=0;held_=autoTail_=false;recent_=sinceVoice_=0;status_=Status::armed;
     }
     Status status()const noexcept{return status_;}
     Capture tick(float l,float r,ThrowMode mode,bool manual) noexcept{
@@ -39,7 +39,7 @@ public:
         if(cooldown_)--cooldown_;
         if(recent_){--recent_;sinceVoice_=std::min(frame_*64,sinceVoice_+1);}
         if(manual&&!held_&&recent_&&!remaining_&&sinceVoice_<=frame_*20){
-            start(std::min(policy.capture*frame_,recent_),sinceVoice_,policy);
+            start(std::min(policy.capture*frame_,recent_),sinceVoice_,policy,false);
         }
         held_=manual;
         // Max-energy channel (not stereo fold) avoids false silence on
@@ -53,6 +53,9 @@ public:
             count_=0;energy_=difference_=0;
             const float floor=std::clamp(reference_*.10f,.006f,.015f);
             if(rms>floor&&coherent){
+                // A new voiced frame supersedes an automatic throw. The core
+                // ramps/invalidates wet only; never gate the microphone.
+                if(autoTail_){autoTail_=false;remaining_=0;out.retire=true;out.l=out.r=0.f;}
                 recent_=std::min(frame_*32,recent_+frame_*2);sinceVoice_=0;
                 if(gap_>=policy.gap){phrase_=high_=lastHigh_=0;}
                 gap_=0;phrase_=std::min(phrase_+1,10000u);
@@ -70,7 +73,7 @@ public:
                         if(mode!=ThrowMode::manual&&!cooldown_&&!remaining_&&learned_>=12&&
                            phrase_>=policy.phrase&&high_>=policy.high&&lastHigh_<=5){
                             const auto n=std::min(policy.capture,phrase_)*frame_;
-                            start(n,gap_*frame_,policy);
+                            start(n,gap_*frame_,policy,true);
                         }
                         phrase_=high_=lastHigh_=0;
                     }
@@ -94,15 +97,15 @@ private:
             default:return {1.85f,24,15,14,17,110};
         }
     }
-    void start(std::uint32_t n,std::uint32_t gap,const Policy& p)noexcept{
+    void start(std::uint32_t n,std::uint32_t gap,const Policy& p,bool automatic)noexcept{
         if(n<edge_*2||n+gap>=left_.capacity())return;
-        length_=remaining_=n;age_=n+gap;cooldown_=p.cooldown*frame_;
+        length_=remaining_=n;age_=n+gap;cooldown_=p.cooldown*frame_;autoTail_=automatic;
     }
     Policy policy_=config(ThrowMode::off);ThrowMode policyMode_=ThrowMode::off;
     DelayLine left_,right_;
     std::uint32_t frame_=1,edge_=1,count_=0,phrase_=0,gap_=0,high_=0,lastHigh_=0,learned_=0,
         cooldown_=0,remaining_=0,length_=0,age_=0,recent_=0,sinceVoice_=0;
     float energy_=0,difference_=0,reference_=0,previous_=0;
-    bool held_=false;Status status_=Status::armed;
+    bool held_=false,autoTail_=false;Status status_=Status::armed;
 };
 } // namespace

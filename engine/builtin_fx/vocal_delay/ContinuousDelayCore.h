@@ -59,7 +59,7 @@ public:
         ready_=false;
         const auto capacity=static_cast<std::size_t>(std::ceil(rate*4.))+2;
         left_.prepare(capacity);right_.prepare(capacity);throw_.prepare(rate);
-        activeThrow_=q.throwMode_;switchGain_=1.f;
+        activeThrow_=q.throwMode_;switchGain_=1.f;retireGain_=1.f;retiring_=false;
         rate_=rate;target_=q;active_=next_=q.taps_;
         fadeLength_=static_cast<std::uint32_t>(std::ceil(rate*.03));
         fadePosition_=fadeLength_;
@@ -86,7 +86,7 @@ public:
     }
     // AUDIO only, or CONTROL on an unpublished instance.
     void invalidate() noexcept {
-        left_.invalidate();right_.invalidate();throw_.reset();tailRemaining_=0;
+        left_.invalidate();right_.invalidate();throw_.reset();tailRemaining_=0;retireGain_=1.f;retiring_=false;
         toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;sustain_=0.f;headroom_=1.f;focus_.reset();publishMeter(0,0);
         active_=next_=target_.taps_;fadePosition_=fadeLength_;
     }
@@ -117,7 +117,7 @@ public:
                 if(switchGain_==0.f){
                     // Wet-only fade before O(1) retirement; no prior lyrics leak into throw mode.
                     left_.invalidate();right_.invalidate();throw_.reset();toneL_={};toneR_={};wetL_={};wetR_={};
-                    activeThrow_=target_.throwMode_;
+                    activeThrow_=target_.throwMode_;retireGain_=1.f;retiring_=false;
                 }
             }else switchGain_=std::min(1.f,switchGain_+powerStep_);
             // Dry is never buffered, filtered, or limited by the echo engine.
@@ -166,6 +166,7 @@ public:
                 if(target_.enabled_&&!switching){
                     const auto captured=throw_.tick(safeL,safeR,activeThrow_,target_.hit_);
                     srcL=captured.l;srcR=captured.r;
+                    if(captured.retire)retiring_=true;
                 }else{srcL=srcR=0.f;}
             }
             const float fold=.5f*(srcL+srcR);
@@ -179,7 +180,7 @@ public:
             const float fL=toneL_.tick(dL+(dR-dL)*cross_,hp_,lp_);
             const float fR=toneR_.tick(dR+(dL-dR)*cross_,hp_,lp_);
             // Stop feeding new audio on OFF; ramp the wet return, then invalidate.
-            const float feed=target_.enabled_&&!switching?power_:0.f;
+            const float feed=target_.enabled_&&!switching&&!retiring_?power_:0.f;
             const float peak=std::min(1.f,std::max(std::abs(dryL),std::abs(dryR)));
             env_=tiny(env_+(peak-env_)*(peak>env_?target_.attack_:target_.release_));
             // Soft activity ramp: full duck at ~-18 dBFS, never hard-gate echo.
@@ -201,7 +202,10 @@ public:
             left_.push(bounded(inL*send+regen*fL,8.f));
             right_.push(bounded(inR*send+regen*fR,8.f));
             const float reduction=depth_*activity;
-            const float gain=echo_*power_*(1.f-reduction)*switchGain_;
+            // Fade an obsolete automatic tail to zero in <=10ms, then
+            // invalidate only wet history; detector reference stays learned.
+            if(retiring_)retireGain_=std::max(0.f,retireGain_-powerStep_);
+            const float gain=echo_*power_*(1.f-reduction)*switchGain_*retireGain_;
             const float mid=.5f*(wL+wR);
             if(gain==0.f) {
                 l[i]=dryL;if(!monoBuffer)r[i]=dryR;
@@ -222,6 +226,10 @@ public:
                 blockWet=std::max(blockWet,std::max(std::abs(wetL),std::abs(wetR)));
             }
             if(gain>0.f)blockReduction=std::max(blockReduction,reduction);
+            if(retiring_&&retireGain_==0.f){
+                left_.invalidate();right_.invalidate();toneL_={};toneR_={};wetL_={};wetR_={};
+                retiring_=false;retireGain_=1.f;headroom_=1.f;
+            }
         }
         publishMeter(blockWet,blockReduction);
     }
@@ -287,7 +295,7 @@ private:
     float stageBlend_=0.f,sustain_=0.f,sustainAttack_=0.f,sustainRelease_=0.f;
     float headroom_=1.f,headroomRelease_=0.f;
     AdaptiveVocalFocus focus_{};
-    ConcertThrow throw_{};ThrowMode activeThrow_=ThrowMode::off;float switchGain_=1.f;
+    ConcertThrow throw_{};ThrowMode activeThrow_=ThrowMode::off;float switchGain_=1.f,retireGain_=1.f;bool retiring_=false;
     static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
     std::atomic<std::uint32_t> meterWord_{0};std::uint32_t meterSequence_=0;
     bool ready_=false;

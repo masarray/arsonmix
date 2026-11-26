@@ -29,7 +29,7 @@ static void scenario(double rate,std::size_t preset){
     double tail=0,side=0;std::size_t first=n;
     for(std::size_t i=0;i<n;++i){
         CHECK(l[i]==a[i]&&r[i]==b[i]&&std::isfinite(l[i])&&std::abs(l[i])<=1.00001f&&std::abs(r[i])<=1.00001f);
-        if(i<std::size_t(rate*2.55)||p.throwMode==ThrowMode::manual)CHECK(l[i]==dry[i]&&r[i]==dry[i]);
+        if(i<std::size_t(rate*2.55)||i>=std::size_t(rate*4.23)||p.throwMode==ThrowMode::manual)CHECK(l[i]==dry[i]&&r[i]==dry[i]);
         if(l[i]!=dry[i]||r[i]!=dry[i])first=std::min(first,i);
         if(i>=std::size_t(rate*2.55)&&i<std::size_t(rate*4.2)){tail+=std::abs(l[i]-dry[i])+std::abs(r[i]-dry[i]);side+=std::abs(l[i]-r[i]);}
     }
@@ -67,7 +67,22 @@ static void rejectNoiseAndSwitch(){
     l.assign(n,0);r=l;run(c,l.data(),r.data(),n);
     for(std::size_t i=std::size_t(rate*.025);i<n;++i)CHECK(l[i]==0.f&&r[i]==0.f);
 }
+static void rejectPrematureReturn(){
+    constexpr double rate=48000;auto p=presetSettings(concertPresetStart);
+    ContinuousDelayCore c;CHECK(c.prepare(rate,p));
+    const auto n=std::size_t(rate*4);std::vector<float> dry(n),l(n),r(n);
+    for(std::size_t i=0;i<n;++i){
+        const double time=double(i)/rate;float amp=0;
+        if(time<.65)amp=.07f;
+        if(time>=.65&&time<1.1)amp=.34f;
+        // Return after detector confirms but before a 420ms delay can sound.
+        if(time>=1.30&&time<2.4)amp=.07f;
+        dry[i]=amp*float(std::sin(i*.025));
+    }
+    l=r=dry;run(c,l.data(),r.data(),n);CHECK(l==dry&&r==dry);
+}
 int main(){
+    rejectPrematureReturn();
     rejectNoiseAndSwitch();
     for(double rate:{8000.,44100.,48000.,96000.,192000.})for(std::size_t i=0;i<concertPresetCount;++i)scenario(rate,i);
     manualAndReset();std::puts("PASS 40 concert cases, dry identity, selected tail, stereo, manual/reset, block invariance, no heap");
