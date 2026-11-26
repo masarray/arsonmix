@@ -80,8 +80,10 @@ def exercise(browser, out, width, height):
         "A current native PCM graph with all three SEND capabilities must admit SOF")
     options = target.locator("option").all_text_contents()
     assert any("STAGE BUS" in label for label in options), options
-    target.select_option(label=next(label for label in options if "STAGE BUS" in label))
+    # The approved compact console reveals the target selector only
+    # after SEND MIX is active. Exercise the actual visible operator path.
     toggle.click()
+    target.select_option(label=next(label for label in options if "STAGE BUS" in label))
     assert page.locator("#mixContext").inner_text() == "SEND MIX → STAGE BUS"
     on = source.locator('[data-action="sofOn"]')
     tap = source.locator('[data-action="sofTap"]')
@@ -221,9 +223,9 @@ def exercise_dmx(browser, out, width, height):
     cue.wait_for(state="attached",timeout=15000)
     assert abs(float(wet.locator(".fader").input_value())+6)<.01
     target=page.locator("#sofTarget")
-    target.select_option(label="SINGER MONITOR")
     toggle=page.locator("#sofToggle")
     toggle.click()
+    target.select_option(label="SINGER MONITOR")
     assert page.locator("#mixContext").inner_text()=="MONITOR MIX"
     assert wet.locator(".sof-badge").inner_text()=="PRE-FADER"
     assert wet.locator(".fader").is_enabled()
