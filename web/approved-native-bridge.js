@@ -830,7 +830,7 @@
       if(labels.output!==undefined)t.output=labels.output;
       const direct=Array.isArray(native.raw?.externalOutputs)?
         native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
-      const pair=direct && hardwareOutputPairs().find(p=>
+      const pair=direct && hardwareOutputPairs(true).find(p=>
         p.left===direct.physicalLeft&&p.right===direct.physicalRight);
       t.externalOutput=direct?(direct.status==="LIVE"&&pair?pair.label:
         (direct.status==="PENDING"?"Pending · ":"Needs Remap · ")+
@@ -1193,7 +1193,7 @@
   const NEEDS_REMAP="Audio connection lost";
   // Only driver-verified even/odd physical pin pairs (not packed ordinals).
   // MAIN and MONITOR retain exclusive ownership of their actual pins.
-  const hardwareOutputPairs=()=>deviceVM.outputChoices(hardware);
+  const hardwareOutputPairs=(includeReserved=false)=>deviceVM.outputChoices(hardware,includeReserved);
   const paintExternalReadback=(next)=>{
     const assignments=Array.isArray(next?.raw?.externalOutputs)?
       next.raw.externalOutputs:[];
@@ -1203,7 +1203,7 @@
       const id=nativeIdFor(t);
       const row=assignments.find(p=>p.channelId===id);
       // Native PCM/armed status is projected, never asserted by the DOM.
-      const projected=deviceVM.externalPresentation(next,row,choices);
+      const projected=deviceVM.externalPresentation(next,row,deviceVM.outputChoices(next,true));
       const {state,value}=projected;
       t.externalOutput=value;
       const select=document.querySelector('.strip[data-id="'+t.id+
@@ -3599,6 +3599,16 @@
   let extraPanel=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
       extraError="",extraInventoryKnown=false;
   const extraField=name=>extraPanel?.querySelector("[data-extra-"+name+"]");
+  function settleAdditionalOutput(live){
+    const p=extraPending;
+    if(!p?.acked||!live)return;
+    const matches=p.action==="secondaryOutputConnect"?
+      live.secondaryOutputReady===true&&live.secondaryOutputArmed===false&&live.secondaryOutputName===p.value:
+      p.action==="secondaryOutputArm"?live.secondaryOutputArmed===p.value:
+      live.secondaryOutputReady===false&&live.secondaryOutputArmed===false&&!live.secondaryOutputName&&!live.secondaryOutputFault;
+    if(matches)extraPending=null;
+    else if(live.secondaryOutputFault===true){extraPending=null;extraError="Output fault · disconnect and reconnect the endpoint.";}
+  }
   function paintAdditionalOutput(){
     if(!extraPanel?.open)return;
     const live=extraLive, busy=Boolean(extraPending),ready=live?.secondaryOutputReady===true,
@@ -3621,12 +3631,12 @@
     extraField("arm").disabled=busy||(!armed&&(!ready||fault||!allowed));
     extraField("arm").textContent=armed?"Disarm output":"Arm output";
     extraField("stop").disabled=busy||(!ready&&!fault&&!live?.secondaryOutputName);
-    const message=busy?"Waiting for native output response…":!live?"Reading audio engine status…":
+    const message=busy?(extraPending.acked?"Waiting for native output state…":"Waiting for native output response…"):!live?"Reading audio engine status…":
       fault?"Output fault · disconnect and reconnect the same endpoint.":
       armed?"Output armed · "+live.secondaryOutputName+" · receiving app must verify audio":
       ready?"Connected · "+live.secondaryOutputName+" · arm to send MAIN":
       !allowed?"Apply verified input routing and use DIRECT audio mode first.":
-      !hardwareMuted?"Mute hardware output before connecting (close this panel to use mixer Output mute).":
+      !hardwareMuted?"Mute hardware output before connecting (close this dialog and Audio I/O, then use the mixer output mute).":
       !extraInventoryKnown?"Reading Windows playback devices…":
       !options.length?"No Windows playback endpoint found. Install/enable a virtual cable, then Refresh.":
       "Select a playback endpoint, then Connect.";
@@ -3640,7 +3650,7 @@
     if(extraPending||!extraPanel?.open)return;
     const requestId="extra-out-"+(++extraSerial);
     extraError="";
-    extraPending={requestId,action};
+    extraPending={requestId,action,value,acked:false};
     paintAdditionalOutput();
     backend.emitEvent("arMixAction",{action,value,requestId});
     window.setTimeout(()=>{
@@ -5349,13 +5359,16 @@
     // browser polling, requestAnimationFrame or audio callback work.
     backend.addEventListener("arMixSecondaryOutputAck",ack=>{
       if(!extraPending||ack?.requestId!==extraPending.requestId||ack.action!==extraPending.action)return;
-      extraPending=null;
-      extraError=ack.ok===true?"":String(ack.error||"Additional output rejected");
-      // ACK acknowledges the command; status telemetry owns connected/armed state.
+      if(ack.ok!==true){
+        extraPending=null;
+        extraError=String(ack.error||"Additional output rejected");
+      }else extraPending.acked=true;
+      // Keep controls pending until a subsequent native status matches.
       paintAdditionalOutput();
     });
     backend.addEventListener("arMixStatus", live=>{
       extraLive=live;
+      settleAdditionalOutput(live);
       paintAdditionalOutput();
       const health=protocol.footerHealthFromLive(live);
       if(!health || health.sequence===lastFooterHealth?.sequence)return;

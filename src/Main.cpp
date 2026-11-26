@@ -7821,11 +7821,15 @@ private:
                     rv,bus.getProperty("graphRevision",{}));
             std::uint64_t rawId=0;
             const bool idOk=armix::session::parseDecimal(juce::var(channelText),rawId);
-            juce::String error="EXTERNAL OUT: invalid or stale native request";
-            if(requestId.startsWith("out-o-") && requestId.length()<=64 &&
-               tokens && idOk && confirmed.isBool() &&
-               ((left==-1 && right==-1) || (left>=0 && right>=0)) &&
-               !nativeShowBusy_ && !studioBackupBusy_)
+            juce::String error;
+            if(!requestId.startsWith("out-o-") || requestId.length()>64 || !idOk ||
+               !confirmed.isBool() || !((left==-1 && right==-1) || (left>=0 && right>=0)))
+                error="EXTERNAL OUT: invalid channel or output request";
+            else if(nativeShowBusy_ || studioBackupBusy_)
+                error="EXTERNAL OUT: finish the current Show or backup operation first";
+            else if(!tokens)
+                error="EXTERNAL OUT: stale device or graph revision; refresh Audio I/O";
+            else
                 error=engine_.setPhysicalExternalOutput(
                     armix::mixer::ChannelId{rawId},
                     armix::console::nativeSessionTokenValue(ep),

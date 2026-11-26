@@ -203,7 +203,7 @@
       x.left===row.left && x.right===row.right);
     return found?.label||"None";
   }
-  function outputChoices(snapshot) {
+  function outputChoices(snapshot,includeReserved=false) {
     const d=snapshot?.device,choices=[{...NONE}];
     if(d?.backend!=="ASIO"||!Array.isArray(d.outputEndpoints)||
        !Array.isArray(d.enabledOutputs))return choices;
@@ -215,8 +215,12 @@
       snapshot.raw.physicalMainOutputs:[];
     const monitor=Array.isArray(snapshot?.raw?.physicalMonitorOutputs)?
       snapshot.raw.physicalMonitorOutputs:[];
+    const reserved=new Set((Array.isArray(snapshot?.raw?.logicalOutputRegistry?.ports)?
+      snapshot.raw.logicalOutputRegistry.ports:[]).filter(p=>p.bound===true&&p.playback===d.playbackDevice)
+      .flatMap(p=>[p.left,p.right]));
     for(const [left,a] of map) {
-      if(left%2!==0||!map.has(left+1))continue;
+      if(left%2!==0||!map.has(left+1)||
+         (!includeReserved&&(reserved.has(left)||reserved.has(left+1))))continue;
       const b=map.get(left+1);
       if(main.includes(left)||main.includes(left+1)||
          monitor.includes(left)||monitor.includes(left+1))continue;
@@ -233,7 +237,7 @@
   // Project one installed row for the existing DOM. ACK-only and logical
   // assignments never promote output status to LIVE; that still requires
   // matching verified pins AND accepted native graph AND armed output.
-  function externalPresentation(snapshot,row,choices=outputChoices(snapshot)) {
+  function externalPresentation(snapshot,row,choices=outputChoices(snapshot,true)) {
     const match=row&&choices.find(p=>p.left===row.physicalLeft &&
       p.right===row.physicalRight);
     const installed=row?.status==="LIVE"&&match;

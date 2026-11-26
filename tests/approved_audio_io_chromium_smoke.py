@@ -455,6 +455,12 @@ def verify_additional_output(page,out):
     page.goto((out / "index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     state=snapshot()
+    state["device"].update(backend="ASIO",outputArmed=False,
+        enabledOutputs=list(range(8)),
+        outputEndpoints=[{"id":"out:"+str(i),"port":i,"callback":i,
+                          "label":"Maono "+str(i+1),"active":True} for i in range(8)])
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],
+                 externalRevision="2",externalOutputs=[])
     emit(page,"arMixConsoleSnapshot",state)
     live={"monitor":False,"directRouteAuthorized":True,"adaptiveClockActive":False,
           "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True},
@@ -477,6 +483,7 @@ def verify_additional_output(page,out):
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputConnect').at(-1)")
     emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
     assert panel.get_by_role("button",name="Arm output").is_disabled()
+    assert panel.get_by_role("button",name="Connect",exact=True).is_disabled()
     live.update(secondaryOutputReady=True,secondaryOutputName="CABLE Input")
     emit(page,"arMixStatus",live)
     panel.get_by_role("button",name="Arm output").click()

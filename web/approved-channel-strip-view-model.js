@@ -188,6 +188,9 @@
         return unavailable;
       const main=hardware?.raw?.physicalMainOutputs||[];
       const monitor=hardware?.raw?.physicalMonitorOutputs||[];
+      const ports=hardware.raw.logicalOutputRegistry?.ports;
+      if(Array.isArray(ports)&&ports.some(p=>p.bound===true&&p.playback===d.playbackDevice&&
+        [p.left,p.right].some(pin=>pin===left||pin===right)))return unavailable;
       if((Array.isArray(main)&&[left,right].some(p=>main.includes(p)))||
          (Array.isArray(monitor)&&[left,right].some(p=>monitor.includes(p))))
         return unavailable;

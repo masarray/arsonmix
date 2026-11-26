@@ -7572,3 +7572,22 @@ test("U1 output rejects preserve actionable native reasons without weakening gen
  assert.match(b,/ack\?\.requestId!==extraPending\.requestId\|\|ack\.action!==extraPending\.action/);
  assert.match(host,/EXTERNAL_OUTPUT_REJECTED/);
 });
+
+
+test("U1 reserved logical pairs are not offered as direct outputs but installed readback stays visible",()=>{
+ const id="123",device={epoch:"31",backend:"ASIO",playbackDevice:"Maono",outputArmed:true,
+  enabledOutputs:[0,1,2,3,4,5,6,7],
+  outputEndpoints:Array.from({length:8},(_,port)=>({port,active:true,label:"Maono "+port}))};
+ const raw={externalRevision:"9",physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
+  logicalOutputRegistry:{ports:[{bound:true,playback:"Maono",left:4,right:5}],references:[]}};
+ const hardware={device,raw};
+ assert.deepEqual(deviceVM.outputChoices(hardware).map(p=>p.left),[-1,2,6]);
+ const installed=deviceVM.externalPresentation(hardware,{physicalLeft:4,physicalRight:5,status:"LIVE"});
+ assert.equal(installed.state,"LIVE");
+ const choice=deviceVM.outputChoices(hardware,true).find(p=>p.left===4);
+ const native={admitted:true,device:{epoch:"31"},graph:{revision:"9",channels:[{id,role:"INPUT"}]}};
+ const input={native,hardware,channelId:id,choices:[choice],selectedLabel:choice.label,currentLabel:"None"};
+ assert.equal(stripVM.externalOutputPlan(input).kind,"UNAVAILABLE");
+ assert.equal(stripVM.externalOutputPlan({...input,hardware:{device,raw:{...raw,logicalOutputRegistry:{ports:[],references:[]}}}}).kind,"READY");
+ assert.equal(stripVM.externalOutputPlan({...input,hardware:{device,raw:{...raw,logicalOutputRegistry:{ports:[],references:[]}}},native:{...native,graph:{...native.graph,revision:"10"}}}).kind,"UNAVAILABLE");
+});
