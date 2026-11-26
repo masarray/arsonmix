@@ -1,0 +1,26 @@
+name: SonKu P10.4 coherent externalization research
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify_sonku_p104_externalization.py'
+      - 'tests/sonku_p104_externalization.cpp'
+      - '.github/workflows/sonku-p104-externalization.yml'
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compare actual native renderer with isolated acoustic hypothesis
+        run: python3 scripts/verify_sonku_p104_externalization.py sonku-p104-listening
+      - name: Upload blinded listening and numeric evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P104-coherent-externalization-research
+          path: sonku-p104-listening/
+          if-no-files-found: error
+          retention-days: 14
