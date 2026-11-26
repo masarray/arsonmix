@@ -376,6 +376,7 @@ public:
         remaining_=0;
         degrees_=wrapDegrees(settings_.startAzimuthDegrees);
         haveKernel_=false;
+        invalidateStaticHrir();
         room_.reset();
         reverb_.reset();
         integrity_.reset();
@@ -496,6 +497,7 @@ public:
         // continue to use their exact original 1/r distance law.
         if(s.spacePreset!=0)nativeSpaceEverUsed_=true;
         remaining_=0;
+        invalidateStaticHrir();
         return true;
     }
     Settings settings() const noexcept {return settings_;}
@@ -596,6 +598,7 @@ public:
         }
         remaining_=0;
         haveKernel_=false;
+        invalidateStaticHrir();
         return true;
 #endif
     }
@@ -941,33 +944,11 @@ public:
             }
 #endif
             float ears[2]{0.f,0.f};
-            for(int tap=0;tap<taps;++tap) {
-                int at=write_-tap;
-                if(at<0)at+=taps;
-                const float v0=history_[0][at],v1=history_[1][at];
-                // The old implementation replaced four HRIR kernels in
-                // visible 16-frame jumps. Slew continuously per audio sample.
-                auto& l0=kernels_[0][0][tap];
-                auto& r0=kernels_[0][1][tap];
-                auto& l1=kernels_[1][0][tap];
-                auto& r1=kernels_[1][1][tap];
-                l0+=filterSlew_*(targets_[0][0][tap]-l0);
-                r0+=filterSlew_*(targets_[0][1][tap]-r0);
-                if(musicSafe && !musicFused) {
-                    // Both musical input channels share exactly one centered
-                    // measured HRIR. No dual-HRTF center interference; the
-                    // unprocessed SIDE is returned in its own stereo axis.
-                    // Only two FIR multiply-accumulates per tap, not four.
-                    const float sum=v0+v1;
-                    ears[0]+=sum*l0;
-                    ears[1]+=sum*r0;
-                }else{
-                    l1+=filterSlew_*(targets_[1][0][tap]-l1);
-                    r1+=filterSlew_*(targets_[1][1][tap]-r1);
-                    ears[0]+=v0*l0+v1*l1;
-                    ears[1]+=v0*r0+v1*r1;
-                }
-            }
+            // Keep tap order and coefficient slew exactly as before. Split the
+            // circular history into two contiguous spans, selecting the
+            // centered/twin path once instead of branching for every tap.
+            if(musicSafe && !musicFused) accumulateDirect<true>(ears);
+            else accumulateDirect<false>(ears);
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
             p92::WorldBassFoundation::Ears p92RoomBass{};
@@ -1341,6 +1322,33 @@ public:
         }
     }
 private:
+    template<bool Centered>
+    void accumulateDirect(float (&ears)[2]) noexcept {
+        int tap=0;
+        const auto span=[&](int at,int count) noexcept {
+            for(int n=0;n<count;++n,--at,++tap) {
+                const float v0=history_[0][at],v1=history_[1][at];
+                auto& l0=kernels_[0][0][tap];
+                auto& r0=kernels_[0][1][tap];
+                l0+=filterSlew_*(targets_[0][0][tap]-l0);
+                r0+=filterSlew_*(targets_[0][1][tap]-r0);
+                if constexpr(Centered) {
+                    const float sum=v0+v1;
+                    ears[0]+=sum*l0;
+                    ears[1]+=sum*r0;
+                } else {
+                    auto& l1=kernels_[1][0][tap];
+                    auto& r1=kernels_[1][1][tap];
+                    l1+=filterSlew_*(targets_[1][0][tap]-l1);
+                    r1+=filterSlew_*(targets_[1][1][tap]-r1);
+                    ears[0]+=v0*l0+v1*l1;
+                    ears[1]+=v0*r0+v1*r1;
+                }
+            }
+        };
+        span(write_,write_+1);
+        span(taps-1,taps-write_-1);
+    }
     bool applyAcousticSettings(const Settings& s) noexcept {
         const float width=s.spacePreset==1?7.2f:
             s.spacePreset==2?14.4f:28.8f;
@@ -1370,7 +1378,32 @@ private:
     // Positive azimuth is right. MIT KEMAR supplied azimuth 0..180 with
     // symmetric opposite-ear swapping for left hemisphere, not yaw-panning.
     using EarKernel=std::array<std::array<float,taps>,2>;
+    // Raw measured HRIR only: never cache the signal-dependent MID correction,
+    // p90 coherence, room direction updates, or smoothed FIR coefficients.
+    // Three fixed slots belong to L, R and center; no heap or shared mutation.
+    struct StaticHrir {
+        EarKernel raw{};
+        double azimuth=0.;
+        bool valid=false;
+    };
+    void invalidateStaticHrir() noexcept {
+        for(auto& entry:staticHrir_)entry.valid=false;
+    }
     void interpolate(EarKernel& destination,double azimuth) noexcept {
+        if(settings_.moving) {
+            interpolateRaw(destination,azimuth);
+            return;
+        }
+        auto& cached=staticHrir_[&destination==&targets_[0]?0:
+                                 &destination==&targets_[1]?1:2];
+        if(!cached.valid || cached.azimuth!=azimuth) {
+            interpolateRaw(cached.raw,azimuth);
+            cached.azimuth=azimuth;
+            cached.valid=true;
+        }
+        destination=cached.raw;
+    }
+    void interpolateRaw(EarKernel& destination,double azimuth) noexcept {
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH
         if(room_.preparedProfile()==SonKuReflectionProfile::SixSurfaceKemarResearch &&
            (researchElevationDegrees_!=0.f
@@ -1599,6 +1632,7 @@ private:
     std::array<std::array<std::array<float,taps>,2>,2> kernels_{};
     std::array<std::array<std::array<float,taps>,2>,2> targets_{};
     EarKernel centerTarget_{};  // fixed target coefficients, no extra PCM FIR
+    std::array<StaticHrir,3> staticHrir_{};
     Settings settings_{};
     SonKuEarlyReflections room_{};
     SonKuMusicalReverb reverb_{};
