@@ -4027,9 +4027,7 @@ private:
                 emitNotice("Additional output paused after device change · choose Enable when ready",false);
                 return;
             }
-            auto* liveDevice=engine_.devices().getCurrentAudioDevice();
-            if(!liveDevice||liveDevice->getName()!=streamIntent->driver||
-               engine_.devices().getCurrentAudioDeviceType()!="ASIO")return;
+            if(!engine_.secondarySourceMatches(*streamIntent))return;
             pendingVendorStream_=PendingVendorStream{*streamIntent,engine_.dryRoutingLabEpoch(),
                 engine_.outputArmRevision(),static_cast<std::uint64_t>(monotonicMilliseconds()+5000),
                 previousMonitor&&!operatorOutputMuted_};
@@ -6771,7 +6769,8 @@ private:
             else if(action=="audioDriverPanel")
                 emitNotice("Audio device is busy · try again",true);
             else if(action=="secondaryOutputEnable"||action=="secondaryOutputConnect"||
-                    action=="secondaryOutputArm"||action=="secondaryOutputStop"){
+                    action=="secondaryOutputArm"||action=="secondaryOutputStop"||
+                    action=="secondaryOutputSplit"){
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("requestId",args.getProperty("requestId",{}));
                 ack->setProperty("action",action);ack->setProperty("ok",false);
@@ -9965,8 +9964,44 @@ private:
                !armix::console::approvedNativeId(value.getProperty("graphRevision",{}),rev)||
                !armix::console::approvedNativeId(value.getProperty("rosterRevision",{}),roster))
                 error="DMX: stale request or mixer operation in progress";
-            else error=engine_.patchDmxSplitOutput(ep,rev,roster,bool(enable));
+            else if(!bool(value.getProperty("smart",false)))
+                error=engine_.patchDmxSplitOutput(ep,rev,roster,bool(enable));
+            else {
+                // One explicit mode change owns both output gates and the
+                // existing native graph transaction. Never mutate PCM in JS.
+                auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
+                const auto intent=engine_.captureSecondaryResumeIntent();
+                const bool monitorWasActive=engine_.isMonitorEnabled();
+                const bool monitorWanted=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+                const auto generation=secondaryRetry_.generation();
+                if(!lease||!intent||!engine_.secondarySourceMatches(*intent)||
+                   !engine_.secondaryResumeReady()||ep!=engine_.dryRoutingLabEpoch()||
+                   rev!=engine_.outputArmRevision()||mixerSessionWorker_.busy()||
+                   pendingRetainedFxCapture_||retainedOfflineFxActive_||engine_.hasRuntimeFxFault())
+                    error="Connect the additional output and wait for audio to be ready";
+                else {
+                    autoMainEpoch_=0;
+                    engine_.setMonitorEnabled(false);
+                    engine_.disarmSecondaryOutput();
+                    error=engine_.patchDmxSplitOutput(ep,rev,roster,bool(enable));
+                    const auto acceptedRevision=engine_.outputArmRevision();
+                    if(generation==secondaryRetry_.generation()&&!pendingSecondaryStop_&&
+                       engine_.dryRoutingLabEpoch()==ep&&
+                       (error.isEmpty()||acceptedRevision==rev)) {
+                        // On rejection restore the prior verified route; on
+                        // success wait for callback mapping before restoring.
+                        if(monitorWanted||monitorWasActive)
+                            requestAutomaticMain(false);
+                        pendingVendorStream_=PendingVendorStream{*intent,ep,acceptedRevision,
+                            static_cast<std::uint64_t>(monotonicMilliseconds()+5000),
+                            monitorWanted||monitorWasActive};
+                    }
+                    emitApprovedNativeSnapshot();
+                }
+            }
             auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",args.getProperty("requestId",{}));
+            ack->setProperty("action",action);
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
             ack->setProperty("secondaryMainOnly",engine_.status().getProperty("dryRoutingLab",{})
@@ -9974,8 +10009,8 @@ private:
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixSecondaryOutputAck",juce::var(ack.release()));
             return emitNotice(error.isNotEmpty()?error:
-                (bool(enable)?"DMX: MAIN to STREAM, ASIO to MONITOR. Patch MONITOR sends, then arm each output explicitly.":
-                "DMX: physical MAIN restored. Outputs remain muted."),error.isNotEmpty());
+                (bool(enable)?"Independent monitor selected · use MONITOR sends to build your headphone mix":
+                "Same mix selected · restoring verified outputs"),error.isNotEmpty());
         }
         if(action=="secondaryOutputEnable" || action=="secondaryOutputConnect" ||
            action=="secondaryOutputArm" || action=="secondaryOutputStop") {

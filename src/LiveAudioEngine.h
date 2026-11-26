@@ -403,10 +403,13 @@ public:
             !routeReconfiguring_.load(std::memory_order_acquire)&&!independent_.active()&&
             diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal;
     }
-    juce::String restoreSecondaryOutput(const SecondaryResumeIntent& intent) {
+    bool secondarySourceMatches(const SecondaryResumeIntent& intent) {
         auto* d=deviceManager_.getCurrentAudioDevice();
-        if(!secondaryResumeReady()||!d||!d->isOpen()||d->getName()!=intent.driver||
-           deviceManager_.getCurrentAudioDeviceType()!="ASIO"||intent.endpointId.empty())
+        return d&&d->isOpen()&&d->getName()==intent.driver&&
+            deviceManager_.getCurrentAudioDeviceType()=="ASIO"&&!intent.endpointId.empty();
+    }
+    juce::String restoreSecondaryOutput(const SecondaryResumeIntent& intent) {
+        if(!secondaryResumeReady()||!secondarySourceMatches(intent))
             return "Additional output could not verify the previous audio route";
         const auto error=connectSecondaryOutput(intent.name,intent.endpointId);
         if(error.isNotEmpty())return error;

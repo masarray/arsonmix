@@ -7742,3 +7742,21 @@ test("U3 same-device Apply suspends and restores the verified stream without man
  assert.match(a,/engine_\.beginManualAudioSetup\(\)/);
  assert.match(a,/pendingVendorStream_=PendingVendorStream/);
 });
+
+
+test("U4 independent headphone mix uses admitted two-pin native scope and correlated mode readback",()=>{
+ const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[0,1]},graph:{revision:"19",rosterRevision:"23"},raw:{physicalBusOutputObserved:true,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],externalOutputs:[]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ const mode=protocol.secondaryMixMode(s,live);
+ assert.equal(mode.available,true);assert.deepEqual(mode.value,{enabled:true,smart:true,deviceEpoch:"17",graphRevision:"19",rosterRevision:"23"});
+ assert.equal(protocol.secondaryMixMode({...s,device:{...s.device,enabledOutputs:[0,1,2,3]}},live).available,false);
+ assert.equal(protocol.secondaryMixMode({...s,raw:{...s.raw,externalOutputs:[{}]}},live).available,false);
+ assert.equal(protocol.secondaryMixMode(s,{...live,secondaryOutputArmed:false}).available,false);
+ const split={...s,raw:{...s.raw,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1]}};
+ assert.equal(protocol.secondaryMixMode(split,live).value.enabled,false);
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js");
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
+ assert.doesNotMatch(a,/getCurrentAudioDevice\(/);
+ assert.match(n,/engine_.disarmSecondaryOutput\(\);\s*error=engine_.patchDmxSplitOutput/);
+ assert.match(b,/live.dryRoutingLab\?\.busOutputObserved===true&&live.secondaryOutputArmed===true/);
+});

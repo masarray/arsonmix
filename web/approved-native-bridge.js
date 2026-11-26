@@ -3637,9 +3637,11 @@
     const matches=p.action==="secondaryOutputEnable"?
       live.secondaryOutputReady===true&&live.secondaryOutputArmed===true&&live.secondaryOutputName===p.value:
       p.action==="secondaryOutputArm"?live.secondaryOutputArmed===p.value:
+      p.action==="secondaryOutputSplit"?live.dryRoutingLab?.secondaryMainOnly===p.value.enabled&&
+        live.dryRoutingLab?.busOutputObserved===true&&live.secondaryOutputArmed===true:
       live.secondaryOutputReady===false&&live.secondaryOutputArmed===false&&!live.secondaryOutputName&&!live.secondaryOutputFault;
     if(matches)extraPending=null;
-    else if(live.secondaryOutputFault===true){extraPending=null;extraError="Output fault · disconnect and reconnect the endpoint.";}
+    else if(live.secondaryOutputFault===true&&p.action!=="secondaryOutputSplit"){extraPending=null;extraError="Output fault · disconnect and reconnect the endpoint.";}
   }
   function paintAdditionalOutput(){
     if(!extraControls||!extraSurfaceOpen())return;
@@ -3665,8 +3667,17 @@
     extraField("stop").disabled=extraPending?.action==="secondaryOutputStop"||
       (!ready&&!fault&&!name&&!recovering&&extraPending?.action!=="secondaryOutputEnable");
     extraField("repair").hidden=!live||allowed||busy||armed||recovering;
-    const mode=split?"MAIN → Windows · independent monitor":"MAIN → Windows · same mix";
+    const mode=split?"Independent headphone mix":"Same mix";
     if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
+    const mix=protocol.secondaryMixMode(hardware,live);
+    const modeButton=extraField("mix");
+    modeButton.hidden=!mix.available&&!split;
+    modeButton.disabled=busy||!mix.available;
+    const modeLabel=split?"Use same mix":"Separate headphone mix";
+    if(modeButton.textContent!==modeLabel)modeButton.textContent=modeLabel;
+    const mixHint=extraField("mix-hint");
+    mixHint.hidden=modeButton.hidden;
+    if(mixHint.textContent!==mix.reason)mixHint.textContent=mix.reason;
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
     const message=extraPending?(extraPending.acked?"Verifying output…":"Applying output…"):
@@ -3700,7 +3711,7 @@
       extraPending=null;
       extraError="Output response timed out · inspect current device state before retrying.";
       paintAdditionalOutput();
-    },15000);
+    },action==="secondaryOutputSplit"?30000:15000);
   }
   function ensureAdditionalControls(){
     if(extraControls)return;
@@ -3720,6 +3731,9 @@
       .armix-stream-controls select{width:100%;min-width:0}
       .armix-stream-controls button[data-extra-connect]{background:#2c5268}
       .armix-stream-controls button:disabled,.armix-stream-controls select:disabled{opacity:.5}
+      .armix-stream-controls [hidden]{display:none!important}
+      .armix-stream-controls [data-extra-mix]{border-color:#638994}
+      .armix-output-status[data-state="RECOVERING"]{color:#e5c17d}
       .armix-stream-controls [data-extra-status]{color:#b6c9d1;overflow-wrap:anywhere}
       .armix-stream-controls[data-state="ENABLED"] [data-extra-status]{color:#9bd3b8}
       .armix-stream-controls[data-state="FAULT"] [data-extra-status],.armix-stream-controls [data-extra-error]{color:#ffb7a5}
@@ -3742,6 +3756,7 @@
       <label>Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
       <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-repair hidden>Set up audio</button></div>
       <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
+      <div class="armix-stream-actions"><button type="button" data-extra-mix hidden>Separate headphone mix</button><span class="armix-stream-hint" data-extra-mix-hint hidden></span></div>
       <div class="armix-stream-hint">Post-FX MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
     panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
     extraField("refresh").onclick=()=>refreshAdditionalInventory(true);
@@ -3753,6 +3768,10 @@
     extraField("device").onchange=()=>{extraSelected=extraField("device").value;paintAdditionalOutput();};
     extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
     extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
+    extraField("mix").onclick=()=>{
+      const mode=protocol.secondaryMixMode(hardware,extraLive);
+      if(mode.available)requestAdditionalOutput("secondaryOutputSplit",mode.value);
+    };
   }
   function mountInlineAdditionalOutput(){
     const host=extraInlineHost();

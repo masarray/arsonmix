@@ -512,6 +512,7 @@ def verify_additional_output(page,out):
     live["secondaryOutputArmed"]=True
     emit(page,"arMixStatus",live)
     assert panel.get_by_role("button",name="Disconnect").is_enabled()
+    assert not panel.get_by_role("button",name="Separate headphone mix").is_visible()
     assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
     panel.get_by_role("button",name="Close Additional Output").click()
     # Audio I/O uses the same control instance inline, without another dialog.

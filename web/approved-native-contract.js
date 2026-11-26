@@ -286,6 +286,25 @@
   }
   // One secondary destination projection for the quick output controller and
   // unified workspace. No ACK, friendly name or browser draft proves PCM.
+  function secondaryMixMode(snapshot,live) {
+    const raw=snapshot?.raw,d=snapshot?.device,g=snapshot?.graph;
+    const output=secondaryOutputView(snapshot,live);
+    const split=output.split;
+    if(!snapshot?.admitted||snapshot.retained||d?.backend!=="ASIO"||
+       d.enabledOutputs?.length!==2||raw?.physicalBusOutputObserved!==true||
+       [d.epoch,g?.revision,g?.rosterRevision].some(v=>decimal(v)===null)||
+       !Array.isArray(raw.physicalMainOutputs)||!Array.isArray(raw.physicalMonitorOutputs))
+      return {available:false,split,reason:"Independent mix requires a verified two-output ASIO route."};
+    if(raw.externalOutputs?.length||raw.logicalOutputRegistry?.references?.length||
+       raw.logicalOutputRegistry?.ports?.some(p=>p.bound===true))
+      return {available:false,split,reason:"Existing output assignments are preserved."};
+    if(!split&&(raw.physicalMainOutputs.length!==2||raw.physicalMonitorOutputs.length!==0))
+      return {available:false,split,reason:"Existing monitor mapping is preserved."};
+    if(!output.armed||output.recovering)
+      return {available:false,split,reason:"Enable the additional output first."};
+    return {available:true,split,reason:split?"Headphones use MONITOR sends; OBS receives MAIN.":"OBS and headphones receive the same MAIN mix.",
+      value:{enabled:!split,smart:true,deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision}};
+  }
   function secondaryOutputSelection(options,{active="",selected="",preferred="",hasSaved=false}={}) {
     if(options.includes(active))return active;
     if(options.includes(selected))return selected;
@@ -1116,5 +1135,5 @@
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,monitorTimingView});
+    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,monitorTimingView});
 });
