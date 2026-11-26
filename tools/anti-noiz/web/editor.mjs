@@ -1,8 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Shared editor: isolated harness and approved native mixer use this exact
 // renderer. Transport is the only authority for settings and observations.
-export const defaults=Object.freeze({mode:'Auto',cleanDb:14,silenceDb:32,musicProtect:1,enabled:true});
-export function valid(s){return !!s&&['Auto','Voice','Singing','Music'].includes(s.mode)&&typeof s.enabled==='boolean'&&[['cleanDb',24],['silenceDb',48],['musicProtect',1]].every(([k,max])=>Number.isFinite(s[k])&&s[k]>=0&&s[k]<=max);}
+export const defaults=Object.freeze({mode:'Auto',cleanDb:14,silenceDb:32,musicProtect:1,enabled:true,spectralManual:false,noiseOffsetDb:0,manualExpander:false,gate:false,thresholdDb:-40,ratio:4,rangeDb:60,attackMs:1,holdMs:100,releaseMs:120,kneeDb:0,sidechainHpHz:120,sidechainLpHz:12000,spectralEnabled:true,artifactControl:.5,vocalProtection:.5,smartVoice:false,smartMarginDb:9,smartMaxLiftDb:12});
+const proDefs=[['cleanDb','Reduction',0,40,.5,'dB'],['noiseOffsetDb','Noise threshold',-20,20,.5,'dB'],['artifactControl','Artifact control',0,1,.01,'%'],['vocalProtection','Vocal protection',0,1,.01,'%'],['thresholdDb','Threshold',-80,0,1,'dBFS'],['smartMarginDb','Noise margin',3,18,1,'dB'],['smartMaxLiftDb','Max threshold lift',0,24,1,'dB'],['ratio','Ratio',1,20,.5,':1'],['rangeDb','Range',0,96,1,'dB'],['attackMs','Attack',.5,20,.5,'ms'],['holdMs','Hold',0,500,5,'ms'],['releaseMs','Release',10,1000,10,'ms'],['kneeDb','Knee',0,18,1,'dB'],['sidechainHpHz','Detector HPF',20,500,10,'Hz'],['sidechainLpHz','Detector LPF',1000,20000,100,'Hz']];
+const bounds=[['cleanDb','Clean',0,40],['silenceDb','Silence',0,48],['musicProtect','Music Protect',0,1],...proDefs];
+export const normalize=s=>({...defaults,...s});
+export function valid(s){if(!s||!['Auto','Voice','Singing','Music'].includes(s.mode)||typeof s.enabled!=='boolean')return false;const n=Object.keys(s).length;if(n!==5&&n!==18&&n!==21&&n!==24)return false;if(n===5&&s.cleanDb>24)return false;const v=normalize(s);return Object.keys(defaults).every(k=>Object.hasOwn(v,k))&&Object.keys(s).every(k=>Object.hasOwn(defaults,k))&&['spectralManual','manualExpander','gate','spectralEnabled','smartVoice'].every(k=>typeof v[k]==='boolean')&&bounds.every(([k,_,min,max])=>Number.isFinite(v[k])&&v[k]>=min&&v[k]<=max)&&['cleanDb','silenceDb','musicProtect'].every(k=>Object.hasOwn(s,k))&&(n===5||Object.keys(defaults).filter(k=>(n>=21||!['spectralEnabled','artifactControl','vocalProtection'].includes(k))&&(n>=24||!['smartVoice','smartMarginDb','smartMaxLiftDb'].includes(k))).every(k=>Object.hasOwn(s,k)));}
+// Factory starting points, not a promise of automatic noise separation.
+// Preserve existing DSP power on recall; never carry a learned profile.
+export const factoryPresets=Object.freeze([
+ ['DEFAULT','Default',{}],
+ ['VOCAL_GENTLE','Vocal · Gentle',{mode:'Singing',cleanDb:8,silenceDb:0,manualExpander:true,thresholdDb:-55,ratio:2,rangeDb:18,holdMs:150,releaseMs:250,kneeDb:6}],
+ ['VOCAL_LIVE','Vocal · Live',{mode:'Voice',cleanDb:12,silenceDb:0,spectralManual:true,manualExpander:true,thresholdDb:-48,ratio:4,rangeDb:40,holdMs:120,releaseMs:180,kneeDb:4,vocalProtection:.75}],
+ ['PAUSE_MUTE','Gate · Pause mute',{mode:'Voice',cleanDb:0,silenceDb:0,manualExpander:true,gate:true,thresholdDb:-48,rangeDb:96,holdMs:160,releaseMs:180,smartVoice:false}],
+ ['SMART_ROOM','Smart · Room noise',{mode:'Voice',cleanDb:12,silenceDb:0,spectralManual:true,manualExpander:true,smartVoice:true,thresholdDb:-55,rangeDb:36,holdMs:150,releaseMs:220,kneeDb:6,vocalProtection:.75}],
+ ['SPECTRAL_ONLY','Spectral · Learn',{mode:'Voice',cleanDb:12,silenceDb:0,spectralManual:true,manualExpander:false,artifactControl:.75,vocalProtection:.75}]
+].map(([id,label,patch])=>Object.freeze({id,label,settings:Object.freeze({...defaults,...patch})})));
+export function sameSettings(a,b,ignorePower=false){
+ if(!valid(a)||!valid(b))return false;
+ const x=normalize(a),y=normalize(b);
+ return Object.keys(defaults).every(k=>ignorePower&&k==='enabled'||(typeof x[k]==='number'?Math.fround(x[k])===Math.fround(y[k]):x[k]===y[k]));
+}
+export function factoryValue(s){return factoryPresets.find(p=>sameSettings(p.settings,s,true))?.id||'CUSTOM';}
 export function controller(transport,render){
  let accepted=null,pending=null,queued=null,seq=0,closed=false,error='Waiting for DSP',observation=null,appliedId='';
  const state=()=>({accepted,pending:!!pending,adjusting:!!pending?.continuous,desired:pending?.continuous?{...pending.settings,...queued}:null,error,observation,appliedId});
@@ -19,9 +38,9 @@ export function controller(transport,render){
   if(!valid(m.settings))return;
   if(m.kind==='snapshot'){
    observation=m.observation||null;
-   if(!pending){if(!accepted)error='';accepted={...m.settings};}
+   if(!pending){if(!accepted)error='';accepted=normalize(m.settings);}
   }else if(m.kind==='ack'&&pending&&m.id===pending.id&&typeof m.applied==='boolean'){
-   const next=queued;queued=null;accepted={...m.settings};pending=null;error=m.applied?'':(m.error||'DSP rejected request');
+   const next=queued;queued=null;accepted=normalize(m.settings);pending=null;error=m.applied?'':(m.error||'DSP rejected request');
    if(m.applied&&next&&Object.keys(next).some(k=>next[k]!==accepted[k])){
     submit('settings',next,true);return;
    }
@@ -31,7 +50,7 @@ export function controller(transport,render){
  }
  const unsubscribe=transport.subscribe(receive);
  function submit(kind,patch={},continuous=false){
-  if(closed||pending||!accepted||!['settings','learn'].includes(kind))return false;
+  if(closed||pending||!accepted||!['settings','learn','clear','audition'].includes(kind))return false;
   const settings={...accepted,...patch};if(!valid(settings))return false;
   pending={kind,id:++seq,settings,continuous};error='';draw();
   try{transport.send(pending);}catch{pending=null;queued=null;error='Transport unavailable';draw();return false;}
@@ -39,7 +58,7 @@ export function controller(transport,render){
  }
  draw();transport.read();
  function adjust(key,value){
-  if(closed||!accepted||!['cleanDb','silenceDb','musicProtect'].includes(key)||!valid({...accepted,[key]:value}))return false;
+  if(closed||!accepted||!bounds.some(d=>d[0]===key)||!valid({...accepted,[key]:value}))return false;
   if(pending){
    if(!pending.continuous)return false;
    queued={...queued,[key]:value};draw();return true;
@@ -105,12 +124,40 @@ export function mount(root,transport,options={}){
  const assetBase=options.nativeAssets?'assets/':'../../../site/preview-v2/assets/';
  root.innerHTML=`<section class="an-panel" aria-label="Anti Noiz">
  <header class="an-head"><div class="an-identity"><h1>ANTI<span> NOIZ</span></h1><small>ARSONMIX <span class="an-brand-divider">/</span> ADAPTIVE DENOISER</small></div><div class="an-head-actions"><button class="armix-builtin-fx-power" data-power data-fx-state="unknown" type="button" aria-label="FX state unavailable" aria-pressed="false" disabled>⏻</button><button class="armix-builtin-fx-close" data-close type="button" aria-label="Close Anti Noiz" title="Close Anti Noiz"></button></div></header>
- <div class="an-presets" hidden><span class="an-engraved">PROGRAM</span><select data-preset aria-label="Anti Noiz preset"><option value="CUSTOM">Custom</option><option value="DEFAULT">Default</option></select></div>
- <div class="an-display" data-lcd-mode="gr"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-lcd-cue" aria-hidden="true"><span data-lcd-hint>Tap for spectrum</span><span class="an-lcd-pages"><i></i><i></i></span></div></div><div class="an-lcd-content"><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>12</span><span>24</span><span>36</span><span>48</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><div class="an-spectrum-plot"><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-noise-fill" data-noise-fill/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div></div></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div><button class="an-lcd-hit" data-lcd-switch type="button" aria-label="Noise spectrum display" aria-pressed="false" title="Click or tap LCD for noise spectrum"></button></div>
+ <div class="an-presets" hidden><span class="an-engraved">PROGRAM</span><select data-preset aria-label="Anti Noiz preset"><option value="CUSTOM">Custom</option><optgroup label="FACTORY · STARTING POINTS">${factoryPresets.map(p=>`<option value="${p.id}">${p.label}</option>`).join("")}</optgroup></select></div>
+ <div class="an-display" data-lcd-mode="gr"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-lcd-cue" aria-hidden="true"><span data-lcd-hint>Tap for spectrum</span><span class="an-lcd-pages"><i></i><i></i></span></div></div><div class="an-lcd-content"><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>24</span><span>48</span><span>72</span><span>96</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><div class="an-spectrum-plot"><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-noise-fill" data-noise-fill/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div></div></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div><button class="an-lcd-hit" data-lcd-switch type="button" aria-label="Noise spectrum display" aria-pressed="false" title="Click or tap LCD for noise spectrum"></button></div>
  <div class="an-knobs"></div><div class="an-source"><span class="an-engraved">SOURCE</span><div class="an-modes" role="group" aria-label="Source mode"></div></div>
+ <details class="an-pro"><summary><span>Professional controls</span><small data-pro-summary>Waiting for DSP</small></summary>
+ <div class="an-pro-body"><div class="an-pro-tabs" role="tablist" aria-label="Noise control sections"><button type="button" role="tab" id="an-tab-expander" data-pro-tab="expander" aria-selected="true" aria-controls="an-page-expander">Expander</button><button type="button" role="tab" id="an-tab-spectral" data-pro-tab="spectral" aria-selected="false" aria-controls="an-page-spectral" tabindex="-1">Spectral</button><button type="button" role="tab" id="an-tab-sidechain" data-pro-tab="sidechain" aria-selected="false" aria-controls="an-page-sidechain" tabindex="-1">Sidechain</button></div>
+ <section class="an-pro-page" role="tabpanel" id="an-page-expander" data-pro-page="expander" aria-labelledby="an-tab-expander">
+ <div class="an-pro-row an-pro-heading"><span>Residual dynamics</span><div><label class="an-switch" title="Replace automatic Silence with user-owned dynamics"><input type="checkbox" data-pro-flag="manualExpander"><span>Manual</span></label><label class="an-switch" title="Use fixed range below threshold; 96 dB mutes"><input type="checkbox" data-pro-flag="gate"><span>Gate</span></label></div></div>
+ <div class="an-pro-metrics"><span>Detector <output data-detector>—</output></span><span>Threshold <output data-smart-threshold>—</output></span><span>Reduction <output data-pro-residual>—</output></span></div>
+ <svg class="an-pro-curve" viewBox="0 0 300 88" role="img" aria-label="Static expander transfer curve and measured detector"><path class="an-pro-gridlines" d="M28 8V74H292 M28 30H292 M28 52H292 M116 8V74 M204 8V74"/><path class="an-pro-reference" d="M28 41L292 8"/><path data-pro-threshold class="an-pro-threshold"/><path data-pro-curve class="an-pro-transfer"/><circle data-pro-dot r="3" hidden/><text x="28" y="85">−90</text><text x="116" y="85">−60</text><text x="204" y="85">−30</text><text x="292" y="85" text-anchor="end">0 IN</text><text x="24" y="11" text-anchor="end">0</text><text x="24" y="33" text-anchor="end">−60</text><text x="24" y="55" text-anchor="end">−120</text><text x="24" y="76" text-anchor="end">−180</text></svg><div class="an-pro-grid" data-pro-expander></div>
+ <small data-expander-help>Manual replaces automatic Silence (main Silence knob inactive). Gate + Range 96 dB = digital mute; Range 0 = bypass.</small></section>
+ <section class="an-pro-page" role="tabpanel" id="an-page-spectral" data-pro-page="spectral" aria-labelledby="an-tab-spectral" hidden>
+ <div class="an-pro-row an-pro-heading"><span>Noise profile</span><div><label class="an-switch" title="Independent spectral bypass"><input type="checkbox" data-pro-flag="spectralEnabled"><span>On</span></label><label class="an-switch" title="Use the learned reference and manual controls"><input type="checkbox" data-pro-flag="spectralManual"><span>Manual</span></label></div></div>
+ <div class="an-pro-metrics"><span>Reduction limit <output data-pro-clean>—</output></span><span>Deepest cut <output data-pro-spectral-gr>—</output></span><span>Profile <output data-pro-profile>—</output></span></div>
+ <div class="an-pro-grid" data-pro-spectral></div>
+ <div class="an-pro-row an-pro-tools"><button type="button" data-pro-learn>Learn noise</button><button type="button" data-clear-profile>Reset profile</button><button type="button" data-audition title="Replaces channel output for two seconds. Soundcheck only.">Noise only · 2s</button></div>
+ <small data-audition-warning>Soundcheck only: Noise Only replaces channel output, including audience sends. Requires manual spectral and manual expander or Silence 0.</small></section>
+ <section class="an-pro-page" role="tabpanel" id="an-page-sidechain" data-pro-page="sidechain" aria-labelledby="an-tab-sidechain" hidden>
+ <div class="an-pro-row an-pro-heading"><span>Detector tuning</span><div><label class="an-switch" title="Use a bounded learned threshold; all dynamics remain user-owned"><input type="checkbox" data-pro-flag="smartVoice"><span>Smart Voice</span></label></div></div>
+ <div class="an-pro-metrics"><span>Learned peak <output data-smart-noise>—</output></span><span>Effective threshold <output data-sidechain-effective>—</output></span><span>Lift <output data-smart-lift>—</output></span></div>
+ <div class="an-pro-grid" data-pro-sidechain></div><small data-smart-status>Learned peak + margin, limited by maximum lift. Relearn after changing HPF / LPF.</small></section></div></details>
  <footer><button data-learn data-learning="false">Learn noise</button><span data-status role="status"></span><span class="an-stereo" title="Stereo processing is linked; not a toggle">STEREO<span>LINK</span></span></footer></section>`;
- const $=s=>root.querySelector(s), controls=[];
- const defs=[['cleanDb','Clean',24,.5,'dB'],['silenceDb','Silence',48,.5,'dB'],['musicProtect','Music Protect',1,.01,'%']];
+ const $=s=>root.querySelector(s), controls=[],proControls=[];
+ const spectralKeys=new Set(["cleanDb","noiseOffsetDb","artifactControl","vocalProtection"]),sidechainKeys=new Set(["sidechainHpHz","sidechainLpHz","smartMarginDb","smartMaxLiftDb"]);
+ const proTabs=[...root.querySelectorAll("[data-pro-tab]")],proPages=[...root.querySelectorAll("[data-pro-page]")];
+ let proPage="expander",curveKey="";
+ for(const [key,name,min,max,step,unit] of proDefs){
+  const el=document.createElement("div");el.className="an-pro-param";
+  const percent=unit==="%",scale=percent?100:1;
+  el.innerHTML='<label for="an-pro-'+key+'">'+name+'</label><div class="an-pro-value"><input type="number" aria-label="'+name+' value" min="'+min*scale+'" max="'+max*scale+'" step="'+step*scale+'" inputmode="decimal"><span>'+unit+'</span></div><input id="an-pro-'+key+'" type="range" min="'+min+'" max="'+max+'" step="'+step+'" aria-label="'+name+'">';
+  $(spectralKeys.has(key)?"[data-pro-spectral]":sidechainKeys.has(key)?"[data-pro-sidechain]":"[data-pro-expander]").append(el);
+  proControls.push({key,unit,min,max,step,scale,input:el.querySelector('input[type=range]'),number:el.querySelector('input[type=number]'),editing:false});
+ }
+ const proFlags=[...root.querySelectorAll("[data-pro-flag]")];
+ const defs=[['cleanDb','Clean',40,.5,'dB'],['silenceDb','Silence',48,.5,'dB'],['musicProtect','Music Protect',1,.01,'%']];
  // Tangential dashed LED arc: every segment has the SAME radius.
  // Stationary metallic PNG, independent shadow and rotating pointer.
  const arcPoint=deg=>{const t=deg*Math.PI/180;return `${(50+45.5*Math.sin(t)).toFixed(2)} ${(50-45.5*Math.cos(t)).toFixed(2)}`;};
@@ -125,11 +172,11 @@ export function mount(root,transport,options={}){
  const cancel=c=>{clearTimeout(c.timer);c.timer=null;c.draft=null;const g=c.gesture;c.gesture=null;if(g&&c.input.hasPointerCapture(g.id))c.input.releasePointerCapture(g.id);};
  const meterEls=new Map();
  function meter(name,gain,live){
-  const db=live&&Number.isFinite(gain)?Math.max(0,Math.min(48,-20*Math.log10(Math.max(1e-8,gain)))):null;
+  const db=live&&Number.isFinite(gain)?Math.max(0,Math.min(96,-20*Math.log10(Math.max(1e-8,gain)))):null;
   let els=meterEls.get(name);if(!els){els={out:$(name),bar:$(name.slice(0,-1)+'-bar]'),value:undefined};meterEls.set(name,els);}
   const v=db===null?null:Math.round(db*10)/10;if(els.value===v)return;els.value=v;
   setText(els.out,v===null?'—':v.toFixed(1)+' dB');
-  els.bar.style.transform='scaleX('+(v===null?0:v/48)+')';
+  els.bar.style.transform='scaleX('+(v===null?0:v/96)+')';
  }
  // Existing host polling cadence (~5.6 Hz). No extra IPC, FFT, timer,
  // animation loop or PCM processing; smooth only newly observed frames.
@@ -194,6 +241,41 @@ export function mount(root,transport,options={}){
   meter('[data-spectral]',observation?.spectralGain,live&&!hostOff&&accepted?.enabled);
   meter('[data-residual]',observation?.residualGain,live&&!hostOff&&accepted?.enabled);
   const observed=live&&!unavailable;
+  const level=observation?.detectorLevel;
+  if($(".an-pro").open&&proPage==="expander"&&accepted){
+   const p={...accepted,...(view.desired||{})};
+   const actual=observation?.sidechainThreshold;
+   if(p.smartVoice&&observed&&!hostOff&&observation?.sidechainReference===true&&Number.isFinite(actual)&&actual>0&&!view.desired&&!pending)p.thresholdDb=20*Math.log10(actual);
+   const px=x=>28+264*(Math.max(-90,Math.min(0,x))+90)/90,py=y=>8-66*Math.max(-180,Math.min(0,y))/180;
+   const cut=x=>{if(!p.manualExpander)return 0;if(p.gate)return x<p.thresholdDb?p.rangeDb:0;const d=p.thresholdDb-x,k=p.kneeDb;const below=k===0?Math.max(0,d):d<=-k/2?0:d>=k/2?d:(d+k/2)**2/(2*k);return Math.min(p.rangeDb,below*(p.ratio-1));};
+   const key=[p.manualExpander,p.gate,p.thresholdDb,p.ratio,p.rangeDb,p.kneeDb].join(":");
+   if(key!==curveKey){curveKey=key;setPath($("[data-pro-curve]"),Array.from({length:181},(_,i)=>{const x=-90+i/2;return (i?"L":"M")+px(x).toFixed(1)+" "+py(x-cut(x)).toFixed(1);}).join(" "));setPath($("[data-pro-threshold]"),"M"+px(p.thresholdDb)+" 8V74");}
+   const dot=$("[data-pro-dot]"),show=observed&&!hostOff&&p.manualExpander&&Number.isFinite(level)&&Number.isFinite(observation?.residualGain);
+   dot.toggleAttribute('hidden',!show);if(show){const x=20*Math.log10(Math.max(1e-6,level)),gr=20*Math.log10(Math.max(1e-8,observation.residualGain));dot.setAttribute("cx",px(x));dot.setAttribute("cy",py(x+gr));}
+  }
+  if(!accepted){curveKey="";setPath($("[data-pro-curve]"),"");setPath($("[data-pro-threshold]"),"");$("[data-pro-dot]").setAttribute("hidden","");}
+  setText($("[data-detector]"),observed&&!hostOff&&accepted?.manualExpander&&Number.isFinite(level)?(20*Math.log10(Math.max(1e-6,level))).toFixed(1)+" dBFS":"—");
+  const reference=observed&&!hostOff&&observation?.sidechainReference===true;
+  const formatPeak=x=>Number.isFinite(x)&&x>0?(20*Math.log10(x)).toFixed(1)+" dBFS":"—";
+  setText($("[data-smart-noise]"),reference?formatPeak(observation.sidechainNoisePeak):"—");
+  setText($("[data-smart-threshold]"),observed&&!hostOff&&accepted?.manualExpander?formatPeak(observation?.sidechainThreshold):"—");
+  setText($("[data-sidechain-effective]"),$("[data-smart-threshold]").textContent);
+  const actual=observation?.sidechainThreshold;
+  setText($("[data-smart-lift]"),observed&&!hostOff&&accepted?.manualExpander&&Number.isFinite(actual)&&actual>0?Math.max(0,20*Math.log10(actual)-accepted.thresholdDb).toFixed(1)+" dB":"—");
+  setText($("[data-pro-residual]"),$("[data-residual]").textContent);
+  setText($("[data-pro-spectral-gr]"),$("[data-spectral]").textContent);
+  setText($("[data-pro-clean]"),accepted?(view.desired?.cleanDb??accepted.cleanDb).toFixed(1)+" dB":"—");
+  setText($("[data-pro-profile]"),observed&&!hostOff?(observation.learning?"Learning":observation.profile?"Ready":"Not learned"):"Offline");
+  setText($("[data-pro-summary]"),accepted?(accepted.manualExpander?(accepted.smartVoice?"Smart":"Manual"):"Auto")+" dynamics · "+(!accepted.spectralEnabled?"Spectral off":accepted.spectralManual?"Manual spectral":"Auto spectral"):"Waiting for DSP");
+  setText($("[data-smart-status]"),!accepted?.smartVoice?"Manual threshold · Smart Voice optional":reference?"Learned sidechain active · margin and max lift set by you":"No matching sidechain profile · manual threshold fallback. Learn again after HPF / LPF changes.");
+  for(const f of proFlags){f.checked=!!accepted?.[f.dataset.proFlag];f.disabled=!accepted||pending||unavailable||(["smartVoice","gate"].includes(f.dataset.proFlag)&&!accepted?.manualExpander);}
+  for(const c of proControls){
+   const value=view.desired?.[c.key]??accepted?.[c.key];
+   const disabled=!accepted||(pending&&!adjusting)||unavailable||(spectralKeys.has(c.key)?!accepted?.spectralEnabled||(c.key!=="cleanDb"&&!accepted?.spectralManual):!accepted?.manualExpander||(["smartMarginDb","smartMaxLiftDb"].includes(c.key)&&!accepted?.smartVoice));
+   if(Number.isFinite(value)){if(Number(c.input.value)!==value)c.input.value=value;if(!c.editing||disabled||view.error)c.number.value=Number((value*c.scale).toFixed(2));}else if(!c.editing)c.number.value="";
+   c.input.disabled=disabled;c.number.disabled=disabled;
+   if(disabled||view.error)c.editing=false;
+  }
   const learning=observed&&observation.learning===true&&!hostOff&&accepted?.enabled===true;
   const learn=$('[data-learn]'), learningValue=String(learning);
   if(learn.dataset.learning!==learningValue)learn.dataset.learning=learningValue;
@@ -212,8 +294,17 @@ export function mount(root,transport,options={}){
   const powerTitle=fxState==='unknown'?'FX state unavailable':fxState==='rack-off'?'FX rack/global bypassed · enable upstream first':power==='SLOT'?'FX slot bypassed · click to enable slot':fxState==='on'?'DSP on · click to bypass':'DSP bypassed · click to enable';
   if(powerButton.title!==powerTitle){powerButton.title=powerTitle;powerButton.setAttribute('aria-label',powerTitle);}
   powerButton.disabled=pending||fxState==='unknown'||fxState==='rack-off'||(power==='SLOT'&&!options.enableSlot);
-  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-lcd-switch')&&!b.hasAttribute('data-power'))b.disabled=!accepted||pending||unavailable;
-  for(const c of controls){c.input.disabled=!accepted||(pending&&!adjusting)||unavailable;if(c.input.disabled){cancel(c);if(accepted){c.input.value=accepted[c.key];paintDial(c,accepted[c.key]);}}}
+  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-lcd-switch')&&!b.hasAttribute('data-power')&&!b.hasAttribute("data-pro-tab"))b.disabled=!accepted||pending||unavailable;
+  $("[data-pro-learn]").disabled=$("[data-learn]").disabled;
+  setText($("[data-pro-learn]"),learning?"Capturing…":"Learn noise");
+  const canCommand=!!accepted&&!pending&&live&&!hostOff&&!unavailable;
+  $("[data-clear-profile]").disabled=!canCommand||(!observation?.profile&&!observation?.learning);
+  const audition=$("[data-audition]"),active=live&&observation?.audition===true&&!hostOff;
+  audition.disabled=!canCommand||(!active&&(!accepted.enabled||!accepted.spectralEnabled||!accepted.spectralManual||accepted.cleanDb===0||!observation?.profile||observation?.learning||observation?.effectiveMode==="Music"||(!accepted.manualExpander&&accepted.silenceDb!==0)));
+  setText(audition,active?"Stop noise audition":"Noise only · 2s");setPressed(audition,active);
+  for(const c of controls){c.input.disabled=!accepted||(pending&&!adjusting)||unavailable||(c.key==="silenceDb"&&accepted?.manualExpander)||(c.key==="cleanDb"&&!accepted?.spectralEnabled);
+   c.el.dataset.inactive=String(!!accepted&&((c.key==="silenceDb"&&accepted.manualExpander)||(c.key==="cleanDb"&&!accepted.spectralEnabled)));
+   c.el.title=c.el.dataset.inactive==="true"?(c.key==="silenceDb"?"Manual expander owns residual reduction":"Spectral stage bypassed"):"";if(c.input.disabled){cancel(c);if(accepted){c.input.value=accepted[c.key];paintDial(c,accepted[c.key]);}}}
  }
  const model=controller(transport,view=>{
   lastView=view;
@@ -255,9 +346,46 @@ export function mount(root,transport,options={}){
   c.input.addEventListener('input',()=>{if(!c.gesture){const v=Number(c.input.value);preview(v);flush();c.draft=null;}});
   c.input.addEventListener('dblclick',e=>{e.preventDefault();if(!c.input.disabled){preview(defaults[c.key]);flush();c.draft=null;}});
  }
+ $("[data-clear-profile]").onclick=()=>model.submit("clear");
+ $("[data-audition]").onclick=()=>model.submit("audition");
+ function fitPro(){
+  if(!options.nativeAssets||!$(".an-pro").open||!root.isConnected)return;
+  const r=root.getBoundingClientRect(),inset=8;
+  const x=Math.max(inset,Math.min(r.left,window.innerWidth-r.width-inset));
+  const y=Math.max(inset,Math.min(r.top,window.innerHeight-r.height-inset));
+  // The approved shared bridge owns CSS translate and its WeakMap offset.
+  // Never write top/left here: the two coordinate systems would add up.
+  if(Math.abs(x-r.left)>.5||Math.abs(y-r.top)>.5)
+   window.__ARMIX_NATIVE_INLINE_FX_CLIP__?.move(root,x-r.left,y-r.top);
+ }
+ const onProResize=()=>fitPro();window.addEventListener("resize",onProResize);
+ function selectPro(page,focus=false){
+  proPage=page;
+  for(const b of proTabs){const active=b.dataset.proTab===page;b.setAttribute("aria-selected",String(active));b.tabIndex=active?0:-1;if(active&&focus)b.focus();}
+  for(const panel of proPages)panel.hidden=panel.dataset.proPage!==page;
+  if(lastView)paintHost(lastView);fitPro();
+ }
+ for(const [index,b] of proTabs.entries()){
+  b.onclick=()=>selectPro(b.dataset.proTab);
+  b.onkeydown=event=>{const next=event.key==="ArrowRight"?(index+1)%proTabs.length:event.key==="ArrowLeft"?(index+proTabs.length-1)%proTabs.length:event.key==="Home"?0:event.key==="End"?proTabs.length-1:-1;if(next>=0){event.preventDefault();selectPro(proTabs[next].dataset.proTab,true);}};
+ }
+ $("[data-pro-learn]").onclick=()=>{if(!$("[data-learn]").disabled)$("[data-learn]").click();};
+ $(".an-pro").addEventListener("toggle",()=>{if(lastView)paintHost(lastView);fitPro();});
+ for(const c of proControls){
+  c.input.addEventListener("input",()=>model.adjust(c.key,Number(c.input.value)));
+  c.input.addEventListener("dblclick",()=>{if(!c.input.disabled)model.adjust(c.key,defaults[c.key]);});
+  c.number.addEventListener("focus",()=>{c.editing=true;c.number.select();});
+  const finish=()=>{if(!c.editing)return;c.editing=false;const v=c.number.valueAsNumber/c.scale;
+   if(!c.number.disabled&&Number.isFinite(v)){const q=Math.max(c.min,Math.min(c.max,Number((c.min+Math.round((v-c.min)/c.step)*c.step).toFixed(4))));model.adjust(c.key,q);}
+   if(lastView)paintHost(lastView);
+  };
+  c.number.addEventListener("blur",finish);
+  c.number.addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.preventDefault();finish();c.number.blur();}else if(ev.key==="Escape"){ev.preventDefault();ev.stopPropagation();c.editing=false;if(lastView)paintHost(lastView);c.number.blur();}});
+ }
+ for(const f of proFlags)f.addEventListener("change",()=>model.submit("settings",{[f.dataset.proFlag]:f.checked}));
  for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.submit('settings',{mode:b.dataset.mode});
  $('[data-power]').onclick=()=>{if(!current||$('[data-power]').disabled)return;if(options.hostPower?.()==='SLOT')options.enableSlot?.();else model.submit('settings',{enabled:!current.enabled});};$('[data-learn]').onclick=()=>{if((!options.hostPower||options.hostPower()==='ON')&&!$('[data-learn]').disabled)model.submit('learn');};
  $('[data-close]').onclick=()=>options.onClose?.();
  $('[data-close]').hidden=!options.onClose;
- return {model,refreshHostPower(){if(lastView)paintHost(lastView);},dispose(){for(const c of controls)cancel(c);model.dispose();root.replaceChildren();}};
+ return {model,refreshHostPower(){if(lastView)paintHost(lastView);},dispose(){window.removeEventListener("resize",onProResize);for(const c of controls)cancel(c);model.dispose();root.replaceChildren();}};
 }

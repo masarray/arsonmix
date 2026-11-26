@@ -55,7 +55,7 @@ inline void write(const std::filesystem::path& path,const Audio& a){
     o.write("data",4);put(o,n,4);for(float x:a.samples)put(o,std::bit_cast<std::uint32_t>(x),4);
     o.close();require(bool(o),"WAV write failed");
 }
-struct Result { Audio processed,delta; double inputRms=0,outputRms=0,deltaRms=0; int latency=0; };
+struct Result { Audio processed,delta; double inputRms=0,outputRms=0,deltaRms=0; int latency=0; bool sidechainReference=false;float sidechainNoisePeak=0,sidechainThreshold=0; };
 inline Result render(const Audio& input,const Audio* noise,Core::Settings settings,int block=128,Core::SourceRole source=Core::SourceRole::Unknown){
     Core core;require(core.prepare(input.rate,static_cast<int>(input.channels),source)&&core.setSettings(settings),"invalid DSP format/settings");
     require(!input.samples.empty()&&input.samples.size()%input.channels==0&&block>=1&&block<=1024,"invalid input/block");
@@ -69,7 +69,7 @@ inline Result render(const Audio& input,const Audio* noise,Core::Settings settin
         require(core.hasProfile()&&!core.learning(),"noise learning incomplete or rejected; provide >2s noise only");
     }else require(core.effectiveMode()==Core::Mode::Music||!settings.enabled,"noise reference required for active modes");
     core.resetStreamKeepProfile();
-    Result out;out.latency=core.latencySamples();out.processed={input.rate,input.channels,std::vector<float>(input.samples.size())};out.delta=out.processed;
+    Result out;out.latency=core.latencySamples();out.sidechainReference=core.sidechainReferenceValid();out.sidechainNoisePeak=core.sidechainNoisePeak();out.sidechainThreshold=core.sidechainThreshold();out.processed={input.rate,input.channels,std::vector<float>(input.samples.size())};out.delta=out.processed;
     const auto frames=input.samples.size()/input.channels, delay=std::size_t(out.latency);
     for(std::size_t p=0;p<frames+delay;){
         const int n=static_cast<int>(std::min<std::size_t>(block,frames+delay-p));fill(input,p,n);core.process(l.data(),r.data(),n);

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Standalone test: one producer and one audio consumer, no native host.
-#include "../engine/builtin_fx/anti_noiz/AntiNoizControl.h"
+#include "../engine/builtin_fx/anti_noiz/AntiNoizNativeState.h"
 #include "../tools/anti-noiz/RtAllocationProbe.h"
 #include <array>
 #include <atomic>
@@ -23,12 +23,18 @@ Core::Settings packet(unsigned id,unsigned instance){
     s.silenceDb=float((id+instance*7)%49);
     s.musicProtect=float((id+instance)%11)/10.f;
     s.enabled=(id%13)!=0;
+    s.spectralManual=id%2==0;s.spectralEnabled=id%3!=0;s.noiseOffsetDb=float(int(id%41)-20);
+    s.artifactControl=float((id+instance)%11)/10.f;s.vocalProtection=float((id+instance+3)%11)/10.f;
+    s.manual.enabled=id%3==0;s.manual.gate=id%5==0;s.manual.smartVoice=id%7==0;
+    s.manual.thresholdDb=float(int((id+instance)%81)-80);s.manual.ratio=float(1+id%20);s.manual.rangeDb=float(id%97);
+    s.manual.attackMs=.5f+float(id%40)*.5f;s.manual.holdMs=float(id%501);s.manual.releaseMs=float(10+id%991);
+    s.manual.kneeDb=float(id%19);s.manual.hpHz=float(20+id%481);s.manual.lpHz=float(1000+id%19001);
+    s.manual.smartMarginDb=float(3+id%16);s.manual.smartMaxLiftDb=float(id%25);
     if(id%17==0)s.cleanDb=std::numeric_limits<float>::quiet_NaN();
     return s;
 }
 bool equal(Core::Settings a,Core::Settings b){
-    return a.mode==b.mode&&a.cleanDb==b.cleanDb&&a.silenceDb==b.silenceDb&&
-           a.musicProtect==b.musicProtect&&a.enabled==b.enabled;
+    return NativeState::encode(a)==NativeState::encode(b);
 }
 void concurrency(){
     constexpr unsigned count=12000;

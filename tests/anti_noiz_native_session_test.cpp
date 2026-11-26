@@ -14,10 +14,16 @@ int main(){
     const auto bytes=NativeState::encode(s);
     Core::Settings decoded;check(NativeState::decode(bytes,decoded)&&decoded.cleanDb==18,"state codec");
     for(std::size_t n=0;n<bytes.size();++n)check(!NativeState::decode({bytes.data(),n},decoded),"truncation");
-    for(auto [index,value]:std::array<std::pair<int,std::uint32_t>,5>{{{0,0},{4,2},{8,4},{12,0x7fc00000u},{24,2}}}){
+    for(auto [index,value]:std::array<std::pair<int,std::uint32_t>,5>{{{0,0},{4,5},{8,4},{12,0x7fc00000u},{24,2}}}){
         auto corrupt=bytes;NativeState::put(corrupt,std::size_t(index),value);
         check(!NativeState::decode(corrupt,decoded)&&decoded.cleanDb==18,"transactional reject");
     }
+    auto legacy=bytes;NativeState::put(legacy,4,1);
+    check(NativeState::decode({legacy.data(),NativeState::legacySize},decoded)&&!decoded.manual.enabled&&decoded.cleanDb==18,"v1 migration");
+    auto v2=bytes;NativeState::put(v2,4,2);check(NativeState::decode({v2.data(),NativeState::v2Size},decoded)&&decoded.spectralEnabled&&decoded.artifactControl==.5f,"v2 migration");
+    auto v3=bytes;NativeState::put(v3,4,3);check(NativeState::decode({v3.data(),NativeState::v3Size},decoded)&&!decoded.manual.smartVoice&&decoded.manual.smartMarginDb==9,"v3 migration");
+    auto pro=s;pro.manual.enabled=true;pro.manual.gate=true;pro.manual.smartVoice=true;pro.manual.smartMarginDb=7;pro.manual.smartMaxLiftDb=18;pro.manual.rangeDb=96;pro.spectralManual=true;pro.noiseOffsetDb=7;pro.cleanDb=40;
+    check(NativeState::decode(NativeState::encode(pro),decoded)&&decoded.manual.enabled&&decoded.manual.gate&&decoded.manual.rangeDb==96&&decoded.manual.smartVoice&&decoded.manual.smartMarginDb==7&&decoded.manual.smartMaxLiftDb==18&&decoded.cleanDb==40&&decoded.noiseOffsetDb==7,"v2 manual persistence");
     for(unsigned rate:{44100u,48000u,88200u,96000u})for(int channels:{1,2}){
         NativeSession native;check(native.restore(bytes),"cold restore");
         check(native.prepare(rate,channels),"prepare");
@@ -67,6 +73,21 @@ int main(){
         }
         check(last.profile&&!last.learning&&last.learnStatus==NativeSession::LearnStatus::Rejected,"relearn rejection retains profile");
         check(last.spectrum.noiseValid&&!last.spectrum.candidate&&last.spectrum.noise==trusted.noise,"rejected candidate cannot replace trusted spectrum");
+        check(last.sidechainReference&&last.sidechainNoisePeak>0&&last.sidechainThreshold>0,"sidechain reference readback");
+        auto manual=s;manual.spectralManual=true;manual.manual.enabled=true;manual.manual.smartVoice=true;
+        check(native.submit({6,Control::Kind::settings,manual}),"manual setting queue");process();check(native.poll(ack)&&ack.applied&&ack.state.sidechainReference&&ack.state.settings.manual.smartVoice,"manual ACK");
+        check(native.submit({7,Control::Kind::audition,{}}),"audition queue");process();check(native.poll(ack)&&ack.applied&&ack.state.audition,"audition ACK");
+        // Save while the source actually has a learned profile and active
+        // audition. Neither transient may be inherited by a fresh instance.
+        const auto activeState=NativeState::encode(native.acceptedSettings());
+        NativeSession cold;check(cold.restore(activeState)&&cold.prepare(rate,channels),"cold active-state restore");
+        check(NativeState::encode(cold.acceptedSettings())==activeState,"all durable fields roundtrip");
+        check(!cold.observed().profile&&!cold.observed().sidechainReference&&!cold.observed().audition&&!cold.observed().learning,"no transient profile or audition persistence");
+        native.onBypass(true,true);process();
+        check(native.submit({8,Control::Kind::audition,{}}),"bypassed audition queue");process();check(native.poll(ack)&&!ack.applied&&!ack.state.audition,"bypass cancels and rejects audition");
+        native.onBypass(false,false);
+        check(native.submit({9,Control::Kind::clearProfile,{}}),"reset queue");process();check(native.poll(ack)&&ack.applied&&!ack.state.profile&&!ack.state.sidechainReference,"reset ACK");
+        check(native.submit({10,Control::Kind::audition,{}}),"empty audition queue");process();check(native.poll(ack)&&!ack.applied,"no profile rejects audition");
         check(rtprobe::empty(alloc),"native callback allocation");
         const auto saved=NativeState::encode(native.acceptedSettings());
         native.release();check(!native.ready()&&!native.prepare(rate,channels),"published retirement");
