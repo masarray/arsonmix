@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
+#include "../src/BoundedDataInput.h"
+#include "../src/PortableWorkspace.h"
+#include <cassert>
+#include <iostream>
+#include <limits>
+using Input=armix::storage::BoundedDataInput;
+using Workspace=armix::storage::PortableWorkspace;
+int main() {
+    const auto root=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMixAdversarial","",false);
+    assert(root.createDirectory().wasOk());
+    const auto file=root.getChildFile("fixture.json");
+    juce::String text="preserved";
+    const auto invalid=[&](std::initializer_list<unsigned char> bytes) {
+        juce::MemoryBlock mb(bytes.begin(),bytes.size());
+        assert(!Input::decodeUtf8(mb,text));
+        assert(text=="preserved");
+        assert(file.replaceWithData(mb.getData(),mb.getSize()));
+        assert(!Input::text(file,1024,text)&&text=="preserved");
+    };
+    invalid({0x7b,0x7d,0,0x78});
+    invalid({0xc0,0xaf});
+    invalid({0xed,0xa0,0x80});
+    invalid({0xf4,0x90,0x80,0x80});
+    invalid({0xe2,0x82});
+    invalid({0x80});
+    invalid({0xef,0xbb,0xbf});
+    const unsigned char good[]{0xef,0xbb,0xbf,0x7b,0x7d};
+    assert(Input::decodeUtf8(juce::MemoryBlock(good,sizeof good),text)&&text=="{}");
+    assert(file.replaceWithText("{\"label\":\"日本語 🎵\"}"));
+    assert(Input::text(file,1024,text)&&Input::jsonStructure(text));
+    juce::MemoryBlock data("safe",4);
+    assert(!Input::read(file,1,data)&&data==juce::MemoryBlock("safe",4));
+    assert(!Input::read(file,std::numeric_limits<juce::int64>::max(),data));
+    assert(Input::read(file,1024,data));
+    assert(file.replaceWithText(juce::String::repeatedString("[",64)+juce::String::repeatedString("]",64)));
+    assert(Input::text(file,1024,text)&&Input::jsonStructure(text));
+    assert(!Input::jsonStructure("["+text+"]"));
+    assert(!Input::jsonStructure("{]"));
+    assert(!Input::jsonStructure("{\"a\":\"unterminated}"));
+    assert(Input::jsonStructure("{\"a\":\"[{}]\\\"\"}"));
+    for(const auto* path:{"../escape","a/../escape","a//b","/a","a/",
+                          "a\\b","a:stream","CON.txt","x/aux.vst3","x/LPT1",
+                          "x/COM¹.txt","x/alias. ","x/bad?name","x/bad\nname"}) {
+        assert(!Workspace::safeRelativePath(path));
+        assert(Workspace::decode(root,juce::String("workspace://")+path)==juce::File());
+    }
+    assert(Workspace::safeRelativePath("Plugins/VST3/My Reverb.vst3"));
+    assert(Workspace::decode(root,"workspace://Plugins/VST3/My Reverb.vst3").isAChildOf(root));
+#if JUCE_LINUX || JUCE_MAC
+    const auto external=root.getSiblingFile(root.getFileName()+"-outside");
+    assert(external.createDirectory().wasOk());
+    const auto externalFile=external.getChildFile("protected.txt");
+    assert(externalFile.replaceWithText("DO NOT MODIFY"));
+    const auto link=root.getChildFile("linked");
+    assert(external.createSymbolicLink(link,false));
+    assert(!Input::managedPath(root,link.getChildFile("protected.txt")));
+    assert(Workspace::decode(root,"workspace://linked/protected.txt")==juce::File());
+    assert(externalFile.loadFileAsString()=="DO NOT MODIFY");
+    assert(link.deleteFile());
+    assert(external.deleteRecursively());
+#endif
+    assert(root.deleteRecursively());
+    std::cout<<"ZBSH10_ADVERSARIAL_INPUT_PASS\n";
+}
