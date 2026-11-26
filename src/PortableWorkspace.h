@@ -79,7 +79,7 @@ struct PortableWorkspace final
             const auto stem=part.upToFirstOccurrenceOf(".",false,false).trimEnd().toUpperCase();
             if(stem=="CON"||stem=="PRN"||stem=="AUX"||stem=="NUL"||
                (stem.length()==4&&(stem.startsWith("COM")||stem.startsWith("LPT"))&&
-                juce::String("123456789¹²³").containsChar(stem[3])))return false;
+                ((stem[3]>='1'&&stem[3]<='9')||stem[3]==0xb9||stem[3]==0xb2||stem[3]==0xb3)))return false;
         }
         // Empty tokens are also invalid (e.g. Plugins//Bad.vst3).
         return !relative.contains ("//");

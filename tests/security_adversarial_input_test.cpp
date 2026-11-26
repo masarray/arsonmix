@@ -31,7 +31,7 @@ int main() {
     invalid({0xef,0xbb,0xbf});
     const unsigned char good[]{0xef,0xbb,0xbf,0x7b,0x7d};
     assert(Input::decodeUtf8(juce::MemoryBlock(good,sizeof good),text)&&text=="{}");
-    assert(file.replaceWithText("{\"label\":\"日本語 🎵\"}"));
+    assert(file.replaceWithText(juce::String::fromUTF8("{\"label\":\"日本語 🎵\"}")));
     assert(Input::text(file,1024,text)&&Input::jsonStructure(text));
     juce::MemoryBlock data("safe",4);
     assert(!Input::read(file,1,data)&&data==juce::MemoryBlock("safe",4));
@@ -46,8 +46,10 @@ int main() {
     for(const auto* path:{"../escape","a/../escape","a//b","/a","a/",
                           "a\\b","a:stream","CON.txt","x/aux.vst3","x/LPT1",
                           "x/COM¹.txt","x/alias. ","x/bad?name","x/bad\nname"}) {
-        assert(!Workspace::safeRelativePath(path));
-        assert(Workspace::decode(root,juce::String("workspace://")+path)==juce::File());
+        const auto decodedPath=juce::String::fromUTF8(path);
+        if(Workspace::safeRelativePath(decodedPath))std::cerr<<"Unexpected admitted path: "<<path<<"\n";
+        assert(!Workspace::safeRelativePath(decodedPath));
+        assert(Workspace::decode(root,juce::String("workspace://")+decodedPath)==juce::File());
     }
     assert(Workspace::safeRelativePath("Plugins/VST3/My Reverb.vst3"));
     assert(Workspace::decode(root,"workspace://Plugins/VST3/My Reverb.vst3").isAChildOf(root));
