@@ -322,7 +322,7 @@ def main():
         assert (bundle/"assets"/"geq31-brushed-metal.jpg").stat().st_size>0
         ring=root.locator(".an-led-off").first.get_attribute("d")
         assert ring.count("M")==27 and ring.count("A45.5 45.5")==27 and "L" not in ring
-        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==16
+        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==1+int(26*accepted["cleanDb"]/40)
         assert root.locator(".an-knob-art").first.get_attribute("src").endswith("mixer-gain-knob-brushed-steel.png")
         knob=root.locator('input[aria-label="Clean"]')
         bounds=knob.bounding_box()
@@ -335,7 +335,7 @@ def main():
         page.mouse.move(x,y-65,steps=7);page.wait_for_timeout(70)
         desired=float(knob.input_value())
         assert desired>first["settings"]["cleanDb"]
-        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==1+int(26*desired/24)
+        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==1+int(26*desired/40)
         expect(knob).to_be_enabled()
         # Require a new snapshot request, rather than silently responding
         # to the previously consumed request.
@@ -393,6 +393,125 @@ def main():
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))
         assert_full_composition(root)
         page.set_viewport_size({"width":1366,"height":768})
+        # Actual advanced controls must reach the same accepted native identity.
+        root.locator(".an-pro summary").click()
+        manual=root.locator('[data-pro-flag="manualExpander"]')
+        manual.click()
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["manualExpander"] is True
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(manual).to_be_checked()
+        expect(root.locator('input[aria-label="Silence"]')).to_be_disabled()
+        threshold=root.locator('input[aria-label="Threshold"]')
+        expect(threshold).to_be_enabled()
+        threshold.focus();page.keyboard.press("ArrowRight")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["thresholdDb"]==-39
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        readback(page,accepted,{**OBS,"serial":"19","effectiveMode":"Voice","profile":True,"detectorLevel":.01})
+        expect(root.locator("[data-detector]")).to_have_text("-40.0 dBFS")
+        expect(root.locator("[data-pro-dot]")).to_be_visible()
+        expect(root.locator("[data-pro-curve]")).to_have_attribute("d",__import__("re").compile("^M"))
+        root.locator('[data-pro-tab="sidechain"]').click()
+        expect(root.locator('[data-pro-page="expander"]')).to_be_hidden()
+        smart=root.locator('[data-pro-flag="smartVoice"]')
+        smart.click()
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["smartVoice"] is True
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(smart).to_be_checked()
+        margin=root.locator('input[aria-label="Noise margin"]')
+        margin.focus();page.keyboard.press("ArrowRight")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["smartMarginDb"]==10
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        readback(page,accepted,{**OBS,"serial":"190","effectiveMode":"Voice","profile":True,"detectorLevel":.01,"sidechainReference":True,"sidechainNoisePeak":.01,"sidechainThreshold":.0316227766})
+        expect(root.locator("[data-smart-noise]")).to_have_text("-40.0 dBFS")
+        expect(root.locator("[data-sidechain-effective]")).to_have_text("-30.0 dBFS")
+        expect(root.locator("[data-smart-lift]")).to_have_text("9.0 dB")
+        assert accepted["thresholdDb"]==-39
+        root.locator('[data-pro-tab="spectral"]').click()
+        expect(root.locator('[data-pro-page="sidechain"]')).to_be_hidden()
+        spectral=root.locator('[data-pro-flag="spectralManual"]')
+        spectral.click()
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["spectralManual"] is True
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(spectral).to_be_checked()
+        reduction=root.locator('input[aria-label="Reduction value"]')
+        reduction.fill("18.5");reduction.press("Enter")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["cleanDb"]==18.5
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        assert float(root.locator('input[aria-label="Clean"]').input_value())==18.5
+        expect(root.locator(".an-knobs")).to_be_hidden()
+        artifact=root.locator('input[aria-label="Artifact control"]')
+        artifact.focus();page.keyboard.press("ArrowRight")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert abs(edit["settings"]["artifactControl"]-.51)<.0001
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        readback(page,accepted,{**OBS,"serial":"20","effectiveMode":"Voice","profile":True,"detectorLevel":.01})
+        root.locator("[data-audition]").click()
+        edit=last_action(page,"nativeAntiNoizAudition")
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=accepted)
+        readback(page,accepted,{**OBS,"serial":"21","effectiveMode":"Voice","profile":True,"audition":True})
+        expect(root.locator("[data-audition]")).to_have_text("Stop noise audition")
+        root.locator("[data-clear-profile]").click()
+        edit=last_action(page,"nativeAntiNoizClear")
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=accepted)
+        readback(page,accepted,{**OBS,"serial":"22","effectiveMode":"Voice","profile":False,"audition":False})
+        expect(root.locator("[data-audition]")).to_be_disabled()
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-1366.png"))
+        # Numeric editing uses the same acknowledged control path; no optimistic durable state.
+        number=root.locator('input[aria-label="Artifact control value"]')
+        number.fill("72");number.press("Enter")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert abs(edit["settings"]["artifactControl"]-.72)<.0001
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        root.locator('[data-pro-tab="expander"]').click()
+        desktop=root.evaluate("""el=>{const q=s=>el.querySelector(s),p=q(".an-panel").getBoundingClientRect();
+          return {rect:{top:p.top,left:p.left,bottom:p.bottom,right:p.right},viewport:{w:innerWidth,h:innerHeight},
+            inlinePosition:[el.style.top,el.style.left],targets:["[data-close]","[data-learn]",".an-pro-tabs [aria-selected=true]"].map(s=>{const c=q(s),r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {selector:s,ok:c===hit||c.contains(hit),hit:hit?.outerHTML.slice(0,160)};})};}""")
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-desktop-hit.png"))
+        assert desktop["rect"]["top"]>=-1 and desktop["rect"]["left"]>=-1 and desktop["rect"]["bottom"]<=desktop["viewport"]["h"]+1 and desktop["rect"]["right"]<=desktop["viewport"]["w"]+1 and all(t["ok"] for t in desktop["targets"]) and desktop["inlinePosition"]==["",""], desktop
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-expander-1366.png"))
+        root.locator('[data-pro-tab="sidechain"]').click()
+        assert root.evaluate("""el=>{const c=el.querySelector("[data-learn]"),r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return c===hit||c.contains(hit);}"""),"desktop sidechain Learn reachable"
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-sidechain-1366.png"))
+        page.set_viewport_size({"width":360,"height":720})
+        for name in ("expander","spectral","sidechain"):
+            tab=root.locator(f'[data-pro-tab="{name}"]');tab.click()
+            expect(root.locator(f'[data-pro-page="{name}"]')).to_be_visible()
+            assert root.locator(".an-panel").evaluate("el=>el.scrollWidth<=el.clientWidth+2")
+            assert root.locator(f'[data-pro-page="{name}"]').evaluate("el=>el.scrollWidth<=el.clientWidth+2")
+            assert root.evaluate("""el=>{const panel=el.querySelector('.an-panel'),p=panel.getBoundingClientRect();
+              return p.top>=-1&&p.left>=-1&&p.right<=innerWidth+1&&p.bottom<=innerHeight+1&&['.an-head','footer','.an-pro-tabs'].every(s=>{const r=el.querySelector(s).getBoundingClientRect();
+                return r.top>=p.top-.5&&r.bottom<=p.bottom+.5;})&&panel.scrollTop===0;
+            }"""),"professional chrome and Learn must remain inside the face"
+
+            root.screenshot(path=str(bundle.parent/f"anti-noiz-operator-pro-{name}-360.png"))
+        root.locator('[data-pro-tab="sidechain"]').focus();page.keyboard.press("Home")
+        expect(root.locator('[data-pro-tab="expander"]')).to_have_attribute("aria-selected","true")
+        page.set_viewport_size({"width":1366,"height":768})
+        root.locator(".an-pro summary").click()
+        expect(root.locator(".an-knobs")).to_be_visible()
+        assert float(root.locator('input[aria-label="Clean"]').input_value())==18.5
+        select=root.locator('[data-preset]')
+        select.select_option('VOCAL_LIVE')
+        edit=last_action(page,'nativeAntiNoizSet')
+        assert edit['settings']['manualExpander'] and edit['settings']['spectralManual'] and edit['settings']['cleanDb']==12
+        expect(select).to_have_value('CUSTOM')
+        respond(page,edit,'arMixBuiltinAntiNoizAck',status='APPLIED',settings=edit['settings'])
+        accepted=edit['settings']
+        expect(select).to_have_value('VOCAL_LIVE')
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
         root.locator(".mx-fxp-save-as").click()
@@ -400,6 +519,37 @@ def main():
         root.locator(".mx-fxp-confirm").click()
         save=last_action(page,"nativeBuiltinFxUserPreset")
         assert save["operation"]=="saveAs" and save["name"]=="Vocal noise" and save["instanceId"]==INSTANCE
+        # Disk reply fixtures exercise only UI ownership, not actual storage.
+        user_id="c73fa8e2-0673-40d0-a87b-534285766120"
+        legacy_id="c73fa8e2-0673-40d0-a87b-534285766121"
+        saved=dict(accepted)
+        respond(page,save,preset_event,status="OK",operation="saveAs",catalogId=ID,presetId=user_id)
+        listing=last_action(page,"nativeBuiltinFxUserPreset")
+        assert listing["operation"]=="list"
+        respond(page,listing,preset_event,status="OK",operation="list",catalogId=ID,items=[
+            {"id":user_id,"name":"Vocal noise"},{"id":legacy_id,"name":"Old preset"}])
+        expect(select).to_have_value("user:"+user_id)
+        select.select_option("DEFAULT")
+        edit=last_action(page,"nativeAntiNoizSet")
+        expect(select).to_have_value("user:"+user_id)
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="REJECTED",settings=saved,errorCode="BUSY")
+        expect(select).to_have_value("user:"+user_id)
+        select.select_option("user:"+legacy_id)
+        recall=last_action(page,"nativeBuiltinFxUserPreset")
+        assert recall["operation"]=="read" and recall["presetId"]==legacy_id
+        respond(page,recall,preset_event,status="OK",operation="read",catalogId=ID,presetId=legacy_id,settings=DEFAULTS)
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert len(edit["settings"])==24 and edit["settings"]["manualExpander"] is False
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(select).to_have_value("user:"+legacy_id)
+        select.select_option("PAUSE_MUTE")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["gate"] is True and edit["settings"]["rangeDb"]==96
+        expect(select).to_have_value("user:"+legacy_id)
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(select).to_have_value("PAUSE_MUTE")
         # Three real close/reopen gestures must leave one DOM and one set
         # of callbacks. No new browser engine/window/PCM graph.
         for _ in range(3):

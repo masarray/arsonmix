@@ -30,6 +30,7 @@ public:
         count_=observed_=checkpointCount_=0;warmup_=2;qualified_=false;
         learning_=true;idle_=0;drift_.reset();return true;
     }
+    void clear() noexcept {cancel();valid_=qualified_=false;anchor_={};working_={};variability_={};checkpoint_={};checkpointCount_=0;}
     void cancel() noexcept {learning_=false;idle_=0;drift_.reset();}
     // Revoke the extra Voice authority at a policy boundary, not on each
     // foreground frame. No Learn invalidation or new profile transaction.
@@ -51,6 +52,8 @@ public:
     // an unqualified current window or a rejected transaction.
     const Powers& captured() const noexcept {return checkpoint_;}
     int capturedFrames() const noexcept {return learning_?checkpointCount_:0;}
+    int checkpointFrameCount() const noexcept {return checkpointCount_;}
+    bool atCheckpointBoundary() const noexcept {return learning_&&observed_>0&&observed_%learnWindow_==0;}
     int observedFrames() const noexcept {return learning_?observed_:0;}
     int targetFrames() const noexcept {return target_;}
     // Coefficient of variation of accepted FFT-frame broadband power.

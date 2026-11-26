@@ -41,6 +41,17 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - name: Preserve exact standalone source for offline reproducibility
+        if: matrix.benchmark == 'ON'
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-pro-product-source
+          path: |
+            engine/builtin_fx/anti_noiz/
+            engine/builtin_fx/FxSpsc.h
+            tests/anti_noiz_*.cpp
+            tools/anti-noiz/
+          if-no-files-found: error
       - name: Configure isolated standard C++ DSP
         run: >
           cmake -S tools/anti-noiz -B "$RUNNER_TEMP/anti-noiz"
@@ -120,6 +131,65 @@ jobs:
       - name: Opt-in recorded audio smoke (local WAVs, no upload)
         if: ${{ !cancelled() && matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke') }}
         run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f
+
+  professional-rt:
+    name: Anti Noiz professional native-session CPU headroom (Release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Record runner and build exact Release probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/pro-rt"
+          { git rev-parse HEAD; g++ --version; lscpu; } > "$RUNNER_TEMP/pro-rt/environment.txt"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -DANTI_NOIZ_ALLOC_PROBE=1 tests/anti_noiz_pro_rt_test.cpp -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign -o "$RUNNER_TEMP/pro-rt-test"
+      - name: Checkout exact unpacked stereo reference
+        uses: actions/checkout@v4
+        with:
+          ref: bf4bd81a244d5ea80210c23d31c18a05597b097f
+          path: .anti-noiz-unpacked
+          persist-credentials: false
+      - name: Matched strict FP manual stereo parity against unpacked professional reference
+        run: |
+          flags=(-std=c++20 -O3 -ffp-contract=off -DNDEBUG -Wall -Wextra -Werror)
+          g++ "${flags[@]}" -I .anti-noiz-unpacked/engine/builtin_fx/anti_noiz tests/anti_noiz_stereo_packed_probe.cpp -o "$RUNNER_TEMP/stereo-old"
+          g++ "${flags[@]}" -I engine/builtin_fx/anti_noiz tests/anti_noiz_stereo_packed_probe.cpp -o "$RUNNER_TEMP/stereo-new"
+          "$RUNNER_TEMP/stereo-old" "$RUNNER_TEMP/old.f32"
+          "$RUNNER_TEMP/stereo-new" "$RUNNER_TEMP/new.f32"
+          python3 tools/anti-noiz/compare_stereo_packed.py "$RUNNER_TEMP/old.f32" "$RUNNER_TEMP/new.f32" "$RUNNER_TEMP/pro-rt/stereo-parity.json" --manual-only
+          rm -f "$RUNNER_TEMP/old.f32" "$RUNNER_TEMP/new.f32"
+      - name: Checkout exact canonical automatic DSP reference
+        uses: actions/checkout@v4
+        with:
+          ref: bf399bfdd6f8739f39bdd226965ef2274e6e2fbc
+          path: .anti-noiz-canonical
+          persist-credentials: false
+      - name: Exact legacy PCM fingerprints across four modes and three noise shapes
+        run: |
+          set -euo pipefail
+          flags=(-std=c++20 -O3 -ffp-contract=off -DNDEBUG -Wall -Wextra -Werror)
+          g++ "${flags[@]}" -I .anti-noiz-canonical/engine/builtin_fx/anti_noiz tests/anti_noiz_legacy_pcm_probe.cpp -o "$RUNNER_TEMP/legacy-old"
+          g++ "${flags[@]}" -I engine/builtin_fx/anti_noiz tests/anti_noiz_legacy_pcm_probe.cpp -o "$RUNNER_TEMP/legacy-new"
+          "$RUNNER_TEMP/legacy-old" > "$RUNNER_TEMP/pro-rt/legacy-old.csv"
+          "$RUNNER_TEMP/legacy-new" > "$RUNNER_TEMP/pro-rt/legacy-new.csv"
+          test "$(wc -l < "$RUNNER_TEMP/pro-rt/legacy-old.csv")" -eq 96
+          cmp "$RUNNER_TEMP/pro-rt/legacy-old.csv" "$RUNNER_TEMP/pro-rt/legacy-new.csv"
+          echo LEGACY_PCM_96_EXACT_PASS
+      - name: Enforce 50 percent P99 thread CPU headroom (wall misses reported separately)
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          "$RUNNER_TEMP/pro-rt-test" --enforce-headroom | tee "$RUNNER_TEMP/pro-rt/native-session.csv"
+      - name: Preserve timing evidence even when headroom fails
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-professional-rt
+          path: ${{ runner.temp }}/pro-rt/
+          if-no-files-found: error
 
   numerical-reproducibility:
     name: Anti Noiz matched PCM reproducibility (opt-in)

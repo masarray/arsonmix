@@ -4,6 +4,9 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
     paths:
       - 'src/BuiltInFxUserPresetStore.h'
+      - 'src/AntiNoizPortableSettings.h'
+      - 'src/AntiNoizNativeBinding.h'
+      - 'site/preview-v2/assets/mixer-builtin-fx-preset-bar.js'
       - 'tests/builtin_fx_user_preset_store_test.cpp'
       - 'src/BuiltInFxAcceptedSnapshot.h'
       - 'tests/builtin_fx_accepted_snapshot_test.cpp'
@@ -42,7 +45,7 @@ jobs:
           if [[ "$PR_ACTION" != "synchronize" ]] || ! git rev-parse --verify HEAD^ >/dev/null 2>&1; then
             echo 'build=true' >> "$GITHUB_OUTPUT"
           elif git diff --name-only HEAD^ HEAD -- \
-             CMakeLists.txt src/BuiltInFxUserPresetStore.h \
+             CMakeLists.txt src/BuiltInFxUserPresetStore.h src/AntiNoizPortableSettings.h src/AntiNoizNativeBinding.h site/preview-v2/assets/mixer-builtin-fx-preset-bar.js \
              src/BuiltInFxAcceptedSnapshot.h \
              tests/builtin_fx_user_preset_store_test.cpp \
              tests/builtin_fx_accepted_snapshot_test.cpp \

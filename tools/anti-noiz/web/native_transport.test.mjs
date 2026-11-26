@@ -44,7 +44,9 @@ emit2('arMixBuiltinAntiNoizSnapshot',sent2.at(-1),{status:'ACCEPTED',settings:de
 model2.adjust('cleanDb',16);const first=sent2.at(-1);model2.adjust('cleanDb',19);model2.adjust('silenceDb',12);assert.equal(sent2.filter(x=>x.action==='nativeAntiNoizSet').length,1);
 emit2('arMixBuiltinAntiNoizAck',first,{status:'APPLIED',settings:first.settings});
 const writes=sent2.filter(x=>x.action==='nativeAntiNoizSet');assert.equal(writes.length,2);assert.equal(writes[1].settings.cleanDb,19);assert.equal(writes[1].settings.silenceDb,12);assert(latest.pending);
-emit2('arMixBuiltinAntiNoizAck',writes[1],{status:'APPLIED',settings:writes[1].settings});assert.equal(latest.accepted.cleanDb,19);assert(!latest.pending);model2.dispose();console.log('ANTI_NOIZ_NATIVE_CONTINUOUS_ACK PASS');
+emit2('arMixBuiltinAntiNoizAck',writes[1],{status:'APPLIED',settings:writes[1].settings});assert.equal(latest.accepted.cleanDb,19);assert(!latest.pending);
+assert(model2.submit('clear'));const clear=sent2.at(-1);assert.equal(clear.action,'nativeAntiNoizClear');emit2('arMixBuiltinAntiNoizAck',clear,{status:'APPLIED',settings:latest.accepted});assert(!latest.pending);
+assert(model2.submit('audition'));const audition=sent2.at(-1);assert.equal(audition.action,'nativeAntiNoizAudition');emit2('arMixBuiltinAntiNoizAck',audition,{status:'REJECTED',settings:latest.accepted,errorCode:'NO_PROFILE'});assert(latest.error);model2.dispose();console.log('ANTI_NOIZ_NATIVE_CONTINUOUS_ACK PASS');
 
 // Spectrum extension is optional, bounded and rejects malformed data.
 const spec={bins:129,binHz:187.5,candidate:true,progress:.4,input:Array(129).fill(-45),noise:Array(129).fill(-65)};

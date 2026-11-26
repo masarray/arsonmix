@@ -79,10 +79,10 @@ export function nativeTransport(backend,context,clock=()=>Date.now()){
   lastRequestId:()=>lastId,
   send(c){
    const target=identity();if(closed||!target||writing)throw Error('Native lease unavailable');
-   if(c.kind==='learn'&&target.deviceEpoch==='0')throw Error('Learn requires live audio');
+   if(c.kind!=='settings'&&target.deviceEpoch==='0')throw Error('Command requires live audio');
    const requestId='an-'+nextRequest();lastId=requestId;
    writing={id:c.id,context:target,requestId,started:clock()};
-   try{backend.emitEvent('arMixAction',{action:c.kind==='learn'?'nativeAntiNoizLearn':'nativeAntiNoizSet',
+   try{backend.emitEvent('arMixAction',{action:({learn:'nativeAntiNoizLearn',clear:'nativeAntiNoizClear',audition:'nativeAntiNoizAudition',settings:'nativeAntiNoizSet'})[c.kind],
     ...target,requestId,settings:c.settings});}catch(e){writing=null;throw e;}
   }};
 }

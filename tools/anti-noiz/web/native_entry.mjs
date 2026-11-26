@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {mount,valid,defaults} from './editor.mjs';
+import {mount,valid,normalize,factoryPresets,factoryValue,sameSettings} from './editor.mjs';
 import {nativeTransport} from './native_transport.mjs';
 // In the approved resource bundle only, style is injected from the same
 // editor.css. No browser PCM, no second mixer, no public preview fallback.
@@ -42,24 +42,25 @@ import {nativeTransport} from './native_transport.mjs';
    enableSlot(){if(target()?.power==='SLOT'&&current)window.__ARMIX_NATIVE_M2__?.consumeAction?.(current.track,'slotPower',{dataset:{slot:String(current.slot)}});},
    onState(state){
    latest=state;
-   if(state.accepted&&!state.pending){presets?.onAccepted(state.accepted,state.appliedId);presets?.refresh();}
+   if(!state.accepted)presets?.reset();
+   if(state.accepted&&!state.pending){if(state.error)presets?.rejectRecall(transport.lastRequestId(),state.error);presets?.onAccepted(state.accepted,state.appliedId);presets?.refresh();presets?.restoreSelection();}
    presets?.paint();
   }});
   const select=root.querySelector('[data-preset]');
   const bar=root.querySelector('.an-presets');
-  const factoryValue=s=>valid(s)&&Object.keys(defaults).every(k=>s[k]===defaults[k])?'DEFAULT':'CUSTOM';
   presets=window.ArSonMixBuiltinFxPresetBar?.create({
     host:root,select,label:'Anti Noiz',catalogId:ID,context,
     stable:()=>!!latest?.accepted&&!latest.pending,readAccepted:()=>latest?.accepted||{},
-    validate:valid,factoryValue,notice:m=>{const el=root.querySelector('[data-status]');if(el)el.textContent=m;},
-    apply:s=>view?.model.submit('settings',s)?transport.lastRequestId():null
+    validate:valid,factoryValue,sameSettings,notice:m=>{const el=root.querySelector('[data-status]');if(el)el.textContent=m;},
+    apply:s=>view?.model.submit('settings',normalize(s))?transport.lastRequestId():null
   });
   if(presets){
    bar.hidden=false;
    select.onchange=()=>{
     if(presets.selectUser(select.value))return;
-    if(select.value==='DEFAULT'&&view.model.submit('settings',defaults))presets.factoryIntent(transport.lastRequestId());
-    else select.value=factoryValue(latest?.accepted);
+    const factory=factoryPresets.find(p=>p.id===select.value);
+    if(factory&&latest?.accepted)presets.selectFactory({...factory.settings,enabled:latest.accepted.enabled});
+    else presets.restoreSelection();
    };
    if(latest?.accepted)presets.onAccepted(latest.accepted);
   }
