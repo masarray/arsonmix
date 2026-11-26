@@ -2356,7 +2356,7 @@ public:
                 std::move(processor),juce::String(fx.id),fx.name,
                 LiveDryRoutingLab::Block::hardFrameLimit);
             return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,rosterRevision,id,
-                fx.id,std::move(lease),true);
+                fx.id,std::move(lease),true,allOutputsDisarmed());
         } catch(...) {
             fail.error=fx.prepareException;return fail;
         }
@@ -2626,6 +2626,7 @@ public:
         auto* device=deviceManager_.getCurrentAudioDevice();
         const auto valid=[&]{
             return device&&deviceManager_.getCurrentAudioDevice()==device&&
+                device->isOpen()&&dryRoutingLab_.ready()&&dryRoutingLab_.channelIdPhysicalPcmActive()&&
                 epoch==dryRoutingLab_.epoch()&&attached_&&directFence_.permitted()&&
                 !independent_.active()&&!secondaryOutput_.armed()&&
                 !routeReconfiguring_.load(std::memory_order_acquire)&&

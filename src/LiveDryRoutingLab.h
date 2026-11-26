@@ -1301,7 +1301,7 @@ public:
             std::uint64_t expectedRosterRevision,armix::mixer::ChannelId target,
             const juce::String& catalogId,
             armix::mixer::DynamicChannelFxLeaseBank::Lease processor,
-            bool verifiedPreparedLiveInsert=false) {
+            bool verifiedPreparedLiveInsert=false,bool explicitlyDisarmed=false) {
         using namespace armix::mixer;
         NativeBusResult out{};
         out.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1369,8 +1369,8 @@ public:
             fx.graphRevision=expectedPcmRevision+1;
             const auto published=nativePublisher_.commit(
                 next,nativeAccepted_.graph.request,expectedPcmRevision,
-                expectedEpoch,epoch(),false,std::move(fx),false,true,nullptr,nullptr,
-                catalogId=="armix.builtin.channel-compressor.v1");
+                expectedEpoch,epoch(),explicitlyDisarmed,std::move(fx),false,true,nullptr,nullptr,
+                catalogId=="armix.builtin.channel-compressor.v1"&&!explicitlyDisarmed);
             if(!published.ok()) {
                 out.error=published.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable?
                     "COMPRESSOR_INSERT_REQUIRES_STABLE_LIVE_GRAPH":"NATIVE_VST3_PCM_COMMIT_REJECTED";return out;

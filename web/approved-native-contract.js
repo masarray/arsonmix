@@ -50,7 +50,7 @@
     if(raw.includes("DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED"))
       return "Delete not applied · Fade not confirmed; retry with outputs muted";
     if(raw.includes("COMPRESSOR_INSERT_REQUIRES_STABLE_LIVE_GRAPH"))
-      return "Compressor not added · Finish the current mixer change and retry";
+      return "Compressor not added · Finish current edits or mute outputs, then retry";
     // A product never advertises unfinished internal QA/FAT certification to
     // operators. This is a display-only adapter, not an audio-state override.
     if(/\b(?:HARDWARE\s+)?FAT\s+(?:PENDING|PASSED|FAILED)\b|\b(?:NATIVE\s+)?PCM\s+(?:GRAPH|HARDWARE|FAT)\b|\b(?:PENDING_ACCEPTED_SNAPSHOT|HARDWARE_FAT_PENDING)\b/i.test(raw)){
