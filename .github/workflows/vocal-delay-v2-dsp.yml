@@ -58,6 +58,10 @@ jobs:
           g++ -std=c++17 -Wall -Wextra -Werror -O2 tools/vocal-delay/audition.cpp -o /tmp/vd-audition
           /tmp/vd-audition vd-audition
           /tmp/vd-audition vd-audition-roundtrip "vd-audition/00 Dry reference.wav"
+          /tmp/vd-audition vd-concert-audition --concert
+          test "$(find vd-concert-audition -name '*.wav' | wc -l)" -eq 22
+          cat vd-concert-audition/metrics.csv
+          git rev-parse HEAD > vd-concert-audition/source-sha.txt
           test "$(find vd-audition -name '*.wav' | wc -l)" -eq 22
           cat vd-audition/metrics.csv
           git rev-parse HEAD > vd-audition/source-sha.txt
@@ -65,7 +69,9 @@ jobs:
         if: matrix.cxx == 'g++'
         with:
           name: vocal-delay-audition
-          path: vd-audition/
+          path: |
+            vd-audition/
+            vd-concert-audition/
           if-no-files-found: error
   ui-contract:
     runs-on: ubuntu-latest

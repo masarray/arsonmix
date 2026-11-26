@@ -197,7 +197,7 @@ public:
             b.setColour(juce::TextButton::textColourOffId,hardware::col(selected?0xc8f5e4:0xc5cccd));
             b.setColour(juce::TextButton::buttonColourId,hardware::col(selected?0x27695c:0x41494d));
         }
-        hit_.setEnabled(available&&p.enabled&&!processor_.isDetached()&&hostBypass()==HostBypass::none);hit_.setButtonText(p.throwMode!=ThrowMode::off?(p.hit?"ARM OFF":"THROW"):(p.hit?"HIT ON":"HIT"));
+        hit_.setEnabled(available&&p.enabled&&!processor_.isDetached()&&hostBypass()==HostBypass::none);hit_.setButtonText(p.throwMode!=ThrowMode::off?(p.hit?"REARM":"THROW"):(p.hit?"HIT ON":"HIT"));
         hit_.setTooltip(p.throwMode!=ThrowMode::off?"One-shot recent vocal capture on rising edge; click to rearm":"Chorus highlight: more wet echo and repeats");
         hit_.setColour(juce::TextButton::buttonColourId,hardware::col(p.hit?0x88652d:0x41494d));
         tail_.setEnabled(available);tail_.setButtonText(p.spillover?"TAIL ON":"TAIL");

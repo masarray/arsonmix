@@ -21,7 +21,7 @@ public:
     std::size_t ringBytes()const noexcept{return (left_.capacity()+right_.capacity())*sizeof(float);}
     void reset() noexcept{
         left_.invalidate();right_.invalidate();count_=phrase_=gap_=high_=lastHigh_=learned_=cooldown_=remaining_=length_=age_=0;
-        energy_=difference_=reference_=previous_=0;held_=false;recent_=0;status_=Status::armed;
+        energy_=difference_=reference_=previous_=0;held_=false;recent_=sinceVoice_=0;status_=Status::armed;
     }
     Status status()const noexcept{return status_;}
     Capture tick(float l,float r,ThrowMode mode,bool manual) noexcept{
@@ -36,9 +36,9 @@ public:
             --remaining_;
         }
         if(cooldown_)--cooldown_;
-        if(recent_)--recent_;
-        if(manual&&!held_&&recent_&&!remaining_){
-            start(std::min(policy.capture*frame_,recent_),0,policy);
+        if(recent_){--recent_;sinceVoice_=std::min(frame_*64,sinceVoice_+1);}
+        if(manual&&!held_&&recent_&&!remaining_&&sinceVoice_<=frame_*20){
+            start(std::min(policy.capture*frame_,recent_),sinceVoice_,policy);
         }
         held_=manual;
         // Max-energy channel (not stereo fold) avoids false silence on
@@ -52,7 +52,7 @@ public:
             count_=0;energy_=difference_=0;
             const float floor=std::clamp(reference_*.10f,.006f,.015f);
             if(rms>floor&&coherent){
-                recent_=std::min(frame_*32,recent_+frame_*2);
+                recent_=std::min(frame_*32,recent_+frame_*2);sinceVoice_=0;
                 if(gap_>=policy.gap){phrase_=high_=lastHigh_=0;}
                 gap_=0;phrase_=std::min(phrase_+1,10000u);
                 if(learned_>=12&&rms>=std::max(.018f,reference_*policy.ratio)){
@@ -99,7 +99,7 @@ private:
     }
     DelayLine left_,right_;
     std::uint32_t frame_=1,edge_=1,count_=0,phrase_=0,gap_=0,high_=0,lastHigh_=0,learned_=0,
-        cooldown_=0,remaining_=0,length_=0,age_=0,recent_=0;
+        cooldown_=0,remaining_=0,length_=0,age_=0,recent_=0,sinceVoice_=0;
     float energy_=0,difference_=0,reference_=0,previous_=0;
     bool held_=false;Status status_=Status::armed;
 };

@@ -108,6 +108,16 @@ int main(){
         stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);
         ballad->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(2))&&!hosted.singerPending());
         liveButton->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(0)));
+        auto* concert=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.smart"));CHECK(concert);
+        concert->onClick();CHECK(liveButton->getButtonText()=="Idol Concert"&&liveButton->isVisible());
+        CHECK(!editor->findChildWithID("vd.stage.8")->isVisible());
+        stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);
+        liveButton->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(concertPresetStart)));
+        capture("vocal-delay-concert.png");
+        juce::MemoryBlock concertState;hosted.getStateInformation(concertState);State decoded{};
+        CHECK(StateCodec::decode(concertState.getData(),concertState.getSize(),decoded)&&decoded.continuous.throwMode==ThrowMode::concert);
+        concert->onClick();CHECK(liveButton->getButtonText()=="Smart Live");liveButton->onClick();
+        CHECK(sameParameters(hosted.singerDisplay(),presetSettings(0)));
         stageToggle->onClick();CHECK(echo->isVisible()&&!liveButton->isVisible());
         echo->setValue(27,juce::sendNotificationSync);
         CHECK(!hosted.singerPending()&&std::abs(hosted.acceptedSnapshot().accepted.echo-.27f)<1.e-6f);

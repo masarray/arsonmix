@@ -80,7 +80,7 @@ public:
         if(!ready_||q.rate_!=rate_)return false;
         // Only an actual ON->OFF transition may arm a tail. Repeated edits
         // while OFF cannot extend it, nor resurrect cleared history.
-        if(target_.enabled_&&!q.enabled_&&q.spillover_&&power_>0.f)tailRemaining_=tailLimit_;
+        if(target_.enabled_&&!q.enabled_){throw_.reset();if(q.spillover_&&power_>0.f)tailRemaining_=tailLimit_;}
         if(q.enabled_||!q.spillover_)tailRemaining_=0;
         target_=q;return true; // latest target; no unbounded edit queue in DSP
     }
@@ -166,7 +166,7 @@ public:
                 if(target_.enabled_&&!switching){
                     const auto captured=throw_.tick(safeL,safeR,activeThrow_,target_.hit_);
                     srcL=captured.l;srcR=captured.r;
-                }else{throw_.reset();srcL=srcR=0.f;}
+                }else{srcL=srcR=0.f;}
             }
             const float fold=.5f*(srcL+srcR);
             float inL=srcL+(fold-srcL)*mono_;
