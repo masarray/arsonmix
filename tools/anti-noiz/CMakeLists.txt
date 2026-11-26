@@ -164,3 +164,15 @@ set_tests_properties(AntiNoizManualSpectral PROPERTIES TIMEOUT 90)
 anti_noiz_target(anti_noiz_smart_voice_test tests/anti_noiz_smart_voice_test.cpp)
 add_test(NAME AntiNoizSmartVoice COMMAND anti_noiz_smart_voice_test)
 set_tests_properties(AntiNoizSmartVoice PROPERTIES TIMEOUT 90)
+
+# Professional native-session matrix (functional invariant gate; timings are
+# diagnostic here, separately enforced by the dedicated Release CPU job).
+anti_noiz_target(anti_noiz_pro_rt_test tests/anti_noiz_pro_rt_test.cpp)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANTI_NOIZ_SANITIZERS)
+  target_compile_definitions(anti_noiz_pro_rt_test PRIVATE ANTI_NOIZ_ALLOC_PROBE=1)
+  foreach(symbol malloc calloc realloc free aligned_alloc posix_memalign)
+    target_link_options(anti_noiz_pro_rt_test PRIVATE "-Wl,--wrap=${symbol}")
+  endforeach()
+endif()
+add_test(NAME AntiNoizProfessionalRT COMMAND anti_noiz_pro_rt_test)
+set_tests_properties(AntiNoizProfessionalRT PROPERTIES TIMEOUT 120)

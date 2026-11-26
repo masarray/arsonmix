@@ -200,6 +200,32 @@ jobs:
         if: ${{ !cancelled() && matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke') }}
         run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f
 
+  professional-rt:
+    name: Anti Noiz professional native-session CPU headroom (Release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Record runner and build exact Release probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/pro-rt"
+          { git rev-parse HEAD; g++ --version; lscpu; } > "$RUNNER_TEMP/pro-rt/environment.txt"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -DANTI_NOIZ_ALLOC_PROBE=1 tests/anti_noiz_pro_rt_test.cpp -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign -o "$RUNNER_TEMP/pro-rt-test"
+      - name: Enforce 50 percent P99 thread CPU headroom (wall misses reported separately)
+        run: |
+          set -o pipefail
+          "$RUNNER_TEMP/pro-rt-test" --enforce-headroom | tee "$RUNNER_TEMP/pro-rt/native-session.csv"
+      - name: Preserve timing evidence even when headroom fails
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-professional-rt
+          path: ${{ runner.temp }}/pro-rt/
+          if-no-files-found: error
+
   numerical-reproducibility:
     name: Anti Noiz matched PCM reproducibility (opt-in)
     if: contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
