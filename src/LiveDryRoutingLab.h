@@ -3190,9 +3190,14 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
-            const auto committed=nativePublisher_.commit(roster,nativeAccepted_.graph.request,
+            auto request=nativeAccepted_.graph.request;
+            // The return to a graph without MONITOR cannot carry the
+            // independent timing policy. Preserve existing default on entry.
+            if(!enable)request.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
+            const auto committed=nativePublisher_.commit(roster,request,
                 rev,ep,epoch(),true,std::move(fx));
             if(!committed.ok())return "DMX: PCM graph rejected";
+            nativeAccepted_.graph.request=std::move(request);
             nativeAccepted_.graph.roster=std::move(roster);
             nativeAccepted_.graph.ids.monitor=monitor;
             nativeAccepted_.fxOwners=std::move(owner);

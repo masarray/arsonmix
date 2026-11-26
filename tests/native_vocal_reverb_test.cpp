@@ -183,7 +183,14 @@ int main() {
             created,0,newer->instanceId,{},0,denied,deniedBank));
         assert(!prepareNativeFxRackEdit(ep,2,candidate.revision(),candidate,candidateBank,
             created,0,newer->instanceId,{1},0,denied,deniedBank));
-        std::puts("DMX_ATOMIC_RETURN_CONVERSION_PASS stale token, new lease, exact existing edge, guarded removal");
+        // RTR full-rack replace/deactivate must obey the same wet-only contract.
+        assert(!prepareNativeFxRackReplacement(ep,2,candidate.revision(),candidate,
+            candidateBank,created,{},false,denied,deniedBank));
+        assert(!prepareNativeFxRackReplacement(ep,2,candidate.revision(),candidate,
+            candidateBank,created,{old},false,denied,deniedBank));
+        assert(!prepareNativeFxRackReplacement(ep,2,candidate.revision(),candidate,
+            candidateBank,{1},{newer},false,denied,deniedBank));
+        std::puts("DMX_ATOMIC_RETURN_CONVERSION_PASS stale token, new lease, exact existing edge, guarded removal/replacement");
     }
     // Direct native factory must publish the actual device format even
     // for processors whose prepareToPlay only initializes their own core.

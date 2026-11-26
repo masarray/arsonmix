@@ -314,6 +314,11 @@
       }else rows.push({pair:pair(left,right),pins:"Saved pins unavailable",
         role,owners:role,status:"NEEDS_REMAP",shared:0});
     }
+    if(raw.secondaryMainOnly===true&&raw.physicalMainOutputs?.length===0&&
+       raw.physicalMonitorOutputs?.length===2&&good(...raw.physicalMonitorOutputs)){
+      rows.push({pair:"STREAM",pins:"Separate WASAPI endpoint",role:"MAIN",
+        owners:"MAIN",status:raw.physicalBusSecondaryArmed===true?"ENABLED":"MUTED",shared:0});
+    }
     const activeExternal=new Set();
     for(const left of [...ports.keys()].sort((a,b)=>a-b)){
       const right=left+1;

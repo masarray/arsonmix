@@ -119,7 +119,9 @@ inline bool prepareNativeFxRackReplacement(std::uint64_t epoch,std::uint64_t rev
     std::vector<std::string> catalogs;
     for(const auto& lease:inserts){
         if(!lease||!lease->processor)return false;
-        catalogs.push_back(lease->catalogId.toStdString());
+        const auto id=lease->catalogId.toStdString();
+        if(isWetReturnCatalog(id)!=lease->silenceBypass)return false;
+        catalogs.push_back(id);
     }
     DynamicChannelRoster roster;
     if(!prepareRackCatalogReplacement(prior,rosterRevision,target,catalogs,roster))return false;

@@ -147,6 +147,11 @@
             busChoices.length>1?"Mute MAIN and STREAM to remap":"Fixed bus"});
       }
     }
+    if(!input&&live&&snapshot.raw.secondaryMainOnly===true&&
+       snapshot.raw.physicalMainOutputs?.length===0&&snapshot.raw.physicalMonitorOutputs?.length===2)
+      rows.push({id:"secondaryMainOnly",name:"MAIN",bus:true,editable:false,pending:false,
+        choices:[],pair:[],cells:pins.map(()=>""),selected:"",
+        state:snapshot.raw.physicalBusSecondaryArmed===true?"WASAPI STREAM · armed":"WASAPI STREAM · disarmed"});
     for(const ch of live&&Array.isArray(snapshot.graph?.channels)?snapshot.graph.channels:[]){
       if(input?ch.role!=="INPUT":!["INPUT","GROUP","FX_RETURN"].includes(ch.role))continue;
       if(input){

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicChannelRoster.h"
+#include "WetReturnCatalog.h"
 namespace armix::mixer {
 // One roster revision for an entire rack replacement, preserving all other
 // channel fields and edges. Empty replacement is a real latency-free rack.
@@ -10,6 +11,12 @@ inline bool prepareRackCatalogReplacement(const DynamicChannelRoster& prior,
     const auto* row=prior.find(target);
     if(!row||row->role==ChannelRole::monitor||revision!=prior.revision()||
        catalogs.size()>8)return false;
+    const auto hasWet=[](const auto& ids){return std::any_of(ids.begin(),ids.end(),isWetReturnCatalog);};
+    if(hasWet(catalogs)&&row->role!=ChannelRole::fxReturn)return false;
+    if(hasWet(row->insertCatalogIds)&&!hasWet(catalogs))
+        for(const auto& source:prior.channels())
+            for(const auto& send:source.sends)
+                if(send.destination==target)return false;
     std::vector<ChannelEdit> ops;
     for(std::size_t n=row->insertCatalogIds.size();n>0;--n){
         ChannelEdit edit;edit.kind=ChannelEdit::Kind::removeInsertReference;
