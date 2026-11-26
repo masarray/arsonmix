@@ -413,6 +413,23 @@ def main():
         expect(root.locator("[data-detector]")).to_have_text("-40.0 dBFS")
         expect(root.locator("[data-pro-dot]")).to_be_visible()
         expect(root.locator("[data-pro-curve]")).to_have_attribute("d",__import__("re").compile("^M"))
+        smart=root.locator('[data-pro-flag="smartVoice"]')
+        smart.click()
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["smartVoice"] is True
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(smart).to_be_checked()
+        margin=root.locator('input[aria-label="Noise margin"]')
+        margin.focus();page.keyboard.press("ArrowRight")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["smartMarginDb"]==10
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        readback(page,accepted,{**OBS,"serial":"190","effectiveMode":"Voice","profile":True,"detectorLevel":.01,"sidechainReference":True,"sidechainNoisePeak":.01,"sidechainThreshold":.0316227766})
+        expect(root.locator("[data-smart-noise]")).to_have_text("-40.0 dBFS")
+        expect(root.locator("[data-smart-threshold]")).to_have_text("-30.0 dBFS")
+        assert accepted["thresholdDb"]==-39
         spectral=root.locator('[data-pro-flag="spectralManual"]')
         spectral.click()
         edit=last_action(page,"nativeAntiNoizSet")

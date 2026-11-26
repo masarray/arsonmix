@@ -98,7 +98,7 @@ public:
         if(above||hold_>0)target_=1.f;
         else if(s.gate)target_=s.rangeDb>=96?0.f:p_.floor;
         else if(ticks_==0){
-            const float db=s.smartVoice&&referenceValid_?s.thresholdDb+20.f*std::log10(std::max(env_,1e-12f)/effectiveThreshold_):20.f*std::log10(std::max(env_,1e-12f));
+            const float db=s.smartVoice&&referenceValid_&&effectiveThreshold_!=p_.threshold?s.thresholdDb+20.f*std::log10(std::max(env_,1e-12f)/effectiveThreshold_):20.f*std::log10(std::max(env_,1e-12f));
             target_=std::pow(10.f,-cut(db,s)/20.f);
         }
         ticks_=(ticks_+1)&15;

@@ -14,6 +14,7 @@ on:
       - 'tools/anti-noiz/wind_period_candidate.cpp'
       - 'tools/anti-noiz/wind_period_native_eval.py'
       - 'tools/anti-noiz/manual_spectral_eval.py'
+      - 'tools/anti-noiz/smart_voice_eval.py'
       - 'tools/anti-noiz/historical_fp_contract.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
       - 'tools/anti-noiz/compare_environment.py'
@@ -234,6 +235,9 @@ jobs:
       - name: Manual spectral controls — native recorded response
         if: ${{ !cancelled() && (steps.raw_gate.outcome == 'success' || steps.raw_gate.outcome == 'failure') }}
         run: python3 tools/anti-noiz/manual_spectral_eval.py "$RUNNER_TEMP/raw-wind-report" "$RUNNER_TEMP/raw-field-new"
+      - name: Smart Voice paired recorded response (manual versus learned threshold)
+        if: ${{ !cancelled() && (steps.raw_gate.outcome == 'success' || steps.raw_gate.outcome == 'failure') }}
+        run: python3 tools/anti-noiz/smart_voice_eval.py "$RUNNER_TEMP/raw-wind-report" "$RUNNER_TEMP/raw-field-new"
       - name: Preserve actual selected source bytes, licenses and diagnostic report
         if: always()
         uses: actions/upload-artifact@v4
@@ -248,6 +252,7 @@ jobs:
             ${{ runner.temp }}/raw-wind-report/dc-reference-audit/report.json
             ${{ runner.temp }}/raw-wind-report/native-period-report.json
             ${{ runner.temp }}/raw-wind-report/manual-spectral-report.json
+            ${{ runner.temp }}/raw-wind-report/smart-voice-report.json
             ${{ runner.temp }}/raw-wind-report/*/provenance.tsv
             ${{ runner.temp }}/raw-wind-report/*/segments.tsv
             ${{ runner.temp }}/raw-wind-report/*/clean.wav

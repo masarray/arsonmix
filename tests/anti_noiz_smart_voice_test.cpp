@@ -8,6 +8,13 @@ using namespace armix::builtin_fx::anti_noiz;
 static void check(bool x,const char* why){if(!x){std::cerr<<why<<'\n';std::abort();}}
 int main(){
  for(int rate:{44100,48000,88200,96000})for(int ch:{1,2}){
+  ManualExpander detector;detector.prepare(rate,ch,rate>48000?512:256);
+  detector.beginReference();
+  for(int i=0;i<rate/2;++i)detector.observeReference(.004f*std::sin(2*std::numbers::pi_v<float>*500*i/rate),0);
+  detector.checkpointReference(true);
+  for(int i=0;i<rate/2;++i)detector.observeReference(.8f*std::sin(2*std::numbers::pi_v<float>*500*i/rate),0);
+  detector.checkpointReference(false);detector.finishReference(true);
+  check(detector.referenceValid()&&detector.noisePeak()<.01f,"discarded window cannot contaminate reference");
   Core c;Core::Settings s;s.mode=Core::Mode::Voice;s.cleanDb=0;s.silenceDb=0;s.manual.enabled=true;s.manual.gate=true;
   s.manual.thresholdDb=-60;s.manual.smartVoice=true;s.manual.smartMarginDb=9;s.manual.smartMaxLiftDb=24;s.manual.rangeDb=96;
   check(c.prepare(rate,ch)&&c.setSettings(s),"prepare");

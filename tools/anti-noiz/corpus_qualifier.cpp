@@ -214,13 +214,17 @@ int main(int argc,char** argv) {
     try {
         if(argc==2&&std::string_view(argv[1])=="--self-test"){selfTest();return 0;}
         if(argc==3&&std::string_view(argv[1])=="--learn-diagnostics"){learnDiagnostics(offline::read(argv[2]));return 0;}
-        if(argc!=10&&argc!=11&&argc!=14){std::cerr<<"Usage: anti_noiz_qualify clean.wav noise.wav learn.wav segments.tsv provenance.tsv output-prefix mode cleanDb musicProtect(0..1) [silenceDb [noiseOffsetDb artifactControl vocalProtection]]\n";return 2;}
+        if(argc!=10&&argc!=11&&argc!=14&&argc!=16){std::cerr<<"Usage: anti_noiz_qualify clean.wav noise.wav learn.wav segments.tsv provenance.tsv output-prefix mode cleanDb musicProtect(0..1) [silenceDb [noiseOffsetDb artifactControl vocalProtection | thresholdDb hpHz marginDb maxLiftDb smart(0|1)]]\n";return 2;}
         provenance(argv[5]);const auto clean=offline::read(argv[1]),noise=offline::read(argv[2]),learn=offline::read(argv[3]);
         sameFormat(clean,learn);
         require(!std::filesystem::equivalent(argv[2],argv[3])&&noise.samples!=learn.samples,"Learn and test noise must be independent recordings/segments");
         const auto input=mix(clean,noise);const auto labels=segments(argv[4],clean.samples.size()/clean.channels);
         Core::Settings s;s.silenceDb=argc>=11?number(argv[10]):0;s.cleanDb=number(argv[8]);s.musicProtect=number(argv[9]);
         if(argc==14){s.spectralManual=true;s.noiseOffsetDb=number(argv[11]);s.artifactControl=number(argv[12]);s.vocalProtection=number(argv[13]);}
+        if(argc==16){
+            const float smart=number(argv[15]);require(smart==0||smart==1,"smart flag");
+            s.manual.enabled=true;s.manual.gate=true;s.manual.rangeDb=96;s.manual.thresholdDb=number(argv[11]);s.manual.hpHz=number(argv[12]);s.manual.smartMarginDb=number(argv[13]);s.manual.smartMaxLiftDb=number(argv[14]);s.manual.smartVoice=smart==1;
+        }
         Core::SourceRole role=Core::SourceRole::Unknown;policy(argv[7],s,role);
         const auto transparent=Core::resolveMode(s.mode,role)==Core::Mode::Music;
         const auto prefix=std::string(argv[6]);
@@ -240,6 +244,7 @@ int main(int argc,char** argv) {
         }
         offline::write(paths[0],input);offline::write(paths[1],result.processed);
         offline::write(paths[2],result.delta);offline::write(paths[3],cleanOnly.processed);
+        if(argc==16)std::cerr<<std::setprecision(12)<<"SMART_GATE "<<result.sidechainReference<<' '<<result.sidechainNoisePeak<<' '<<result.sidechainThreshold<<'\n';
         std::cerr<<"Silence="<<s.silenceDb<<"; latency aligned "<<result.latency<<" samples; report is objective error, not perceptual or isolated noise attenuation in active segments.\n";
     } catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
     return 0;
