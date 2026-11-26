@@ -8,6 +8,7 @@ on:
       - 'tools/anti-noiz/compare_p0_controls.py'
       - 'tools/anti-noiz/raw_wind_intake.py'
       - 'tools/anti-noiz/recorded_raw_wind.py'
+      - 'tools/anti-noiz/wind_resolution_probe.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
       - 'tools/anti-noiz/compare_environment.py'
       - 'tools/anti-noiz/tonal_benchmark.cpp'
@@ -200,7 +201,17 @@ jobs:
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror raw-field-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/raw-field-old"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/raw-field-new"
       - name: Run pinned raw microphone wind objective gate
+        id: raw_gate
         run: python3 tools/anti-noiz/recorded_raw_wind.py "$RUNNER_TEMP/raw-wind-intake" "$RUNNER_TEMP/raw-field-old" "$RUNNER_TEMP/raw-field-new" "$RUNNER_TEMP/raw-wind-report"
+      - name: Measure offline resolution and causal pitch feasibility (not qualification)
+        if: ${{ !cancelled() && (steps.raw_gate.outcome == 'success' || steps.raw_gate.outcome == 'failure') }}
+        env:
+          OPENBLAS_NUM_THREADS: '1'
+        run: |
+          test -f "$RUNNER_TEMP/raw-wind-report/report.json"
+          python3 -m venv "$RUNNER_TEMP/wind-probe-env"
+          "$RUNNER_TEMP/wind-probe-env/bin/python" -m pip install numpy==2.3.5 scipy==1.17.0
+          "$RUNNER_TEMP/wind-probe-env/bin/python" tools/anti-noiz/wind_resolution_probe.py "$RUNNER_TEMP/raw-wind-report"
       - name: Preserve actual selected source bytes, licenses and diagnostic report
         if: always()
         uses: actions/upload-artifact@v4
@@ -211,6 +222,7 @@ jobs:
             ${{ runner.temp }}/raw-wind-intake/LICENSE-*.txt
             ${{ runner.temp }}/raw-wind-intake/*.wav
             ${{ runner.temp }}/raw-wind-report/report.json
+            ${{ runner.temp }}/raw-wind-report/resolution-probe.json
             ${{ runner.temp }}/raw-wind-report/*/provenance.tsv
             ${{ runner.temp }}/raw-wind-report/*/segments.tsv
             ${{ runner.temp }}/raw-wind-report/*/clean.wav
