@@ -10,6 +10,8 @@ import json
 import math
 from pathlib import Path
 import random
+import os
+import shutil
 import re
 import subprocess
 import tempfile
@@ -67,7 +69,14 @@ def main():
     p.add_argument("--input",type=Path,help="local stereo file you are authorized to use")
     p.add_argument("--start",type=float,default=0)
     p.add_argument("--out",type=Path,default=Path("sonku-p105-program"))
+    p.add_argument("--renderer-dir",type=Path,help="prebuilt native audition binaries")
+    p.add_argument("--verify-only",action="store_true",help="raw PCM verification without FFmpeg exports")
     args=p.parse_args()
+    if args.renderer_dir is None and (Path(__file__).resolve().parent/"bin"/"manifest.json").is_file():
+        args.renderer_dir=Path(__file__).resolve().parent/"bin"
+    if not args.verify_only or args.input:
+        if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+            p.error("FFmpeg and FFprobe must be available on PATH for audio decoding/loudness matching")
     if not math.isfinite(args.start) or args.start<0:p.error("invalid start")
     if args.out.exists() and any(args.out.iterdir()):p.error("output directory must be empty")
     args.out.mkdir(parents=True,exist_ok=True)
@@ -89,28 +98,53 @@ def main():
         input_gain=min(1,.35/peak)
         if input_gain<1:
             pcm=array.array("f",(x*input_gain for x in pcm));source.write_bytes(pcm.tobytes())
-        candidate_copy(tmp/"candidate")
-        for name,inc in (("reference",FX),("candidate",tmp/"candidate")):
-            exe=tmp/(name+"-program")
-            run("g++","-std=c++20","-O2","-ffp-contract=off","-I",str(inc/"sonku"),
-                "-I",str(inc),*["-D"+x+"=1" for x in FLAGS],str(DRIVER),"-o",str(exe))
-            run(str(exe),str(source),str(tmp/name))
-        for case in range(13):
+        if args.renderer_dir:
+            folder=args.renderer_dir.resolve()
+            manifest=json.loads((folder/"manifest.json").read_text())
+            suffix=".exe" if os.name=="nt" else ""
+            if manifest.get("format")!=1 or set(manifest.get("sha256",{}))!={v+"-program"+suffix for v in ("reference","candidate")}:
+                raise ValueError("invalid native renderer manifest")
+            for name in ("reference","candidate"):
+                exe=folder/(name+"-program"+suffix)
+                if hashlib.sha256(exe.read_bytes()).hexdigest()!=manifest["sha256"][exe.name]:
+                    raise ValueError("native renderer identity mismatch: "+exe.name)
+                run(str(exe),str(source),str(tmp/name))
+        else:
+            candidate_copy(tmp/"candidate")
+            for name,inc in (("reference",FX),("candidate",tmp/"candidate")):
+                exe=tmp/(name+"-program")
+                run("g++","-std=c++20","-O2","-ffp-contract=off","-I",str(inc/"sonku"),
+                    "-I",str(inc),*["-D"+x+"=1" for x in FLAGS],str(DRIVER),"-o",str(exe))
+                run(str(exe),str(source),str(tmp/name))
+        for case in range(14):
             paths=[tmp/v/(str(case)+".f32") for v in ("reference","candidate")]
             (old,a),(new,b)=map(read_pcm,paths)
             assert len(a)==len(b)==12*RATE*2
-            if case>=3:assert old==new,("protected program PCM mismatch",case)
+            if 3<=case<13:assert old==new,("protected program PCM mismatch",case)
+            assert max(map(abs,a))<=.981 and max(map(abs,b))<=.981,("native peak exceeded",case)
             row={"case":case,"bitExact":old==new,
                  "baseline":metrics(a),"candidate":metrics(b),
                  "sha256":[hashlib.sha256(x).hexdigest() for x in (old,new)]}
-            if case<3:
+            if case==13:
+                # Differential step: compare only the NEW contribution,
+                # not the pre-existing native preset/mix transition.
+                edges=[]
+                for sec in (3,5,7,9,11,12):
+                    frame=(sec-1)*RATE
+                    delta=max(abs((float(b[2*frame+ear])-a[2*frame+ear])-
+                        (float(b[2*(frame-1)+ear])-a[2*(frame-1)+ear])) for ear in (0,1))
+                    edges.append({"inputSecond":sec,"additionalBoundaryStep":delta})
+                row["transitionEdges"]=edges
+                # Report rather than certify arbitrary program-dependent
+                # click thresholds. Finite and linked peak bounds are hard gates.
+            if (case<3 or case==13) and not args.verify_only:
                 base=[measure(x,raw=True) for x in paths]
                 # Target <= -18 LUFS and never require boost or peak limiting.
                 target=min(-18.,*(x["input_i"] for x in base),
                     *(x["input_i"]-1.5-x["input_tp"] for x in base))
                 indices=[0,1];rng.shuffle(indices);final=[]
                 for label,idx in zip("AB",indices):
-                    dest=args.out/f"pair-{case+1}-{label}.wav"
+                    dest=args.out/f"pair-{4 if case==13 else case+1}-{label}.wav"
                     gain=target-base[idx]["input_i"]
                     m=export(paths[idx],dest,gain)
                     assert m["input_tp"]<=-1.0,m
@@ -125,16 +159,22 @@ def main():
             "decodedInputSha256":hashlib.sha256(raw).hexdigest(),"inputGainLinear":input_gain,
             "warmupSeconds":1,"auditionSeconds":12,"sampleRate":RATE,"cases":rows}
     (args.out/"metrics.json").write_text(json.dumps(report,indent=2)+"\n")
+    if args.verify_only:
+        print("P107_NATIVE_PCM_PASS",len(rows),"cases;",
+              sum(r["bitExact"] for r in rows[3:13]),"protected exact;",
+              "transition edges",rows[13]["transitionEdges"],flush=True)
+        return
     (args.out/"blind-answer-key.json").write_text(json.dumps(key,indent=2)+"\n")
     (args.out/"README.txt").write_text(
-        "Listen before opening the key or metrics. Pair 1: continuous orbit; 2: FRONT; 3: REAR.\n"
+        "Listen before opening the key or metrics. Pair 1: continuous orbit; 2: FRONT; 3: REAR; 4: live preset/room/mix edits.\n"
         "Same decoded stereo input; 1s warmup omitted, 12s clips, constant gain only.\n"
         "Score outside-head distance, front/back, vocal/melody body, bass, clarity and preference.\n"
         "Integrated loudness measured via FFmpeg loudnorm (BS.1770/EBU R128), <=0.1 LU mismatch.\n"
         "Original generated arrangement is not recorded music or a subjective pass.\n"
         "No production change. For private local audio, do not upload resulting files without permission.\n")
-    print("P105_PROGRAM_PASS",len(rows),"cases;",
-          sum(r["bitExact"] for r in rows[3:]),"protected exact;",
-          max(r["matchErrorLu"] for r in rows[:3]),"max LU error;",
-          max(m["input_tp"] for r in rows[:3] for m in r["blindOutputStats"]),"max dBTP",flush=True)
+    audition=[r for r in rows if "matchErrorLu" in r]
+    print("P107_PROGRAM_PASS",len(rows),"cases;",
+          sum(r["bitExact"] for r in rows[3:13]),"protected exact;",
+          max(r["matchErrorLu"] for r in audition),"max LU error;",
+          max(m["input_tp"] for r in audition for m in r["blindOutputStats"]),"max dBTP",flush=True)
 if __name__=="__main__":main()

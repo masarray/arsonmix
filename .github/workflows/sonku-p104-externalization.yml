@@ -8,6 +8,7 @@ on:
       - 'scripts/verify_sonku_p105_program_material.py'
       - 'tests/sonku_p105_program_material.cpp'
       - 'tests/sonku_p106_depth_transition.cpp'
+      - 'scripts/build_sonku_p107_windows_audition.py'
 permissions:
   contents: read
 jobs:
@@ -49,5 +50,31 @@ jobs:
         with:
           name: SonKu-P105-LUFS-program-listening
           path: sonku-p105-program/
+          if-no-files-found: error
+          retention-days: 14
+  windows-audition:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify approved source identity
+        run: python scripts/verify_immersib_approved_pcm_sources.py
+      - name: Compile MSVC audition pair and verify distributed executables
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdline = 'call "' + $vcvars + '" >nul && python scripts/build_sonku_p107_windows_audition.py'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'SONKU_P107_AUDITION_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P107-Windows-Offline-Audition
+          path: sonku-p107-windows/
           if-no-files-found: error
           retention-days: 14

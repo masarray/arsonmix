@@ -21,9 +21,9 @@ int main(int argc,char** argv){
     src.seekg(0);src.read(reinterpret_cast<char*>(input.data()),bytes);
     if(!src)return 3;
     const std::filesystem::path out=argv[2];std::filesystem::create_directories(out);
-    for(int c=0;c<13;++c){
+    for(int c=0;c<14;++c){
         auto dsp=std::make_unique<SonKuSpatialCore>();
-        if(c<6)dsp->optInP99ForSonKuInsert();
+        if(c<6||c==13)dsp->optInP99ForSonKuInsert();
         else {dsp->optInImmerSIBStageMonitor();dsp->optInImmerSIBVocalRoom();dsp->optInImmerSIBMusicalEq();}
         if(!dsp->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch))return 4;
         auto s=p99::DefaultOrbitStage::settings();
@@ -31,13 +31,29 @@ int main(int argc,char** argv){
         if(c==3)s.sceneVoicing=0;
         if(c==4){s.spacePreset=0;s.roomAmount=0.f;s.ambience=0.f;}
         if(c==5)s.spatialMix=0.f;
-        if(c>=6)s=armix::builtin_fx::imersipP92Factory(c-4);
+        if(c>=6&&c<13)s=armix::builtin_fx::imersipP92Factory(c-4);
+        if(c==13)s.moving=true;
         if(!valid(s)||!dsp->setSettings(s))return 5;
         dsp->reset();
         std::ofstream f(out/(std::to_string(c)+".f32"),std::ios::binary);
         if(!f)return 6;
         std::array<float,block> l{},r{};
         for(int pos=0;pos<13*rate;pos+=block){
+            // Case 13: same continuous program and graph, no reset between
+            // edits. Boundaries aligned to the 128-frame audio callback.
+            if(c==13){
+                bool edit=true;
+                switch(pos){
+                    case 3*rate: s.sceneVoicing=0;break;
+                    case 5*rate: s.sceneVoicing=1;break;
+                    case 7*rate: s.spacePreset=0;s.roomAmount=0.f;s.ambience=0.f;break;
+                    case 9*rate: s.spacePreset=3;s.roomAmount=1.f;s.ambience=.77f;break;
+                    case 11*rate:s.spatialMix=0.f;break;
+                    case 12*rate:s.spatialMix=1.f;break;
+                    default:edit=false;break;
+                }
+                if(edit&&(!valid(s)||!dsp->setSettings(s)))return 9;
+            }
             const int n=std::min(block,13*rate-pos);
             for(int i=0;i<n;++i){l[i]=input[2*(pos+i)];r[i]=input[2*(pos+i)+1];}
             dsp->process(l.data(),r.data(),n);
