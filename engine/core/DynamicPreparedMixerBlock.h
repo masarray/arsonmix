@@ -968,18 +968,14 @@ public:
         // in-place/aliased hardware buffers an earlier clear would erase the
         // input before the source strips consumed it. This adds no allocation,
         // copy, lock, callback, DSP pass or latency.
-        std::fill_n(outputL,frames,0.f);
-        std::fill_n(outputR,frames,0.f);
-        if(monitorL){
-            std::fill_n(monitorL,frames,0.f);
-            std::fill_n(monitorR,frames,0.f);
-        }
-        // Output roles are terminal sinks; copy each independently from
-        // the SAME preallocated render graph. No second FX traversal.
+        // Each terminal sink is written once, after all aliased input
+        // reads: prepared PCM copy OR silence, not redundant clear+copy.
         const auto copySink=[&](std::size_t sink,float* l,float* r) noexcept {
-            if(sink==notScheduled || !lanes_[sink].enabled)return;
+            if(sink==notScheduled || !lanes_[sink].enabled ||
+               lanes_[sink].slot>=renderOrder_.size()){
+                std::fill_n(l,frames,0.f);std::fill_n(r,frames,0.f);return;
+            }
             const auto slot=lanes_[sink].slot;
-            if(slot>=renderOrder_.size())return;
             const float* const source=scratch_.data()+slot*2*block;
             std::copy_n(source,frames,l);
             std::copy_n(source+block,frames,r);

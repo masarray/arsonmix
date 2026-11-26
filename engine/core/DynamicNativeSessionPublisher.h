@@ -274,8 +274,10 @@ public:
                 int hardwareOutputCount=0,
                 std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
                     qualifiedCaptureBlocks={},std::uint64_t cueRoute=0,
-                    std::uint64_t* renderedRevision=nullptr) noexcept {
+                    std::uint64_t* renderedRevision=nullptr,
+                    std::size_t* renderedMeterCount=nullptr) noexcept {
         if(renderedRevision)*renderedRevision=0;
+        if(renderedMeterCount)*renderedMeterCount=0;
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -368,6 +370,11 @@ public:
                 acceptedFx.render(acceptedFx.context,id,l,r,n);
             else effect(id,l,r,n);
         };
+        // Only the opted-in host requests the actual prepared roster prefix.
+        if(renderedMeterCount&&channelPeaksL.size()==channelPeaksR.size()){
+            const auto count=std::min(channelPeaksL.size(),snap->prepared->graph.channelCount());
+            channelPeaksL=channelPeaksL.first(count);channelPeaksR=channelPeaksR.first(count);
+        }
         const bool ok=snap->prepared->graph.process(
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
@@ -382,6 +389,7 @@ public:
             clearOutputs();
         }
         if(ok&&renderedRevision)*renderedRevision=snap->graphRevision;
+        if(ok&&renderedMeterCount)*renderedMeterCount=channelPeaksL.size();
         return ok;
     }
 

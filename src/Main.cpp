@@ -1337,6 +1337,8 @@ private:
                  "slowCallbackCount", "overBudgetCount", "callbackGapCount",
                  "lateCallbackIntervals", "callbackCadenceClockRegressions",
                  "callbackCadenceComparedIntervals", "worstCallbackUs",
+                 "renderPressureWindowValid", "renderPressureWithinThenOnTime", "renderPressureWithinThenLate",
+                 "renderPressureOverThenOnTime", "renderPressureOverThenLate", "renderPressureProvenance",
                  "worstPluginUs", "slowPluginCount",
                  "nativeFxWorstUs", "nativeFxWorstName", "nativeFxTimingLeases",
                  "nativeFxWorkloadMeasuredLeases", "nativeFxWorkloadOverBudgetLeases",

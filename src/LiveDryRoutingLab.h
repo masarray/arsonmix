@@ -3164,6 +3164,7 @@ public:
             nativeAccepted_.pcmRevision=committed.revision;
             reapplyExternalOutputsSameEpoch();
             nativeControlDirty_=true;nativeStructureLive_=true;
+            busPatchEpoch_=ep; // MAIN/STREAM must wait for callback readback
             nativeMeterEpoch_.store(0,std::memory_order_release);
             return {};
         }catch(...){return "MONITOR timing: preparation failed; previous policy retained";}
@@ -3480,7 +3481,8 @@ public:
         // Meter taps come from the SAME realtime ChannelId renderer, in
         // accepted roster order. No JS guesses or second DSP render.
         const bool pcmMeterValid=!retained &&
-            nativeMeterEpoch_.load(std::memory_order_acquire)==epoch();
+            nativeMeterEpoch_.load(std::memory_order_acquire)==epoch()&&
+            nativeMeterRevision_.load(std::memory_order_acquire)==nativeAccepted_.pcmRevision;
         std::size_t meterIndex=0;
         for(const auto& ch:routing->channels) {
             auto row=std::make_unique<juce::DynamicObject>();
@@ -4049,6 +4051,7 @@ public:
         std::array<float,nativeMeterCapacity> nativeMaxL{},nativeMaxR{};
         std::array<float,auxCount> perAuxPeaks{};
         std::uint64_t completedNativeRevision=0;
+        std::size_t completedMeterCount=0;
         bool mixedNativeRevisions=false;
         for(int offset=0;offset<frames;offset+=max) {
             const int n=std::min(max,frames-offset);
@@ -4063,7 +4066,8 @@ public:
                 // The current M4 import is at most 10+4+MAIN+MONITOR.
                 // Meter sources are the ACTUAL ChannelId PCM POST-fader
                 // lanes, not another mixer pass or reused M4 peak values.
-                std::array<float,nativeMeterCapacity> tapsL{},tapsR{};
+                // process() initializes only the actual leased roster prefix.
+                std::array<float,nativeMeterCapacity> tapsL,tapsR;
                 // One source block is read from each native player FIFO by
                 // the HOST before calling process(). This existing ChannelId
                 // renderer performs all FX/WIRE/MAIN mixing; no second audio
@@ -4077,6 +4081,7 @@ public:
                 }
                 const auto noExtraFx=[](armix::mixer::ChannelId,float*,float*,int) noexcept {};
                 std::uint64_t sliceRevision=0;
+                std::size_t sliceMeterCount=0;
                 processed=nativePublisher_.render(
                     generation,shifted.data(),inputCount,
                     meterOnly?mutedMain_[0].data():mainL+offset,
@@ -4088,22 +4093,25 @@ public:
                         slice.data(),playerPcm.size()),
                      meterOnly?nullptr:outputSlices.data(),
                      meterOnly?0:outputCount,{},
-                     privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0,&sliceRevision);
+                     privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0,
+                     &sliceRevision,&sliceMeterCount);
                 if(processed) {
-                    if(completedNativeRevision&&completedNativeRevision!=sliceRevision)
-                        mixedNativeRevisions=true;
-                    completedNativeRevision=sliceRevision;
-                    for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
+                    if(completedNativeRevision&&(completedNativeRevision!=sliceRevision||
+                       completedMeterCount!=sliceMeterCount))mixedNativeRevisions=true;
+                    completedNativeRevision=sliceRevision;completedMeterCount=sliceMeterCount;
+                    for(std::size_t ch=0;ch<sliceMeterCount;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
                         nativeMaxR[ch]=std::max(nativeMaxR[ch],tapsR[ch]);
                     }
                     for(int ch=0;ch<count;++ch) {
-                        level.channelPeakL[ch]=tapsL[ch];
-                        level.channelPeakR[ch]=tapsR[ch];
-                        level.channelPeak[ch]=std::max(tapsL[ch],tapsR[ch]);
+                        if(static_cast<std::size_t>(ch)<sliceMeterCount){
+                            level.channelPeakL[ch]=tapsL[ch];level.channelPeakR[ch]=tapsR[ch];
+                            level.channelPeak[ch]=std::max(tapsL[ch],tapsR[ch]);
+                        }
                     }
                     for(int b=0;b<auxCount;++b)
-                        level.auxPeak[b]=std::max(tapsL[count+b],tapsR[count+b]);
+                        if(static_cast<std::size_t>(count+b)<sliceMeterCount)
+                            level.auxPeak[b]=std::max(tapsL[count+b],tapsR[count+b]);
                 }
             } else {
                 processed=snapshot->prepared->process(
@@ -4188,10 +4196,11 @@ public:
         for(int b=0;b<auxCount;++b)
             auxPeaks_[b].store(perAuxPeaks[b],std::memory_order_relaxed);
         if(channelIdRender) {
-            for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
-                nativeMeterPeaksL_[ch].store(nativeMaxL[ch],std::memory_order_relaxed);
-                nativeMeterPeaksR_[ch].store(nativeMaxR[ch],std::memory_order_relaxed);
-            }
+            if(!mixedNativeRevisions)
+                for(std::size_t ch=0;ch<completedMeterCount;++ch) {
+                    nativeMeterPeaksL_[ch].store(nativeMaxL[ch],std::memory_order_relaxed);
+                    nativeMeterPeaksR_[ch].store(nativeMaxR[ch],std::memory_order_relaxed);
+                }
             if(nativeHardwareObserved_.load(std::memory_order_relaxed)!=native)
                 nativeHardwareObserved_.store(native,std::memory_order_release);
             nativeMeterRevision_.store(mixedNativeRevisions?0:completedNativeRevision,std::memory_order_relaxed);

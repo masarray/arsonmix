@@ -33,6 +33,7 @@
 #include "../engine/core/FxMoveRamp.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
+#include "../engine/core/RenderPressureEvidence.h"
 #include "../engine/core/CaptureBoundaryEvidence.h"
 #include "../engine/core/FxBypassEnvelope.h"
 #include "../engine/core/FxWorkloadEvidence.h"
@@ -3227,6 +3228,16 @@ public:
         o->setProperty ("callbackCadenceLastExpectedUs",
             static_cast<double> (cadenceLastExpectedUs_.load (std::memory_order_relaxed)));
         o->setProperty ("callbackCadenceGapThresholds", "SUGGESTIVE_1_5X_AND_2_3X_PREVIOUS_BLOCK_PERIOD");
+        const auto pressure=renderPressure_.snapshot();
+        o->setProperty("renderPressureWindowValid",pressure.valid);
+        if(pressure.valid){
+            o->setProperty("renderPressureWithinThenOnTime",static_cast<int>(pressure.withinThenOnTime));
+            o->setProperty("renderPressureWithinThenLate",static_cast<int>(pressure.withinThenLate));
+            o->setProperty("renderPressureOverThenOnTime",static_cast<int>(pressure.overThenOnTime));
+            o->setProperty("renderPressureOverThenLate",static_cast<int>(pressure.overThenLate));
+        }
+        o->setProperty("renderPressureProvenance",
+            "LAST_COMPLETE_64_ADJACENT_ARMED_NATIVE_RENDER_PAIRS_PREVIOUS_QUANTUM_NOT_CAUSAL_OR_XRUN");
         o->setProperty ("testOutputFrames", static_cast<double> (testOutputFrames_.load()));
         o->setProperty ("testCaptureFrames", static_cast<double> (testCaptureFrames_.load()));
         o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
@@ -3671,6 +3682,7 @@ private:
     std::array<std::atomic<std::uint64_t>, maxFx> lastPluginUsBySlot_ {};
     std::array<std::atomic<std::uint64_t>, maxFx> worstPluginUsBySlot_ {};
     armix::rt::CallbackCadenceEvidence cadence_; // one render producer; lifecycle reset
+    armix::rt::RenderPressureEvidence renderPressure_;
     double sampleRateHz_ = 48000.0;
 
     static std::uint64_t clockMicros() noexcept
@@ -3769,6 +3781,7 @@ private:
             worstPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
         }
         cadence_.prepare (sampleRateHz_);
+        renderPressure_.breakSequence();
         cadenceLastExpectedUs_.store (0, std::memory_order_relaxed);
         int latency = 0;
         for (int i = 0; i < graphOwned_->count; ++i)
@@ -3804,6 +3817,7 @@ private:
         monitor_.store(false,std::memory_order_release);
         loopback_.interrupted();
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
+        renderPressure_.breakSequence();cadence_.breakSequence();
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
         playerDeck_.deviceRate(0.0); // invalidates old PCM generation
@@ -3933,7 +3947,8 @@ private:
         const float* const* inputs, int inputChannels, float* const* outputs,
         int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
     {
-        if (samples <= 0) return;
+        if (samples <= 0) {renderPressure_.breakSequence();cadence_.breakSequence();return;}
+        const std::uint64_t beginUs = clockMicros(); // actual host callback entry
         // Fail closed if JUCE silently rerouted ASIO/WASAPI after hotplug or
         // while the user is changing devices. Atomic gate only: no name hash,
         // allocations, OS calls or device restart on the realtime callback.
@@ -3946,6 +3961,7 @@ private:
                 for (int c=0; c<outputChannels; ++c)
                     if (outputs && outputs[c])
                         juce::FloatVectorOperations::clear(outputs[c],samples);
+                renderPressure_.breakSequence();cadence_.breakSequence();
                 return;
             }
             if (independent_.active() || !directFence_.permitted() ||
@@ -3966,6 +3982,7 @@ private:
             publishDriverBufferPeaks(0.f,0.f);
             directSuppressedFrames_.fetch_add (static_cast<std::uint64_t> (samples),
                                                std::memory_order_relaxed);
+            renderPressure_.breakSequence();cadence_.breakSequence();
             return;
         }
         // ONE explicit owner for the whole device callback. The GUI cannot
@@ -4010,10 +4027,10 @@ private:
             outputPeakR_.store(0.f, std::memory_order_relaxed);
             publishDriverBufferPeaks(0.f,0.f);
             handoff_.endCycle(cycle); // ACK prepared FX graph even in silence
+            renderPressure_.breakSequence();cadence_.breakSequence();
             return;
         }
 
-        const std::uint64_t beginUs = clockMicros();
         const double periodUs = 1000000.0 * static_cast<double> (samples) / sampleRateHz_;
         // Scheduling gaps are NOT driver-confirmed xruns. Critically the
         // expected START-to-START period comes from the PREVIOUS callback's
@@ -4153,6 +4170,7 @@ private:
                     !topologyPublicationMute_.load(std::memory_order_acquire),nativeMainPair))
             {
                 publishDriverBufferPeaks(0.f,0.f);
+                renderPressure_.breakSequence();cadence_.breakSequence();
                 return; // exclude calibration blocks from production timing evidence
             }
             // OUTPUT1: publish the SAME post-FX, post-fader, de-clicked MAIN
@@ -4186,7 +4204,9 @@ private:
             // Reuse the exact post-DSP/fade peaks rather than re-scanning PCM.
             const bool wroteMain=outputGate.hardware&&routed&&nativeMain[0]&&nativeMain[1];
             publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
-            recordRenderTiming(beginUs,periodUs);
+            const auto pressureRevision=nativePcm&&wroteMain&&!cycle.fadeIn&&!cycle.fadeOut&&
+                routedFxMove==0&&!probePermit?dryRoutingLab_.renderedNativeRevision():0;
+            recordRenderTiming(beginUs,periodUs,outputLease.epoch,pressureRevision);
             return;
         }
         // The only remaining stereo renderer is DIAGNOSTIC. It may emit
@@ -4356,8 +4376,12 @@ private:
 
     // Same two timestamps and atomic updates, but account for the final
     // physical clearing and meter publication in every measured render.
-    void recordRenderTiming(std::uint64_t beginUs,double periodUs) noexcept {
-        const auto elapsedUs = clockMicros() - beginUs;
+    void recordRenderTiming(std::uint64_t beginUs,double periodUs,
+            std::uint64_t epoch=0,std::uint64_t revision=0) noexcept {
+        const auto endUs=clockMicros();
+        if(endUs<beginUs){renderPressure_.breakSequence();cadence_.breakSequence();return;}
+        const auto elapsedUs = endUs - beginUs;
+        renderPressure_.finish(epoch,revision,beginUs,elapsedUs,periodUs);
         lastCallbackUs_.store (elapsedUs, std::memory_order_relaxed);
         publishMax (worstCallbackUs_, elapsedUs);
         realtimeHistogram_.observe (elapsedUs, periodUs);

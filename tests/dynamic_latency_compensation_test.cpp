@@ -169,10 +169,12 @@ int main(){
             if(time==0){inA[0]=1;inB[0]=2;inR[0]=4;}
             const float* physical[]{inA.data(),inA.data(),inB.data(),inB.data(),inR.data(),inR.data(),silent.data(),silent.data()};
             const auto before=allocations;
-            std::uint64_t rendered=0;
+            std::uint64_t rendered=0;std::size_t meterCount=0;
+            std::array<float,128> meterL,meterR;meterL.fill(-99.f);meterR.fill(-99.f);
             assert(publisher.render(9,physical,request.physicalInputs,l.data(),right.data(),n,false,
-                [](ChannelId,float*,float*,int) noexcept {},ml.data(),mr.data(),{},{},{},nullptr,0,{},0,&rendered));
-            assert(rendered==1&&allocations==before);
+                [](ChannelId,float*,float*,int) noexcept {},ml.data(),mr.data(),meterL,meterR,{},nullptr,0,{},0,&rendered,&meterCount));
+            assert(rendered==1&&meterCount==ids.size()&&allocations==before);
+            for(std::size_t i=meterCount;i<meterL.size();++i)assert(meterL[i]==-99.f&&meterR[i]==-99.f);
             for(int i=0;i<n;++i){
                 assert(std::abs(l[i]-(time+i==expected?8.f:0.f))<1.e-5f);
                 assert(std::abs(right[i]-l[i])<1.e-5f);
