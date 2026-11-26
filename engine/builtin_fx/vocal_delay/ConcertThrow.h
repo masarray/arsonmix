@@ -58,11 +58,16 @@ public:
                 if(autoTail_){autoTail_=false;remaining_=0;out.retire=true;out.l=out.r=0.f;}
                 recent_=std::min(frame_*32,recent_+frame_*2);sinceVoice_=0;
                 if(gap_>=policy.gap){phrase_=high_=lastHigh_=0;}
+                // A short breath can retain the phrase but not accumulate
+                // separated loud syllables into a fake sustained climax.
+                // Do not clear on silence itself: the genuine terminal gap
+                // still needs the last note evidence at confirmation.
+                if(gap_>2){high_=lastHigh_=0;}
                 gap_=0;phrase_=std::min(phrase_+1,10000u);
                 if(learned_>=12&&rms>=std::max(.018f,reference_*policy.ratio)){
                     high_=std::min(high_+1,10000u);lastHigh_=0;
                 }else{
-                    if(high_&&++lastHigh_>5)high_=0;
+                    if(high_){++lastHigh_;high_=high_>2?high_-2:0;if(lastHigh_>5)high_=0;}
                     reference_=learned_?reference_+.035f*(rms-reference_):rms;
                     learned_=std::min(learned_+1,10000u);
                 }

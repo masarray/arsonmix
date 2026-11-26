@@ -81,7 +81,23 @@ static void rejectPrematureReturn(){
     }
     l=r=dry;run(c,l.data(),r.data(),n);CHECK(l==dry&&r==dry);
 }
+static void staccatoIsNotClimax(double rate){
+    auto p=presetSettings(concertPresetStart);ContinuousDelayCore c;
+    CHECK(c.prepare(rate,p));const auto n=std::size_t(rate*4);
+    std::vector<float> dry(n),l(n),r(n);
+    for(std::size_t i=0;i<n;++i){
+        const double time=double(i)/rate;float amp=0;
+        if(time<.7)amp=.07f;
+        // Five 60ms accents separated by 50ms, each well below
+        // the minimum sustained climax. Total high time exceeds it.
+        if(time>=.9&&time<1.45&&std::fmod(time-.9,.11)<.06)amp=.34f;
+        if(time>=2.5&&time<3.0)amp=.07f;
+        dry[i]=amp*float(std::sin(6.283185307179586*190*time));
+    }
+    l=r=dry;run(c,l.data(),r.data(),n);CHECK(l==dry&&r==dry);
+}
 int main(){
+    for(double rate:{8000.,44100.,48000.,96000.,192000.})staccatoIsNotClimax(rate);
     rejectPrematureReturn();
     rejectNoiseAndSwitch();
     for(double rate:{8000.,44100.,48000.,96000.,192000.})for(std::size_t i=0;i<concertPresetCount;++i)scenario(rate,i);
