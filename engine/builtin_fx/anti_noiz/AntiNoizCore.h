@@ -237,7 +237,10 @@ private:
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
         const bool windEnabled=!protect&&!idle&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&wind_.eligible();
         wind_.update(power_,profile_.anchor(),windEnabled);
-        coherence_.update(work_,windEnabled);
+        // Phase coherence alone cannot distinguish a learned hum from
+        // desired harmonics. Keep the qualified tonal path authoritative.
+        const bool coherenceEnabled=windEnabled&&tonal_.selected()<0;
+        coherence_.update(work_,coherenceEnabled);
         tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
         const float expTarget=idle?silenceFloor_:context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
@@ -286,7 +289,7 @@ private:
             // P1: positive evidence only. Independent narrow-band phase
             // coherence can restore soft upper harmonics without opening
             // the entire gate or lifting the dominant DC/low noise bins.
-            if(windEnabled&&k>=2&&k<=4&&ratio<4.f){
+            if(coherenceEnabled&&k>=2&&k<=4&&ratio<4.f){
                 float support=0.f;
                 for(int c=0;c<channels_;++c){
                     const float local=coherence_.support(c,k);

@@ -120,4 +120,6 @@ jobs:
             ${{ runner.temp }}/field-wind/*/old-max-processed.wav
             ${{ runner.temp }}/field-wind/*/new-max-processed.wav
             ${{ runner.temp }}/field-wind/*/clean.wav
+            ${{ runner.temp }}/field-wind/*/learn.wav
+            ${{ runner.temp }}/field-wind/*/noise.wav
           if-no-files-found: warn
