@@ -12,6 +12,10 @@ const uiFullName="Full Chromium /preview/ visual and interaction qualification";
 const securityName="Security regression / native ASan UBSan fuzz and release contracts";
 const securityPaths=new Set([
   "src/BoundedDataInput.h",
+  "src/StudioBackup.h",
+  "tests/studio_backup_test.cpp",
+  "scripts/disaster_recovery.py",
+  "scripts/tests/test_disaster_recovery.py",
   "src/Vst3ScanIsolation.h",
   "src/Vst3DescriptionCache.h",
   "src/PluginCatalog.h",

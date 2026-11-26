@@ -9,11 +9,11 @@ trap 'rm -rf "$work"' EXIT
 export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
 export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
 flags=(-std=c++20 -O1 -g -pthread -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 -DJUCE_STANDALONE_APPLICATION=1 -DJUCE_USE_CURL=0 -I "$juce_root/modules")
-for source in juce_core/juce_core.cpp juce_core/juce_core_CompilationTime.cpp juce_cryptography/juce_cryptography.cpp; do
+for source in juce_core/juce_core.cpp juce_core/juce_core_CompilationTime.cpp juce_cryptography/juce_cryptography.cpp juce_events/juce_events.cpp; do
   "$cxx" "${flags[@]}" -fsanitize=fuzzer-no-link -c "$juce_root/modules/$source" -o "$work/$(basename "$source").o"
 done
 objects=("$work/"*.o)
-for name in security_adversarial_input_test native_show_schema_test native_show_store_test native_preset_roundtrip_test portable_workspace_test runtime_vendor_crash_journal_test; do
+for name in security_adversarial_input_test native_show_schema_test native_show_store_test native_preset_roundtrip_test portable_workspace_test runtime_vendor_crash_journal_test studio_backup_test; do
   "$cxx" "${flags[@]}" -fsanitize=fuzzer-no-link "tests/$name.cpp" "${objects[@]}" -ldl -lrt -o "$work/$name"
   timeout 45 "$work/$name"
   echo "ZBSH10_NATIVE_PASS $name"

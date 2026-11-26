@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'src/BoundedDataInput.h'
+      - 'src/StudioBackup.h'
+      - 'tests/studio_backup_test.cpp'
+      - 'scripts/disaster_recovery.py'
+      - 'scripts/tests/test_disaster_recovery.py'
       - 'src/Vst3ScanIsolation.h'
       - 'src/Vst3DescriptionCache.h'
       - 'src/PluginCatalog.h'
@@ -46,6 +50,10 @@ on:
     branches: [main]
     paths:
       - 'src/BoundedDataInput.h'
+      - 'src/StudioBackup.h'
+      - 'tests/studio_backup_test.cpp'
+      - 'scripts/disaster_recovery.py'
+      - 'scripts/tests/test_disaster_recovery.py'
       - 'src/Vst3ScanIsolation.h'
       - 'src/Vst3DescriptionCache.h'
       - 'src/PluginCatalog.h'
@@ -111,5 +119,6 @@ jobs:
         run: |
           node --test tests/supply_chain_audit.test.mjs tests/required_pr_merge_gate.test.mjs
           python3 -m unittest discover -s tests -p test_release_trust_manifest.py -v
+          python3 -m unittest discover -s scripts/tests -p test_disaster_recovery.py -v
       - name: Instrument production storage code and fuzz native Show codecs
         run: bash scripts/run_security_regression.sh security-juce

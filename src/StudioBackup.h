@@ -8,6 +8,7 @@
 #include <atomic>
 #include <memory>
 #include <unordered_set>
+#include <unordered_map>
 #if JUCE_WINDOWS
  #include <windows.h>
 #endif
@@ -34,7 +35,8 @@ public:
                           const juce::File& studio,
                           const juce::File& destinationRoot)
     {
-        if (!executable.existsAsFile() || !studio.isDirectory() ||
+        if (!validExecutableName (executable.getFileName()) ||
+            !executable.existsAsFile() || !studio.isDirectory() ||
             !destinationRoot.isDirectory() || linked (executable) ||
             linked (studio) || linked (destinationRoot))
             return { {}, "App, Studio or backup destination is missing" };
@@ -63,7 +65,8 @@ public:
         auto copyVerify = [&](const juce::File& from, const juce::File& to,
                               const juce::String& relative) -> juce::String
         {
-            if (!from.existsAsFile() || linked (from))
+            if (!PortableWorkspace::safeRelativePath (relative) ||
+                !from.existsAsFile() || linked (from))
                 return "Backup rejected missing/linked file: " + relative;
             if (to.getParentDirectory().createDirectory().failed())
                 return "Backup destination cannot create directory for: " + relative;
@@ -139,7 +142,18 @@ public:
         // deliberate Load-in-Place catalog paths. There may ALSO be external
         // sample libraries not discoverable from the JUCE catalog.
         int external = 0;
-        const auto catalog = juce::JSON::parse (studio.getChildFile ("plugin-catalog.json"));
+        const auto catalogFile = studio.getChildFile ("plugin-catalog.json");
+        juce::var catalog;
+        if (catalogFile.exists())
+        {
+            juce::String catalogText;
+            if (linked (catalogFile) || !BoundedDataInput::text (catalogFile, manifestLimit, catalogText) ||
+                !BoundedDataInput::jsonStructure (catalogText))
+                return fail ("Plugin catalog is not bounded valid text");
+            catalog = juce::JSON::parse (catalogText);
+            if (!catalog.isObject() || !catalog.getProperty ("items", {}).isArray())
+                return fail ("Plugin catalog schema is invalid");
+        }
         const auto catalogItems = catalog.getProperty ("items", {});
         if (const auto* list = catalogItems.getArray())
             for (const auto& item : *list)
@@ -181,32 +195,57 @@ public:
         if (!backupFolder.isDirectory() || linked (backupFolder))
             return "Backup folder missing or is a link";
         const auto marker = backupFolder.getChildFile ("portable_mode.txt");
-        if (!marker.existsAsFile() ||
-            marker.loadFileAsString().trim() != "ARSONMIX_PORTABLE_WORKSPACE_V1")
+        juce::String markerText;
+        if (linked (marker) || !BoundedDataInput::text (marker, 256, markerText) ||
+            markerText.trim() != "ARSONMIX_PORTABLE_WORKSPACE_V1")
             return "Portable startup marker missing or invalid";
         const auto manifestFile = backupFolder.getChildFile ("backup-manifest.json");
-        if (!manifestFile.existsAsFile() || manifestFile.getSize() > 16 * 1024 * 1024)
-            return "Backup manifest missing or exceeds integrity limit";
-        const auto manifest = juce::JSON::parse (manifestFile);
+        juce::String manifestText;
+        if (linked (manifestFile) || !BoundedDataInput::text (manifestFile, manifestLimit, manifestText) ||
+            !BoundedDataInput::jsonStructure (manifestText))
+            return "Backup manifest missing, invalid or exceeds integrity limit";
+        const auto manifest = juce::JSON::parse (manifestText);
         if (!manifest.isObject() ||
             manifest.getProperty ("format", {}).toString() != "arsonmix.studio-backup" ||
-            static_cast<int> (manifest.getProperty ("schemaVersion", 0)) != 1)
+            !manifest.getProperty ("schemaVersion", {}).isInt() ||
+            static_cast<int> (manifest.getProperty ("schemaVersion", 0)) != 1 ||
+            !manifest.getProperty ("executable", {}).isString() ||
+            !validExecutableName (manifest.getProperty ("executable", {}).toString()) ||
+            manifest.getProperty ("dataRoot", {}).toString() != "Studio")
             return "Backup manifest schema is invalid";
         const auto items = manifest.getProperty ("files", {});
         const auto* records = items.getArray();
-        if (!records || records->size() < 2)
+        if (!records || records->size() < 2 || records->size() > 100000)
             return "Backup manifest contains no application and marker";
         std::unordered_set<std::string> names;
+        std::unordered_map<std::string, std::string> namespacePaths;
+        std::unordered_set<std::string> directories;
+        const auto executableName = manifest.getProperty ("executable", {}).toString();
         for (const auto& record : *records)
         {
             const auto relative = record.getProperty ("path", {}).toString();
-            if (!PortableWorkspace::safeRelativePath (relative))
+            if (!record.isObject() || !record.getProperty ("path", {}).isString() ||
+                !PortableWorkspace::safeRelativePath (relative) ||
+                (relative != executableName && relative != "portable_mode.txt" &&
+                    !relative.startsWith ("Studio/")))
                 return "Unsafe backup manifest file path";
+            // Reject case aliases of any path component even on a case-sensitive host.
+            auto prefix = relative;
+            for (;;)
+            {
+                const auto exact = prefix.toStdString();
+                const auto key = prefix.toLowerCase().toStdString();
+                const auto inserted = namespacePaths.emplace (key, exact);
+                if (!inserted.second && inserted.first->second != exact)
+                    return "Case-colliding backup paths";
+                if (!prefix.containsChar ('/')) break;
+                prefix = prefix.upToLastOccurrenceOf ("/", false, false);
+                directories.insert (prefix.toStdString());
+            }
             if (!names.insert (relative.toStdString()).second)
                 return "Duplicate file path in backup manifest";
             const auto target = backupFolder.getChildFile (relative);
-            if (!target.isAChildOf (backupFolder) || !target.existsAsFile() ||
-                linked (target))
+            if (!target.isAChildOf (backupFolder) || linked (target))
                 return "Missing or linked backup file: " + relative;
             auto parent = target.getParentDirectory();
             while (parent != backupFolder)
@@ -215,6 +254,9 @@ public:
                     return "Linked or escaping backup folder: " + relative;
                 parent = parent.getParentDirectory();
             }
+            std::error_code fileError;
+            if (!std::filesystem::is_regular_file (std::filesystem::symlink_status (native (target), fileError)) || fileError)
+                return "Missing or unsafe backup file: " + relative;
             const auto expected = record.getProperty ("bytes", {});
             const auto expectedHash = record.getProperty ("sha256", {}).toString();
             if (!(expected.isInt() || expected.isInt64() || expected.isDouble()) ||
@@ -234,17 +276,22 @@ public:
             const auto status = it->symlink_status (ec);
             if (ec || std::filesystem::is_symlink (status))
                 return "Backup contains linked/reparse path";
-            if (std::filesystem::is_directory (status)) continue;
-            if (!std::filesystem::is_regular_file (status))
-                return "Backup contains unsafe special file";
            #if JUCE_WINDOWS
             const auto fileFlags = GetFileAttributesW (it->path().c_str());
-            if (fileFlags != INVALID_FILE_ATTRIBUTES &&
+            if (fileFlags == INVALID_FILE_ATTRIBUTES ||
                 (fileFlags & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
                 return "Backup contains reparse path";
            #endif
             const auto rel = it->path().lexically_relative (root).generic_u8string();
             const auto name = std::string (reinterpret_cast<const char*> (rel.data()), rel.size());
+            if (std::filesystem::is_directory (status))
+            {
+                if (directories.find (name) == directories.end())
+                    return "Unmanifested directory found in backup";
+                continue;
+            }
+            if (!std::filesystem::is_regular_file (status))
+                return "Backup contains unsafe special file";
             if (name != "backup-manifest.json" && names.find (name) == names.end())
                 return "Unmanifested file found in backup";
         }
@@ -253,6 +300,15 @@ public:
             names.find (manifest.getProperty ("executable", {}).toString().toStdString()) == names.end())
             return "Application or portable marker not listed in manifest";
         return {};
+    }
+
+    static constexpr juce::int64 manifestLimit = 16 * 1024 * 1024;
+
+    static bool validExecutableName (const juce::String& name)
+    {
+        const auto lower = name.toLowerCase();
+        return PortableWorkspace::safeRelativePath (name) && !name.containsChar ('/') &&
+            lower != "studio" && lower != "portable_mode.txt" && lower != "backup-manifest.json";
     }
 
     static bool linked (const juce::File& file)

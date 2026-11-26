@@ -77,6 +77,31 @@ int main()
     assert (copy.folder.getChildFile ("INJECTED.vst3").deleteFile());
     assert (st::StudioBackup::verify (copy.folder).isEmpty());
 
+    // Manifest and marker are untrusted input, including linked paths and malformed bytes.
+    const auto manifestFile = copy.folder.getChildFile ("backup-manifest.json");
+    const auto manifestText = manifestFile.loadFileAsString();
+    assert (manifestFile.replaceWithText (juce::String::repeatedString ("[", 65) +
+        juce::String::repeatedString ("]", 65)));
+    assert (st::StudioBackup::verify (copy.folder).isNotEmpty());
+    assert (manifestFile.replaceWithText (manifestText));
+    auto bad = juce::JSON::parse (manifestText);
+    bad.getDynamicObject()->setProperty ("executable", "portable_mode.txt");
+    assert (manifestFile.replaceWithText (juce::JSON::toString (bad)));
+    assert (st::StudioBackup::verify (copy.folder).isNotEmpty());
+    assert (manifestFile.replaceWithText (manifestText));
+    const auto extraDir = copy.folder.getChildFile ("extra-empty");
+    assert (extraDir.createDirectory().wasOk());
+    assert (st::StudioBackup::verify (copy.folder).isNotEmpty());
+    assert (extraDir.deleteFile());
+    assert (st::StudioBackup::verify (copy.folder).isEmpty());
+    // Cold portable recovery drill: verify original, copy into a NEW location,
+    // verify the copy before use; no live workspace replacement or execution.
+    const auto recovery = temp.getChildFile ("Recovered Studio");
+    assert (copy.folder.copyDirectoryTo (recovery));
+    assert (st::StudioBackup::verify (recovery).isEmpty());
+    assert (recovery.getChildFile ("Studio/presets/Vocal Live.armix").loadFileAsString() == sound.loadFileAsString());
+    assert (st::StudioBackup::verify (copy.folder).isEmpty());
+
     // This is immediately runnable as a portable workspace on a new PC.
     assert (st::PortableWorkspace::dataRootFor (copy.folder) ==
         copy.folder.getChildFile ("Studio"));
