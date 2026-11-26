@@ -7268,3 +7268,105 @@ test("M3 MONITOR timing requires admitted physical pairs, disarm and observed re
   raw.monitorTiming.monitorSamples=305;assert.equal(read(),null);
   raw.monitorTiming.monitorSamples=304;raw.physicalMonitorOutputs=[1,5];assert.equal(read(),null);
 });
+
+
+// RTR M4 read-only Smart Performance Assistant: exact device/epoch, 1 Hz
+// cumulative bucket deltas, provenance, and no automated DSP/device changes.
+const m4Accepted=(armed=true)=>({
+  admitted:true,retained:false,
+  device:{epoch:"42",sampleRate:48000,bufferFrames:128,outputArmed:armed}
+});
+const m4Live=(sequence,buckets,extra={})=>({
+  connected:true,directRouteAuthorized:true,deviceGeneration:42,
+  rate:48000,buffer:128,periodUs:2666.667,
+  footerHealthSequence:sequence,callbackBudgetBuckets:buckets,...extra
+});
+const m4Buckets=(values={})=>Array.from({length:13},(_,i)=>values[i]||0);
+test("M4 first 1 Hz sample cannot manufacture green status or inferred xrun",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({9:100})),m4Accepted());
+  assert.equal(first.state,"COLLECTING");
+  assert.equal(first.headroom,null);
+  assert.equal(first.callbacks,null);
+  assert.equal(first.over,null);
+  assert.equal(first.cursor.epoch,"42");
+  assert.equal(first.recommendations.some(x=>/at least 64/.test(x)),true);
+});
+test("M4 computes per-second histogram delta and conservative bucket-ceiling headroom",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({9:500})),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({9:500,10:100})),m4Accepted(),first.cursor);
+  assert.equal(next.state,"TIGHT"); // index 10 is <=85% budget
+  assert.equal(next.headroom.p99,"85%");
+  assert.equal(next.headroom.margin,"15%");
+  assert.equal(next.over,0);
+  assert.equal(next.callbacks,100);
+  assert.equal(next.recommendations[0].includes("Limited"),true);
+});
+test("M4 labels current over-budget host renders as pressure, not confirmed crackle",()=>{
+  const first=protocol.smartPerformanceView(m4Live(5,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(6,m4Buckets({8:90,12:10}),{
+    ...m4Accepted(),device:{...m4Accepted().device}},first.cursor);
+  assert.equal(next.state,"PRESSURE");
+  assert.equal(next.headroom.p99,">100%");
+  assert.equal(next.over,10);
+  assert.equal(next.callbacks,100);
+  assert.match(next.recommendations[0],/Render deadline exceeded/);
+  assert.equal(next.headroom.confidence.includes("NOT_XRUN"),true);
+});
+test("M4 rejects stale device, retained graph, broken interval and counter reset",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({6:64})),m4Accepted());
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),device:{...m4Accepted().device,epoch:"43"}},first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),retained:true},first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:63})),
+    m4Accepted(),first.cursor).state,"COLLECTING");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,[1,2]),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(1,m4Buckets({6:128})),
+    m4Accepted(),first.cursor).state,"COLLECTING");
+});
+test("M4 distinguishes scheduling suspicion and a historic sampled FX peak",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:80}),{
+    renderPressureWindowValid:true,renderPressureWithinThenOnTime:52,
+    renderPressureWithinThenLate:12,renderPressureOverThenOnTime:0,
+    renderPressureOverThenLate:0,nativeFxWorkloadWorstPermille:913,
+    nativeFxWorkloadWorstName:"dearVR",nativeFxWorkloadWorstSampledOnly:true,
+    nativeFxWorkloadReviews:[{name:"dearVR",channel:"CH1_EXTERNAL",
+      recommendation:"REVIEW_BLOCK_BUDGET",sampledOnly:true,
+      windowValid:true,windowMeanPermille:290}]
+  }),m4Accepted(),first.cursor);
+  assert.equal(next.state,"OBSERVED_MARGIN");
+  assert.equal(next.fxPeak.percent,"91.3%");
+  assert.equal(next.fxPeak.sampled,true);
+  assert.equal(next.reviews[0].window,"29.0%");
+  assert.match(next.recommendations.join(" "),/driver \/ OS scheduling/);
+  assert.match(next.recommendations.join(" "),/historical and sampled/);
+});
+test("M4 reports signed-off graph PDC with no implied zero device latency",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:64}),{
+    nativeLatencyPlanValid:true,nativeLatencyPlanAlignedSamples:1456,
+    nativeLatencyPlanHasMonitor:true,nativeLatencyPlanMonitorOutputSamples:0,
+    nativeLatencyPlanMonitorPolicy:"INDEPENDENT_MONITOR",
+    nativeMaxInsertLatencySamples:1152,nativeMaxInsertLatencyName:"Harmonice",
+    nativeLatentBypassRequestedCount:1
+  }),m4Accepted(),first.cursor);
+  assert.equal(next.latency.main,"30.33 ms");
+  assert.equal(next.latency.monitor,"0.00 ms");
+  assert.equal(next.latency.policy,"Independent singer monitor");
+  assert.match(next.recommendations.join(" "),/save then deactivate explicitly/);
+});
+test("M4 refuses green while disarmed, discards invalid FX fields and uses a single native status transport",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted(false));
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({5:100}),{
+    nativeFxWorkloadReviews:[{name:"<img src=x onerror=alert(1)>",recommendation:"BAD"}]
+  }),m4Accepted(false),first.cursor);
+  assert.equal(next.state,"COLLECTING");
+  assert.equal(next.reviews.length,0);
+  assert.equal(next.recommendations[0].startsWith("Outputs disarmed"),true);
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/protocol.smartPerformanceView\(live,hardware,lastM4Performance\?\.cursor\)/);
+  assert.match(bridge,/row.textContent=value; \/\/ Plugin names are data/);
+  assert.match(bridge,/data-audio-tab="performance"/);
+  assert.doesNotMatch(bridge,/action:"autoBypassForM4"|action:"autoBufferIncreaseForM4"/);
+});
