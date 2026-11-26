@@ -208,7 +208,7 @@ export function mount(root,transport,options={}){
    setPath($("[data-pro-curve]"),Array.from({length:181},(_,i)=>{const x=-90+i/2;return (i?"L":"M")+px(x).toFixed(1)+" "+py(x-cut(x)).toFixed(1);}).join(" "));
    setPath($("[data-pro-threshold]"),"M"+px(p.thresholdDb)+" 8V74");
    const dot=$("[data-pro-dot]"),show=observed&&!hostOff&&p.manualExpander&&Number.isFinite(level)&&Number.isFinite(observation?.residualGain);
-   dot.hidden=!show;if(show){const x=20*Math.log10(Math.max(1e-6,level)),gr=20*Math.log10(Math.max(1e-8,observation.residualGain));dot.setAttribute("cx",px(x));dot.setAttribute("cy",py(x+gr));}
+   dot.toggleAttribute('hidden',!show);if(show){const x=20*Math.log10(Math.max(1e-6,level)),gr=20*Math.log10(Math.max(1e-8,observation.residualGain));dot.setAttribute("cx",px(x));dot.setAttribute("cy",py(x+gr));}
   }
   setText($("[data-detector]"),observed&&!hostOff&&accepted?.manualExpander&&Number.isFinite(level)?(20*Math.log10(Math.max(1e-6,level))).toFixed(1)+" dBFS":"—");
   for(const f of proFlags){f.checked=!!accepted?.[f.dataset.proFlag];f.disabled=!accepted||pending||unavailable;}

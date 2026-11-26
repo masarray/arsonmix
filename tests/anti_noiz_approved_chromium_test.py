@@ -410,6 +410,7 @@ def main():
         accepted=edit["settings"]
         readback(page,accepted,{**OBS,"serial":"19","effectiveMode":"Voice","profile":True,"detectorLevel":.01})
         expect(root.locator("[data-detector]")).to_have_text("-40.0 dBFS")
+        expect(root.locator("[data-pro-dot]")).to_be_visible()
         expect(root.locator("[data-pro-curve]")).to_have_attribute("d",__import__("re").compile("^M"))
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-1366.png"))
         root.locator(".an-pro summary").click()
