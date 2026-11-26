@@ -734,11 +734,14 @@
     window.setTimeout(()=>controller?.expire(result.requestId),8000);
     return true;
   }
+  function nativeSofSource(t) {
+    return !!t && (t.nativeRole?wireVM.sofSourceRole(t.nativeRole):t.kind==="audio");
+  }
   function selectedNativeSofEdge(t) {
-    if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
+    if(!scope?.sofEnabled||!nativeSofSource(t))return null;
     const current=controller?.state()?.current;
     const matches=scope?.tracks?.filter(x=>x.id===scope.sofTargetId&&
-      (x.kind==="bus"||x.kind==="fx"))||[];
+      (x.nativeRole?wireVM.sofTargetRole(x.nativeRole):x.kind==="bus"||x.kind==="fx"))||[];
     if(matches.length!==1)return null;
     return wireVM.sofSendEdge(current,{sourceId:nativeIdFor(t),
       destinationId:nativeIdFor(matches[0])});
@@ -780,7 +783,7 @@
       // No Number(ch.id): all native identities stay canonical uint64 strings.
       localByNative.set(ch.id,t.id);
       nextNativeByUi.set(t.id,ch.id);
-      t.name=displayNameFor(ch);t.kind=kind;
+      t.name=displayNameFor(ch);t.kind=kind;t.nativeRole=ch.role;
       const appearance=channelPresentation.get(ch.id);
       if(appearance?.color)t.color=appearance.color;
       if(appearance?.icon)t.icon=appearance.icon;
@@ -791,9 +794,9 @@
       t.nativeGainAvailable=(native.admitted===true||native.logical===true) && kind==="audio" &&
         native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
         Number.isFinite(ch.controls.inputGainDb);
-      t.nativeTapAvailable=native.admitted===true&&kind==="audio"&&
+      t.nativeTapAvailable=native.admitted===true&&nativeSofSource(t)&&
         native.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION");
-      t.nativeSendAvailable=native.admitted===true&&kind==="audio"&&
+      t.nativeSendAvailable=native.admitted===true&&nativeSofSource(t)&&
         native.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED");
       // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
       t.pan=ch.controls.pan*100;
@@ -5329,7 +5332,7 @@
         }
         return true;
       }
-      if(field==="level"&&scope?.sofEnabled&&t.kind==="audio"){
+      if(field==="level"&&scope?.sofEnabled&&nativeSofSource(t)){
         const edge=selectedNativeSofEdge(t),db=Number(el.value);
         const uiId=edge&&uiByWireId.get(edge.edgeId);
         if(!edge||uiId===undefined||!Number.isFinite(db)||db< -60||db>6){
@@ -6002,7 +6005,7 @@
       // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
       // write the main channel's SET_FADER or M4 faderDb by accident.
       if (event.target.closest?.(".fader-box")||event.target.classList.contains("fader")){
-        if(scope?.sofEnabled&&t?.kind==="audio"){
+        if(scope?.sofEnabled&&nativeSofSource(t)){
           const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
           if(!edge||id===undefined||
              !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))

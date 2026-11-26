@@ -362,6 +362,14 @@ function sectionGain(t){
   '<input type="range" data-field="trim" min="-24" max="24" step="0.1" value="'+value+'" aria-label="'+escapeHtml(t.name)+' digital input gain"'+(nativeUnavailable?' disabled':'')+'></div>'+
   '<output class="gain-readout" aria-label="Gain in decibels"><span class="gain-lcd-digits">'+(nativeUnavailable?'NATIVE PENDING':formatDb(value)+' dB')+'</span></output></div></div>';
 }
+/* DMX uses the existing SOF surface and native role readback. Pages demo
+   keeps its original INPUT/BUS/FX roles; terminal outputs are never sends. */
+function isSofSource(t){
+ return t?.nativeRole?['INPUT','GROUP','FX_RETURN'].includes(t.nativeRole):t?.kind==='audio';
+}
+function isSofTarget(t){
+ return t?.nativeRole?['GROUP','FX_RETURN','MONITOR'].includes(t.nativeRole):t?.kind==='bus'||t?.kind==='fx';
+}
 /* SOF is a contextual UI view of an explicit existing EdgeId, not a new graph. */
 function sectionSof(t){
  // SOF is a view of ONE selected target WIRE, not a parallel audio graph.
@@ -396,7 +404,7 @@ function sectionSof(t){
   (tap==='preFader'||tap==='preFx'?'PRE':'POST')+'</span></button></div></div></div>';
 }
 function sectionFx(t){
- if(sofEnabled&&t.kind==='audio')return sectionSof(t);
+ if(sofEnabled&&isSofSource(t))return sectionSof(t);
  if(stripView==='gain'&&t.kind==='audio')return sectionGain(t);
  ensureFxInsertIds(t);
  const used=t.fx.map((name,i)=>({name,i})).filter(x=>x.name!=='None');
@@ -782,7 +790,7 @@ window.ArSonMixMeterCalibration=Object.freeze({
  readDemo:()=>({frame:meterFrame,gain:tracks[0]?.level??0,running:preview})
 });
 function sectionFader(t){
- const isSend=sofEnabled&&t.kind==='audio',value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:10;
+ const isSend=sofEnabled&&isSofSource(t),value=isSend?getSofLevel(t):t.level,percent=faderPercent(value,isSend),gainMax=isSend?6:10;
  const vuTicks=[0,-6,-12,-18,-24,-36,-48,-60],gainTicks=[gainMax,0,-6,-12,-24,-36,-48,-60];
  // Keep mathematically exact scale positions; suppress only intermediate
  // numerals that crowd the compact rails. Minor tick marks remain visible.
@@ -834,7 +842,7 @@ function strip(t){
  if(showPfl)code+='<button type="button" class="mx-hw-key" data-hw-kind="pfl" data-action="cue" title="'+escapeHtml(pflTitle)+'" aria-label="'+escapeHtml(t.name+' '+pflTitle)+'" aria-pressed="'+Boolean(t.cue&&!isNative)+'" '+(isNative?'disabled':'')+'><span class="mx-hw-fallback">PFL</span></button>';
  code+='</div>';
   code+=sectionFader(t);
- code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&t.kind==='audio'?'S ': '')+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
+ code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&isSofSource(t)?'S ': '')+formatDb(sofEnabled&&isSofSource(t)?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';
  return code;
 }
 const DENSITY_WIDTH=Object.freeze({comfort:150,standard:134,compact:130});
@@ -910,7 +918,7 @@ function say(s){info.textContent=s;}
 function syncFaderVisual(t,element){
  const root=element||document.querySelector('.strip[data-id="'+t.id+'"]');
  if(!root)return;
- const isSend=sofEnabled&&t.kind==='audio',v=isSend?getSofLevel(t):t.level;
+ const isSend=sofEnabled&&isSofSource(t),v=isSend?getSofLevel(t):t.level;
  const value=formatDb(v);
  const readout=root.querySelector('.fader-readout');
  if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
@@ -939,11 +947,11 @@ function setDensity(mode){
 function selectedSofDestination(){
  // A stable local display ID, never an audio-graph identity or a bus name.
  // Native ChannelId stays a precise decimal string in the bridge.
- return tracks.find(t=>t.id===sofTargetId&&(t.kind==='bus'||t.kind==='fx'))||null;
+ return tracks.find(t=>t.id===sofTargetId&&isSofTarget(t))||null;
 }
 function updateSofTargets(){
  const el=document.getElementById('sofTarget');
- const choices=tracks.filter(t=>t.kind==='bus'||t.kind==='fx');
+ const choices=tracks.filter(isSofTarget);
  let target=selectedSofDestination();
  if(!target){
   const named=choices.filter(t=>t.name===sofTarget);
@@ -963,7 +971,7 @@ function getSofEdge(t){
 function getSofLevel(t){const edge=getSofEdge(t);return edge?edge.levelDb:-60;}
 function setSofLevel(t,newLevel){
  const dest=selectedSofDestination();
- if(!dest||t.kind==='master')return false;
+ if(!dest||!isSofSource(t)||dest.id===t.id)return false;
  const level=Math.round(Math.max(-60,Math.min(6,newLevel))*10)/10;
  const edge=getSofEdge(t);
  // Never auto-patch or remove a WIRE at minimum send level.
@@ -973,7 +981,7 @@ function setSofLevel(t,newLevel){
 function toggleSof(force){
  sofEnabled=typeof force==='boolean'?force:!sofEnabled;
  updateSofTargets();
- if(sofEnabled&&!selectedSofDestination()){sofEnabled=false;say('Create a Bus or FX Return to use Sends on Faders');return;}
+ if(sofEnabled&&!selectedSofDestination()){sofEnabled=false;say('Select a Bus, FX Return or Monitor to use Sends on Faders');return;}
  // PFL visual selection remains stable when switching between MAIN and SOF.
  const btn=document.getElementById('sofToggle');btn.classList.toggle('active',sofEnabled);
  btn.setAttribute('aria-pressed',String(sofEnabled));document.querySelector('.console-body').classList.toggle('sends-mode',sofEnabled);
@@ -2065,7 +2073,7 @@ function handleField(event){
  }
  if(field==='fx'){t.fx[Number(el.dataset.slot)]=el.value;t.slotBypass[Number(el.dataset.slot)]=false;say(t.name+' · FX '+(Number(el.dataset.slot)+1)+': '+el.value);refreshStrip(t);}
  else if(field==='level'){
- if(sofEnabled&&t.kind==='audio'){
+ if(sofEnabled&&isSofSource(t)){
   if(setSofLevel(t,Number(el.value))){const readout=el.closest('.strip')?.querySelector('.db-value');if(readout)readout.textContent='S '+formatDb(getSofLevel(t));syncFaderVisual(t,el.closest('.strip'));if(event.type==='change')say(t.name+' → '+sofTarget+' send '+formatDb(getSofLevel(t))+' dB');}
   else el.value=getSofLevel(t);
   return;
@@ -2321,7 +2329,7 @@ function finishFaderPointer(ev){
  handleField({target:g.input,type:'change',altKey:!!ev.altKey});
  g.box.releasePointerCapture?.(ev.pointerId);
  const t=findTrack(g.input);
- if(t)say(t.name+' fader '+formatDb(sofEnabled&&t.kind==='audio'?getSofLevel(t):t.level)+' dB');
+ if(t)say(t.name+' fader '+formatDb(sofEnabled&&isSofSource(t)?getSofLevel(t):t.level)+' dB');
 }
 window.addEventListener('pointerup',finishFaderPointer);
 window.addEventListener('pointercancel',ev=>{
@@ -2469,7 +2477,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='removeFx'){if(deferNativeFxIntent('Remove FX insert'))return;const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){if(deferNativeFxIntent('FX insert bypass'))return;const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
  if(a==='sofOn'){
-  if(!sofEnabled||t.kind!=='audio')return;
+  if(!sofEnabled||!isSofSource(t))return;
   if(window.__JUCE__?.backend)return; // native bridge owns accepted send gate
   const edge=getSofEdge(t);
   if(!edge)return;
@@ -2478,7 +2486,7 @@ document.querySelector('.console-body').addEventListener('click',e=>{
   return;
  }
  if(a==='sofTap'){
-  if(!sofEnabled||t.kind!=='audio')return;
+  if(!sofEnabled||!isSofSource(t))return;
   if(window.__JUCE__?.backend){say('Native WIRE tap change requires PCM ACK');return;}
   const edge=getSofEdge(t);
   if(!edge){say('Connect a parallel WIRE to '+sofTarget+' before changing its tap');return;}
@@ -2528,7 +2536,7 @@ document.querySelector('.console-body').addEventListener('dblclick',e=>{
   return;
  }
  if(e.target.closest('.fader-box')||e.target.classList.contains('fader')){
-  const send=sofEnabled&&t.kind==='audio';
+  const send=sofEnabled&&isSofSource(t);
   if(send&&!getSofEdge(t)){say('NO SEND · patch one WIRE first');return;}
   // Never mutate t.level directly: in SOF the physical fader belongs to
   // the selected EdgeId, not MAIN. Native bridge owns the accepted write.
@@ -3101,7 +3109,7 @@ document.getElementById('globalFxToggle').addEventListener('click',()=>{
 document.getElementById('sofToggle').addEventListener('click',()=>toggleSof());
 document.getElementById('sofTarget').addEventListener('change',()=>{
  const id=Number(document.getElementById('sofTarget').value);
- const target=tracks.find(t=>t.id===id&&(t.kind==='bus'||t.kind==='fx'));
+ const target=tracks.find(t=>t.id===id&&isSofTarget(t));
  if(!target){updateSofTargets();say('Invalid SEND target · selection unchanged');return;}
  sofTargetId=target.id;sofTarget=target.name;
  render();say('SEND MIX → '+sofTarget+' · MAIN faders protected');
