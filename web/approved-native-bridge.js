@@ -3300,7 +3300,7 @@
       (d.outputArmed?"Output enabled":"Output muted")+" · "+playback+
       (virtualOut?" · Virtual output · No speakers":"");
     const healthSameEpoch=lastFooterHealth &&
-      lastFooterHealth.deviceGeneration===String(d?.epoch);
+      lastFooterHealth.routingEpoch===String(d?.epoch);
     // The status strip is LIVE only on the exact current hardware epoch.
     // Do not display stale latency after device disconnect or remap.
     const activeOutput=!next?.retained && deviceOpen &&

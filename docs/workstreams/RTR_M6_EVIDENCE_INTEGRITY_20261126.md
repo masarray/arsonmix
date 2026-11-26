@@ -5,3 +5,5 @@ Scope decision: M6 was not in the original RTR M1–M5 plan. This is a measured 
 References: Steinberg New Audio Performance Monitor (current real-time vs peak load): https://helpcenter.steinberg.de/hc/en-us/articles/4454943549330-New-Audio-Performance-Monitor-in-Cubase-14-Nuendo-14 ; Windows Performance Toolkit media/glitch ETW: https://learn.microsoft.com/en-us/windows-hardware/test/wpt/optimizing-windows-devices-for-multimedia-experiences . Neither constitutes a benchmark for ArSonMix.
 
 Source baseline M5 bc4213b94583e2ec91365eac7ab662bc9dbca18a; preserve #899 and main; tests extend existing C++ pressure and native UI contracts. Physical ASIO, full Windows and installer remain separate exact-SHA gates.
+
+Reconnect defect: the live deviceGeneration counter increments only on START, whereas LiveDryRoutingLab epoch increments on START and STOP (see synchronizeApprovedRouteDeviceEpoch). Compare the actual routing epoch and nativeBus.graphRevision, not start count or a legacy revision. Footer health uses the same routing epoch. Legacy deviceGeneration output retained for other consumers. Tests use divergent counters and reject mismatched native identity.

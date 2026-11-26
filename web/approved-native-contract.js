@@ -885,6 +885,9 @@
       sequence:live.footerHealthSequence,
       deviceGeneration:whole(live.deviceGeneration)===null?
         null:String(live.deviceGeneration),
+      // Device starts and accepted routing epochs diverge after STOP.
+      routingEpoch:whole(live.dryRoutingLab?.epoch)===null?
+        null:String(live.dryRoutingLab.epoch),
       latency,performance:cpuLabel+" · "+rtLabel+" · "+ramLabel,
       // The presentation colors classify *only* the observable signals:
       // CPU App = process CPU on all logical cores; RT = last callback
@@ -915,11 +918,12 @@
     if(!accepted?.admitted||accepted.retained||!accepted.device ||
        !live||live.connected!==true||live.directRouteAuthorized!==true||
        live.adaptiveClockActive!==false||
-       accepted.device.epoch!==String(live.deviceGeneration)||
+       integer(live.dryRoutingLab?.epoch)===null||
+       accepted.device.epoch!==String(live.dryRoutingLab.epoch)||
        accepted.device.sampleRate!==live.rate ||
        accepted.device.bufferFrames!==live.buffer ||
        !accepted.graph?.revision ||
-       accepted.graph.revision!==live.nativeFxGraphRevision ||
+       accepted.graph.revision!==live.dryRoutingLab?.nativeBus?.graphRevision ||
        !(finite(live.periodUs)>0))
       return unavailable("No matching verified native render / device epoch");
     const seq=integer(live.footerHealthSequence);

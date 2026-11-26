@@ -6820,7 +6820,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
 
 test("UX-1 footer live metrics: exact driver hints, CPU App, last RT and process RAM",()=>{
   const input={
-    footerHealthSequence:17,deviceGeneration:4,
+    footerHealthSequence:17,deviceGeneration:4,dryRoutingLab:{epoch:7},
     connected:true,directRouteAuthorized:true,adaptiveClockActive:false,
     rate:48000,periodUs:5000,driverReportedInputLatencyFrames:240,
     driverReportedOutputLatencyFrames:480,latencySamples:240,
@@ -6832,6 +6832,8 @@ test("UX-1 footer live metrics: exact driver hints, CPU App, last RT and process
     "do not add the separate 240-frame buffer twice");
   assert.equal(projected.performance,"CPU App 4.2% · RT last 8% · RAM 318 MiB");
   assert.equal(projected.deviceGeneration,"4");
+  assert.equal(projected.routingEpoch,"7");
+  assert.equal(protocol.footerHealthFromLive({...input,dryRoutingLab:null}).routingEpoch,null);
   assert.equal(projected.sequence,17);
   assert.match(projected.provenance,/NOT_LOOPBACK/);
   assert.equal(protocol.footerHealthFromLive({...input,footerHealthSequence:undefined}),null);
@@ -6861,7 +6863,7 @@ test("UX-1 health strip uses only already-available 1 Hz host samples and existi
   assert.match(bridge,/backend\.addEventListener\("arMixStatus", live=>/);
   assert.match(bridge,/protocol\.footerHealthFromLive\(live\)/);
   assert.match(bridge,/paintAudioHealthFooter\(hardware\)/);
-  assert.match(bridge,/lastFooterHealth\.deviceGeneration===String\(d\?\.epoch\)/);
+  assert.match(bridge,/lastFooterHealth\.routingEpoch===String\(d\?\.epoch\)/);
   assert.match(bridge,/warningText==="OUTPUT ENABLED"/);
   assert.doesNotMatch(bridge,/setInterval\([^)]*footer|setTimeout\([^)]*footer/i);
   assert.match(page,/html\.armix-native-desktop \.status-bar \.warning\[data-telemetry="true"\]/);
@@ -7280,6 +7282,7 @@ const m4Accepted=(armed=true)=>({
 const m4Live=(sequence,buckets,extra={})=>({
   connected:true,directRouteAuthorized:true,deviceGeneration:42,adaptiveClockActive:false,
   performanceRenderToken:"11",performanceRenderEpoch:"42",performanceRenderRevision:"9",
+  dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"9"}},
   rate:48000,buffer:128,periodUs:2666.667,nativeFxGraphRevision:"9",
   footerHealthSequence:sequence,callbackBudgetBuckets:buckets,...extra
 });
@@ -7324,7 +7327,7 @@ test("M4 rejects stale device, retained graph, broken interval and counter reset
     m4Accepted(),first.cursor).state,"COLLECTING");
   assert.equal(protocol.smartPerformanceView(m4Live(2,[1,2]),m4Accepted(),first.cursor).state,"UNAVAILABLE");
   assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128}),
-    {nativeFxGraphRevision:"10"}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+    {dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"10"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
   assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
     {...m4Accepted(),graph:{revision:"10"}},first.cursor).state,"UNAVAILABLE");
   assert.equal(protocol.smartPerformanceView(m4Live(1,m4Buckets({6:128})),
@@ -7392,4 +7395,15 @@ test("M6 continuous live evidence excludes skipped samples, mute cycles, diagnos
   assert.equal(next(3,{},m4Accepted(),muted.cursor).headroom,null);
   assert.equal(next(2,{renderPressureWindowValid:true,renderPressureWithinThenLate:65,
     renderPressureWithinThenOnTime:0,renderPressureOverThenLate:0,renderPressureOverThenOnTime:0}).correlation,null);
+});
+
+test("M6 uses actual routing epoch and installed native graph, not device-start or legacy revision counters",()=>{
+  const extra={deviceGeneration:21,nativeFxGraphRevision:"81"};
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets(),extra),m4Accepted());
+  const second=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),extra),m4Accepted(),first.cursor);
+  assert.equal(second.state,"OBSERVED_MARGIN");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),{
+    dryRoutingLab:{epoch:21,nativeBus:{graphRevision:"9"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),{
+    dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"81"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
 });
