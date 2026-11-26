@@ -105,14 +105,20 @@ jobs:
           ref: 20172fb40f9d1ed8765761a6f7fad77c79d8df02
           path: residual-reference
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 54af7eea34b264e03f123302051aaf5d2ebf61c8
+          path: active-reference
+          persist-credentials: false
       - name: Build exact field baseline and candidate
         run: |
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror field-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-old"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-new"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror residual-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-prior"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror active-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-pre-active"
           python3 tools/anti-noiz/recorded_field_wind.py --self-test
       - name: Measure paired real breeze and preserve foreground
-        run: python3 tools/anti-noiz/recorded_field_wind.py "$RUNNER_TEMP/field-old" "$RUNNER_TEMP/field-new" "$RUNNER_TEMP/field-wind" --prior "$RUNNER_TEMP/field-prior"
+        run: python3 tools/anti-noiz/recorded_field_wind.py "$RUNNER_TEMP/field-old" "$RUNNER_TEMP/field-new" "$RUNNER_TEMP/field-wind" --prior "$RUNNER_TEMP/field-prior" --pre-active "$RUNNER_TEMP/field-pre-active"
       - name: Preserve unnormalized A/B and machine evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -126,6 +132,8 @@ jobs:
             ${{ runner.temp }}/field-wind/*/old-max-processed.wav
             ${{ runner.temp }}/field-wind/*/new-max-processed.wav
             ${{ runner.temp }}/field-wind/*/prior-max-processed.wav
+            ${{ runner.temp }}/field-wind/*/pre-active-max-processed.wav
+            ${{ runner.temp }}/field-wind/*/pre-active-spectral-processed.wav
             ${{ runner.temp }}/field-wind/*/prior-spectral-processed.wav
             ${{ runner.temp }}/field-wind/*/new-spectral-processed.wav
             ${{ runner.temp }}/field-wind/*/clean.wav

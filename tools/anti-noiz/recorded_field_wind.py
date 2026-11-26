@@ -109,6 +109,27 @@ def compare_residual(prior, new, failures, case, spectral_pcm_exact):
           "spectral_exact",spectral_pcm_exact,flush=True)
 
 
+def compare_active(prior, new, failures, case):
+    """New spectral policy must earn its changes; preserve earlier idle gains."""
+    foreground_pairs(prior, new, failures, case)
+    a,b=prior["max"],new["max"]
+    old_active=aggregate(a["rows"],"active","error_improvement_db")
+    active=aggregate(b["rows"],"active","error_improvement_db")
+    projection=aggregate(b["rows"],"active","desired_projection")
+    old_idle=aggregate(a["rows"],"idle","idle_attenuation_db")
+    idle=aggregate(b["rows"],"idle","idle_attenuation_db")
+    extra=idle-aggregate(new["spectral"]["rows"],"idle","idle_attenuation_db")
+    if active-old_active<.5 or not .97<=projection<=1.03:
+        failures.append([case,"active incremental preservation/benefit",old_active,active,projection])
+    if idle<12 or extra<3 or idle<old_idle:
+        failures.append([case,"active change lost prior idle gain",old_idle,idle,extra])
+    if b["windows"]["p10_db"]<a["windows"]["p10_db"] or b["windows"]["longest_under_6db_ms"]>a["windows"]["longest_under_6db_ms"]:
+        failures.append([case,"active change exposed-noise regression"])
+    print("FIELD_ACTIVE_INCREMENTAL",case,"active",old_active,active,"projection",projection,
+          "idle",old_idle,idle,"residual",extra,"p10",a["windows"]["p10_db"],b["windows"]["p10_db"],
+          "longest_ms",a["windows"]["longest_under_6db_ms"],b["windows"]["longest_under_6db_ms"],flush=True)
+
+
 def run():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("old",type=Path,nargs="?")
@@ -116,12 +137,16 @@ def run():
     p.add_argument("output",type=Path,nargs="?")
     p.add_argument("--self-test",action="store_true")
     p.add_argument("--prior",type=Path,help="exact pre-residual broadband comparator")
+    p.add_argument("--pre-active",type=Path,help="exact pre-active spectral-policy comparator")
     args=p.parse_args()
     self_test()
     if args.self_test:return
     if not args.old or not args.new or not args.output:raise ValueError("old,new,output required")
     binaries={"old":args.old.resolve(strict=True),"new":args.new.resolve(strict=True)}
     if args.prior:binaries["prior"]=args.prior.resolve(strict=True)
+    if args.pre_active:
+        if not args.prior:raise ValueError("historical residual comparator required")
+        binaries["pre-active"]=args.pre_active.resolve(strict=True)
     root=args.output.resolve();root.mkdir(parents=True,exist_ok=False)
     download("README.md",README_SHA,root/"SOURCE-README.md")
     stereo,credit=recorded_noise(SOURCE,root/SOURCE[3])
@@ -159,19 +184,25 @@ def run():
             report["cases"][key]=results
             if all(len(v)==2 for v in results.values()):
                 compare(results["old"],results["new"],report["failures"],key)
+                if "pre-active" in results:
+                    compare_active(results["pre-active"],results["new"],report["failures"],key)
                 if "prior" in results:
-                    parity=(case/"prior-spectral-processed.wav").read_bytes()==(case/"new-spectral-processed.wav").read_bytes()
+                    # Preserve the strict residual-only parity gate on the exact
+                    # pair it was designed for; the new spectral policy is
+                    # intentionally different and separately qualified above.
+                    residual_lane="pre-active" if "pre-active" in results else "new"
+                    parity=(case/"prior-spectral-processed.wav").read_bytes()==(case/f"{residual_lane}-spectral-processed.wav").read_bytes()
                     report["cases"][key]["spectral_pcm_exact"]=parity
                     if not parity:
                         x=pcm(str(case/"prior-spectral-processed.wav"),RATE,ch)
-                        y=pcm(str(case/"new-spectral-processed.wav"),RATE,ch)
+                        y=pcm(str(case/f"{residual_lane}-spectral-processed.wav"),RATE,ch)
                         if len(x)!=len(y):raise ValueError("spectral timeline mismatch")
                         delta=[abs(v-w) for v,w in zip(x,y)]
                         detail={"samples":len(delta),"changed_samples":sum(d!=0 for d in delta),
                                 "peak_abs":max(delta),"rms":math.sqrt(math.fsum(d*d for d in delta)/len(delta))}
                         report["cases"][key]["spectral_pcm_difference"]=detail
                         print("FIELD_SPECTRAL_DIFF",key,detail,flush=True)
-                    compare_residual(results["prior"],results["new"],report["failures"],key,parity)
+                    compare_residual(results["prior"],results[residual_lane],report["failures"],key,parity)
     if len(report["cases"])!=4:raise ValueError("incomplete cases")
     (root/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
     for fail in report["failures"]:print("FIELD_WIND_FAIL",fail,flush=True)

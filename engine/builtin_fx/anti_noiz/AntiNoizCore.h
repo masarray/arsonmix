@@ -306,6 +306,10 @@ private:
                 }
                 gain+=std::min(.40f,1.f-gain)*std::clamp((support-.06f)*3.f,0.f,1.f);
             }
+            // Restore foreground outside the learned dominant band only
+            // when independent local excess is present.
+            if(broadEnabled&&activeVoice&&evidence>4.f)
+                gain=broadband_.restoreOutsideNoise(k,gain,evidence);
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
                 context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
             target_[k]=std::max(localFloor,gain);

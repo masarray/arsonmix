@@ -14,6 +14,7 @@ public:
         channels_=channels;bins_=fft/2+1;first_=std::clamp(int(std::ceil(3000.*fft/rate)),1,bins_-1);
         last_=std::clamp(int(std::ceil(12000.*fft/rate)),first_+1,bins_);
         alpha_=float(1.-std::exp(-double(hop)/(rate*.022)));
+        shapeAlpha_=float(1.-std::exp(-double(hop)/(rate*.090)));
         hold_=std::max(1,int(std::ceil(.075*rate/hop)));
         valid_=false;reset();
     }
@@ -42,9 +43,16 @@ public:
     void reset() noexcept {initialized_=false;quiet_=0;engaged_=false;}
     bool eligible() const noexcept {return valid_;}
     bool residualIdle() const noexcept {return engaged_;}
+    // A high-band profile must not unnecessarily darken foreground outside
+    // its dominant region. Positive-only restoration, on local excess.
+    float restoreOutsideNoise(int k,float gain,float evidence) const noexcept {
+        if(k>=first_&&k<last_)return gain;
+        const float amount=std::clamp((evidence-4.f)/12.f,0.f,1.f);
+        return gain+.90f*amount*(1.f-gain);
+    }
     // The cap cannot lower a gain at or below this exact bound.
     bool mayLimit(int k,float gain,float floor) const noexcept {
-        return initialized_&&k>=first_&&k<last_&&gain>std::max(floor,.20f);
+        return initialized_&&k>=first_&&k<last_&&gain>std::max(floor,.10f);
     }
     void update(const Powers& p,const Powers& anchor,bool enabled,bool residualEnabled) noexcept {
         if(!enabled||!valid_){reset();return;}
@@ -57,11 +65,15 @@ private:
     template<bool Residual> void updateImpl(const Powers& p,const Powers& anchor) noexcept {
         bool idle=Residual,strong=false;
         for(int c=0;c<channels_;++c){
-            std::array<float,(MaxBins+7)/8> groups{},instantGroups{};int n=0;
+            std::array<float,(MaxBins+7)/8> groups{},slowGroups{},instantGroups{};int n=0;
             for(int k=first_,g=0;k<last_;++g){
                 float a=0,instant=0;const int end=std::min(k+8,last_);
                 for(;k<end;++k){auto& avg=average_[c][k];avg=initialized_?avg+alpha_*(p[c][k]-avg):anchor[c][k];a+=avg;if constexpr(Residual)instant+=p[c][k];}
-                if(invGroup_[c][g]>0.f)groups[n++]=a*invGroup_[c][g];
+                if(invGroup_[c][g]>0.f){
+                    const float r=a*invGroup_[c][g];auto& z=slowRatio_[c][g];
+                    z=initialized_?z+shapeAlpha_*(r-z):r;
+                    slowGroups[n]=z;groups[n++]=r;
+                }
                 if constexpr(Residual)instantGroups[g]=instant;
             }
             if(n>=4){
@@ -71,6 +83,14 @@ private:
                 const float shape=std::min(std::clamp((lower/std::max(middle,eps)-.65f)*5.f,0.f,1.f),
                     std::clamp((1.75f-upper/std::max(middle,eps))*2.f,0.f,1.f));
                 confidence_[c]=shape*std::clamp((lower-.30f)*3.f,0.f,1.f);
+                // A slower group-only history reduces random loss of shape
+                // confidence. It cannot override the per-bin onset veto or
+                // grant residual authority; the latter uses fast evidence.
+                std::sort(slowGroups.begin(),slowGroups.begin()+n);
+                const float sm=slowGroups[n/2],sl=slowGroups[n/4],su=slowGroups[(3*n)/4];
+                const float ss=std::min(std::clamp((sl/std::max(sm,eps)-.65f)*5.f,0.f,1.f),
+                    std::clamp((1.75f-su/std::max(sm,eps))*2.f,0.f,1.f));
+                confidence_[c]=std::max(confidence_[c],.85f*ss*std::clamp((sl-.30f)*3.f,0.f,1.f));
                 // Independent lower and upper frequency evidence, with no
                 // authority to modify the trusted learned PSD.
                 if constexpr(Residual){
@@ -118,16 +138,16 @@ public:
             const float onset=instant>5.f?std::min((instant-5.f)/8.f,1.f):0.f;
             g=std::max(g,1.f-confidence_[c]*(1.f-std::max(estimate,onset)));
         }
-        return std::max(floor,.20f+.80f*g);
+        return std::max(floor,.10f+.90f*g);
     }
 private:
     static constexpr float eps=1e-16f;
     Powers average_{},invBin_{};
-    std::array<std::array<float,(MaxBins+7)/8>,2> invGroup_{},groupRef_{};
+    std::array<std::array<float,(MaxBins+7)/8>,2> invGroup_{},groupRef_{},slowRatio_{};
     std::array<float,2> inverseScale_{},confidence_{},total_{},upperRef_{},lowTotal_{};
     std::array<std::array<float,(MaxBins+3)/4>,2> lowRef_{};
     int hold_=1,quiet_=0;
-    int channels_=0,bins_=0,first_=1,last_=2;float alpha_=1;
+    int channels_=0,bins_=0,first_=1,last_=2;float alpha_=1,shapeAlpha_=1;
     bool valid_=false,initialized_=false,engaged_=false;
 };
 }

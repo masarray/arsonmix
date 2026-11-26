@@ -98,16 +98,27 @@ jobs:
           ref: d72ed4bf9ead70b081ac30ddad850288bb36ffd1
           path: .anti-noiz-pre-fastpath
           persist-credentials: false
-      - name: Matched broadband cap and residual decision fingerprint
+      - name: Checkout exact qualified fast-path comparison target (GCC only)
+        if: matrix.benchmark == 'ON'
+        uses: actions/checkout@v4
+        with:
+          ref: 54af7eea34b264e03f123302051aaf5d2ebf61c8
+          path: .anti-noiz-fastpath-reference
+          persist-credentials: false
+      - name: Matched historical broadband cap and residual decision fingerprint
         if: matrix.benchmark == 'ON'
         run: |
           cp tests/anti_noiz_broadband_fastpath_test.cpp .anti-noiz-pre-fastpath/tests/
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror .anti-noiz-pre-fastpath/tests/anti_noiz_broadband_fastpath_test.cpp -o "$RUNNER_TEMP/cap-old"
-          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tests/anti_noiz_broadband_fastpath_test.cpp -o "$RUNNER_TEMP/cap-new"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror .anti-noiz-fastpath-reference/tests/anti_noiz_broadband_fastpath_test.cpp -o "$RUNNER_TEMP/cap-new"
           "$RUNNER_TEMP/cap-old" > "$RUNNER_TEMP/cap-old.txt"
           "$RUNNER_TEMP/cap-new" > "$RUNNER_TEMP/cap-new.txt"
           cat "$RUNNER_TEMP/cap-old.txt" "$RUNNER_TEMP/cap-new.txt"
           cmp "$RUNNER_TEMP/cap-old.txt" "$RUNNER_TEMP/cap-new.txt"
+          # The new spectral policy intentionally changes gains. Keep the
+          # original historical equality gate above and separately require
+          # exact fast-path equivalence against its own unconditional cap.
+          "$RUNNER_TEMP/anti-noiz/anti_noiz_broadband_fastpath_test"
       - name: Run all regression gates (wind remains hard failure)
         if: ${{ !cancelled() && steps.build_p0.outcome == 'success' }}
         run: ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure --verbose
