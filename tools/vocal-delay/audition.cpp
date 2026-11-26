@@ -83,19 +83,27 @@ static void writeWave(const fs::path& path,const Audio& a){
     for(std::size_t i=0;i<a.l.size();++i){write(a.l[i]);write(a.r[i]);}
     if(!out)throw std::runtime_error("cannot write output WAV");
 }
-static void render(const fs::path& dir,const Audio& dry,const std::string& name,const Parameters& p,std::ofstream& csv){
+static void render(const fs::path& dir,const Audio& dry,const std::string& name,const Parameters& p,std::ofstream& csv,bool synthetic){
     Audio a=dry;ContinuousDelayCore core;if(!core.prepare(a.rate,p))throw std::runtime_error("prepare failed");
     for(std::size_t i=0;i<a.l.size();){const auto n=std::min<std::size_t>(128,a.l.size()-i);
         core.processStereo(a.l.data()+i,a.r.data()+i,n);i+=n;}
-    double wet=0,side=0;float peak=0;std::size_t clips=0;
+    double wet=0,side=0,quiet=0,tail=0;std::size_t quietN=0,tailN=0;float peak=0;std::size_t clips=0;
     for(std::size_t i=0;i<a.l.size();++i){
         if(!std::isfinite(a.l[i])||!std::isfinite(a.r[i]))throw std::runtime_error("nonfinite render");
         const float l=a.l[i]-dry.l[i],r=a.r[i]-dry.r[i];
-        wet+=double(l)*l+double(r)*r;side+=double(l-r)*(l-r);
+        const double energy=double(l)*l+double(r)*r;
+        wet+=energy;side+=double(l-r)*(l-r);
+        if(synthetic){
+            if(i>=std::size_t(a.rate*1.7)&&i<std::size_t(a.rate*2.3)){quiet+=energy;++quietN;}
+            if(i>=std::size_t(a.rate*4.95)&&i<std::size_t(a.rate*5.65)){tail+=energy;++tailN;}
+        }
         peak=std::max({peak,std::abs(a.l[i]),std::abs(a.r[i])});
         if(std::abs(a.l[i])>1.000001f||std::abs(a.r[i])>1.000001f)++clips;
     }
-    csv<<name<<','<<peak<<','<<std::sqrt(wet/(2*a.l.size()))<<','<<std::sqrt(side/(4*a.l.size()))<<','<<clips<<'\n';
+    csv<<name<<','<<peak<<','<<std::sqrt(wet/(2*a.l.size()))<<','<<std::sqrt(side/(4*a.l.size()))<<','<<clips<<',';
+    if(synthetic)csv<<std::sqrt(quiet/(2*quietN))<<','<<std::sqrt(tail/(2*tailN));
+    else csv<<',';
+    csv<<'\n';
     writeWave(dir/(name+".wav"),a);
 }
 int main(int argc,char** argv){
@@ -105,16 +113,16 @@ int main(int argc,char** argv){
         Audio dry=argc==3?readWave(argv[2]):fixture();
         dry.l.resize(dry.l.size()+std::size_t(dry.rate)*3,0.f);dry.r.resize(dry.l.size(),0.f);
         writeWave(dir/"00 Dry reference.wav",dry);
-        std::ofstream csv(dir/"metrics.csv");csv<<std::fixed<<std::setprecision(7)<<"preset,output_peak,wet_rms,wet_side_rms,over_full_scale_frames\n";
-        render(dir,dry,"01 Classic Live Vocal",presetSettings(stagePresetCount),csv);
+        std::ofstream csv(dir/"metrics.csv");csv<<std::fixed<<std::setprecision(7)<<"preset,output_peak,wet_rms,wet_side_rms,over_full_scale_frames,fixture_quiet_wet_rms,fixture_tail_wet_rms\n";
+        render(dir,dry,"01 Classic Live Vocal",presetSettings(stagePresetCount),csv,argc==2);
         for(std::size_t i=0;i<stagePresetCount;++i){
             const auto prefix=std::to_string(i+2);
-            render(dir,dry,(prefix.size()==1?"0":"")+prefix+" "+singerPresets[i].name,presetSettings(i),csv);
+            render(dir,dry,(prefix.size()==1?"0":"")+prefix+" "+singerPresets[i].name,presetSettings(i),csv,argc==2);
         }
         if(!csv)throw std::runtime_error("cannot write metrics");
         std::ofstream notes(dir/"README.txt");
         notes<<(argc==3?"User supplied PCM16 dry voice.":"Synthetic harmonic excitation, NOT a human singer.")
-             <<"\nSame input, sample rate and dry gain; no output normalization. Stereo PCM16 export, three seconds of tail. Metrics measured in float before PCM16 quantization; over-full-scale samples may clip at export. No auto tempo: free-time fallback. Compare at safe monitoring volume.\n";
+             <<"\nSame input, sample rate and dry gain; no output normalization. Stereo PCM16 export, three seconds of tail. Metrics measured in float before PCM16 quantization; over-full-scale samples may clip at export. Fixture-only quiet/tail columns measure 1.7–2.3 s and 4.95–5.65 s; blank for supplied audio. No auto tempo: free-time fallback. Compare at safe monitoring volume.\n";
         if(!notes)throw std::runtime_error("cannot write notes");
         std::cout<<"VD9_AUDITION PASS: dry + classic + "<<stagePresetCount<<" stage renders, rate="<<dry.rate<<"\n";
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

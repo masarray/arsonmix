@@ -32,7 +32,14 @@ public:
             if(goal>.05f)hold_=stage?stageHold_:holdLength_;
             activity_=clean(activity_+(goal-activity_)*attack);
         }else if(hold_>0)--hold_;
-        else activity_=clean(activity_+(goal-activity_)*release);
+        else{
+            // Only a genuinely quiet gap may bloom faster. A partially
+            // voiced syllable retains its configured release, and the hold
+            // still protects breaths. Doubling a small one-pole coefficient
+            // approximately halves its time constant without another filter.
+            const float gapRelease=stage&&fast_<=lower?std::min(1.f,2.f*release):release;
+            activity_=clean(activity_+(goal-activity_)*gapRelease);
+        }
         return activity_;
     }
 private:

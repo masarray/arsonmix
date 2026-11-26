@@ -177,7 +177,7 @@ public:
             if(stageFocus>0.f)sustain_=tiny(sustain_+(activity-sustain_)*(activity>sustain_?sustainAttack_:sustainRelease_));
             else sustain_=0.f;
             const float budget=stageFocus*depth_*sustain_;
-            const float send=feed*(1.f-.62f*budget);
+            const float send=feed*(1.f-.45f*budget); // retain more phrase-end energy
             const float regen=feedback_*(1.f-.45f*budget);
             left_.push(bounded(inL*send+regen*fL,8.f));
             right_.push(bounded(inR*send+regen*fR,8.f));
