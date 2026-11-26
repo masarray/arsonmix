@@ -1727,7 +1727,9 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   // Reordering /preview/ strips must NOT change the real hardware lane.
   assert.match(bridge,/const channel=m4Index\(t\)/);
   assert.match(bridge,/const m4TrackIds=Array\.isArray\(scope\?\.tracks\)/);
-  assert.match(bridge,/const savedId = uiByNativeId\.get\(ch\.id\) \?\? m4Id/);
+  assert.match(bridge,/const heldId=uiByNativeId\.get\(ch\.id\)/);
+  assert.match(bridge,/!reserved\.has\(m4Id\)&&!nextNativeByUi\.has\(m4Id\)/);
+  assert.match(bridge,/if\(nextNativeByUi\.has\(t\.id\)\)return false/);
   assert.match(bridge,/action:"routingSourceSwitch"/);
   assert.match(read("web/approved-channel-strip-view-model.js"),
     /row\?\.left===pending\.choice\.left/);
@@ -3571,7 +3573,9 @@ test("M3/V60 Windows bundle dispatches exactly one fader release through native 
    "Both visual surfaces must use one Pages taper, not another native renderer");
  assert.ok(builder.includes("function fxNativeTransactionRequired"));
  assert.ok(builder.includes("__ARMIX_NATIVE_SCOPE__"));
- assert.ok(bridge.includes("scope.installGraph(nextTracks,nextMaster,edges)"));
+ assert.ok(bridge.includes("scope.installGraph(nextTracks.map(commitTrack),commitTrack(nextMaster),edges)"));
+ assert.ok(bridge.indexOf("validateCandidateGraph(nextTracks,nextMaster.id,edges)")<bridge.indexOf("const commitTrack="),
+   "validate the complete graph before mutating the previously installed strip models");
  assert.ok(bridge.includes("scope?.findTrack?.(el)"));
  assert.ok(!bridge.includes('window.addEventListener("pointerup"'));
 });

@@ -2665,6 +2665,43 @@ int main(){
     assert(!roundTrip.resumeMain.has_value());
     assert(roundTrip.request.sources.size()==d.request.sources.size());
     assert(readback.size()==1&&readback[0].bytes==binary.bytes);
+    // P0-A: a real .smix file containing non-default controls on different
+    // channel banks, MASTER, and existing FX/WIRE state. The codec is not
+    // permitted to restore every control at the minimum or unity.
+    {
+        auto varied=d;
+        auto rows=varied.roster.channels();
+        for(std::size_t i=0;i<rows.size();++i){
+            if(rows[i].role!=ChannelRole::input)continue;
+            rows[i].faderLinear=.08f+.07f*static_cast<float>(i);
+            rows[i].pan=(i%2==0)?-.35f:.6f;
+            rows[i].mute=i%3==0;rows[i].solo=i==8;
+        }
+        assert(varied.roster.restoreExact(varied.acceptedRevision,rows));
+        varied.masterGain=.43f;varied.masterMute=false;
+        const auto project=studio.getChildFile("RestoreControls.smix");
+        assert(NativeMixerSessionStore::writeFile(project,varied,{binary}).isEmpty());
+        MixerSessionDocument reopened;
+        std::vector<BinaryState> restoredStates;
+        assert(NativeMixerSessionStore::readFile(project,reopened,restoredStates).isEmpty());
+        assert(std::abs(reopened.masterGain-varied.masterGain)<1.e-6f);
+        assert(reopened.masterMute==varied.masterMute);
+        for(const auto& row:rows){
+            const auto* actual=reopened.roster.find(row.id);
+            assert(actual);
+            assert(std::abs(actual->faderLinear-row.faderLinear)<1.e-6f);
+            assert(std::abs(actual->pan-row.pan)<1.e-6f);
+            assert(actual->mute==row.mute&&actual->solo==row.solo);
+            assert(actual->insertCatalogIds==row.insertCatalogIds);
+            assert(actual->sends.size()==row.sends.size());
+        }
+        assert(restoredStates.size()==1&&restoredStates[0].bytes==binary.bytes);
+        const auto prior=Codec::encode(reopened);
+        assert(project.replaceWithText("{broken"));
+        assert(NativeMixerSessionStore::readFile(project,reopened,restoredStates).isNotEmpty());
+        assert(Codec::encode(reopened)==prior);
+        assert(restoredStates.size()==1&&restoredStates[0].bytes==binary.bytes);
+    }
     auto tampered=juce::JSON::parse(portable.loadFileAsString());
     tampered.getProperty("pluginState",{}).getDynamicObject()->setProperty(binary.sha256,"AAAA");
     assert(portable.replaceWithText(juce::JSON::toString(tampered)));

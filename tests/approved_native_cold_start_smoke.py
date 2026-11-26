@@ -54,6 +54,10 @@ def verify_workspace_restore(browser, out):
     g['destinations']=[{k:row[k] for k in ('id','role','name')} for row in g['channels']]
     state['mixerSession'].update(channels=copy.deepcopy(g['channels']),main={'db':-60,'mute':False})
     emit(page,'arMixConsoleSnapshot',state)
+    bank=page.locator('#bankSelect')
+    assert bank.locator('option').count()>1
+    previous_bank=str(bank.locator('option').count()-1)
+    bank.select_option(previous_bank)
     restored=copy.deepcopy(state)
     restored['workspaceGeneration']='2'
     expected={}
@@ -66,6 +70,7 @@ def verify_workspace_restore(browser, out):
     restored['mixerSession'].update(channels=copy.deepcopy(restored['graph']['channels']),
         main={'db':expected['MAIN'],'mute':True if 12%3==0 else False})
     emit(page,'arMixConsoleSnapshot',restored)
+    assert bank.input_value()==previous_bank, 'Open unexpectedly reset active bank'
     def check_all():
         seen=set()
         bank=page.locator('#bankSelect')
@@ -90,6 +95,8 @@ def verify_workspace_restore(browser, out):
                 seen.add(name)
         assert seen==set(expected), seen
     check_all()
+    emit(page,'arMixNativeSessionAck',{'operation':'OPEN','ok':False,'error':'Invalid test .smix'})
+    check_all()  # failed file open retains current accepted project
     # Repeated Open with identical native values and an intentionally stale
     # mounted cap/range must repair DOM without a synthetic audio command.
     page.locator('#tracks .fader').first.evaluate("(el)=>{el.value=-60;el.closest('.fader-box').style.setProperty('--fader-y','100%');}")
