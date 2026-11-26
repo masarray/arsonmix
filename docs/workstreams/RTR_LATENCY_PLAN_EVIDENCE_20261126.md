@@ -5,3 +5,5 @@ A source-only or otherwise potential direct-output lane can contribute to the cu
 No audio callback code, delay allocation policy, route, auto-bypass, buffer, or approved GUI changes. This is the read-only first slice of RTR-4, not automatic low-latency mode. Next: explicitly authorized topology planning and safe transitions; actual vendor/ASIO qualification still required.
 
 Regression extends the existing exact PDC impulse + heap guard test to PRE/POST, source-only 19-sample lane vs 10-sample MAIN and zero-sample MONITOR, stale epoch/revision and rejected candidate preservation. Test execution pending exact CI. No canonical RC or release mutation.
+
+The existing cheap Logical Mixer C++20 workflow now explicitly compiles and executes this PDC test (including test-only changes in its path filter), so a skipped Windows job cannot be confused with its result. Export the read-only planner keys through the existing compact health snapshot as well; #930's Main.cpp editor/session hunks do not overlap this key list. No new build workflow or FAT dispatch.
