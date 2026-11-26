@@ -202,6 +202,9 @@ jobs:
           # fast runner so a stale device-persistence assertion cannot waste
           # a complete JUCE/MSVC job again.
           node --test tests/direct_restore_recovery_contract_test.mjs
+          # RTR contracts also run on Windows; catch stale source anchors
+          # before spending a JUCE/Windows runner on an integrated candidate.
+          node --test tests/main_v08_native_integration_test.mjs tests/p0_diagnostic_contract_test.mjs tests/smart_audio_diagnostic_contract_test.mjs
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/audio_continuity_policy_test.cpp -o "$RUNNER_TEMP/armix-audio-continuity"
           "$RUNNER_TEMP/armix-audio-continuity"
           # SonKu has >192 KiB acoustic rings per DSP instance. Prove the

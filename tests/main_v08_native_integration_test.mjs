@@ -84,7 +84,21 @@ test('native LUFS/true peak are shown only with qualified live measurement prove
  assert.match(app,/updateMasterAnalysisPreview\(-31\+/); // preview remains demo-only
  assert.match(bridge,/MEASURED_48K_BS1770_K_4X_FIR/);
  assert.match(bridge,/element\.classList\.toggle\("over-limit",measured&&value>limit\)/);
- assert.match(src,/masterLoudness_\.process\(measured,juce::jmin\(outputChannels,2\),samples\)/);
+ // The former synchronous DSP is now analysis-only: exact render PCM is
+ // published to a bounded queue and the unchanged meter runs on its worker.
+ assert.match(src,/NativeMasterAnalysisTap masterLoudness_/);
+ assert.match(src,/const float\* measured\[2\] = \{nativeMain\[0\],nativeMain\[1\]\};\s*if\(!independent_\.active\(\)\)masterLoudness_\.publish\(measured,2,samples\)/);
+ assert.match(src,/masterLoudness_\.publish\(measured,juce::jmin\(outputChannels,2\),samples\)/);
+ assert.doesNotMatch(src,/masterLoudness_\.process\(/);
+ const tap=read('engine/dsp/NativeMasterAnalysisTap.h');
+ const producer=tap.slice(tap.indexOf('void publish('),tap.indexOf('Reading read() const'));
+ assert.match(producer,/queue_->push\(gen,pcm,count,n\)/);
+ assert.match(producer,/gapGeneration_\.store\(gen,std::memory_order_release\)/);
+ assert.doesNotMatch(producer,/meter\.process|lock_guard|sleep_for|new |make_unique/);
+ const worker=tap.slice(tap.indexOf('void run() noexcept'));
+ assert.match(worker,/meter\.process\(pcm,b\.channels,b\.frames\)/);
+ assert.match(tap,/State::gap/);
+ assert.match(tap,/State::stale/);
  assert.match(src,/masterLoudness_\.prepare \(sampleRateHz_\)/);
  assert.match(src,/masterLoudness_\.prepare \(0\.0\)/);
  assert.match(src,/masterAnalysisProvenance/);

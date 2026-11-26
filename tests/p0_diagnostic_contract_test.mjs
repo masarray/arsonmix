@@ -28,8 +28,12 @@ test('audio callback isolates low-amplitude oscillator from input and VST3',()=>
   assert.match(engine,/diagnosticTone_\.next \(audible\)/);
   assert.match(engine,/if \(!toneTest\)/);
   const start=engine.indexOf('// The only remaining stereo renderer is DIAGNOSTIC');
-  const end=engine.indexOf('const auto elapsedUs = clockMicros() - beginUs',start);
+  // Timing is centralized after output publication; the diagnostic body
+  // still ends before the shared timing helper and cannot run VST DSP.
+  const end=engine.indexOf('recordRenderTiming(beginUs,periodUs);',start);
+  assert.match(engine,/NativeRenderAuthority::select\(\s*activeDiagnosticRoute==armix::diagnostics::Route::normal,\s*dryRoutingLab_\.active\(\)\)/);
   assert.ok(start>0&&end>start,'isolated diagnostics must have an explicit owner');
+  assert.match(engine.slice(start,end),/NativeRenderAuthority::mayRunDiagnostic\(\s*renderOwner\)/);
   assert.doesNotMatch(engine.slice(start,end),
     /processor->processBlock|MidiBuffer midi/,
     'test tone and capture-only must never enter a legacy VST processor');

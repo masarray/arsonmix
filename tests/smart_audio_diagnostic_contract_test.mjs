@@ -402,7 +402,11 @@ test('INT-1B rejects missed/unknown data rather than counting missing as zero',(
 });
 
 test("P11 render timing covers final output publication and flags incomplete sampling",()=>{
-  assert.match(engine,/publishDriverBufferPeaks\(wroteMain\?audibleLeft:0\.f,wroteMain\?audibleRight:0\.f\);\s*recordRenderTiming\(beginUs,periodUs\);\s*return;/);
+  assert.match(engine,/publishDriverBufferPeaks\(wroteMain\?audibleLeft:0\.f,wroteMain\?audibleRight:0\.f\);\s*const auto pressureRevision=nativePcm&&wroteMain&&!cycle\.fadeIn&&!cycle\.fadeOut&&\s*routedFxMove==0&&!probePermit\?dryRoutingLab_\.renderedNativeRevision\(\):0;\s*recordRenderTiming\(beginUs,periodUs,outputLease\.epoch,pressureRevision\);\s*return;/);
+  // Diagnostics retain lifetime histogram coverage but cannot extend an
+  // armed-native pressure segment (default zero epoch/revision).
+  assert.match(engine,/void recordRenderTiming\(std::uint64_t beginUs,double periodUs,\s*std::uint64_t epoch=0,std::uint64_t revision=0\) noexcept/);
+  assert.match(engine,/const auto endUs=clockMicros\(\);\s*if\(endUs<beginUs\)\{renderPressure_\.breakSequence\(\);cadence_\.breakSequence\(\);return;\}\s*const auto elapsedUs = endUs - beginUs;\s*renderPressure_\.finish\(epoch,revision,beginUs,elapsedUs,periodUs\)/);
   assert.equal((engine.match(/realtimeHistogram_\.observe \(elapsedUs, periodUs\)/g)||[]).length,1);
   assert.match(host,/"callbackTimingScope"/);
   const v2=(second,props={},partial=false)=>{
