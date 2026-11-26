@@ -118,10 +118,12 @@ test("approved FAT Windows run fulfills the native CTest lane without duplicate 
   const fast=automatic(10,"p1-windows.yml");
   const fat=dispatched(13,"p1-windows.yml");
   fat.display_title="ArSonMix FAT PR"+number+" "+sha;
-  const selected=findRuns([fast,fat],number,sha);
+  const security=automatic(14,"security-regression.yml");
+  const selected=findRuns([fast,fat,security],number,sha);
   assert.equal(selected.fullWin.id,13);
   assert.equal(evaluate(lanes,selected,
-    {10:[job(names.native)],13:[job(names.windows)]}).state,"success");
+    {10:[job(names.native)],13:[job(names.windows)],
+     14:[job("Security regression / native ASan UBSan fuzz and release contracts")]}).state,"success");
 });
 test("GUI bridge requires both fast native and full Chromium, not Windows CTest",()=>{
   const lanes=requiredLanes(["web/approved-native-bridge.js"]);
