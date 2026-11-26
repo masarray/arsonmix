@@ -1,0 +1,20 @@
+# Review routing only: this is not a new mandatory approval gate.
+# The solo maintainer cannot approve their own PR; preserve existing CI rules.
+# Restrict ownership to high-trust boundaries rather than every FX change.
+/.github/ @masarray
+/LICENSE @masarray
+/LICENSE-NOTICE.txt @masarray
+/COPYRIGHT.md @masarray
+/TRADEMARK.md @masarray
+/SECURITY.md @masarray
+/docs/security/ @masarray
+/installer/ @masarray
+/scripts/release_ci_dispatch.mjs @masarray
+/scripts/chat_ci_dispatch.mjs @masarray
+/scripts/required_pr_merge_gate.mjs @masarray
+/scripts/repository_security_audit.mjs @masarray
+/tests/repository_security_audit.test.mjs @masarray
+/config/factoryfx-approved-releases.json @masarray
+/config/vbcable-official-package.json @masarray
+/scripts/package_native_* @masarray
+/scripts/verify_*artifact* @masarray

@@ -60,7 +60,10 @@ int main(){
         CHECK(editor->findChildWithID("vd.algorithm")->isVisible());capture("vocal-delay-expert.png");
         expert->onClick();CHECK(!duck->isVisible()&&smart->isVisible());
         CHECK(sameParameters(before,p.singerDisplay())&&!p.singerPending()&&p.acceptedSnapshot().revision==rev);
-        preset->setSelectedId(4,juce::sendNotificationSync);CHECK(p.singerDisplay().adaptiveFocus&&p.singerDisplay().spillover);
+        preset->setSelectedId(4,juce::sendNotificationSync);CHECK(p.singerDisplay().adaptiveFocus&&p.singerDisplay().spillover&&p.singerDisplay().smartStage);
+        auto* stageView=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stageView"));CHECK(stageView);
+        stageView->onClick();CHECK(editor->findChildWithID("vd.stage.0")->isVisible()&&!time->isVisible());capture("vocal-delay-stage.png");
+        stageView->onClick();CHECK(time->isVisible());
         bpm->setValue(100,juce::sendNotificationSync);CHECK(p.singerDisplay().bpmQuarter==400&&p.singerDisplay().timeMs==600);
         const auto base=p.singerDisplay();hit->onClick();CHECK(p.singerDisplay().hit&&p.singerDisplay().echo==base.echo);
         hit->onClick();CHECK(sameParameters(base,p.singerDisplay()));
@@ -97,6 +100,15 @@ int main(){
         auto* singer=dynamic_cast<SingerEditor*>(editor.get());CHECK(singer);
         auto* echo=dynamic_cast<juce::Slider*>(editor->findChildWithID("vd.echo"));CHECK(echo);
         bool access=true;singer->bindHostAccess([&]{return access;});
+        auto* liveButton=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stage.0"));
+        auto* ballad=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stage.2"));
+        auto* stageToggle=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stageView"));
+        auto* stagePower=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.power"));
+        CHECK(liveButton&&ballad&&stageToggle&&stagePower&&liveButton->isVisible()&&!echo->isVisible());
+        stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);
+        ballad->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(2))&&!hosted.singerPending());
+        liveButton->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(0)));
+        stageToggle->onClick();CHECK(echo->isVisible()&&!liveButton->isVisible());
         echo->setValue(27,juce::sendNotificationSync);
         CHECK(!hosted.singerPending()&&std::abs(hosted.acceptedSnapshot().accepted.echo-.27f)<1.e-6f);
         auto* preset=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.preset"));CHECK(preset);
@@ -127,6 +139,15 @@ int main(){
         auto bypass=SingerEditor::HostBypass::global;
         singer->bindHostBypass([&]{return bypass;});CHECK(!hit->isEnabled());
         bypass=SingerEditor::HostBypass::none;singer->refresh();CHECK(hit->isEnabled());
+        CHECK(live.musicFollowing());
+        auto* division=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.division"));CHECK(division);
+        division->setSelectedId(2,juce::sendNotificationSync);CHECK(!live.musicFollowing());
+        CHECK(live.singerDisplay().bpmQuarter==480&&live.singerDisplay().timeMs==250);
+        // Stage recall re-arms the policy after a deliberate manual override.
+        auto* stage=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stage.0"));CHECK(stage);
+        stage->onClick();CHECK(live.musicFollowing()&&live.singerDisplay().timeMs==300);
+        live.serviceSingerControl();pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();
+        CHECK(live.stateSnapshotQuiescent()&&live.acceptedSnapshot().accepted.timeMs==300);
         CHECK(live.setMusicFollow(true));MusicObservation o{7,1,2,100,120,.8f,true};
         live.publishMusicObservation(o,9,0);o.frame=200;live.publishMusicObservation(o,9,500);
         CHECK(live.singerPending());pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();

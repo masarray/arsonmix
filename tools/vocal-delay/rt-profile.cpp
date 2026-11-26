@@ -10,8 +10,8 @@
 using namespace armix::builtin_fx::vocal_delay;
 int main(){
     using Clock=std::chrono::steady_clock;
-    for(double rate:{44100.,48000.,96000.})for(std::size_t frames:{64u,128u})for(std::size_t count:{1u,10u}){
-        Parameters p{};p.feedback=.65f;p.echo=.28f;p.style=EchoStyle::multitap;p.adaptiveFocus=true;
+    for(bool stage:{false,true})for(double rate:{44100.,48000.,96000.})for(std::size_t frames:{64u,128u})for(std::size_t count:{1u,10u}){
+        Parameters p{};p.feedback=.65f;p.echo=.28f;p.style=EchoStyle::multitap;p.adaptiveFocus=true;p.smartStage=stage;p.duck=.92f;p.mode=StereoMode::pingPong;
         std::array<std::unique_ptr<ContinuousDelayCore>,10> cores{};
         for(std::size_t k=0;k<count;++k){cores[k]=std::make_unique<ContinuousDelayCore>();if(!cores[k]->prepare(rate,p))return 1;}
         std::array<std::array<float,128>,10> l{},r{};std::vector<double> us;us.reserve(8000);
@@ -24,6 +24,6 @@ int main(){
             for(std::size_t k=0;k<count;++k)for(std::size_t i=0;i<frames;++i){if(!std::isfinite(l[k][i])||!std::isfinite(r[k][i]))return 3;peak=std::max(peak,std::abs(l[k][i]));}
         }
         std::sort(us.begin(),us.end());const auto p99=us[us.size()*99/100];
-        std::printf("VD4D_PROFILE instances=%zu rate=%.0f frames=%zu p50_us=%.3f p99_us=%.3f deadline_pct=%.3f peak=%.4f ring_bytes=%zu\n",count,rate,frames,us[us.size()/2],p99,p99/(double(frames)/rate*1e6)*100,peak,cores[0]->ringBytes()*count);
+        std::printf("VD7_PROFILE stage=%d instances=%zu rate=%.0f frames=%zu p50_us=%.3f p99_us=%.3f deadline_pct=%.3f peak=%.4f ring_bytes=%zu\n",int(stage),count,rate,frames,us[us.size()/2],p99,p99/(double(frames)/rate*1e6)*100,peak,cores[0]->ringBytes()*count);
     }
 }

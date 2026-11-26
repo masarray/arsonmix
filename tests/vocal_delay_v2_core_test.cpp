@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/builtin_fx/vocal_delay/ContinuousDelayCore.h"
+#include "../engine/builtin_fx/vocal_delay/SingerWorkflow.h"
 #include "../engine/builtin_fx/VocalThrow.h"
 #include <array>
 #include <atomic>
@@ -105,6 +106,99 @@ static void invalidAndDucking(){
     std::array<float,4> bad{{NAN,INFINITY,-INFINITY,0}},badR=bad;
     process(c,bad.data(),badR.data(),bad.size());for(float x:bad)CHECK(std::isfinite(x));
 }
+static void stagePingPong(double rate){
+    auto p=transparent();p.smartStage=true;p.mode=StereoMode::pingPong;
+    ContinuousDelayCore c;CHECK(c.prepare(rate,p));
+    const auto d=std::size_t(rate*.1);std::vector<float> l(d*5+1),r(l);
+    l[0]=r[0]=.8f;process(c,l.data(),r.data(),l.size());
+    CHECK(l[0]==.8f&&r[0]==.8f);
+    for(std::size_t k=1;k<=5;++k){
+        const float v=.4f*std::pow(.5f,int(k-1));
+        CHECK(near(l[k*d],k%2?v:0)&&near(r[k*d],k%2?0:v));
+    }
+    // A true mono output fold must stay positive, never cancel.
+    CHECK(c.prepare(rate,p));l.assign(d*3+1,0.f);l[0]=.8f;
+    process(c,l.data(),l.data(),l.size());
+    CHECK(near(l[d],.2f)&&near(l[2*d],.1f));
+}
+static void stagePhrase(double rate){
+    auto p=transparent();p.duck=.95f;p.adaptiveFocus=true;p.duckAttackMs=5;p.duckReleaseMs=110;
+    ContinuousDelayCore prior,stage;CHECK(prior.prepare(rate,p));p.smartStage=true;CHECK(stage.prepare(rate,p));
+    const auto n=std::size_t(rate*2.),end=std::size_t(rate*1.2),gap=std::size_t(rate*.04);
+    std::vector<float> l(n),r(n),a(n),b(n),dry(n);
+    for(std::size_t i=0;i<end;++i){
+        if(i>=std::size_t(rate*.8)&&i<std::size_t(rate*.8)+gap)continue;
+        dry[i]=.2f*std::sin(float(i)*.071f);
+    }
+    l=r=a=b=dry;
+    for(std::size_t i=0;i<n;){const auto k=std::min<std::size_t>(127,n-i);
+        process(prior,l.data()+i,r.data()+i,k);process(stage,a.data()+i,b.data()+i,k);i+=k;}
+    double oldWet=0,newWet=0,shortGap=0,tail=0;
+    for(std::size_t i=std::size_t(rate*.5);i<n;++i){
+        CHECK(std::isfinite(a[i])&&std::isfinite(b[i]));
+        if(i<end){oldWet+=std::abs(l[i]-dry[i]);newWet+=std::abs(a[i]-dry[i]);}
+        if(i>=std::size_t(rate*.8)&&i<std::size_t(rate*.8)+gap)shortGap+=std::abs(a[i]);
+        if(i>=end&&i<end+std::size_t(rate*.3))tail+=std::abs(a[i]);
+    }
+    CHECK(newWet<oldWet*.75&&tail>0.001&&shortGap<tail);
+    std::printf("VD7_PHRASE rate=%.0f active_wet_ratio=%.4f tail_sum=%.5f\n",rate,newWet/oldWet,tail);
+    p.echo=0;CHECK(stage.prepare(rate,p));a=b=dry;process(stage,a.data(),b.data(),n);CHECK(a==dry&&b==dry);
+}
+static void stageBank(){
+    for(double rate:{44100.,48000.,96000.})for(std::size_t preset=0;preset<stagePresetCount;++preset){
+        auto p=presetSettings(preset);ContinuousDelayCore a,b;
+        CHECK(a.prepare(rate,p)&&b.prepare(rate,p));
+        const auto n=std::size_t(rate*1.5),end=std::size_t(rate*.8);
+        std::vector<float> l(n),r(n),x(n),y(n),dry(n);
+        for(std::size_t i=0;i<end;++i){
+            const auto amp=i<end/2?.025f:.3f;
+            const auto phase=6.283185307179586*180.*double(i)/rate;
+            dry[i]=amp*float(std::sin(phase)+.2*std::sin(phase*3.));
+        }
+        l=r=x=y=dry;
+        for(std::size_t i=0;i<n;){const auto k=std::min<std::size_t>(64,n-i);process(a,l.data()+i,r.data()+i,k);i+=k;}
+        for(std::size_t i=0;i<n;){const auto k=std::min<std::size_t>(251,n-i);process(b,x.data()+i,y.data()+i,k);i+=k;}
+        double wet=0,side=0;
+        for(std::size_t i=0;i<n;++i){
+            CHECK(l[i]==x[i]&&r[i]==y[i]&&std::isfinite(l[i])&&std::isfinite(r[i]));
+            CHECK(std::abs(l[i])<1.f&&std::abs(r[i])<1.f);
+            wet+=std::abs(l[i]-dry[i])+std::abs(r[i]-dry[i]);side+=std::abs(l[i]-r[i]);
+        }
+        CHECK(wet>.001);
+        if(p.mode!=StereoMode::mono)CHECK(side>.001);
+        else CHECK(side==0.);
+        p.echo=0;CHECK(a.prepare(rate,p));l=r=dry;process(a,l.data(),r.data(),n);CHECK(l==dry&&r==dry);
+    }
+    std::puts("PASS VD7 36 stage preset/rate cases: weak/loud, stereo, finite headroom, dry identity, block partitions and no heap");
+}
+static void stageHeadroomAndTransitions(){
+    constexpr double rate=48000.;auto p=transparent();p.smartStage=true;p.timeMs=20;p.echo=1;p.feedback=.8f;
+    ContinuousDelayCore a,b;CHECK(a.prepare(rate,p)&&b.prepare(rate,p));
+    constexpr std::size_t n=48000;
+    std::vector<float> l(n,.96f),r(n,.92f),x(l),y(r);
+    process(a,l.data(),r.data(),n);
+    for(std::size_t i=0;i<n;){auto k=std::min<std::size_t>(64,n-i);process(b,x.data()+i,y.data()+i,k);i+=k;}
+    for(std::size_t i=0;i<n;++i){CHECK(l[i]==x[i]&&r[i]==y[i]);CHECK(l[i]>=.96f&&l[i]<=1.000001f&&r[i]>=.92f&&r[i]<=1.000001f);}
+    CHECK(l.back()>.96f&&r.back()>.92f);
+    // Negative and already-over-full-scale dry are never attenuated.
+    CHECK(a.prepare(rate,p));l.assign(n,-1.2f);r=l;process(a,l.data(),r.data(),n);
+    for(float v:l)CHECK(v>=-1.200001f&&v<=-1.2f);
+    // Repeated live edits across all stage presets, different block partitions.
+    p=presetSettings(0);CHECK(a.prepare(rate,p)&&b.prepare(rate,p));
+    constexpr std::size_t segment=2400;
+    for(std::size_t z=0;z<72;++z){
+        p=presetSettings(z%stagePresetCount);edit(a,p,rate);edit(b,p,rate);
+        l.resize(segment);r.resize(segment);x.resize(segment);y.resize(segment);
+        for(std::size_t i=0;i<segment;++i)l[i]=r[i]=x[i]=y[i]=.72f*std::sin(float(z*segment+i)*.04f);
+        process(a,l.data(),r.data(),segment);
+        for(std::size_t i=0;i<segment;){const auto k=std::min<std::size_t>(97,segment-i);process(b,x.data()+i,y.data()+i,k);i+=k;}
+        for(std::size_t i=0;i<segment;++i)CHECK(l[i]==x[i]&&r[i]==y[i]&&std::abs(l[i])<=1.000001f&&std::abs(r[i])<=1.000001f);
+    }
+    p.enabled=false;p.spillover=false;edit(a,p,rate);l.assign(n,0);r=l;process(a,l.data(),r.data(),n);
+    l.assign(n,.4f);r.assign(n,-.3f);l[1]=NAN;r[2]=INFINITY;process(a,l.data(),r.data(),n);
+    CHECK(l[1]==0.f&&r[2]==0.f&&l.back()==.4f&&r.back()==-.3f&&a.meter().wetPeak==0.f);
+    std::puts("PASS VD8 linked wet headroom, hot dry preservation, 72 preset transitions, partition invariance, off fast path");
+}
 int main(){
     CHECK(ContinuousDelayCore::addedLatencySamples==0);
     for(double rate:{8000.,44100.,48000.,96000.,192000.}){
@@ -112,10 +206,11 @@ int main(){
         impulse(rate,StereoMode::stereo,0,100);
         impulse(rate,StereoMode::mono,.5f,100);
         impulse(rate,StereoMode::pingPong,.5f,100);
+        stagePingPong(rate);stagePhrase(rate);
         continuousVsLegacy(rate);
     }
     impulse(8000,StereoMode::stereo,.5f,4000);
-    fractionalAndWrap();blocksAndEdits();bypassAndReset();invalidAndDucking();
+    stageBank();stageHeadroomAndTransitions();fractionalAndWrap();blocksAndEdits();bypassAndReset();invalidAndDucking();
     ContinuousDelayCore c;CHECK(c.prepare(192000));CHECK(c.ringBytes()==(768000+2)*2*sizeof(float));
     std::puts("PASS Vocal Delay V2 continuous PCM, legacy contrast, timing, stereo, no-heap, bypass, block invariance");
 }

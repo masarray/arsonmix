@@ -54,7 +54,11 @@ public:
         if(!next_.valid())return;
         setRateAndBufferSizeDetails(rate,frames);
         active_=prepared_?session_.restartStopped(rate,next_):session_.prepareStopped(rate,next_,initial_);
-        if(active_)prepared_=true;
+        if(active_){prepared_=true;
+            if(published_&&localMailbox_){const auto p=singerDisplay();
+                if(p.smartStage&&!p.bpmQuarter&&p.timeMs>=140.f)follow_.enable(true,p.timeMs);
+            }
+        }
         next_={};
     }
     // Host retires/stops PCM before release. Discard unconsumed UI intent;
@@ -71,7 +75,13 @@ public:
     void onRealtimeBypass(bool requested,bool fully) noexcept override{
         if(active_)session_.onRealtimeBypass(requested,fully);
     }
-    void sealForRealtime() noexcept override{published_=true;}
+    void sealForRealtime() noexcept override{
+        const bool first=!published_;published_=true;
+        // Only new/unlocked stage sounds auto-follow an already routed shared clock.
+        if(first&&active_&&localMailbox_){const auto p=singerDisplay();
+            if(p.smartStage&&!p.bpmQuarter&&p.timeMs>=140.f)follow_.enable(true,p.timeMs);
+        }
+    }
     bool stateSnapshotQuiescent() const noexcept override{return active_&&session_.quiescent()&&!singer_.pending()&&!singer_.fault();}
     Submit submit(const Edit& edit) noexcept{
         if(localMailbox_)return Submit::invalid;
@@ -95,6 +105,11 @@ public:
     bool setMusicFollow(bool enabled) noexcept{
         if(!active_||!published_||!localMailbox_||!editorOpen_||singer_.fault())return false;
         follow_.enable(enabled);return true;
+    }
+    bool armStageTempo(const Parameters& p) noexcept{
+        if(!active_||!published_||!localMailbox_||!editorOpen_||singer_.fault())return false;
+        const bool use=p.smartStage&&p.timeMs>=140.f&&!p.bpmQuarter;
+        follow_.enable(use,use?p.timeMs:0.f);return use;
     }
     bool musicFollowing() const noexcept{return follow_.enabled();}
     MusicFollow::Status musicStatus() const noexcept{return follow_.status();}

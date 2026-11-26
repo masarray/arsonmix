@@ -33,10 +33,10 @@ public:
         }else if(s.kind==State::Kind::continuous){
             const auto& p=s.continuous;if(!valid(p))return false;
             const bool v5=p.spillover||p.bpmQuarter!=0;
-            u(v5?5u:(p.adaptiveFocus?4u:(p.style==EchoStyle::classic?2u:3u)));f(p.timeMs);f(p.feedback);f(p.echo);f(p.highPassHz);f(p.lowPassHz);
+            u(p.smartStage?6u:v5?5u:(p.adaptiveFocus?4u:(p.style==EchoStyle::classic?2u:3u)));f(p.timeMs);f(p.feedback);f(p.echo);f(p.highPassHz);f(p.lowPassHz);
             f(p.duck);f(p.duckAttackMs);f(p.duckReleaseMs);
             const std::uint32_t flags=(p.adaptiveFocus?1u:0u)|(p.spillover?2u:0u)|
-                (p.bpmQuarter?(std::uint32_t(p.division)<<2)|(std::uint32_t(p.bpmQuarter)<<5):0u);
+                (p.bpmQuarter?(std::uint32_t(p.division)<<2)|(std::uint32_t(p.bpmQuarter)<<5):0u)|(p.smartStage?0x8000u:0u);
             // Runtime HIT is intentionally not serialized; save base knobs.
             u(std::uint32_t(p.mode)|(std::uint32_t(p.style)<<8)|(flags<<16));u(p.enabled?1u:0u);
         }else return false;
@@ -59,17 +59,20 @@ public:
             p.captureMs=f();p.silenceMs=f();p.thresholdDb=f();
             p.wet=f();p.decay=f();p.ducking=f();
             if(!VocalThrow::validSettings(p))return false;
-        }else if(version==2||version==3||version==4||version==5){
+        }else if(version==2||version==3||version==4||version==5||version==6){
             auto& p=s.continuous;
             p.timeMs=f();p.feedback=f();p.echo=f();p.highPassHz=f();p.lowPassHz=f();
             p.duck=f();p.duckAttackMs=f();p.duckReleaseMs=f();
-            const auto word=u(),enabled=u();const auto mode=word&255u,style=(word>>8)&255u,flags=word>>16;
+            const auto word=u(),enabled=u();const auto mode=word&255u,style=(word>>8)&255u,rawFlags=word>>16;
+            const auto flags=rawFlags&0x7fffu;
+            if((version==6)!=bool(rawFlags&0x8000u))return false;
             if(mode>2||enabled>1||style>4||(version==2&&(style!=0||flags!=0))||
                (version==3&&(style<1||flags!=0))||(version==4&&flags!=1)||
-               (version==5&&((flags&0x8000u)||(!(flags&2u)&&!(flags>>5))||(!(flags>>5)&&(flags&28u)))))return false;
+               (version==5&&(!(flags&2u)&&!(flags>>5)))||((version==5||version==6)&&!(flags>>5)&&(flags&28u)))return false;
             p.mode=static_cast<StereoMode>(mode);p.style=static_cast<EchoStyle>(style);p.enabled=enabled==1;
             p.adaptiveFocus=(flags&1u)!=0;
-            if(version==5){p.spillover=(flags&2u)!=0;p.bpmQuarter=static_cast<std::uint16_t>(flags>>5);
+            p.smartStage=version==6;
+            if(version==5||version==6){p.spillover=(flags&2u)!=0;p.bpmQuarter=static_cast<std::uint16_t>(flags>>5);
                 p.division=p.bpmQuarter?static_cast<std::uint8_t>((flags>>2)&7u):3;}
             if(!valid(p))return false;
         }else return false;

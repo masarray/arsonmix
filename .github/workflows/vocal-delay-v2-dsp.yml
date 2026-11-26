@@ -50,6 +50,21 @@ jobs:
         run: |
           g++ -std=c++17 -O3 tools/vocal-delay/rt-profile.cpp -o /tmp/vdprofile
           /tmp/vdprofile
+      - name: Render exact DSP audition bank (synthetic, not vocal acceptance)
+        if: matrix.cxx == 'g++'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -O2 tools/vocal-delay/audition.cpp -o /tmp/vd-audition
+          /tmp/vd-audition vd-audition
+          /tmp/vd-audition vd-audition-roundtrip "vd-audition/00 Dry reference.wav"
+          test "$(find vd-audition -name '*.wav' | wc -l)" -eq 14
+          cat vd-audition/metrics.csv
+          git rev-parse HEAD > vd-audition/source-sha.txt
+      - uses: actions/upload-artifact@v4
+        if: matrix.cxx == 'g++'
+        with:
+          name: vocal-delay-audition
+          path: vd-audition/
+          if-no-files-found: error
   ui-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 5
