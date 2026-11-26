@@ -3648,6 +3648,35 @@
     if(matches)extraPending=null;
     else if(live.secondaryOutputFault===true&&p.action!=="secondaryOutputSplit"){extraPending=null;extraError="Output fault · disconnect and reconnect the endpoint.";}
   }
+  // Destination selection is UI navigation only (TotalMix submix / Yamaha SOF).
+  // Use the installed MONITOR ChannelId and the existing SOF selector, never
+  // synthesize a send, choose a similarly named BUS, or modify MAIN faders.
+  function headphoneMixTarget(){
+    const current=controller?.state()?.current;
+    if(!flags.acceptedGraphConnected||!deviceReady()||
+       !protocol.secondaryOutputView(hardware,extraLive).split||
+       !wireVM.sofAvailable(current,!!scope?.toggleSof))return null;
+    const monitors=current.graph.channels.filter(ch=>ch.role==="MONITOR");
+    if(monitors.length!==1)return null;
+    const tracks=scope?.tracks?.filter(t=>t.nativeRole==="MONITOR"&&nativeIdFor(t)===monitors[0].id)||[];
+    const target=document.getElementById("sofTarget"),toggle=document.getElementById("sofToggle");
+    if(tracks.length!==1||!target||!toggle||toggle.disabled||
+       !Array.from(target.options).some(o=>o.value===String(tracks[0].id)))return null;
+    return {id:tracks[0].id,target,toggle};
+  }
+  function openHeadphoneMix(){
+    if(extraPending||deviceBusy())return;
+    const mix=headphoneMixTarget();
+    if(!mix){nativeToast("Headphone mix unavailable · verify the current MONITOR route");return;}
+    if(extraPanel?.open)extraPanel.close();
+    else if(extraInlineVisible())closeNativeAudioIO();
+    if(scope.sofTargetId!==mix.id){
+      mix.target.value=String(mix.id);
+      mix.target.dispatchEvent(new Event("change",{bubbles:true}));
+    }
+    if(scope.sofTargetId===mix.id&&!scope.sofEnabled)scope.toggleSof(true);
+    mix.toggle.focus();
+  }
   function paintAdditionalOutput(){
     if(!extraControls||!extraSurfaceOpen())return;
     const live=extraLive, busy=Boolean(extraPending)||deviceBusy(),
@@ -3684,9 +3713,13 @@
     const starterButton=extraField("starter");
     starterButton.hidden=!starter;
     starterButton.disabled=busy||!allowed||!starter;
+    const editButton=extraField("edit-mix");
+    const edit=split&&!starter&&headphoneMixTarget();
+    editButton.hidden=!edit;
+    editButton.disabled=busy||!edit;
     const mixHint=extraField("mix-hint");
-    mixHint.hidden=modeButton.hidden&&starterButton.hidden;
-    const hint=starter?"Create a quiet starting mix from MAIN sources, then adjust MONITOR sends.":mix.reason;
+    mixHint.hidden=modeButton.hidden&&starterButton.hidden&&editButton.hidden;
+    const hint=starter?"Create a quiet starting mix from MAIN sources, then edit the headphone mix.":mix.reason;
     if(mixHint.textContent!==hint)mixHint.textContent=hint;
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
@@ -3768,8 +3801,8 @@
       <label>Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
       <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-repair hidden>Set up audio</button></div>
       <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
-      <div class="armix-stream-actions"><button type="button" data-extra-mix hidden>Separate headphone mix</button><button type="button" data-extra-starter hidden>Create headphone mix</button><span class="armix-stream-hint" data-extra-mix-hint hidden></span></div>
-      <div class="armix-stream-hint">Post-FX MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
+      <div class="armix-stream-actions"><button type="button" data-extra-mix hidden>Separate headphone mix</button><button type="button" data-extra-starter hidden>Create headphone mix</button><button type="button" data-extra-edit-mix hidden>Edit headphone mix</button><span class="armix-stream-hint" data-extra-mix-hint hidden></span></div>
+      <div class="armix-stream-hint">OBS receives MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
     panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
     extraField("refresh").onclick=()=>refreshAdditionalInventory(true);
     extraField("repair").onclick=()=>{
@@ -3784,6 +3817,7 @@
       const mode=protocol.secondaryMixMode(hardware,extraLive);
       if(mode.available)requestAdditionalOutput("secondaryOutputSplit",mode.value);
     };
+    extraField("edit-mix").onclick=openHeadphoneMix;
     extraField("starter").onclick=()=>{
       const value=protocol.secondaryMonitorStarter(hardware,extraLive);
       if(value)requestAdditionalOutput("secondaryMonitorStarter",value);
@@ -4624,10 +4658,11 @@
   }
 
   let firstSoundButton=null,firstSoundDialog=null,firstSoundLease=null;
+  const firstSoundBusy=()=>matrixBusy()||Boolean(controller?.state()?.pending||pendingBusCreate||pendingTrackDelete);
   function paintFirstSound(next){
     if(!firstSoundButton)return;
     const plan=protocol.firstSoundPlan(next);
-    const busy=matrixBusy()||Boolean(controller?.state()?.pending||pendingBusCreate||pendingTrackDelete);
+    const busy=firstSoundBusy();
     if(firstSoundButton.hidden!==!plan)firstSoundButton.hidden=!plan;
     const disabled=busy||!deviceReady();
     if(firstSoundButton.disabled!==disabled)firstSoundButton.disabled=disabled;
@@ -4637,7 +4672,7 @@
       const stale=!plan||plan.epoch!==firstSoundLease?.epoch||plan.revision!==firstSoundLease?.revision||
         plan.config!==firstSoundLease?.config;
       if(stale)firstSoundDialog.close();
-      else firstSoundDialog.querySelector("[data-first-connect]").disabled=busy||
+      else firstSoundDialog.querySelector("[data-first-connect]").disabled=disabled||
         firstSoundDialog.querySelector("select").value==="";
     }
   }
@@ -4645,8 +4680,7 @@
     const current=protocol.firstSoundPlan(hardware);
     if(!current||current.channelId!==plan.channelId||current.epoch!==plan.epoch||
        current.revision!==plan.revision||current.config!==plan.config||
-       !current.pins.some(p=>p.port===port)||matrixBusy()||
-       controller?.state()?.pending||!deviceReady())return;
+       !current.pins.some(p=>p.port===port)||firstSoundBusy()||!deviceReady())return;
     const choices=sourceChoicesFor(),choice=choices.find(p=>p.mode==="MONO"&&p.left===port);
     const decision=stripVM.sourceQueueSelection({choice,choices,epoch:current.epoch,
       acceptedLabel:"None",hardwareConfiguration:current.config});
@@ -4658,7 +4692,7 @@
   }
   function openFirstSound(){
     const plan=protocol.firstSoundPlan(hardware);
-    if(!plan||matrixBusy()||!deviceReady())return;
+    if(!plan||firstSoundBusy()||!deviceReady())return;
     if(plan.pins.length===1)return connectFirstSound(plan,plan.pins[0].port);
     if(!firstSoundDialog){
       const dialog=document.createElement("dialog");
@@ -5407,6 +5441,7 @@
       // expired/rejected edit with unchanged graph values must not strand its
       // LCD at a speculative value; error status settles that separately.
       finishNativeTrack(next);finishNativeTrackDelete(next);
+      paintFirstSound(next);
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
       if(startupWire)window.queueMicrotask(flushStartupWire);
@@ -5414,6 +5449,7 @@
     }
     if (!projectNativeGraphWithoutFocusLoss(next)) {
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
+      paintFirstSound(next);paintAdditionalOutput();
       stopDemo();status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
@@ -5425,6 +5461,10 @@
     // native graph was unmounted; enable the button only after successful
     // projection, without requiring a second telemetry callback/click.
     syncAddTrack(next);
+    // First Sound requires the accepted ChannelId projection, not just the snapshot.
+    // Do not strand the action until another telemetry packet arrives.
+    paintFirstSound(next);
+    paintAdditionalOutput();
     syncEmergencyOutputControl(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")

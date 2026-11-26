@@ -583,6 +583,7 @@ def verify_independent_output(page,out):
         outputArmed=True,enabledOutputs=[0,1],
         outputEndpoints=[{"id":"out:"+str(i),"port":i,"callback":i,
             "label":"ASIO "+str(i+1),"active":True} for i in range(2)])
+    state["graph"]["capabilities"]["supportedOps"].append("SET_SEND_ENABLED")
     state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],externalOutputs=[],
                  physicalBusPatchSupported=True,physicalBusOutputObserved=True,physicalBusSecondaryArmed=True,
                  secondaryMainOnly=False,externalRevision="2")
@@ -640,6 +641,16 @@ def verify_independent_output(page,out):
     assert not starter.is_visible()
     assert panel.get_by_role("button",name="Use same mix").is_disabled()
     assert "preserved" in panel.locator("[data-extra-mix-hint]").inner_text()
+    # Destination navigation is the existing SOF, not a second mixer or native write.
+    edit=panel.get_by_role("button",name="Edit headphone mix")
+    assert edit.is_enabled()
+    before=page.evaluate("()=>window.__actions.length")
+    edit.click()
+    assert not panel.is_visible()
+    assert page.locator("#mixContext").inner_text()=="MONITOR MIX"
+    assert page.evaluate("()=>window.__actions.length")==before
+    page.locator("#sofToggle").click()
+    assert page.locator("#mixContext").inner_text()=="MAIN MIX"
     assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
     assert not errors,errors
 
@@ -660,6 +671,7 @@ def verify_first_sound(page,out):
     emit(page,"arMixConsoleSnapshot",state)
     button=page.locator("[data-native-first-sound]")
     assert button.is_visible()
+    assert button.is_enabled(), "First accepted projection must enable input without a second snapshot"
     button.click()
     dialog=page.get_by_role("dialog",name="Connect microphone")
     connect=dialog.get_by_role("button",name="Connect",exact=True)
