@@ -42,14 +42,21 @@ public:
     bool residualIdle() const noexcept {return engaged_;}
     void update(const Powers& p,const Powers& anchor,bool enabled,bool residualEnabled) noexcept {
         if(!enabled||!valid_){reset();return;}
-        bool idle=residualEnabled,strong=false;
+        // Specialize the spectral-only loop: no residual collection or
+        // runtime branch per FFT bin when the Silence control is zero.
+        if(residualEnabled)updateImpl<true>(p,anchor);
+        else {quiet_=0;engaged_=false;updateImpl<false>(p,anchor);}
+    }
+private:
+    template<bool Residual> void updateImpl(const Powers& p,const Powers& anchor) noexcept {
+        bool idle=Residual,strong=false;
         for(int c=0;c<channels_;++c){
             std::array<float,(MaxBins+7)/8> groups{},instantGroups{};int n=0;
             for(int k=first_,g=0;k<last_;++g){
                 float a=0,instant=0;const int end=std::min(k+8,last_);
-                for(;k<end;++k){auto& avg=average_[c][k];avg=initialized_?avg+alpha_*(p[c][k]-avg):anchor[c][k];a+=avg;if(residualEnabled)instant+=p[c][k];}
+                for(;k<end;++k){auto& avg=average_[c][k];avg=initialized_?avg+alpha_*(p[c][k]-avg):anchor[c][k];a+=avg;if constexpr(Residual)instant+=p[c][k];}
                 if(invGroup_[c][g]>0.f)groups[n++]=a*invGroup_[c][g];
-                if(residualEnabled)instantGroups[g]=instant;
+                if constexpr(Residual)instantGroups[g]=instant;
             }
             if(n>=4){
                 std::sort(groups.begin(),groups.begin()+n);
@@ -60,27 +67,29 @@ public:
                 confidence_[c]=shape*std::clamp((lower-.30f)*3.f,0.f,1.f);
                 // Independent lower and upper frequency evidence, with no
                 // authority to modify the trusted learned PSD.
-                if(!residualEnabled)continue;
-                const float level=std::clamp(middle,1.f,12.f);
-                // Immediate novel high-band event veto, independent of the
-                // smoothed estimate. Group power avoids single-bin jitter.
-                for(int g=0,k=first_;k<last_;++g,k+=8)
-                    if(instantGroups[g]>8.f*level*groupRef_[c][g]+(invGroup_[c][g]>0.f?0.f:.02f*total_[c]))strong=true;
-                float low=0,lowRef=0,upperPower=0;
-                for(int k=0,g=0;k<first_;++g){float q=0;const int end=std::min(k+4,first_);for(;k<end;++k)q+=p[c][k];const float ref=lowRef_[c][g];low+=q;lowRef+=ref;
-                    if(q>8.f*level*ref+.005f*total_[c])strong=true;}
-                for(int k=last_;k<bins_;++k)upperPower+=p[c][k];
-                if(low>3.5f*level*lowRef||upperPower>5.f*level*upperRef_[c])strong=true;
-                if(low>2.2f*level*lowRef||upperPower>3.f*level*upperRef_[c]||upper>2.5f*std::max(middle,eps)||middle>4.f||lower<.5f*middle)idle=false;
-
+                if constexpr(Residual){
+                    const float level=std::clamp(middle,1.f,12.f);
+                    // Immediate novel high-band event veto, independent of the
+                    // smoothed estimate. Group power avoids single-bin jitter.
+                    for(int g=0,k=first_;k<last_;++g,k+=8)
+                        if(instantGroups[g]>8.f*level*groupRef_[c][g]+(invGroup_[c][g]>0.f?0.f:.02f*total_[c]))strong=true;
+                    float low=0,lowRef=0,upperPower=0;
+                    for(int k=0,g=0;k<first_;++g){float q=0;const int end=std::min(k+4,first_);for(;k<end;++k)q+=p[c][k];const float ref=lowRef_[c][g];low+=q;lowRef+=ref;
+                        if(q>8.f*level*ref+.005f*total_[c])strong=true;}
+                    for(int k=last_;k<bins_;++k)upperPower+=p[c][k];
+                    if(low>3.5f*level*lowRef||upperPower>5.f*level*upperRef_[c])strong=true;
+                    if(low>2.2f*level*lowRef||upperPower>3.f*level*upperRef_[c]||upper>2.5f*std::max(middle,eps)||middle>4.f||lower<.5f*middle)idle=false;
+                }
             }else {inverseScale_[c]=1.f;confidence_[c]=0.f;idle=false;}
         }
         initialized_=true;
-        if(!residualEnabled){quiet_=0;engaged_=false;return;}
-        quiet_=strong?0:idle?std::min(quiet_+1,hold_):std::max(quiet_-2,0);
-        if(strong||quiet_<hold_/2)engaged_=false;
-        else if(quiet_>=hold_)engaged_=true;
+        if constexpr(Residual){
+            quiet_=strong?0:idle?std::min(quiet_+1,hold_):std::max(quiet_-2,0);
+            if(strong||quiet_<hold_/2)engaged_=false;
+            else if(quiet_>=hold_)engaged_=true;
+        }
     }
+public:
     float cap(int k,const Powers& p,float floor) const noexcept {
         if(!initialized_||k<first_||k>=last_)return 1.f;
         float g=0;

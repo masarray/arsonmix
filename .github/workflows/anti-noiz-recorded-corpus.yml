@@ -126,6 +126,8 @@ jobs:
             ${{ runner.temp }}/field-wind/*/old-max-processed.wav
             ${{ runner.temp }}/field-wind/*/new-max-processed.wav
             ${{ runner.temp }}/field-wind/*/prior-max-processed.wav
+            ${{ runner.temp }}/field-wind/*/prior-spectral-processed.wav
+            ${{ runner.temp }}/field-wind/*/new-spectral-processed.wav
             ${{ runner.temp }}/field-wind/*/clean.wav
             ${{ runner.temp }}/field-wind/*/learn.wav
             ${{ runner.temp }}/field-wind/*/noise.wav

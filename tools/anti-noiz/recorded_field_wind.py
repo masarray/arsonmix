@@ -162,6 +162,15 @@ def run():
                 if "prior" in results:
                     parity=(case/"prior-spectral-processed.wav").read_bytes()==(case/"new-spectral-processed.wav").read_bytes()
                     report["cases"][key]["spectral_pcm_exact"]=parity
+                    if not parity:
+                        x=pcm(str(case/"prior-spectral-processed.wav"),RATE,ch)
+                        y=pcm(str(case/"new-spectral-processed.wav"),RATE,ch)
+                        if len(x)!=len(y):raise ValueError("spectral timeline mismatch")
+                        delta=[abs(v-w) for v,w in zip(x,y)]
+                        detail={"samples":len(delta),"changed_samples":sum(d!=0 for d in delta),
+                                "peak_abs":max(delta),"rms":math.sqrt(math.fsum(d*d for d in delta)/len(delta))}
+                        report["cases"][key]["spectral_pcm_difference"]=detail
+                        print("FIELD_SPECTRAL_DIFF",key,detail,flush=True)
                     compare_residual(results["prior"],results["new"],report["failures"],key,parity)
     if len(report["cases"])!=4:raise ValueError("incomplete cases")
     (root/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
