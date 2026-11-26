@@ -72,6 +72,14 @@ int main(){
         }
         check(last.profile&&!last.learning&&last.learnStatus==NativeSession::LearnStatus::Rejected,"relearn rejection retains profile");
         check(last.spectrum.noiseValid&&!last.spectrum.candidate&&last.spectrum.noise==trusted.noise,"rejected candidate cannot replace trusted spectrum");
+        auto manual=s;manual.spectralManual=true;
+        check(native.submit({6,Control::Kind::settings,manual}),"manual setting queue");process();check(native.poll(ack)&&ack.applied,"manual ACK");
+        check(native.submit({7,Control::Kind::audition,{}}),"audition queue");process();check(native.poll(ack)&&ack.applied&&ack.state.audition,"audition ACK");
+        native.onBypass(true,true);process();
+        check(native.submit({8,Control::Kind::audition,{}}),"bypassed audition queue");process();check(native.poll(ack)&&!ack.applied&&!ack.state.audition,"bypass cancels and rejects audition");
+        native.onBypass(false,false);
+        check(native.submit({9,Control::Kind::clearProfile,{}}),"reset queue");process();check(native.poll(ack)&&ack.applied&&!ack.state.profile,"reset ACK");
+        check(native.submit({10,Control::Kind::audition,{}}),"empty audition queue");process();check(native.poll(ack)&&!ack.applied,"no profile rejects audition");
         check(rtprobe::empty(alloc),"native callback allocation");
         const auto saved=NativeState::encode(native.acceptedSettings());
         native.release();check(!native.ready()&&!native.prepare(rate,channels),"published retirement");

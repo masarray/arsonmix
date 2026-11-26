@@ -413,6 +413,30 @@ def main():
         expect(root.locator("[data-detector]")).to_have_text("-40.0 dBFS")
         expect(root.locator("[data-pro-dot]")).to_be_visible()
         expect(root.locator("[data-pro-curve]")).to_have_attribute("d",__import__("re").compile("^M"))
+        spectral=root.locator('[data-pro-flag="spectralManual"]')
+        spectral.click()
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["spectralManual"] is True
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(spectral).to_be_checked()
+        artifact=root.locator('input[aria-label="Artifact control"]')
+        artifact.focus();page.keyboard.press("ArrowRight")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert abs(edit["settings"]["artifactControl"]-.51)<.0001
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        readback(page,accepted,{**OBS,"serial":"20","effectiveMode":"Voice","profile":True,"detectorLevel":.01})
+        root.locator("[data-audition]").click()
+        edit=last_action(page,"nativeAntiNoizAudition")
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=accepted)
+        readback(page,accepted,{**OBS,"serial":"21","effectiveMode":"Voice","profile":True,"audition":True})
+        expect(root.locator("[data-audition]")).to_have_text("Stop noise audition")
+        root.locator("[data-clear-profile]").click()
+        edit=last_action(page,"nativeAntiNoizClear")
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=accepted)
+        readback(page,accepted,{**OBS,"serial":"22","effectiveMode":"Voice","profile":False,"audition":False})
+        expect(root.locator("[data-audition]")).to_be_disabled()
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-1366.png"))
         root.locator(".an-pro summary").click()
         # Show-store/preset plumbing is not mocked as disk success: verify

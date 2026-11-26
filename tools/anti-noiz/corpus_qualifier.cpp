@@ -214,12 +214,13 @@ int main(int argc,char** argv) {
     try {
         if(argc==2&&std::string_view(argv[1])=="--self-test"){selfTest();return 0;}
         if(argc==3&&std::string_view(argv[1])=="--learn-diagnostics"){learnDiagnostics(offline::read(argv[2]));return 0;}
-        if(argc!=10&&argc!=11){std::cerr<<"Usage: anti_noiz_qualify clean.wav noise.wav learn.wav segments.tsv provenance.tsv output-prefix mode cleanDb musicProtect(0..1) [silenceDb]\n";return 2;}
+        if(argc!=10&&argc!=11&&argc!=14){std::cerr<<"Usage: anti_noiz_qualify clean.wav noise.wav learn.wav segments.tsv provenance.tsv output-prefix mode cleanDb musicProtect(0..1) [silenceDb [noiseOffsetDb artifactControl vocalProtection]]\n";return 2;}
         provenance(argv[5]);const auto clean=offline::read(argv[1]),noise=offline::read(argv[2]),learn=offline::read(argv[3]);
         sameFormat(clean,learn);
         require(!std::filesystem::equivalent(argv[2],argv[3])&&noise.samples!=learn.samples,"Learn and test noise must be independent recordings/segments");
         const auto input=mix(clean,noise);const auto labels=segments(argv[4],clean.samples.size()/clean.channels);
-        Core::Settings s;s.silenceDb=argc==11?number(argv[10]):0;s.cleanDb=number(argv[8]);s.musicProtect=number(argv[9]);
+        Core::Settings s;s.silenceDb=argc>=11?number(argv[10]):0;s.cleanDb=number(argv[8]);s.musicProtect=number(argv[9]);
+        if(argc==14){s.spectralManual=true;s.noiseOffsetDb=number(argv[11]);s.artifactControl=number(argv[12]);s.vocalProtection=number(argv[13]);}
         Core::SourceRole role=Core::SourceRole::Unknown;policy(argv[7],s,role);
         const auto transparent=Core::resolveMode(s.mode,role)==Core::Mode::Music;
         const auto prefix=std::string(argv[6]);

@@ -289,14 +289,14 @@ private:
         const auto* variability=!protect&&!settings_.manual.enabled&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f?
             &profile_.variability():nullptr;
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
-        const bool windEnabled=!protect&&!idle&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&wind_.eligible();
+        const bool windEnabled=!settings_.spectralManual&&!protect&&!idle&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&wind_.eligible();
         wind_.update(power_,profile_.anchor(),windEnabled);
         // Phase coherence alone cannot distinguish a learned hum from
         // desired harmonics. Keep the qualified tonal path authoritative.
         const bool coherenceEnabled=windEnabled&&tonal_.selected()<0;
         coherence_.update(work_,coherenceEnabled);
         const bool broadEligible=!protect&&effectiveMode_==Mode::Voice&&broadband_.eligible()&&tonal_.selected()<0;
-        const bool broadEnabled=broadEligible&&cleanFloor_<1.f;
+        const bool broadEnabled=!settings_.spectralManual&&broadEligible&&cleanFloor_<1.f;
         const bool broadResidual=broadEligible&&!settings_.manual.enabled&&silenceFloor_<1.f;
         broadband_.update(power_,profile_.anchor(),broadEnabled||broadResidual,broadResidual);
         tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
