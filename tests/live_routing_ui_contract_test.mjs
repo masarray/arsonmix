@@ -400,3 +400,13 @@ test('ZBSH09 vendor lifetime survives initial startup and protects automatic res
   assert.ok(shutdown.indexOf('window_.reset();')<shutdown.indexOf('finishCleanExit()'));
   assert.match(read('tests/runtime_vendor_crash_journal_test.cpp'),/std::_Exit\(77\)/);
 });
+
+test('ZBSH09 caught DSP exceptions permanently mute the faulty owner instead of retrying',()=>{
+  const graph=readFileSync(new URL('../engine/core/LiveChannelFxGraph.h',import.meta.url),'utf8');
+  assert.match(graph,/if\(processFaulted\(\)\)/);
+  assert.match(graph,/exceptions\.fetch_add\(1,std::memory_order_release\)/);
+  assert.match(engine,/slot\.processFault->store\(true,std::memory_order_release\)/);
+  assert.match(engine,/if\(slot\.processFaulted\(\)\)/);
+  assert.match(main,/VST3_RUNTIME_FAULT_LATCHED/);
+  assert.match(main,/if\(automatic && engine_\.hasRuntimeFxFault\(\)\)/);
+});

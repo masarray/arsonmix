@@ -51,7 +51,8 @@ public:
         inline static std::atomic<std::uint64_t> nextId{1};
         std::atomic_flag processing=ATOMIC_FLAG_INIT;
         std::atomic<unsigned> contention{0};
-        std::atomic<unsigned> exceptions{0};
+        std::atomic<unsigned> exceptions{0}; // nonzero permanently latches this owner
+        bool processFaulted() const noexcept {return exceptions.load(std::memory_order_acquire)!=0;}
 
         FxInstance(std::unique_ptr<Processor> p,juce::String id,juce::String label,
                    int maxSamples,juce::String restoredInstance={})
@@ -121,6 +122,7 @@ public:
         bool tryCaptureState(juce::MemoryBlock& out) noexcept {
             if(!processor || processing.test_and_set(std::memory_order_acquire))
                 return false;
+            if(processFaulted()) {processing.clear(std::memory_order_release);return false;}
             bool ok=false;
             try {
                 // Even under the exclusive processor gate, async EQ edits
@@ -158,6 +160,15 @@ public:
                 processing.clear(std::memory_order_release);
                 return;
             }
+            // A thrown processBlock may leave vendor state inconsistent.
+            // Keep this exact owner silent even across MOVE or BYPASS toggles.
+            // No dry fallback, retries, allocations, logging or teardown here.
+            if(processFaulted()) {
+                juce::FloatVectorOperations::clear(left,samples);
+                juce::FloatVectorOperations::clear(right,samples);
+                processing.clear(std::memory_order_release);
+                return;
+            }
             if(nativeControl)
                 nativeControl->onRealtimeBypass(requestedBypass,
                                                 bypassFade.fullyBypassed());
@@ -191,10 +202,11 @@ public:
                 processor->processBlock(buffer,midi);
             } catch(...) {
                 // Vendor exceptions must never unwind through the callback.
-                exceptions.fetch_add(1,std::memory_order_relaxed);
+                exceptions.fetch_add(1,std::memory_order_release);
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
-            }
+                processing.clear(std::memory_order_release);
+                return; // never mix the failed block with the dry fade
             if(fullyBypassed){
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                 juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
@@ -276,6 +288,11 @@ public:
         return setAuxSendGain(source,bus,SendTap::postFader,gain);
     }
     int activeInserts() const noexcept{return activeInserts_;}
+    bool hasRuntimeFxFault() const noexcept {
+        for(const auto& rack:processors_)for(const auto& fx:rack)
+            if(fx&&fx->processFaulted())return true;
+        return false;
+    }
     bool setStripControl(int channel,float gain,float pan,
                          bool mono,bool mute,bool solo) noexcept {
         return controls_.set(channel,gain,pan,mono,mute,solo);

@@ -39,6 +39,8 @@ void operator delete(void* p,std::size_t) noexcept {std::free(p);}
 class GainFx final : public juce::AudioProcessor {
 public:
     static inline int living=0, prepared=0, released=0;
+    bool throwOnProcess=false;
+    int renderCalls=0;
     explicit GainFx(float gain,int delay=0,float offset=0)
       : AudioProcessor(BusesProperties()
         .withInput("Main",juce::AudioChannelSet::stereo(),true)
@@ -48,6 +50,8 @@ public:
     void prepareToPlay(double,int)override{++prepared;assert(delay_.prepare(delaySamples_));}
     void releaseResources()override{++released;}
     void processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&)override{
+        ++renderCalls;
+        if(throwOnProcess) {buffer.clear();throw 7;}
         for(int c=0;c<buffer.getNumChannels();++c)
             for(int f=0;f<buffer.getNumSamples();++f)
                 buffer.getWritePointer(c)[f]=buffer.getWritePointer(c)[f]*gain_+offset_;
@@ -2608,6 +2612,29 @@ int main(int argc,char** argv) {
     verifyNativeFxRackTransactions();
     verifyNativeBuiltinEqOrderedPcmAndBypassAck();
     verifyNativeEqCaptureRequiresAcceptedDspAndOfflineRestore();
+    // Fault stays on the actual shared owner across graph/rack gestures.
+    {
+        auto p=std::make_unique<GainFx>(2.f);
+        auto* raw=p.get();p->prepareToPlay(48000,32);raw->throwOnProcess=true;
+        auto owner=std::make_shared<LiveChannelFxGraph::FxInstance>(
+            std::move(p),"throw-fixture","Throw fixture",32);
+        std::array<float,32> left{},right{};
+        left.fill(.25f);right.fill(.25f);
+        owner->render(left.data(),right.data(),32);
+        assert(owner->processFaulted()&&raw->renderCalls==1);
+        assert(std::all_of(left.begin(),left.end(),[](float x){return x==0.f;}));
+        // A bypass gesture must not resume an inconsistent processor or
+        // unexpectedly let unprocessed microphone audio through.
+        owner->bypassRequested.store(true);
+        left.fill(.25f);right.fill(.25f);
+        owner->render(left.data(),right.data(),32,true);
+        owner->bypassRequested.store(false);
+        owner->render(left.data(),right.data(),32,false);
+        assert(raw->renderCalls==1&&owner->exceptions.load()==1);
+        assert(std::all_of(right.begin(),right.end(),[](float x){return x==0.f;}));
+        juce::MemoryBlock retained("safe",4);
+        assert(!owner->tryCaptureState(retained)&&retained.getSize()==4);
+    }
     // Tests above use a real JUCE AudioProcessor processing seam. Vendor
     // VST3 formats and sound quality require separate Windows hardware FAT.
 }

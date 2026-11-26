@@ -74,6 +74,9 @@ public:
     struct Slot
     {
         std::shared_ptr<juce::AudioPluginInstance> processor;
+        // CONTROL allocation; structural copies retain the same fault latch.
+        std::shared_ptr<std::atomic<bool>> processFault;
+        bool processFaulted() const noexcept {return processFault&&processFault->load(std::memory_order_acquire);}
         juce::String name, catalogId, path;
         int uid = 0;
         bool bypass = false;
@@ -1100,6 +1103,7 @@ public:
         added.name=chosen->name;added.catalogId=catalogId;
         added.path=filename;added.uid=uid;
         added.latency=latency;
+        added.processFault=std::make_shared<std::atomic<bool>>(false);
         added.processor=std::move(prepared);
         next->slots[next->count++]=std::move(added);
         // A failed publish destroys the candidate on CONTROL, invoking
@@ -1134,6 +1138,7 @@ public:
                 const int physical = graphOwned_->physicalAt (i);
                 const auto& slot = graphOwned_->slots[physical];
                 if (!slot.processor) { error = "Invalid active FX slot"; break; }
+                if(slot.processFaulted()) {error="Faulted VST3 state not captured: "+slot.name;break;}
                 armix::storage::FxState state;
                 state.path = slot.path;
                 state.name = slot.name;
@@ -1213,6 +1218,7 @@ public:
             slot.path = fx.path;
             slot.uid = fx.uid;
             slot.bypass = fx.bypass;
+            slot.processFault=std::make_shared<std::atomic<bool>>(false);
             slot.processor = std::move (owned);
             stagedSlots[static_cast<size_t> (i)] = std::move (slot);
         }
@@ -2206,6 +2212,12 @@ public:
     }
     armix::mixer::NativeMusicTempoMonitor::State pollNativeMusicTempo() noexcept {
         return dryRoutingLab_.pollMusicTempo();
+    }
+    // CONTROL-only status over retained owners; never scan from audio.
+    bool hasRuntimeFxFault() const noexcept {
+        if(graphOwned_)for(int i=0;i<graphOwned_->count;++i)
+            if(graphOwned_->slots[i].processFaulted())return true;
+        return dryRoutingLab_.hasRuntimeFxFault();
     }
     template<class Callback>
     void forEachNativeProcessor(Callback&& visit) const {
@@ -3368,6 +3380,11 @@ private:
             const int physical=Graph::physicalAt(order,logical);
             auto& slot=graph.slots[physical];
             if(!slot.processor)continue;
+            if(slot.processFaulted()) {
+                juce::FloatVectorOperations::clear(left,frames);
+                juce::FloatVectorOperations::clear(right,frames);
+                return;
+            }
             auto& bypass=graph.bypassEnvelope[physical];
             bypass.request(graph.rackBypassed.load(std::memory_order_acquire) ||
                            (graph.globalRackOverride &&
@@ -3386,6 +3403,7 @@ private:
                 {
                     juce::FloatVectorOperations::clear(left,frames);
                     juce::FloatVectorOperations::clear(right,frames);
+                    if(slot.processFault)slot.processFault->store(true,std::memory_order_release);
                     return; // vendor exception must not unwind JUCE callback
                 }
             }

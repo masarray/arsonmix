@@ -1487,6 +1487,18 @@ public:
     }
     // CONTROL traversal of the *published* insert owners. No audio-thread
     // graph search or raw unmanaged pointers survive this synchronous call.
+    bool hasRuntimeFxFault() const noexcept {
+        if(nativeAccepted_.fxOwners)
+            for(const auto& channel:nativeAccepted_.graph.roster.channels()) {
+                const auto count=nativeAccepted_.fxOwners->insertCount(channel.id);
+                for(std::size_t slot=0;slot<count;++slot) {
+                    const auto* owner=nativeAccepted_.fxOwners->ownerForControl(channel.id,slot);
+                    if(owner&&*owner&&(*owner)->processFaulted())return true;
+                }
+            }
+        const auto* graph=publisher_.controlPrepared(epoch(),revision());
+        return graph&&graph->hasRuntimeFxFault();
+    }
     template<class Callback>
     void forEachNativeProcessor(Callback&& visit) const {
         if(!channelIdPhysicalPcmActive()||!nativeAccepted_.fxOwners)return;

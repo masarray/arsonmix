@@ -785,6 +785,8 @@ private:
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
     bool mixerSessionRecoveryPending_=false;
+    bool runtimeFxFaultNoticeSent_=false;
+    juce::uint32 runtimeFxFaultPollTick_=0;
     bool startupFxSafeMode_=armix::startup::Vst3RestoreCrashGuard(settingsDirectory()).interrupted();
     bool vendorSafeRecoveryActive() const {
         return startupFxSafeMode_ || armix::startup::RuntimeVendorCrashJournal::process().recoveryRequired();
@@ -3180,6 +3182,7 @@ private:
     void serviceAutomaticMain() {
         if(autoMainEpoch_==0)return;
         if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
+        if(engine_.hasRuntimeFxFault()){autoMainEpoch_=0;return;}
         if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
@@ -3212,6 +3215,7 @@ private:
 
     void requestAutomaticMain(bool requireInput=true) {
         if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
+        if(engine_.hasRuntimeFxFault()){autoMainEpoch_=0;return;}
         if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         autoMainRequiresInput_=requireInput;
         autoMainEpoch_=engine_.dryRoutingLabEpoch();
@@ -4395,7 +4399,7 @@ private:
     juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
             armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
                 armix::session::MixerDeviceBindingPolicy::Mode::exact) {
-        if(vendorSafeRecoveryActive()) {
+        if(vendorSafeRecoveryActive()||engine_.hasRuntimeFxFault()) {
             mixerSessionRecoveryPending_=true;
             mixerSessionStatus_="STARTUP_FX_SAFE_RECOVERY";
             return "Previous vendor lifetime ended unexpectedly. Open a verified .smix manually; MAIN remains disarmed automatically.";
@@ -4513,6 +4517,7 @@ private:
                                     bool shutdownCheckpoint=false) {
         const bool automatic=exportFile==juce::File{};
         if(automatic && vendorSafeRecoveryActive())return "Safe recovery: saved mixer checkpoint preserved";
+        if(automatic && engine_.hasRuntimeFxFault())return "Faulted VST3: saved mixer checkpoint preserved";
         // The committed logical FX save is newer than the restored live
         // processor. Auto/shutdown capture MUST NOT replace its binary
         // VST state until an explicit verified session Open adopts it.
@@ -9143,6 +9148,19 @@ private:
         if(startupFxGuard_ && browser_.loaded &&
            juce::Time::getMillisecondCounter()-startupFxGuardTick_>=15000u) {
             if(startupFxGuard_->complete())startupFxGuard_.reset();
+        }
+        // Report caught C++ DSP exceptions on CONTROL, at most once per
+        // fault episode. Do not log, allocate or reopen a plugin in RT.
+        const auto faultNow=juce::Time::getMillisecondCounter();
+        if(faultNow-runtimeFxFaultPollTick_>=1000u) {
+            runtimeFxFaultPollTick_=faultNow;
+            const bool faulted=engine_.hasRuntimeFxFault();
+            if(faulted&&!runtimeFxFaultNoticeSent_) {
+                autoMainEpoch_=0;
+                diagnostics_.record("VST3_RUNTIME_FAULT_LATCHED","Affected FX path muted; replace or remove the failed instance");
+                emitNotice("An FX threw during processing. Its path is muted. Remove/re-add the failed FX or open a verified mixer file; the saved checkpoint is preserved.",true);
+            }
+            runtimeFxFaultNoticeSent_=faulted;
         }
         observeNativeCallbackHeartbeat();
 #if defined(_WIN32)
