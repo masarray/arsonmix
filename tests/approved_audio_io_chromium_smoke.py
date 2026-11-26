@@ -509,10 +509,28 @@ def verify_additional_output(page,out):
     assert not panel.is_visible()
     assert page.locator("[data-extra-device]").count()==1
     assert page.locator("[data-audio-output-matrix]").get_by_text("MAIN MIRROR",exact=False).is_visible()
+    # Fault recovery is native-owned; a lost sink must not look enabled.
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,
+                secondaryOutputFault=True,secondaryOutputRecovering=True,
+                secondaryOutputRecoveryName="CABLE Input")
+    emit(page,"arMixStatus",live)
+    assert inline.locator("[data-extra-status]").inner_text().startswith("Reconnecting")
+    assert inline.get_by_role("button",name="Enable output",exact=True).is_disabled()
+    assert inline.get_by_role("button",name="Disconnect").is_enabled()
+    assert page.locator("[data-audio-output-matrix]").get_by_text("RECOVERING",exact=True).is_visible()
+    live.update(secondaryOutputReady=True,secondaryOutputArmed=True,
+                secondaryOutputFault=False,secondaryOutputRecovering=False)
+    emit(page,"arMixStatus",live)
+    assert inline.locator("[data-extra-status]").inner_text().startswith("Enabled")
+    # Disconnect is also available during a later recovery.
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,
+                secondaryOutputFault=True,secondaryOutputRecovering=True)
+    emit(page,"arMixStatus",live)
     inline.get_by_role("button",name="Disconnect").click()
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputStop').at(-1)")
     emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
-    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,secondaryOutputName="")
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,secondaryOutputName="",
+                secondaryOutputFault=False,secondaryOutputRecovering=False,secondaryOutputRecoveryName="")
     emit(page,"arMixStatus",live)
     assert inline.get_by_role("button",name="Disconnect").is_disabled()
     assert not page.locator("[data-audio-output-matrix]").get_by_text("MAIN MIRROR",exact=False).count()

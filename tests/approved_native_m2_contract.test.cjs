@@ -7680,6 +7680,8 @@ test("U2-C/U3 secondary continuity is identity-pinned and preference is not ARM 
  assert.match(r,/secondaryContinuity_->revision!=revision/);
  assert.match(r,/current.selection.id!=intent.endpointId/);
  assert.match(r,/secondaryRetry_\.attempts\(\)>=5/);
+ assert.match(r,/generation!=secondaryRetry_\.generation\(\)/);
+ assert.match(r,/engine_\.disconnectSecondaryOutput\(\)/);
  assert.match(r,/deviceApply_\.tryBegin/);
  assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
  assert.match(n,/secondary-output\.json/);

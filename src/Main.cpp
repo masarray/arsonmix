@@ -4299,7 +4299,16 @@ private:
             emitNotice("Additional output identity changed · choose your destination again",true);
             return;
         }
+        const auto generation=secondaryRetry_.generation();
         const auto error=current.ok()?engine_.restoreSecondaryOutput(intent):current.error;
+        // A nested native device event or Stop may revoke this request while
+        // the vendor open runs. Never publish success for a superseded intent.
+        if(generation!=secondaryRetry_.generation()||
+           engine_.dryRoutingLabEpoch()!=epoch||engine_.outputArmRevision()!=revision) {
+            engine_.disconnectSecondaryOutput();
+            cancelSecondaryContinuity();
+            return;
+        }
         if(error.isEmpty()) {
             secondaryRetry_.recovered();
             diagnostics_.record("SECONDARY_HOTPLUG_RESTORED",intent.name);
@@ -4328,8 +4337,15 @@ private:
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
         if(!lease)return;
         auto intent=p.intent;
+        const auto epoch=p.epoch,revision=p.revision,generation=secondaryRetry_.generation();
         pendingVendorStream_.reset();
         const auto error=engine_.restoreSecondaryOutput(intent);
+        if(generation!=secondaryRetry_.generation()||
+           engine_.dryRoutingLabEpoch()!=epoch||engine_.outputArmRevision()!=revision) {
+            engine_.disconnectSecondaryOutput();
+            cancelSecondaryContinuity();
+            return;
+        }
         diagnostics_.record(error.isEmpty()?"SECONDARY_AUTO_RESTORED":"SECONDARY_AUTO_RESTORE_REJECTED",
                             error.isEmpty()?intent.name:error);
         emitNotice(error.isEmpty()?"Additional output restored":error,error.isNotEmpty());
@@ -9867,8 +9883,11 @@ private:
             } else engine_.disconnectSecondaryOutput();
             if(error.isEmpty()&&(action=="secondaryOutputEnable"||
                (action=="secondaryOutputArm"&&bool(value))))
-                if(auto intent=engine_.captureSecondaryResumeIntent())
+                if(auto intent=engine_.captureSecondaryResumeIntent()) {
+                    if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
+                        secondaryContinuity_=SecondaryContinuity{*intent,engine_.dryRoutingLabEpoch(),engine_.outputArmRevision()};
                     rememberSecondaryPreference(*intent);
+                }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
