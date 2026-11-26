@@ -14,6 +14,16 @@ int main(){
         CHECK(sameParameters(q,smartVoicing(q)));
         p.duck=.99f;CHECK(styleIndex(p)==-1);
     }
+    CHECK(stagePresetCount==12&&singerPresets.size()==25);
+    for(std::size_t i=0;i<stagePresetCount;++i){
+        const auto p=presetSettings(i);
+        CHECK(p.enabled&&p.adaptiveFocus&&p.spillover&&p.style!=EchoStyle::classic);
+        CHECK(p.feedback<=.42f&&p.echo<=.28f&&p.duckAttackMs<=8.f);
+        if(i!=4&&i!=10)CHECK(p.duck>=.83f);
+        State s{};s.continuous=p;StateCodec::Bytes bytes{};State out{};
+        CHECK(StateCodec::encode(s,bytes)&&StateCodec::decode(bytes.data(),bytes.size(),out)&&sameParameters(p,out.continuous));
+    }
+    CHECK(presetSettings(0).style==EchoStyle::dual&&presetSettings(0).duck>=.9f);
     auto quiet=presetSettings(1),heavy=quiet;heavy.echo=.9f;heavy.feedback=.9f;heavy.timeMs=4000;
     auto soft=smartVoicing(quiet),strong=smartVoicing(heavy);
     CHECK(strong.duck>soft.duck&&strong.highPassHz>soft.highPassHz&&strong.lowPassHz<soft.lowPassHz);

@@ -18,7 +18,11 @@ public:
         for(const auto* n:{"Classic","Voiced","Dual","Multitap","Tape"})algorithm_.addItem(n,algorithm_.getNumItems()+1);
         algorithm_.onChange=[this]{const int id=algorithm_.getSelectedId();if(id>=1&&id<=5){auto p=processor_.singerDisplay();p.style=static_cast<EchoStyle>(id-1);offer(p);}};
         preset_.addItem("Custom",99);
-        for(std::size_t i=0;i<singerPresets.size();++i)preset_.addItem(singerPresets[i].name,int(i+1));
+        preset_.addSectionHeading("Ready to Sing");
+        for(std::size_t i=0;i<singerPresets.size();++i){
+            if(i==stagePresetCount)preset_.addSectionHeading("Classic Presets");
+            preset_.addItem(singerPresets[i].name,int(i+1));
+        }
         mode_.addItem("Mono",1);mode_.addItem("Stereo",2);mode_.addItem("Ping Pong",3);
         const std::array<const char*,7> divisions{{"1/16","1/8","Dotted 1/8","1/4","Dotted 1/4","1/2","Whole"}};
         for(std::size_t i=0;i<divisions.size();++i)division_.addItem(divisions[i],int(i+1));
@@ -61,7 +65,8 @@ public:
             const int id=preset_.getSelectedId();
             if(id>0&&id<=int(singerPresets.size())){
                 processor_.setMusicFollow(false);selectedUserId_.clear();taps_.reset();tempoNotice_.clear();
-                offer(presetSettings(std::size_t(id-1),processor_.singerDisplay().enabled));
+                const auto index=std::size_t(id-1);
+                offer(presetSettings(index,index<stagePresetCount||processor_.singerDisplay().enabled));
             }else if(id>=1000&&std::size_t(id-1000)<userPresets_.size()&&recallUserPreset_){
                 const auto entry=userPresets_[std::size_t(id-1000)];
                 if(const auto p=recallUserPreset_(entry.id);p&&processor_.offerSinger(*p)){
@@ -229,7 +234,11 @@ private:
         userPresets_=listUserPresets_?listUserPresets_():std::vector<UserPresetEntry>{};
         preset_.clear(juce::dontSendNotification);
         preset_.addItem("Custom",99);
-        for(std::size_t i=0;i<singerPresets.size();++i)preset_.addItem(singerPresets[i].name,int(i+1));
+        preset_.addSectionHeading("Ready to Sing");
+        for(std::size_t i=0;i<singerPresets.size();++i){
+            if(i==stagePresetCount)preset_.addSectionHeading("Classic Presets");
+            preset_.addItem(singerPresets[i].name,int(i+1));
+        }
         if(!userPresets_.empty())preset_.addSectionHeading("My Presets");
         for(std::size_t i=0;i<userPresets_.size();++i)preset_.addItem(userPresets_[i].name,int(i)+1000);
     }
