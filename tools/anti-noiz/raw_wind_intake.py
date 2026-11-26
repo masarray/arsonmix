@@ -20,7 +20,6 @@ URL = ('https://www.iks.rwth-aachen.de/fileadmin/user_upload/downloads/'
 MAX_ARCHIVE = 256 * 1024 * 1024
 MAX_MEMBER = 32 * 1024 * 1024
 MAX_LICENSE = 64 * 1024
-MIN_FRAMES = 17 * 16000
 # Actual archive obtained on exact CI 45750792084, manifest artifact 15085013465.
 RWTH_SHA256 = "d32bfa809ce4ab759613ce1abab3027a4e5e428b2e972d65dce1f389114cc222"
 
@@ -99,7 +98,7 @@ def inspect(archive, root, expected=None):
             meta["duplicate_of"] = seen_sha.get(digest_wav)
             seen_sha.setdefault(digest_wav, x.filename)
             manifest.append(meta)
-            if meta["duplicate_of"] is not None or category in selected or rate != 16000 or ch not in (1, 2) or width not in (2, 3, 4) or frames < MIN_FRAMES:
+            if meta["duplicate_of"] is not None or category in selected or rate not in (16000, 48000) or ch not in (1, 2) or width not in (2, 3, 4) or frames < 17*rate:
                 continue
             # Select first valid recording by lexical path, not by DSP score.
             # Flat controlled name: no user/archive-provided extraction path.
@@ -120,11 +119,11 @@ def inspect(archive, root, expected=None):
 def self_test():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        def fixture(value):
+        def fixture(value, rate=16000):
             b = io.BytesIO()
             with wave.open(b, 'wb') as w:
-                w.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
-                w.writeframes(value.to_bytes(2, 'little', signed=True) * MIN_FRAMES)
+                w.setparams((1, 2, rate, 0, 'NONE', 'not compressed'))
+                w.writeframes(value.to_bytes(2, 'little', signed=True) * (17*rate))
             return b.getvalue()
         indoor = fixture(1)
         archive = root / 'fixture.zip'
@@ -133,12 +132,13 @@ def self_test():
             z.writestr('audio_booth/constant_wind/mic_dist_2cm/a.wav', indoor)
             z.writestr('audio_booth/varying_wind/mic_dist_2cm/a.wav', indoor)
             z.writestr('outdoors/wind_normal.wav', fixture(2))
-            z.writestr('outdoors/wind_strong.wav', fixture(3))
+            z.writestr('outdoors/wind_strong.wav', fixture(3, 48000))
         actual = sha(archive.read_bytes())
         result = inspect(archive, root / 'out', actual)
         require(result['pinned'] and len(result['selected']) == 3, 'unique fixture selection')
         require(sum(v['duplicate_of'] is not None for v in result['recordings']) == 1, 'duplicate detection')
         require((root / 'out' / 'indoor.wav').read_bytes() == indoor, 'byte preservation')
+        require(result['selected']['outdoor-strong']['rate']==48000, 'native 48k source selection')
         try:
             inspect(archive, root / 'bad', '0' * 64)
         except ValueError:

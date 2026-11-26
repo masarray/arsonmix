@@ -213,4 +213,9 @@ jobs:
             ${{ runner.temp }}/raw-wind-report/report.json
             ${{ runner.temp }}/raw-wind-report/*/provenance.tsv
             ${{ runner.temp }}/raw-wind-report/*/segments.tsv
+            ${{ runner.temp }}/raw-wind-report/*/clean.wav
+            ${{ runner.temp }}/raw-wind-report/*/learn.wav
+            ${{ runner.temp }}/raw-wind-report/*/noise.wav
+            ${{ runner.temp }}/raw-wind-report/*/new-max-processed.wav
+            ${{ runner.temp }}/raw-wind-report/*/old-max-processed.wav
           if-no-files-found: warn

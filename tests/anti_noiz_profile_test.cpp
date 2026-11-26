@@ -147,6 +147,34 @@ int main(){
         auto extreme=base;for(float& x:extreme[0])x*=64.f;
         for(int i=0;i<learnWindow&&p.learning();++i)p.observe(extreme);
         check(!p.learning()&&!p.lastAttemptQualified()&&p.anchor()==safe,"extreme window veto");
+        // Rumble-shaped troughs are absence of energy, not evidence of a
+        // new foreground. Retain safety for upward and off-shape windows.
+        Profile rumble;rumble.prepare(rate,hop,1,129);
+        Profile::Powers rumbleBase{};rumbleBase[0][0]=.8f;rumbleBase[0][1]=.2f;rumbleBase[0][12]=.001f;
+        auto learn=[&](int scenario){
+            check(rumble.begin(),"rumble Learn start");
+            for(int i=0;i<2;++i)rumble.observe(rumbleBase);
+            for(int i=0;i<frames&&rumble.learning();++i){
+                auto x=rumbleBase;const int window=i/learnWindow;
+                if(window>=4&&window%2==0){
+                    for(float& v:x[0])v*=.02f;
+                    if(scenario==1){x[0][0]=x[0][1]=0.f;x[0][12]=.02f;}
+                    if(scenario==2){x[0].fill(0.f);}
+                    if(scenario==3){x=rumbleBase;for(float& v:x[0])v*=64.f;}
+                    if(scenario==4){x=rumbleBase;for(float& v:x[0])v*=10.f;}
+                }
+                rumble.observe(x);
+            }
+            return rumble.lastAttemptQualified();
+        };
+        check(learn(0),"matched low-energy rumble troughs accepted");
+        const auto trustedRumble=rumble.anchor();
+        check(trustedRumble[0][0]<rumbleBase[0][0]*.8f,"trough energy included, not discarded");
+        for(int scenario=1;scenario<=4;++scenario){
+            check(!learn(scenario),"off-shape, zero or upward contamination rejected");
+            check(rumble.anchor()==trustedRumble,"rejected Learn retains trusted rumble");
+        }
+        std::cout<<rate<<" Hz: rumble trough acceptance and contamination rollback PASS\n";
         std::cout<<rate<<" Hz: window Learn acceptance, exclusion, coverage and catastrophic veto PASS\n";
         std::cout<<rate<<" Hz: drift ratio "<<ratio<<", rollback, freeze and bounds PASS\n";
     }

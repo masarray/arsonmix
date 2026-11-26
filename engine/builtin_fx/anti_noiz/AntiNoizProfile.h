@@ -13,6 +13,7 @@ public:
     enum class LearnResult { waiting, accepted, rejected };
     void prepare(double rate,int hop,int channels,int bins) noexcept {
         channels_=channels;bins_=bins;
+        lowBins_=std::min(bins_,int(400.*(2*hop)/rate)+1);
         target_=int(std::ceil(2.*rate/hop));
         // 50 ms: aggregate multiple overlapping FFT frames before deciding
         // a learned noise estimate is unstable. Keep the 2 s wall clock.
@@ -97,7 +98,19 @@ public:
                     if(current>32.f*std::max(mean,1e-12f)){
                         cancel();return LearnResult::rejected;
                     }
-                    discard|=current>4.f*std::max(mean,1e-12f)||current<.1f*mean;
+                    // Wind-like deep rumble can have very quiet troughs. Do not
+                    // mistake missing energy for foreground contamination when
+                    // both the accepted checkpoint and new window have the
+                    // same exceptionally low-frequency concentration. Upward
+                    // contamination and all extreme vetoes remain unchanged.
+                    bool quietRumble=false;
+                    if(current<.1f*mean&&current>std::max(1e-12f,.001f*mean)&&
+                       checkpointCount_>=2*learnWindow_&&lowBins_>=2){
+                        float low=0.f,prior=0.f;
+                        for(int k=0;k<lowBins_;++k){prior+=checkpoint_[c][k];low+=candidate_[c][k]-checkpoint_[c][k];}
+                        quietRumble=prior>=.98f*checkpointEnergy_[c]&&low>=.98f*windowEnergy_[c];
+                    }
+                    discard|=current>4.f*std::max(mean,1e-12f)||(current<.1f*mean&&!quietRumble);
                 }
             }
             if(discard){
@@ -156,7 +169,7 @@ private:
     NoiseDriftGuard<MaxBins> drift_{};
     std::array<float,2> energy_{},checkpointEnergy_{},windowEnergy_{},variability_{};
     std::array<double,2> acceptedSquares_{},windowSquares_{};
-    int channels_=0,bins_=0,target_=1,trackHold_=1,count_=0,warmup_=0,idle_=0;
+    int channels_=0,bins_=0,lowBins_=0,target_=1,trackHold_=1,count_=0,warmup_=0,idle_=0;
     int learnWindow_=1,maximumDiscarded_=0,observed_=0,checkpointCount_=0;
     float alpha_=0;
     bool valid_=false,learning_=false,qualified_=false;
