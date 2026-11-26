@@ -7244,7 +7244,7 @@ private:
             return;
         }
 
-        if(action=="nativeAntiNoizSnapshot"||action=="nativeAntiNoizSet"||action=="nativeAntiNoizLearn") {
+        if(action=="nativeAntiNoizSnapshot"||action=="nativeAntiNoizSet"||action=="nativeAntiNoizLearn"||action=="nativeAntiNoizClear"||action=="nativeAntiNoizAudition") {
             using P=armix::builtin_fx::AntiNoizProcessor;
             using Binding=armix::builtin_fx::AntiNoizNativeBinding;
             const auto request=armix::builtin_fx::NativeFxControlRequest::parse(
@@ -7264,23 +7264,24 @@ private:
                 return;
             }
             const auto id=request.sequence("an-");
-            const bool learn=action=="nativeAntiNoizLearn";
+            const bool learn=action=="nativeAntiNoizLearn",clear=action=="nativeAntiNoizClear",audition=action=="nativeAntiNoizAudition";
+            const bool liveCommand=learn||clear||audition;
             P::Core::Settings settings;
-            const bool typed=learn||Binding::parseSettings(args.getProperty("settings",{}),settings);
+            const bool typed=liveCommand||Binding::parseSettings(args.getProperty("settings",{}),settings);
             bool queued=false;
             if(p&&id&&typed&&!pendingNativeAntiNoiz_.owner&&!deviceApply_.busy()&&
                !nativeShowBusy_&&!studioBackupBusy_&&!engine_.independentClockActive()&&
-               !engine_.isGraphSwitchPending()&&(!learn||!request.unbound)){
-                queued=learn?p->queueLearn(id):p->queueSettings(settings,id);
+               !engine_.isGraphSwitchPending()&&(!liveCommand||!request.unbound)){
+                queued=learn?p->queueLearn(id):clear?p->queueClearProfile(id):audition?p->queueAudition(id):p->queueSettings(settings,id);
                 if(queued&&!request.unbound){
                     pendingNativeAntiNoiz_={owner,args,id,request.epoch,request.revision,
                         request.channel,request.slot,juce::Time::getMillisecondCounter(),false};
                 }
             }
-            if(request.unbound&&!learn)
+            if(request.unbound&&!liveCommand)
                 return completeLogicalFxEdit(args,std::move(stored),p,queued,"arMixBuiltinAntiNoizAck");
             emitAntiNoizReply("arMixBuiltinAntiNoizQueue",args,queued?"QUEUED":"REJECTED",
-                queued?"NONE":learn&&request.unbound?"LEARN_REQUIRES_LIVE_PCM":
+                queued?"NONE":liveCommand&&request.unbound?"ANTI_NOIZ_REQUIRES_LIVE_PCM":
                 pendingNativeAntiNoiz_.owner?"ANTI_NOIZ_CONTROL_BUSY":"INVALID_OR_STALE_ANTI_NOIZ",
                 p);
             return;

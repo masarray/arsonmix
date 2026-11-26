@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "PortableWorkspace.h"
+#include "AntiNoizPortableSettings.h"
 #include "../engine/builtin_fx/vocal_delay/PortablePreset.h"
 #include <juce_core/juce_core.h>
 #include <juce_cryptography/juce_cryptography.h>
@@ -116,12 +117,8 @@ public:
                 (shape==juce::var("Shelf")||shape==juce::var("Focused"));
         }
         if(catalog=="armix.builtin.anti-noiz.v1"){
-            const auto mode=settings.getProperty("mode",{});
-            return containsOnly(settings,{"mode","cleanDb","silenceDb","musicProtect","enabled"})&&
-                mode.isString()&&(mode=="Auto"||mode=="Voice"||mode=="Singing"||mode=="Music")&&
-                settings.getProperty("enabled",{}).isBool()&&
-                number(settings,"cleanDb",0,24)&&number(settings,"silenceDb",0,48)&&
-                number(settings,"musicProtect",0,1);
+            armix::builtin_fx::AntiNoizPortableSettings::Core::Settings decoded;
+            return armix::builtin_fx::AntiNoizPortableSettings::parseSettings(settings,decoded);
         }
         if(catalog=="armix.builtin.channel-compressor.v1"){
             if(!containsOnly(settings,{"thresholdDb","ratio","attackMs","releaseMs",

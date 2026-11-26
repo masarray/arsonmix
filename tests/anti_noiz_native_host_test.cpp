@@ -43,10 +43,10 @@ int main(){
         check(fx!=nullptr,"actual registry preparation");const int latency=rate>48000?512:256;
         check(fx->isReady()&&p->getLatencySamples()==latency&&p->getSampleRate()==rate,"JUCE prepare");
         juce::MemoryBlock saved;p->getStateInformation(saved);
-        check(saved.getSize()==28,"state size");
+        check(saved.getSize()==armix::builtin_fx::anti_noiz::NativeState::size,"state size");
         Instance lease(std::move(p),AntiNoizProcessor::catalogIdentity,"Anti Noiz",128);
         check(lease.continuousBypassProcessing&&lease.latencySamples==latency,"actual host PDC");
-        check(!fx->restoreUnpublishedState(saved.getData(),28),"published restore denied");
+        check(!fx->restoreUnpublishedState(saved.getData(),static_cast<int>(saved.getSize())),"published restore denied");
         Core::Settings s;s.mode=Core::Mode::Voice;s.silenceDb=0;
         check(fx->queueSettings(s,1)&&!lease.tryCaptureState(saved),"pending state denied");
         std::array<float,128> l{},r{};
@@ -61,7 +61,7 @@ int main(){
             }
             l.fill(0);r.fill(0);
         }
-        check(lease.tryCaptureState(saved)&&saved.getSize()==28,"accepted native capture");
+        check(lease.tryCaptureState(saved)&&saved.getSize()==armix::builtin_fx::anti_noiz::NativeState::size,"accepted native capture");
         check(fx->queueLearn(2),"native learn");lease.render(l.data(),r.data(),128);
         check(fx->pollCompletion(ack)&&ack.applied&&ack.state.learning,"native learning");
         for(int i=0;i<16;++i)lease.render(l.data(),r.data(),128,true);
@@ -96,7 +96,7 @@ int main(){
         check(noise.isArray()&&input.isArray()&&noise.getArray()->size()==latency/2+1&&input.getArray()->size()==latency/2+1,"typed native spectral arrays");
         check(static_cast<double>((*noise.getArray())[8])>static_cast<double>((*noise.getArray())[16]),"typed spectral peak");
         auto restored=std::make_unique<AntiNoizProcessor>();
-        check(restored->restoreUnpublishedState(saved.getData(),28),"cold reopen");
+        check(restored->restoreUnpublishedState(saved.getData(),static_cast<int>(saved.getSize())),"cold reopen");
         restored->prepareToPlay(rate,128);
         check(restored->isReady()&&restored->acceptedSettings().mode==Core::Mode::Voice,"native state roundtrip");
         std::cout<<"JUCE_HOST,"<<rate<<",latency="<<latency<<",FxInstance ACK/restore/bypass PASS\n";
