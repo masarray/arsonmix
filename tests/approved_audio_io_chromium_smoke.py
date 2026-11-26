@@ -644,6 +644,40 @@ def verify_independent_output(page,out):
     assert not errors,errors
 
 
+def verify_first_sound(page,out):
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        outputArmed=False,enabledInputs=[0,2],inputEndpoints=[
+            {"id":"in:"+str(i),"port":i,"callback":j,"label":"Mic "+str(i+1),"active":True}
+            for j,i in enumerate([0,2])])
+    emit(page,"arMixConsoleSnapshot",state)
+    button=page.locator("[data-native-first-sound]")
+    assert button.is_visible()
+    button.click()
+    dialog=page.get_by_role("dialog",name="Connect microphone")
+    connect=dialog.get_by_role("button",name="Connect",exact=True)
+    assert connect.is_disabled()
+    dialog.get_by_label("Microphone input").select_option("2")
+    connect.click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').at(-1)")
+    assert req["channelId"]==SOURCE and req["left"]==2 and req["mode"]=="MONO"
+    assert button.is_disabled()
+    emit(page,"arMixNativeSourceAck",{"requestId":req["requestId"],"channelId":SOURCE,"ok":True,"graphRevision":"3"})
+    state["graph"].update(revision="3")
+    state["graph"]["channels"][0]["source"]={"sourceFormat":"MONO","portId":"in:2"}
+    state["mixerSession"].update(routeRevision="3",channels=copy.deepcopy(state["graph"]["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    assert not button.is_visible()
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='monitor').length")==0
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -661,6 +695,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_independent_output(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1024,"height":576})
+        verify_first_sound(page,out)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_bus_remap(page,out)

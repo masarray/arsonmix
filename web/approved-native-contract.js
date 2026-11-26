@@ -598,6 +598,26 @@
   }
   // Read-only operator diagnosis from verified Windows callback evidence.
   // UI-only: this routine cannot patch, ARM, create PCM or certify speakers.
+  // A novice shortcut is offered only for an empty physical input graph.
+  // Do not take over a saved logical input, PLAYER, or authored source.
+  function firstSoundPlan(snapshot) {
+    const d=snapshot?.device,g=snapshot?.graph,raw=snapshot?.raw;
+    if(!snapshot?.admitted||snapshot.retained||raw?.mixerSession?.authority!=="CHANNEL_ID"||
+       raw.mixerSession.deviceEpoch!==d?.epoch||!snapshot.hardwareConfiguration||
+       raw.operatorOutputMuted===true||raw.secondaryMainOnly===true||
+       raw.waitingAsioInputs>0||raw.logicalInputRegistry?.references?.length||
+       !Array.isArray(g?.channels)||!Array.isArray(g.edges))return null;
+    const inputs=g.channels.filter(ch=>ch.role==="INPUT");
+    if(inputs.some(ch=>ch.source!=null))return null;
+    const target=inputs.find(ch=>ch.controls?.mute===false&&
+      g.edges.some(e=>e.from===ch.id&&e.to===g.mainChannelId&&e.primaryOutput===true&&e.enabled===true));
+    const pins=(d.inputEndpoints||[]).filter(p=>p.active===true&&d.enabledInputs?.includes(p.port)&&
+      Number.isInteger(p.port)&&typeof p.label==="string"&&p.label.length>0);
+    if(!target||!pins.length)return null;
+    return {channelId:target.id,channelName:target.name,epoch:d.epoch,revision:g.revision,
+      config:snapshot.hardwareConfiguration,pins:pins.map(p=>({port:p.port,label:p.label}))};
+  }
+
   function diagnoseFirstSound(snapshot, selectedPhysicalPort=null) {
     const d=snapshot?.device, t=snapshot?.telemetry, m4=snapshot?.raw?.legacyM4;
     const opened=Boolean(d && d.sampleRate>0 && Array.isArray(d.enabledOutputs) &&
@@ -1149,7 +1169,7 @@
 
   return Object.freeze({smartPerformanceView,footerHealthFromLive,decimal,cmp,normalizeSnapshot,
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
-    logicalReadbackProves,diagnoseFirstSound,createController,
+    logicalReadbackProves,firstSoundPlan,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
     operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,monitorTimingView});
 });

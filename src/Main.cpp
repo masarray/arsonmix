@@ -6768,6 +6768,14 @@ private:
                 emitNotice("FX editor unavailable: Audio I/O is applying",true);
             else if(action=="audioDriverPanel")
                 emitNotice("Audio device is busy · try again",true);
+            else if(action=="routingNativeSourcePatch"){
+                auto ack=std::make_unique<juce::DynamicObject>();
+                ack->setProperty("requestId",args.getProperty("requestId",{}));
+                ack->setProperty("channelId",args.getProperty("channelId",{}));
+                ack->setProperty("ok",false);
+                ack->setProperty("error","Audio configuration is finishing");
+                if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNativeSourceAck",juce::var(ack.release()));
+            }
             else if(action=="secondaryOutputEnable"||action=="secondaryOutputConnect"||
                     action=="secondaryOutputArm"||action=="secondaryOutputStop"||
                     action=="secondaryOutputSplit"||action=="secondaryMonitorStarter"){
@@ -8731,9 +8739,37 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
-                result=engine_.patchNativeInputSource(ep,rev,roster,
-                    armix::mixer::ChannelId{id},left,right,
-                    mode=="STEREO"||player,player);
+                // Input patching is a normal mixer operation, not a reason
+                // to require the operator to disconnect a healthy STREAM.
+                auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
+                if(lease&&!mixerSessionWorker_.busy()&&!pendingRetainedFxCapture_&&
+                   !retainedOfflineFxActive_&&!engine_.hasRuntimeFxFault()) {
+                    auto stream=engine_.captureSecondaryResumeIntent();
+                    if(!stream&&pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
+                       pendingVendorStream_->revision==rev)stream=pendingVendorStream_->intent;
+                    if(!stream&&secondaryContinuity_&&secondaryContinuity_->epoch==ep&&
+                       secondaryContinuity_->revision==rev&&secondaryRetry_.pending())
+                        stream=secondaryContinuity_->intent;
+                    pendingVendorStream_.reset();
+                    cancelSecondaryContinuity();
+                    const auto generation=secondaryRetry_.generation();
+                    const bool hardwareWanted=!operatorOutputMuted_&&
+                        (engine_.isMonitorEnabled()||engine_.wantsMainContinuation());
+                    if(stream)engine_.disarmSecondaryOutput();
+                    result=engine_.patchNativeInputSource(ep,rev,roster,
+                        armix::mixer::ChannelId{id},left,right,
+                        mode=="STEREO"||player,player);
+                    const auto acceptedRevision=engine_.outputArmRevision();
+                    if(generation==secondaryRetry_.generation()&&!pendingSecondaryStop_&&
+                       engine_.dryRoutingLabEpoch()==ep&&(result.accepted||acceptedRevision==rev)) {
+                        if(hardwareWanted||(result.accepted&&mode!="NONE"&&!operatorOutputMuted_))
+                            requestAutomaticMain(!hardwareWanted);
+                        if(stream&&engine_.secondarySourceMatches(*stream))
+                            pendingVendorStream_=PendingVendorStream{*stream,ep,acceptedRevision,
+                                static_cast<std::uint64_t>(monotonicMilliseconds()+5000),
+                                hardwareWanted};
+                    }
+                }else result.error="Audio configuration is finishing";
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);

@@ -7787,3 +7787,19 @@ test("U4 starter mix is an atomic native WIRE transaction, no overwrite of autho
  assert.match(f,/std::min\(0.25f,1.f\/static_cast<float>\(changes.size\(\)\)\)/);
  assert.match(f,/return applyNativeWireTransaction\(ep,rev,rosterRev,changes\)/);
 });
+
+
+test("U5 first sound is a contextual shortcut to a verified empty ChannelId input",()=>{
+ const s={admitted:true,hardwareConfiguration:"lease",device:{epoch:"17",enabledInputs:[2],inputEndpoints:[{port:2,label:"Mic",active:true}]},graph:{revision:"19",mainChannelId:"5",channels:[{id:"3",role:"INPUT",name:"Vocal",controls:{mute:false}}],edges:[{from:"3",to:"5",primaryOutput:true,enabled:true}]},raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"17"}}};
+ assert.deepEqual(protocol.firstSoundPlan(s),{channelId:"3",channelName:"Vocal",epoch:"17",revision:"19",config:"lease",pins:[{port:2,label:"Mic"}]});
+ assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,operatorOutputMuted:true}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,logicalInputRegistry:{references:[{}]}}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,graph:{...s.graph,channels:[{...s.graph.channels[0],source:{sourceFormat:"PLAYER"}}]}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,device:{...s.device,enabledInputs:[]}}),null);
+ const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp");
+ const f=b.slice(b.indexOf("function connectFirstSound("),b.indexOf("function openFirstSound("));
+ assert.match(f,/pendingNativeSources.set/);assert.match(f,/dispatchNativeSource/);assert.doesNotMatch(f,/emitEvent/);
+ const h=n.slice(n.indexOf('if(action=="routingNativeSourcePatch"){',n.indexOf('if(action=="routingNativeSourcePatch"){')+1),n.indexOf('if(action=="routingNativeBusCreate"'));
+ assert.match(h,/engine_.disarmSecondaryOutput/);assert.match(h,/engine_.patchNativeInputSource/);
+ assert.match(h,/pendingVendorStream_=PendingVendorStream/);assert.match(h,/requestAutomaticMain/);
+});

@@ -3276,6 +3276,7 @@
     host.append(table);
   }
   function paintPhysicalOutputs(next) {
+    paintFirstSound(next);
     if(devicePanel&&!devicePanel.hidden){
       paintMonitorTiming(next);
       const page=devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab;
@@ -3407,6 +3408,7 @@
       !d.enabledInputs?.length?(next.admitted?"NO ACTIVE CAPTURE PINS · AUDIO I/O":
         "CHECK AUDIO I/O SETTINGS"):
       next?.raw?.operatorOutputMuted===true?"EMERGENCY STOP · MORE → RESUME":
+      protocol.firstSoundPlan(next)?"CONNECT MICROPHONE · CHOOSE INPUT":
       legacy()?.routeAccepted||next?.admitted?"OUTPUT RECOVERING · CHECK AUDIO I/O":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
@@ -4621,6 +4623,65 @@
     });
   }
 
+  let firstSoundButton=null,firstSoundDialog=null,firstSoundLease=null;
+  function paintFirstSound(next){
+    if(!firstSoundButton)return;
+    const plan=protocol.firstSoundPlan(next);
+    const busy=matrixBusy()||Boolean(controller?.state()?.pending||pendingBusCreate||pendingTrackDelete);
+    firstSoundButton.hidden=!plan;
+    firstSoundButton.disabled=busy||!deviceReady();
+    const label=plan?.pins.length===1?"Connect input":"Connect microphone";
+    if(firstSoundButton.textContent!==label)firstSoundButton.textContent=label;
+    if(firstSoundDialog?.open){
+      const stale=!plan||plan.epoch!==firstSoundLease?.epoch||plan.revision!==firstSoundLease?.revision||
+        plan.config!==firstSoundLease?.config;
+      if(stale)firstSoundDialog.close();
+      else firstSoundDialog.querySelector("[data-first-connect]").disabled=busy||
+        firstSoundDialog.querySelector("select").value==="";
+    }
+  }
+  function connectFirstSound(plan,port){
+    const current=protocol.firstSoundPlan(hardware);
+    if(!current||current.channelId!==plan.channelId||current.epoch!==plan.epoch||
+       current.revision!==plan.revision||current.config!==plan.config||
+       !current.pins.some(p=>p.port===port)||matrixBusy()||
+       controller?.state()?.pending||!deviceReady())return;
+    const choices=sourceChoicesFor(),choice=choices.find(p=>p.mode==="MONO"&&p.left===port);
+    const decision=stripVM.sourceQueueSelection({choice,choices,epoch:current.epoch,
+      acceptedLabel:"None",hardwareConfiguration:current.config});
+    if(decision.kind!=="QUEUE")return;
+    firstSoundDialog?.close();
+    pendingNativeSources.set(current.channelId,decision.entry);
+    dispatchNativeSource(); // the SAME native ChannelId queue and ACK owner
+    paintFirstSound(hardware);
+  }
+  function openFirstSound(){
+    const plan=protocol.firstSoundPlan(hardware);
+    if(!plan||matrixBusy()||!deviceReady())return;
+    if(plan.pins.length===1)return connectFirstSound(plan,plan.pins[0].port);
+    if(!firstSoundDialog){
+      const dialog=document.createElement("dialog");
+      dialog.className="armix-stream-dialog";dialog.setAttribute("aria-label","Connect microphone");
+      dialog.style.cssText="width:min(380px,92vw);padding:0;border:1px solid #506778;border-radius:8px;background:#192b35;color:#e3eff4;font:12px system-ui,sans-serif";
+      dialog.innerHTML='<div style="display:grid;gap:10px;padding:14px"><div style="display:flex;justify-content:space-between;align-items:center"><strong style="font-weight:550">Connect microphone</strong><button type="button" data-first-cancel aria-label="Close microphone setup">×</button></div><label style="display:grid;gap:5px">Audio input<select aria-label="Microphone input" style="min-height:30px;background:#102631;color:#e1eff6;border:1px solid #527889;border-radius:4px"></select></label><span data-first-note style="color:#a9c5d2"></span><button type="button" data-first-connect style="min-height:30px;background:#2c5268;color:#e1eff6;border:1px solid #527889;border-radius:4px">Connect</button></div>';
+      document.body.append(dialog);firstSoundDialog=dialog;
+      dialog.querySelector("[data-first-cancel]").onclick=()=>dialog.close();
+      dialog.querySelector("select").onchange=()=>paintFirstSound(hardware);
+      dialog.querySelector("[data-first-connect]").onclick=()=>{
+        const selected=dialog.querySelector("select").value;
+        if(firstSoundLease&&selected!=="")connectFirstSound(firstSoundLease,Number(selected));
+      };
+    }
+    firstSoundLease=plan;
+    const select=firstSoundDialog.querySelector("select");
+    select.replaceChildren(new Option("Choose your input…",""),
+      ...plan.pins.map(p=>new Option(p.label+" · IN "+(p.port+1),String(p.port))));
+    firstSoundDialog.querySelector("[data-first-note]").textContent=
+      "Connect to "+plan.channelName+". Start with low headphone volume; output is verified automatically.";
+    if(!firstSoundDialog.open)firstSoundDialog.showModal();
+    paintFirstSound(hardware);
+  }
+
   function installFirstSoundMenu() {
     const menu=document.querySelector?.("#moreTools .more-tools-panel");
     if(!menu || typeof document.createElement!=="function")return;
@@ -4969,6 +5030,13 @@
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
+      firstSoundButton=item("button","tool","Connect microphone");
+      firstSoundButton.dataset.nativeFirstSound="true";
+      firstSoundButton.hidden=true;
+      firstSoundButton.style.cssText="border-color:#638994;color:#b9e2ed";
+      firstSoundButton.title="Connect a microphone to an unused native mixer";
+      firstSoundButton.addEventListener("click",openFirstSound);
+      toolbar.insertBefore(firstSoundButton,io);
       const addTrack=document.getElementById("addTrack");
       if(addTrack){
         addTrack.textContent="+ Audio Track";
