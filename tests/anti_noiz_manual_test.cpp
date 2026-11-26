@@ -37,6 +37,11 @@ int main(){
   s.gate=false;s.rangeDb=60;s.ratio=4;e.apply(ManualExpander::prepareSettings(s));
   check(ManualExpander::cut(-50,s)==30&&ManualExpander::cut(-80,s)==60,"static curve");
   s.kneeDb=12;check(std::abs(ManualExpander::cut(-40,s)-4.5f)<1e-6,"knee");
+  // A steady detector inside the upper half of the knee must not be forced open.
+  e.reset();s.thresholdDb=-40;s.holdMs=0;s.attackMs=1;s.releaseMs=10;
+  e.apply(ManualExpander::prepareSettings(s));
+  for(int i=0;i<rate/2;++i)e.step(.015f*std::sin(2*std::numbers::pi_v<float>*1000*i/rate),0);
+  check(e.gain()<.999f&&e.gain()>.2f,"dynamic knee response");
   s.ratio=1;e.apply(ManualExpander::prepareSettings(s));for(int i=0;i<rate/5;++i)e.step(0,0);check(e.gain()==1,"unity ratio");
   s.ratio=4;s.rangeDb=0;e.apply(ManualExpander::prepareSettings(s));for(int i=0;i<rate/5;++i)e.step(0,0);check(e.gain()==1,"unity range");
   s.thresholdDb=NAN;check(!ManualExpander::valid(s),"nan reject");

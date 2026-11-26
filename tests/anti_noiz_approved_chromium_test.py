@@ -322,7 +322,7 @@ def main():
         assert (bundle/"assets"/"geq31-brushed-metal.jpg").stat().st_size>0
         ring=root.locator(".an-led-off").first.get_attribute("d")
         assert ring.count("M")==27 and ring.count("A45.5 45.5")==27 and "L" not in ring
-        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==16
+        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==1+int(26*accepted["cleanDb"]/40)
         assert root.locator(".an-knob-art").first.get_attribute("src").endswith("mixer-gain-knob-brushed-steel.png")
         knob=root.locator('input[aria-label="Clean"]')
         bounds=knob.bounding_box()
@@ -393,6 +393,26 @@ def main():
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-360.png"))
         assert_full_composition(root)
         page.set_viewport_size({"width":1366,"height":768})
+        # Actual advanced controls must reach the same accepted native identity.
+        root.locator(".an-pro summary").click()
+        manual=root.locator('[data-pro-flag="manualExpander"]')
+        manual.check()
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["manualExpander"] is True
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        threshold=root.locator('input[aria-label="Threshold"]')
+        expect(threshold).to_be_enabled()
+        threshold.focus();page.keyboard.press("ArrowRight")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["thresholdDb"]==-39
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        readback(page,accepted,{**OBS,"serial":"19","effectiveMode":"Voice","profile":True,"detectorLevel":.01})
+        expect(root.locator("[data-detector]")).to_have_text("-40.0 dBFS")
+        expect(root.locator("[data-pro-curve]")).to_have_attribute("d",__import__("re").compile("^M"))
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-1366.png"))
+        root.locator(".an-pro summary").click()
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
         root.locator(".mx-fxp-save-as").click()

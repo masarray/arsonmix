@@ -13,7 +13,7 @@ public:
         bool enabled=false,gate=false;
         float thresholdDb=-40,ratio=4,rangeDb=60,attackMs=1,holdMs=100,releaseMs=120,kneeDb=0,hpHz=120,lpHz=12000;
     };
-    struct Prepared {Settings s{};float threshold=.01f,closeThreshold=.007079458f,floor=.001f;};
+    struct Prepared {Settings s{};float threshold=.01f,closeThreshold=.007079458f,floor=.001f,kneeOpen=.01f;};
     static bool valid(const Settings& s) noexcept {
         auto in=[](float x,float a,float b){return std::isfinite(x)&&x>=a&&x<=b;};
         return in(s.thresholdDb,-80,0)&&in(s.ratio,1,20)&&in(s.rangeDb,0,96)&&
@@ -21,11 +21,11 @@ public:
             in(s.kneeDb,0,18)&&in(s.hpHz,20,500)&&in(s.lpHz,1000,20000);
     }
     static Prepared prepareSettings(Settings s) noexcept {
-        return {s,std::pow(10.f,s.thresholdDb/20.f),std::pow(10.f,(s.thresholdDb-3.f)/20.f),std::pow(10.f,-s.rangeDb/20.f)};
+        return {s,std::pow(10.f,s.thresholdDb/20.f),std::pow(10.f,(s.thresholdDb-3.f)/20.f),std::pow(10.f,-s.rangeDb/20.f),std::pow(10.f,(s.thresholdDb+s.kneeDb*.5f)/20.f)};
     }
     void prepare(double rate,int channels,int delay) noexcept {rate_=float(rate);channels_=channels;delay_=delay;reset();apply(p_);}
     void apply(const Prepared& p) noexcept {
-        const bool toggled=p.s.enabled!=p_.s.enabled||p.s.gate!=p_.s.gate;
+        const bool toggled=p.s.enabled!=p_.s.enabled;
         p_=p;
         const auto& s=p.s;
         hp_=1.f/(1.f+rate_/(2.f*std::numbers::pi_v<float>*s.hpHz));
@@ -56,7 +56,7 @@ public:
         env_=std::max(peak,env_*(1.f-decay_));
         if(env_<1e-15f)env_=0;
         const auto& s=p_.s;
-        const bool above=env_>=(s.gate&&open_?p_.closeThreshold:p_.threshold);
+        const bool above=env_>=(s.gate?(open_?p_.closeThreshold:p_.threshold):p_.kneeOpen);
         if(above){hold_=holdSamples_;open_=true;}
         else if(hold_>0)--hold_;
         else open_=false;
