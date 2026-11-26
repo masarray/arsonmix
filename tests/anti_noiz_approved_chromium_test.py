@@ -413,6 +413,8 @@ def main():
         expect(root.locator("[data-detector]")).to_have_text("-40.0 dBFS")
         expect(root.locator("[data-pro-dot]")).to_be_visible()
         expect(root.locator("[data-pro-curve]")).to_have_attribute("d",__import__("re").compile("^M"))
+        root.locator('[data-pro-tab="sidechain"]').click()
+        expect(root.locator('[data-pro-page="expander"]')).to_be_hidden()
         smart=root.locator('[data-pro-flag="smartVoice"]')
         smart.click()
         edit=last_action(page,"nativeAntiNoizSet")
@@ -428,8 +430,11 @@ def main():
         accepted=edit["settings"]
         readback(page,accepted,{**OBS,"serial":"190","effectiveMode":"Voice","profile":True,"detectorLevel":.01,"sidechainReference":True,"sidechainNoisePeak":.01,"sidechainThreshold":.0316227766})
         expect(root.locator("[data-smart-noise]")).to_have_text("-40.0 dBFS")
-        expect(root.locator("[data-smart-threshold]")).to_have_text("-30.0 dBFS")
+        expect(root.locator("[data-sidechain-effective]")).to_have_text("-30.0 dBFS")
+        expect(root.locator("[data-smart-lift]")).to_have_text("9.0 dB")
         assert accepted["thresholdDb"]==-39
+        root.locator('[data-pro-tab="spectral"]').click()
+        expect(root.locator('[data-pro-page="sidechain"]')).to_be_hidden()
         spectral=root.locator('[data-pro-flag="spectralManual"]')
         spectral.click()
         edit=last_action(page,"nativeAntiNoizSet")
@@ -455,6 +460,26 @@ def main():
         readback(page,accepted,{**OBS,"serial":"22","effectiveMode":"Voice","profile":False,"audition":False})
         expect(root.locator("[data-audition]")).to_be_disabled()
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-1366.png"))
+        # Numeric editing uses the same acknowledged control path; no optimistic durable state.
+        number=root.locator('input[aria-label="Artifact control value"]')
+        number.fill("72");number.press("Enter")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert abs(edit["settings"]["artifactControl"]-.72)<.0001
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        root.locator('[data-pro-tab="expander"]').click()
+        root.screenshot(path=str(bundle.parent/"anti-noiz-pro-expander-1366.png"))
+        root.locator('[data-pro-tab="sidechain"]').click()
+        root.screenshot(path=str(bundle.parent/"anti-noiz-pro-sidechain-1366.png"))
+        page.set_viewport_size({"width":360,"height":720})
+        for name in ("expander","spectral","sidechain"):
+            tab=root.locator(f'[data-pro-tab="{name}"]');tab.click()
+            expect(root.locator(f'[data-pro-page="{name}"]')).to_be_visible()
+            assert root.locator(".an-panel").evaluate("el=>el.scrollWidth<=el.clientWidth+2")
+            root.screenshot(path=str(bundle.parent/f"anti-noiz-pro-{name}-360.png"))
+        root.locator('[data-pro-tab="sidechain"]').focus();page.keyboard.press("Home")
+        expect(root.locator('[data-pro-tab="expander"]')).to_have_attribute("aria-selected","true")
+        page.set_viewport_size({"width":1366,"height":768})
         root.locator(".an-pro summary").click()
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
