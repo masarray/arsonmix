@@ -223,7 +223,7 @@ root.innerHTML=[
  '<div class="sk-rotary-grid">',
  '<label class="sk-rotary"><span class="sk-param-name">REVOLUTION</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpeed" type="range" min="0.5" max="30" step="0.1" value="12" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpeedValue">12.0 s</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">SPREAD</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpread" type="range" min="0" max="180" step="1" value="60" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpreadValue">60°</output></label>',
- '<label class="sk-rotary"><span class="sk-param-name">HEAD YAW</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skHeadYaw" type="range" min="-180" max="180" step="1" value="0" title="Turn listener left/right; double-click to center" aria-label="Head yaw"/></span><output id="skYawValue">0°</output></label>',
+ '<label class="sk-rotary"><span class="sk-param-name">HEAD YAW</span><span class="sk-dial sk-dial-bipolar"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skHeadYaw" type="range" min="-180" max="180" step="1" value="0" title="Turn listener left/right; double-click to center" aria-label="Head yaw"/></span><output id="skYawValue">0°</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">OUTPUT GAIN</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skTrim" type="range" min="-24" max="12" step="0.5" value="-2.5" title="Gain in dB (-24 to +12). Double-click for unity 0 dB."/></span><output id="skTrimValue">-2.5 dB</output></label>',
  '</div><div class="sk-space-panel" aria-label="Room simulation controls">',
  '<div class="sk-space-head"><span>SPACE</span><output id="skSpaceText">DIRECT ONLY</output></div>',
@@ -364,8 +364,15 @@ function render(){
   const min=Number(el.min),max=Number(el.max);
   const p=Math.max(0,Math.min(1,(value-min)/(max-min)));
   const dial=el.closest(".sk-dial");
-  dial.style.setProperty("--sk-sweep",(p*270).toFixed(2)+"deg");
-  dial.style.setProperty("--sk-needle",(-135+p*270).toFixed(2)+"deg");
+  const sweep=p*270;
+  dial.style.setProperty("--sk-sweep",sweep.toFixed(2)+"deg");
+  dial.style.setProperty("--sk-needle",(sweep-135).toFixed(2)+"deg");
+  // Same angular coordinate for both pointer and bipolar arc. Zero is
+  // twelve o'clock, not the counter-clockwise end of a unipolar knob.
+  if(input==="skHeadYaw"){
+   dial.style.setProperty("--sk-arc-start",Math.min(135,sweep).toFixed(2)+"deg");
+   dial.style.setProperty("--sk-arc-end",Math.max(135,sweep).toFixed(2)+"deg");
+  }
  }
  // ROOM is one typed native scene, never a browser audio simulator.
  root.querySelectorAll("[data-sk-room]").forEach(el=>{

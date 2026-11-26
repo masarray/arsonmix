@@ -687,6 +687,55 @@ def exercise(browser,out,width,height):
     accepted_snapshot(page,state,drag_cmd["settings"],applied=drag_cmd["requestId"],schema=11)
     assert command_count()==before+1
     assert float(yaw.input_value())==drag_cmd["settings"]["headYawDegrees"]
+    # Bipolar arc must start at 12 o'clock and terminate exactly at the
+    # pointer, including both endpoints and a completely neutral 0°.
+    def check_yaw_arc(value):
+        arc=yaw.evaluate("""n=>{
+          const d=n.closest('.sk-dial');
+          const cs=getComputedStyle(d);
+          const track=getComputedStyle(d.querySelector('.sk-dial-track'));
+          const needle=getComputedStyle(d.querySelector('.sk-dial-needle'));
+          const m=new DOMMatrixReadOnly(needle.transform);
+          return {bipolar:d.classList.contains('sk-dial-bipolar'),
+            start:parseFloat(cs.getPropertyValue('--sk-arc-start')),
+            end:parseFloat(cs.getPropertyValue('--sk-arc-end')),
+            sweep:parseFloat(cs.getPropertyValue('--sk-sweep')),
+            needle:Math.atan2(m.b,m.a)*180/Math.PI,
+            duration:needle.transitionDuration,
+            gradient:track.backgroundImage};
+        }""")
+        sweep=135+value*.75
+        assert arc["bipolar"] and abs(arc["sweep"]-sweep)<.011,arc
+        assert abs(arc["start"]-min(135,sweep))<.011,arc
+        assert abs(arc["end"]-max(135,sweep))<.011,arc
+        assert abs(arc["needle"]-(sweep-135))<.02,arc
+        assert arc["duration"]=="0s",arc
+        # Verify the actually computed paint, not merely custom properties.
+        import re
+        stops=re.findall(r"rgb\\(121, 198, 209\\) ([0-9.]+)deg",arc["gradient"])
+        assert len(stops)==2 and abs(float(stops[0])-arc["start"])<.011 and abs(float(stops[1])-arc["end"])<.011,arc
+    for value in (-180,-90,0,90,180):
+        before=command_count()
+        yaw.evaluate("""(n,v)=>{n.value=String(v);n.dispatchEvent(new Event('input',{bubbles:true}));}""",value)
+        page.wait_for_timeout(58)
+        assert command_count()==before+1,(value,"yaw native edit missing")
+        cmd=last_action(page,"nativeSonKuSet")
+        assert cmd["settings"]["headYawDegrees"]==value and cmd["settings"]["spatialMix"]==1
+        check_yaw_arc(value) # live draft, before ACK
+        emit(page,"arMixBuiltinSonKuAck",{"requestId":cmd["requestId"],"status":"APPLIED"})
+        accepted_snapshot(page,state,cmd["settings"],applied=cmd["requestId"],schema=11)
+        check_yaw_arc(value) # authoritative readback
+        if value in (-90,0,90):
+            dial.screenshot(path=f"arsonmix-sonku-editor-yaw-{value}-{width}.png")
+    before=command_count()
+    dial.dblclick()
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Double-click must center yaw once"
+    cmd=last_action(page,"nativeSonKuSet")
+    assert cmd["settings"]["headYawDegrees"]==0
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":cmd["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,cmd["settings"],applied=cmd["requestId"],schema=11)
+    check_yaw_arc(0)
     factory=editor.locator("#skPreset")
     assert factory.is_enabled(),"Valid P9.1+P9.2 native capability must unlock presets"
     assert factory.input_value()=="CUSTOM","Saved non-factory scene was overwritten"
