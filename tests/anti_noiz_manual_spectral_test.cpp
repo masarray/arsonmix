@@ -12,7 +12,7 @@ void check(bool x,const char* why){if(!x){std::cerr<<why<<'\n';std::abort();}}
 // vector norm for forward error, Parseval for aggregate error and the
 // original time-domain peak for inverse reconstruction. Exact zero remains
 // exact; tiny input is tested relatively rather than against a fixed floor.
-void checkPackedFftOracle(){
+void checkFftOracle(){
  using D=std::complex<double>;FftPlan fft;std::mt19937 rng(29);
  std::uniform_real_distribution<float> random(-64.f,64.f);
  double worst=0,roundWorst=0;
@@ -27,7 +27,7 @@ void checkPackedFftOracle(){
     input[i]={random(rng)*scale,trial%4==0?0.f:random(rng)*scale};
     norm2+=std::norm(D(input[i]));peak=std::max(peak,std::abs(D(input[i])));
    }
-   ref=packed=input;fft.transform(ref,false);fft.transformPacked<false>(packed);
+   ref=packed=input;fft.transform(ref,false);fft.transform(packed,false);
    const double norm=std::sqrt(norm2);double err2[2]{};
    for(int k=0;k<n;++k){
     // Independent scalar extended-precision accumulation.
@@ -48,7 +48,7 @@ void checkPackedFftOracle(){
     }
    }
    for(double e:err2)check(e<=4e-12*n*norm2,"FFT Parseval relative error");
-   fft.transform(ref,true);fft.transformPacked<true>(packed);
+   fft.transform(ref,true);fft.transform(packed,true);
    for(int i=0;i<n;++i)for(auto val:{ref[i],packed[i]}){
     const double err=std::abs(D(val)-D(input[i]));
     check(err<=2e-6*peak,"FFT independent inverse reconstruction");
@@ -59,7 +59,7 @@ void checkPackedFftOracle(){
  std::cout<<"FFT_ORACLE_PASS cases=192 max_forward_norm_error="<<worst<<" max_roundtrip_peak_error="<<roundWorst<<'\n';
 }
 int main(){
- checkPackedFftOracle();
+ checkFftOracle();
  for(float e:{.1f,1.f,2.f,5.f,100.f}){
   float prior=1;
   for(float floor:{1.f,.5f,.1f,.01f}){const float x=ManualSpectral::target(e,1,floor,.5f);check(x<=prior&&x>=floor-1e-6f,"reduction monotonic");prior=x;}

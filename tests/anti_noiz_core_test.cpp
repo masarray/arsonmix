@@ -13,7 +13,7 @@ double rms(const std::vector<float>& x,std::size_t start) {
 }
 int main(){
     // Both transform sizes, full-scale bounded PCM, tiny values and silent
-    // stereo legs: compare the packed kernel with the existing reference.
+    // stereo legs: compare two independently initialized inputs through the shared FFT plan.
     {
         using armix::builtin_fx::anti_noiz::FftPlan;
         FftPlan fft;std::mt19937 rng(29);
@@ -25,10 +25,10 @@ int main(){
                 const float scale=trial%3==0?1.f:trial%3==1?1e-12f:0.f;
                 for(int i=0;i<n;++i)ref[i]={random(rng)*scale,trial%4==0?0.f:random(rng)*scale};
                 packed=ref;
-                fft.transform(ref,false);fft.transformPacked<false>(packed);
-                for(int i=0;i<n;++i)require(std::abs(ref[i]-packed[i])<=2e-6f*std::max(1.f,std::abs(ref[i])),"packed FFT forward parity");
-                fft.transform(ref,true);fft.transformPacked<true>(packed);
-                for(int i=0;i<n;++i)require(std::abs(ref[i]-packed[i])<=2e-6f*std::max(1.f,std::abs(ref[i])),"packed FFT inverse parity");
+                fft.transform(ref,false);fft.transform(packed,false);
+                for(int i=0;i<n;++i)require(std::abs(ref[i]-packed[i])<=2e-6f*std::max(1.f,std::abs(ref[i])),"FFT forward repeatability");
+                fft.transform(ref,true);fft.transform(packed,true);
+                for(int i=0;i<n;++i)require(std::abs(ref[i]-packed[i])<=2e-6f*std::max(1.f,std::abs(ref[i])),"FFT inverse repeatability");
             }
         }
     }

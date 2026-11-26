@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Independent scalar reference for the production FFT plan, including SSE2.
+// Independent scalar reference for the production FFT plan, including staged twiddles.
 #include "../engine/builtin_fx/anti_noiz/AntiNoizFft.h"
 #include <cstdlib>
 #include <iostream>
