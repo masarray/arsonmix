@@ -35,6 +35,7 @@
 #endif
 #include "PluginCatalog.h"
 #include "StartupVst3RecoveryGuard.h"
+#include "RuntimeVendorCrashJournal.h"
 #include "PortableWorkspace.h"
 #include "BuiltInFxUserPresetStore.h"
 #include "BuiltInFxAcceptedSnapshot.h"
@@ -784,6 +785,12 @@ private:
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
     bool mixerSessionRecoveryPending_=false;
+    bool runtimeFxFaultNoticeSent_=false;
+    juce::uint32 runtimeFxFaultPollTick_=0;
+    bool startupFxSafeMode_=armix::startup::Vst3RestoreCrashGuard(settingsDirectory()).interrupted();
+    bool vendorSafeRecoveryActive() const {
+        return startupFxSafeMode_ || armix::startup::RuntimeVendorCrashJournal::process().recoveryRequired();
+    }
     // Isolated read/write FX workspace captured explicitly from a disconnected
     // retained graph. It edits persisted .smix data, NEVER the original lease.
     bool retainedOfflineFxActive_=false;
@@ -3174,6 +3181,8 @@ private:
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
         if(autoMainEpoch_==0)return;
+        if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
+        if(engine_.hasRuntimeFxFault()){autoMainEpoch_=0;return;}
         if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         if(autoMainEpoch_!=engine_.dryRoutingLabEpoch() ||
            engine_.isMonitorEnabled()) {
@@ -3205,6 +3214,8 @@ private:
     }
 
     void requestAutomaticMain(bool requireInput=true) {
+        if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
+        if(engine_.hasRuntimeFxFault()){autoMainEpoch_=0;return;}
         if(operatorOutputMuted_){autoMainEpoch_=0;return;}
         autoMainRequiresInput_=requireInput;
         autoMainEpoch_=engine_.dryRoutingLabEpoch();
@@ -4388,6 +4399,11 @@ private:
     juce::String restoreSavedMixerSession(bool startupOnSavedDevice=false,
             armix::session::MixerDeviceBindingPolicy::Mode bindingMode=
                 armix::session::MixerDeviceBindingPolicy::Mode::exact) {
+        if(vendorSafeRecoveryActive()||engine_.hasRuntimeFxFault()) {
+            mixerSessionRecoveryPending_=true;
+            mixerSessionStatus_="STARTUP_FX_SAFE_RECOVERY";
+            return "Previous vendor lifetime ended unexpectedly. Open a verified .smix manually; MAIN remains disarmed automatically.";
+        }
         // Device auto-restore must NEVER overwrite newer offline VST/built-in
         // state with the older retained DSP graph. Only the operator's
         // explicit .smix Open may replace this pending durable document.
@@ -4500,6 +4516,8 @@ private:
     juce::String saveMixerSession(bool resumeMain, const juce::File& exportFile={},
                                     bool shutdownCheckpoint=false) {
         const bool automatic=exportFile==juce::File{};
+        if(automatic && vendorSafeRecoveryActive())return "Safe recovery: saved mixer checkpoint preserved";
+        if(automatic && engine_.hasRuntimeFxFault())return "Faulted VST3: saved mixer checkpoint preserved";
         // The committed logical FX save is newer than the restored live
         // processor. Auto/shutdown capture MUST NOT replace its binary
         // VST state until an explicit verified session Open adopts it.
@@ -4683,7 +4701,7 @@ private:
             if(error.isEmpty()) {
                 const auto id=doc.id;
                 bool sameOutputs=false;
-                const bool monitoring=engine.isMonitorEnabled();
+                const bool monitoring=engine.isMonitorEnabled()&&!safe->vendorSafeRecoveryActive();
                 error=engine.restoreNativeMixerSession(std::move(doc),states,true,&sameOutputs);
                 if(monitoring&&sameOutputs&&error.isEmpty()&&
                    chosenEpoch==engine.dryRoutingLabEpoch()&&engine.liveOutputArmFault(false).isEmpty())
@@ -4705,6 +4723,8 @@ private:
                     safe->mixerSessionStatus_=engine.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
                     safe->mixerSessionError_.clear();
                     safe->lastMixerFile_=file;
+                    safe->startupFxSafeMode_=false;
+                    armix::startup::RuntimeVendorCrashJournal::process().acknowledgeExplicitRecovery();
                     safe->startupFxGuard_=std::move(explicitRecovery);
                     safe->startupFxGuardTick_=juce::Time::getMillisecondCounter();
                     safe->diagnostics_.record("STARTUP_FX_EXPLICIT_RECOVERY_ACCEPTED",
@@ -9090,10 +9110,12 @@ private:
                 // A crash in vendor DLL code bypasses C++ exception handling.
                 // Preserve the user's .smix without replaying its FX at every
                 // launch. Manual Open remains available after diagnosis.
-                if(guard->interrupted()) {
+                if(guard->interrupted()||vendorSafeRecoveryActive()) {
                     mixerSessionStatus_="STARTUP_FX_SAFE_RECOVERY";
-                    mixerSessionError_="Previous startup ended during FX restore. "
-                        "Session preserved; reopen it manually after checking VST3 plugins.";
+                    mixerSessionError_="Previous VST3 lifetime ended unexpectedly. "
+                        "Session preserved; reopen a verified mixer file manually after checking plugins.";
+                    const auto previous=armix::startup::RuntimeVendorCrashJournal::process().previousOperation();
+                    if(previous.isNotEmpty())diagnostics_.record("LAST_VENDOR_OPERATION",previous);
                     diagnostics_.record("STARTUP_FX_RESTORE_CRASH_GUARD",mixerSessionError_);
                     emitNotice(mixerSessionError_,true);
                 } else if(!guard->arm()) {
@@ -9116,6 +9138,9 @@ private:
                         deviceSettingsDirty_=true;
                     }
                 }
+            }else if(vendorSafeRecoveryActive()) {
+                mixerSessionStatus_="STARTUP_FX_SAFE_RECOVERY";
+                emitNotice("Previous vendor lifetime ended unexpectedly. MAIN automatic resume is disabled; open a verified mixer file to recover.",true);
             }else if(startupError_.isEmpty())requestAutomaticMain();
         }
         // Do not clear the marker as soon as constructors return: Waves and
@@ -9123,6 +9148,19 @@ private:
         if(startupFxGuard_ && browser_.loaded &&
            juce::Time::getMillisecondCounter()-startupFxGuardTick_>=15000u) {
             if(startupFxGuard_->complete())startupFxGuard_.reset();
+        }
+        // Report caught C++ DSP exceptions on CONTROL, at most once per
+        // fault episode. Do not log, allocate or reopen a plugin in RT.
+        const auto faultNow=juce::Time::getMillisecondCounter();
+        if(faultNow-runtimeFxFaultPollTick_>=1000u) {
+            runtimeFxFaultPollTick_=faultNow;
+            const bool faulted=engine_.hasRuntimeFxFault();
+            if(faulted&&!runtimeFxFaultNoticeSent_) {
+                autoMainEpoch_=0;
+                diagnostics_.record("VST3_RUNTIME_FAULT_LATCHED","Affected FX path muted; replace or remove the failed instance");
+                emitNotice("An FX threw during processing. Its path is muted. Remove/re-add the failed FX or open a verified mixer file; the saved checkpoint is preserved.",true);
+            }
+            runtimeFxFaultNoticeSent_=faulted;
         }
         observeNativeCallbackHeartbeat();
 #if defined(_WIN32)
@@ -9562,7 +9600,9 @@ public:
     const juce::String getApplicationName() override { return "ArSonMix"; }
     const juce::String getApplicationVersion() override { return "0.5.0-native-catalog"; }
     // Prevent competing audio-device owners and WebView2 sessions.
-    bool moreThanOneInstanceAllowed() override { return false; }
+    bool moreThanOneInstanceAllowed() override {
+        return armix::vst::ScanIsolation::isWorker(getCommandLineParameterArray());
+    }
     void anotherInstanceStarted (const juce::String&) override
     {
         if (window_)
@@ -9574,6 +9614,21 @@ public:
     }
     void initialise (const juce::String&) override
     {
+        const auto args=getCommandLineParameterArray();
+        if (armix::vst::ScanIsolation::isWorker(args)) {
+            scanWorkerMode_=true;
+#if defined(_WIN32)
+            ::SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+            const auto hr=::CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+#endif
+            int result=armix::vst::ScanIsolation::worker(args);
+#if defined(_WIN32)
+            if (SUCCEEDED(hr)) ::CoUninitialize();
+#endif
+            setApplicationReturnValue(result);
+            quit();
+            return;
+        }
 #if defined(_WIN32)
         // Per-user-session installer handshake. An Inno update requests the
         // ordinary JUCE quit path on the MESSAGE thread: the native mixer
@@ -9706,11 +9761,17 @@ public:
     }
     void shutdown() override
     {
+        if (scanWorkerMode_) return; // no mixer session or updater on worker exit
         stopTimer();
+        const bool hadMixerWindow=window_!=nullptr;
 #if defined(_WIN32)
         updateNotice_.reset();
 #endif
         window_.reset();
+        // Vendor processors, editors and driver owners have now been destroyed.
+        // A GUI-only update health probe must not erase crash evidence.
+        if(hadMixerWindow&&!isAutoUpdateHealthProbe())
+            (void)armix::startup::RuntimeVendorCrashJournal::process().finishCleanExit();
         splash_.reset();
 #if defined(_WIN32)
         // All session persistence has completed. Only a normal user exit can
@@ -9737,6 +9798,7 @@ public:
 #endif
     }
 private:
+    bool scanWorkerMode_=false;
     void presentMixerOnStartup()
     {
         // GUI ready is the *only* normal-launch transition that may foreground

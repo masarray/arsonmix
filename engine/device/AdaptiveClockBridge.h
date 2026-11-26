@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <new>
 
 namespace armix::device
 {
@@ -43,21 +44,26 @@ public:
             || !std::isfinite (targetLatencyMs)
             || targetLatencyMs < 5. || targetLatencyMs > 200.) return false;
 
-        channels_ = numChannels;
-        mask_ = static_cast<std::uint64_t> (bufferCapacityFrames - 1);
-        capacity_ = bufferCapacityFrames;
-        inputPerOutput_ = captureRate / renderRate;
-        renderRate_ = renderRate;
-        targetFill_ = std::clamp (static_cast<std::uint64_t> (captureRate * targetLatencyMs / 1000.),
+        // Prepare all new storage on CONTROL before publishing any metadata.
+        // Allocation failure cannot leave capacity/stride pointing outside
+        // the old ring. Both callbacks must already be stopped.
+        const auto target = std::clamp (static_cast<std::uint64_t> (captureRate * targetLatencyMs / 1000.),
                                   static_cast<std::uint64_t> (taps * 2),
-                                  static_cast<std::uint64_t> (capacity_ / 2));
-        if (targetFill_ + taps * 2 >= static_cast<std::uint64_t> (capacity_)) return false;
+                                  static_cast<std::uint64_t> (bufferCapacityFrames / 2));
+        if (target + taps * 2 >= static_cast<std::uint64_t> (bufferCapacityFrames)) return false;
+        const double ratio = captureRate / renderRate;
+        std::vector<float> nextCoefficients, nextRing;
+        try {
+            nextCoefficients.resize(static_cast<std::size_t>(phases)*taps);
+            nextRing.assign(static_cast<std::size_t>(bufferCapacityFrames)*numChannels,0.f);
+        } catch (const std::bad_alloc&) {
+            return false; // previous valid stopped configuration is unchanged
+        }
 
         // Band-limited polyphase windowed-sinc FIR, normalized to DC unity.
         // Anti-alias cutoff leaves margin for bounded ppm rate corrections.
-        const double cutoff = 0.94 * std::min (1., 1. / inputPerOutput_);
+        const double cutoff = 0.94 * std::min (1., 1. / ratio);
         const double pi = 3.1415926535897932384626433832795;
-        coefficients_.resize (static_cast<std::size_t> (phases * taps));
         for (int p = 0; p < phases; ++p)
         {
             const double frac = static_cast<double> (p) / phases;
@@ -72,15 +78,23 @@ public:
                 const double w = 0.42 - 0.5 * std::cos (2. * pi * k / (taps - 1))
                                        + 0.08 * std::cos (4. * pi * k / (taps - 1));
                 const float c = static_cast<float> (sinc * w);
-                coefficients_[static_cast<std::size_t> (p * taps + k)] = c;
+                nextCoefficients[static_cast<std::size_t> (p * taps + k)] = c;
                 sum += c;
             }
             if (!(sum > 0.0)) return false;
             for (int k = 0; k < taps; ++k)
-                coefficients_[static_cast<std::size_t> (p * taps + k)]
+                nextCoefficients[static_cast<std::size_t> (p * taps + k)]
                     /= static_cast<float> (sum);
         }
-        ring_.assign (static_cast<std::size_t> (capacity_) * channels_, 0.f);
+        // No exceptions after storage commit; publish dimensions last.
+        coefficients_.swap(nextCoefficients);
+        ring_.swap(nextRing);
+        channels_=numChannels;
+        capacity_=bufferCapacityFrames;
+        mask_=static_cast<std::uint64_t>(capacity_-1);
+        targetFill_=target;
+        inputPerOutput_=ratio;
+        renderRate_=renderRate;
         resetStopped();
         return true;
     }

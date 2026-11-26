@@ -11,7 +11,8 @@ if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_P
    $policyOutput -notcontains 'ARSONMIX_UPDATER_CACHE_AND_RECOVERY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_RETRY_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS' -or
-   $policyOutput -notcontains 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS'){
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS'){
     throw "Smart updater offline version/origin/duplicate-asset policy failed: $policyOutput"
 }
 Write-Host "ARSONMIX_UPDATER_POLICY_PASS"

@@ -27,8 +27,10 @@ struct ClockBridgeSizing
         Decision d;
         if (!std::isfinite (captureHz) || !std::isfinite (renderHz)
             || captureHz < 8000 || renderHz < 8000
+            || captureHz > 384000 || renderHz > 384000
             || capturePeriod < 1 || renderPeriod < 1
             || firTaps < 1 || capacityFrames < 256
+            || capacityFrames > (1 << 18)
             || !std::isfinite (requestedTargetMs)
             || requestedTargetMs < 5. || requestedTargetMs > 100.)
             return d;
@@ -44,13 +46,13 @@ struct ClockBridgeSizing
         d.minFrames = d.renderSourceFrames +
             std::max (d.renderSourceFrames,
                       static_cast<std::uint64_t> (capturePeriod)) +
-            static_cast<std::uint64_t> (firTaps * 2 + 4);
+            (static_cast<std::uint64_t> (firTaps) * 2u + 4u);
         d.targetMs = std::max (requestedTargetMs,
             1000.0 * static_cast<double> (d.minFrames) / captureHz);
         // The existing SPSC bridge deliberately keeps target occupancy in
         // the lower half of its capacity; reject instead of silently clamp.
         const auto maximumFill = static_cast<std::uint64_t> (capacityFrames / 2);
-        const auto guard = static_cast<std::uint64_t> (firTaps * 2);
+        const auto guard = (static_cast<std::uint64_t> (firTaps) * 2u);
         d.valid = d.targetMs <= 180. &&
             d.minFrames + guard < maximumFill &&
             static_cast<std::uint64_t> (std::ceil (captureHz*d.targetMs/1000.)) + guard < maximumFill;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "Vst3DescriptionCache.h"
+#include "RuntimeVendorCrashJournal.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
@@ -400,6 +401,10 @@ public:
                 auto* fmt=formats.getFormat(0);
                 if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
                     return label+": VST3 module unavailable; rescan catalog";
+                armix::startup::RuntimeVendorCrashJournal::Operation vendorGuard(
+                    armix::startup::RuntimeVendorCrashJournal::process(),req.path,
+                    restores?"SHOW_RESTORE":"ROUTING_ADD");
+                if(!vendorGuard)return label+": VST3 recovery journal unavailable or vendor operation busy";
                 const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,req.path,req.uid);
                 if(!chosen)
                     return label+": selected effect identity is unavailable or instrument";
@@ -1482,6 +1487,18 @@ public:
     }
     // CONTROL traversal of the *published* insert owners. No audio-thread
     // graph search or raw unmanaged pointers survive this synchronous call.
+    bool hasRuntimeFxFault() const noexcept {
+        if(nativeAccepted_.fxOwners)
+            for(const auto& channel:nativeAccepted_.graph.roster.channels()) {
+                const auto count=nativeAccepted_.fxOwners->insertCount(channel.id);
+                for(std::size_t slot=0;slot<count;++slot) {
+                    const auto* owner=nativeAccepted_.fxOwners->ownerForControl(channel.id,slot);
+                    if(owner&&*owner&&(*owner)->processFaulted())return true;
+                }
+            }
+        const auto* graph=publisher_.controlPrepared(epoch(),revision());
+        return graph&&graph->hasRuntimeFxFault();
+    }
     template<class Callback>
     void forEachNativeProcessor(Callback&& visit) const {
         if(!channelIdPhysicalPcmActive()||!nativeAccepted_.fxOwners)return;

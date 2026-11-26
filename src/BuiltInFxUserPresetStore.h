@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "PortableWorkspace.h"
+#include "BoundedDataInput.h"
 #include <juce_core/juce_core.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include <algorithm>
@@ -206,8 +207,9 @@ public:
         const auto file=filename(catalog,id);
         if(!file.existsAsFile()||file.getSize()<1||file.getSize()>maxBytes)
             return "Preset missing or exceeds size budget";
-        const auto json=file.loadFileAsString();
-        if(json.getNumBytesAsUTF8()>maxBytes)return "Preset size budget exceeded";
+        juce::String json;
+        if(!BoundedDataInput::managedPath(root_,file)||!BoundedDataInput::text(file,maxBytes,json)||
+           !BoundedDataInput::jsonStructure(json))return "Preset size or structure budget exceeded";
         auto record=juce::JSON::parse(json);
         if(!record.isObject()||
            !containsOnly(record,{"schemaVersion","presetId","catalogId",
@@ -261,6 +263,8 @@ private:
            !validateSettings(entry.catalogId,entry.settings))
             return "Preset identity/parameters invalid";
         const auto dir=folder(entry.catalogId);
+        if(!BoundedDataInput::managedPath(root_,dir)||
+           !BoundedDataInput::managedPath(root_,filename(entry.catalogId,entry.id)))return "Unsafe preset write path";
         if(!dir.isDirectory()&&dir.createDirectory().failed())
             return "Cannot create user preset directory";
         const auto file=filename(entry.catalogId,entry.id);

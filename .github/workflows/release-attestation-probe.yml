@@ -1,0 +1,37 @@
+name: Release attestation service probe (no release)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-attestation-probe.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    if: github.repository == 'masarray/arsonmix' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Create harmless synthetic subject
+        run: printf 'ArSonMix attestation probe (not a release) %s %s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" > probe.txt
+      - name: Attest synthetic bytes only
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: probe.txt
+      - name: Verify identity and reject altered bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          verify() {
+            gh attestation verify "$1" --repo masarray/arsonmix --signer-workflow masarray/arsonmix/.github/workflows/release-attestation-probe.yml --source-ref refs/heads/main --source-digest "$GITHUB_SHA" --signer-digest "$GITHUB_SHA" --deny-self-hosted-runners
+          }
+          verify probe.txt
+          printf 'tampered\n' >> probe.txt
+          if verify probe.txt; then echo "Unexpected verification of tampered bytes"; exit 1; fi
+          echo "ATTESTATION_PROBE_PASS (synthetic subject, no binary or release)"

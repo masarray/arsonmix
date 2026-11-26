@@ -98,10 +98,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: V60 fast no-browser fader and WIRE motion contract
@@ -160,8 +160,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
       - name: Install Chromium for native-only legal UI proof
@@ -172,7 +172,7 @@ jobs:
         run: python tests/embedded_legal_center_chromium_smoke.py
       - name: Preserve actual legal-center screenshots
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-Embedded-AGPL-UX-${{ github.run_id }}
           path: arsonmix-legal-center-*.png
@@ -188,8 +188,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install one scoped Chromium
@@ -200,7 +200,7 @@ jobs:
         run: python tests/sof_contextual_console_smoke.py
       - name: Retain rendered operator evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-GAIN-Brushed-Metal-${{ github.run_id }}
           path: arsonmix-gain-knob-*.png
@@ -214,8 +214,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install one scoped Chromium browser
@@ -253,7 +253,7 @@ jobs:
           python tests/native_orbit_ui_smoke.py
       - name: Keep compact desktop and narrow viewport evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-Floating-UX-${{ github.run_id }}
           path: |
@@ -271,10 +271,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install scoped Chromium only
@@ -319,7 +319,7 @@ jobs:
           python tests/sonku_offline_demo_contract.py sonku-listening
       - name: Publish 8D-SonKu reproducible listening WAVs and blind answer key
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-SonKu-Headphone-Audio-${{ github.run_id }}
           path: sonku-listening/*
@@ -327,7 +327,7 @@ jobs:
           retention-days: 14
       - name: Keep verified 8D-SonKu editor screenshots
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-SonKu-Editor-${{ github.run_id }}
           path: arsonmix-sonku-editor-*.png
@@ -335,7 +335,7 @@ jobs:
           retention-days: 7
       - name: Keep native SOF accepted-state desktop and narrow screenshots
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-SOF-PCM-Bridge-${{ github.run_id }}
           path: |
@@ -354,8 +354,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install Chromium for targeted Vocal Delay UI
@@ -366,7 +366,7 @@ jobs:
         run: python tests/approved_native_vocal_throw_smoke.py
       - name: Keep compact editor screenshot evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-Vocal-Delay-Desktop-Mobile-${{ github.run_id }}
           path: arsonmix-vocal-throw-*.png
@@ -380,8 +380,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install Chromium for UX FAT
@@ -394,7 +394,7 @@ jobs:
           python tests/approved_operator_ux_native_identity_smoke.py
       - name: Retain rendered evidence across viewport sizes
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-Operator-UX-5-viewports-${{ github.run_id }}
           path: operator-ux-*.png
@@ -408,8 +408,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install Chromium (one scoped compressor UI test)
@@ -426,7 +426,7 @@ jobs:
           python tests/pages_contextual_contrast_smoke.py
       - name: Upload exact assembled native editor screenshots
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-Native-Compressor-Approved-GUI-${{ github.run_id }}
           path: arsonmix-native-compressor-*.png
@@ -443,8 +443,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install one Chromium
@@ -457,7 +457,7 @@ jobs:
         run: python tests/pages_global_fx_ab_pan_wire_smoke.py
       - name: Retain ON/OFF screenshots from all viewports
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-Global-FX-PAN-${{ github.run_id }}
           path: arsonmix-global-fx-*.png
@@ -471,8 +471,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 14
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install Chromium
@@ -483,7 +483,7 @@ jobs:
         run: python tests/approved_native_geq31_smoke.py
       - name: Save one approved GEQ screenshot from the actual assembled GUI
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-GEQ31-One-WebView2-GUI-${{ github.run_id }}
           path: arsonmix-geq31-one-webview-*.png
@@ -500,10 +500,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_sha != '' && inputs.expected_sha || github.sha }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Cheap canonical Console v6 puzzle socket gate
@@ -884,7 +884,7 @@ jobs:
         run: python tests/ui_firefox_perf_smoke.py
       - name: Attach current WIRE / FX / meter / fader screenshots (small, PR-friendly)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: arsonmix-gui-current-smoke
           path: |

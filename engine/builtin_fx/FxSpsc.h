@@ -9,19 +9,25 @@
 // control consumer. Never allocate, wait, log or lock in the callback.
 namespace armix::builtin_fx {
 template<class T,std::size_t Capacity> class FxSpsc final {
-    static_assert(Capacity>1);
+    // Unsigned sequence counters wrap after 2^32 pushes. The slot mapping
+    // must also wrap at that boundary; arbitrary modulo capacities do not.
+    static_assert(Capacity>1 && (Capacity & (Capacity-1))==0 &&
+                  Capacity<=0x40000000u,
+                  "SPSC capacity must be a bounded power of two");
+    static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
+                  "SPSC sequence counters must be lock-free");
 public:
     bool push(const T& value) noexcept {
         const auto w=write_.load(std::memory_order_relaxed);
         if(w-read_.load(std::memory_order_acquire)>=Capacity)return false;
-        data_[w%Capacity]=value;
+        data_[w&(Capacity-1)]=value;
         write_.store(w+1,std::memory_order_release);
         return true;
     }
     bool pop(T& value) noexcept {
         const auto r=read_.load(std::memory_order_relaxed);
         if(r==write_.load(std::memory_order_acquire))return false;
-        value=data_[r%Capacity];
+        value=data_[r&(Capacity-1)];
         read_.store(r+1,std::memory_order_release);
         return true;
     }
