@@ -3777,6 +3777,7 @@ private:
             LegacyChannelOneLease ch1Lease{cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
             std::array<int,2> nativeMonitorPair{{-1,-1}};
+            std::array<float*,2> secondaryMainTap{{nullptr,nullptr}};
             // Deck A is pulled ONCE per hardware callback, independently
             // from how many ChannelIds have PLAYER A as their IN. The existing
             // ChannelId FX/WIRE/MAIN graph owns the ONLY mixing/rendering pass.
@@ -3804,11 +3805,13 @@ private:
                      std::span<const armix::mixer::DynamicPlayerPcmBlock>(
                          deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease,
                      outputGate.hardware&&!mainOnlyMuted&&!cycle.fadeOut&&!cycle.fadeIn&&
-                     fxMovePhase_.load(std::memory_order_acquire)==0&&privateDeEzzerCueAllowed());
+                     fxMovePhase_.load(std::memory_order_acquire)==0&&privateDeEzzerCueAllowed(),
+                     &secondaryMainTap);
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
-            const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
-                outputs,outputChannels,nativeMainPair);
+            const bool splitMain=secondaryMainTap[0]&&secondaryMainTap[1];
+            const auto nativeMain=splitMain?secondaryMainTap:
+                armix::mixer::NativeOutputPairTap::select(outputs,outputChannels,nativeMainPair);
             const auto nativeMonitor=armix::mixer::NativeOutputPairTap::select(
                 outputs,outputChannels,nativeMonitorPair);
             // STOP can race after the outer active() check. Never leave a
@@ -3834,6 +3837,11 @@ private:
                 armix::mixer::NativeOutputTransition::apply(
                     outputs,outputChannels,samples,routedFxMove,
                     cycle.fadeOut,cycle.fadeIn,
+                    nativeMain[0],nativeMain[1],movedPeakL,movedPeakR);
+                // The internal MAIN buffer is not in the driver output list.
+                // Apply the same post-render envelope exactly once to it.
+                if(splitMain)armix::mixer::NativeOutputTransition::apply(
+                    secondaryMainTap.data(),2,samples,routedFxMove,cycle.fadeOut,cycle.fadeIn,
                     nativeMain[0],nativeMain[1],movedPeakL,movedPeakR);
                 if(routedFxMove==1 && cycle.graph) {
                     cycle.graph->orderPacked.store(
@@ -3889,8 +3897,15 @@ private:
                     if(outputs && outputs[channel])
                         juce::FloatVectorOperations::clear(outputs[channel],samples);
             // Reuse the exact post-DSP/fade peaks rather than re-scanning PCM.
-            const bool wroteMain=outputGate.hardware&&routed&&nativeMain[0]&&nativeMain[1];
-            publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
+            const bool wroteMain=outputGate.hardware&&routed&&!splitMain&&nativeMain[0]&&nativeMain[1];
+            if(splitMain&&outputGate.hardware&&routed&&nativeMonitor[0]&&nativeMonitor[1]){
+                // Physical telemetry describes the actual singer output,
+                // not the isolated stream MAIN scratch.
+                float l=0.f,r=0.f;
+                for(int i=0;i<samples;++i){l=std::max(l,std::abs(nativeMonitor[0][i]));
+                    r=std::max(r,std::abs(nativeMonitor[1][i]));}
+                publishDriverBufferPeaks(l,r);
+            }else publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
             recordRenderTiming(beginUs,periodUs);
             return;
         }

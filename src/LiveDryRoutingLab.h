@@ -2362,7 +2362,7 @@ public:
             if(!matchesSessionDevice(pins))return reply;
             if(graphChanged){
                 const auto& hw=nativeAccepted_.hardware;
-                const std::array<int,4> reserved{hw.mainL,hw.mainR,hw.monitorL,hw.monitorR};
+                const auto reserved=hw.sinkPlan().reserved();
                 const std::span<const int> callbackPins(pins.outputByCallback.data(),static_cast<std::size_t>(pins.outputCount));
                 std::vector<DynamicNativeSessionPublisher::InitialExternalTarget> targets;
                 std::vector<std::uint64_t> verified;
@@ -2397,7 +2397,7 @@ public:
                     return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
                 };
                 const DynamicNativeSessionPublisher::InitialExternalPlan plan{
-                    pins.outputCount,{reserved.data(),hw.monitorEnabled?4U:2U},targets};
+                    pins.outputCount,{reserved.data(),hw.sinkPlan().reservedCount()},targets};
                 const auto published=nativePublisher_.commit(nativeAccepted_.graph.roster,
                     nativeAccepted_.graph.request,rev,ep,epoch(),true,std::move(fx),false,false,nullptr,&plan);
                 if(!published.ok()){reply.error="LOGICAL_OUTPUT_PCM_COMMIT_REJECTED";return reply;}
@@ -3206,8 +3206,7 @@ public:
             // graph. No per-channel post-publication target updates on restore.
             std::vector<DynamicNativeSessionPublisher::InitialExternalTarget> externalTargets;
             std::vector<std::uint64_t> verifiedExternal;
-            std::array<int,4> reserved{document.outputs.mainL,document.outputs.mainR,
-                document.outputs.monitorL,document.outputs.monitorR};
+            const auto reserved=document.outputs.sinkPlan().reserved();
             if(pins.typeName=="ASIO"&&pins.deviceName==document.binding.playback){
                 const std::span<const int> callbackPins(pins.outputByCallback.data(),
                     static_cast<std::size_t>(pins.outputCount));
@@ -3226,7 +3225,7 @@ public:
                 }
             }
             const DynamicNativeSessionPublisher::InitialExternalPlan externalPlan{
-                pins.outputCount,{reserved.data(),document.outputs.monitorEnabled?4U:2U},externalTargets};
+                pins.outputCount,{reserved.data(),document.outputs.sinkPlan().reservedCount()},externalTargets};
             const auto published=nativePublisher_.commit(
                 document.roster,document.request,previous,generation,epoch(),
                 true,std::move(fx),false,false,nullptr,&externalPlan);
@@ -3775,7 +3774,9 @@ public:
                  bool allowMutedMetering=false,
                  std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={},
                  bool mainOnlyMuted=false,
-                 const NativeOutputLease* outputLease=nullptr,bool privateCueAllowed=false) noexcept {
+                 const NativeOutputLease* outputLease=nullptr,bool privateCueAllowed=false,
+                 std::array<float*,2>* secondaryMainTap=nullptr) noexcept {
+        if(secondaryMainTap)*secondaryMainTap={{nullptr,nullptr}};
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
@@ -3858,14 +3859,19 @@ public:
            channelIdPcmEpoch_.load(std::memory_order_acquire)!=generation)) {
             silence();return true;
         }
-        if(outLeft<0||outRight<0||outLeft==outRight||
+        const bool splitMain=channelIdRender&&armix::mixer::DmxOutputSinkPlan{
+            outputCount,{outLeft,outRight},{nativePin(native,2),nativePin(native,3)},true}.secondaryMain();
+        if((splitMain&&frames>Block::hardFrameLimit)||
+           (!splitMain&&(outLeft<0||outRight<0||outLeft==outRight||
            outLeft>=outputCount||outRight>=outputCount||
-           !outputs[outLeft]||!outputs[outRight]){
+           !outputs[outLeft]||!outputs[outRight]))){
             topologyFault_.store(true,std::memory_order_release);
             silence();return true;
         }
-        float* const mainL=outputs[outLeft];
-        float* const mainR=outputs[outRight];
+        // Distinct preallocated logical MAIN PCM. Physical ASIO never sees
+        // this buffer in split mode; only the existing secondary consumer.
+        float* const mainL=splitMain?secondaryMainPcm_[0].data():outputs[outLeft];
+        float* const mainR=splitMain?secondaryMainPcm_[1].data():outputs[outRight];
         float* monitorL=nullptr;
         float* monitorR=nullptr;
         const int monitorLeft=channelIdRender?nativePin(native,2):
@@ -3885,7 +3891,7 @@ public:
         // Return the callback indices from THIS leased prepared graph.
         // The post-render FX transition and meters must not re-read a
         // potentially newer route or assume hardware channels 0/1.
-        if(actualOutputPair && !masterMuted)*actualOutputPair={{outLeft,outRight}};
+        if(actualOutputPair && !masterMuted && !splitMain)*actualOutputPair={{outLeft,outRight}};
         if(masterMuted && actualMonitorPair)*actualMonitorPair={{-1,-1}};
         const auto renderRevision=channelIdRender?0:snapshot->graphRevision;
         if(renderRevision!=audioRevision_ || generation!=audioEpoch_) {
@@ -3971,7 +3977,7 @@ public:
                         slice.data(),playerPcm.size()),
                      meterOnly?nullptr:outputSlices.data(),
                      meterOnly?0:outputCount,{},
-                     privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0);
+                     privateCueAllowed&&!splitMain&&!masterMuted&&monitorL&&monitorR?native:0);
                 if(processed) {
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
@@ -4076,6 +4082,9 @@ public:
                 nativeHardwareObserved_.store(native,std::memory_order_release);
             nativeMeterEpoch_.store(generation,std::memory_order_release);
         } else nativeMeterEpoch_.store(0,std::memory_order_release);
+        // Only completed PCM may escape. The tap is callback-local and
+        // never survives a rejected render, epoch, or muted meter pass.
+        if(splitMain&&!masterMuted&&secondaryMainTap)*secondaryMainTap={{mainL,mainR}};
         renderAudit_.completed(auditPath);
         return true;
     }
@@ -4236,6 +4245,7 @@ public:
         }
         if(mainGraph && !liveMonitor.isEmpty())
             for(float gain:mainGraph->monitorGains())liveMonitorSends.add(gain);
+        out->setProperty("secondaryMainOnly",nativePcm&&nativeAccepted_.hardware.secondaryMain());
         out->setProperty("mainOutputs",juce::var(liveMain));
         out->setProperty("monitorOutputs",juce::var(liveMonitor));
         out->setProperty("busOutputObserved",nativePcm&&nativeBusOutputObserved());
@@ -4308,6 +4318,7 @@ private:
     }
     static constexpr int mutedMeterFrames=512;
     std::array<std::array<float,mutedMeterFrames>,2> mutedMain_{},mutedMonitor_{};
+    std::array<std::array<float,Block::hardFrameLimit>,2> secondaryMainPcm_{};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT; // one AUDIO producer
     armix::rt::ProductionRenderAudit renderAudit_; // per-process, RT-only writers
     Publisher publisher_;
