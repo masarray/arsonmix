@@ -43,7 +43,7 @@ import {nativeTransport} from './native_transport.mjs';
    onState(state){
    latest=state;
    if(!state.accepted)presets?.reset();
-   if(state.accepted&&!state.pending){if(state.error)presets?.rejectRecall(transport.lastRequestId(),state.error);presets?.onAccepted(state.accepted,state.appliedId);presets?.refresh();const select=root.querySelector('[data-preset]');if(!select.value.startsWith('user:'))select.value=factoryValue(state.accepted);}
+   if(state.accepted&&!state.pending){if(state.error)presets?.rejectRecall(transport.lastRequestId(),state.error);presets?.onAccepted(state.accepted,state.appliedId);presets?.refresh();presets?.restoreSelection();}
    presets?.paint();
   }});
   const select=root.querySelector('[data-preset]');

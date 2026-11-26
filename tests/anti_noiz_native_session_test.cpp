@@ -77,6 +77,12 @@ int main(){
         auto manual=s;manual.spectralManual=true;manual.manual.enabled=true;manual.manual.smartVoice=true;
         check(native.submit({6,Control::Kind::settings,manual}),"manual setting queue");process();check(native.poll(ack)&&ack.applied&&ack.state.sidechainReference&&ack.state.settings.manual.smartVoice,"manual ACK");
         check(native.submit({7,Control::Kind::audition,{}}),"audition queue");process();check(native.poll(ack)&&ack.applied&&ack.state.audition,"audition ACK");
+        // Save while the source actually has a learned profile and active
+        // audition. Neither transient may be inherited by a fresh instance.
+        const auto activeState=NativeState::encode(native.acceptedSettings());
+        NativeSession cold;check(cold.restore(activeState)&&cold.prepare(rate,channels),"cold active-state restore");
+        check(NativeState::encode(cold.acceptedSettings())==activeState,"all durable fields roundtrip");
+        check(!cold.observed().profile&&!cold.observed().sidechainReference&&!cold.observed().audition&&!cold.observed().learning,"no transient profile or audition persistence");
         native.onBypass(true,true);process();
         check(native.submit({8,Control::Kind::audition,{}}),"bypassed audition queue");process();check(native.poll(ack)&&!ack.applied&&!ack.state.audition,"bypass cancels and rejects audition");
         native.onBypass(false,false);

@@ -201,7 +201,7 @@ function create(adapter){
   if(sameSettings(settings,readAccepted())){selectedId="";saved=null;dirty=false;restoreSelection();paint();return true;}
   const id=apply(settings);
   if(!id){restoreSelection();return false;}
-  factoryIntent(id);restoreSelection();paint();return true;
+  factoryIntent(id);recall.settings=clone(settings);restoreSelection();paint();return true;
  }
  function factoryIntent(requestId){
   if(typeof requestId==="string"&&requestId)
@@ -211,7 +211,12 @@ function create(adapter){
   verified=true;
   if(recall&&recall.requestId===appliedId){
    if(recall.factory){
-    selectedId="";saved=null;dirty=false;
+    if(recall.settings&&(!validate(accepted)||!sameSettings(accepted,recall.settings))){
+     if(selectedId&&saved)dirty=!sameSettings(accepted,saved);
+     notice("FACTORY READBACK MISMATCH · REVIEW ACCEPTED AUDIO");
+    }else{
+     selectedId="";saved=null;dirty=false;
+    }
    }else if(validate(accepted)&&sameSettings(accepted,recall.settings)){
     selectedId=recall.presetId;saved=clone(recall.settings);dirty=false;
     notice("MY PRESET APPLIED · VERIFIED");

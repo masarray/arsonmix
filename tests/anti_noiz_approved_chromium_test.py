@@ -543,6 +543,13 @@ def main():
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
         accepted=edit["settings"]
         expect(select).to_have_value("user:"+legacy_id)
+        select.select_option("PAUSE_MUTE")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["gate"] is True and edit["settings"]["rangeDb"]==96
+        expect(select).to_have_value("user:"+legacy_id)
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(select).to_have_value("PAUSE_MUTE")
         # Three real close/reopen gestures must leave one DOM and one set
         # of callbacks. No new browser engine/window/PCM graph.
         for _ in range(3):
