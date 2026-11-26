@@ -138,7 +138,6 @@ root.setAttribute("role","dialog");root.setAttribute("aria-modal","false");
 root.setAttribute("aria-label","8D-SonKu binaural spatial audio");
 root.innerHTML=[
  '<header class="sk-head"><span class="sk-brand">8D<span>·</span>SonKu</span>',
- '<span class="sk-headnote">SPATIAL AUDIO</span>',
  '<select id="skPreset" class="sk-preset" aria-label="SonKu ready-to-use sound presets" title="Ready-to-use spatial scenes; settings remain editable">',
  '<option value="CUSTOM">CUSTOM · MANUAL</option>',
  '<option value="orbitStage">ORBIT STAGE · DEFAULT</option>',
@@ -151,63 +150,77 @@ root.innerHTML=[
  '<button type="button" id="skPower" class="armix-builtin-fx-power" data-fx-state="unknown" aria-label="SonKu FX state unavailable" aria-pressed="false" disabled>⏻</button>',
  '<button type="button" id="skClose" class="sk-close armix-builtin-fx-close armix-floating-close" aria-label="Close 8D-SonKu">×</button></header>',
  '<div class="sk-content"><div class="sk-stage">',
- '<svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-rear listener with two depth-aware draggable binaural speakers">',
- '<defs><radialGradient id="skBg" cx="50%" cy="48%" r="73%"><stop offset="0" stop-color="#263c4a"/><stop offset=".58" stop-color="#192b37"/><stop offset="1" stop-color="#101b25"/></radialGradient>',
- '<radialGradient id="skFloor" cx="50%" cy="55%" r="65%"><stop offset="0" stop-color="#7fdae7" stop-opacity=".14"/><stop offset="1" stop-color="#46758b" stop-opacity="0"/></radialGradient>',
- // One continuous rail: front/back share geometry, stroke and depth gradient.
- '<linearGradient id="skRail" gradientUnits="userSpaceOnUse" x1="200" x2="200" y1="91" y2="257"><stop stop-color="#729baa" stop-opacity=".38"/><stop offset=".50" stop-color="#69a8b8" stop-opacity=".62"/><stop offset="1" stop-color="#8edce6" stop-opacity=".94"/></linearGradient>',
- // Only the part of the SAME rail occluded by the shoulder is composited over it.
- '<clipPath id="skForegroundClip" clipPathUnits="userSpaceOnUse"><rect x="0" y="174" width="400" height="156"/></clipPath>',
- '<mask id="skListenerCoverage" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="400" height="330" style="mask-type:alpha"><image href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet"/></mask>',
+ '<div class="sk-lcd"><svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-rear listener with two depth-aware draggable binaural speakers">',
+
+ '<defs><radialGradient id="skBg" cx="50%" cy="42%" r="72%"><stop offset="0" stop-color="#203a49"/><stop offset=".52" stop-color="#112633"/><stop offset="1" stop-color="#07121b"/></radialGradient>',
+ '<radialGradient id="skFloor" cx="50%" cy="55%" r="65%"><stop offset="0" stop-color="#64bac9" stop-opacity=".15"/><stop offset="1" stop-color="#46758b" stop-opacity="0"/></radialGradient>',
+ '<radialGradient id="skShadow"><stop stop-color="#02070c" stop-opacity=".66"/><stop offset="1" stop-color="#02070c" stop-opacity="0"/></radialGradient>',
+ '<linearGradient id="skRail" gradientUnits="userSpaceOnUse" x1="200" x2="200" y1="91" y2="257"><stop stop-color="#304852"/><stop offset=".50" stop-color="#435e69"/><stop offset="1" stop-color="#597881"/></linearGradient>',
+ // A SINGLE painted ellipse. Only the far half of the alpha silhouette
+ // subtracts from its coverage; the rear stroke is never drawn twice.
+ '<clipPath id="skFarOcclusion" clipPathUnits="userSpaceOnUse"><rect width="400" height="174"/></clipPath>',
+ '<filter id="skAlphaBlack" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>',
+ '<mask id="skRailOcclusion" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="400" height="330" style="mask-type:luminance"><rect width="400" height="330" fill="white"/><g clip-path="url(#skFarOcclusion)"><image href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" filter="url(#skAlphaBlack)"/></g></mask>',
+ '<mask id="skFarSpeakerOcclusion" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="400" height="330" style="mask-type:luminance"><rect width="400" height="330" fill="white"/><image href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" filter="url(#skAlphaBlack)"/></mask>',
+ '<linearGradient id="skCabinet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#798791"/><stop offset=".23" stop-color="#37444d"/><stop offset="1" stop-color="#111a20"/></linearGradient>',
+ '<linearGradient id="skBaffle" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#28323a"/><stop offset=".55" stop-color="#141e25"/><stop offset="1" stop-color="#0a1218"/></linearGradient>',
+ '<radialGradient id="skCone" cx=".43" cy=".34" r=".69"><stop stop-color="#778791"/><stop offset=".25" stop-color="#4a5963"/><stop offset=".61" stop-color="#202b32"/><stop offset=".84" stop-color="#10191e"/><stop offset="1" stop-color="#4d606c"/></radialGradient>',
+ '<radialGradient id="skDome" cx=".35" cy=".25" r=".75"><stop stop-color="#b0bec5"/><stop offset=".45" stop-color="#4c5c67"/><stop offset="1" stop-color="#172129"/></radialGradient>',
+ '<linearGradient id="skGlass" x1="0" y1="0" x2=".72" y2="1"><stop stop-color="#e0f5ff" stop-opacity=".085"/><stop offset=".34" stop-color="#e0f5ff" stop-opacity=".018"/><stop offset=".35" stop-color="#e0f5ff" stop-opacity="0"/><stop offset="1" stop-color="#d8efff" stop-opacity=".015"/></linearGradient>',
  '</defs>',
- '<rect width="400" height="330" rx="10" fill="url(#skBg)"/>',
+ '<rect width="400" height="330" fill="url(#skBg)"/>',
  '<ellipse cx="200" cy="174" rx="148" ry="83" fill="url(#skFloor)"/>',
  '<path class="sk-axis" d="M200 79V270 M45 174H355" fill="none" stroke="#597d89" stroke-opacity=".21" stroke-width=".8" stroke-dasharray="2 9"/>',
  // FRONT is the far upper orbit, behind head from this top-rear camera.
- '<ellipse id="skOrbitRail" class="sk-orbit-rail" cx="200" cy="174" rx="148" ry="83" fill="none" stroke="url(#skRail)" stroke-width="1.7" pointer-events="none"/>',
  '<text class="sk-direction sk-front" x="200" y="55" text-anchor="middle">FRONT</text>',
  '<text class="sk-direction" x="200" y="317" text-anchor="middle">REAR</text>',
  '<text class="sk-direction" x="11" y="149">LEFT</text><text class="sk-direction" x="352" y="149">RIGHT</text>',
  // Rear/top-view translucent PNG: back of skull, protruding ears and shoulders.
  // Listener looks toward FRONT at top; native source azimuth is unchanged.
- '<ellipse class="sk-head-shadow" cx="200" cy="246" rx="76" ry="22" fill="#031621" fill-opacity=".27"/>',
- '<g id="skFarSources" class="sk-far-sources"></g>',
+ '<ellipse class="sk-head-shadow" cx="200" cy="252" rx="101" ry="28" fill="url(#skShadow)"/>',
  '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-rear" aria-label="Rear/top-view listener facing front at top" pointer-events="none"/>',
- // The near portion is visible over the listener's back only where its alpha
- // silhouette covers the underlying rail. No independent arc or horizon join.
- '<g clip-path="url(#skForegroundClip)" pointer-events="none"><use id="skOrbitForeground" href="#skOrbitRail" mask="url(#skListenerCoverage)"/></g>',
- // Paint independent rear/near speakers above the back; far speakers behind head.
+ // One continuous stroke above the PNG, with only far silhouette occlusion.
+ '<ellipse id="skOrbitRail" class="sk-orbit-rail" cx="200" cy="174" rx="148" ry="83" fill="none" stroke="url(#skRail)" stroke-width="1.15" mask="url(#skRailOcclusion)" pointer-events="none"/>',
+ // Both cabinet layers paint ABOVE the rail. The far layer subtracts the
+ // listener's full alpha silhouette, retaining actual head occlusion.
+ '<g id="skFarSources" class="sk-far-sources" mask="url(#skFarSpeakerOcclusion)"></g>',
+ // Near cabinets remain unmasked and above the listener's back.
  '<g id="skNearSources" class="sk-near-sources"></g>',
- '<path d="M193 68 L200 60 L207 68" fill="none" stroke="#77d9e6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".83"/>',
+ '<rect class="sk-glass" x="0" y="0" width="400" height="330" fill="url(#skGlass)" pointer-events="none" aria-hidden="true"/>',
  // No circle markers: each emitter is a small raised studio monitor.
  // Offsets at coincident directions are display-only; native azimuth stays equal.
  '<g class="sk-src" data-index="0" tabindex="0" role="slider" aria-label="Left virtual source position" aria-valuemin="-180" aria-valuemax="180">',
  '<path class="sk-tether" d="" fill="none" stroke="#91dcef" stroke-width=".9" stroke-dasharray="2 2"/>',
- '<rect class="sk-speaker-shell" x="-13" y="-17" width="26" height="34" rx="5"/>',
- '<rect class="sk-speaker-inner" x="-10" y="-14" width="20" height="28" rx="3"/>',
- '<circle class="sk-speaker-tweeter" cx="0" cy="-7" r="3.2"/>',
- '<circle class="sk-speaker-woofer" cx="0" cy="5" r="6.9"/>',
- '<circle class="sk-speaker-cone" cx="0" cy="5" r="3.1"/>',
+ '<rect class="sk-speaker-shell" x="-13" y="-17" width="26" height="34" rx="3.3" fill="url(#skCabinet)"/>',
+ '<path d="M9 -14L12 -16V14L9 16Z" fill="#0b1118" opacity=".85"/>',
+ '<rect class="sk-speaker-inner" x="-10" y="-14" width="19" height="28" rx="2" fill="url(#skBaffle)"/>',
+ '<circle cx="-.5" cy="-7.4" r="4.3" fill="#080e14" stroke="#4f626d" stroke-width=".65"/>',
+ '<circle cx="-.5" cy="-7.4" r="2.65" fill="url(#skDome)"/>',
+ '<circle cx="-.5" cy="5" r="8" fill="#050b10" stroke="#5b6b75" stroke-width=".65"/>',
+ '<circle cx="-.5" cy="5" r="6.65" fill="url(#skCone)"/>',
+ '<circle cx="-.5" cy="5" r="2.55" fill="url(#skDome)" stroke="#151f26" stroke-width=".5"/>',
+ '<path d="M-8 12H-4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>',
+ '<rect class="sk-speaker-shade" x="-13" y="-17" width="26" height="34" rx="3.3" fill="#03090e" opacity=".12" pointer-events="none"/>',
  '<text class="sk-speaker-label" x="0" y="-22" text-anchor="middle">L</text></g>',
  '<g class="sk-src sk-right" data-index="1" tabindex="0" role="slider" aria-label="Right virtual source position" aria-valuemin="-180" aria-valuemax="180">',
- '<path class="sk-tether" d="" fill="none" stroke="#eac2e3" stroke-width=".9" stroke-dasharray="2 2"/>',
- '<rect class="sk-speaker-shell" x="-13" y="-17" width="26" height="34" rx="5"/>',
- '<rect class="sk-speaker-inner" x="-10" y="-14" width="20" height="28" rx="3"/>',
- '<circle class="sk-speaker-tweeter" cx="0" cy="-7" r="3.2"/>',
- '<circle class="sk-speaker-woofer" cx="0" cy="5" r="6.9"/>',
- '<circle class="sk-speaker-cone" cx="0" cy="5" r="3.1"/>',
+ '<path class="sk-tether" d="" fill="none" stroke="#91dcef" stroke-width=".9" stroke-dasharray="2 2"/>',
+ '<rect class="sk-speaker-shell" x="-13" y="-17" width="26" height="34" rx="3.3" fill="url(#skCabinet)"/>',
+ '<path d="M9 -14L12 -16V14L9 16Z" fill="#0b1118" opacity=".85"/>',
+ '<rect class="sk-speaker-inner" x="-10" y="-14" width="19" height="28" rx="2" fill="url(#skBaffle)"/>',
+ '<circle cx="-.5" cy="-7.4" r="4.3" fill="#080e14" stroke="#4f626d" stroke-width=".65"/>',
+ '<circle cx="-.5" cy="-7.4" r="2.65" fill="url(#skDome)"/>',
+ '<circle cx="-.5" cy="5" r="8" fill="#050b10" stroke="#5b6b75" stroke-width=".65"/>',
+ '<circle cx="-.5" cy="5" r="6.65" fill="url(#skCone)"/>',
+ '<circle cx="-.5" cy="5" r="2.55" fill="url(#skDome)" stroke="#151f26" stroke-width=".5"/>',
+ '<path d="M-8 12H-4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>',
+ '<rect class="sk-speaker-shade" x="-13" y="-17" width="26" height="34" rx="3.3" fill="#03090e" opacity=".12" pointer-events="none"/>',
  '<text class="sk-speaker-label" x="0" y="-22" text-anchor="middle">R</text></g>',
- '</svg><div class="sk-stage-caption">HEADPHONES · HRIR 0° ELEVATION · 44.1 / 48 kHz</div>',
- '</div><aside class="sk-controls"><div class="sk-control-title">SPATIAL ENGINE <span class="sk-engine-led">HRTF ACTIVE</span></div>',
- '<div id="skRenderRow" class="sk-render-row" hidden>',
- '<span class="sk-render-label">RENDER MODE · P8.3 TEST</span>',
- '<select id="skRenderMode" aria-label="Native SonKu P8.3 renderer">',
- '<option value="music">MUSIC BED · P8.2</option>',
- '<option value="mono">MONO OBJECT · LEFT INPUT</option>',
- '<option value="physical">SPEAKER MONITOR · PHYSICAL</option>',
- '<option value="musiclf">SPEAKER MONITOR · MUSIC LF</option>',
- '</select><label class="sk-yaw" for="skHeadYaw">HEAD YAW <output id="skYawValue">0°</output>',
- '<input id="skHeadYaw" type="range" min="-180" max="180" step="5" value="0"/></label></div>',
+ '</svg></div><span class="sk-stage-caption sk-sr">HEADPHONES · HRIR 0° ELEVATION · 44.1 / 48 kHz</span>',
+
+ '</div><aside class="sk-controls">',
+ '<button type="button" id="skUpgrade" class="sk-upgrade" hidden title="Switch the saved legacy sound to the current engine. Audio will change only after native acceptance.">Use current spatial sound</button>',
+ '<label class="sk-space-slider sk-yaw" id="skYawRow" for="skHeadYaw" hidden>HEAD YAW <output id="skYawValue">0°</output>',
+ '<input id="skHeadYaw" type="range" min="-180" max="180" step="5" value="0"/></label>',
  '<div class="sk-buttons"><button type="button" id="skMotion">ORBIT</button><button type="button" id="skDirection">CLOCKWISE</button></div>',
  '<div class="sk-rotary-grid">',
  '<label class="sk-rotary"><span class="sk-param-name">REVOLUTION</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpeed" type="range" min="0.5" max="30" step="0.1" value="12" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpeedValue">12.0 s</output></label>',
@@ -221,30 +234,38 @@ root.innerHTML=[
  '<button type="button" data-sk-room="1">SQUARE</button>',
  '<button type="button" data-sk-room="2">CHAMBER</button>',
  '<button type="button" data-sk-room="3">LARGE</button></div>',
- '<label class="sk-space-slider" for="skDistance">SOURCE DISTANCE <output id="skDistanceValue">1.6 m</output>',
+ '<label class="sk-space-slider" for="skDistance">DISTANCE <output id="skDistanceValue">1.6 m</output>',
  '<input id="skDistance" type="range" min="1.6" max="10" step="0.1" value="1.6"/></label>',
- '<label class="sk-space-slider" id="skElevationRow" for="skElevation" hidden>SOURCE ELEVATION <output id="skElevationValue">0.0°</output>',
+ '<label class="sk-space-slider" id="skElevationRow" for="skElevation" hidden>ELEVATION <output id="skElevationValue">0.0°</output>',
  '<input id="skElevation" type="range" min="-30" max="45" step="0.1" value="0" aria-label="Direct source elevation in degrees" title="Measured binaural source height · native experimental schema v3 only"/></label>',
- '<label class="sk-space-slider" id="skHrtfAlignRow" for="skHrtfAlign" hidden>EAR HEIGHT ALIGN · HRTF <output id="skHrtfAlignValue">0.0°</output>',
+ '<label class="sk-space-slider" id="skHrtfAlignRow" for="skHrtfAlign" hidden>EAR ALIGN <output id="skHrtfAlignValue">0.0°</output>',
  '<input id="skHrtfAlign" type="range" min="-30" max="20" step="0.1" value="0" aria-label="Calibrate headphone HRTF perceived elevation, not physical XYZ source height" title="Ear-level alignment: changes measured KEMAR spectral angle, not room speaker height"/></label>',
  '<label class="sk-space-slider" for="skReflections">REFLECTIONS <output id="skReflectionsValue">55%</output>',
  '<input id="skReflections" type="range" min="0" max="100" step="1" value="55" title="First-wall reflections level, 0 is dry"/></label>',
  '<label class="sk-space-slider" for="skAmbience">REVERB <output id="skAmbienceValue">30%</output>',
  '<input id="skAmbience" type="range" min="0" max="100" step="1" value="30"/></label>',
- '<div class="sk-space-hint">Independent first reflections + diffuse late reverb · OFF = original HRTF</div></div>',
- '<div class="sk-guide">Drag monitors to position · rotary knobs: vertical drag, double-click to reset</div>',
+ '</div>',
  '</aside></div>',
- '<footer class="sk-status"><span id="skMode">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
+ '<footer class="sk-status"><span id="skMode" class="sk-sr">VISUAL PREVIEW</span><span id="skHint" role="status">No browser audio</span></footer>'
 ].join("");
-// Move the complete existing SPACE controls below the orbit, retaining the
-// SAME native slider IDs, ACK, gesture ownership, and room-validation logic.
-// This is a DOM layout move, never a duplicated render/control authority.
-root.querySelector(".sk-stage").appendChild(root.querySelector(".sk-space-panel"));
+// One panel, one set of native controls. Four primary knobs form the LCD deck;
+ // room and movement parameters occupy the right-hand column.
+root.querySelector(".sk-stage").appendChild(root.querySelector(".sk-rotary-grid"));
+root.querySelector(".sk-controls").prepend(root.querySelector(".sk-buttons"));
 const $=id=>root.querySelector("#"+id);
 // Cache fixed SVG node references; only their transforms change at 60fps.
 const speakerNodes=[...root.querySelectorAll("#skMap .sk-src")];
 const speakerTethers=speakerNodes.map(n=>n.querySelector(".sk-tether"));
+const speakerShades=speakerNodes.map(n=>n.querySelector(".sk-speaker-shade"));
 const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
+function paintSlider(el){
+ const min=Number(el.min),max=Number(el.max),value=Number(el.value);
+ const p=max>min?Math.max(0,Math.min(1,(value-min)/(max-min))):0;
+ el.style.setProperty("--sk-fill",(p*100).toFixed(2)+"%");
+}
+root.addEventListener("input",e=>{
+ if(e.target.matches(".sk-space-slider input[type=range]"))paintSlider(e.target);
+});
 const mount=()=>{if(!root.isConnected)document.body.append(root)};
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",mount,{once:true});else mount();
 let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
@@ -256,7 +277,6 @@ function syncPower(){
  const p=$("skPower");
  if(!current){
   p.dataset.fxState="unknown";p.disabled=true;
-  root.querySelector(".sk-engine-led").textContent="HRTF WAIT";
   return;
  }
  const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
@@ -286,10 +306,7 @@ function syncPower(){
     "SONKU STATE UNAVAILABLE · waiting for native readback";
  p.setAttribute("aria-label",p.title);
  root.dataset.fxState=state;
- root.querySelector(".sk-engine-led").textContent=
-  state==="on"?"HRTF ACTIVE":
-  state==="off"?"FX BYPASSED":
-  state==="rack-off"?"RACK OFF":"HRTF WAIT";
+
 }
 const context=()=>{
  if(!current||!native())return null;
@@ -315,91 +332,14 @@ function render(){
  if(defaultOrbitOption)defaultOrbitOption.disabled=!p99Capable;
  const factoryName=p91p92Capable?matchFactoryPreset(s,p99Capable):"CUSTOM";
  if(presetPicker.value!==factoryName)presetPicker.value=factoryName;
- const row=$("skRenderRow");row.hidden=!(p83Capable||p84Capable);
- if(p83Capable||p84Capable){
- const picker=$("skRenderMode");
-  if(p90Capable && picker.dataset.nativeModeSet!=="latest"){
-    // P9.5 is the sole normal user-facing engine. Preserve old .smix mode
-    // bytes in native state; show a truthful migration option only when a
-    // previously saved session actually contains an older DSP mode.
-    picker.dataset.nativeModeSet="latest";
-    root.querySelector(".sk-render-label").textContent="SPATIAL ENGINE";
-    picker.innerHTML='<option value="external">LATEST · IMMERSIVE SPATIAL</option>';
-   }else if(!p90Capable && p89Capable && picker.dataset.nativeModeSet!=="p89"){
-    picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
-     '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
-     '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
-     '<option value="focus">SPATIAL · P8.6 REFERENCE</option>'+
-     '<option value="body">SPATIAL · P8.7 REFERENCE</option>'+
-     '<option value="align">SPATIAL · P8.8 EAR ALIGN + DISTANCE</option>'+
-     '<option value="depth">SPATIAL · P8.9 ROOM-ANCHORED STEREO</option>';
-    picker.dataset.nativeModeSet="p89";
-    root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.9 HEADPHONE FAT";
-   }else if(!p89Capable && p88Capable && picker.dataset.nativeModeSet!=="p88"){
-   picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
-    '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
-    '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
-    '<option value="focus">SPATIAL · P8.6 FOCUS</option>'+
-    '<option value="body">SPATIAL · P8.7 AIR + BODY</option>'+
-    '<option value="align">SPATIAL · P8.8 EAR ALIGN + DISTANCE</option>';
-   picker.dataset.nativeModeSet="p88";
-   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.8 HEADPHONE FAT";
-  }else if(!p88Capable && p87Capable && picker.dataset.nativeModeSet!=="p87"){
-   picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
-    '<option value="clarity">SPATIAL · P8.4 REFERENCE</option>'+
-    '<option value="coherence">SPATIAL · P8.5 REFERENCE</option>'+
-    '<option value="focus">SPATIAL · P8.6 FOCUS REFERENCE</option>'+
-    '<option value="body">SPATIAL · P8.7 MUSICAL AIR + BODY</option>';
-   picker.dataset.nativeModeSet="p87";
-   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.7 HEADPHONE FAT";
-  }else if(!p87Capable && p86Capable && picker.dataset.nativeModeSet!=="p86"){
-   picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
-    '<option value="clarity">SPATIAL · P8.4 FAT REFERENCE</option>'+
-    '<option value="coherence">SPATIAL · P8.5 FAT REFERENCE</option>'+
-    '<option value="focus">SPATIAL · P8.6 HORIZONTAL FOCUS</option>';
-   picker.dataset.nativeModeSet="p86";
-   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.6 HEADPHONE FAT";
-  }else if(!p86Capable && p85Capable && picker.dataset.nativeModeSet!=="p85"){
-   picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
-    '<option value="clarity">SPATIAL · P8.4 FAT REFERENCE</option>'+
-    '<option value="coherence">SPATIAL · P8.5 COHERENT WORLD</option>';
-   picker.dataset.nativeModeSet="p85";
-   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.5 HEADPHONE FAT";
-  }else if(!p85Capable && p84Capable && picker.dataset.nativeModeSet!=="p84"){
-   picker.innerHTML='<option value="music">MUSIC BED · P8.2 GOLDEN</option>'+
-    '<option value="clarity">SPATIAL · P8.4 MUSIC FIRST</option>';
-   picker.dataset.nativeModeSet="p84";
-   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.4 HEADPHONE FAT";
-  }else if(p83Capable && picker.dataset.nativeModeSet!=="p83"){
-   picker.innerHTML='<option value="music">MUSIC BED · P8.2</option>'+
-    '<option value="mono">MONO OBJECT · LEFT INPUT</option>'+
-    '<option value="physical">SPEAKER MONITOR · PHYSICAL</option>'+
-    '<option value="musiclf">SPEAKER MONITOR · MUSIC LF</option>';
-   picker.dataset.nativeModeSet="p83";
-   root.querySelector(".sk-render-label").textContent="RENDER MODE · P8.3 TEST";
-  }
-  // Restore-only compatibility: no legacy experiments in a new user menu.
-  // Allow the user to choose LATEST without auto-mutating saved DSP state.
-  if(p90Capable){
-   const legacy=picker.querySelector('option[value="legacy"]');
-   if(s.renderMode!==9 && !legacy){
-    picker.add(new Option("SAVED SESSION · LEGACY SOUND","legacy"));
-   }else if(s.renderMode===9 && legacy){
-    legacy.remove();
-   }
-  }
-  const v=p90Capable?(s.renderMode===9?"external":"legacy"):
-     p89Capable?(s.renderMode===8?"depth":s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
-     p88Capable?(s.renderMode===7?"align":s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
-    p87Capable?(s.renderMode===6?"body":s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
-    p86Capable?(s.renderMode===5?"focus":s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
-    p85Capable?(s.renderMode===4?"coherence":s.renderMode===3?"clarity":"music"):
-    p84Capable?(s.renderMode===3?"clarity":"music"):
-    s.renderMode===1?"mono":s.renderMode===2?
-    (s.musicCompatibleLowFrequency?"musiclf":"physical"):"music";
-  // Native readback arrives every 250ms. A no-op assignment to an open native
-  // select is unnecessary; preserve popup interaction while value is unchanged.
-  if(picker.value!==v)picker.value=v;
+
+ // Latest native renderer is the normal product experience. Preserve any
+ // restored mode exactly; offer an explicit upgrade only for legacy sessions
+ // on a capable host. Never silently change saved audio or expose test menus.
+ $("skUpgrade").hidden=!(p90Capable&&s.renderMode!==9);
+ $("skUpgrade").disabled=Boolean(pending)||!context();
+ $("skYawRow").hidden=!(p83Capable||p84Capable||p90Capable);
+ if(!$("skYawRow").hidden){
   $("skHeadYaw").value=String(s.headYawDegrees);
   $("skYawValue").textContent=Math.round(s.headYawDegrees)+"°";
  }
@@ -496,11 +436,6 @@ function render(){
  $("skSpread").closest("label").querySelector(".sk-param-name").textContent=
   (p83Capable||p84Capable)&&s.renderMode!==0?"SPEAKER ANGLE":
   musicSafeStereo?"SIDE WIDTH":"SPREAD";
- root.querySelector(".sk-guide").textContent=p90Capable&&s.renderMode===9
-  ?"World-anchored stereo speakers · immersive room & musical bass"
-  :musicSafeStereo
-  ?"Legacy music WIDTH adjusts headlocked SIDE; P9 spatializes it"
-  :"Drag monitors to position · rotary knobs: vertical drag, double-click to reset";
  if(!rangeEdits.has("skAmbience"))
   $("skAmbience").value=String(Math.round(s.ambience*100));
  const reflections=$("skReflections");
@@ -510,6 +445,7 @@ function render(){
  $("skReflectionsValue").textContent=Math.round(s.roomAmount*100)+"%";
  $("skAmbience").disabled=s.spacePreset===0;
  $("skAmbienceValue").textContent=Math.round(s.ambience*100)+"%";
+ for(const slider of root.querySelectorAll(".sk-space-slider input[type=range]"))paintSlider(slider);
  // Only source placement is animated; knobs and input ranges are NOT
  // redrawn at 60 Hz. The native audio callback remains the time authority.
  drawSpeakers();
@@ -559,7 +495,9 @@ function drawSpeakers(){
   }
   const scale=(.96-.20*depth).toFixed(3); // far .76, side .96, near 1.16
   g.setAttribute("transform","translate("+visible.x.toFixed(2)+","+visible.y.toFixed(2)+") scale("+scale+")");
-  g.style.opacity=(.83-.14*depth).toFixed(3);
+  // Real speaker cabinets are opaque. Continuous shading gives depth
+  // without leaking the orbit rail through the cabinet.
+  speakerShades[source].setAttribute("opacity",(.12+.10*depth).toFixed(3));
   g.dataset.depth=near?"near":"far";
   g.dataset.depthFactor=depth.toFixed(4);
   g.dataset.acousticX=anchor.x.toFixed(2);
@@ -610,7 +548,12 @@ function animate(time){
  frame=requestAnimationFrame(animate);
 }
 document.addEventListener("visibilitychange",syncVisualFrame);
-function hint(s){$("skHint").textContent=s;}
+function hint(s){
+ $("skHint").textContent=s;
+ // Keep accepted/pending diagnostics accessible without a noisy footer.
+ // Real failures and the browser no-audio warning remain visibly distinct.
+ root.dataset.attention=String(/REJECTED|NOT APPLIED|NOT ACCEPTED|TIMEOUT|UNAVAILABLE|NO AUDIO|NO DSP/i.test(s));
+}
 function requestSnapshot(force=false){
  const c=context();if(!c)return;
  const now=performance.now();
@@ -838,47 +781,22 @@ $("skClose").addEventListener("click",()=>{root.hidden=true;current=null;xyzCapa
  drag=null;windowGesture=null;rangeEdits.clear();gestureStart.clear();lastLiveAt=0;
  if(clock!==null){clearInterval(clock);clock=null;}
  if(frame!==null){cancelAnimationFrame(frame);frame=null;}});
-$("skRenderMode").addEventListener("change",()=>{
- if(!(p83Capable||p84Capable))return;
- const v=$("skRenderMode").value;
- const mode=p90Capable?(v==="external"?9:draft.renderMode):
-     p89Capable?(v==="depth"?8:v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
-     p88Capable?(v==="align"?7:v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
-    p87Capable?(v==="body"?6:v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
-    p86Capable?(v==="focus"?5:v==="coherence"?4:v==="clarity"?3:0):
-    p85Capable?(v==="coherence"?4:v==="clarity"?3:0):
-    p84Capable?(v==="clarity"?3:0):
-    v==="mono"?1:v==="physical"||v==="musiclf"?2:0;
- const scene={...draft,renderMode:mode,musicCompatibleLowFrequency:v==="musiclf"};
- // P9.1/P9.2: a factory-new P8.2 state is NOT a musical P9 default.
- // Only on first user selection of P9, and only when every relevant
- // parameter still matches the legacy factory values, initialize a
- // real close-room music stage. Saved .smix/manual settings are untouched.
- // The entire scene goes through the existing native ACK, never optimistic DSP.
+
+$("skUpgrade").addEventListener("click",()=>{
+ if(!p90Capable||draft.renderMode===9||pending||!context())return;
+ const scene={...draft,renderMode:9,musicCompatibleLowFrequency:false};
  const legacy=draft.renderMode===0 && draft.spacePreset===0 &&
    draft.startAzimuthDegrees===0 && draft.moving===true &&
    Math.abs(draft.stereoSpreadDegrees-60)<.001 &&
    Math.abs(draft.outputTrim-.75)<.001 &&
-   Math.abs(draft.roomAmount-.55)<.001 &&
-   Math.abs(draft.ambience-.30)<.001 &&
+   Math.abs(draft.roomAmount-.55)<.001 && Math.abs(draft.ambience-.30)<.001 &&
    Math.abs(draft.sourceDistanceMeters-1.6)<.001;
- if(mode===9 && p90Capable && legacy){
-  Object.assign(scene,{moving:false,stereoSpreadDegrees:82,
-    outputTrim:1,spacePreset:3,sourceDistanceMeters:1.6,
-    roomAmount:.78,ambience:.33});
- }
- // Mode changes in v6 must not reset the owner scene, yaw or motion.
- if(mode!==0 && !p85Capable){
-  scene.moving=false;
-  scene.startAzimuthDegrees=0;
-  if(mode===2 && (scene.stereoSpreadDegrees<20 ||
-                  scene.stereoSpreadDegrees>120))
-   scene.stereoSpreadDegrees=60;
- }
+ if(legacy)Object.assign(scene,{moving:false,stereoSpreadDegrees:82,
+   outputTrim:1,spacePreset:3,sourceDistanceMeters:1.6,roomAmount:.78,ambience:.33});
  if(!send(scene))render();
 });
 $("skHeadYaw").addEventListener("change",()=>{
- if(!(p83Capable||p84Capable))return;
+ if(!(p83Capable||p84Capable||p90Capable))return;
  if(!send({...draft,headYawDegrees:Number($("skHeadYaw").value)}))render();
 });
 $("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));

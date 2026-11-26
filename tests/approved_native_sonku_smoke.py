@@ -149,28 +149,62 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
     assert editor.locator("#skMap ellipse#skOrbitRail").count()==1
     assert editor.locator("#skMap #skFarArc, #skMap #skNearArc").count()==0
-    # Single complete geometry; foreground is a masked reference, not an arc.
+
+    # Exactly one painted ellipse; only far silhouette subtracts alpha.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
       const rail=map.querySelector('#skOrbitRail');
       const art=map.querySelector('#skListenerArt');
-      const front=map.querySelector('#skOrbitForeground');
-      return Boolean((rail.compareDocumentPosition(art)&Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     (art.compareDocumentPosition(front)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+      const near=map.querySelector('#skNearSources');
+      return Boolean((art.compareDocumentPosition(rail)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (rail.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING) &&
                      rail.getAttribute('rx')==='148' && rail.getAttribute('ry')==='83' &&
-                     front.getAttribute('href')==='#skOrbitRail' &&
-                     front.getAttribute('mask')==='url(#skListenerCoverage)' &&
-                     getComputedStyle(map.querySelector('#skRail')).display!=='none');
-    }"""), "Continuous rail or foreground occlusion incorrect"
+                     rail.getAttribute('mask')==='url(#skRailOcclusion)' &&
+                     rail.getAttribute('stroke-width')==='1.15' &&
+                     !map.querySelector('use[href="#skOrbitRail"]') &&
+                     getComputedStyle(map.querySelector('#skGlass')).display!=='none');
+    }"""), "Single-pass rail / optical stack incorrect"
+    assert editor.locator("#skRenderMode, .sk-control-title, .sk-guide").count()==0
+    assert editor.locator(".sk-stage .sk-rotary-grid .sk-dial").count()==4
+    assert editor.locator(".sk-dial-cap").first.evaluate(
+        """n=>getComputedStyle(n).backgroundImage.includes('mixer-gain-knob-brushed-steel.png')""")
+    assert page.evaluate("""async()=>{const im=new Image();
+      im.src='assets/mixer-gain-knob-brushed-steel.png';
+      await im.decode();return im.naturalWidth>0&&im.naturalHeight>0;
+    }"""),"Shared metal PNG missing from compiled bundle"
+    assert editor.locator("#skMap .sk-glass").get_attribute("pointer-events")=="none"
+    # Both cabinets have one material and the L/R labels retain identity.
+    # Chassis texture is decoded once and visible through both transparent decks.
+    assert editor.evaluate("""async n=>{
+      const im=new Image();im.src='assets/geq31-brushed-metal.jpg';await im.decode();
+      const cs=el=>getComputedStyle(el);
+      const sources=[...n.querySelectorAll('.sk-src')];
+      const shells=sources.map(el=>cs(el.querySelector('.sk-speaker-shell')).stroke);
+      const labels=sources.map(el=>cs(el.querySelector('.sk-speaker-label')).fill);
+      return im.naturalWidth>0 && cs(n).backgroundImage.includes('geq31-brushed-metal.jpg') &&
+        ['.sk-stage','.sk-controls'].every(sel=>cs(n.querySelector(sel)).backgroundImage==='none' &&
+          cs(n.querySelector(sel)).backgroundColor==='rgba(0, 0, 0, 0)') &&
+        shells.length===2 && shells[0]===shells[1] &&
+        labels[0]===labels[1] &&
+        sources[0].querySelector('.sk-tether').getAttribute('stroke')===
+          sources[1].querySelector('.sk-tether').getAttribute('stroke');
+    }"""),"Brushed chassis or unified speaker material missing"
     # Each moving speaker is depth-sorted against the listener alpha silhouette.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
       const far=map.querySelector('#skFarSources');
       const art=map.querySelector('#skListenerArt');
       const near=map.querySelector('#skNearSources');
-      return Boolean((far.compareDocumentPosition(art)&Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     (art.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING));
-    }"""),"Speaker planes must surround the alpha listener PNG"
+      const rail=map.querySelector('#skOrbitRail');
+      const glass=map.querySelector('.sk-glass');
+      return Boolean((art.compareDocumentPosition(rail)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (rail.compareDocumentPosition(far)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (far.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (near.compareDocumentPosition(glass)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     far.getAttribute('mask')==='url(#skFarSpeakerOcclusion)' &&
+                     !near.hasAttribute('mask') &&
+                     [...map.querySelectorAll('.sk-src')].every(n=>getComputedStyle(n).opacity==='1'));
+    }"""),"Opaque speaker cabinets must cover the rail and respect listener occlusion"
     # Every rotation input remains an accessible native range, wrapped in
     # a tactile rotary shell: no browser PCM, no fake processed state.
     assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
@@ -204,7 +238,7 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skListenerArt").get_attribute("pointer-events")=="none"
     assert editor.locator("#skMotion").inner_text()=="ORBIT"
     assert editor.locator("#skDirection").inner_text()=="CLOCKWISE"
-    assert editor.locator("#skMode").inner_text()=="NATIVE HRTF"
+    assert editor.locator("#skMode").text_content()=="NATIVE HRTF"
     # 250ms visualization timer must not overwrite an unacknowledged
     # snapshot request (real JUCE message thread can be temporarily busy).
     count=page.evaluate(
@@ -284,7 +318,8 @@ def exercise(browser,out,width,height):
           value:Number(n.getAttribute('aria-valuenow')),
           layer:n.parentElement.id,depth:n.dataset.depth,
           scale:Number(n.getAttribute('transform').match(/scale\(([^)]+)\)/)?.[1]||0),
-          opacity:Number(n.style.opacity)}))""")
+          shade:Number(n.querySelector('.sk-speaker-shade').getAttribute('opacity')),
+          opacity:Number(getComputedStyle(n).opacity)}))""")
         assert len(data)==2 and data[0]["value"]==data[1]["value"]==degrees,data
         assert abs(data[0]["ax"]-data[1]["ax"])<.01,data
         assert abs(data[0]["ay"]-data[1]["ay"])<.01,data
@@ -306,21 +341,23 @@ def exercise(browser,out,width,height):
     # ellipse, not a flattened physical/acoustic source orbit.
     for x,y in ((200,91),(348,174),(200,257),(52,174)):
         assert abs(((x-200)/148)**2+((y-174)/83)**2-1)<.001
-    assert editor.locator(".sk-stage > .sk-space-panel").count()==1,(
-        "SPACE controls must be below the motion field, not inside rotary column")
+    assert editor.locator(".sk-controls > .sk-space-panel").count()==1,(
+        "SPACE has one owner on the right; primary dials occupy the LCD deck")
     assert editor.locator("#skPreset").count()==1
     assert editor.locator("#skPower.armix-builtin-fx-power").count()==1
     assert front["depth"]=="far" and rear["depth"]=="near"
     assert front["scale"]<right["scale"]<rear["scale"],(front,right,rear)
     assert rear["scale"]-front["scale"]>=.39,(front,rear)
-    assert rear["opacity"]>front["opacity"],(front,rear)
+    assert front["shade"]>rear["shade"],(front,rear)
+    assert front["opacity"]==right["opacity"]==rear["opacity"]==1,(front,right,rear)
     # At the edge-on horizons: layer swaps while 3D scaling remains continuous.
     _,_,far_side=pose(89)
     _,_,near_side=pose(91)
     assert far_side["depth"]=="far" and near_side["depth"]=="near"
     assert far_side["layer"]=="skFarSources" and near_side["layer"]=="skNearSources"
     assert abs(far_side["scale"]-near_side["scale"])<.02,(far_side,near_side)
-    assert abs(far_side["opacity"]-near_side["opacity"])<.02,(far_side,near_side)
+    assert abs(far_side["shade"]-near_side["shade"])<.02,(far_side,near_side)
+    assert far_side["opacity"]==near_side["opacity"]==1,(far_side,near_side)
     # L and R belong to independent near/far planes when they straddle 90°.
     # Native control snapshots are request-correlated; allow a fresh read
     # instead of reusing the previous consumed requestId (rejected as stale).
@@ -410,7 +447,34 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skReflections").is_disabled()
     assert editor.locator("#skTrimValue").inner_text().endswith("dB")
     assert editor.locator("#skTrim").get_attribute("max")=="12"
-    editor.locator('[data-sk-room="2"]').click()
+    room=editor.locator('[data-sk-room="2"]')
+    room.scroll_into_view_if_needed()
+    assert room.get_attribute("aria-pressed")=="false"
+    # Dark released cap: no white bevel or bright border, even under shared chrome.
+    def assert_dark_released(locator):
+        style=locator.evaluate("""n=>{
+          const s=getComputedStyle(n);
+          return {borders:[s.borderTopColor,s.borderRightColor,
+            s.borderBottomColor,s.borderLeftColor],shadow:s.boxShadow};
+        }""")
+        assert all(c in ("rgb(32, 43, 50)","rgb(16, 25, 31)")
+                   for c in style["borders"]),style
+        assert "255, 255, 255" not in style["shadow"],style
+    assert_dark_released(room)
+    assert_dark_released(editor.locator("#skClose"))
+    released=room.evaluate("n=>getComputedStyle(n).boxShadow")
+    bounds=room.bounding_box()
+    assert bounds
+    page.mouse.move(bounds["x"]+bounds["width"]/2,bounds["y"]+bounds["height"]/2)
+    page.mouse.down()
+    try:
+        assert room.evaluate("n=>n.matches(':active')")
+        assert room.evaluate("n=>getComputedStyle(n).boxShadow")!=released
+        assert room.evaluate("n=>getComputedStyle(n).transform")!="none"
+        assert room.get_attribute("aria-pressed")=="false"
+        editor.screenshot(path=f"arsonmix-sonku-hardware-pressed-{width}.png")
+    finally:
+        page.mouse.up()
     scene=last_action(page,"nativeSonKuSet")
     assert scene["settings"]["spacePreset"]==2,scene
     assert scene["settings"]["sourceDistanceMeters"]==1.6,scene
@@ -424,8 +488,11 @@ def exercise(browser,out,width,height):
                 "revolutionSeconds":dialAction["settings"]["revolutionSeconds"],
                 "spacePreset":2}
     accepted_snapshot(page,state,sceneState,applied=scene["requestId"])
-    assert editor.locator('[data-sk-room="2"]').get_attribute("aria-pressed")=="true"
+    assert room.get_attribute("aria-pressed")=="true"
+    assert room.evaluate("n=>getComputedStyle(n).boxShadow")!=released
+    assert room.evaluate("n=>getComputedStyle(n).transform")=="none"
     assert editor.locator("#skDistance").is_enabled()
+    editor.screenshot(path=f"arsonmix-sonku-hardware-latched-{width}.png")
     assert editor.locator("#skAmbience").is_enabled()
     assert editor.locator("#skReflections").is_enabled()
     # The 0..100% controls must reach independent native wet parameters,
@@ -612,6 +679,7 @@ def exercise(browser,out,width,height):
     page.wait_for_function("""()=>
       document.getElementById('skPower')?.dataset.fxState==='off'""")
     assert editor.locator("#skPower").is_enabled()
+    assert_dark_released(editor.locator("#skPower"))
     state["graph"]["channels"][0]["fxRackBypassed"]=True
     emit(page,"arMixConsoleSnapshot",state)
     page.wait_for_function("""()=>

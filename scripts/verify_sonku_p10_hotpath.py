@@ -61,7 +61,7 @@ def main():
                     log=run(str(tmp/(profile+"-"+name)),str(pcm),stdout=subprocess.PIPE,text=True).stdout
                     print(profile,iteration,name,log,flush=True)
                     result[name]=pcm.read_bytes()
-                expected=2*2*9*8192*2*4
+                expected=2*2*12*8192*2*4 + 2*(44100+48000)*2*4
                 assert len(result["reference"])==expected==len(result["candidate"])
                 if result["reference"]!=result["candidate"]:
                     at=next(i for i,(a,b) in enumerate(zip(result["reference"],result["candidate"])) if a!=b)

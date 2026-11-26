@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "SonKuMeasuredHrir.h"
+#include <bit>
 #include "SonKuEarlyReflections.h"
 #include "SonKuMusicalReverb.h"
 #include "SonKuStereoIntegrity.h"
@@ -841,6 +842,10 @@ public:
             const float sceneBinauralLevel=(p90World?.72f:.5f)*smoothedMix_;
             if(remaining_==0) {
                 updateKernels();
+                // Prove the original slew is a bitwise fixed point before
+                // removing it. Moving and adaptive targets are rechecked on
+                // the original retarget cadence; never snap coefficients.
+                directSettled_=!settings_.moving && directSlewIsStationary();
                 remaining_=updateInterval;
             }
             const float x0=std::isfinite(left[i])?left[i]:0.f;
@@ -947,8 +952,13 @@ public:
             // Keep tap order and coefficient slew exactly as before. Split the
             // circular history into two contiguous spans, selecting the
             // centered/twin path once instead of branching for every tap.
-            if(musicSafe && !musicFused) accumulateDirect<true>(ears);
-            else accumulateDirect<false>(ears);
+            if(musicSafe && !musicFused) {
+                if(directSettled_)accumulateDirect<true,false>(ears);
+                else accumulateDirect<true,true>(ears);
+            }else{
+                if(directSettled_)accumulateDirect<false,false>(ears);
+                else accumulateDirect<false,true>(ears);
+            }
 #if defined(SONKU_P80_TRANSPARENT_BASS_RESEARCH) && SONKU_P80_TRANSPARENT_BASS_RESEARCH
 #if defined(SONKU_P90_TRUE_EXTERNAL_RESEARCH) && SONKU_P90_TRUE_EXTERNAL_RESEARCH
             p92::WorldBassFoundation::Ears p92RoomBass{};
@@ -1322,7 +1332,20 @@ public:
         }
     }
 private:
-    template<bool Centered>
+    bool directSlewIsStationary() const noexcept {
+        for(int source=0;source<2;++source)
+            for(int ear=0;ear<2;++ear)
+                for(int tap=0;tap<taps;++tap){
+                    const float current=kernels_[source][ear][tap];
+                    float next=current;
+                    next+=filterSlew_*(targets_[source][ear][tap]-next);
+                    // Numeric equality alone is insufficient for signed zero.
+                    if(std::bit_cast<std::uint32_t>(next)!=
+                       std::bit_cast<std::uint32_t>(current))return false;
+                }
+        return true;
+    }
+    template<bool Centered,bool Slew>
     void accumulateDirect(float (&ears)[2]) noexcept {
         int tap=0;
         const auto span=[&](int at,int count) noexcept {
@@ -1330,8 +1353,10 @@ private:
                 const float v0=history_[0][at],v1=history_[1][at];
                 auto& l0=kernels_[0][0][tap];
                 auto& r0=kernels_[0][1][tap];
-                l0+=filterSlew_*(targets_[0][0][tap]-l0);
-                r0+=filterSlew_*(targets_[0][1][tap]-r0);
+                if constexpr(Slew){
+                    l0+=filterSlew_*(targets_[0][0][tap]-l0);
+                    r0+=filterSlew_*(targets_[0][1][tap]-r0);
+                }
                 if constexpr(Centered) {
                     const float sum=v0+v1;
                     ears[0]+=sum*l0;
@@ -1339,8 +1364,10 @@ private:
                 } else {
                     auto& l1=kernels_[1][0][tap];
                     auto& r1=kernels_[1][1][tap];
-                    l1+=filterSlew_*(targets_[1][0][tap]-l1);
-                    r1+=filterSlew_*(targets_[1][1][tap]-r1);
+                    if constexpr(Slew){
+                        l1+=filterSlew_*(targets_[1][0][tap]-l1);
+                        r1+=filterSlew_*(targets_[1][1][tap]-r1);
+                    }
                     ears[0]+=v0*l0+v1*l1;
                     ears[1]+=v0*r0+v1*r1;
                 }
@@ -1388,6 +1415,7 @@ private:
     };
     void invalidateStaticHrir() noexcept {
         for(auto& entry:staticHrir_)entry.valid=false;
+        directSettled_=false;
     }
     void interpolate(EarKernel& destination,double azimuth) noexcept {
         if(settings_.moving) {
@@ -1633,6 +1661,7 @@ private:
     std::array<std::array<std::array<float,taps>,2>,2> targets_{};
     EarKernel centerTarget_{};  // fixed target coefficients, no extra PCM FIR
     std::array<StaticHrir,3> staticHrir_{};
+    bool directSettled_=false;
     Settings settings_{};
     SonKuEarlyReflections room_{};
     SonKuMusicalReverb reverb_{};

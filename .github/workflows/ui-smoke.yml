@@ -318,7 +318,7 @@ jobs:
           /tmp/sonku-rt-bench
           python tests/sonku_offline_demo_contract.py sonku-listening
       - name: SonKu P10 full PCM parity and same-runner hotpath evidence
-        if: ${{ startsWith(github.head_ref, 'fix/sonku-p10-') }}
+        if: ${{ startsWith(github.head_ref, 'fix/sonku-p10-dsp-') }}
         run: python scripts/verify_sonku_p10_hotpath.py
       - name: Publish 8D-SonKu reproducible listening WAVs and blind answer key
         if: ${{ always() }}

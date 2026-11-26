@@ -6,6 +6,7 @@
 #include "SonKuSpatialCore.h"
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
 #include "ImerSipP92Scene.h"
+#include "SonKuP99DefaultOrbitStage.h"
 #endif
 #include <algorithm>
 #include <array>
@@ -46,7 +47,7 @@ int main(int argc,char** argv){
 #if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
             s.renderMode=9;s.sceneVoicing=brand==0?1:0;
 #endif
-            for(int stage=0;stage<9;++stage){
+            for(int stage=0;stage<12;++stage){
                 // Static and moving, zero spread, direction reversal, XYZ edits,
                 // room tail transition, dry, reset and return to wet.
                 if(stage==1){s.moving=false;s.startAzimuthDegrees=180.f;}
@@ -78,15 +79,27 @@ int main(int argc,char** argv){
                     if(stage==8){s.spacePreset=0;s.roomAmount=0.f;s.ambience=0.f;}
                 }
 #endif
+                // Extended stable targets and wake-up: long stationary run,
+                // moving resume and a second static pose after re-prepare.
+                if(stage==9){
+#if defined(SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH) && SONKU_P99_MUSICAL_VOCAL_DEPTH_RESEARCH
+                    if(brand==0)s=p99::DefaultOrbitStage::settings();
+#endif
+                    s.moving=false;s.startAzimuthDegrees=0.f;s.spatialMix=1.f;
+                }
+                if(stage==10){s.moving=true;s.revolutionSeconds=12.f;}
+                if(stage==11){s.moving=false;s.startAzimuthDegrees=-45.f;dsp->reset();}
                 assert(valid(s)&&dsp->setSettings(s));
                 std::vector<double> timings;
                 timings.reserve(128);
                 std::array<float,257> l{},r{};
                 int done=0;
                 // Non-power-of-two blocks exercise every write-ring offset.
-                while(done<8192){
+                const int warm=stage==9?rate:0;
+                const int total=warm+8192;
+                while(done<total){
                     const int cap=(done%3==0?64:done%3==1?block:257);
-                    const int n=std::min(cap,8192-done);
+                    const int n=std::min(cap,total-done);
                     for(int i=0;i<n;++i){
                         const double t=double(stage*8192+done+i)/rate;
                         const float m=.065f*std::sin(2*pi*320*t)+.032f*std::sin(2*pi*1900*t);
@@ -97,7 +110,7 @@ int main(int argc,char** argv){
                     dsp->process(l.data(),r.data(),n);
                     const auto end=std::chrono::steady_clock::now();
                     // Normalize informational timings by processed samples.
-                    timings.push_back(std::chrono::duration<double,std::micro>(end-begin).count()/n);
+                    if(done>=warm)timings.push_back(std::chrono::duration<double,std::micro>(end-begin).count()/n);
                     for(int i=0;i<n;++i){
                         assert(std::isfinite(l[i])&&std::isfinite(r[i]));
                         assert(std::fwrite(&l[i],sizeof(float),1,out)==1);

@@ -1,0 +1,10 @@
+# P10.4 performance qualification — 2026-11-27
+
+## P10 original candidate readback
+CI 45885360894 job 140134787196: both legacy and P99 produced 589824 float values bit-exact twice each (2,359,296 compared values including repetitions). P99 SHA256 712e5ee8801990c1fd178a0913e26532f6d78af06b268ade92cbee865a141265. The simple branch-reduced FIR plus raw HRIR cache did not materially improve modern CPU: unweighted mean per-scenario p50/p95 SonKu -0.44%/-1.87%, ImmerSIB +0.21%/-0.88%; legacy SonKu -2.62%/-0.50%. Informational two-order measurements on shared runner, not mixer or ASIO benchmark. Source lock rejection is intentional and remains untouched. Do not admit the candidate on marginal timing alone.
+
+## Candidate 2
+Preserve same tap order and arithmetic. For static targets only, prove every direct FIR coefficient is a bitwise fixed point of the existing one-pole step (including signed zero), then execute a branch-selected accumulation specialization without redundant writes or slew arithmetic. Recheck after every original 16-sample target update, including signal-dependent P90 compose. Moving sources use existing slew path. Reset/invalidation clears flag. No snap, no allocation, no extra delay, no new dependency. Extra bool and specialized function code. Candidate is unqualified; a scan may cost more than savings in adaptive cases. Expanded driver retains all prior scenarios, adds one-second stationary warm-up with PCM checked, default SonKu P99 factory, moving wake-up, static reset, both rates and product opt-ins. Benchmark stage 9 reports only post-warm-up timings. Do not claim gain before CI and repeated representative timing; do not modify the existing source lock or approved source manifest. Windows/MSVC parity and actual hardware remain required.
+
+## Integration
+Reconcile the candidate with exact GUI HEAD 532453ff1e0cec2a1cf97f75a91ff18e80502dbe using a merge commit, preserve all nine GUI changes, avoid overwriting its documentation. No merge to main until protected qualification and explicit provenance admission. Research-only acoustic experiment is independent from bit-exact performance work.
