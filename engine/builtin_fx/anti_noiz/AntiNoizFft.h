@@ -37,13 +37,8 @@ public:
             const int half=len/2;
             const auto* w=stages.data()+half;
             for(int base=0;base<n_;base+=len)for(int j=0;j<half;++j) {
-                const auto u=a[base+j],x=a[base+j+half],z=w[j];
-                // Input is bounded finite PCM; no generic complex NaN recovery
-                // in the inner loop. Keep scalar arithmetic and order.
-                const float re=x.real()*z.real()-x.imag()*z.imag();
-                const float im=x.real()*z.imag()+x.imag()*z.real();
-                a[base+j]={u.real()+re,u.imag()+im};
-                a[base+j+half]={u.real()-re,u.imag()-im};
+                const auto u=a[base+j],v=a[base+j+half]*w[j];
+                a[base+j]=u+v;a[base+j+half]=u-v;
             }
         }
         if(inverse)for(int i=0;i<n_;++i)a[i]/=float(n_);
