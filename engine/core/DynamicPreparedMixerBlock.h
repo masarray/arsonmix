@@ -335,6 +335,21 @@ public:
             externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
     }
 
+    // Immutable, CONTROL-only evidence from the exact accepted PDC plan.
+    // A potential direct tap is not proof that a hardware patch is armed.
+    struct LatencyPlanSummary final {
+        bool valid=false,hasMonitor=false;
+        int alignedSamples=0,mainBeforeAlignment=0,monitorBeforeAlignment=0;
+        int potentialDirectMaxSamples=0;
+        ChannelId potentialDirectMaxChannel{};
+        unsigned potentialDirectMaxTies=0;
+        bool directTapRaisesTarget() const noexcept {
+            return valid && potentialDirectMaxSamples >
+                std::max(mainBeforeAlignment,hasMonitor?monitorBeforeAlignment:0);
+        }
+    };
+    LatencyPlanSummary latencyPlanSummary() const noexcept {return latencyPlan_;}
+
     // CONTROL-only DAG PDC. Every fan-in receives sample-aligned PCM,
     // including a destination's own hardware capture and PRE-fader sends.
     // A failure discards the unpublished candidate; the old graph stays live.
@@ -366,14 +381,26 @@ public:
                 arrival[edges_[e].destination]=std::max(arrival[edges_[e].destination],output[i]);
         }
         int terminal=0,externalTerminal=0;
+        LatencyPlanSummary summary;
+        summary.hasMonitor=monitor_!=notScheduled;
+        summary.mainBeforeAlignment=output[main_];
+        if(summary.hasMonitor)summary.monitorBeforeAlignment=output[monitor_];
         for(const auto i:renderOrder_){
             if(i==main_||i==monitor_)terminal=std::max(terminal,output[i]);
             if(lanes_[i].role==ChannelRole::input ||
                lanes_[i].role==ChannelRole::group ||
-               lanes_[i].role==ChannelRole::fxReturn)
-                externalTerminal=std::max(externalTerminal,output[i]);
+               lanes_[i].role==ChannelRole::fxReturn) {
+                if(output[i]>externalTerminal || summary.potentialDirectMaxTies==0) {
+                    externalTerminal=output[i];
+                    summary.potentialDirectMaxChannel=lanes_[i].id;
+                    summary.potentialDirectMaxTies=1;
+                } else if(output[i]==externalTerminal) {
+                    ++summary.potentialDirectMaxTies;
+                }
+            }
         }
         // Across independent physical buses, PDC shares a single target.
+        summary.potentialDirectMaxSamples=externalTerminal;
         terminal=std::max(terminal,externalTerminal);
         externalTerminal=terminal;
         for(const auto i:renderOrder_) {
@@ -398,7 +425,9 @@ public:
                 error={DynamicGraphFault::scratchBudget,lane.id};return false;
             }
         }
-        latencySamples_=terminal;return true;
+        latencySamples_=terminal;
+        summary.alignedSamples=terminal;summary.valid=true;
+        latencyPlan_=summary;return true;
     }
     int latencySamples() const noexcept {return latencySamples_;}
 
@@ -1047,6 +1076,7 @@ private:
     std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
     std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;
+    LatencyPlanSummary latencyPlan_{};
     std::unique_ptr<ChannelTarget[]> channelTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
     std::unique_ptr<SourceFade[]> sourceFades_;

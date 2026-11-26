@@ -16,11 +16,11 @@ void operator delete(void* p,std::size_t) noexcept {std::free(p);}
 void operator delete[](void* p,std::size_t) noexcept {std::free(p);}
 using namespace armix::mixer;
 struct Effects {
-    ChannelId a{},receiver{};
-    armix::dsp::StereoLatencyDelay delayA,delayReceiver;
-    int latency(ChannelId id) const noexcept{return id==a?7:id==receiver?3:0;}
+    ChannelId a{},receiver{},isolated{};
+    armix::dsp::StereoLatencyDelay delayA,delayReceiver,delayIsolated;
+    int latency(ChannelId id) const noexcept{return id==a?7:id==receiver?3:id==isolated?19:0;}
     void render(ChannelId id,float* l,float* r,int n) noexcept {
-        auto* delay=id==a?&delayA:id==receiver?&delayReceiver:nullptr;
+        auto* delay=id==a?&delayA:id==receiver?&delayReceiver:id==isolated?&delayIsolated:nullptr;
         if(delay)for(int i=0;i<n;++i)delay->process(l[i],r[i]);
     }
 };
@@ -29,10 +29,10 @@ int main(){
     assert(probe.prepare(0)&&!probe.active());
     assert(probe.prepare(7)&&probe.active());
     assert(probe.prepare(0)&&!probe.active());
-    for(bool pre:{false,true}) {
+    for(bool pre:{false,true}) for(bool potentialOnly:{false,true}) {
         DynamicChannelRoster roster;
         std::vector<ChannelEdit> edits;
-        for(int i=0;i<5;++i){ChannelEdit e;e.kind=ChannelEdit::Kind::add;
+        for(int i=0;i<(potentialOnly?6:5);++i){ChannelEdit e;e.kind=ChannelEdit::Kind::add;
             e.position=i;e.role=i==3?ChannelRole::main:i==4?ChannelRole::monitor:ChannelRole::input;
             e.format=ProcessingFormat::stereo;e.text="node";edits.push_back(e);}
         const auto added=roster.edit(0,edits);assert(added.ok());
@@ -46,6 +46,14 @@ int main(){
         DynamicGraphRequest request;request.physicalInputs=6;request.maxFrames=16;
         request.sources={{a,0,1,true},{b,2,3,true},{r,4,5,true}};
         auto fx=std::make_shared<Effects>();fx->a=a;fx->receiver=r;
+        if(potentialOnly) {
+            // No WIRE to MAIN/MONITOR and no armed direct output. A source
+            // only lane nevertheless participates in today's global PDC.
+            fx->isolated=ids[5];
+            request.physicalInputs=8;
+            request.sources.push_back({ids[5],6,7,true});
+            assert(fx->delayIsolated.prepare(19));
+        }
         assert(fx->delayA.prepare(7)&&fx->delayReceiver.prepare(3));
         DynamicNativeSessionPublisher publisher;
         DynamicNativeSessionPublisher::FxPlan plan;
@@ -53,21 +61,31 @@ int main(){
         plan.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {static_cast<Effects*>(p)->render(id,l,r,n);};
         plan.latency=+[](void* p,ChannelId id) noexcept{return static_cast<Effects*>(p)->latency(id);};
         assert(publisher.commit(roster,request,0,9,9,true,plan).ok());
-        assert(publisher.latencySamples(9,1)==10);
-        std::array<float,16> inA{},inB{},inR{},l{},right{},ml{},mr{};
+        const int expected=potentialOnly?19:10;
+        assert(publisher.latencySamples(9,1)==expected);
+        const auto summary=publisher.latencyPlanSummary(9,1);
+        assert(summary.valid&&summary.hasMonitor&&summary.alignedSamples==expected);
+        assert(summary.mainBeforeAlignment==10&&summary.monitorBeforeAlignment==0);
+        assert(summary.potentialDirectMaxSamples==expected);
+        assert(summary.potentialDirectMaxChannel==(potentialOnly?ids[5]:r));
+        assert(summary.potentialDirectMaxTies==1);
+        assert(summary.directTapRaisesTarget()==potentialOnly);
+        assert(!publisher.latencyPlanSummary(8,1).valid);
+        assert(!publisher.latencyPlanSummary(9,2).valid);
+        std::array<float,16> inA{},inB{},inR{},silent{},l{},right{},ml{},mr{};
         int time=0;
         for(int n:{3,1,7,5,16}){
             inA.fill(0);inB.fill(0);inR.fill(0);
             if(time==0){inA[0]=1;inB[0]=2;inR[0]=4;}
-            const float* physical[]{inA.data(),inA.data(),inB.data(),inB.data(),inR.data(),inR.data()};
+            const float* physical[]{inA.data(),inA.data(),inB.data(),inB.data(),inR.data(),inR.data(),silent.data(),silent.data()};
             const auto before=allocations;
-            assert(publisher.render(9,physical,6,l.data(),right.data(),n,false,
+            assert(publisher.render(9,physical,request.physicalInputs,l.data(),right.data(),n,false,
                 [](ChannelId,float*,float*,int) noexcept {},ml.data(),mr.data()));
             assert(allocations==before);
             for(int i=0;i<n;++i){
-                assert(std::abs(l[i]-(time+i==10?8.f:0.f))<1.e-5f);
+                assert(std::abs(l[i]-(time+i==expected?8.f:0.f))<1.e-5f);
                 assert(std::abs(right[i]-l[i])<1.e-5f);
-                assert(std::abs(ml[i]-(time+i==10?2.f:0.f))<1.e-5f);
+                assert(std::abs(ml[i]-(time+i==expected?2.f:0.f))<1.e-5f);
                 assert(std::abs(mr[i]-ml[i])<1.e-5f);
             }
             time+=n;
@@ -77,5 +95,6 @@ int main(){
         plan.graphRevision=2;
         assert(!publisher.commit(roster,request,1,9,9,true,plan).ok());
         assert(publisher.acceptedRevision()==1);
+        assert(publisher.latencyPlanSummary(9,1).alignedSamples==expected);
     }
 }

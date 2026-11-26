@@ -544,6 +544,11 @@ public:
         const auto* p=publisher_.controlPrepared(epoch,revision);
         return p?p->graph.latencySamples():0;
     }
+    DynamicPreparedMixerBlock::LatencyPlanSummary latencyPlanSummary(
+            std::uint64_t epoch,std::uint64_t revision) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p?p->graph.latencyPlanSummary():DynamicPreparedMixerBlock::LatencyPlanSummary{};
+    }
     NativeFxCueBus& cueControl() noexcept {return cueBus_;} // CONTROL only
     void unpublish() noexcept {cueBus_.cancel(false);publisher_.unpublish();}
     void pollRetirement() noexcept {publisher_.pollRetirement();}

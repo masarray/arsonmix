@@ -3155,6 +3155,28 @@ public:
             o->setProperty ("masterDbtp", loudness.dbtp);
         o->setProperty ("latencySamples", dryRoutingLab_.channelIdPhysicalPcmActive()?
             dryRoutingLab_.nativePcmLatencySamples():totalLatency_.load());
+        // Read-only planner: explain the accepted global alignment, not a
+        // proposed reroute or measured hardware round trip. Never change PDC.
+        const auto latencyPlan=dryRoutingLab_.nativePcmLatencyPlan();
+        o->setProperty("nativeLatencyPlanValid",latencyPlan.valid);
+        if(latencyPlan.valid) {
+            o->setProperty("nativeLatencyPlanProvenance","ACCEPTED_GRAPH_DECLARED_PDC_NOT_PHYSICAL_RTL");
+            o->setProperty("nativeLatencyPlanAlignedSamples",latencyPlan.alignedSamples);
+            o->setProperty("nativeLatencyPlanMainBeforeAlignment",latencyPlan.mainBeforeAlignment);
+            o->setProperty("nativeLatencyPlanMainAlignmentPad",latencyPlan.alignedSamples-latencyPlan.mainBeforeAlignment);
+            o->setProperty("nativeLatencyPlanHasMonitor",latencyPlan.hasMonitor);
+            if(latencyPlan.hasMonitor) {
+                o->setProperty("nativeLatencyPlanMonitorBeforeAlignment",latencyPlan.monitorBeforeAlignment);
+                o->setProperty("nativeLatencyPlanMonitorAlignmentPad",latencyPlan.alignedSamples-latencyPlan.monitorBeforeAlignment);
+            }
+            o->setProperty("nativeLatencyPlanPotentialDirectMax",latencyPlan.potentialDirectMaxSamples);
+            if(latencyPlan.potentialDirectMaxTies) {
+                o->setProperty("nativeLatencyPlanPotentialDirectChannel",
+                    juce::String(static_cast<juce::int64>(latencyPlan.potentialDirectMaxChannel.value)));
+                o->setProperty("nativeLatencyPlanPotentialDirectTies",static_cast<int>(latencyPlan.potentialDirectMaxTies));
+            }
+            o->setProperty("nativeLatencyPlanPotentialDirectRaisesTarget",latencyPlan.directTapRaisesTarget());
+        }
         o->setProperty ("chainCount", graphOwned_->count);
         o->setProperty ("graphSwitchPending", handoff_.busy());
         o->setProperty ("completedGraphSwaps", static_cast<double> (completedSwaps_.load()));

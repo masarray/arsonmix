@@ -2660,6 +2660,11 @@ public:
         return channelIdPhysicalPcmActive()?
             nativePublisher_.latencySamples(epoch(),nativeAccepted_.pcmRevision):0;
     }
+    armix::mixer::DynamicPreparedMixerBlock::LatencyPlanSummary nativePcmLatencyPlan() const noexcept {
+        return channelIdPhysicalPcmActive()?
+            nativePublisher_.latencyPlanSummary(epoch(),nativeAccepted_.pcmRevision):
+            armix::mixer::DynamicPreparedMixerBlock::LatencyPlanSummary{};
+    }
     // CONTROL snapshot: genuine stable ChannelIds from the SAME publisher
     // as physical PCM. No guessed IDs, synthetic UI routes or JS DSP.
 
