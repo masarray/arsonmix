@@ -81,13 +81,16 @@ def candidate_copy(root):
         // A separate, 45ms envelope fades only the additional cue in/out.
         if(!research_ && transition_==0.f)return baseline;
         const float targetBlend=research_?1.f:0.f;
-        if(research_){
-            coherentWeight_+=slew_*(coherentTarget_-coherentWeight_);
-            if(std::abs(coherentWeight_-coherentTarget_)<1.e-6f)
-                coherentWeight_=coherentTarget_;
-        }
-        transition_+=slew_*(targetBlend-transition_);
-        if(std::abs(transition_-targetBlend)<1.e-6f)transition_=targetBlend;
+        // A one-pole float can reach a representational fixed point before
+        // the epsilon test. Snap only the candidate state when that happens;
+        // the original approved baseline coefficient path is untouched.
+        const auto smooth=[this](float& value,float target) noexcept {
+            const float before=value;
+            value+=slew_*(target-value);
+            if(value==before||std::abs(value-target)<1.e-6f)value=target;
+        };
+        if(research_)smooth(coherentWeight_,coherentTarget_);
+        smooth(transition_,targetBlend);
         if(transition_==0.f){coherentWeight_=0.f;return baseline;}
         const float cw=std::clamp(coherentWeight_,0.f,1.f);
         const Gains candidate{1.f-.065f*cw,1.f+.42f*cw};
