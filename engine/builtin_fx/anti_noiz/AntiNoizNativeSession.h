@@ -58,6 +58,7 @@ public:
     Snapshot observed() const noexcept {return observed_;}
     void onBypass(bool requested,bool fully) noexcept {
         if(!ready_)return;
+        if(requested&&!rackBypassed_)fx_->cancelAudition();
         if(requested&&!rackBypassed_&&fx_->learning()){
             fx_->cancelNativeLearn();status_=LearnStatus::Cancelled;
         }
@@ -65,11 +66,12 @@ public:
     }
     void consume() noexcept {
         if(!ready_)return;
-        const bool before=fx_->learning();
+        const bool before=fx_->learning(),hadProfile=fx_->hasProfile();
         if(rackBypassed_)fx_->consumeWhileRackBypassed();else fx_->consume();
         const bool after=fx_->learning();
         if(!before&&after)status_=LearnStatus::Learning;
         if(before&&!after)status_=LearnStatus::Cancelled;
+        if(hadProfile&&!fx_->hasProfile()&&!after)status_=LearnStatus::Idle;
     }
     void process(float* l,float* r,int n) noexcept {
         if(!ready_||n<=0)return;

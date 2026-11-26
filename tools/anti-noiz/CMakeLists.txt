@@ -156,3 +156,7 @@ set_tests_properties(AntiNoizReferenceMaskProbe PROPERTIES TIMEOUT 60)
 anti_noiz_target(anti_noiz_manual_test tests/anti_noiz_manual_test.cpp)
 add_test(NAME AntiNoizManual COMMAND anti_noiz_manual_test)
 set_tests_properties(AntiNoizManual PROPERTIES TIMEOUT 60)
+
+anti_noiz_target(anti_noiz_manual_spectral_test tests/anti_noiz_manual_spectral_test.cpp)
+add_test(NAME AntiNoizManualSpectral COMMAND anti_noiz_manual_spectral_test)
+set_tests_properties(AntiNoizManualSpectral PROPERTIES TIMEOUT 90)

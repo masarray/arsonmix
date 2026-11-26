@@ -60,6 +60,8 @@ public:
     Core::Settings acceptedSettings() const noexcept {return session_.acceptedSettings();}
     bool queueSettings(Core::Settings s,std::uint64_t id) noexcept {return session_.submit({id,Control::Kind::settings,s});}
     bool queueLearn(std::uint64_t id) noexcept {return session_.submit({id,Control::Kind::learn,{}});}
+    bool queueClearProfile(std::uint64_t id) noexcept {return session_.submit({id,Control::Kind::clearProfile,{}});}
+    bool queueAudition(std::uint64_t id) noexcept {return session_.submit({id,Control::Kind::audition,{}});}
     bool pollCompletion(Control::Completion& c) noexcept {return session_.poll(c);}
     bool pollTelemetry(Snapshot& s) noexcept {return session_.pollTelemetry(s);}
     // CONTROL-only bounded drain. No DSP state read on this thread.
@@ -74,7 +76,7 @@ public:
         out.append(bytes.data(),bytes.size());
     }
     bool restoreUnpublishedState(const void* data,int bytes) noexcept {
-        if(!data||(bytes!=static_cast<int>(anti_noiz::NativeState::size)&&bytes!=static_cast<int>(anti_noiz::NativeState::legacySize)))return false;
+        if(!data||(bytes!=static_cast<int>(anti_noiz::NativeState::size)&&bytes!=static_cast<int>(anti_noiz::NativeState::legacySize)&&bytes!=static_cast<int>(anti_noiz::NativeState::v2Size)))return false;
         return session_.restore({static_cast<const std::uint8_t*>(data),static_cast<std::size_t>(bytes)});
     }
     void setStateInformation(const void* data,int bytes) override {(void)restoreUnpublishedState(data,bytes);}

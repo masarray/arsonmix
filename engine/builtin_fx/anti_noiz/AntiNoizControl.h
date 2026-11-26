@@ -8,7 +8,7 @@ namespace armix::builtin_fx::anti_noiz {
 // Host adapter must fence instance identity and graph generation externally.
 class Control final {
 public:
-    enum class Kind { settings, learn };
+    enum class Kind { settings, learn, clearProfile, audition };
     struct Command { std::uint64_t id=0; Kind kind=Kind::settings; Core::Settings settings{}; };
     struct Snapshot {
         Core::Settings settings{};
@@ -18,6 +18,7 @@ public:
         Core::SourceRole sourceRole=Core::SourceRole::Unknown;
         Core::Mode effectiveMode=Core::Mode::AutoProtect;
         float detectorLevel=0;
+        bool audition=false;
     };
     struct Completion { std::uint64_t id=0; bool applied=false; Snapshot state{}; };
     bool prepare(double rate,int channels,Core::SourceRole role=Core::SourceRole::Unknown) noexcept {
@@ -42,6 +43,8 @@ public:
         if(c.kind==Kind::settings)ok=core_.applySettings(c.prepared);
         if(c.kind==Kind::learn&&core_.settings().enabled&&core_.effectiveMode()!=Core::Mode::Music)
             ok=core_.beginLearn();
+        if(c.kind==Kind::clearProfile)ok=core_.clearProfile();
+        if(c.kind==Kind::audition)ok=core_.audition();
         (void)done_.push({c.id,ok,snapshot()});
     }
     void process(float* l,float* r,int n) noexcept {
@@ -56,7 +59,7 @@ public:
     }
     // AUDIO owner or unpublished/quiescent only. No UI thread access.
     Snapshot snapshot() const noexcept {
-        return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples(),core_.sourceRole(),core_.effectiveMode(),core_.detectorLevel()};
+        return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples(),core_.sourceRole(),core_.effectiveMode(),core_.detectorLevel(),core_.auditionActive()};
     }
     // Native-only seams. Do not change the qualified standalone process,
     // command packet, Snapshot layout or steady-state DSP.
@@ -67,6 +70,8 @@ public:
     bool learning() const noexcept {return core_.learning();}
     bool lastNativeLearnQualified() const noexcept {return core_.lastNativeLearnQualified();}
     void cancelNativeLearn() noexcept {core_.cancelNativeLearn();}
+    void cancelAudition() noexcept {core_.cancelAudition();}
+    bool hasProfile() const noexcept {return core_.hasProfile();}
     void consumeWhileRackBypassed() noexcept {
         Packet c;
         if(!core_.ready()||!done_.canPush()||!commands_.pop(c))return;

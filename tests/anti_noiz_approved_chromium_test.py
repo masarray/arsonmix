@@ -396,11 +396,12 @@ def main():
         # Actual advanced controls must reach the same accepted native identity.
         root.locator(".an-pro summary").click()
         manual=root.locator('[data-pro-flag="manualExpander"]')
-        manual.check()
+        manual.click()
         edit=last_action(page,"nativeAntiNoizSet")
         assert edit["settings"]["manualExpander"] is True
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
         accepted=edit["settings"]
+        expect(manual).to_be_checked()
         threshold=root.locator('input[aria-label="Threshold"]')
         expect(threshold).to_be_enabled()
         threshold.focus();page.keyboard.press("ArrowRight")
