@@ -10,6 +10,9 @@ on:
       - 'tools/anti-noiz/recorded_raw_wind.py'
       - 'tools/anti-noiz/wind_resolution_probe.py'
       - 'tools/anti-noiz/wind_reference_audit.py'
+      - 'tools/anti-noiz/WindPeriodCandidate.h'
+      - 'tools/anti-noiz/wind_period_candidate.cpp'
+      - 'tools/anti-noiz/wind_period_native_eval.py'
       - 'tools/anti-noiz/historical_fp_contract.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
       - 'tools/anti-noiz/compare_environment.py'
@@ -216,6 +219,17 @@ jobs:
           "$RUNNER_TEMP/wind-probe-env/bin/python" -m pip install numpy==2.3.5 scipy==1.17.0
           "$RUNNER_TEMP/wind-probe-env/bin/python" tools/anti-noiz/wind_resolution_probe.py "$RUNNER_TEMP/raw-wind-report"
           "$RUNNER_TEMP/wind-probe-env/bin/python" tools/anti-noiz/wind_reference_audit.py "$RUNNER_TEMP/raw-wind-report" --native "$RUNNER_TEMP/raw-field-new"
+      - name: Native streaming period candidate contract and recorded evidence (not qualification)
+        if: ${{ !cancelled() && (steps.raw_gate.outcome == 'success' || steps.raw_gate.outcome == 'failure') }}
+        env:
+          OPENBLAS_NUM_THREADS: '1'
+        run: |
+          test -x "$RUNNER_TEMP/wind-probe-env/bin/python"
+          g++ -std=c++20 -O3 -Wall -Wextra -Werror tools/anti-noiz/wind_period_candidate.cpp -o "$RUNNER_TEMP/wind-period-native"
+          "$RUNNER_TEMP/wind-period-native" --self-test
+          clang++ -std=c++20 -O1 -g -Wall -Wextra -Werror -fsanitize=address,undefined tools/anti-noiz/wind_period_candidate.cpp -o "$RUNNER_TEMP/wind-period-san"
+          "$RUNNER_TEMP/wind-period-san" --self-test
+          "$RUNNER_TEMP/wind-probe-env/bin/python" tools/anti-noiz/wind_period_native_eval.py "$RUNNER_TEMP/raw-wind-report" "$RUNNER_TEMP/wind-period-native"
       - name: Preserve actual selected source bytes, licenses and diagnostic report
         if: always()
         uses: actions/upload-artifact@v4
@@ -228,6 +242,7 @@ jobs:
             ${{ runner.temp }}/raw-wind-report/report.json
             ${{ runner.temp }}/raw-wind-report/resolution-probe.json
             ${{ runner.temp }}/raw-wind-report/dc-reference-audit/report.json
+            ${{ runner.temp }}/raw-wind-report/native-period-report.json
             ${{ runner.temp }}/raw-wind-report/*/provenance.tsv
             ${{ runner.temp }}/raw-wind-report/*/segments.tsv
             ${{ runner.temp }}/raw-wind-report/*/clean.wav
