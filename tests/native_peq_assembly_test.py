@@ -73,7 +73,7 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn(".mx-sonku .sk-listener-art",css)
         png=(ROOT/"site/preview-v2/assets/sonku-listener-top.png").read_bytes()
         self.assertEqual(png[:8],bytes([137,80,78,71,13,10,26,10]))
-        self.assertLess(len(png),45000)
+        self.assertLess(len(png),256*1024)
         self.assertNotIn("mixer-native-sonku.css",self.assembled)
         sonku=(ROOT/"site/preview-v2/assets/mixer-native-sonku.js").read_text("utf-8")
         # SonKu now paints the actual rear/top-view PNG with the listener
@@ -83,8 +83,12 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn('data-orientation="front-up-rear"',sonku)
         self.assertIn('id="skFarSources"',sonku)
         self.assertIn('id="skNearSources"',sonku)
-        self.assertIn('id="skFarArc"',sonku)
-        self.assertIn('id="skNearArc"',sonku)
+        self.assertIn('id="skOrbitRail"',sonku)
+        self.assertIn('mask="url(#skRailOcclusion)"',sonku)
+        self.assertNotIn('href="#skOrbitRail"',sonku)
+        self.assertIn('mixer-gain-knob-brushed-steel.png',css)
+        self.assertNotIn('id="skFarArc"',sonku)
+        self.assertNotIn('id="skNearArc"',sonku)
         self.assertIn('x="103" y="90" width="194" height="202"',sonku)
         self.assertNotIn('id="skRearSources"',sonku)
         self.assertNotIn('id="skFrontSources"',sonku)
@@ -92,13 +96,15 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn('const depthLayers=',sonku)
         self.assertNotIn('id="skCrown"',sonku)
         self.assertNotIn('id="skBackSuit"',sonku)
-        # Pin the 256x256 rear-view alpha PNG used by the installed GUI;
-        # never silently repack the old flipped top-view artwork.
+        # Pin the owner-approved independently rendered rear-view raster, not a palette conversion
+        # back to the low-color asset or a substitute vector silhouette.
         import hashlib
-        self.assertEqual(hashlib.sha256(png).hexdigest(),
-            "34d067dce8fa83ed0233b61c326fc8b2182a08b5b2a875d2ca28d75b3d2be5d8")
-        self.assertEqual(png[16:24],bytes([0,0,1,0,0,0,1,0]))
-        self.assertIn(b"tRNS",png)
+        header=f"blob {len(png)}\0".encode("ascii")
+        self.assertEqual(hashlib.sha1(header+png).hexdigest(),
+            "31de77d1126d318d81ff43297d97adb2187bccfa")
+        self.assertEqual(png[16:24],bytes([0,0,2,0,0,0,2,0]))
+        self.assertEqual(png[24:26],bytes([8,6])) # 8-bit true-color RGBA
+        self.assertEqual(png[12:16],b"IHDR")
         self.assertIn("FRONT</text>",sonku)
         self.assertIn('arMixBuiltinSonKuAck',sonku)
         self.assertIn('nativeSonKuSet',sonku)
@@ -162,7 +168,8 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn('values.getProperty("directElevationDegrees",{}).isVoid()',bridge)
         self.assertIn('r.schemaVersion===3',js)
         self.assertIn('xyzCapable=measured',js)
-        self.assertIn('r.appliedRequestId!==pending.requestId',js)
+        self.assertIn('if(!pending.ack||appliedRequestId!==pending.requestId||',js)
+        self.assertIn('acceptSettingsReadback(incoming,r.appliedRequestId,c)',js)
         self.assertIn('id="skElevationRow" for="skElevation" hidden',js)
         self.assertIn('skElevationRow',js)
         self.assertIn('.sk-space-slider[hidden]{display:none!important}',css)

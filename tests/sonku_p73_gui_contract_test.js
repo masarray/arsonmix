@@ -47,7 +47,7 @@ assert(!api.valid(mk(1,5,0)),"native room radial policy");
 assert(!api.valid(mk(0,10.01,0)),"maximum radial admission");
 assert(source.includes('r.schemaVersion===3'),"native explicit capability");
 assert(source.includes('xyzCapable=measured'),"capability controlled by native snapshot");
-assert(source.includes('r.appliedRequestId!==pending.requestId'),"audio ACK readback");
+assert(source.includes('if(!pending.ack||appliedRequestId!==pending.requestId||') && source.includes('acceptSettingsReadback(incoming,r.appliedRequestId,c)'),"audio ACK readback");
 assert(source.includes('String(r.graphRevision)!==String(c.graphRevision)'),"reject stale revision");
 assert(source.includes('id="skElevationRow" for="skElevation" hidden'),"v2 UI hidden");
 assert(source.includes('elevationRow.hidden=!xyzCapable'),"v2 never shows research control");
