@@ -5,6 +5,9 @@ on:
     paths:
       - 'tools/anti-noiz/recorded_environment.py'
       - 'tools/anti-noiz/recorded_field_wind.py'
+      - 'tools/anti-noiz/compare_p0_controls.py'
+      - 'tools/anti-noiz/raw_wind_intake.py'
+      - 'tools/anti-noiz/recorded_raw_wind.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
       - 'tools/anti-noiz/compare_environment.py'
       - 'tools/anti-noiz/tonal_benchmark.cpp'
@@ -115,7 +118,13 @@ jobs:
           ref: 14c87a874e615350f5cf5cdf149dc4848f084a9a
           path: shape-reference
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 1a10819afb7d2eb4ebf9ad22eea707668923219d
+          path: controls-reference
+          persist-credentials: false
       - name: Build exact field baseline and candidate
+        id: field_build
         run: |
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror field-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-old"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-new"
@@ -128,6 +137,17 @@ jobs:
           python3 tools/anti-noiz/recorded_field_wind.py --self-test
       - name: Measure paired real breeze and preserve foreground
         run: python3 tools/anti-noiz/recorded_field_wind.py "$RUNNER_TEMP/field-old" "$RUNNER_TEMP/field-new" "$RUNNER_TEMP/field-wind" --prior "$RUNNER_TEMP/field-prior" --pre-active "$RUNNER_TEMP/field-pre-active" --pre-shape "$RUNNER_TEMP/field-pre-shape" --reference-probe "$RUNNER_TEMP/reference-mask"
+      - name: Strict arithmetic control independence and historical parity
+        if: ${{ !cancelled() && steps.field_build.outcome == 'success' }}
+        run: |
+          # Additional exact comparison; do not replace or waive the original
+          # default-compiler field gate. The same explicit FP contract applies
+          # to all four independently built reference executables.
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off controls-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/controls-old"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/controls-new"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off residual-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/strict-prior"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off active-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/strict-fastpath"
+          python3 tools/anti-noiz/compare_p0_controls.py "$RUNNER_TEMP/field-wind" "$RUNNER_TEMP/controls-old" "$RUNNER_TEMP/controls-new" "$RUNNER_TEMP/strict-prior" "$RUNNER_TEMP/strict-fastpath"
       - name: Preserve unnormalized A/B and machine evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -135,6 +155,8 @@ jobs:
           name: anti-noiz-field-wind-ab
           path: |
             ${{ runner.temp }}/field-wind/report.json
+            ${{ runner.temp }}/field-wind/controls-report.json
+            ${{ runner.temp }}/field-wind/*/controls-*-residual-only-processed.wav
             ${{ runner.temp }}/reference-mask-rumble.csv
             ${{ runner.temp }}/field-wind/*/reference-mask-*.csv
             ${{ runner.temp }}/field-wind/*/pre-shape-max-processed.wav
@@ -151,4 +173,44 @@ jobs:
             ${{ runner.temp }}/field-wind/*/clean.wav
             ${{ runner.temp }}/field-wind/*/learn.wav
             ${{ runner.temp }}/field-wind/*/noise.wav
+          if-no-files-found: warn
+
+  raw-mic-wind:
+    name: Independent RWTH microphone wind discovery (not acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: b2800799cffe85c9ec7d2e1addad3dce22627c6a
+          path: raw-field-reference
+          persist-credentials: false
+      - name: Self-test intake and resampling
+        run: |
+          python3 tools/anti-noiz/raw_wind_intake.py --self-test
+          python3 tools/anti-noiz/recorded_raw_wind.py --self-test
+      - name: Acquire official archive and record actual source hashes
+        run: python3 tools/anti-noiz/raw_wind_intake.py "$RUNNER_TEMP/raw-wind-intake"
+      - name: Build exact native baseline and candidate
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror raw-field-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/raw-field-old"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/raw-field-new"
+      - name: Run independent raw wind diagnostic (first discovery must not qualify)
+        run: python3 tools/anti-noiz/recorded_raw_wind.py "$RUNNER_TEMP/raw-wind-intake" "$RUNNER_TEMP/raw-field-old" "$RUNNER_TEMP/raw-field-new" "$RUNNER_TEMP/raw-wind-report"
+      - name: Preserve actual selected source bytes, licenses and diagnostic report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-raw-mic-wind-discovery
+          path: |
+            ${{ runner.temp }}/raw-wind-intake/manifest.json
+            ${{ runner.temp }}/raw-wind-intake/LICENSE-*.txt
+            ${{ runner.temp }}/raw-wind-intake/*.wav
+            ${{ runner.temp }}/raw-wind-report/report.json
+            ${{ runner.temp }}/raw-wind-report/*/provenance.tsv
+            ${{ runner.temp }}/raw-wind-report/*/segments.tsv
           if-no-files-found: warn

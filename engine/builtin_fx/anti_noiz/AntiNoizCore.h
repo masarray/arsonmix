@@ -243,10 +243,12 @@ private:
         // desired harmonics. Keep the qualified tonal path authoritative.
         const bool coherenceEnabled=windEnabled&&tonal_.selected()<0;
         coherence_.update(work_,coherenceEnabled);
-        const bool broadEnabled=!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&broadband_.eligible()&&tonal_.selected()<0;
-        broadband_.update(power_,profile_.anchor(),broadEnabled,silenceFloor_<1.f);
+        const bool broadEligible=!protect&&effectiveMode_==Mode::Voice&&broadband_.eligible()&&tonal_.selected()<0;
+        const bool broadEnabled=broadEligible&&cleanFloor_<1.f;
+        const bool broadResidual=broadEligible&&silenceFloor_<1.f;
+        broadband_.update(power_,profile_.anchor(),broadEnabled||broadResidual,broadResidual);
         tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
-        const bool broadIdle=broadEnabled&&broadband_.residualIdle();
+        const bool broadIdle=broadResidual&&broadband_.residualIdle();
         const float expTarget=idle?silenceFloor_:broadIdle?std::max(silenceFloor_,.12589254f):context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
         // Only explicit Voice or source-aware SpeechMic permits independently

@@ -35,14 +35,23 @@ void check(unsigned rate,unsigned channels){
     offline::require(wet.processed.samples==partition.processed.samples,"broadband partition PCM");
     offline::require(wet.latency==(rate>48000?512:256),"broadband latency unchanged");
     s.silenceDb=0;const auto spectral=offline::render(input,&learn,s,127);
-    double raw=0,out=0,base=0,ref=0,projection=0,onsetRef=0,onsetProj=0;
+    s.cleanDb=0;const auto unity=offline::render(input,&learn,s,127);
+    for(std::size_t i=0;i<input.samples.size();++i)
+        offline::require(std::abs(input.samples[i]-unity.processed.samples[i])<2e-6f,"both controls zero unity");
+    s.silenceDb=48;const auto residualOnly=offline::render(input,&learn,s,127);
+    const auto residualPartition=offline::render(input,&learn,s,64);
+    offline::require(residualOnly.processed.samples==residualPartition.processed.samples,"residual-only partition PCM");
+    double raw=0,out=0,base=0,ref=0,projection=0,onsetRef=0,onsetProj=0,residualPower=0,residualProjection=0,residualOnset=0;
     for(unsigned i=0;i<4*rate;++i)for(unsigned c=0;c<channels;++c){
         const auto j=i*channels+c;const double x=input.samples[j],y=wet.processed.samples[j],v=clean.samples[j];
-        if(i>=rate/2&&i<2*rate){raw+=x*x;out+=y*y;base+=double(spectral.processed.samples[j])*spectral.processed.samples[j];}
-        if(i>=2*rate&&i<3*rate){ref+=v*v;projection+=v*y;if(i<2*rate+rate/40){onsetRef+=v*v;onsetProj+=v*y;}}
+        if(i>=rate/2&&i<2*rate){raw+=x*x;out+=y*y;base+=double(spectral.processed.samples[j])*spectral.processed.samples[j];residualPower+=double(residualOnly.processed.samples[j])*residualOnly.processed.samples[j];}
+        if(i>=2*rate&&i<3*rate){ref+=v*v;projection+=v*y;residualProjection+=v*residualOnly.processed.samples[j];if(i<2*rate+rate/40){onsetRef+=v*v;onsetProj+=v*y;residualOnset+=v*residualOnly.processed.samples[j];}}
     }
     const double cut=10*std::log10(raw/out),extra=10*std::log10(base/out),retain=projection/ref,onset=onsetProj/onsetRef;
     std::cout<<rate<<" Hz "<<channels<<"ch broad idle "<<cut<<" dB residual "<<extra<<" dB foreground "<<retain<<" onset "<<onset<<std::endl;
+    const double residualCut=10*std::log10(raw/residualPower);
+    std::cout<<"residual-only "<<residualCut<<" dB foreground "<<residualProjection/ref<<" onset "<<residualOnset/onsetRef<<std::endl;
+    offline::require(residualCut>=3.&&residualProjection/ref>.90&&residualProjection/ref<1.10&&residualOnset/onsetRef>.75&&residualOnset/onsetRef<1.25,"Silence independent of Clean with foreground retained");
     offline::require(cut>=12.&&extra>=3.,"broadband idle and residual target");
     offline::require(retain>.90&&retain<1.10&&onset>.75&&onset<1.25,"broadband foreground retention");
 }
