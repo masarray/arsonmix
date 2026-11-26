@@ -208,7 +208,7 @@ def exercise(browser,out,width,height):
     # Every rotation input remains an accessible native range, wrapped in
     # a tactile rotary shell: no browser PCM, no fake processed state.
     assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
-    for knob in ("skSpeed","skSpread","skMix","skTrim"):
+    for knob in ("skSpeed","skSpread","skHeadYaw","skTrim"):
         assert editor.locator("#"+knob).get_attribute("type")=="range"
         assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
     art=editor.locator("#skListenerArt")
@@ -667,6 +667,26 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skYawValue").inner_text()=="-47°"
     yaw.evaluate("n=>n.dispatchEvent(new Event('change',{bubbles:true}))")
     assert command_count()==before+1
+    # Actual mouse gesture through the existing tactile knob path.
+    dial=yaw.locator("..")
+    dial.scroll_into_view_if_needed()
+    bounds=dial.bounding_box()
+    assert bounds
+    x=bounds["x"]+bounds["width"]/2
+    y=bounds["y"]+bounds["height"]/2
+    before=command_count()
+    page.mouse.move(x,y)
+    page.mouse.down()
+    page.mouse.move(x,y-12)
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Yaw drag did not send native edit"
+    drag_cmd=last_action(page,"nativeSonKuSet")
+    assert drag_cmd["settings"]["headYawDegrees"]>-47
+    page.mouse.up()
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":drag_cmd["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,drag_cmd["settings"],applied=drag_cmd["requestId"],schema=11)
+    assert command_count()==before+1
+    assert float(yaw.input_value())==drag_cmd["settings"]["headYawDegrees"]
     factory=editor.locator("#skPreset")
     assert factory.is_enabled(),"Valid P9.1+P9.2 native capability must unlock presets"
     assert factory.input_value()=="CUSTOM","Saved non-factory scene was overwritten"

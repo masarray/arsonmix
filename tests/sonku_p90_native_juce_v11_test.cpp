@@ -260,6 +260,45 @@ int main(){
  assert(std::abs(fused-reference)>0.0002);
  const double relativeDb=10.*std::log10(fused/reference);
  assert(std::abs(relativeDb)<8.0);
+ // Verify actual P90 audio changes with yaw, not only the accepted scalar.
+ {
+  auto left=std::make_unique<SonKuSpatialProcessor>();
+  auto right=std::make_unique<SonKuSpatialProcessor>();
+  auto base=s;base.headYawDegrees=0.f;base.spatialMix=1.f;
+  for(auto* p:{left.get(),right.get()}){
+   p->prepareToPlay(48000.,128);
+   assert(p->queueSettings(base,812));
+   p->consumeRealtimeEdits();
+   assert(p->pollCompletion(ack)&&ack.applied);
+   p->sealForRealtime();
+  }
+  juce::AudioBuffer<float> l(2,128),r(2,128);
+  juce::MidiBuffer midi;
+  auto block=[&](int n){
+   for(int i=0;i<128;++i){
+    const float t=float(n*128+i)/48000.f;
+    const float x=.1f*std::sin(2*pi*311*t);
+    const float y=.04f*std::sin(2*pi*1703*t);
+    l.setSample(0,i,x+y);l.setSample(1,i,x-y);
+    r.setSample(0,i,x+y);r.setSample(1,i,x-y);
+   }
+   left->processBlock(l,midi);right->processBlock(r,midi);
+   double diff=0.;
+   for(int c=0;c<2;++c)for(int i=0;i<128;++i){
+    assert(std::isfinite(l.getSample(c,i))&&std::isfinite(r.getSample(c,i)));
+    const double d=double(l.getSample(c,i))-r.getSample(c,i);
+    diff+=d*d;
+   }
+   return diff;
+  };
+  for(int n=0;n<64;++n)assert(block(n)==0.);
+  base.headYawDegrees=60.f;
+  assert(right->queueSettings(base,813));
+  double diff=block(64);
+  assert(right->pollCompletion(ack)&&ack.requestId==813&&ack.applied);
+  for(int n=65;n<128;++n)diff+=block(n);
+  assert(diff>1.e-6 && "Head yaw must audibly alter native PCM");
+ }
  // Audio-thread head-yaw change is a separate accepted v10 transaction.
  s.headYawDegrees=60.f;
  s.spatialMix=.3f;
