@@ -273,6 +273,7 @@ let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
+let lastSpeakerPhase=null,lastSpeakerSpread=null;
 function syncPower(){
  const p=$("skPower");
  if(!current){
@@ -321,6 +322,13 @@ const context=()=>{
 };
 function render(){
  const s=draft;
+ // A timed-out request may still be queued in the native audio callback.
+ // Never replay it or let another control write race it. Keep Close/Power
+ // reachable so the user can recover an unavailable device.
+ const recovering=Boolean(pending?.timedOut);
+ root.querySelector(".sk-stage").inert=recovering;
+ root.querySelector(".sk-controls").inert=recovering;
+ root.dataset.recovering=String(recovering);
  // Header identity is always authoritative, including v2 native, reconnect
  // and logical sessions. A missing capability must never unlock presets.
  syncPower();
@@ -475,6 +483,10 @@ function render(){
 function drawSpeakers(){
  const s=draft;
  const phase=s.moving?visualPhase:s.startAzimuthDegrees;
+ // Native snapshot polling must not repaint unchanged static SVG geometry.
+ // Cache only the two exact presentation inputs, never native audio state.
+ if(phase===lastSpeakerPhase&&s.stereoSpreadDegrees===lastSpeakerSpread)return;
+ lastSpeakerPhase=phase;lastSpeakerSpread=s.stereoSpreadDegrees;
  const angles=[phase-s.stereoSpreadDegrees/2,phase+s.stereoSpreadDegrees/2];
  const pair=displayPair(angles);
  for(let source=0;source<2;++source) {
@@ -508,9 +520,13 @@ function drawSpeakers(){
   const leader=speakerTethers[source];
   leader.setAttribute("d","M0 0 L"+deltaX.toFixed(2)+" "+deltaY.toFixed(2));
   leader.style.opacity=Math.hypot(deltaX,deltaY)>4?".65":"0";
-  g.setAttribute("aria-valuenow",String(Math.round(deg>180?deg-360:deg)));
+  // Screen-reader value is integer degrees. Do not emit accessibility
+  // mutations at display frame rate when the spoken value did not change.
+  const value=String(Math.round(deg>180?deg-360:deg));
+  if(g.getAttribute("aria-valuenow")!==value)g.setAttribute("aria-valuenow",value);
   const direction=deg<45||deg>=315?"FRONT":deg<135?"RIGHT":deg<225?"REAR":"LEFT";
-  g.setAttribute("aria-valuetext",direction+" "+Math.round(deg)+"° ("+(near?"near":"far")+" view)");
+  const spoken=direction+" "+Math.round(deg)+"° ("+(near?"near":"far")+" view)";
+  if(g.getAttribute("aria-valuetext")!==spoken)g.setAttribute("aria-valuetext",spoken);
  }
 }
 // rAF is a VISUAL interpolator, not an audio clock or optimistic DSP ACK.
@@ -569,6 +585,8 @@ function requestSnapshot(force=false){
 // latest-wins coalescing; ACK + accepted snapshot remain mandatory before
 // issuing the next. Never fill the DSP SPSC queue with raw pointer events.
 const LIVE_INTERVAL_MS=40;
+// Reuse the existing 250ms editor heartbeat; no separate watchdog timer.
+const ACK_DEADLINE_MS=3000;
 const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
  (!xyzCapable || a.directElevationDegrees===b.directElevationDegrees) &&
  (!p88Capable || a.hrtfElevationTrimDegrees===b.hrtfElevationTrimDegrees) &&
@@ -577,32 +595,42 @@ const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
    a.musicCompatibleLowFrequency===b.musicCompatibleLowFrequency &&
    a.headYawDegrees===b.headYawDegrees));
 function send(next,continuous=false){
+ if(pending?.timedOut){render();return false;}
  if(!valid(next))return false;
- draft={...next};render();
- if(!native()){accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");return true;}
- const c=context();if(!c){hint("NATIVE INSERT NOT ACCEPTED");return false;}
+ draft={...next};
+ if(!native()){accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");render();return true;}
+ const c=context();
+ if(!c){draft={...accepted};hint("NATIVE INSERT NOT ACCEPTED");render();return false;}
  if(pending){
   latest=sameSettings(next,pending.settings)?null:{...next};
   if(!continuous)hint("DSP FOLLOWING · FINAL VALUE PENDING");
-  return true;
+  render();return true;
  }
- if(sameSettings(next,accepted))return true;
+ if(sameSettings(next,accepted)){render();return true;}
  const id="sonku-"+String(Date.now()*1000+(++seq%1000));
- pending={requestId:id,settings:{...next},context:c,ack:false};
- backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next});
+ pending={requestId:id,settings:{...next},context:c,ack:false,sentAt:performance.now(),timedOut:false};
  hint(continuous?"DSP LIVE · AWAITING AUDIO ACK":"DSP QUEUED · AWAITING AUDIO ACK");
+ // Render after recording pending so preset controls cannot appear
+ // unlocked while a transaction is already in flight. Before emit also
+ // prevents a synchronous native readback from being painted as pending.
+ render();
+ backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next});
  return true;
 }
 function cancelLiveTimer(){
  if(liveTimer!==null){clearTimeout(liveTimer);liveTimer=null;}
 }
 function liveInput(next){
+ if(pending?.timedOut){render();return false;}
  if(!valid(next))return false;
- draft={...next};render();
  const now=performance.now(),wait=LIVE_INTERVAL_MS-(now-lastLiveAt);
  if(wait<=0){
   cancelLiveTimer();lastLiveAt=now;return send(next,true);
  }
+ // The deferred timer owns the newest draft, superseding any older
+ // coalesced command. A readback must not flush that older value first.
+ latest=null;
+ draft={...next};render();
  if(liveTimer===null)liveTimer=setTimeout(()=>{
   liveTimer=null;lastLiveAt=performance.now();
   if(current&&!root.hidden)send({...draft},true);
@@ -614,9 +642,31 @@ function commitInput(next){
  return send(next,false);
 }
 function flushLatest(){
+ if(liveTimer!==null)return;
  if(latest){const next=latest;latest=null;
   if(!sameSettings(next,accepted))send(next,true);
  }
+}
+function serviceNativeTransaction(){
+ if(!native()||!context()) {
+  if(pending&&!pending.timedOut&&performance.now()-pending.sentAt>=ACK_DEADLINE_MS)
+   enterRecovery();
+  return;
+ }
+ if(pending&&!pending.timedOut&&performance.now()-pending.sentAt>=ACK_DEADLINE_MS)
+  enterRecovery();
+ // An ACK may have arrived while its readback was lost. A missing ACK
+ // gets read-only recovery after the deadline, never another SET.
+ if(!pending||pending.ack||pending.timedOut)requestSnapshot();
+}
+function enterRecovery(){
+ if(!pending||pending.timedOut)return;
+ pending.timedOut=true;
+ cancelLiveTimer();latest=null;
+ drag=null;dialDrag=null;rangeEdits.clear();gestureStart.clear();
+ draft={...accepted};
+ hint(pending.ack?"DSP TIMEOUT · RECOVERING READBACK":"DSP TIMEOUT · WAITING FOR ACK");
+ render();requestSnapshot(true);
 }
 function finishFailure(reason){
  cancelLiveTimer();pending=null;latest=null;
@@ -631,8 +681,34 @@ backend()?.addEventListener?.("arMixBuiltinSonKuQueue",r=>{
 backend()?.addEventListener?.("arMixBuiltinSonKuAck",r=>{
  if(!pending||r?.requestId!==pending.requestId)return;
  if(r.status!=="APPLIED")return finishFailure("DSP NOT APPLIED · "+(r.errorCode||"STALE"));
- pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");requestSnapshot(true);
+ pending.ack=true;
+ hint(pending.timedOut?"DSP TIMEOUT · VERIFYING READBACK":"DSP APPLIED · VERIFYING READBACK");
+ requestSnapshot(true);
 });
+function acceptSettingsReadback(incoming,appliedRequestId,c){
+ // A scheduled keyboard/slider edit owns draft just like a held pointer.
+ const ownsDraft=liveTimer!==null||latest!==null||drag||dialDrag||rangeEdits.size!==0;
+ if(pending){
+  // Strict native contract even after timeout: matching ACK, THEN a
+  // subsequent snapshot of the same graph/device/insert and request.
+  const sent=pending.context;
+  if(!pending.ack||appliedRequestId!==pending.requestId||
+     sent.channelId!==c.channelId||sent.instanceId!==c.instanceId||
+     String(sent.deviceEpoch)!==String(c.deviceEpoch)||
+     String(sent.graphRevision)!==String(c.graphRevision)||
+     sent.workspaceToken!==c.workspaceToken)return false;
+  const recovered=pending.timedOut;
+  accepted={...incoming};pending=null;
+  if(recovered||!ownsDraft)draft={...incoming};
+  hint("DSP APPLIED · ACCEPTED");
+  if(!recovered)flushLatest();
+ }else{
+  // Advance accepted even while a throttled gesture owns the display.
+  accepted={...incoming};
+  if(!ownsDraft)draft={...incoming};
+ }
+ return true;
+}
 backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  if(r?.requestId!==readId||!current)return;
  const c=context();if(!c||r.status!=="ACCEPTED"||
@@ -696,19 +772,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  p8TransparentBass=musicSafeStereo && r.p8TransparentBass===true;
  p82MultibandRoom=p8TransparentBass && r.p82MultibandRoom===true;
  readId="";readSentAt=0;
- if(pending) {
-  if(!pending.ack || r.appliedRequestId!==pending.requestId){
-   if(pending.ack)requestSnapshot();
-   return;
-  }
-  accepted={...incoming};pending=null;hint("DSP APPLIED · ACCEPTED");flushLatest();
- }else if(!drag&&!dialDrag&&rangeEdits.size===0){
-  accepted={...incoming};draft={...incoming};
- }else if(!pending){
-  // Preserve live thumb ownership, yet advance the accepted mirror so a
-  // later failure/reopen never restores a stale value.
-  accepted={...incoming};
- }
+ if(!acceptSettingsReadback(incoming,r.appliedRequestId,c))return;
  if(Number.isFinite(r.observedAzimuthDegrees) && root.dataset.fxState==="on"){
   // Disabled PCM has no running phase: never oscillate around stale native
   // readbacks or repeatedly restart a non-existent bypassed audio orbit.
@@ -954,6 +1018,7 @@ const api={
  open(track,slot){
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
+  lastSpeakerPhase=lastSpeakerSpread=null;
   drag=null;rangeEdits.clear();gestureStart.clear();
   accepted=defaults();draft=defaults();xyzCapable=false;
   p83Capable=p84Capable=p85Capable=p86Capable=p87Capable=p88Capable=
@@ -971,7 +1036,7 @@ const api={
   if(native())requestSnapshot();
   if(clock!==null)clearInterval(clock);
   clock=setInterval(()=>{if(root.hidden)return;
-    syncPower();syncVisualFrame();if(native()&&!pending&&context())requestSnapshot();},250);
+    syncPower();syncVisualFrame();serviceNativeTransaction();},250);
   if(frame!==null){cancelAnimationFrame(frame);frame=null;}
   render();
  },

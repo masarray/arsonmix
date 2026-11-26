@@ -127,11 +127,64 @@ assert.match(source,/root\.querySelector\("\.sk-stage"\)\.appendChild\(root\.que
 assert.match(source,/head\.setPointerCapture\(e\.pointerId\)/);
 assert.match(source,/window\.addEventListener\("resize",constrainWindow\)/);
 assert.match(source,/if\(!p91p92Capable\|\|draft\.renderMode!==9\|\|!preset\|\|pending\|\|/);
+assert.match(source,/const ACK_DEADLINE_MS=3000/);
+assert.match(source,/if\(!pending\|\|pending\.ack\|\|pending\.timedOut\)requestSnapshot\(\)/);
+assert.match(source,/if\(!pending\.ack\|\|appliedRequestId!==pending\.requestId\|\|/);
+assert.match(source,/if\(pending\?\.timedOut\)\{render\(\);return false;\}/);
+assert.match(source,/if\(!recovered\)flushLatest\(\)/);
+assert.match(source,/DSP TIMEOUT · WAITING FOR ACK/);
+// Deterministic real publisher/readback test with controllable time. No
+// parallel reimplementation, no browser sleep or scheduling lottery.
+const publisher=between("const LIVE_INTERVAL_MS=40;","backend()?.addEventListener?.(\"arMixBuiltinSonKuQueue\"");
+const readback=between("function acceptSettingsReadback(","backend()?.addEventListener?.(\"arMixBuiltinSonKuSnapshot\"");
+const tx=vm.runInNewContext("(function(){"+
+ "let now=100,seq=0,current={},root={hidden:false},accepted={gain:0},draft={gain:0},pending=null,latest=null,liveTimer=null,lastLiveAt=0,drag=null,dialDrag=null,rangeEdits=new Map(),gestureStart=new Map();"+
+ "let xyzCapable=false,p88Capable=false,p98Capable=false,p83Capable=false,p84Capable=false;"+
+ "const defaults=()=>({gain:0}),valid=()=>true,native=()=>true,render=()=>{},hint=()=>{},requestSnapshot=()=>{};"+
+ "const ctx={channelId:'1',instanceId:'2',deviceEpoch:'3',graphRevision:'4'},context=()=>ctx;"+
+ "let events=[],timer=null;const backend=()=>({emitEvent(_,v){events.push(v)}});"+
+ "const performance={now:()=>now},setTimeout=f=>{timer=f;return 1},clearTimeout=()=>{timer=null};"+
+ publisher+readback+
+ "return {edit(v,t){now=t;liveInput({gain:v})},state(){return {accepted:accepted.gain,draft:draft.gain,latest:latest?.gain,events:events.length,pending:!!pending,timer:!!timer}},id(){return pending.requestId},ack(){pending.ack=true},timeout(){enterRecovery()},read(v,id,c=ctx){return acceptSettingsReadback({gain:v},id,c)},fire(t){now=t;const f=timer;timer=null;f()},events:()=>events,ctx};})()",{});
+tx.edit(1,100);const first=tx.id();
+tx.edit(2,110);tx.ack();assert(tx.read(1,first));
+assert.equal(tx.state().draft,2);assert.equal(tx.state().events,1);
+tx.fire(140);assert.equal(tx.events()[1].settings.gain,2);
+const second=tx.id();
+tx.edit(3,200); // coalesced pending
+tx.edit(4,210); // newer throttled value supersedes coalesced value
+tx.ack();assert(tx.read(2,second));assert.equal(tx.state().draft,4);
+assert.equal(tx.state().events,2);tx.fire(240);
+assert.equal(tx.events()[2].settings.gain,4);
+const third=tx.id();tx.timeout();
+assert.equal(tx.read(4,third),false);assert(tx.state().pending);
+tx.ack();assert.equal(tx.read(4,third,{...tx.ctx,graphRevision:'5'}),false);
+assert(tx.state().pending);assert(tx.read(4,third));assert.equal(tx.state().pending,false);
+assert.equal(tx.state().events,3);
+
 assert.match(source,/picker\.value==="orbitStage"&&!p99Capable/);
 assert.match(source,/root\.dataset\.fxState==="on"/);
 assert.match(source,/if\(previous!==state\)/);
 assert.match(css,/\.mx-sonku \.sk-space-panel\{display:grid/);
 assert.match(source,/current\.track\.slotBypass\[current\.slot\]/);
+// Actual production draw function, not a duplicate geometry algorithm.
+const draw=between("function drawSpeakers(){","// rAF is a VISUAL");
+const paint=vm.runInNewContext("(function(){"+
+ "let draft={moving:false,startAzimuthDegrees:0,stereoSpreadDegrees:127},visualPhase=0,lastSpeakerPhase=null,lastSpeakerSpread=null;"+
+ "let writes=0,aria=0;const layer={appendChild(n){n.parentNode=this;writes++}};const depthLayers={near:layer,far:layer};"+
+ "const document={activeElement:null};const angle=v=>((v%360)+360)%360;"+
+ "function node(){return {parentNode:layer,dataset:new Proxy({},{set(t,k,v){writes++;t[k]=v;return true}}),style:{},attrs:{},setAttribute(k,v){writes++;if(k.startsWith('aria-'))aria++;this.attrs[k]=v},getAttribute(k){return this.attrs[k]}}};"+
+ "const speakerNodes=[node(),node()],speakerShades=[node(),node()],speakerTethers=[node(),node()];"+
+ "const displayPair=__pair;"+draw+
+ "return {draw:drawSpeakers,counts:()=>[writes,aria],set(phase,spread){draft.startAzimuthDegrees=phase;draft.stereoSpreadDegrees=spread},reset(){lastSpeakerPhase=lastSpeakerSpread=null}}})()",{__pair:g.displayPair});
+paint.draw();const firstPaint=paint.counts();
+assert(firstPaint[0]>0);
+for(let i=0;i<100;++i)paint.draw();
+assert.deepEqual(paint.counts(),firstPaint,"Identical static snapshots must not mutate orbit");
+paint.set(.01,127);paint.draw();const smallPaint=paint.counts();
+assert(smallPaint[0]>firstPaint[0]);assert.equal(smallPaint[1],firstPaint[1]);
+paint.set(90,127);paint.draw();assert(paint.counts()[1]>smallPaint[1]);
+const beforeReset=paint.counts()[0];paint.reset();paint.draw();assert(paint.counts()[0]>beforeReset);
 const scheduler=between("function canAnimate(){","function hint(s)");
 const visual=vm.runInNewContext("(function(){"+
  "let root={hidden:false,dataset:{fxState:'on'}},current={},draft={moving:true,revolutionSeconds:24,clockwise:true},drag=null,frame=null,visualAt=0,visualPhase=0,observedAt=0,pending=null,observed=0;"+

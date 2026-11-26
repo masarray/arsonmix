@@ -26,9 +26,8 @@ STYLE_EVIDENCE=r"""() => {
   '--lit','--peak-extent','--ch'];
  const included='.app,.app *,#wireWorkspace,#wireWorkspace *,#moreTools,#moreTools *';
  const nodes=[...document.querySelectorAll(included)];
- // Baseline resides in a temporary folder; shipped CSS resides in dist-pages.
- // Absolute file:// asset URLs are equivalent only when their final /assets/
- // path matches. Normalize path prefixes, NOT colors, selector, query or image.
+ // Both variants share the same asset root. Keep URL normalization for
+ // CSS evidence portability; never normalize colors, selectors or image content.
  const norm=value=>String(value).replace(/file:\/\/\/[^"')]+\/assets\//g,'assets/');
  return nodes.map((node,i)=>{
    const style=getComputedStyle(node);
@@ -44,12 +43,13 @@ STYLE_EVIDENCE=r"""() => {
 }"""
 
 
-async def render(browser, path, viewport, state):
-    page=await browser.new_page(viewport={"width":viewport[0],"height":viewport[1]},
-                                reduced_motion="reduce")
+async def render(page, path, viewport, state):
     errors=[]
-    page.on("pageerror",lambda e:errors.append(str(e)))
+    on_error=lambda e:errors.append(str(e))
+    page.on("pageerror",on_error)
     try:
+        await page.goto("about:blank")
+        await page.mouse.move(0,0)
         await page.goto(path.resolve().as_uri())
         await page.wait_for_selector("#tracks .strip[data-id='1']")
         # The original/compiled CSS share the same DOM and PNGs but are
@@ -89,7 +89,7 @@ async def render(browser, path, viewport, state):
             viewport,state,hashlib.sha256(previous or b"").hexdigest())
         return styles,screenshot
     finally:
-        await page.close()
+        page.remove_listener("pageerror",on_error)
 
 
 async def main():
@@ -98,6 +98,21 @@ async def main():
         baseline=Path(tmp)/"preview"
         shutil.copytree(COMPILED,baseline)
         restore_original_css_bundle(baseline)
+        # Use the SAME asset directory and one fresh browsing context per
+        # comparison. Different file roots and renderer page allocations
+        # can perturb edge alpha rounding even with identical CSS values.
+        # Keep both actual HTML variants and load each by normal navigation.
+        # No screenshot masking, rounding, tolerance or CSS modification.
+        original=baseline/"index.original.html"
+        (baseline/"index.html").rename(original)
+        shutil.copyfile(COMPILED/"index.html",baseline/"index.html")
+        # The only HTML difference must be the stylesheet ownership.
+        # The reconstruction fixture only changes CSS and the HTML link stack.
+        # Verify every other shipped asset is byte-identical before rendering.
+        for shipped in COMPILED.rglob("*"):
+            if shipped.is_file() and shipped.suffix.lower() not in (".css",".html"):
+                restored=baseline/shipped.relative_to(COMPILED)
+                assert restored.read_bytes()==shipped.read_bytes(),("fixture asset changed",shipped)
         async with async_playwright() as playwright:
             browser=await playwright.chromium.launch(headless=True)
             try:
@@ -107,10 +122,22 @@ async def main():
                     ((1366,768),"hover-hardware"),
                     ((1600,900),"default"),
                 ]:
-                    original_style,original_image=await render(
-                        browser,baseline/"index.html",viewport,state)
-                    optimized_style,optimized_image=await render(
-                        browser,COMPILED/"index.html",viewport,state)
+                    page=await browser.new_page(
+                        viewport={"width":viewport[0],"height":viewport[1]},
+                        reduced_motion="reduce")
+                    try:
+                        original_style,original_image=await render(
+                            page,original,viewport,state)
+                        # Independent DOM on navigation; discard any persisted
+                        # preview state from the first render before the second.
+                        await page.evaluate("""() => {
+                          try { localStorage.clear(); sessionStorage.clear(); }
+                          catch (_) { /* file origin may disallow storage */ }
+                        }""")
+                        optimized_style,optimized_image=await render(
+                            page,baseline/"index.html",viewport,state)
+                    finally:
+                        await page.close()
                     assert len(original_style)==len(optimized_style),(
                         "DOM changed",viewport,state)
                     assert original_style==optimized_style,(

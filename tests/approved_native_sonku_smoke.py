@@ -666,6 +666,61 @@ def exercise(browser,out,width,height):
         "requestId":applied["requestId"],"status":"APPLIED"})
     accepted_snapshot(page,state,proposed,applied=applied["requestId"],schema=11)
     assert factory.input_value()=="music","Native-accepted preset did not stay selected"
+    # P10.5: ACK received but accepted readback is lost. The existing
+    # heartbeat must retry a READ, not replay SET or get stuck.
+    before=command_count()
+    editor.locator("#skMotion").click()
+    lost_read=last_action(page,"nativeSonKuSet")
+    assert command_count()==before+1
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":lost_read["requestId"],"status":"APPLIED"})
+    first_read=last_action(page,"nativeSonKuSnapshot")["requestId"]
+    page.wait_for_function("""id=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').at(-1).requestId!==id""",
+                           arg=first_read,timeout=2500)
+    assert command_count()==before+1
+    accepted_snapshot(page,state,lost_read["settings"],applied=lost_read["requestId"],schema=11)
+    assert editor.locator("#skHint").inner_text()=="DSP APPLIED · ACCEPTED"
+    # Missing ACK entirely. No optimistic success; readback must match the
+    # exact applied request, not merely the same instance or settings.
+    before=command_count()
+    editor.locator("#skMotion").click()
+    lost_ack=last_action(page,"nativeSonKuSet")
+    assert command_count()==before+1
+    page.wait_for_function("""()=>document.querySelector('#mxNativeSonKu').dataset.recovering==='true'""",
+                           timeout=4500)
+    assert "TIMEOUT" in editor.locator("#skHint").inner_text()
+    assert factory.is_disabled()
+    assert editor.locator(".sk-controls").evaluate("n=>n.inert")
+    accepted_snapshot(page,state,lost_read["settings"],applied=lost_read["requestId"],schema=11)
+    assert editor.get_attribute("data-recovering")=="true"
+    editor.locator("#skMotion").evaluate("n=>n.click()")
+    assert command_count()==before+1,"Recovery must not replay or race pending native SET"
+    stale_read=last_action(page,"nativeSonKuSnapshot")["requestId"]
+    page.wait_for_function("""id=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').at(-1).requestId!==id""",
+                           arg=stale_read,timeout=2500)
+    accepted_snapshot(page,state,lost_ack["settings"],applied=lost_ack["requestId"],schema=11)
+    assert editor.get_attribute("data-recovering")=="true","Snapshot alone cannot substitute for ACK"
+    assert factory.is_disabled()
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":lost_ack["requestId"],"status":"APPLIED"})
+    assert editor.get_attribute("data-recovering")=="true","ACK alone cannot unlock recovery"
+    assert factory.is_disabled()
+    accepted_snapshot(page,state,lost_ack["settings"],applied=lost_ack["requestId"],schema=11)
+    assert editor.get_attribute("data-recovering")=="false"
+    assert editor.locator("#skHint").inner_text()=="DSP APPLIED · ACCEPTED"
+    assert factory.is_enabled()
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":lost_ack["requestId"],"status":"APPLIED"})
+    assert editor.locator("#skHint").inner_text()=="DSP APPLIED · ACCEPTED"
+    assert command_count()==before+1
+    # New transaction after recovery remains ACK+readback gated.
+    editor.locator("#skMotion").click()
+    recovered_edit=last_action(page,"nativeSonKuSet")
+    assert recovered_edit["requestId"]!=lost_ack["requestId"]
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":recovered_edit["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,recovered_edit["settings"],applied=recovered_edit["requestId"],schema=11)
+    factory.select_option("music")
+    restored=last_action(page,"nativeSonKuSet")
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":restored["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,restored["settings"],applied=restored["requestId"],schema=11)
+    assert factory.input_value()=="music"
     # Actual accepted mixer graph is the SINGLE authority for FX Power,
     # including individual insert bypass vs whole rack disabled.
     state["graph"]["channels"][0]["fxRackBypassed"]=False
