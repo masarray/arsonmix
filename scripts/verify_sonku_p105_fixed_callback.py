@@ -42,7 +42,7 @@ def main():
         exes={}
         for variant in ("reference","candidate"):
             inc=tmp/variant/SUB
-            exe=tmp/(variant+(".exe" if args.msvc else ""))
+            exe=tmp/("bench-"+variant+(".exe" if args.msvc else ""))
             if args.msvc:
                 cmd=["cl","/nologo","/std:c++20","/O2","/fp:strict","/EHsc",
                     "/I"+str(inc),"/I"+str(inc.parent),*["/D"+x+"=1" for x in FLAGS],
