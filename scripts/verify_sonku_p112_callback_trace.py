@@ -108,7 +108,7 @@ def main():
         assert all(baseline[k]!=candidate[k] for k in baseline)
         exes={}
         for v,folder in (("reference",FX),("candidate",tmp/"candidate")):
-            exe=tmp/(v+(".exe" if a.msvc else ""))
+            exe=tmp/("bench-"+v+(".exe" if a.msvc else ""))
             inc=folder/"sonku"
             cmd=(["cl","/nologo","/std:c++20","/O2","/fp:strict","/EHsc","/I"+str(inc),
                   "/I"+str(folder),*["/D"+f+"=1" for f in FLAGS],str(DRIVER),"/Fe:"+str(exe),
