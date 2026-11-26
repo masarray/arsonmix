@@ -37,7 +37,7 @@ A UI intent is not complete on ACK alone: verify an independent accepted same-re
 
 ## Licensing and third-party contributions
 
-The original mixer and native built-in FX are **AGPL-3.0-only**; see [LICENSE](LICENSE) and [LICENSE-NOTICE.txt](LICENSE-NOTICE.txt). Submit original contributions only if you have the rights needed to license them accordingly. Do not copy proprietary VST3 code, restricted SDK sources, audio datasets or media into first-party modules. Keep third-party attributions and upstream licence files intact.
+The original mixer and native built-in FX are **AGPL-3.0-only**; see [LICENSE](LICENSE) and [LICENSE-NOTICE.txt](LICENSE-NOTICE.txt). Submit original contributions only if you have the rights needed to license them accordingly. Do not copy proprietary VST3 code, restricted SDK sources, audio datasets or media into first-party modules. Keep third-party attributions and upstream licence files intact. Document the source, creator/rights holder, version, applicable terms, redistribution permission and attribution for imported artwork, fonts, samples, SDKs, models and binary plugins in the [third-party inventory](docs/security/ZBSH-02_THIRD_PARTY_INVENTORY.md). Unknown rights are not approval to ship. See [COPYRIGHT.md](COPYRIGHT.md) and [TRADEMARK.md](TRADEMARK.md); these do not restrict AGPL rights. Report vulnerabilities following [SECURITY.md](SECURITY.md), not in public bug reports.
 
 The Windows installer/portable ZIP and Linux/macOS packages must include the complete AGPL text, first-party notice and applicable vendored-component notices. The fast licence distribution contract and Windows byte-level artifact verifier enforce this. Do not weaken release source provenance or change the native DSP graph to implement licensing.
 

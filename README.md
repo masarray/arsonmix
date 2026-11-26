@@ -96,7 +96,9 @@ You can download ArSonMix without a GitHub account. Posting an issue requires Gi
 
 ArSonMix is open-source software licensed under **AGPL-3.0-only** for its original mixer, GUI and native built-in effects. The app includes a dedicated **More > About & Licenses** section. [View the license](LICENSE), [third-party notices](LICENSE-NOTICE.txt) or [current releases](https://github.com/masarray/arsonmix/releases).
 
-Third-party plugins and audio drivers retain their own license terms.
+Third-party plugins and audio drivers retain their own license terms. See [copyright and authorship](COPYRIGHT.md), [official identity and download verification](TRADEMARK.md), and the [third-party inventory](docs/security/ZBSH-02_THIRD_PARTY_INVENTORY.md).
+
+**Security:** please [report suspected vulnerabilities privately](SECURITY.md), not in ordinary public bug reports. Official downloads come from [GitHub Releases](https://github.com/masarray/arsonmix/releases); compare the exact asset SHA-256 with trusted release metadata.
 
 <details>
 <summary><strong>For developers and contributors</strong></summary>
