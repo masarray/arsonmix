@@ -23,6 +23,14 @@ function(anti_noiz_target name source)
   endif()
 endfunction()
 anti_noiz_target(anti_noiz_core_test tests/anti_noiz_core_test.cpp)
+# Strict same-operation reference: preserve the original per-bin tolerance.
+# Production/default FP is independently checked against a double DFT in
+# AntiNoizManualSpectral, including near-cancelled bins and roundtrip.
+if(MSVC)
+  target_compile_options(anti_noiz_core_test PRIVATE /fp:strict)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$")
+  target_compile_options(anti_noiz_core_test PRIVATE -ffp-contract=off)
+endif()
 add_test(NAME AntiNoizCore COMMAND anti_noiz_core_test)
 set_tests_properties(AntiNoizCore PROPERTIES TIMEOUT 60)
 if(ANTI_NOIZ_BENCHMARK)
