@@ -9562,7 +9562,9 @@ public:
     const juce::String getApplicationName() override { return "ArSonMix"; }
     const juce::String getApplicationVersion() override { return "0.5.0-native-catalog"; }
     // Prevent competing audio-device owners and WebView2 sessions.
-    bool moreThanOneInstanceAllowed() override { return false; }
+    bool moreThanOneInstanceAllowed() override {
+        return armix::vst::ScanIsolation::isWorker(getCommandLineParameterArray());
+    }
     void anotherInstanceStarted (const juce::String&) override
     {
         if (window_)
@@ -9574,6 +9576,21 @@ public:
     }
     void initialise (const juce::String&) override
     {
+        const auto args=getCommandLineParameterArray();
+        if (armix::vst::ScanIsolation::isWorker(args)) {
+            scanWorkerMode_=true;
+#if defined(_WIN32)
+            ::SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+            const auto hr=::CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+#endif
+            int result=armix::vst::ScanIsolation::worker(args);
+#if defined(_WIN32)
+            if (SUCCEEDED(hr)) ::CoUninitialize();
+#endif
+            setApplicationReturnValue(result);
+            quit();
+            return;
+        }
 #if defined(_WIN32)
         // Per-user-session installer handshake. An Inno update requests the
         // ordinary JUCE quit path on the MESSAGE thread: the native mixer
@@ -9706,6 +9723,7 @@ public:
     }
     void shutdown() override
     {
+        if (scanWorkerMode_) return; // no mixer session or updater on worker exit
         stopTimer();
 #if defined(_WIN32)
         updateNotice_.reset();
@@ -9737,6 +9755,7 @@ public:
 #endif
     }
 private:
+    bool scanWorkerMode_=false;
     void presentMixerOnStartup()
     {
         // GUI ready is the *only* normal-launch transition that may foreground
