@@ -292,7 +292,7 @@ private:
             // spectral uses a shared real mask; no phase-dependent guards.
             for(int i=0;i<n_;++i){const int j=(pos_+i)&ringMask_;
                 work_[0][i]={in_[0][j]*win_[i],in_[1][j]*win_[i]};}
-            fft_.transform(work_[0],false);
+            fft_.transformPackedFinite(work_[0],false);
             for(int k=0;k<bins;++k){
                 const auto z=work_[0][k],mirror=std::conj(work_[0][(n_-k)&ringMask_]);
                 const auto sum=(z+mirror)*.5f,difference=(z-mirror)*.5f;
@@ -392,7 +392,7 @@ private:
         expansion_=expTarget>=expansion_?expTarget:expansion_+expandClose_*(expTarget-expansion_);
         if(packedStereo){
             for(int k=0;k<bins;++k){const float g=mask_[k]*expansion_;work_[0][k]*=g;if(k>0&&k<hop_)work_[0][n_-k]*=g;}
-            fft_.transform(work_[0],true);
+            fft_.transformPackedFinite(work_[0],true);
             for(int i=0;i<n_;++i){const int j=(pos_+i)&ringMask_;out_[0][j]+=work_[0][i].real()*win_[i];out_[1][j]+=work_[0][i].imag()*win_[i];}
         }else for(int c=0;c<channels_;++c) {
             for(int k=0;k<bins;++k) {

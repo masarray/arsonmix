@@ -28,5 +28,33 @@ int main(){
             for(int i=0;i<n;++i)require(std::abs(a[i]-original[i])<1e-4f,"FFT roundtrip");
         }
         std::cout<<"FFT_SCALAR_PARITY,"<<n<<",cases=64,peak="<<peak<<'\n';
+        // Packed finite SSE2 path versus the unchanged scalar plan. Include
+        // silence, impulse, full-scale correlated and one-sided stereo,
+        // asymmetric random input and per-bin real mask before the inverse.
+        double packedPeak=0;
+        for(int k=0;k<1000;++k){
+            Buffer a{};
+            for(int i=0;i<n;++i){
+                if(k==1)a[i]={i==7?1.f:0.f,0.f};
+                else if(k==2)a[i]={64.f,-64.f};
+                else if(k==3)a[i]={noise(rng),0.f};
+                else if(k==4)a[i]={0.f,noise(rng)};
+                else if(k>=5)a[i]={noise(rng),noise(rng)};
+            }
+            auto b=a;
+            for(bool inverse:{false,true}){
+                f.transform(a,inverse);f.transformPackedFinite(b,inverse);
+                for(int i=0;i<n;++i){
+                    const double error=std::abs(a[i]-b[i]);
+                    packedPeak=std::max(packedPeak,error);
+                    require(std::isfinite(error)&&error<=2e-6*std::max(1.,double(std::abs(a[i]))),"packed finite FFT comparison");
+                }
+                if(!inverse)for(int i=0;i<n;++i){
+                    const float mask=float((std::min(i,n-i)+k)%17)/16.f;
+                    a[i]*=mask;b[i]*=mask;
+                }
+            }
+        }
+        std::cout<<"FFT_PACKED_FINITE_PARITY,"<<n<<",cases=1000,peak="<<packedPeak<<'\n';
     }
 }
