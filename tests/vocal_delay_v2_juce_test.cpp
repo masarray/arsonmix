@@ -139,7 +139,11 @@ int main(){
         auto bypass=SingerEditor::HostBypass::global;
         singer->bindHostBypass([&]{return bypass;});CHECK(!hit->isEnabled());
         bypass=SingerEditor::HostBypass::none;singer->refresh();CHECK(hit->isEnabled());
-        CHECK(live.musicFollowing());CHECK(live.setMusicFollow(true));MusicObservation o{7,1,2,100,120,.8f,true};
+        CHECK(live.musicFollowing());
+        auto* division=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.division"));CHECK(division);
+        division->setSelectedId(2,juce::sendNotificationSync);CHECK(!live.musicFollowing());
+        division->setSelectedId(4,juce::sendNotificationSync);
+        CHECK(live.setMusicFollow(true));MusicObservation o{7,1,2,100,120,.8f,true};
         live.publishMusicObservation(o,9,0);o.frame=200;live.publishMusicObservation(o,9,500);
         CHECK(live.singerPending());pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();
         CHECK(live.acceptedSnapshot().accepted.timeMs==500);

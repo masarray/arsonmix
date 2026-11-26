@@ -171,6 +171,34 @@ static void stageBank(){
     }
     std::puts("PASS VD7 36 stage preset/rate cases: weak/loud, stereo, finite headroom, dry identity, block partitions and no heap");
 }
+static void stageHeadroomAndTransitions(){
+    constexpr double rate=48000.;auto p=transparent();p.smartStage=true;p.timeMs=20;p.echo=1;p.feedback=.8f;
+    ContinuousDelayCore a,b;CHECK(a.prepare(rate,p)&&b.prepare(rate,p));
+    constexpr std::size_t n=48000;
+    std::vector<float> l(n,.96f),r(n,.92f),x(l),y(r);
+    process(a,l.data(),r.data(),n);
+    for(std::size_t i=0;i<n;){auto k=std::min<std::size_t>(64,n-i);process(b,x.data()+i,y.data()+i,k);i+=k;}
+    for(std::size_t i=0;i<n;++i){CHECK(l[i]==x[i]&&r[i]==y[i]);CHECK(l[i]>=.96f&&l[i]<=1.000001f&&r[i]>=.92f&&r[i]<=1.000001f);}
+    CHECK(l.back()>.96f&&r.back()>.92f);
+    // Negative and already-over-full-scale dry are never attenuated.
+    CHECK(a.prepare(rate,p));l.assign(n,-1.2f);r=l;process(a,l.data(),r.data(),n);
+    for(float v:l)CHECK(v>=-1.200001f&&v<=-1.2f);
+    // Repeated live edits across all stage presets, different block partitions.
+    p=presetSettings(0);CHECK(a.prepare(rate,p)&&b.prepare(rate,p));
+    constexpr std::size_t segment=2400;
+    for(std::size_t z=0;z<72;++z){
+        p=presetSettings(z%stagePresetCount);edit(a,p,rate);edit(b,p,rate);
+        l.resize(segment);r.resize(segment);x.resize(segment);y.resize(segment);
+        for(std::size_t i=0;i<segment;++i)l[i]=r[i]=x[i]=y[i]=.72f*std::sin(float(z*segment+i)*.04f);
+        process(a,l.data(),r.data(),segment);
+        for(std::size_t i=0;i<segment;){const auto k=std::min<std::size_t>(97,segment-i);process(b,x.data()+i,y.data()+i,k);i+=k;}
+        for(std::size_t i=0;i<segment;++i)CHECK(l[i]==x[i]&&r[i]==y[i]&&std::abs(l[i])<=1.000001f&&std::abs(r[i])<=1.000001f);
+    }
+    p.enabled=false;p.spillover=false;edit(a,p,rate);l.assign(n,0);r=l;process(a,l.data(),r.data(),n);
+    l.assign(n,.4f);r.assign(n,-.3f);l[1]=NAN;r[2]=INFINITY;process(a,l.data(),r.data(),n);
+    CHECK(l[1]==0.f&&r[2]==0.f&&l.back()==.4f&&r.back()==-.3f&&a.meter().wetPeak==0.f);
+    std::puts("PASS VD8 linked wet headroom, hot dry preservation, 72 preset transitions, partition invariance, off fast path");
+}
 int main(){
     CHECK(ContinuousDelayCore::addedLatencySamples==0);
     for(double rate:{8000.,44100.,48000.,96000.,192000.}){
@@ -182,7 +210,7 @@ int main(){
         continuousVsLegacy(rate);
     }
     impulse(8000,StereoMode::stereo,.5f,4000);
-    stageBank();fractionalAndWrap();blocksAndEdits();bypassAndReset();invalidAndDucking();
+    stageBank();stageHeadroomAndTransitions();fractionalAndWrap();blocksAndEdits();bypassAndReset();invalidAndDucking();
     ContinuousDelayCore c;CHECK(c.prepare(192000));CHECK(c.ringBytes()==(768000+2)*2*sizeof(float));
     std::puts("PASS Vocal Delay V2 continuous PCM, legacy contrast, timing, stereo, no-heap, bypass, block invariance");
 }

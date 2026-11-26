@@ -68,6 +68,7 @@ public:
         tape_=q.taps_.style==EchoStyle::tape?1.f:0.f;
         stageBlend_=q.smartStage_?1.f:0.f;
         sustainAttack_=timeCoefficient(rate,200.f);sustainRelease_=timeCoefficient(rate,90.f);
+        headroomRelease_=timeCoefficient(rate,65.f);
         focus_.prepare(rate);focusBlend_=q.adaptiveFocus_?1.f:0.f;
         power_=q.enabled_?1.f:0.f;tailLimit_=static_cast<std::uint32_t>(std::ceil(rate*30.));ready_=true;
         invalidate();return true;
@@ -83,7 +84,7 @@ public:
     // AUDIO only, or CONTROL on an unpublished instance.
     void invalidate() noexcept {
         left_.invalidate();right_.invalidate();tailRemaining_=0;
-        toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;sustain_=0.f;focus_.reset();publishMeter(0,0);
+        toneL_={};toneR_={};wetL_={};wetR_={};env_=0.f;sustain_=0.f;headroom_=1.f;focus_.reset();publishMeter(0,0);
         active_=next_=target_.taps_;fadePosition_=fadeLength_;
     }
     std::size_t ringBytes() const noexcept {
@@ -99,6 +100,11 @@ public:
     void processStereo(float* l,float* r,std::size_t frames) noexcept {
         if(!ready_||!l||!r||frames==0)return;
         const bool monoBuffer=l==r;
+        if(!target_.enabled_&&power_==0.f){
+            // Preserve previous finite-input contract, but skip all wet work.
+            for(std::size_t i=0;i<frames;++i){l[i]=finite(l[i]);if(!monoBuffer)r[i]=finite(r[i]);}
+            publishMeter(0,0);return;
+        }
         float blockWet=0,blockReduction=0;
         for(std::size_t i=0;i<frames;++i) {
             const float dryL=finite(l[i]),dryR=monoBuffer?dryL:finite(r[i]);
@@ -142,9 +148,10 @@ public:
             }
             // Convex cross-feedback; wet safety bound, not a dry limiter.
             // Mono input/return folds with an average, never +6 dB summation.
-            const float fold=.5f*(bounded(dryL,4.f)+bounded(dryR,4.f));
-            float inL=bounded(dryL,4.f)+(fold-bounded(dryL,4.f))*mono_;
-            float inR=bounded(dryR,4.f)+(fold-bounded(dryR,4.f))*mono_;
+            const float safeL=bounded(dryL,4.f),safeR=bounded(dryR,4.f);
+            const float fold=.5f*(safeL+safeR);
+            float inL=safeL+(fold-safeL)*mono_;
+            float inR=safeR+(fold-safeR)*mono_;
             if(target_.smartStage_||stageBlend_!=0.f)move(stageBlend_,target_.smartStage_?1.f:0.f);
             // Seed one delay line, even for identical stereo microphone PCM.
             // Average fold avoids a +6 dB mono sum; old sessions retain their topology.
@@ -177,13 +184,22 @@ public:
             const float reduction=depth_*activity;
             const float gain=echo_*power_*(1.f-reduction);
             const float mid=.5f*(wL+wR);
-            if(gain==0.f) { l[i]=dryL;if(!monoBuffer)r[i]=dryR; }
-            else if(monoBuffer){
-                const float wet=gain*mid;l[i]=dryL+wet;
-                blockWet=std::max(blockWet,std::abs(wet));
+            if(gain==0.f) {
+                l[i]=dryL;if(!monoBuffer)r[i]=dryR;
+                headroom_=1.f;
             }else {
-                const float wetL=gain*(wL+(mid-wL)*mono_),wetR=gain*(wR+(mid-wR)*mono_);
-                l[i]=dryL+wetL;r[i]=dryR+wetR;
+                float wetL=gain*(monoBuffer?mid:wL+(mid-wL)*mono_);
+                float wetR=monoBuffer?wetL:gain*(wR+(mid-wR)*mono_);
+                if(stageBlend_>0.f){
+                    // Linked wet-only peak budget. Never limit, delay or turn
+                    // down dry; already-hot dry remains the mixer's responsibility.
+                    // Immediate protection, causal slow recovery, no lookahead.
+                    const float cap=std::min(wetAllowance(dryL,wetL),wetAllowance(dryR,wetR));
+                    headroom_=cap<headroom_?cap:headroom_+headroomRelease_*(cap-headroom_);
+                    const float scale=1.f-stageBlend_*(1.f-headroom_);
+                    wetL*=scale;wetR*=scale;
+                }else headroom_=1.f;
+                l[i]=dryL+wetL;if(!monoBuffer)r[i]=dryR+wetR;
                 blockWet=std::max(blockWet,std::max(std::abs(wetL),std::abs(wetR)));
             }
             if(gain>0.f)blockReduction=std::max(blockReduction,reduction);
@@ -195,6 +211,13 @@ private:
         const auto quant=[](float v){return static_cast<std::uint32_t>(std::clamp(v,0.f,1.f)*1023.f+.5f);};
         meterSequence_=(meterSequence_+1u)&4095u;
         meterWord_.store((meterSequence_<<20)|(quant(reduction)<<10)|quant(wet),std::memory_order_relaxed);
+    }
+    static float wetAllowance(float dry,float wet) noexcept {
+        // Do not allow wet to increase an existing over-ceiling peak.
+        const float limit=std::max(1.f,std::abs(dry));
+        if(wet>0.f&&wet>limit-dry)return std::max(0.f,(limit-dry)/wet);
+        if(wet<0.f&&-wet>limit+dry)return std::max(0.f,(limit+dry)/(-wet));
+        return 1.f;
     }
     static float finite(float v) noexcept { return std::isfinite(v)?v:0.f; }
     static float bounded(float v,float limit) noexcept {return std::clamp(v,-limit,limit);}
@@ -218,6 +241,7 @@ private:
         return {l,r,l,r};
     }
     void move(float& v,float target) const noexcept {
+        if(v==target)return;
         v+=slew_*(target-v);
         if(std::abs(target-v)<1.e-7f)v=target;
     }
@@ -242,6 +266,7 @@ private:
     float feedback_=0,echo_=0,hp_=0,lp_=1,mono_=0,cross_=0,depth_=0,env_=0;
     float wetTone_=0.f,tape_=0.f,focusBlend_=0.f;
     float stageBlend_=0.f,sustain_=0.f,sustainAttack_=0.f,sustainRelease_=0.f;
+    float headroom_=1.f,headroomRelease_=0.f;
     AdaptiveVocalFocus focus_{};
     static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
     std::atomic<std::uint32_t> meterWord_{0};std::uint32_t meterSequence_=0;

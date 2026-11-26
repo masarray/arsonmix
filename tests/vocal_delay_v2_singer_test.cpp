@@ -64,6 +64,21 @@ int main(){
         CHECK(autoTempo.update(o,9,600,base,next)&&next.timeMs==250&&next.division==1&&next.smartStage);
         o.locked=false;CHECK(!autoTempo.update(o,9,700,next,base)&&autoTempo.status()==MusicFollow::Status::holding);
     }
+    {
+        MusicFollow f;f.enable(true,300.f);auto base=presetSettings(0);Parameters next{};
+        MusicObservation o{7,2,3,100,120,.9f,true};
+        CHECK(!f.update(o,9,0,base,next));o.frame=200;o.bpm=120.5f;
+        CHECK(!f.update(o,9,250,base,next));o.frame=300;o.bpm=119.5f;
+        CHECK(f.update(o,9,500,base,next)&&next.timeMs==250);
+        base=next;
+        for(int i=1;i<=8;++i){o.frame+=100;o.bpm=i%2?120.75f:119.25f;
+            CHECK(!f.update(o,9,500.+i*250.,base,next));}
+        CHECK(f.status()==MusicFollow::Status::locked);
+        CHECK(!f.update(o,9,4500,base,next)&&f.status()==MusicFollow::Status::holding);
+        o.frame+=100;o.bpm=90;CHECK(!f.update(o,9,4600,base,next));
+        o.frame+=100;CHECK(f.update(o,9,5100,base,next)&&next.bpmQuarter==360);
+        CHECK(next.timeMs>80&&next.timeMs<=1000);
+    }
     NativeSession session;State s{};Lease l{1,2,3,4};CHECK(session.prepareStopped(48000,l,s));
     SingerControl c;CHECK(c.attach(session.acceptedSnapshot()));
     auto p=presetSettings(3);CHECK(c.offer(session.acceptedSnapshot(),p));c.service(session);

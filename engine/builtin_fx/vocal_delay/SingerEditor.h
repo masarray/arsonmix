@@ -83,7 +83,7 @@ public:
             }
         };
         mode_.onChange=[this]{const int id=mode_.getSelectedId();if(id>=1&&id<=3){auto p=processor_.singerDisplay();p.mode=static_cast<StereoMode>(id-1);offer(p);}};
-        division_.onChange=[this]{const auto p=processor_.singerDisplay();applyTempo(p.bpmQuarter?double(p.bpmQuarter)*.25:120.);};
+        division_.onChange=[this]{if(!hostAvailable())return;processor_.setMusicFollow(false);const auto p=processor_.singerDisplay();applyTempo(p.bpmQuarter?double(p.bpmQuarter)*.25:120.);};
         tap_.onClick=[this]{if(!hostAvailable())return;processor_.setMusicFollow(false);double bpm=0;if(taps_.tap(juce::Time::getMillisecondCounterHiRes(),bpm)){applyTempo(bpm);}else{tempoNotice_="TAP 3+ BEATS";noticeUntil_=juce::Time::getMillisecondCounterHiRes()+1500.;repaint();}};
         time_.onValueChange=[this]{if(!hostAvailable())return;processor_.setMusicFollow(false);auto p=processor_.singerDisplay();freeTime(p,float(time_.getValue()));taps_.reset();tempoNotice_.clear();offer(p);};
         feedback_.onValueChange=[this]{auto p=processor_.singerDisplay();p.feedback=float(feedback_.getValue())*.01f;offer(p);};
@@ -185,6 +185,7 @@ public:
         smart_.setEnabled(available);stageToggle_.setEnabled(available);
         for(std::size_t i=0;i<stagePresetCount;++i){auto& b=stageButtons_[i];b.setEnabled(available);
             const bool selected=style==int(i)&&p.enabled&&selectedUserId_.isEmpty();
+            b.setColour(juce::TextButton::textColourOffId,hardware::col(selected?0xc8f5e4:0xc5cccd));
             b.setColour(juce::TextButton::buttonColourId,hardware::col(selected?0x27695c:0x41494d));
         }
         hit_.setEnabled(available&&p.enabled&&!processor_.isDetached()&&hostBypass()==HostBypass::none);hit_.setButtonText(p.hit?"HIT ON":"HIT");

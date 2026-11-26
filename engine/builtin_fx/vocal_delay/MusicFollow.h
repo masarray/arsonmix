@@ -28,7 +28,8 @@ public:
         if(!good){reset();status_=hadLock_?Status::holding:Status::listening;return false;}
         const auto q=static_cast<std::uint16_t>(std::lround(o.bpm*4.f));
         if(o.source!=source_||o.epoch!=epoch_||o.revision!=revision_||
-           o.frame<frame_||now<lastAdvance_||now-lastAdvance_>1500.||q!=candidate_){
+           o.frame<frame_||now<lastAdvance_||now-lastAdvance_>1500.||
+           (stageTime_>0.f?std::abs(int(q)-int(candidate_))>4:q!=candidate_)){
             source_=o.source;epoch_=o.epoch;revision_=o.revision;frame_=o.frame;
             candidate_=q;since_=lastAdvance_=now;status_=hadLock_?Status::holding:Status::listening;return false;
         }
@@ -36,16 +37,24 @@ public:
         frame_=o.frame;lastAdvance_=now;
         if(now-since_<500.)return false;
         auto p=base;
+        const auto acceptedQ=stageTime_>0.f?candidate_:q;
         std::size_t division=base.division;
         if(stageTime_>0.f){
             float best=1.e9f;
             for(std::size_t i=0;i<=4;++i){float ms=0;
-                if(!beatTime(double(q)*.25,i,ms)||ms<80.f||ms>1000.f)continue;
+                if(!beatTime(double(acceptedQ)*.25,i,ms)||ms<80.f||ms>1000.f)continue;
                 const float error=std::abs(ms-stageTime_);
                 if(error<best){best=error;division=i;}
             }
+            float previous=0;
+            if(base.bpmQuarter&&base.division<=4&&beatTime(double(acceptedQ)*.25,base.division,previous)&&
+               previous>=80.f&&previous<=1000.f&&std::abs(previous-stageTime_)<=best+20.f)
+                division=base.division; // avoid division hopping near a tie
+            if(base.bpmQuarter&&division==base.division&&std::abs(int(acceptedQ)-int(base.bpmQuarter))<=4){
+                hadLock_=true;status_=Status::locked;return false;
+            }
         }
-        if(!setTempo(p,double(q)*.25,division)){status_=Status::range;return false;}
+        if(!setTempo(p,double(acceptedQ)*.25,division)){status_=Status::range;return false;}
         hadLock_=true;status_=Status::locked;
         if(p.bpmQuarter==base.bpmQuarter&&p.timeMs==base.timeMs)return false;
         // Native smoothing retimes wet taps only, leaving all other edits intact.
