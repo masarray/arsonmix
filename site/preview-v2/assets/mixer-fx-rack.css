@@ -1195,11 +1195,11 @@
 .mx-sonku .sk-guide{margin-top:auto}
 .mx-sonku .sk-status{display:flex;justify-content:space-between;gap:10px;font-size:10px;}
 .mx-sonku #skHint{text-align:right}
-@media(max-width:550px){.mx-sonku{}
- .mx-sonku .sk-content{}
- .mx-sonku .sk-headnote{display:none}
- .mx-sonku .sk-stage svg{}
- .mx-sonku .sk-controls{}
+@media(max-width:550px){:root:not(.armix-native-desktop) .mx-sonku{}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-content{}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-headnote{display:none}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-stage svg{}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-controls{}
 }
 
 /* 8D-SonKu top-view graphic. ONE approved FX Rack CSS owner; no new CSS file. */
@@ -1324,18 +1324,18 @@
  border-top:1px solid #344650;padding:7px 11px;letter-spacing:.2px;
  color:#a7becb;align-items:center;flex-wrap:wrap}
 @media(max-width:550px){
- .mx-sonku{top:8px;max-height:calc(100vh - 16px)}
- .mx-sonku .sk-content{grid-template-columns:1fr}
- .mx-sonku .sk-stage{border-right:0;border-bottom:1px solid #344d5d}
- .mx-sonku .sk-stage svg{max-height:37vh}
- .mx-sonku .sk-controls{gap:8px}
- .mx-sonku .sk-rotary-grid{grid-template-columns:repeat(4,minmax(0,1fr));
+ :root:not(.armix-native-desktop) .mx-sonku{top:8px;max-height:calc(100vh - 16px)}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-content{grid-template-columns:1fr}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-stage{border-right:0;border-bottom:1px solid #344d5d}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-stage svg{max-height:37vh}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-controls{gap:8px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-rotary-grid{grid-template-columns:repeat(4,minmax(0,1fr));
  row-gap:0;min-height:auto;gap:1px}
- .mx-sonku .sk-dial{width:48px;height:48px}
- .mx-sonku .sk-dial-cap{inset:8px}
- .mx-sonku .sk-param-name{font-size:8px}
- .mx-sonku .sk-rotary{padding:3px 0!important}
- .mx-sonku .sk-guide{font-size:9px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-dial{width:48px;height:48px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-dial-cap{inset:8px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-param-name{font-size:8px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-rotary{padding:3px 0!important}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-guide{font-size:9px}
 }
 
 /* SonKu M4 native SPACE controls — same existing FX-rack CSS owner.
@@ -1364,8 +1364,8 @@
  width:100%;height:13px;margin:0!important;accent-color:#67c4d7}
 .mx-sonku .sk-space-slider input:disabled{opacity:.32;cursor:not-allowed}
 .mx-sonku .sk-space-hint{font-size:8px;line-height:1.35;color:#87aebb}
-@media(max-width:550px){.mx-sonku .sk-space-panel{gap:6px;padding:8px}
- .mx-sonku .sk-space-options button{min-height:29px;font-size:9px}}
+@media(max-width:550px){:root:not(.armix-native-desktop) .mx-sonku .sk-space-panel{gap:6px;padding:8px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-space-options button{min-height:29px;font-size:9px}}
 
 /* Both painter planes inherit the same speaker shadow. Its projected scale
    and opacity are continuous; the horizon must not switch CSS filters. */
@@ -1410,15 +1410,15 @@
 .mx-sonku[data-fx-state="off"] .sk-engine-led,.mx-sonku[data-fx-state="rack-off"] .sk-engine-led{color:#a5a4a1}
 .mx-sonku[data-fx-state="off"] .sk-engine-led::before,.mx-sonku[data-fx-state="rack-off"] .sk-engine-led::before{background:#b98578;box-shadow:none}
 @media(max-width:680px){
- .mx-sonku .sk-preset{flex-basis:136px;max-width:136px}
- .mx-sonku .sk-channel{max-width:80px}
- .mx-sonku .sk-stage .sk-space-panel{gap:5px 9px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-preset{flex-basis:136px;max-width:136px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-channel{max-width:80px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-stage .sk-space-panel{gap:5px 9px}
 }
 @media(max-width:415px){
- .mx-sonku .sk-preset{max-width:115px;flex-basis:115px;font-size:9px}
- .mx-sonku .sk-channel{display:none}
- .mx-sonku .sk-stage .sk-space-panel{grid-template-columns:1fr}
- .mx-sonku .sk-stage :is(.sk-space-head,.sk-space-options,.sk-space-hint){grid-column:1}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-preset{max-width:115px;flex-basis:115px;font-size:9px}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-channel{display:none}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-stage .sk-space-panel{grid-template-columns:1fr}
+ :root:not(.armix-native-desktop) .mx-sonku .sk-stage :is(.sk-space-head,.sk-space-options,.sk-space-hint){grid-column:1}
 }
 
 

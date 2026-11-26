@@ -534,6 +534,7 @@ function render(){
    p8TransparentBass?"NATIVE P8 ACOUSTICS · RESEARCH":
    musicSafeStereo?"NATIVE MUSIC SAFE · RESEARCH":"NATIVE HRTF"):
   "NATIVE UNAVAILABLE"):"VISUAL ONLY · NO AUDIO";
+ syncVisualFrame();
 }
 function drawSpeakers(){
  const s=draft;
@@ -577,9 +578,22 @@ function drawSpeakers(){
 // rAF is a VISUAL interpolator, not an audio clock or optimistic DSP ACK.
 // A bounded phase-locked correction follows the real native callback without
 // teleporting at each ~250ms readback. Only SVG geometry is painted per frame.
+function canAnimate(){
+ return !root.hidden && !document.hidden && !!current &&
+  draft.moving && !drag && root.dataset.fxState==="on";
+}
+function syncVisualFrame(){
+ if(!canAnimate()){
+  if(frame!==null)cancelAnimationFrame(frame);
+  frame=null;visualAt=0;
+ }else if(frame===null){
+  visualAt=0;frame=requestAnimationFrame(animate);
+ }
+}
 function animate(time){
- if(root.hidden||!current){frame=null;return;}
- if(visualAt && draft.moving && !drag && root.dataset.fxState==="on"){
+ frame=null;
+ if(!canAnimate()){visualAt=0;return;}
+ if(visualAt){
   const dt=Math.max(0,Math.min(.08,(time-visualAt)*.001));
   const speed=(draft.clockwise?1:-1)*360/draft.revolutionSeconds;
   visualPhase=angle(visualPhase+speed*dt);
@@ -595,6 +609,7 @@ function animate(time){
  visualAt=time;
  frame=requestAnimationFrame(animate);
 }
+document.addEventListener("visibilitychange",syncVisualFrame);
 function hint(s){$("skHint").textContent=s;}
 function requestSnapshot(force=false){
  const c=context();if(!c)return;
@@ -762,7 +777,7 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
 let windowGesture=null;
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 function constrainWindow(){
- if(root.hidden)return;
+ if(root.hidden||window.__ARMIX_NATIVE_INLINE_FX_CLIP__)return;
  const r=root.getBoundingClientRect();
  if(!r.width||!r.height)return;
  const x=clamp(r.left,0,Math.max(0,innerWidth-r.width));
@@ -801,7 +816,7 @@ $("skPower").addEventListener("click",()=>{
  }else{
   current.track.slotBypass??=[];
   current.track.slotBypass[current.slot]=!current.track.slotBypass[current.slot];
-  syncPower();
+  syncPower();syncVisualFrame();
  }
 });
 $("skPreset").addEventListener("change",()=>{
@@ -982,6 +997,7 @@ map.addEventListener("pointerdown",e=>{
  const g=e.target.closest(".sk-src");if(!g)return;
  drag={source:Number(g.dataset.index),pointer:e.pointerId,
        starting:{...draft}};
+ syncVisualFrame();
  map.setPointerCapture?.(e.pointerId);e.preventDefault();
 });
 map.addEventListener("pointermove",e=>{
@@ -995,12 +1011,12 @@ map.addEventListener("pointermove",e=>{
 map.addEventListener("pointerup",e=>{
  if(!drag||drag.pointer!==e.pointerId)return;
  drag=null;map.releasePointerCapture?.(e.pointerId);
- commitInput({...draft});
+ commitInput({...draft});syncVisualFrame();
 });
 map.addEventListener("pointercancel",e=>{
  if(!drag||drag.pointer!==e.pointerId)return;
  const prior=drag.starting;drag=null;
- commitInput(prior);
+ commitInput(prior);syncVisualFrame();
 });
 map.addEventListener("keydown",e=>{
  const g=e.target.closest(".sk-src");if(!g)return;
@@ -1037,10 +1053,9 @@ const api={
   if(native())requestSnapshot();
   if(clock!==null)clearInterval(clock);
   clock=setInterval(()=>{if(root.hidden)return;
-    syncPower();if(native()&&!pending&&context())requestSnapshot();},250);
+    syncPower();syncVisualFrame();if(native()&&!pending&&context())requestSnapshot();},250);
+  if(frame!==null){cancelAnimationFrame(frame);frame=null;}
   render();
-  if(frame!==null)cancelAnimationFrame(frame);
-  frame=requestAnimationFrame(animate);
  },
  close(){$("skClose").click();}
 };

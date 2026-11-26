@@ -107,4 +107,21 @@ assert.match(source,/root\.dataset\.fxState==="on"/);
 assert.match(source,/if\(previous!==state\)/);
 assert.match(css,/\.mx-sonku \.sk-stage \.sk-space-panel\{display:grid/);
 assert.match(source,/current\.track\.slotBypass\[current\.slot\]/);
+const scheduler=between("function canAnimate(){","function hint(s)");
+const visual=vm.runInNewContext("(function(){"+
+ "let root={hidden:false,dataset:{fxState:'on'}},current={},draft={moving:true,revolutionSeconds:24,clockwise:true},drag=null,frame=null,visualAt=0,visualPhase=0,observedAt=0,pending=null,observed=0;"+
+ "let document={hidden:false,addEventListener(){}};let queue=new Map(),id=0,draws=0;"+
+ "const angle=v=>((v%360)+360)%360;const drawSpeakers=()=>draws++;"+
+ "const requestAnimationFrame=cb=>{queue.set(++id,cb);return id};const cancelAnimationFrame=n=>queue.delete(n);"+
+ scheduler+
+ "return {sync:syncVisualFrame,tick(t){const entry=queue.entries().next().value;if(entry){queue.delete(entry[0]);entry[1](t)}},state(){return [queue.size,draws,visualPhase,visualAt]},set(k,v){if(k==='power')root.dataset.fxState=v;else if(k==='moving')draft.moving=v;else if(k==='drag')drag=v;else if(k==='hidden')document.hidden=v;else if(k==='closed')root.hidden=v;syncVisualFrame()}}})()",{});
+visual.sync();visual.sync();assert.equal(visual.state()[0],1);
+visual.tick(100);visual.tick(116);assert.equal(visual.state()[1],1);
+const phaseBefore=visual.state()[2];assert(phaseBefore>0);
+for(const [k,stop,resume] of [["moving",false,true],["power","off","on"],["drag",{},null],["hidden",true,false],["closed",true,false]]){
+ visual.set(k,stop);assert.equal(visual.state()[0],0);assert.equal(visual.state()[3],0);
+ visual.set(k,resume);assert.equal(visual.state()[0],1);
+ visual.tick(10000);assert.equal(visual.state()[2],phaseBefore);
+}
+assert.match(css,/:root:not\(\.armix-native-desktop\) \.mx-sonku \.sk-stage svg\{max-height:37vh\}/);
 console.log("PASS SonKu P9.3: approved perspective orbit, inverse drag, native power readback, draggable window, five historic + gated new default Orbit presets, compact SPACE placement");

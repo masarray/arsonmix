@@ -622,25 +622,76 @@ def exercise(browser,out,width,height):
     # All listener and rendering JS exceptions remain fatal.
     assert not failures,(width,height,failures)
     page.screenshot(path=f"arsonmix-sonku-editor-{width}.png")
-    # Responsive visual evidence from the same mounted production editor.
+    # Native FUX-1 is a fixed hardware face, clipped by the ONE mixer WebView.
+    # Assert original geometry AND recoverability rather than forcing mobile layout.
+    assert page.locator("#armix-native-inline-fx-clip").count()==1
+    def native_layout():
+        return editor.evaluate("""n=>{
+          const box=n.getBoundingClientRect(),head=n.querySelector('.sk-head');
+          const map=n.querySelector('#skMap'),m=map.getScreenCTM(),p=map.createSVGPoint();
+          p.x=348;p.y=174;
+          const back=p.matrixTransform(m).matrixTransform(m.inverse());
+          return {width:box.width,scroll:n.scrollWidth,client:n.clientWidth,
+            headScroll:head.scrollWidth,headClient:head.clientWidth,
+            mapWidth:map.getBoundingClientRect().width,mapHeight:map.getBoundingClientRect().height,
+            columns:getComputedStyle(n.querySelector('.sk-content')).gridTemplateColumns,
+            spaceColumns:getComputedStyle(n.querySelector('.sk-space-panel')).gridTemplateColumns,
+            roundTrip:Math.hypot(back.x-348,back.y-174)};
+        }""")
+    baseline=native_layout()
+    for viewport in ({"width":680,"height":740},{"width":390,"height":740}):
+        page.set_viewport_size(viewport)
+        page.wait_for_timeout(100)
+        layout=native_layout()
+        assert abs(layout["width"]-790)<2,layout
+        assert layout["scroll"]<=layout["client"]+1,layout
+        assert layout["headScroll"]<=layout["headClient"]+1,layout
+        assert layout["columns"]==baseline["columns"],layout
+        assert layout["spaceColumns"]==baseline["spaceColumns"],layout
+        assert abs(layout["mapWidth"]-baseline["mapWidth"])<1,layout
+        assert abs(layout["mapHeight"]-baseline["mapHeight"])<1,layout
+        assert layout["roundTrip"]<.001,layout
+        page.screenshot(path=f"arsonmix-sonku-editor-native-clipped-{viewport['width']}.png")
+        # Use the actual production pan owner, then verify the close target
+        # is physically reachable in the clipped viewport.
+        editor.evaluate("""n=>{
+          const close=n.querySelector('#skClose').getBoundingClientRect();
+          window.__ARMIX_NATIVE_INLINE_FX_CLIP__.move(n,innerWidth-close.right-12,0);
+        }""")
+        close=editor.locator("#skClose").bounding_box()
+        assert close and close["x"]>=0 and close["x"]+close["width"]<=viewport["width"],close
+        assert abs(editor.bounding_box()["width"]-790)<2
+        page.screenshot(path=f"arsonmix-sonku-editor-native-panned-{viewport['width']}.png")
+    editor.locator("#skClose").click()
+    assert editor.is_hidden()
+    assert not failures,failures
+    page.close()
+
+def exercise_browser_layout(browser,out):
+    # Independent non-native visual-only instance of the same compiled module.
+    page=browser.new_page(viewport={"width":680,"height":740})
+    failures=[]
+    page.on("pageerror",lambda exc:failures.append(str(exc)))
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.ArSonMixNativeSonKu")
+    assert page.locator("#armix-native-inline-fx-clip").count()==0
+    page.evaluate("""()=>window.ArSonMixNativeSonKu.open(
+        {id:22,name:'VISUAL PREVIEW',slotBypass:[false]},0)""")
+    editor=page.locator("#mxNativeSonKu")
+    editor.wait_for(state="visible")
     for viewport in ({"width":680,"height":740},{"width":390,"height":740}):
         page.set_viewport_size(viewport)
         page.wait_for_timeout(100)
         layout=editor.evaluate("""n=>{
           const box=n.getBoundingClientRect(),head=n.querySelector('.sk-head');
           const close=n.querySelector('#skClose').getBoundingClientRect();
-          const map=n.querySelector('#skMap'),m=map.getScreenCTM(),p=map.createSVGPoint();
-          p.x=348;p.y=174;
-          const back=p.matrixTransform(m).matrixTransform(m.inverse());
           return {left:box.left,right:box.right,scroll:n.scrollWidth,client:n.clientWidth,
-            headScroll:head.scrollWidth,headClient:head.clientWidth,closeRight:close.right,
-            roundTrip:Math.hypot(back.x-348,back.y-174)};
+            headScroll:head.scrollWidth,headClient:head.clientWidth,closeRight:close.right};
         }""")
         assert layout["left"]>=-1 and layout["right"]<=viewport["width"]+1,layout
         assert layout["scroll"]<=layout["client"]+1,layout
         assert layout["headScroll"]<=layout["headClient"]+1,layout
         assert layout["closeRight"]<=layout["right"]+1,layout
-        assert layout["roundTrip"]<.001,layout
         page.screenshot(path=f"arsonmix-sonku-editor-responsive-{viewport['width']}.png")
     assert not failures,failures
     page.close()
@@ -656,9 +707,10 @@ def main():
         # now tested inside the original mixer WebView with five peers.
         for width,height in [(1366,768)]:
             exercise(browser,out,width,height)
+        exercise_browser_layout(browser,out)
         browser.close()
     print("PASS 8D-SonKu actual native editor: insert intent, no premature GUI,"
-          " ACK/readback, reopen, typed settings and 2 viewport screenshots."
+          " ACK/readback, reopen, typed settings, native clipping and browser responsiveness."
           " Browser uses a transport mock; native DSP requires CTest and hardware FAT.")
 
 if __name__=="__main__":
