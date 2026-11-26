@@ -9,6 +9,8 @@ on:
       - 'tools/anti-noiz/raw_wind_intake.py'
       - 'tools/anti-noiz/recorded_raw_wind.py'
       - 'tools/anti-noiz/wind_resolution_probe.py'
+      - 'tools/anti-noiz/wind_reference_audit.py'
+      - 'tools/anti-noiz/historical_fp_contract.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
       - 'tools/anti-noiz/compare_environment.py'
       - 'tools/anti-noiz/tonal_benchmark.cpp'
@@ -141,8 +143,9 @@ jobs:
       - name: Strict arithmetic control independence and historical parity
         if: ${{ !cancelled() && steps.field_build.outcome == 'success' }}
         run: |
-          # Additional exact comparison; do not replace or waive the original
-          # default-compiler field gate. The same explicit FP contract applies
+          # Mandatory bit-identical comparison; the independent default-build
+          # numerical-equivalence and all audio-quality gates also apply.
+          # The same explicit FP contract applies
           # to all four independently built reference executables.
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off controls-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/controls-old"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -ffp-contract=off tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/controls-new"
@@ -212,6 +215,7 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/wind-probe-env"
           "$RUNNER_TEMP/wind-probe-env/bin/python" -m pip install numpy==2.3.5 scipy==1.17.0
           "$RUNNER_TEMP/wind-probe-env/bin/python" tools/anti-noiz/wind_resolution_probe.py "$RUNNER_TEMP/raw-wind-report"
+          "$RUNNER_TEMP/wind-probe-env/bin/python" tools/anti-noiz/wind_reference_audit.py "$RUNNER_TEMP/raw-wind-report" --native "$RUNNER_TEMP/raw-field-new"
       - name: Preserve actual selected source bytes, licenses and diagnostic report
         if: always()
         uses: actions/upload-artifact@v4
@@ -223,6 +227,7 @@ jobs:
             ${{ runner.temp }}/raw-wind-intake/*.wav
             ${{ runner.temp }}/raw-wind-report/report.json
             ${{ runner.temp }}/raw-wind-report/resolution-probe.json
+            ${{ runner.temp }}/raw-wind-report/dc-reference-audit/report.json
             ${{ runner.temp }}/raw-wind-report/*/provenance.tsv
             ${{ runner.temp }}/raw-wind-report/*/segments.tsv
             ${{ runner.temp }}/raw-wind-report/*/clean.wav

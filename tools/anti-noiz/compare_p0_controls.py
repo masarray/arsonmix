@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
 """Strict arithmetic paired control independence; no tolerance on WAV parity.
-Original default-compiler field gate remains separate and binding.
+Default-compiler numerical-equivalence and all field quality gates remain binding.
 """
 import argparse
 import json

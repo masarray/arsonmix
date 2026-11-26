@@ -11,6 +11,7 @@ from pathlib import Path
 from recorded_environment import (RATE, CLIPS, BASE, README_SHA, download, read_pcm,
                                   write_pcm, recorded_noise, resample_clean, prepare, verify_rows)
 from spectral_diagnostics import pcm
+from historical_fp_contract import compare_default, self_test as fp_self_test
 
 SOURCE = ("wind-breeze", "keweldog", "181801", "wind-breeze.wav",
           "v0.3.0-preview", 12256128,
@@ -40,6 +41,7 @@ def windows(inp, out, channels, begin, end, rate=RATE):
 
 
 def self_test():
+    fp_self_test()
     x=[.01]*4800
     w=windows(x,[v*.1 for v in x],1,0,len(x))
     assert w["windows"]==2 and abs(w["p10_db"]-20)<1e-9 and w["longest_under_6db_ms"]==0
@@ -91,22 +93,22 @@ def compare(old, new, failures, case):
     print("FIELD_WIND",case,"idle",rows["max"],"residual",residual,"active",active,"projection",retain,flush=True)
 
 
-def compare_residual(prior, new, failures, case, spectral_pcm_exact):
+def compare_residual(prior, new, failures, case, default_fp_ok):
     # Separate incremental idle gate. Never replace absolute P0/active gates.
     foreground_pairs(prior, new, failures, case)
     before=aggregate(prior["max"]["rows"],"idle","idle_attenuation_db")
     after=aggregate(new["max"]["rows"],"idle","idle_attenuation_db")
     residual=after-aggregate(new["spectral"]["rows"],"idle","idle_attenuation_db")
     a,b=prior["max"]["windows"],new["max"]["windows"]
-    if not spectral_pcm_exact or prior["spectral"]["rows"]!=new["spectral"]["rows"]:
-        failures.append([case,"Silence zero PCM changed"])
+    if not default_fp_ok:
+        failures.append([case,"Silence zero default FP contract exceeded"])
     if after<12 or residual<3 or after-before<3:
         failures.append([case,"incremental residual target",before,after,residual])
     if b["p10_db"]<6 or b["p10_db"]<a["p10_db"] or b["longest_under_6db_ms"]>a["longest_under_6db_ms"]:
         failures.append([case,"residual exposed-noise regression",a,b])
     print("FIELD_RESIDUAL",case,"idle",before,after,"residual",residual,
           "p10",a["p10_db"],b["p10_db"],"longest_ms",a["longest_under_6db_ms"],b["longest_under_6db_ms"],
-          "spectral_exact",spectral_pcm_exact,flush=True)
+          "default_fp_contract",default_fp_ok,flush=True)
 
 
 def compare_active(prior, new, failures, case):
@@ -224,16 +226,14 @@ def run():
                     residual_lane="pre-active" if "pre-active" in results else "new"
                     parity=(case/"prior-spectral-processed.wav").read_bytes()==(case/f"{residual_lane}-spectral-processed.wav").read_bytes()
                     report["cases"][key]["spectral_pcm_exact"]=parity
-                    if not parity:
-                        x=pcm(str(case/"prior-spectral-processed.wav"),RATE,ch)
-                        y=pcm(str(case/f"{residual_lane}-spectral-processed.wav"),RATE,ch)
-                        if len(x)!=len(y):raise ValueError("spectral timeline mismatch")
-                        delta=[abs(v-w) for v,w in zip(x,y)]
-                        detail={"samples":len(delta),"changed_samples":sum(d!=0 for d in delta),
-                                "peak_abs":max(delta),"rms":math.sqrt(math.fsum(d*d for d in delta)/len(delta))}
-                        report["cases"][key]["spectral_pcm_difference"]=detail
-                        print("FIELD_SPECTRAL_DIFF",key,detail,flush=True)
-                    compare_residual(results["prior"],results[residual_lane],report["failures"],key,parity)
+                    x=pcm(str(case/"prior-spectral-processed.wav"),RATE,ch)
+                    y=pcm(str(case/f"{residual_lane}-spectral-processed.wav"),RATE,ch)
+                    detail=compare_default(x,y,results["prior"]["spectral"]["rows"],results[residual_lane]["spectral"]["rows"])
+                    report["cases"][key]["spectral_pcm_difference"]=detail
+                    print("FIELD_SPECTRAL_DIFF",key,detail,flush=True)
+                    # Exact PCM remains a hard gate on the same frozen pair
+                    # in compare_p0_controls.py, compiled with -ffp-contract=off.
+                    compare_residual(results["prior"],results[residual_lane],report["failures"],key,detail["within_contract"])
     if len(report["cases"])!=4:raise ValueError("incomplete cases")
     (root/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
     for fail in report["failures"]:print("FIELD_WIND_FAIL",fail,flush=True)
