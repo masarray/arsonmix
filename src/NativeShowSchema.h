@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_core/juce_core.h>
+#include "BoundedDataInput.h"
 #include <array>
 #include <cmath>
 #include <vector>
@@ -228,7 +229,7 @@ public:
     // Decode is transactional: an invalid record never mutates the caller's
     // previously accepted record. Capability/plugin/device preflight is later.
     static bool decode(const juce::String& json,ShowV2& out) {
-        if(json.getNumBytesAsUTF8()>maxJsonBytes) return false;
+        if(json.getNumBytesAsUTF8()>maxJsonBytes||!armix::storage::BoundedDataInput::jsonStructure(json)) return false;
         const auto v=juce::JSON::parse(json);
         if(!detail::header(v,"arsonmix.native.show")) return false;
         ShowV2 next;
@@ -239,7 +240,7 @@ public:
         return decodeShowArrays(v,next,out);
     }
     static bool decode(const juce::String& json,SnapshotV2& out) {
-        if(json.getNumBytesAsUTF8()>maxJsonBytes) return false;
+        if(json.getNumBytesAsUTF8()>maxJsonBytes||!armix::storage::BoundedDataInput::jsonStructure(json)) return false;
         const auto v=juce::JSON::parse(json);
         if(!detail::header(v,"arsonmix.native.snapshot",2,4)) return false;
         int version=0;

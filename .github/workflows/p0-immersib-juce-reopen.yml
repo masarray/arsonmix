@@ -24,15 +24,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout exact source (no moving main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Checkout pinned JUCE 8 for native editor only
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: juce-framework/JUCE
-          ref: 8.0.15
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
           path: third_party/JUCE
           persist-credentials: false
       - name: Obtain pinned WebView2 configure SDK (NOT building browser)

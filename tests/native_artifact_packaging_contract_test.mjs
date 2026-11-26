@@ -64,7 +64,7 @@ test('native FAT picks exact JUCE GUI target, not a test executable',()=>{
   assert.match(workflow,/scripts\/package_native_windows\.ps1/);
   assert.match(workflow,/Independently verify release ZIP and embedded GUI\/engine before upload/);
   assert.ok(workflow.indexOf('scripts/verify_native_windows_artifact.ps1') <
-            workflow.indexOf('uses: actions/upload-artifact@v4'));
+            workflow.search(/uses: actions\/upload-artifact@[a-f0-9]{40}/));
 });
 
 test('JUCE embeds only generated approved Pages DOM, CSS, JS, and PNG button variant',()=>{

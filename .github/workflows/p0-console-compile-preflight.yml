@@ -22,14 +22,14 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 85
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: juce-framework/JUCE
-          ref: 8.0.15
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
           path: third_party/JUCE
           persist-credentials: false
       - name: P11 offline reliability profile and timing contracts
@@ -113,7 +113,7 @@ jobs:
           ctest --test-dir build --output-on-failure --no-tests=error --output-junit integrated-ctest.xml
           if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_FULL_CTEST_FAILED' }
           Write-Host "INTEGRATED_FULL_CTEST_PASS exact=$actual (no hardware or installer FAT)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always() && startsWith(github.ref_name, 'staging/io-reverb-integrated-')
         with:
           name: integrated-native-ctest-${{ github.sha }}
@@ -210,7 +210,7 @@ jobs:
           Write-Host "P12_INTERNAL_INSTALLER_SOFTWARE_FAT_PASS exact=$actual"
       - name: Upload exact-SHA internal installer (never a public release)
         if: (github.ref_name == 'staging/io-reverb-integrated-p12-20261125' || github.ref_name == 'staging/io-reverb-integrated-global-20261125')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-P12-Internal-Installer-${{ github.sha }}
           path: p12-internal/

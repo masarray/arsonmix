@@ -396,6 +396,31 @@ inline ApprovedNativeControlIntent translateApprovedNativeControl(
         converted->setProperty("payload",juce::var(payload.release()));
         return {juce::var(converted.release()),{}};
     }
+    if(op=="CONVERT_REVERB_RETURN") {
+        if(!approvedHasOperation(caps.getProperty("supportedOps",{}),"CONVERT_REVERB_RETURN")||
+           !approvedHasOperation(installedBus.getProperty("supportedOps",{}),"NATIVE_CONVERT_REVERB_RETURN"))
+            return reject("DMX_CONVERSION_NOT_ADMITTED");
+        const auto payload=publicIntent.getProperty("payload",{});
+        const auto slot=payload.getProperty("slot",{}),token=payload.getProperty("instanceId",{});
+        if(!slot.isInt()||static_cast<int>(slot)<0||static_cast<int>(slot)>=8||!token.isString()||token.toString().isEmpty())
+            return reject("INVALID_FX_INSTANCE");
+        juce::var from,nativeFrom;
+        for(const auto& row:*rows.getArray())if(row.getProperty("id",{})==ids)from=row;
+        for(const auto& row:*nativeRows.getArray())if(row.getProperty("id",{})==ids)nativeFrom=row;
+        const auto pub=from.getProperty("inserts",{}),actual=nativeFrom.getProperty("inserts",{});
+        const int index=static_cast<int>(slot);
+        if(from.getProperty("role",{}).toString()!="INPUT"||nativeFrom.getProperty("role",{}).toString()!="INPUT"||
+           !pub.isArray()||!actual.isArray()||pub.size()!=actual.size()||index+1!=pub.size()||
+           pub[index].getProperty("id",{})!=token||actual[index].getProperty("instanceId",{})!=token||
+           pub[index].getProperty("catalogId",{}).toString()!="armix.builtin.vocal-reverb.v1")
+            return reject("DMX_CONVERSION_REQUIRES_LAST_REVERB_DIRECT_MAIN_INPUT");
+        auto args=std::make_unique<juce::DynamicObject>();args->setProperty("slot",slot);args->setProperty("instanceId",token);
+        auto converted=std::make_unique<juce::DynamicObject>();
+        converted->setProperty("requestId",request);converted->setProperty("deviceEpoch",epoch);
+        converted->setProperty("baseGraphRevision",revision);converted->setProperty("baseRosterRevision",roster);
+        converted->setProperty("targetChannelId",ids);converted->setProperty("operation","NATIVE_CONVERT_REVERB_RETURN");
+        converted->setProperty("payload",juce::var(args.release()));return {juce::var(converted.release()),{}};
+    }
     if(op=="REMOVE_INSERT"||op=="MOVE_INSERT") {
         const bool moving=op=="MOVE_INSERT";
         if(!approvedHasOperation(caps.getProperty("supportedOps",{}),moving?"MOVE_INSERT":"REMOVE_INSERT")||

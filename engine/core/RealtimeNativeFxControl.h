@@ -21,6 +21,9 @@ struct RealtimeNativeFxControl {
     // continue processing the actual PCM while its output is bypassed.
     // Ordinary EQ/compressor/vendor FX retain the CPU-saving bypass fast path.
     virtual bool requiresContinuousBypassProcessing() const noexcept {return false;}
+    // Immutable prepared wet-only render contract. Bypass and latency faults
+    // must silence this effect, never restore its input into an FX return.
+    virtual bool bypassToSilence() const noexcept {return false;}
     // Optional exact parked-bypass proof, AUDIO only AFTER onRealtimeBypass
     // and consumeRealtimeEdits. True means processBlock would do no further
     // state, meter, event or timeline work; host retains aligned dry PCM.

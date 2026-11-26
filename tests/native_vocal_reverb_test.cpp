@@ -5,9 +5,12 @@
 #include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../src/NativeBuiltInFx.h"
+#include "../engine/core/DynamicAcceptedSession.h"
+#include "../engine/core/NativeFxRackTransaction.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <vector>
 #include <thread>
@@ -16,6 +19,219 @@ int main() {
     juce::ScopedJuceInitialiser_GUI gui;
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
+    // Catalog/lease, not preset bytes, owns the wet-only routing authority.
+    {
+        using Delay=vocal_delay::JuceVocalDelayProcessor;
+        const auto* ret=findNativeBuiltInFx(Delay::wetReturnIdentity);
+        assert(ret&&ret->showInPicker);
+        auto p=ret->prepare(48000.,128,nullptr,0);
+        assert(p&&p->getName()=="Vocal Delay Return");
+        juce::MemoryBlock state;p->getStateInformation(state);
+        assert(state.getSize()==48);
+        namespace vd=armix::builtin_fx::vocal_delay;
+        vd::State decoded{};
+        assert(vd::StateCodec::decode(state.getData(),state.getSize(),decoded));
+        assert(vd::sameParameters(decoded.continuous,vd::presetSettings(0)));
+        // Smart Live has a 180 Hz high-pass, wet voicing and sustained
+        // speech ducking. A constant DC stimulus is not an audible echo
+        // qualification. Keep it as a reference-equivalence case; use the
+        // same two-second in-band tone as continuousWetAndPower in the
+        // portable concert suite for the nonzero wet-energy requirement.
+        const auto verify=[&](bool dc){
+            auto wet=ret->prepare(48000.,128,state.getData(),static_cast<int>(state.getSize()));
+            auto old=findNativeBuiltInFx(Delay::catalogIdentity)->prepare(
+                48000.,128,state.getData(),static_cast<int>(state.getSize()));
+            assert(wet&&old&&dynamic_cast<Delay*>(wet.get())->bypassToSilence()&&
+                !dynamic_cast<Delay*>(old.get())->bypassToSilence());
+            armix::mixer::LiveChannelFxGraph::FxInstance lease(
+                std::move(wet),ret->id,ret->name,128);
+            armix::mixer::LiveChannelFxGraph::FxInstance insert(
+                std::move(old),Delay::catalogIdentity,"Vocal Delay",128);
+            assert(lease.silenceBypass&&!insert.silenceBypass&&lease.latencySamples==0);
+            vd::ContinuousDelayCore reference(true);
+            assert(reference.prepare(48000.,decoded.continuous));
+            std::array<float,128> dry{},l{},r{},il{},ir{},rl{},rr{};
+            const auto render=[&](int block,bool bypass){
+                for(int i=0;i<128;++i)
+                    dry[i]=dc?.1f:.16f*float(std::sin((block*128+i)*.031));
+                l=r=il=ir=rl=rr=dry;
+                lease.render(l.data(),r.data(),128,bypass);
+                insert.render(il.data(),ir.data(),128,bypass);
+                if(!bypass)reference.processStereo(rl.data(),rr.data(),128);
+            };
+            double energyL=0.,energyR=0.;
+            for(int block=0;block<750;++block){
+                render(block,false);
+                for(int i=0;i<128;++i){
+                    assert(std::isfinite(l[i])&&std::isfinite(r[i]));
+                    assert(std::abs(l[i]-rl[i])<1e-7f&&std::abs(r[i]-rr[i])<1e-7f);
+                    assert(il[i]==dry[i]+l[i]&&ir[i]==dry[i]+r[i]);
+                    if(block==0)assert(l[i]==0.f&&r[i]==0.f);
+                    energyL+=std::abs(l[i]);energyR+=std::abs(r[i]);
+                }
+            }
+            // Preserve the original left-channel threshold for a genuine
+            // signal, and check right independently as well.
+            if(!dc)assert(energyL>1.&&energyR>1.);
+            for(int i=0;i<12;++i)render(750+i,true);
+            assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+            assert(std::all_of(r.begin(),r.end(),[](float v){return v==0.f;}));
+            assert(il==dry&&ir==dry); // legacy insert still bypasses to dry
+            return energyL+energyR;
+        };
+        const double dcEnergy=verify(true),toneEnergy=verify(false);
+        assert(toneEnergy>dcEnergy);
+        std::printf("DMX_NATIVE_DELAY_RETURN_PASS DC=%g tone=%g native/core and dry+wet parity, silence bypass\n",dcEnergy,toneEnergy);
+    }
+    // DMX native production registry -> real lease -> bypass and state.
+    {
+        const auto* ret=findNativeBuiltInFx(VocalReverbProcessor::wetReturnIdentity);
+        assert(ret&&ret->showInPicker);
+        auto p=ret->prepare(48000.,128,nullptr,0);
+        auto* typed=dynamic_cast<VocalReverbProcessor*>(p.get());
+        assert(typed&&typed->wetReturnMode()&&typed->bypassToSilence());
+        assert(typed->desiredSettings().values[0]==1.f);
+        juce::MemoryBlock state;
+        p->getStateInformation(state);
+        assert(!state.isEmpty());
+        auto restored=ret->prepare(48000.,128,state.getData(),static_cast<int>(state.getSize()));
+        assert(restored&&restored->getName()=="Reverb-Sis Return");
+        auto ordinary=findNativeBuiltInFx(VocalReverbProcessor::catalogIdentity)->prepare(
+            48000.,128,state.getData(),static_cast<int>(state.getSize()));
+        assert(ordinary&&!dynamic_cast<VocalReverbProcessor*>(ordinary.get())->wetReturnMode());
+        armix::mixer::LiveChannelFxGraph::FxInstance lease(
+            std::move(p),ret->id,ret->name,128);
+        assert(lease.silenceBypass&&lease.latencySamples==0);
+        std::array<float,128> l{},r{};
+        const auto render=[&](bool bypass){
+            l.fill(.2f);r.fill(-.1f);
+            lease.render(l.data(),r.data(),128,bypass);
+        };
+        render(false);assert(l[0]==0.f&&r[0]==0.f);
+        assert(typed->queueSettings(vocalReverbFactoryPreset(7)));
+        render(false);assert(typed->desiredSettings().values[0]==1.f);
+        for(int i=0;i<12;++i)render(true);
+        assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+        assert(std::all_of(r.begin(),r.end(),[](float v){return v==0.f;}));
+        // Explicit slot bypass uses the same silence policy as rack/global.
+        lease.bypassRequested.store(true);
+        render(false);
+        assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+        lease.bypassRequested.store(false);
+        render(false);
+        assert(std::all_of(l.begin(),l.end(),[](float v){return std::isfinite(v);}));
+        // Native accepted PCM graph with the REAL prepared lease, not a gain
+        // stand-in. Feed one stereo source to dry MAIN and PRE MONITOR, and
+        // one wet return to both. First sample and settled bypass must equal
+        // the undelayed stereo source, with nonzero wet energy in between.
+        using namespace armix::mixer;
+        DynamicAcceptedSession session;
+        constexpr std::uint64_t ep=7123;
+        DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=128;
+        const auto add=[](std::size_t i,ChannelRole role,const char* name){
+            ChannelEdit e;e.kind=ChannelEdit::Kind::add;e.position=i;
+            e.role=role;e.format=ProcessingFormat::stereo;e.text=name;return e;
+        };
+        const std::array<ChannelEdit,4> create{add(0,ChannelRole::input,"VOICE"),
+            add(1,ChannelRole::fxReturn,"REVERB"),add(2,ChannelRole::main,"MAIN"),
+            add(3,ChannelRole::monitor,"MONITOR")};
+        auto a=session.edit(0,0,create,req,ep,ep,true);assert(a.ok());
+        const auto voice=a.edit.createdIds[0],wet=a.edit.createdIds[1],
+            main=a.edit.createdIds[2],monitor=a.edit.createdIds[3];
+        const auto out=[](ChannelId from,ChannelId to){
+            ChannelEdit e;e.kind=ChannelEdit::Kind::setPrimaryOutput;
+            e.id=from;e.target=to;return e;
+        };
+        const auto send=[](ChannelId from,ChannelId to,float gain){
+            ChannelEdit e;e.kind=ChannelEdit::Kind::addSendReference;
+            e.id=from;e.target=to;e.value=gain;e.preFader=true;return e;
+        };
+        const std::array<ChannelEdit,5> links{out(voice,main),out(wet,main),
+            send(voice,monitor,1.f),send(voice,wet,1.f),send(wet,monitor,.25f)};
+        req.sources={{voice,0,1,true}};
+        a=session.edit(1,1,links,req,ep,ep,true);assert(a.ok());
+        armix::mixer::LiveChannelFxGraph::FxInstance real(
+            std::move(restored),ret->id,ret->name,128);
+        std::array<float,128> inputL{},inputR{},ml{},mr{},cl{},cr{};
+        const float* pins[]{inputL.data(),inputR.data()};
+        int calls=0;double wetEnergy=0.;
+        const auto fx=[&](ChannelId id,float* aL,float* aR,int n) noexcept {
+            if(id==wet){++calls;real.render(aL,aR,n);}
+        };
+        for(int block=0;block<120;++block){
+            for(int i=0;i<128;++i){
+                inputL[i]=.16f*std::cos(float(block*128+i)*.03f);
+                inputR[i]=-.12f*std::cos(float(block*128+i)*.05f);
+            }
+            if(block==100)real.bypassRequested.store(true);
+            assert(session.render(ep,pins,2,ml.data(),mr.data(),128,false,fx,cl.data(),cr.data()));
+            assert(calls==block+1);
+            for(int i=0;i<128;++i){
+                const float wl=ml[i]-inputL[i],wr=mr[i]-inputR[i];
+                assert(std::abs((cl[i]-inputL[i])-.25f*wl)<2e-6f);
+                assert(std::abs((cr[i]-inputR[i])-.25f*wr)<2e-6f);
+                if((block==0&&i==0)||block>=110)
+                    assert(std::abs(wl)<1e-7f&&std::abs(wr)<1e-7f);
+                if(block<100)wetEnergy+=double(wl)*wl+double(wr)*wr;
+            }
+        }
+        assert(wetEnergy>1e-7);
+        session.unpublish();session.pollRetirement();
+        std::puts("DMX_NATIVE_REVERB_RETURN_LEASE_PASS real DSP once, independent sinks, silence bypass");
+        // Actual prepared native bank + roster atomic candidate. Stale token
+        // or wrong slot cannot disturb old owner/graph; exact new lease only.
+        DynamicChannelRoster prior;
+        std::vector<ChannelStripDefinition> rows(3);
+        rows[0].id={1};rows[0].role=ChannelRole::input;rows[0].name="VOICE";
+        rows[0].format=ProcessingFormat::stereo;
+        rows[0].insertCatalogIds={VocalReverbProcessor::catalogIdentity};
+        rows[0].sends.push_back({{2},1.f,false,0.f,true,11});
+        rows[1].id={2};rows[1].role=ChannelRole::main;rows[1].name="MAIN";
+        rows[1].format=ProcessingFormat::stereo;
+        rows[2].id={3};rows[2].role=ChannelRole::monitor;rows[2].name="MONITOR";
+        rows[2].format=ProcessingFormat::stereo;
+        assert(prior.restoreExact(1,rows));
+        auto old=std::make_shared<LiveChannelFxGraph::FxInstance>(
+            std::move(ordinary),VocalReverbProcessor::catalogIdentity,"Reverb-Sis",128);
+        auto newer=std::make_shared<LiveChannelFxGraph::FxInstance>(
+            ret->prepare(48000.,128,state.getData(),static_cast<int>(state.getSize())),
+            ret->id,ret->name,128);
+        DynamicChannelFxLeaseBank inventory;
+        DynamicChannelFxLeaseBank::Assignment assignment;
+        assignment.id={1};assignment.format=ProcessingFormat::stereo;
+        assignment.inserts.push_back(old);
+        const std::array<DynamicChannelFxLeaseBank::Assignment,1> assignments{assignment};
+        assert(DynamicChannelFxLeaseBank::prepare(ep,1,assignments,inventory)==
+               DynamicChannelFxLeaseBank::Fault::none);
+        DynamicChannelRoster candidate;DynamicChannelFxLeaseBank candidateBank;ChannelId created{};
+        assert(!prepareNativeReverbReturnConversion(ep,1,1,prior,inventory,{1},0,
+            "wrong-token",newer,.2f,candidate,candidateBank,created));
+        assert(!created.value&&inventory.ownerForControl({1},0)->get()==old.get());
+        assert(prepareNativeReverbReturnConversion(ep,1,1,prior,inventory,{1},0,
+            old->instanceId,newer,.2f,candidate,candidateBank,created));
+        assert(created.value&&candidate.find({1})->insertCatalogIds.empty());
+        assert(prior.find({1})->insertCatalogIds.size()==1);
+        assert(candidate.find(created)->role==ChannelRole::fxReturn);
+        assert(candidate.find(created)->faderLinear==.2f);
+        assert(candidateBank.ownerForControl(created,0)->get()==newer.get());
+        assert(candidateBank.insertCount({1})==0);
+        assert(candidate.find({1})->sends[0].edgeId==11);
+        const auto& sends=candidate.find(created)->sends;
+        assert(sends.size()==2&&sends[1].destination.value==3&&sends[1].preFader&&sends[1].gain==0.f);
+        DynamicChannelRoster denied;DynamicChannelFxLeaseBank deniedBank;
+        assert(!prepareNativeFxRackEdit(ep,2,candidate.revision(),candidate,candidateBank,
+            created,0,newer->instanceId,{},0,denied,deniedBank));
+        assert(!prepareNativeFxRackEdit(ep,2,candidate.revision(),candidate,candidateBank,
+            created,0,newer->instanceId,{1},0,denied,deniedBank));
+        // RTR full-rack replace/deactivate must obey the same wet-only contract.
+        assert(!prepareNativeFxRackReplacement(ep,2,candidate.revision(),candidate,
+            candidateBank,created,{},false,denied,deniedBank));
+        assert(!prepareNativeFxRackReplacement(ep,2,candidate.revision(),candidate,
+            candidateBank,created,{old},false,denied,deniedBank));
+        assert(!prepareNativeFxRackReplacement(ep,2,candidate.revision(),candidate,
+            candidateBank,{1},{newer},false,denied,deniedBank));
+        std::puts("DMX_ATOMIC_RETURN_CONVERSION_PASS stale token, new lease, exact existing edge, guarded removal/replacement");
+    }
     // Direct native factory must publish the actual device format even
     // for processors whose prepareToPlay only initializes their own core.
     for(const char* id:{ChannelEqProcessor::catalogIdentity,ChannelCompressorProcessor::catalogIdentity}){

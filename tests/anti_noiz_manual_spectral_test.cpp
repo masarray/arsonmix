@@ -7,7 +7,59 @@
 #include <vector>
 using namespace armix::builtin_fx::anti_noiz;
 void check(bool x,const char* why){if(!x){std::cerr<<why<<'\n';std::abort();}}
+// Independent double DFT oracle on the ordinary compiler configuration.
+// Cancellation can make a single bin arbitrarily small: use the input
+// vector norm for forward error, Parseval for aggregate error and the
+// original time-domain peak for inverse reconstruction. Exact zero remains
+// exact; tiny input is tested relatively rather than against a fixed floor.
+void checkFftOracle(){
+ using D=std::complex<double>;FftPlan fft;std::mt19937 rng(29);
+ std::uniform_real_distribution<float> random(-64.f,64.f);
+ double worst=0,roundWorst=0;
+ for(int n:{256,512}){
+  fft.prepare(n);std::array<D,FftPlan::maxN> roots{};
+  for(int k=0;k<n;++k){const long double angle=-2.L*std::numbers::pi_v<long double>*k/n;roots[k]={double(std::cos(angle)),double(std::sin(angle))};}
+  for(int trial=0;trial<96;++trial){
+   std::array<FftPlan::Complex,FftPlan::maxN> input{},ref{},packed{};
+   const float scale=trial%3==0?1.f:trial%3==1?1e-12f:0.f;
+   double norm2=0,peak=0;
+   for(int i=0;i<n;++i){
+    input[i]={random(rng)*scale,trial%4==0?0.f:random(rng)*scale};
+    norm2+=std::norm(D(input[i]));peak=std::max(peak,std::abs(D(input[i])));
+   }
+   ref=packed=input;fft.transform(ref,false);fft.transform(packed,false);
+   const double norm=std::sqrt(norm2);double err2[2]{};
+   for(int k=0;k<n;++k){
+    // Independent scalar extended-precision accumulation.
+    long double re=0,im=0;for(int i=0;i<n;++i){const auto w=roots[(k*i)%n];
+     const long double x=input[i].real(),y=input[i].imag();
+     re+=x*w.real()-y*w.imag();im+=x*w.imag()+y*w.real();
+    }
+    const D exact{double(re),double(im)};
+    for(int j=0;j<2;++j){
+     const double err=std::abs(D(j?packed[k]:ref[k])-exact);
+     if(!(err<=2e-6*norm)){
+      std::cerr<<"FFT_ORACLE_FAIL n="<<n<<" trial="<<trial<<" bin="<<k<<" packed="<<j
+       <<" input_norm="<<norm<<" error="<<err<<" expected="<<exact
+       <<" actual="<<(j?packed[k]:ref[k])<<'\n';
+      check(false,"FFT forward double oracle");
+     }
+     err2[j]+=err*err;if(norm>0)worst=std::max(worst,err/norm);
+    }
+   }
+   for(double e:err2)check(e<=4e-12*n*norm2,"FFT Parseval relative error");
+   fft.transform(ref,true);fft.transform(packed,true);
+   for(int i=0;i<n;++i)for(auto val:{ref[i],packed[i]}){
+    const double err=std::abs(D(val)-D(input[i]));
+    check(err<=2e-6*peak,"FFT independent inverse reconstruction");
+    if(peak>0)roundWorst=std::max(roundWorst,err/peak);
+   }
+  }
+ }
+ std::cout<<"FFT_ORACLE_PASS cases=192 max_forward_norm_error="<<worst<<" max_roundtrip_peak_error="<<roundWorst<<'\n';
+}
 int main(){
+ checkFftOracle();
  for(float e:{.1f,1.f,2.f,5.f,100.f}){
   float prior=1;
   for(float floor:{1.f,.5f,.1f,.01f}){const float x=ManualSpectral::target(e,1,floor,.5f);check(x<=prior&&x>=floor-1e-6f,"reduction monotonic");prior=x;}
@@ -50,7 +102,8 @@ int main(){
   // A second Learn must never bypass the trusted manual spectral mask.
   Core capture=c,control=c;check(capture.beginLearn(),"relearn start");
   std::vector<float> captureL(rate/2),captureR(rate/2);
-  for(auto& v:captureL)v=rnd(rng);captureR=captureL;
+  for(auto& v:captureL){v=rnd(rng);}
+  captureR=captureL;
   auto controlL=captureL,controlR=captureR;
   capture.process(captureL.data(),channels==2?captureR.data():nullptr,int(captureL.size()));
   control.process(controlL.data(),channels==2?controlR.data():nullptr,int(controlL.size()));

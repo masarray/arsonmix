@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "Vst3DescriptionCache.h"
+#include "RuntimeVendorCrashJournal.h"
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../engine/core/MasterOutputMonoPolicy.h"
 #include "../engine/core/LiveChannelFxGraph.h"
@@ -8,6 +9,7 @@
 #include "../engine/core/NativeMusicTempoMonitor.h"
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/core/NativeFxRackTransaction.h"
+#include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
@@ -405,6 +407,10 @@ public:
                 auto* fmt=formats.getFormat(0);
                 if(!fmt || !fmt->fileMightContainThisPluginType(req.path))
                     return label+": VST3 module unavailable; rescan catalog";
+                armix::startup::RuntimeVendorCrashJournal::Operation vendorGuard(
+                    armix::startup::RuntimeVendorCrashJournal::process(),req.path,
+                    restores?"SHOW_RESTORE":"ROUTING_ADD");
+                if(!vendorGuard)return label+": VST3 recovery journal unavailable or vendor operation busy";
                 const auto chosen=armix::vst::DescriptionCache::resolve(*fmt,req.path,req.uid);
                 if(!chosen)
                     return label+": selected effect identity is unavailable or instrument";
@@ -1313,6 +1319,9 @@ public:
         if(!current || current->role==ChannelRole::monitor) {
             out.error="NATIVE_INSERT_TARGET_UNAVAILABLE";return out;
         }
+        if(processor->silenceBypass&&current->role!=ChannelRole::fxReturn){
+            out.error="WET_RETURN_REQUIRES_FX_RETURN_CHANNEL";return out;
+        }
         // PCM authority, not historical strip ordinal, owns every new FX.
         // An occupied external CH1 chain still needs a combined lease contract.
         if(nativeAccepted_.fxOwners->externalChannel()==target) {
@@ -1373,6 +1382,69 @@ public:
         } catch(...) {
             out.error="NATIVE_VST3_ADMISSION_FAILED";return out;
         }
+    }
+    // Explicit stopped conversion: capture accepted preset, prepare one
+    // replacement lease and both WIREs, then publish once. No audio rebind.
+    NativeBusResult convertNativeReverbReturn(std::uint64_t ep,std::uint64_t revision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId source,std::size_t slot,
+            const juce::String& token,double rate,int frames,
+            std::unique_ptr<juce::AudioProcessor>(*factory)(double,int,const void*,int),
+            bool outputsDisarmed) {
+        using namespace armix::mixer;
+        NativeBusResult out;out.error="DMX_CONVERSION_REQUIRES_DISARMED_OUTPUTS";
+        if(!outputsDisarmed||!channelIdPhysicalPcmActive()||!ready()||
+           ep!=epoch()||nativeAccepted_.deviceEpoch!=ep||
+           nativeAccepted_.pcmRevision!=revision||!nativeAccepted_.fxOwners||
+           nativeAccepted_.graph.roster.revision()!=rosterRevision||!factory)return out;
+        out.error="DMX_CONVERSION_STALE_OR_UNSUPPORTED_INSERT";
+        const auto* old=nativeAccepted_.fxOwners->ownerForControl(source,slot);
+        if(!old||!*old||(*old)->instanceId!=token||
+           (*old)->catalogId!=armix::builtin_fx::VocalReverbProcessor::catalogIdentity)return out;
+        try {
+            juce::MemoryBlock bytes;
+            if(!(*old)->tryCaptureState(bytes)||bytes.isEmpty()){
+                out.error="DMX_CONVERSION_PRESET_PENDING";return out;
+            }
+            armix::builtin_fx::VocalReverbSettings settings;
+            if(!armix::builtin_fx::VocalReverbProcessor::decodeState(bytes.getData(),
+                static_cast<int>(bytes.getSize()),settings))return out;
+            auto processor=factory(rate,frames,bytes.getData(),static_cast<int>(bytes.getSize()));
+            if(!processor){out.error="DMX_CONVERSION_PREPARE_FAILED";return out;}
+            auto replacement=std::make_shared<FxGraph::FxInstance>(std::move(processor),
+                armix::builtin_fx::VocalReverbProcessor::wetReturnIdentity,
+                "Reverb-Sis Return",Block::hardFrameLimit);
+            replacement->bypassRequested.store((*old)->bypassRequested.load(std::memory_order_acquire)||
+                nativeAccepted_.fxOwners->rackBypassed(source),std::memory_order_release);
+            // Match the original calibrated wet multiplier (not its serial
+            // dry attenuation/pan). Conversion deliberately restores dry unity.
+            const float mix=settings.values[0],x=std::clamp(2.f*mix-1.f,0.f,1.f);
+            const float gain=std::clamp(std::sin(1.5707963267948966f*mix)*
+                (1.f+.5f*x*x*(3.f-2.f*x))/1.5f,0.f,1.f);
+            DynamicChannelRoster roster;DynamicChannelFxLeaseBank prepared;ChannelId created{};
+            if(!prepareNativeReverbReturnConversion(ep,revision,rosterRevision,
+                nativeAccepted_.graph.roster,*nativeAccepted_.fxOwners,source,slot,token,
+                std::move(replacement),gain,roster,prepared,created)){
+                out.error="DMX_CONVERSION_REQUIRES_LAST_REVERB_DIRECT_MAIN_INPUT";return out;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(prepared));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=owner;fx.context=owner.get();fx.deviceEpoch=ep;fx.graphRevision=revision+1;
+            fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(p))(id,l,r,n);
+            };
+            fx.latency=+[](void* p,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
+            };
+            const auto committed=nativePublisher_.commit(roster,nativeAccepted_.graph.request,
+                revision,ep,epoch(),true,std::move(fx));
+            if(!committed.ok()){out.error="DMX_CONVERSION_PCM_REJECTED";return out;}
+            nativeAccepted_.graph.roster=std::move(roster);nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=committed.revision;reapplyExternalOutputsSameEpoch();
+            nativeStructureLive_=true;nativeMeterEpoch_.store(0,std::memory_order_release);
+            out.accepted=true;out.error="";out.created=created;out.pcmRevision=committed.revision;
+            out.rosterRevision=nativeAccepted_.graph.roster.revision();return out;
+        }catch(...){out.error="DMX_CONVERSION_EXCEPTION";return out;}
     }
     NativeBusResult editNativeFxRack(std::uint64_t ep,std::uint64_t revision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId source,std::size_t slot,
@@ -1603,6 +1675,18 @@ public:
     }
     // CONTROL traversal of the *published* insert owners. No audio-thread
     // graph search or raw unmanaged pointers survive this synchronous call.
+    bool hasRuntimeFxFault() const noexcept {
+        if(nativeAccepted_.fxOwners)
+            for(const auto& channel:nativeAccepted_.graph.roster.channels()) {
+                const auto count=nativeAccepted_.fxOwners->insertCount(channel.id);
+                for(std::size_t slot=0;slot<count;++slot) {
+                    const auto* owner=nativeAccepted_.fxOwners->ownerForControl(channel.id,slot);
+                    if(owner&&*owner&&(*owner)->processFaulted())return true;
+                }
+            }
+        const auto* graph=publisher_.controlPrepared(epoch(),revision());
+        return graph&&graph->hasRuntimeFxFault();
+    }
     template<class Callback>
     void forEachNativeProcessor(Callback&& visit) const {
         if(!channelIdPhysicalPcmActive()||!nativeAccepted_.fxOwners)return;
@@ -2393,7 +2477,7 @@ public:
             if(!matchesSessionDevice(pins))return reply;
             if(graphChanged){
                 const auto& hw=nativeAccepted_.hardware;
-                const std::array<int,4> reserved{hw.mainL,hw.mainR,hw.monitorL,hw.monitorR};
+                const auto reserved=hw.sinkPlan().reserved();
                 const std::span<const int> callbackPins(pins.outputByCallback.data(),static_cast<std::size_t>(pins.outputCount));
                 std::vector<DynamicNativeSessionPublisher::InitialExternalTarget> targets;
                 std::vector<std::uint64_t> verified;
@@ -2428,7 +2512,7 @@ public:
                     return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
                 };
                 const DynamicNativeSessionPublisher::InitialExternalPlan plan{
-                    pins.outputCount,{reserved.data(),hw.monitorEnabled?4U:2U},targets};
+                    pins.outputCount,{reserved.data(),hw.sinkPlan().reservedCount()},targets};
                 const auto published=nativePublisher_.commit(nativeAccepted_.graph.roster,
                     nativeAccepted_.graph.request,rev,ep,epoch(),true,std::move(fx),false,false,nullptr,&plan);
                 if(!published.ok()){reply.error="LOGICAL_OUTPUT_PCM_COMMIT_REJECTED";return reply;}
@@ -3054,6 +3138,95 @@ public:
         }
     }
 
+    // Explicit two-pin ASIO sink transaction. Never repurpose a live pair.
+    // The new monitor is intentionally unpatched (silence) until WIRE/SOF.
+    juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t rosterRev,bool enable,
+            const armix::device::JuceActivePortSnapshot& pins,bool outputsDisarmed) {
+        using namespace armix::mixer;
+        if(!outputsDisarmed)return "DMX: both outputs must be disarmed";
+        if(!ready()||!channelIdPhysicalPcmActive()||pins.epoch!=ep||
+           pins.typeName!="ASIO"||pins.outputCount!=2||!matchesSessionDevice(pins)||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev)||
+           !nativeBusOutputObserved()||nativeAccepted_.graph.roster.revision()!=rosterRev)
+            return "DMX: stale or unobserved two-output ASIO mapping";
+        const auto old=nativeAccepted_.hardware;
+        if(!old.valid()||old.activeOutputChannels!=2||old.secondaryMain()==enable)
+            return "DMX: requested output mode is unchanged or unavailable";
+        // Do not steal a saved amplifier or logical output binding. The
+        // operator must explicitly clear those intentions first.
+        if(!externalOutputAssignments_.empty()||!logicalOutputs_.references().empty()||
+           std::any_of(logicalOutputs_.ports().begin(),logicalOutputs_.ports().end(),
+               [](const auto& port){return port.binding.has_value();}))
+            return "DMX: clear existing external/logical output bindings first";
+        for(int i=0;i<2;++i){
+            const int pin=pins.outputPhysicalPort(i);
+            if(pin<0||pin>=pins.outputNames.size()||
+               armix::device::uniqueNamedPin(pins.outputNames,pins.outputNames[pin])!=pin)
+                return "DMX: both ASIO pin names must be verified";
+        }
+        try {
+            auto roster=nativeAccepted_.graph.roster;
+            auto monitor=nativeAccepted_.graph.ids.monitor;
+            VerifiedNativeOutputs next{};
+            if(enable){
+                if(old.monitorEnabled)return "DMX: existing physical MONITOR is reserved";
+                if(!monitor.value){
+                    armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::add;
+                    edit.position=roster.channels().size();edit.role=ChannelRole::monitor;
+                    edit.format=ProcessingFormat::stereo;edit.text="MONITOR";
+                    const auto changed=roster.edit(rosterRev,std::span<const armix::mixer::ChannelEdit>(&edit,1));
+                    if(!changed.ok()||changed.createdIds.size()!=1)return "DMX: MONITOR creation rejected";
+                    monitor=changed.createdIds.front();
+                }
+                const auto* row=roster.find(monitor);
+                if(!row||row->role!=ChannelRole::monitor)return "DMX: invalid MONITOR identity";
+                next={2,-1,-1,old.mainL,old.mainR,true};
+            }else{
+                if(!monitor.value||nativeAccepted_.fxOwners->insertCount(monitor)!=0)
+                    return "DMX: MONITOR is not removable";
+                // Refuse destructive mode changes: preserve all send IDs
+                // and monitor mix until the operator disconnects WIREs.
+                armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::remove;edit.id=monitor;
+                if(!roster.edit(rosterRev,std::span<const armix::mixer::ChannelEdit>(&edit,1)).ok())
+                    return "DMX: disconnect MONITOR WIREs before restoring physical MAIN";
+                monitor={};
+                next={2,old.monitorL,old.monitorR,-1,-1,false};
+            }
+            if(!next.valid()||!matchesSessionDevice(pins))return "DMX: device changed";
+            DynamicChannelFxLeaseBank bank;
+            if(DynamicChannelFxLeaseBank::reuseRevision(ep,rev+1,*nativeAccepted_.fxOwners,bank)
+                !=DynamicChannelFxLeaseBank::Fault::none)return "DMX: FX lease rejected";
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=owner;fx.context=owner.get();fx.deviceEpoch=ep;fx.graphRevision=rev+1;
+            fx.render=+[](void* ctx,ChannelId id,float* l,float* rr,int n) noexcept{
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,rr,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            auto request=nativeAccepted_.graph.request;
+            // The return to a graph without MONITOR cannot carry the
+            // independent timing policy. Preserve existing default on entry.
+            if(!enable)request.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
+            const auto committed=nativePublisher_.commit(roster,request,
+                rev,ep,epoch(),true,std::move(fx));
+            if(!committed.ok())return "DMX: PCM graph rejected";
+            nativeAccepted_.graph.request=std::move(request);
+            nativeAccepted_.graph.roster=std::move(roster);
+            nativeAccepted_.graph.ids.monitor=monitor;
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=committed.revision;
+            nativeAccepted_.hardware=next;
+            nativeStructureLive_=true;nativeControlDirty_=true;
+            busPatchEpoch_=ep;
+            installNativeHardware(ep,next,nativeAccepted_.graph.request.maxFrames);
+            return {};
+        }catch(...){return "DMX: output transaction failed";}
+    }
+
     // CONTROL only, explicit operator MUTE checked by LiveAudioEngine.
     // Only the hardware destination changes. Logical MAIN/MONITOR and FX
     // owners, pin masks, callback quantum and graph revision are unchanged.
@@ -3079,6 +3252,7 @@ public:
         if(logicalOutputPairReserved(pins.deviceName,wanted[0],wanted[1]))
             return "BUS OUTPUT: pair reserved by logical output";
         const auto& hw=nativeAccepted_.hardware;
+        if(hw.secondaryMain())return "BUS OUTPUT: use explicit DMX mode change before repatching";
         if(!hw.valid()||hw.activeOutputChannels!=pins.outputCount)
             return "BUS OUTPUT: installed hardware unavailable";
         std::vector<int> reserved;
@@ -3250,6 +3424,14 @@ public:
            document.outputs.activeOutputChannels!=pins.outputCount ||
            !document.outputs.valid())
             return "NEEDS_REMAP: verified callback layout changed";
+        if(document.outputs.secondaryMain()){
+            const auto* monitor=document.roster.find(document.legacyIds.monitor);
+            if(pins.typeName!="ASIO"||document.binding.backend!="ASIO"||
+               pins.deviceName!=document.binding.playback||
+               pins.outputNames!=document.binding.outputNames||
+               !monitor||monitor->role!=ChannelRole::monitor)
+                return "NEEDS_REMAP: split MAIN/MONITOR requires exact named ASIO binding";
+        }
         if(document.request.maxFrames<32 || document.request.maxFrames>Block::hardFrameLimit)
             return "Invalid native mixer quantum";
         try {
@@ -3307,8 +3489,7 @@ public:
             // graph. No per-channel post-publication target updates on restore.
             std::vector<DynamicNativeSessionPublisher::InitialExternalTarget> externalTargets;
             std::vector<std::uint64_t> verifiedExternal;
-            std::array<int,4> reserved{document.outputs.mainL,document.outputs.mainR,
-                document.outputs.monitorL,document.outputs.monitorR};
+            const auto reserved=document.outputs.sinkPlan().reserved();
             if(pins.typeName=="ASIO"&&pins.deviceName==document.binding.playback){
                 const std::span<const int> callbackPins(pins.outputByCallback.data(),
                     static_cast<std::size_t>(pins.outputCount));
@@ -3327,7 +3508,7 @@ public:
                 }
             }
             const DynamicNativeSessionPublisher::InitialExternalPlan externalPlan{
-                pins.outputCount,{reserved.data(),document.outputs.monitorEnabled?4U:2U},externalTargets};
+                pins.outputCount,{reserved.data(),document.outputs.sinkPlan().reservedCount()},externalTargets};
             const auto published=nativePublisher_.commit(
                 document.roster,document.request,previous,generation,epoch(),
                 true,std::move(fx),false,false,nullptr,&externalPlan);
@@ -3407,7 +3588,7 @@ public:
                              "NATIVE_SET_WIRE_SUM_GAIN",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
                              "NATIVE_SET_BUS_MUTE_SOLO",
-                             "NATIVE_LOAD_INSERT","NATIVE_REMOVE_INSERT","NATIVE_MOVE_INSERT",
+                             "NATIVE_LOAD_INSERT","NATIVE_REMOVE_INSERT","NATIVE_MOVE_INSERT","NATIVE_CONVERT_REVERB_RETURN",
                              "NATIVE_SET_INSERT_BYPASS",
                              "NATIVE_OPEN_INSERT_EDITOR"})
             allowed.add(juce::var(juce::String(op)));
@@ -3891,7 +4072,9 @@ public:
                  bool allowMutedMetering=false,
                  std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={},
                  bool mainOnlyMuted=false,
-                 const NativeOutputLease* outputLease=nullptr,bool privateCueAllowed=false) noexcept {
+                 const NativeOutputLease* outputLease=nullptr,bool privateCueAllowed=false,
+                 std::array<float*,2>* secondaryMainTap=nullptr) noexcept {
+        if(secondaryMainTap)*secondaryMainTap={{nullptr,nullptr}};
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
         if(!active())return false;
@@ -3974,14 +4157,19 @@ public:
            channelIdPcmEpoch_.load(std::memory_order_acquire)!=generation)) {
             silence();return true;
         }
-        if(outLeft<0||outRight<0||outLeft==outRight||
+        const bool splitMain=channelIdRender&&armix::mixer::DmxOutputSinkPlan{
+            outputCount,{outLeft,outRight},{nativePin(native,2),nativePin(native,3)},true}.secondaryMain();
+        if((splitMain&&frames>Block::hardFrameLimit)||
+           (!splitMain&&(outLeft<0||outRight<0||outLeft==outRight||
            outLeft>=outputCount||outRight>=outputCount||
-           !outputs[outLeft]||!outputs[outRight]){
+           !outputs[outLeft]||!outputs[outRight]))){
             topologyFault_.store(true,std::memory_order_release);
             silence();return true;
         }
-        float* const mainL=outputs[outLeft];
-        float* const mainR=outputs[outRight];
+        // Distinct preallocated logical MAIN PCM. Physical ASIO never sees
+        // this buffer in split mode; only the existing secondary consumer.
+        float* const mainL=splitMain?secondaryMainPcm_[0].data():outputs[outLeft];
+        float* const mainR=splitMain?secondaryMainPcm_[1].data():outputs[outRight];
         float* monitorL=nullptr;
         float* monitorR=nullptr;
         const int monitorLeft=channelIdRender?nativePin(native,2):
@@ -4001,7 +4189,7 @@ public:
         // Return the callback indices from THIS leased prepared graph.
         // The post-render FX transition and meters must not re-read a
         // potentially newer route or assume hardware channels 0/1.
-        if(actualOutputPair && !masterMuted)*actualOutputPair={{outLeft,outRight}};
+        if(actualOutputPair && !masterMuted && !splitMain)*actualOutputPair={{outLeft,outRight}};
         if(masterMuted && actualMonitorPair)*actualMonitorPair={{-1,-1}};
         const auto renderRevision=channelIdRender?0:snapshot->graphRevision;
         if(renderRevision!=audioRevision_ || generation!=audioEpoch_) {
@@ -4093,7 +4281,7 @@ public:
                         slice.data(),playerPcm.size()),
                      meterOnly?nullptr:outputSlices.data(),
                      meterOnly?0:outputCount,{},
-                     privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0,
+                     privateCueAllowed&&!splitMain&&!masterMuted&&monitorL&&monitorR?native:0,
                      &sliceRevision,&sliceMeterCount);
                 if(processed) {
                     if(completedNativeRevision&&(completedNativeRevision!=sliceRevision||
@@ -4206,6 +4394,9 @@ public:
             nativeMeterRevision_.store(mixedNativeRevisions?0:completedNativeRevision,std::memory_order_relaxed);
             nativeMeterEpoch_.store(generation,std::memory_order_release);
         } else nativeMeterEpoch_.store(0,std::memory_order_release);
+        // Only completed PCM may escape. The tap is callback-local and
+        // never survives a rejected render, epoch, or muted meter pass.
+        if(splitMain&&!masterMuted&&secondaryMainTap)*secondaryMainTap={{mainL,mainR}};
         renderAudit_.completed(auditPath);
         return true;
     }
@@ -4250,6 +4441,7 @@ public:
             nativeAccepted_.fxOwners->externalChannel()==
                 nativeAccepted_.graph.ids.inputs[0]);
         out->setProperty("epoch",static_cast<juce::int64>(epoch()));
+        out->setProperty("dmxDeviceEpoch",juce::String(std::to_string(epoch())));
         out->setProperty("revision",static_cast<juce::int64>(controlRevision()));
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
@@ -4366,6 +4558,7 @@ public:
         }
         if(mainGraph && !liveMonitor.isEmpty())
             for(float gain:mainGraph->monitorGains())liveMonitorSends.add(gain);
+        out->setProperty("secondaryMainOnly",nativePcm&&nativeAccepted_.hardware.secondaryMain());
         out->setProperty("mainOutputs",juce::var(liveMain));
         out->setProperty("monitorOutputs",juce::var(liveMonitor));
         out->setProperty("busOutputObserved",nativePcm&&nativeBusOutputObserved());
@@ -4438,6 +4631,7 @@ private:
     }
     static constexpr int mutedMeterFrames=512;
     std::array<std::array<float,mutedMeterFrames>,2> mutedMain_{},mutedMonitor_{};
+    std::array<std::array<float,Block::hardFrameLimit>,2> secondaryMainPcm_{};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT; // one AUDIO producer
     armix::rt::ProductionRenderAudit renderAudit_; // per-process, RT-only writers
     Publisher publisher_;

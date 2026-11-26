@@ -15,10 +15,12 @@ class JuceVocalDelayProcessor final : public juce::AudioProcessor,
                                      public armix::mixer::RealtimeNativeFxControl,private juce::Timer {
 public:
     static constexpr const char* catalogIdentity="armix.builtin.vocal-delay.v2";
-    JuceVocalDelayProcessor():AudioProcessor(BusesProperties()
+    static constexpr const char* wetReturnIdentity="armix.builtin.vocal-delay-return.v1";
+    explicit JuceVocalDelayProcessor(bool wetOnly=false):AudioProcessor(BusesProperties()
       .withInput("Input",juce::AudioChannelSet::stereo(),true)
-      .withOutput("Output",juce::AudioChannelSet::stereo(),true)){setLatencySamples(0);initial_.continuous=presetSettings(0);}
-    const juce::String getName() const override{return "Vocal Delay";}
+      .withOutput("Output",juce::AudioChannelSet::stereo(),true)),wetOnly_(wetOnly),session_(wetOnly){setLatencySamples(0);initial_.continuous=presetSettings(0);}
+    const juce::String getName() const override{return wetOnly_?"Vocal Delay Return":"Vocal Delay";}
+    bool bypassToSilence() const noexcept override{return wetOnly_;}
     bool acceptsMidi() const override{return false;}
     bool producesMidi() const override{return false;}
     bool isMidiEffect() const override{return false;}
@@ -69,8 +71,15 @@ public:
         if(active_&&pcm.getNumChannels()==2&&pcm.getNumSamples()>0)
             session_.processStereo(pcm.getWritePointer(0),pcm.getWritePointer(1),
                                    static_cast<std::size_t>(pcm.getNumSamples()));
+        else if(wetOnly_)pcm.clear();
     }
-    void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override{}
+    void processBlock(juce::AudioBuffer<double>& pcm,juce::MidiBuffer&) override{if(wetOnly_)pcm.clear();}
+    void processBlockBypassed(juce::AudioBuffer<float>& pcm,juce::MidiBuffer& midi) override{
+        if(wetOnly_)pcm.clear();else juce::AudioProcessor::processBlockBypassed(pcm,midi);
+    }
+    void processBlockBypassed(juce::AudioBuffer<double>& pcm,juce::MidiBuffer& midi) override{
+        if(wetOnly_)pcm.clear();else juce::AudioProcessor::processBlockBypassed(pcm,midi);
+    }
     void consumeRealtimeEdits() noexcept override{if(active_)session_.consumeRealtimeEdits();}
     void onRealtimeBypass(bool requested,bool fully) noexcept override{
         if(active_)session_.onRealtimeBypass(requested,fully);
@@ -146,7 +155,8 @@ public:
     }
 private:
     void timerCallback() override{serviceSingerControl();}
-    NativeSession session_{};
+    const bool wetOnly_;
+    NativeSession session_;
     SingerControl singer_{};
     MusicFollow follow_{};
     bool editorOpen_=false;

@@ -347,10 +347,11 @@ private:
         // Analysis remains live, but when both gains are exactly unity no
         // inverse FFT is needed. Preserve the context and profile histories.
         if(floor==1.f&&expTarget==1.f){renderUnity();return;}
+        const auto& estimate=settings_.spectralManual?liveAnchor:profile_.processingPowers();
         for(int k=0;k<bins;++k) {
             float evidence=0;
             for(int c=0;c<channels_;++c)
-                evidence=std::max(evidence,power_[c][k]/std::max(settings_.spectralManual?liveAnchor[c][k]:profile_.processingPowers()[c][k],eps));
+                evidence=std::max(evidence,power_[c][k]/std::max(estimate[c][k],eps));
             // Only explicit Voice opts into the stronger causal estimator.
             if(settings_.spectralManual){target_[k]=ManualSpectral::target(evidence,inverseNoiseScale_,floor,settings_.vocalProtection);continue;}
             float gain=selective?AutoGain::target(floor,context_.temporalRatio(liveAnchor,channels_,bins,k),evidence):
@@ -376,11 +377,11 @@ private:
                 context_.relativeNoise(liveAnchor,channels_,k)):floor;
             target_[k]=std::max(localFloor,gain);
         }
+        const float manualClose=maskClose_/(1.f+3.f*settings_.artifactControl);
         for(int k=0;k<bins;++k) {
             if(settings_.spectralManual){
                 const float g=ManualSpectral::smooth(target_[k],target_[std::max(0,k-1)],target_[std::min(bins-1,k+1)],settings_.artifactControl);
-                const float close=maskClose_/(1.f+3.f*settings_.artifactControl);
-                mask_[k]=g>=mask_[k]?g:mask_[k]+close*(g-mask_[k]);continue;
+                mask_[k]=g>=mask_[k]?g:mask_[k]+manualClose*(g-mask_[k]);continue;
             }
             const float smooth=0.25f*target_[std::max(0,k-1)]+0.5f*target_[k]+0.25f*target_[std::min(bins-1,k+1)];
             // A protected band must not be pulled down by neighboring bins.

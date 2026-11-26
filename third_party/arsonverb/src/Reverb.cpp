@@ -185,6 +185,7 @@ const ParameterInfo& parameterInfo(Parameter parameter) noexcept {
 struct Engine::State {
     float sampleRate = 0.0f;
     bool musicalReturn = false;
+    bool wetOnly = false; // immutable until stopped prepare
     float wetReturnTrim = 1.0f;
     float presenceDuckScale = 1.0f;
     float smoother = 0.0f;
@@ -297,6 +298,12 @@ bool Engine::prepared() const noexcept { return state_->sampleRate > 0.0f; }
 void Engine::prepare(double sampleRate) { prepare(sampleRate,false); }
 
 void Engine::prepare(double sampleRate, bool musicalReturn) {
+    prepareMode(sampleRate,musicalReturn,false);
+}
+void Engine::prepareWetReturn(double sampleRate, bool musicalReturn) {
+    prepareMode(sampleRate,musicalReturn,true);
+}
+void Engine::prepareMode(double sampleRate, bool musicalReturn, bool wetOnly) {
     if (!std::isfinite(sampleRate) || sampleRate < 8000.0 || sampleRate > 192000.0)
         throw std::invalid_argument("arverb sample rate must be 8000..192000 Hz");
 
@@ -304,6 +311,7 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     // Allocation is allowed here only, when the host has suspended processing.
     s.sampleRate = static_cast<float>(sampleRate);
     s.musicalReturn = musicalReturn;
+    s.wetOnly = wetOnly;
     // +6.02 dB wet return only. Feedback/injection/RT60 remain unchanged.
     s.wetReturnTrim = musicalReturn ? 2.0f : 1.0f;
     s.presenceDuckScale = musicalReturn ? 1.50f : 1.0f;
@@ -355,7 +363,7 @@ void Engine::prepare(double sampleRate, bool musicalReturn) {
     s.algorithmBlend=1.0f;
     for (std::size_t i = 0; i < parameterCount; ++i)
         s.smooth[i] = parameters_[i].load(std::memory_order_relaxed);
-    s.cachedMix = s.smooth[static_cast<unsigned>(Parameter::Mix)];
+    s.cachedMix = s.wetOnly?1.f:s.smooth[static_cast<unsigned>(Parameter::Mix)];
     s.cachedAnchor=musicalReturn&&voicing_.load(std::memory_order_relaxed)>=3u;
     s.currentDryGain = s.targetDryGain = dryMixTarget(s.cachedMix,s.cachedAnchor);
     s.currentWetGain = s.targetWetGain = wetMixTarget(s.cachedMix, s.musicalReturn);
@@ -473,7 +481,7 @@ void Engine::process(const float* inputLeft, const float* inputRight,
     const auto idx = [](Parameter p) -> unsigned { return static_cast<unsigned>(p); };
     // Atomic host target captured once per block. The entire 100ms
     // transition uses the SAME tank; no two-engine tail CPU/memory cost.
-    const float requestedMix = target[idx(Parameter::Mix)];
+    const float requestedMix = s.wetOnly?1.f:target[idx(Parameter::Mix)];
     const auto profile=s.musicalReturn?voicing_.load(std::memory_order_relaxed):0u;
     const bool anchor=profile>=3u;
     if (requestedMix != s.cachedMix || anchor!=s.cachedAnchor) {

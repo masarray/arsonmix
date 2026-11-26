@@ -1245,7 +1245,10 @@ static void verifyLogicalControlTransactions() {
     const auto reject=[&](const char* reason){
         const auto ack=acks.getLast();
         assert(ack.getProperty("status",{}).toString()=="REJECTED");
-        assert(ack.getProperty("errorCode",{}).toString()==reason);
+        const auto actual=ack.getProperty("errorCode",{}).toString();
+        if(actual!=reason)std::cerr<<"Logical rejection expected "<<reason
+                                  <<" actual "<<actual.toStdString()<<std::endl;
+        assert(actual==reason);
         assert(ack.getProperty("revision",{})==control.readback().getProperty("revision",{}));
     };
     const auto accept=[&](const juce::var& request){
@@ -1300,11 +1303,25 @@ static void verifyLogicalControlTransactions() {
     // insert on one rack; still explicitly prove overflow is rejected.
     const auto capacity=armix::mixer::ChannelRosterBudget{}.maximumInsertSlotsPerChannel;
     assert(capacity>=2 && armix::builtin_fx::nativeBuiltInFx.size()<=2*capacity);
-    std::size_t catalogIndex=0;
+    std::size_t catalogIndex=0,wetCatalogCount=0;
+    std::vector<const armix::builtin_fx::NativeBuiltInFx*> ordinaryCatalog;
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx) {
         auto payload=std::make_unique<juce::DynamicObject>();
         payload->setProperty("catalogId",fx.id);
         const juce::var value(payload.release());
+        // Wet-return catalog identities are role-restricted. They are tested
+        // on a real FX_RETURN in verifyDmxWetReturnSession, not an INPUT/GROUP.
+        if(armix::mixer::isWetReturnCatalog(fx.id)){
+            ++wetCatalogCount;
+            const auto revision=control.readback().getProperty("revision",{});
+            submit(command((juce::String("logical-wet-group-")+fx.id).toRawUTF8(),"ADD_FX_REFERENCE",bus,value));
+            reject("WET_RETURN_REQUIRES_FX_RETURN_CHANNEL");
+            submit(command((juce::String("logical-wet-input-")+fx.id).toRawUTF8(),"ADD_FX_REFERENCE",channel,value));
+            reject("WET_RETURN_REQUIRES_FX_RETURN_CHANNEL");
+            assert(!worker.busy() && control.readback().getProperty("revision",{})==revision);
+            continue;
+        }
+        ordinaryCatalog.push_back(&fx);
         if(catalogIndex==capacity){
             const auto revision=control.readback().getProperty("revision",{});
             submit(command("logical-fx-overflow","ADD_FX_REFERENCE",bus,value));
@@ -1329,7 +1346,8 @@ static void verifyLogicalControlTransactions() {
     const ChannelId busId{static_cast<std::uint64_t>(bus.getLargeIntValue())};
     assert(saved.roster.find(trackId)->name=="Lead Vox");
     assert(saved.roster.find(trackId)->sends.front().destination==busId);
-    assert(saved.inserts.size()==armix::builtin_fx::nativeBuiltInFx.size());
+    assert(saved.inserts.size()==ordinaryCatalog.size());
+    assert(wetCatalogCount==2&&ordinaryCatalog.size()+wetCatalogCount==armix::builtin_fx::nativeBuiltInFx.size());
     const auto bypassed=std::find_if(saved.inserts.begin(),saved.inserts.end(),[&](const auto& f){return f.channel==busId&&f.slot==1;});
     assert(bypassed!=saved.inserts.end()&&bypassed->bypass&&saved.rackBypassed.front()==busId);
     assert(saved.roster.find(busId)->insertCatalogIds.size()==std::min(capacity,catalogIndex));
@@ -1339,7 +1357,7 @@ static void verifyLogicalControlTransactions() {
     for(std::size_t i=0;i<catalogIndex;++i) {
         const auto expectedChannel=i<capacity?busId:trackId;
         const auto expectedSlot=i<capacity?i:i-capacity;
-        const auto& fx=armix::builtin_fx::nativeBuiltInFx[i];
+        const auto& fx=*ordinaryCatalog[i];
         const auto* row=saved.roster.find(expectedChannel);
         assert(row && row->insertCatalogIds[expectedSlot]==juce::String(fx.id).toStdString());
         assert(std::count_if(saved.inserts.begin(),saved.inserts.end(),[&](const auto& insert){
@@ -2024,6 +2042,70 @@ static void checkLogicalOutputSession(){
     assert(Codec::encode(loaded)==encoded&&states.empty());
     assert(dir.deleteRecursively());
 }
+// Exercise actual JUCE ChannelId render with two active ASIO output pins.
+static void verifyDmxSplitNativePcm(){
+    FixtureDevice device(true);device.outputMask.clear();device.outputMask.setRange(0,2,true);
+    LiveDryRoutingLab mixer;mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto d=makeSession();
+    d.binding={"ASIO","Verified ASIO","Verified ASIO","3","3",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    d.request.maxFrames=480;d.rackBypassed.clear();
+    juce::AudioPluginFormatManager formats;std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(d,{},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(mixer.restoreNativeMixerSession(d,std::move(bank),pins,true).isEmpty());
+    std::array<float,480> inputL{},inputR{},outL{},outR{};inputL.fill(.2f);
+    const float* in[]={inputL.data(),inputR.data()};float* out[]={outL.data(),outR.data()};
+    std::array<float*,2> tap{};std::array<int,2> physicalMain{},physicalMonitor{};
+    auto render=[&](bool muted){
+        assert(mixer.process(in,2,out,2,480,1.f,muted,nullptr,nullptr,false,
+            &physicalMain,&physicalMonitor,true,{},false,nullptr,false,&tap));
+    };
+    auto revisions=[&](){
+        auto state=mixer.nativeBusStatus();std::uint64_t rev=0,roster=0;
+        assert(parseDecimal(state.getProperty("graphRevision",{}),rev));
+        assert(parseDecimal(state.getProperty("rosterRevision",{}),roster));
+        return std::array<std::uint64_t,2>{rev,roster};
+    };
+    render(true);
+    auto rev=revisions();
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],true,pins,false).isNotEmpty());
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0]+1,rev[1],true,pins,true).isNotEmpty());
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],true,pins,true).isEmpty());
+    assert(mixer.nativeBusPatchAwaitingCallback());render(true);
+    assert(!mixer.nativeBusPatchAwaitingCallback()&&!tap[0]&&!tap[1]);
+    render(false);
+    assert(tap[0]&&tap[1]&&tap[0]!=out[0]&&tap[1]!=out[1]);
+    assert((physicalMain==std::array<int,2>{-1,-1}));
+    assert((physicalMonitor==std::array<int,2>{0,1}));
+    assert(tap[0][479]>.05f&&outL.back()==0.f&&outR.back()==0.f);
+    MixerSessionDocument saved;std::vector<BinaryState> blobs;
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    const auto monitor=saved.legacyIds.monitor;assert(monitor.value);
+    rev=revisions();
+    const std::array<WireChange,1> wire{{{WireChange::Kind::connect,{1},monitor,0,.25f}}};
+    assert(mixer.applyNativeWireTransaction(pins.epoch,rev[0],rev[1],wire).accepted);
+    render(false);render(false);
+    assert(outL.back()>.01f&&outL.back()<tap[0][479]);
+    rev=revisions();
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],false,pins,true).isNotEmpty());
+    render(false);assert(outL.back()>.01f);
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;
+    MixerSessionDocument decoded;assert(Codec::decode(Codec::encode(saved),decoded));
+    assert(decoded.outputs.secondaryMain()&&decoded.legacyIds.monitor==monitor);
+    auto changed=decoded.binding;changed.outputNames.set(0,"Wrong pin");
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(decoded,changed,2).valid());
+    assert(!MixerDeviceBindingPolicy::proposedOutputs(decoded,decoded.binding,2,BindingMode::verifiedMainPinApply).valid());
+    assert(MixerDeviceBindingPolicy::proposedOutputs(decoded,decoded.binding,2).secondaryMain());
+    Recovery::Context context{BindingMode::exact,Recovery::Source::head,true,false,true,true,false};
+    assert(!Recovery::plan(decoded,context).resumeMain);
+    render(true);assert(!tap[0]&&!tap[1]&&outL.back()==0.f&&outR.back()==0.f);
+    std::cout<<"DMX_SPLIT_NATIVE_PCM_AND_BINDING_PASS\n";
+}
 static void verifyLogicalOutputNativePcm(){
     using R=armix::device::LogicalOutputRegistry;
     using P=LogicalOutputProjection;
@@ -2146,9 +2228,56 @@ static void verifyIoDefaults(){
     assert(file.loadFileAsString().endsWith("damaged"));
     assert(dir.deleteRecursively());
 }
+// Exact durable AVRB state and independent PRE EdgeId survive .smix.
+static void verifyDmxWetReturnSession(const armix::builtin_fx::NativeBuiltInFx& fx){
+    auto d=makeSession();
+    auto rows=d.roster.channels();
+    auto* wet=&*std::find_if(rows.begin(),rows.end(),[](const auto& row){return row.id.value==11;});
+    wet->insertCatalogIds.push_back(fx.id);
+    // Existing legacy source -> AUX PRE edge stays exact. Return -> MAIN
+    // and preserved physical binding use the original .smix schema.
+    assert(d.roster.restoreExact(d.acceptedRevision,rows));
+    auto processor=fx.prepare(48000.,256,nullptr,0);
+    assert(processor);
+    BinaryState state;processor->getStateInformation(state.bytes);
+    assert(!state.bytes.isEmpty());
+    state.sha256=juce::SHA256(state.bytes).toHexString();
+    d.inserts.push_back({{11},0,fx.id,{},state.sha256,
+                         fx.name,0,true,"g5c-96011"});
+    MixerSessionDocument reopened;
+    const auto json=Codec::encode(d);
+    assert(Codec::decode(json,reopened)&&Codec::encode(reopened)==json);
+    assert(reopened.roster.find({1})->sends[1].edgeId==101);
+    assert(reopened.roster.find({11})->insertCatalogIds[0]==fx.id);
+    assert(reopened.inserts.front().instanceId=="g5c-96011"&&reopened.inserts.front().bypass);
+    juce::AudioPluginFormatManager formats;
+    std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(reopened,{state},formats,48000.,256,7,1,bank).isEmpty());
+    const auto* lease=bank->ownerForControl({11},0);
+    assert(lease&&*lease&&(*lease)->silenceBypass&&(*lease)->bypassRequested.load());
+    std::array<float,256> l{},r{};
+    for(int b=0;b<8;++b){
+        l.fill(.2f);r.fill(-.1f);(*bank)({11},l.data(),r.data(),256);
+    }
+    assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+    auto bad=reopened;auto invalidRows=bad.roster.channels();
+    auto first=std::find_if(invalidRows.begin(),invalidRows.end(),[](const auto& row){return row.id.value==1;});
+    auto aux=std::find_if(invalidRows.begin(),invalidRows.end(),[](const auto& row){return row.id.value==11;});
+    first->insertCatalogIds=aux->insertCatalogIds;aux->insertCatalogIds.clear();
+    bad.inserts.front().channel={1};
+    assert(bad.roster.restoreExact(bad.acceptedRevision,invalidRows));
+    MixerSessionDocument rejected;
+    assert(!Codec::decode(Codec::encode(bad),rejected));
+    assert(!NativeMixerSessionFxRestore::prepare(bad,{state},formats,48000.,256,7,2,bank).isEmpty());
+    assert(bank->ownerForControl({11},0));
+    std::cout<<"DMX_RETURN_SMIX_ROUNDTRIP_PASS\n";
+}
 int main(){
+    for(const auto& fx:armix::builtin_fx::nativeBuiltInFx)
+        if(armix::mixer::isWetReturnCatalog(fx.id))verifyDmxWetReturnSession(fx);
     verifyIoDefaults();
     checkLogicalOutputSession();
+    verifyDmxSplitNativePcm();
     verifyLogicalOutputNativePcm();
     checkLogicalInputSession();
     verifyLogicalInputNativePcm();
@@ -2541,6 +2670,15 @@ int main(){
     assert(portable.replaceWithText(juce::JSON::toString(tampered)));
     assert(NativeMixerSessionStore::readFile(portable,roundTrip,readback).isNotEmpty());
     assert(readback.size()==1&&readback[0].bytes==binary.bytes);
+    // Bounded input preflight rejects recursive JSON before JUCE parsing,
+    // with the caller's previous graph and vendor data preserved.
+    juce::String deep;
+    for(int i=0;i<65;++i)deep+="[";
+    for(int i=0;i<65;++i)deep+="]";
+    assert(portable.replaceWithText(deep));
+    assert(NativeMixerSessionStore::readFile(portable,roundTrip,readback).isNotEmpty());
+    assert(readback.size()==1&&readback[0].bytes==binary.bytes);
+    assert(!Codec::decode(deep,roundTrip));
     const auto firstId=studio.getChildFile("MixerSession").getChildFile("HEAD")
         .loadFileAsString().trim();
     assert(armix::shows::detail::uuid(firstId));

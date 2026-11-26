@@ -4,11 +4,13 @@
 #include <bitset>
 #include <optional>
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
+#include "../engine/core/WetReturnCatalog.h"
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/device/NamedDevicePins.h"
 #include "../engine/device/LogicalInputRegistry.h"
 #include "../engine/device/LogicalOutputRegistry.h"
 #include "NativeShowStore.h"
+#include "BoundedDataInput.h"
 #include "NativeHotkeyRegistry.h"
 #include <charconv>
 #include <cmath>
@@ -371,6 +373,15 @@ struct MixerDeviceBindingPolicy final {
             const HardwareBinding& live,int count,Mode mode=Mode::exact) {
         const auto& saved=document.binding;
         const VerifiedNativeOutputs unavailable{count,-1,-1,-1,-1,false};
+        // Never fall back to physical MAIN on a singer's saved MONITOR pair.
+        if(document.outputs.secondaryMain()){
+            if(mode==Mode::verifiedMainPinApply || count!=2 ||
+               saved.backend!="ASIO" || live.backend!="ASIO" ||
+               saved.playback!=live.playback || saved.outputMask!=live.outputMask ||
+               saved.outputNames.isEmpty() || saved.outputNames!=live.outputNames)
+                return unavailable;
+            return document.outputs;
+        }
         if(mode==Mode::verifiedMainPinApply ||
            (mode==Mode::verifiedDeviceApply &&
             (saved.backend!=live.backend || saved.playback!=live.playback)))
@@ -861,7 +872,8 @@ public:
         return juce::JSON::toString(root,false);
     }
     static bool decode(const juce::String& json,MixerSessionDocument& output) {
-        if(json.getNumBytesAsUTF8()>4U*1024U*1024U)return false;
+        if(json.getNumBytesAsUTF8()>4U*1024U*1024U||
+           !armix::storage::BoundedDataInput::jsonStructure(json))return false;
         auto root=juce::JSON::parse(json);
         if(!root.isObject())return false;
         const auto schema=get(root,"schema").toString();
@@ -919,16 +931,16 @@ public:
         auto outputs=get(root,"outputs");
         if(!integral(get(outputs,"active"),doc.outputs.activeOutputChannels,
                      doc.logicalOnly?0:2,doc.logicalOnly?0:256)||
-           !integral(get(outputs,"mainL"),doc.outputs.mainL,doc.logicalOnly?-1:0,
+           !integral(get(outputs,"mainL"),doc.outputs.mainL,-1,
                      doc.logicalOnly?-1:255)||
-           !integral(get(outputs,"mainR"),doc.outputs.mainR,doc.logicalOnly?-1:0,
+           !integral(get(outputs,"mainR"),doc.outputs.mainR,-1,
                      doc.logicalOnly?-1:255)||
            !integral(get(outputs,"monitorL"),doc.outputs.monitorL,-1,255)||
            !integral(get(outputs,"monitorR"),doc.outputs.monitorR,-1,255)||
            !strictBool(get(outputs,"monitorEnabled"),doc.outputs.monitorEnabled)||
            (doc.logicalOnly?
-             (doc.outputs.monitorEnabled || doc.outputs.monitorL!=-1 ||
-              doc.outputs.monitorR!=-1):!doc.outputs.valid()))return false;
+             (doc.outputs.mainL!=-1 || doc.outputs.mainR!=-1 || doc.outputs.monitorEnabled ||
+              doc.outputs.monitorL!=-1 || doc.outputs.monitorR!=-1):!doc.outputs.valid()))return false;
         auto master=get(root,"master");
         if(!real(get(master,"gain"),n,0.,4.))return false;
         doc.masterGain=static_cast<float>(n);
@@ -1056,7 +1068,9 @@ public:
             for(auto id:doc.legacyIds.aux)if(id.value&&!seek(id,ChannelRole::fxReturn))return false;
         }
         if(!seek(doc.legacyIds.main,ChannelRole::main) ||
-           (doc.legacyIds.monitor.value&&!seek(doc.legacyIds.monitor,ChannelRole::monitor)))
+           (doc.legacyIds.monitor.value&&!seek(doc.legacyIds.monitor,ChannelRole::monitor)) ||
+           (doc.outputs.secondaryMain()&&(!doc.legacyIds.monitor.value ||
+            doc.binding.backend!="ASIO" || doc.binding.outputNames.isEmpty())))
             return false;
         auto req=get(root,"request");
         if(!integral(get(req,"physicalInputs"),doc.request.physicalInputs,
@@ -1257,6 +1271,10 @@ public:
         // duplicated slot manifest is rejected; its vendor states must never
         // attach to a different processor or channel.
         for(const auto& ch:doc.roster.channels()) {
+            if(ch.role!=ChannelRole::fxReturn&&
+               std::any_of(ch.insertCatalogIds.begin(),ch.insertCatalogIds.end(),
+                         armix::mixer::isWetReturnCatalog))
+                return false;
             std::size_t slot=0;
             const bool legacyMarker=ch.insertCatalogIds.size()==1 &&
                 ch.insertCatalogIds[0]=="legacy:aux-rack";

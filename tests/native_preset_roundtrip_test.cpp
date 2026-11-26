@@ -64,6 +64,23 @@ int main()
     assert (failure.isNotEmpty());
     assert (loaded.name == existingName && loaded.effects.size() == 1);
 
+    // Nested untrusted JSON is rejected before recursive parser entry.
+    juce::String deep;
+    for(int i=0;i<65;++i)deep+="[";
+    for(int i=0;i<65;++i)deep+="]";
+    assert(!armix::storage::BoundedDataInput::jsonStructure(deep));
+    assert(armix::storage::BoundedDataInput::jsonStructure("{\"name\":\"[{}]\"}"));
+    {
+        juce::ZipFile::Builder zip;
+        zip.addEntry(std::make_unique<juce::MemoryInputStream>(deep.toRawUTF8(),
+            deep.getNumBytesAsUTF8(),true),6,"manifest.json",juce::Time::getCurrentTime());
+        auto dest=archive.fileFor("Nested hostile");
+        auto stream=dest.createOutputStream();
+        assert(stream&&zip.writeToStream(*stream,nullptr));
+        stream.reset();
+        assert(archive.load("Nested hostile",loaded).isNotEmpty());
+        assert(loaded.name==existingName&&loaded.effects.size()==1);
+    }
     folder.deleteRecursively();
     std::cout << "PASS: native ZIP round-trip, binary VST state, mixer values, corruption refusal\n";
     return 0;

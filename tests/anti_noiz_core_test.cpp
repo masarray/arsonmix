@@ -12,6 +12,26 @@ double rms(const std::vector<float>& x,std::size_t start) {
     return std::sqrt(s/double(x.size()-start));
 }
 int main(){
+    // Both transform sizes, full-scale bounded PCM, tiny values and silent
+    // stereo legs: compare two independently initialized inputs through the shared FFT plan.
+    {
+        using armix::builtin_fx::anti_noiz::FftPlan;
+        FftPlan fft;std::mt19937 rng(29);
+        std::uniform_real_distribution<float> random(-64.f,64.f);
+        for(int n:{256,512}){
+            fft.prepare(n);
+            for(int trial=0;trial<96;++trial){
+                std::array<FftPlan::Complex,FftPlan::maxN> ref{},packed{};
+                const float scale=trial%3==0?1.f:trial%3==1?1e-12f:0.f;
+                for(int i=0;i<n;++i)ref[i]={random(rng)*scale,trial%4==0?0.f:random(rng)*scale};
+                packed=ref;
+                fft.transform(ref,false);fft.transform(packed,false);
+                for(int i=0;i<n;++i)require(std::abs(ref[i]-packed[i])<=2e-6f*std::max(1.f,std::abs(ref[i])),"FFT forward repeatability");
+                fft.transform(ref,true);fft.transform(packed,true);
+                for(int i=0;i<n;++i)require(std::abs(ref[i]-packed[i])<=2e-6f*std::max(1.f,std::abs(ref[i])),"FFT inverse repeatability");
+            }
+        }
+    }
     for(double rate:{44100.,48000.,88200.,96000.}) {
         Core a,b;require(a.prepare(rate,2)&&b.prepare(rate,2),"prepare");
         std::vector<float> l(8192),r(8192);

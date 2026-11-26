@@ -1,0 +1,32 @@
+name: Updater security policy (Windows PowerShell)
+on:
+  pull_request:
+    paths:
+      - 'installer/ArSonMixAutoUpdate.ps1'
+      - '.github/workflows/updater-security-policy.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'installer/ArSonMixAutoUpdate.ps1'
+      - '.github/workflows/updater-security-policy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Run offline synthetic updater policy (no installer or network)
+        shell: powershell
+        run: |
+          $output = & powershell.exe -NoLogo -NoProfile -NonInteractive -File installer/ArSonMixAutoUpdate.ps1 -PolicySelfTest
+          $output | Write-Host
+          if ($LASTEXITCODE -ne 0 -or $output -notcontains 'ARSONMIX_UPDATER_POLICY_PASS' -or
+              $output -notcontains 'ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS' -or
+              $output -notcontains 'ARSONMIX_UPDATER_LAST_MILE_PAIR_PASS') {
+            throw 'Updater security policy failed'
+          }

@@ -15,10 +15,11 @@ public:
     void prepare(int n) noexcept {
         n_=n;
         const int hop_=n_/2;
+        swaps_=0;
         for(int i=0;i<n_;++i) {
             unsigned x=static_cast<unsigned>(i),rev=0;
             for(int v=n_;v>1;v>>=1){rev=(rev<<1)|(x&1U);x>>=1;}
-            rev_[i]=static_cast<int>(rev);
+            if(i<static_cast<int>(rev)){swapA_[swaps_]=i;swapB_[swaps_++]=static_cast<int>(rev);}
         }
         for(int i=0;i<hop_;++i) {
             const float a=-2.f*std::numbers::pi_v<float>*float(i)/float(n_);
@@ -30,21 +31,27 @@ public:
             for(int j=0;j<half;++j){forward_[half+j]=twiddle_[j*step];inverse_[half+j]=std::conj(twiddle_[j*step]);}}
     }
     void transform(std::array<Complex,maxN>& a,bool inverse) noexcept {
-        for(int i=0;i<n_;++i)if(i<rev_[i])std::swap(a[i],a[rev_[i]]);
+        for(int i=0;i<swaps_;++i)std::swap(a[swapA_[i]],a[swapB_[i]]);
         const auto& stages=inverse?inverse_:forward_;
         for(int len=2;len<=n_;len*=2) {
             const int half=len/2;
             const auto* w=stages.data()+half;
             for(int base=0;base<n_;base+=len)for(int j=0;j<half;++j) {
-                const auto u=a[base+j],v=a[base+j+half]*w[j];
-                a[base+j]=u+v;a[base+j+half]=u-v;
+                const auto u=a[base+j],x=a[base+j+half],z=w[j];
+                // Input is bounded finite PCM; no generic complex NaN recovery
+                // in the inner loop. Keep scalar arithmetic and order.
+                const float re=x.real()*z.real()-x.imag()*z.imag();
+                const float im=x.real()*z.imag()+x.imag()*z.real();
+                a[base+j]={u.real()+re,u.imag()+im};
+                a[base+j+half]={u.real()-re,u.imag()-im};
             }
         }
         if(inverse)for(int i=0;i<n_;++i)a[i]/=float(n_);
     }
 private:
     int n_=256;
-    std::array<int,maxN> rev_{};
+    int swaps_=0;
+    std::array<int,maxN/2> swapA_{},swapB_{};
     std::array<Complex,maxN/2> twiddle_{};
     std::array<Complex,maxN> forward_{},inverse_{};
 };

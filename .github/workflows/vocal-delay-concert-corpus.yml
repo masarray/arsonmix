@@ -1,0 +1,34 @@
+name: Vocal Delay VD16 controlled human vowel corpus
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/vocal_delay/**'
+      - 'tools/vocal-delay/**'
+      - '.github/workflows/vocal-delay-concert-corpus.yml'
+permissions:
+  contents: read
+concurrency:
+  group: vd16-corpus-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  controlled-corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Build real DSP audition renderer
+        run: g++ -std=c++17 -O2 -Wall -Wextra -Werror tools/vocal-delay/audition.cpp -o /tmp/vd-audition
+      - name: Run pinned licensed human vowel corpus
+        run: |
+          mkdir -p vd16-corpus
+          git rev-parse HEAD > vd16-corpus/source-sha.txt
+          python3 tools/vocal-delay/controlled_corpus.py /tmp/vd-audition vd16-corpus
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: vocal-delay-vd16-controlled-corpus
+          path: vd16-corpus/
+          if-no-files-found: error

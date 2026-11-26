@@ -7,7 +7,7 @@ import {selectWindowsFeatureScope} from './windows_feature_scope.mjs';
 
 export function parseMilestoneCommand(body) {
   if(typeof body!=='string')return null;
-  const m=/^\/arsonmix-ci (check|fast|full|ui|native|fat|field|feature|immersib|stop) ([0-9a-f]{40})$/.exec(body.trim());
+  const m=/^\/arsonmix-ci (check|fast|full|resume|qualify|ui|native|fat|field|feature|immersib|stop) ([0-9a-f]{40})$/.exec(body.trim());
   return m?{lane:m[1],sha:m[2]}:null;
 }
 export function isTrustedOwnerComment(event,repo) {
@@ -29,7 +29,8 @@ export function validateMilestone(event,repo,pr) {
      pr?.base?.ref!=='main' || !/^[a-zA-Z0-9_.\/-]+$/.test(pr?.head?.ref||''))
     throw Error('CI_PR_INVALID');
   if(pr.head.sha!==cmd.sha)throw Error('CI_STALE_SHA');
-  return {...cmd,number:pr.number,branch:pr.head.ref,
+  if(typeof pr.created_at!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(pr.created_at)||!Number.isFinite(Date.parse(pr.created_at))||Date.parse(pr.created_at)>Date.now())throw Error('CI_PR_CREATED_AT_INVALID');
+  return {...cmd,number:pr.number,branch:pr.head.ref,createdAt:pr.created_at,
     workflow:cmd.lane==='ui'?'ui-smoke.yml':
       cmd.lane==='immersib'?'immersib-focused-native.yml':'p1-windows.yml'};
 }
@@ -72,17 +73,43 @@ export function parseImmerSIBFocusedRun(run) {
     .exec(run.display_title||'');
   return m?{number:Number(m[1]),sha:m[2]}:null;
 }
-async function recentImmerSIBFocusedRuns(api) {
-  const all=[];
-  for(let page=1;page<=5;page++){
-    const response=await api('/actions/workflows/immersib-focused-native.yml/runs?'+
-      'event=workflow_dispatch&per_page=100&page='+page);
-    if(!Array.isArray(response?.workflow_runs))
-      throw Error('CI_IMMERSIB_RUNS_INVALID');
-    all.push(...response.workflow_runs);
-    if(response.workflow_runs.length<100)return all;
+// No valid owner milestone can predate its PR. Search only that PR's
+// lifetime, and split busy intervals before GitHub's 1,000-result search
+// cap. Exhaustion fails closed; never silently ignore an active or red run.
+export async function recentScopedMilestones(api,workflow,createdAt,now=Date.now()) {
+  const from=Math.floor(Date.parse(createdAt)/1000),until=Math.floor(now/1000);
+  if(!Number.isSafeInteger(from)||!Number.isSafeInteger(until)||from>until)throw Error('CI_PR_CREATED_AT_INVALID');
+  const iso=n=>new Date(n*1000).toISOString().replace('.000Z','Z');
+  const found=new Map();let requests=0;
+  async function scan(lo,hi) {
+    const query='/actions/workflows/'+workflow+'/runs?event=workflow_dispatch&created='+encodeURIComponent(iso(lo)+'..'+iso(hi))+'&per_page=100&page=';
+    async function read(page) {
+      if(++requests>100)throw Error('CI_DISPATCH_HISTORY_BUDGET');
+      const response=await api(query+page);
+      if(!Array.isArray(response?.workflow_runs))throw Error('CI_DISPATCH_RUNS_INVALID');
+      return response;
+    }
+    const first=await read(1);
+    if(Number.isSafeInteger(first.total_count)&&first.total_count>400) {
+      if(lo===hi)throw Error('CI_DISPATCH_HISTORY_DENSITY');
+      const mid=Math.floor((lo+hi)/2);
+      await scan(lo,mid);await scan(mid+1,hi);return;
+    }
+    for(let page=1;page<=10;page++) {
+      const response=page===1?first:await read(page);
+      for(const run of response.workflow_runs) {
+        if(!Number.isSafeInteger(run.id))throw Error('CI_DISPATCH_RUN_ID_INVALID');
+        found.set(run.id,run);
+      }
+      if(response.workflow_runs.length<100)return;
+    }
+    throw Error('CI_DISPATCH_RUNS_PAGINATION_LIMIT');
   }
-  throw Error('CI_IMMERSIB_RUNS_PAGINATION_LIMIT');
+  await scan(from,until);
+  return [...found.values()].sort((a,b)=>b.id-a.id);
+}
+async function recentImmerSIBFocusedRuns(api,target) {
+  return recentScopedMilestones(api,'immersib-focused-native.yml',target.createdAt);
 }
 
 async function readChangedFiles(api,number) {
@@ -113,21 +140,11 @@ export function parseWindowsMilestoneRun(run) {
 export function isActiveWindowsRun(run) {
   return ['queued','in_progress','waiting','pending','requested'].includes(run?.status);
 }
-async function recentWindowsMilestones(api) {
-  // Explicitly paginate: when several engineers work concurrently, one
-  // page can hide an existing FAT and accidentally request another.
-  const result=[];
-  for(let page=1;page<=5;page++){
-    const response=await api('/actions/workflows/p1-windows.yml/runs?event=workflow_dispatch&per_page=100&page='+page);
-    if(!Array.isArray(response?.workflow_runs))
-      throw Error('CI_DISPATCH_RUNS_INVALID');
-    result.push(...response.workflow_runs);
-    if(response.workflow_runs.length<100)return result;
-  }
-  throw Error('CI_DISPATCH_RUNS_PAGINATION_LIMIT');
+async function recentWindowsMilestones(api,target) {
+  return recentScopedMilestones(api,'p1-windows.yml',target.createdAt);
 }
 export async function guardWindowsMilestone({target,api}) {
-  const runs=(await recentWindowsMilestones(api)).map(run=>({
+  const runs=(await recentWindowsMilestones(api,target)).map(run=>({
     run,identity:parseWindowsMilestoneRun(run)
   })).filter(x=>x.identity?.number===target.number);
   const same=runs.filter(x=>x.identity.sha===target.sha);
@@ -188,7 +205,7 @@ export function quickResult(jobs,lane) {
     'Fast native contracts (no Windows / JUCE checkout)';
   return jobs.find(j=>j.name===name)?.conclusion??null;
 }
-export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(5000)}) {
+export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(5000),resumeMissing=false}) {
   if(!isTrustedOwnerComment(event,repo))throw Error('CI_OWNER_ONLY');
   const target=validateMilestone(event,repo,await api('/pulls/'+event.issue.number));
   const older=[];
@@ -198,17 +215,17 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
     if(c.length<100)break;
     if(page===20)throw Error('CI_COMMENTS_PAGINATION_LIMIT');
   }
-  if(hadEarlierIdenticalRequest(older,event,repo))
+  if(!resumeMissing&&hadEarlierIdenticalRequest(older,event,repo))
     return {kind:'skipped',reason:'duplicate',target};
   // STOP is an owner-authorized safety action. It NEVER dispatches a job
   // and cancels ONLY this exact PR and immutable HEAD; never another PR.
   if(target.lane==='stop') {
-    const ordinary=(await recentWindowsMilestones(api)).filter(x=>{
+    const ordinary=(await recentWindowsMilestones(api,target)).filter(x=>{
       const id=parseWindowsMilestoneRun(x);
       return id?.number===target.number&&id.sha===target.sha&&
         isActiveWindowsRun(x);
     });
-    const focused=(await recentImmerSIBFocusedRuns(api)).filter(x=>{
+    const focused=(await recentImmerSIBFocusedRuns(api,target)).filter(x=>{
       const id=parseImmerSIBFocusedRun(x);
       return id?.number===target.number&&id.sha===target.sha&&
         isActiveWindowsRun(x);
@@ -256,14 +273,14 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
       api,waitForQuick});
     validateMilestone(event,repo,await api('/pulls/'+target.number));
     // Do not overlap a full generic FAT with the focused editor runner.
-    const broad=(await recentWindowsMilestones(api)).filter(x=>{
+    const broad=(await recentWindowsMilestones(api,target)).filter(x=>{
       const id=parseWindowsMilestoneRun(x);
       return id?.number===target.number&&id.lane==='fat'&&
         isActiveWindowsRun(x);
     });
     if(broad.length)return {kind:'skipped',reason:'full-fat-already-running',
       target,proof};
-    const candidates=(await recentImmerSIBFocusedRuns(api)).map(x=>({
+    const candidates=(await recentImmerSIBFocusedRuns(api,target)).map(x=>({
       run:x,identity:parseImmerSIBFocusedRun(x)
     })).filter(x=>x.identity?.number===target.number);
     if(candidates.some(x=>isActiveWindowsRun(x.run)))
@@ -298,8 +315,13 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
   if(target.lane==='ui'){
     const q='/actions/workflows/'+target.workflow+
       '/runs?event=workflow_dispatch&branch='+encodeURIComponent(target.branch)+'&per_page=100';
-    if(hasPriorDispatch((await api(q)).workflow_runs,target.sha))
+    const runs=(await api(q)).workflow_runs;
+    if(!Array.isArray(runs))throw Error('CI_UI_RUNS_INVALID');
+    if(hasPriorDispatch(runs,target.sha))
       return {kind:'skipped',reason:'already-qualified-or-scheduled',target};
+    // RESUME only fills missing work, never retries a known red same-SHA run.
+    if(resumeMissing&&runs.some(r=>r.event==='workflow_dispatch'&&r.head_sha===target.sha))
+      return {kind:'skipped',reason:'failed-ui-use-explicit-job-retry-or-fix',target};
   }else{
     const gate=await guardWindowsMilestone({target,api});
     if(gate)return gate;
@@ -324,7 +346,7 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
 // the independently protected native and/or Chromium gates. Nothing here
 // rewrites branch protection or silently upgrades a FIELD preview to a FAT.
 export function planSmartMilestone(files,mode) {
-  if(!['check','fast','full'].includes(mode))throw Error('CI_SMART_MODE_INVALID');
+  if(!['check','fast','full','resume','qualify'].includes(mode))throw Error('CI_SMART_MODE_INVALID');
   const scope=requiredLanes(files); // same reviewed file policy as merge gate
   // The status publisher requests nativeFull only for actual C++/graph
   // changes. Package, native bridge, and installer changes need a Windows
@@ -339,7 +361,7 @@ export function planSmartMilestone(files,mode) {
     /^config\/immersib_approved_pcm_sources\.json$/.test(f));
   const targets=mode==='check'?[]:
     mode==='fast'?(nativeBinary?['field']:[]):
-    [...(scope.uiFull?['ui']:[]),...(nativeBinary?['native']:[])];
+    [...(scope.uiFull?['ui']:[]),...(nativeBinary?[mode==='qualify'?'fat':'native']:[])];
   return {scope,nativeBinary,targets};
 }
 
@@ -352,7 +374,7 @@ const fastJobs=[
 // Fail closed if *any* required fast lane is missing, failed, cancelled or
 // stale. Checking only the target Windows quick lane can miss UI/release reds
 // on a mixed PR and burn 30+ minutes of CI unnecessarily.
-export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5000)}) {
+export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5000),waitForRegistration=false}) {
   const proof=[];
   for(const [key,workflow,jobName] of fastJobs) {
     if(!scope[key])continue;
@@ -366,16 +388,17 @@ export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5
         (r.path===undefined ||
           r.path.split('@',1)[0]==='.github/workflows/'+workflow))
         .sort((a,b)=>b.id-a.id)[0];
-      if(!exact)throw Error('CI_SMART_FAST_MISSING: '+key+' '+target.sha);
-      const jobs=(await api('/actions/runs/'+exact.id+'/jobs?per_page=100'))?.jobs;
+      if(!exact&&(!waitForRegistration||attempt===12))throw Error('CI_SMART_FAST_MISSING: '+key+' '+target.sha);
+      const jobs=exact?(await api('/actions/runs/'+exact.id+'/jobs?per_page=100'))?.jobs:[];
       if(!Array.isArray(jobs))throw Error('CI_SMART_FAST_JOBS_INVALID: '+key);
       const job=jobs.filter(j=>j.name===jobName);
-      if(job.length!==1)throw Error('CI_SMART_FAST_JOB_MISSING: '+key);
-      if(job[0].conclusion==='success'){
+      if(job.length>1||(!job.length&&(!waitForRegistration||attempt===12||exact?.status==='completed')))
+        throw Error('CI_SMART_FAST_JOB_MISSING: '+key);
+      if(job[0]?.conclusion==='success'){
         proof.push({lane:key,run:exact.id,job:jobName});
         break;
       }
-      if(job[0].conclusion)
+      if(job[0]?.conclusion)
         throw Error('CI_SMART_FAST_FAILED: '+key+' '+job[0].conclusion);
       if(attempt===12)throw Error('CI_SMART_FAST_PENDING: '+key);
       await waitForQuick();
@@ -392,7 +415,7 @@ export async function performSmartMilestone({event,repo,api,
   if(!isTrustedOwnerComment(event,repo))throw Error('CI_OWNER_ONLY');
   const target=validateMilestone(event,repo,
     await api('/pulls/'+event.issue.number));
-  if(!['check','fast','full'].includes(target.lane))
+  if(!['check','fast','full','resume','qualify'].includes(target.lane))
     throw Error('CI_SMART_MODE_INVALID');
   const earlier=[];
   for(let page=1;page<=20;page++) {
@@ -403,11 +426,14 @@ export async function performSmartMilestone({event,repo,api,
     if(comments.length<100)break;
     if(page===20)throw Error('CI_COMMENTS_PAGINATION_LIMIT');
   }
-  if(hadEarlierIdenticalRequest(earlier,event,repo))
+  // Serialized owner-only RESUME/QUALIFY are repeatable: actual run
+  // identities, rather than an earlier comment, decide whether work exists.
+  const recoverable=['resume','qualify'].includes(target.lane);
+  if(!recoverable&&hadEarlierIdenticalRequest(earlier,event,repo))
     return {kind:'skipped',reason:'duplicate',target};
   const files=await readChangedFiles(api,target.number);
   const {scope,targets}=planSmartMilestone(files,target.lane);
-  const proof=await verifySmartFast({target,scope,api,waitForQuick});
+  const proof=await verifySmartFast({target,scope,api,waitForQuick,waitForRegistration:recoverable});
   // One last current HEAD check immediately before any dispatch.
   validateMilestone(event,repo,await api('/pulls/'+target.number));
   if(targets.length===0)
@@ -416,8 +442,16 @@ export async function performSmartMilestone({event,repo,api,
   for(const lane of targets) {
     const request={...event,comment:{...event.comment,
       body:'/arsonmix-ci '+lane+' '+target.sha}};
-    const outcome=await performMilestone({event:request,repo,api,waitForQuick});
-    results.push({lane,kind:outcome.kind,reason:outcome.reason||null});
+    try {
+      const outcome=await performMilestone({event:request,repo,api,waitForQuick,
+        resumeMissing:recoverable});
+      results.push({lane,kind:outcome.kind,reason:outcome.reason||null});
+    } catch(error) {
+      // One known red lane must not prevent recovery of another missing lane.
+      // Never convert unexpected API/auth/stale errors to success.
+      if(!recoverable||!/^CI_(?:NATIVE|FAT)_FAILED_FIX_SOURCE_BEFORE_REDISPATCH$/.test(error.message))throw error;
+      results.push({lane,kind:'skipped',reason:error.message});
+    }
   }
   return {kind:'selected',target,proof,results};
 }
@@ -439,7 +473,7 @@ async function main(){
     return response.status===204?null:response.json();
   };
   const command=parseMilestoneCommand(event?.comment?.body);
-  const result=command && ['check','fast','full'].includes(command.lane)
+  const result=command && ['check','fast','full','resume','qualify'].includes(command.lane)
     ? await performSmartMilestone({event,repo,api})
     : await performMilestone({event,repo,api});
   console.log('CI_'+result.kind.toUpperCase()+' mode='+result.target.lane+

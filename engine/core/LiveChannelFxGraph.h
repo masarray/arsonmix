@@ -39,6 +39,7 @@ public:
         std::unique_ptr<Processor> processor;
         RealtimeNativeFxControl* nativeControl=nullptr; // bound once OFF realtime
         bool continuousBypassProcessing=false; // prepared once; no dynamic cast in RT
+        bool silenceBypass=false; // immutable for this prepared processor lease
         juce::MidiBuffer midi;
         const juce::String catalogId;
         const juce::String name;
@@ -56,7 +57,8 @@ public:
         inline static std::atomic<std::uint64_t> nextId{1};
         std::atomic_flag processing=ATOMIC_FLAG_INIT;
         std::atomic<unsigned> contention{0};
-        std::atomic<unsigned> exceptions{0};
+        std::atomic<unsigned> exceptions{0}; // nonzero permanently latches this owner
+        bool processFaulted() const noexcept {return exceptions.load(std::memory_order_acquire)!=0;}
         armix::rt::FxTimingSampler processTiming;
         armix::rt::FxWorkloadEvidence workloadEvidence;
         // Lease-local: survives MOVE and accepted graph revisions, not a new DSP owner.
@@ -114,8 +116,9 @@ public:
                 if(nativeControl){
                     continuousBypassProcessing=
                         nativeControl->requiresContinuousBypassProcessing();
+                    silenceBypass=nativeControl->bypassToSilence();
                     nativeControl->sealForRealtime();
-                    nativeExactIdleAdmitted=latencySamples==0 && !continuousBypassProcessing &&
+                    nativeExactIdleAdmitted=!silenceBypass && latencySamples==0 && !continuousBypassProcessing &&
                         nativeControl->supportsExactIdle();
                     // Only the fixed, non-moving native ImmerSIB scene contract.
                     // Never infer support for arbitrary VST3, generators or Harmony.
@@ -157,6 +160,7 @@ public:
         bool tryCaptureState(juce::MemoryBlock& out) noexcept {
             if(!processor || processing.test_and_set(std::memory_order_acquire))
                 return false;
+            if(processFaulted()) {processing.clear(std::memory_order_release);return false;}
             bool ok=false;
             try {
                 // Even under the exclusive processor gate, async EQ edits
@@ -194,6 +198,15 @@ public:
                 processing.clear(std::memory_order_release);
                 return;
             }
+            // A thrown processBlock may leave vendor state inconsistent.
+            // Keep this exact owner silent even across MOVE or BYPASS toggles.
+            // No dry fallback, retries, allocations, logging or teardown here.
+            if(processFaulted()) {
+                juce::FloatVectorOperations::clear(left,samples);
+                juce::FloatVectorOperations::clear(right,samples);
+                processing.clear(std::memory_order_release);
+                return;
+            }
             if(nativeControl)
                 nativeControl->onRealtimeBypass(requestedBypass,
                                                 bypassFade.fullyBypassed());
@@ -218,7 +231,10 @@ public:
                 // Settled bypass/fault/qualified parked bypass consumes
                 // ONLY delayed dry. Render directly in the caller's PCM:
                 // same ring operations, no redundant scratch round trip.
-                if(latencySamples!=0)
+                if(silenceBypass){
+                    juce::FloatVectorOperations::clear(left,samples);
+                    juce::FloatVectorOperations::clear(right,samples);
+                }else if(latencySamples!=0)
                     for(int i=0;i<samples;++i)dryDelay.process(left[i],right[i]);
                 processing.clear(std::memory_order_release);return;
             }
@@ -226,18 +242,18 @@ public:
             // when fully wet. Zero-latency inserts need dry scratch ONLY
             // while mixing a fade or continuously processing a dry bypass.
             // Stable wet and ordinary zero-latency bypass need no copy.
-            if(latencySamples!=0 && !latencyFault && !fading && !fullyBypassed) {
+            if(!silenceBypass && latencySamples!=0 && !latencyFault && !fading && !fullyBypassed) {
                 // Every latent FX, internal or vendor: a steady wet block
                 // does not consume delayed dry PCM. Keep its exact history
                 // for a future bypass/fault without materializing scratch.
                 dryDelay.advanceHistory(left,right,samples);
-            } else if(latencySamples!=0) {
+            } else if(!silenceBypass && latencySamples!=0) {
                 for(int i=0;i<samples;++i) {
                     float l=left[i],r=right[i];dryDelay.process(l,r);
                     dryLeft[static_cast<std::size_t>(i)]=l;
                     dryRight[static_cast<std::size_t>(i)]=r;
                 }
-            } else if(fading || (fullyBypassed&&continuousBypassProcessing)) {
+            } else if(!silenceBypass && (fading || (fullyBypassed&&continuousBypassProcessing))) {
                 juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
                 juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
             }
@@ -283,7 +299,7 @@ public:
                 processor->processBlock(buffer,midi);
             } catch(...) {
                 // Vendor exceptions must never unwind through the callback.
-                exceptions.fetch_add(1,std::memory_order_relaxed);
+                exceptions.fetch_add(1,std::memory_order_release);
                 dspOk=false;
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
@@ -311,7 +327,17 @@ public:
             if(immerseIdleAdmitted)
                 immerseIdle.rendered(left,right,samples,dspOk && idleStable &&
                     nativeControl->stateSnapshotQuiescent());
-            if(fullyBypassed){
+            // Preserve timing/fault telemetry, but never mix dry into a failed block.
+            if(!dspOk){processing.clear(std::memory_order_release);return;}
+            if(silenceBypass){
+                if(fullyBypassed){
+                    juce::FloatVectorOperations::clear(left,samples);
+                    juce::FloatVectorOperations::clear(right,samples);
+                } else if(fading)for(int i=0;i<samples;++i){
+                    const float gain=bypassFade.next().wet;
+                    left[i]*=gain;right[i]*=gain;
+                }
+            } else if(fullyBypassed){
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                 juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
             } else if(fading)for(int i=0;i<samples;++i) {
@@ -392,6 +418,11 @@ public:
         return setAuxSendGain(source,bus,SendTap::postFader,gain);
     }
     int activeInserts() const noexcept{return activeInserts_;}
+    bool hasRuntimeFxFault() const noexcept {
+        for(const auto& rack:processors_)for(const auto& fx:rack)
+            if(fx&&fx->processFaulted())return true;
+        return false;
+    }
     bool setStripControl(int channel,float gain,float pan,
                          bool mono,bool mute,bool solo) noexcept {
         return controls_.set(channel,gain,pan,mono,mute,solo);

@@ -151,16 +151,19 @@ def main():
             assert progress.is_visible() and apply.is_disabled(), (
                 'ACK-only must never announce an installed playback device')
             emit_device_readback(out_active,'70')
-            assert page.locator('.armix-audio-shade').is_hidden()
-            page.locator('.command-bar [data-native-io]').click()
+            # Device discovery stays open until fresh inventory proves the
+            # new endpoint. Only an explicit Hardware Pins Apply closes it.
+            assert page.locator('.armix-audio-shade').is_visible()
+            assert progress.is_hidden()
             io_inventory['active']=out_active
             emit(page,'arMixAudioDeviceInventory',io_inventory)
-            assert capture_select.input_value()=='' # reopening does not auto-patch a mic
-            # Inventory is now visible by default on the Audio Device tab.
-            assert page.get_by_role('region',name='Driver channel inventory').is_visible()
-            assert page.locator('[data-audio-pin-summary]').is_visible()
+            assert capture_select.input_value()=='' # never auto-patch a mic
+            page.get_by_role('tab',name='Audio Device').click()
             assert page.locator('[data-audio-field="rate"]').is_visible()
             assert page.locator('[data-audio-field="buffer"]').is_visible()
+            page.get_by_role('tab',name='Hardware Pins').click()
+            assert page.get_by_role('region',name='Driver channel inventory').is_visible()
+            assert page.locator('[data-audio-pin-summary]').is_visible()
             assign_main=page.locator('[data-audio-main-pins]')
             def playback_pin(index):
                 return page.locator(f'[data-audio-pin="output"][data-pin-index="{index}"]')
@@ -201,6 +204,7 @@ def main():
             })
             latency=page.locator('[data-audio-latency]')
             assert 'Estimated total I/O 14.50 ms' in latency.inner_text()
+            page.get_by_role('tab',name='Diagnostics').click()
             details=page.locator('[data-audio-loopback-details]')
             details.locator('summary').click()
             measure=page.locator('[data-audio-loopback-start]')

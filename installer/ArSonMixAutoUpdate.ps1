@@ -39,7 +39,12 @@ function Fail([string]$reason) {
     throw $reason
 }
 function Read-Json([string]$path) {
-    return (Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json)
+    $jsonStream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if($jsonStream.Length -lt 1 -or $jsonStream.Length -gt 1048576){Fail 'JSON metadata exceeds 1MiB limit'}
+        $reader=[IO.StreamReader]::new($jsonStream,[Text.UTF8Encoding]::new($false,$true),$true,4096,$true)
+        try {return ($reader.ReadToEnd() | ConvertFrom-Json)} finally {$reader.Dispose()}
+    } finally {$jsonStream.Dispose()}
 }
 function Write-State([object]$value) {
     $temp=$statePath+'.new'
@@ -130,13 +135,31 @@ function Download-Verified([object]$asset,[string]$destination) {
     $request.Timeout=30000
     $request.ReadWriteTimeout=30000
     $request.UserAgent='ArSonMix-SmartUpdater/1'
-    $request.AllowAutoRedirect=$true
-    $request.MaximumAutomaticRedirections=5
+    $request.AllowAutoRedirect=$false
     $response=$null
     $streamIn=$null
     $streamOut=$null
     try {
-        $response=$request.GetResponse()
+        for($hop=0; $hop -le 5; $hop++){
+            $uri=$request.RequestUri
+            if($uri.Scheme -cne 'https' -or $uri.Port -ne 443 -or $uri.UserInfo -ne '' -or
+               @('github.com','release-assets.githubusercontent.com','objects.githubusercontent.com') -cnotcontains $uri.DnsSafeHost){
+                Fail 'Unexpected download redirect destination'
+            }
+            $response=$request.GetResponse()
+            if([int]$response.StatusCode -notin @(301,302,303,307,308)){break}
+            $location=$response.Headers['Location']
+            $response.Dispose();$response=$null
+            if($hop -eq 5 -or [string]::IsNullOrWhiteSpace($location)){Fail 'Invalid release redirect chain'}
+            $next=[Uri]::new($uri,$location)
+            if($next.Scheme -cne 'https'){Fail 'Non-HTTPS release redirect'}
+            $request=[Net.HttpWebRequest]::Create($next)
+            $request.Timeout=30000
+            $request.ReadWriteTimeout=30000
+            $request.UserAgent='ArSonMix-SmartUpdater/1'
+            $request.AllowAutoRedirect=$false
+        }
+        if($null -eq $response -or [int]$response.StatusCode -ne 200){Fail 'Unexpected release response'}
         $uri=$response.ResponseUri
         if($uri.Scheme -cne 'https' -or
            @('github.com','release-assets.githubusercontent.com','objects.githubusercontent.com') -cnotcontains $uri.DnsSafeHost) {
@@ -165,12 +188,78 @@ function Download-Verified([object]$asset,[string]$destination) {
         if(Test-Path -LiteralPath $part){Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue}
     }
 }
+# Independent signature trust; never download a verifier or fall back to hash-only.
+function Get-AttestationVerifier {
+    $programFiles=[Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
+    if([string]::IsNullOrWhiteSpace($programFiles)){return $null}
+    $folder=Join-Path $programFiles 'GitHub CLI'
+    $path=Join-Path $folder 'gh.exe'
+    try {
+        foreach($item in @($programFiles,$folder,$path)){
+            $info=Get-Item -LiteralPath $item -Force -ErrorAction Stop
+            if(($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $null}
+        }
+        if(-not (Test-Path -LiteralPath $path -PathType Leaf)){return $null}
+        return $path
+    } catch {return $null}
+}
+function Get-AttestationArguments([string]$path,[string]$tag,[string]$sha) {
+    if($tag -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-alpha\.(0|[1-9][0-9]*)$' -or
+       $null -eq (Version-Key $tag) -or $sha -cnotmatch '^[a-f0-9]{40}$' -or
+       -not [IO.Path]::IsPathRooted($path) -or $path.Contains('"') -or
+       [IO.Path]::GetFileName($path) -cne "ArSonMix-$tag-Windows-x64-Setup.exe"){return $null}
+    return ('attestation verify "'+$path+'" --repo masarray/arsonmix'+
+        ' --signer-workflow masarray/arsonmix/.github/workflows/alpha-preview-publish.yml'+
+        ' --source-ref refs/heads/releases/alpha/'+$tag+
+        ' --source-digest '+$sha+' --signer-digest '+$sha+' --deny-self-hosted-runners')
+}
+function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha) {
+    $arguments=Get-AttestationArguments $path $tag $sha
+    $verifier=Get-AttestationVerifier
+    if($null -eq $arguments){Fail 'Invalid attestation subject identity'}
+    if($null -eq $verifier){Fail 'Trusted GitHub CLI missing; use manually verified official installer'}
+    $info=[Diagnostics.ProcessStartInfo]::new()
+    $info.FileName=$verifier
+    $info.Arguments=$arguments
+    $info.WorkingDirectory=[IO.Path]::GetDirectoryName($verifier)
+    $info.UseShellExecute=$false
+    $info.CreateNoWindow=$true
+    $info.EnvironmentVariables['GH_HOST']='github.com'
+    $info.EnvironmentVariables['GH_PROMPT_DISABLED']='1'
+    $info.EnvironmentVariables['GH_NO_UPDATE_NOTIFIER']='1'
+    $info.EnvironmentVariables['GH_NO_EXTENSION_UPDATE_NOTIFIER']='1'
+    $info.EnvironmentVariables.Remove('GH_DEBUG')
+    $child=[Diagnostics.Process]::Start($info)
+    if($null -eq $child){Fail 'Cannot start attestation verifier'}
+    try {
+        if(-not $child.WaitForExit(60000)){
+            try {$child.Kill()} catch {}
+            Fail 'Attestation verifier timed out; update deferred'
+        }
+        if($child.ExitCode -ne 0){Fail 'Installer cryptographic provenance not verified; update deferred'}
+    } finally {$child.Dispose()}
+}
+function Test-ReleaseTransition([string]$operation,[object]$previous,[object]$candidate) {
+    try {
+        $a=Version-Key ([string]$previous.tag_name)
+        $b=Version-Key ([string]$candidate.tag_name)
+        if($null -eq $a -or $null -eq $b){return $false}
+        if($operation -ceq 'repair'){
+            return ($previous.tag_name -ceq $candidate.tag_name -and
+                $previous.target_commitish -ceq $candidate.target_commitish)
+        }
+        return ($operation -ceq 'upgrade' -and (Compare-Version $b $a) -gt 0 -and
+                ($previous.prerelease -or -not $candidate.prerelease))
+    } catch {return $false}
+}
+
 function Download-Release-Verified([object]$release,[object]$installer,[string]$destination) {
     $tag=[string]$release.tag_name
     $prefix=[IO.Path]::GetDirectoryName($destination)
     $sum=Find-Asset $release 'SHA256SUMS.txt' 1
     $provenanceAsset=Find-Asset $release 'INSTALLER_PROVENANCE.json' 1
-    if($null -eq $sum -or $null -eq $provenanceAsset){Fail 'Missing attested release metadata'}
+    if($null -eq $sum -or $null -eq $provenanceAsset -or
+       [long]$sum.size -gt 1048576 -or [long]$provenanceAsset.size -gt 1048576){Fail 'Missing or oversized release metadata'}
     # Use per-tag metadata paths; never allow the second release to reuse
     # the first release's hashes, even if tags share the same base version.
     $sumPath=Join-Path $prefix ('SHA256SUMS-'+$tag+'.txt')
@@ -186,6 +275,7 @@ function Download-Release-Verified([object]$release,[object]$installer,[string]$
         Where-Object {$_ -ceq $line})
     if($matches.Count -ne 1){Fail 'SHA256SUMS does not attest exactly one chosen installer'}
     Download-Verified $installer $destination
+    Assert-InstallerAttestation $destination $tag ([string]$release.target_commitish)
 }
 function Test-StagedAsset([string]$path,[object]$asset) {
     try {
@@ -338,7 +428,7 @@ function Restore-InstalledRelease([string]$sourceSha) {
     if(-not (Test-StagedAsset $destination $asset)){throw 'Recovery installer SHA check failed'}
     if(-not (Test-NoActiveMixer)){throw 'An active mixer appeared during repair'}
     # Missing-EXE mode is NOT normal auto-update and never closes a mixer.
-    if(-not (Run-Installer $destination -AllowMissingExeRecovery)){
+    if(-not (Run-Installer $destination $asset ([string]$sourceRelease.tag_name) $sourceSha -AllowMissingExeRecovery)){
         throw 'Verified recovery installer was not accepted by Windows'
     }
     if(-not (Test-InstalledRelease $sourceSha)){
@@ -351,10 +441,16 @@ function Restore-InstalledRelease([string]$sourceSha) {
     # Keep verified installer cached for next recovery; no Studio cleanup.
 }
 
-function Run-Installer([string]$file,[switch]$AllowMissingExeRecovery) {
+function Run-Installer([string]$file,[object]$asset,[string]$tag,[string]$sha,[switch]$AllowMissingExeRecovery) {
     # Inno performs exact-path process shutdown and EXE replacement preflight.
     # Its silent [Run] is disabled: only this supervisor relaunches once.
     if(-not (Test-Path -LiteralPath $file -PathType Leaf)){return $false}
+    # Hold the verified executable read-only until installer exits.
+    $guard=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+    if(-not (Test-StagedAsset $file $asset)){Fail 'Installer bytes changed before execution'}
+    Assert-InstallerAttestation $file $tag $sha
+    if(-not (Test-NoActiveMixer)){Fail 'Mixer is active; update deferred'}
     $info=New-Object Diagnostics.ProcessStartInfo
     $info.FileName=$file
     $info.Arguments='/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /NOCLOSEAPPLICATIONS /ARSONMIXAUTOUPDATE /DIR="'+$PSScriptRoot+'"'
@@ -371,6 +467,7 @@ function Run-Installer([string]$file,[switch]$AllowMissingExeRecovery) {
         }
         return $process.ExitCode -eq 0
     } finally {$process.Dispose()}
+    } finally {$guard.Dispose()}
 }
 function Launch-WithHealth([string]$expectedSha) {
     $token=[guid]::NewGuid().ToString('D')
@@ -439,6 +536,22 @@ if($PolicySelfTest) {
     $asset.browser_download_url="https://github.com/$repo/releases/download/$tag/$($asset.name)"
     $release.assets=@($asset,$asset,$sum,$proof)
     if($null -ne (Approved-Installer $release)){throw 'Duplicate installer accepted'}
+    $fixtureInstaller=Join-Path ([IO.Path]::GetTempPath()) ("ArSonMix-$tag-Windows-x64-Setup.exe")
+    $verifyArgs=Get-AttestationArguments $fixtureInstaller $tag ('f'*40)
+    if($null -eq $verifyArgs -or $verifyArgs -cnotmatch '--signer-workflow masarray/arsonmix/\.github/workflows/alpha-preview-publish\.yml' -or
+       $verifyArgs -cnotmatch '--deny-self-hosted-runners'){throw 'Attestation identity policy failed'}
+    if($null -ne (Get-AttestationArguments $fixtureInstaller '../bad' ('f'*40)) -or
+       $null -ne (Get-AttestationArguments $fixtureInstaller $tag 'main') -or
+       $null -ne (Get-AttestationArguments (Join-Path ([IO.Path]::GetTempPath()) 'other.exe') $tag ('f'*40))){
+        throw 'Unsafe attestation arguments accepted'
+    }
+    $previous=[pscustomobject]@{tag_name='v0.5.0-alpha.5';target_commitish=('a'*40);prerelease=$true}
+    $candidate=[pscustomobject]@{tag_name=$tag;target_commitish=('f'*40);prerelease=$true}
+    if(-not (Test-ReleaseTransition 'upgrade' $previous $candidate) -or
+       (Test-ReleaseTransition 'upgrade' $candidate $previous) -or
+       (Test-ReleaseTransition 'repair' $previous $candidate) -or
+       -not (Test-ReleaseTransition 'repair' $previous $previous)){throw 'Unsafe release transition accepted'}
+    Write-Output 'ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS'
     # Positive and negative staged binary integrity tests. These execute
     # under synthetic TEMP; never use or modify the installed program.
     $tmp=Join-Path ([IO.Path]::GetTempPath()) ('ArSonMix-Updater-Policy-'+[guid]::NewGuid().ToString('N'))
@@ -782,14 +895,18 @@ try {
     $liveReleases=Read-PublishedReleases $headers
     $approved=$null
     $approvedOld=$null
+    $candidateRelease=$null
+    $baselineRelease=$null
     foreach($release in $liveReleases) {
         if($release.tag_name -ceq $state.candidateTag -and
            $release.target_commitish -ceq $state.candidateSha) {
             $approved=Approved-Installer $release
+            $candidateRelease=$release
         }
         if($release.tag_name -ceq $state.previousTag -and
            $release.target_commitish -ceq $state.previousSha) {
             $approvedOld=Approved-Installer $release
+            $baselineRelease=$release
         }
     }
     if($null -eq $approvedOld -or
@@ -814,6 +931,7 @@ try {
         Log-Result 'RELEASE_REVOKED_UPDATE_DEFERRED'
         exit 0
     }
+    if(-not (Test-ReleaseTransition $state.operation $baselineRelease $candidateRelease)){Fail 'Unsafe staged version transition'}
     $new=[pscustomobject]@{tag_name=$state.candidateTag;target_commitish=$state.candidateSha}
     $oldAsset=$state.previousAsset
     $newAsset=$state.newAsset
@@ -841,10 +959,11 @@ try {
         Log-Result 'INSTALLER_BYTES_CHANGED_UPDATE_DEFERRED'
         exit 0
     }
+    Assert-InstallerAttestation $oldPath ([string]$state.previousTag) ([string]$state.previousSha)
     $state.phase='installing'
     $state.installAttempts=[int]$state.installAttempts+1
     Write-State $state
-    $upgradeOK=Run-Installer $newPath
+    $upgradeOK=Run-Installer $newPath $newAsset ([string]$state.candidateTag) ([string]$state.candidateSha)
     $actualSha=''
     try {$actualSha=[string](Read-Json $provenance).sourceCommit} catch {}
     if($upgradeOK -and (Test-InstalledRelease ([string]$new.target_commitish)) -and
@@ -903,7 +1022,7 @@ try {
     if(-not (Test-StagedAsset $oldPath $oldAsset)){
         Fail 'Rollback installer modified after verified stage'
     }
-    if(Run-Installer $oldPath) {
+    if(Run-Installer $oldPath $oldAsset ([string]$state.previousTag) ([string]$state.previousSha)) {
         if(Test-InstalledRelease $installedSha) {
             $state.phase='rolled-back'
             Write-State $state

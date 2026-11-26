@@ -6,7 +6,7 @@ import {parseMilestoneCommand,isTrustedOwnerComment,validateMilestone,
   hadEarlierIdenticalRequest,hasPriorDispatch,quickResult,performMilestone,
   focusedImmerSIBFileScope,parseImmerSIBFocusedRun,
   parseWindowsMilestoneRun,guardWindowsMilestone,
-  planSmartMilestone,verifySmartFast,performSmartMilestone}
+  planSmartMilestone,verifySmartFast,performSmartMilestone,recentScopedMilestones}
   from '../scripts/chat_ci_dispatch.mjs';
 
 const sha='a'.repeat(40),repo='masarray/arsonmix';
@@ -16,12 +16,12 @@ const event=(body='/arsonmix-ci fat '+sha)=>({
   comment:{id:48,body,author_association:'OWNER',user:{login:'masarray'}}
 });
 const pr=(head=sha)=>({
-  number:418,state:'open',base:{ref:'main',repo:{full_name:repo}},
+  number:418,state:'open',created_at:'2026-01-01T00:00:00Z',base:{ref:'main',repo:{full_name:repo}},
   head:{ref:'integration/daw-direct-hardware-input-20261105',sha:head,repo:{full_name:repo}}
 });
 
 test('owner command parser requires a single bounded command and lowercase SHA',()=>{
-  for(const lane of ['check','fast','full','ui','native','fat','field','feature','immersib','stop'])
+  for(const lane of ['check','fast','full','resume','qualify','ui','native','fat','field','feature','immersib','stop'])
     assert.deepEqual(parseMilestoneCommand('/arsonmix-ci '+lane+' '+sha),{lane,sha});
   for(const bad of ['/arsonmix-ci all '+sha,'/arsonmix-ci fat main',
     '/arsonmix-ci fat '+sha+'; rm -rf .','/arsonmix-ci fat '+sha+'\necho unsafe',
@@ -290,19 +290,19 @@ test('FAT upload is independently retryable without a second Windows compiler an
   assert.ok(upload,'dedicated artifact delivery job must exist');
   assert.match(build,/Seal exact-SHA FAT delivery payload after all installer tests/);
   assert.match(build,/Save completed FAT packages for retryable upload job/);
-  assert.match(build,/actions\/cache\/save@v4/);
-  assert.equal((build.match(/actions\/upload-artifact@v4/g)||[]).length,1);
-  assert.match(build,/Upload portable Windows field preview\n +if: \$\{\{ env\.FIELD_PREVIEW == 'true' \}\}\n +uses: actions\/upload-artifact@v4/);
+  assert.match(build,/actions\/cache\/save@[a-f0-9]{40}/);
+  assert.equal((build.match(/actions\/upload-artifact@[a-f0-9]{40}/g)||[]).length,1);
+  assert.match(build,/Upload portable Windows field preview\n +if: \$\{\{ env\.FIELD_PREVIEW == 'true' \}\}\n +uses: actions\/upload-artifact@[a-f0-9]{40}/);
   assert.match(upload,/needs: windows-build/);
   assert.match(upload,/runs-on: windows-2022/);
-  assert.match(upload,/actions\/cache\/restore@v4/);
+  assert.match(upload,/actions\/cache\/restore@[a-f0-9]{40}/);
   assert.match(upload,/fail-on-cache-miss: true/);
   assert.match(upload,/FAT_UPLOAD_HASH_MISMATCH/);
   assert.match(upload,/FAT_UPLOAD_RECEIPT_MISMATCH/);
   assert.match(upload,/sourceSha -ne \$actual/);
   assert.match(upload,/FAT_UPLOAD_EXE_OR_SETUP_INVALID/);
   assert.match(upload,/overwrite: true/);
-  assert.equal((upload.match(/actions\/upload-artifact@v4/g)||[]).length,2);
+  assert.equal((upload.match(/actions\/upload-artifact@[a-f0-9]{40}/g)||[]).length,2);
   assert.equal((upload.match(/compression-level: 0/g)||[]).length,2);
   assert.match(build,/ctest --test-dir build -C Release --output-on-failure/);
   assert.match(build,/Prove two authentic historical Inno releases upgrade and roll back/);
@@ -570,4 +570,99 @@ test('STOP owner command cancels only active matching PR+exact-SHA, never create
   assert.equal(got.kind,'cancelled');
   assert.deepEqual(calls.filter(c=>c.method==='POST').map(c=>c.path),
     ['/actions/runs/51/cancel','/actions/runs/54/cancel']);
+});
+
+
+test('QUALIFY chooses one FAT package lane in place of NATIVE and keeps GUI qualification',()=>{
+  assert.deepEqual(planSmartMilestone(['src/Main.cpp','web/mixer.js'],'qualify').targets,['ui','fat']);
+  assert.deepEqual(planSmartMilestone(['docs/readme.md'],'qualify').targets,[]);
+  assert.deepEqual(planSmartMilestone(['web/mixer.js'],'qualify').targets,['ui']);
+  assert.deepEqual(planSmartMilestone(['src/Main.cpp'],'resume').targets,['native']);
+});
+
+test('RESUME fills missing lane despite prior comment, never duplicates active or red UI',async()=>{
+  for(const uiState of ['missing','active','red','green']){
+    const calls=[];
+    const req=event('/arsonmix-ci resume '+sha);
+    const api=async(path,method,data)=>{
+      calls.push({path,method,data});
+      if(path.startsWith('/pulls/418/files'))return [{filename:'web/mixer-layout.js'}];
+      if(path.startsWith('/pulls/418'))return pr();
+      if(path.startsWith('/issues/418/comments'))return [
+        {id:47,body:req.comment.body,author_association:'OWNER',user:{login:'masarray'}},
+        {id:46,body:'/arsonmix-ci ui '+sha,author_association:'OWNER',user:{login:'masarray'}}
+      ];
+      if(path.includes('/runs?event=pull_request'))return {workflow_runs:[{id:102,head_sha:sha,event:'pull_request'}]};
+      if(path.startsWith('/actions/runs/102/jobs'))return {jobs:[{name:'Fast UI contracts (every relevant PR commit)',conclusion:'success'}]};
+      if(path.includes('event=workflow_dispatch'))return {workflow_runs:uiState==='missing'?[]:[{
+        id:103,event:'workflow_dispatch',head_sha:sha,status:uiState==='active'?'in_progress':'completed',
+        conclusion:uiState==='red'?'failure':uiState==='green'?'success':null
+      }]};
+      if(path.endsWith('/dispatches'))return null;
+      throw Error('UNEXPECTED_API '+path);
+    };
+    const out=await performSmartMilestone({event:req,repo,api});
+    assert.equal(out.results[0].kind,uiState==='missing'?'dispatched':'skipped');
+    assert.equal(calls.filter(c=>c.method==='POST').length,uiState==='missing'?1:0);
+  }
+});
+
+
+test('QUALIFY is repeatable after timeout, waits for job registration and never duplicates an existing FAT',async()=>{
+  for(const state of ['missing','active','green','red']){
+    let waited=0;
+    const calls=[];
+    const req=event('/arsonmix-ci qualify '+sha);
+    const api=async(path,method,data)=>{
+      calls.push({path,method,data});
+      if(path.startsWith('/pulls/418/files'))return [{filename:'engine/core/Example.h'}];
+      if(path.startsWith('/pulls/418'))return pr();
+      if(path.startsWith('/issues/418/comments'))return [
+        {id:47,body:req.comment.body,author_association:'OWNER',user:{login:'masarray'}},
+        {id:46,body:'/arsonmix-ci fat '+sha,author_association:'OWNER',user:{login:'masarray'}}
+      ];
+      if(path.includes('/runs?event=pull_request'))return {workflow_runs:waited===0?[]:[{id:101,head_sha:sha,event:'pull_request',status:'in_progress'}]};
+      if(path.startsWith('/actions/runs/101/jobs'))return {jobs:waited===1?[]:[{name:'Fast native contracts (no Windows / JUCE checkout)',conclusion:'success'}]};
+      if(path.includes('event=workflow_dispatch'))return {workflow_runs:state==='missing'?[]:[{
+        id:103,event:'workflow_dispatch',head_sha:'b'.repeat(40),display_title:'ArSonMix FAT PR418 '+sha,
+        status:state==='active'?'in_progress':'completed',conclusion:state==='green'?'success':state==='red'?'failure':null
+      }]};
+      if(path.endsWith('/dispatches'))return null;
+      throw Error('UNEXPECTED_API '+path);
+    };
+    const out=await performSmartMilestone({event:req,repo,api,waitForQuick:async()=>{waited++;}});
+    assert.equal(waited,2);
+    assert.equal(out.results[0].kind,state==='missing'?'dispatched':'skipped');
+    const writes=calls.filter(c=>c.method==='POST');
+    assert.equal(writes.length,state==='missing'?1:0);
+    if(writes.length)assert.equal(writes[0].data.inputs.package_fat,true);
+  }
+});
+
+
+test('dispatch history is bounded to the PR lifetime, not 500 global historical runs',async()=>{
+  const calls=[];
+  const a=await recentScopedMilestones(async path=>{
+    calls.push(path);
+    return {total_count:1,workflow_runs:[windowsRun(901,'fat',418,sha,'completed','success')]};
+  },'p1-windows.yml','2026-11-26T11:36:11Z',Date.parse('2026-11-26T12:00:00Z'));
+  assert.equal(a[0].id,901);
+  assert.match(decodeURIComponent(calls[0]),/created=2026-11-26T11:36:11Z\.\.2026-11-26T12:00:00Z/);
+  assert.equal(calls.length,1);
+});
+test('busy dispatch history partitions time, preserves old active runs and newest-first order',async()=>{
+  const ranges=[];
+  const a=await recentScopedMilestones(async path=>{
+    const range=new URLSearchParams(path.split('?')[1]).get('created');
+    ranges.push(range);
+    if(ranges.length===1)return {total_count:1500,workflow_runs:[]};
+    return {total_count:1,workflow_runs:[windowsRun(ranges.length===2?50:90,'fat',418,sha)]};
+  },'p1-windows.yml','2026-11-26T11:00:00Z',Date.parse('2026-11-26T11:00:03Z'));
+  assert.deepEqual(a.map(x=>x.id),[90,50]);
+  assert.deepEqual(ranges.slice(1),['2026-11-26T11:00:00Z..2026-11-26T11:00:01Z','2026-11-26T11:00:02Z..2026-11-26T11:00:03Z']);
+});
+test('dispatch history invalid timestamp or impossible density fails closed',async()=>{
+  await assert.rejects(recentScopedMilestones(async()=>({total_count:1001,workflow_runs:[]}),
+    'p1-windows.yml','2026-11-26T11:00:00Z',Date.parse('2026-11-26T11:00:00Z')),/CI_DISPATCH_HISTORY_DENSITY/);
+  await assert.rejects(recentScopedMilestones(async()=>{throw Error('unexpected request');},'p1-windows.yml','invalid'),/CI_PR_CREATED_AT_INVALID/);
 });

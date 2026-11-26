@@ -7,6 +7,7 @@
 namespace armix::builtin_fx::vocal_delay {
 enum class StereoMode : std::uint8_t { mono, stereo, pingPong };
 enum class EchoStyle : std::uint8_t { classic, voiced, dual, multitap, tape };
+enum class ThrowMode : std::uint8_t { off, concert, ballad, pop, dangdut, rock, ambient, intimate, manual };
 struct Parameters final {
     float timeMs=320.f, feedback=.30f, echo=.22f;
     float highPassHz=150.f, lowPassHz=5500.f; // zero explicitly bypasses a filter
@@ -15,6 +16,7 @@ struct Parameters final {
     bool enabled=true;
     EchoStyle style=EchoStyle::classic; // V2 exact PCM until explicit new style
     bool adaptiveFocus=false; // V2/V3 retain their original detector
+    ThrowMode throwMode=ThrowMode::off; // V7 selective wet capture; off preserves VD11
     bool smartStage=false; // opt-in VD7 policy, never inferred from legacy settings
     bool spillover=false,hit=false; // HIT is transient, never armed by saved state
     std::uint16_t bpmQuarter=0; // 0=free time, otherwise BPM x4 (40..240)
@@ -41,7 +43,7 @@ inline bool validTempo(const Parameters& p) noexcept{
 inline Parameters performanceSettings(Parameters p) noexcept{
     // A bounded wet-only overlay. Base knobs remain editable, HIT never
     // rewrites them; at zero echo HIT cannot unexpectedly enable an effect.
-    if(p.hit){
+    if(p.hit&&p.throwMode==ThrowMode::off){
         p.echo=std::min(1.f,p.echo*1.5f);
         p.feedback=std::min(.90f,p.feedback+.12f);
     }
@@ -60,6 +62,8 @@ inline bool valid(const Parameters& p) noexcept {
         inRange(p.duck,0,1)&&inRange(p.duckAttackMs,2,100)&&
         inRange(p.duckReleaseMs,40,1000)&&
         (p.mode==StereoMode::mono||p.mode==StereoMode::stereo||p.mode==StereoMode::pingPong)&&
-        static_cast<unsigned>(p.style)<=static_cast<unsigned>(EchoStyle::tape)&&validTempo(p);
+        static_cast<unsigned>(p.style)<=static_cast<unsigned>(EchoStyle::tape)&&
+        static_cast<unsigned>(p.throwMode)<=static_cast<unsigned>(ThrowMode::manual)&&
+        (p.throwMode==ThrowMode::off||p.smartStage)&&validTempo(p);
 }
 } // namespace armix::builtin_fx::vocal_delay

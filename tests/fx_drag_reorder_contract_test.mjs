@@ -57,7 +57,7 @@ test('native has six consistent empty inserts and one DSP reorder per drop',()=>
  // Unpatched channels must open a real input patch, not an inert FX picker.
  assert.match(bridge,/window\.__arMixOpenChannelPatch\?\.\(id,"input"\)/);
  assert.doesNotMatch(bridge,/openPicker\(el,id,Math.max\(0,slot\)\)/);
- assert.match(native,/moreThanOneInstanceAllowed\(\) override \{ return false; \}/);
+ assert.match(native,/moreThanOneInstanceAllowed\(\) override \{\s*return armix::vst::ScanIsolation::isWorker\(getCommandLineParameterArray\(\)\);\s*\}/);
 });
 
 
