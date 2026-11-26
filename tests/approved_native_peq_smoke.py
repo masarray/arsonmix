@@ -211,6 +211,23 @@ def main():
                 ?.dataset.fxState==='on'&&getComputedStyle(
                 document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
             assert not power.is_disabled()
+            # The shared overlay requires explicit native global A/B readback.
+            # Prove fail-closed on missing evidence and recovery on restoration;
+            # do not force clicks or bypass the real browser hit-test.
+            shade=editor.locator(".armix-native-fx-bypass")
+            shade.wait_for(state="attached")
+            page.wait_for_function("""()=>!document.querySelector(
+                "#mxNativePeq .armix-native-fx-bypass").classList.contains("is-on")""")
+            missing=copy.deepcopy(state)
+            del missing["globalFxBypassed"]
+            emit(page,"arMixConsoleSnapshot",missing)
+            page.wait_for_function("""()=>{const el=document.querySelector(
+                "#mxNativePeq .armix-native-fx-bypass");return el?.classList.contains("is-on")&&
+                el.textContent==="FX UNAVAILABLE"&&getComputedStyle(el).pointerEvents==="auto";}""")
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>{const el=document.querySelector(
+                "#mxNativePeq .armix-native-fx-bypass");return el&&!el.classList.contains("is-on")&&
+                getComputedStyle(el).pointerEvents==="none";}""")
             assert page.locator(".mx-peq-knob").count()==3
             assert page.locator(".mx-peq-band").count()==8
             assert page.locator(".mx-peq-graph svg").count()==1
