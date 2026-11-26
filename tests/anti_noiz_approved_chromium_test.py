@@ -402,6 +402,7 @@ def main():
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
         accepted=edit["settings"]
         expect(manual).to_be_checked()
+        expect(root.locator('input[aria-label="Silence"]')).to_be_disabled()
         threshold=root.locator('input[aria-label="Threshold"]')
         expect(threshold).to_be_enabled()
         threshold.focus();page.keyboard.press("ArrowRight")
@@ -442,6 +443,13 @@ def main():
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
         accepted=edit["settings"]
         expect(spectral).to_be_checked()
+        reduction=root.locator('input[aria-label="Reduction value"]')
+        reduction.fill("18.5");reduction.press("Enter")
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert edit["settings"]["cleanDb"]==18.5
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        assert float(root.locator('input[aria-label="Clean"]').input_value())==18.5
         artifact=root.locator('input[aria-label="Artifact control"]')
         artifact.focus();page.keyboard.press("ArrowRight")
         edit=last_action(page,"nativeAntiNoizSet")
@@ -468,15 +476,16 @@ def main():
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
         accepted=edit["settings"]
         root.locator('[data-pro-tab="expander"]').click()
-        root.screenshot(path=str(bundle.parent/"anti-noiz-pro-expander-1366.png"))
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-expander-1366.png"))
         root.locator('[data-pro-tab="sidechain"]').click()
-        root.screenshot(path=str(bundle.parent/"anti-noiz-pro-sidechain-1366.png"))
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-sidechain-1366.png"))
         page.set_viewport_size({"width":360,"height":720})
         for name in ("expander","spectral","sidechain"):
             tab=root.locator(f'[data-pro-tab="{name}"]');tab.click()
             expect(root.locator(f'[data-pro-page="{name}"]')).to_be_visible()
             assert root.locator(".an-panel").evaluate("el=>el.scrollWidth<=el.clientWidth+2")
-            root.screenshot(path=str(bundle.parent/f"anti-noiz-pro-{name}-360.png"))
+            assert root.locator(f'[data-pro-page="{name}"]').evaluate("el=>el.scrollWidth<=el.clientWidth+2")
+            root.screenshot(path=str(bundle.parent/f"anti-noiz-operator-pro-{name}-360.png"))
         root.locator('[data-pro-tab="sidechain"]').focus();page.keyboard.press("Home")
         expect(root.locator('[data-pro-tab="expander"]')).to_have_attribute("aria-selected","true")
         page.set_viewport_size({"width":1366,"height":768})

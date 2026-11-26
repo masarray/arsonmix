@@ -2,7 +2,7 @@
 // Shared editor: isolated harness and approved native mixer use this exact
 // renderer. Transport is the only authority for settings and observations.
 export const defaults=Object.freeze({mode:'Auto',cleanDb:14,silenceDb:32,musicProtect:1,enabled:true,spectralManual:false,noiseOffsetDb:0,manualExpander:false,gate:false,thresholdDb:-40,ratio:4,rangeDb:60,attackMs:1,holdMs:100,releaseMs:120,kneeDb:0,sidechainHpHz:120,sidechainLpHz:12000,spectralEnabled:true,artifactControl:.5,vocalProtection:.5,smartVoice:false,smartMarginDb:9,smartMaxLiftDb:12});
-const proDefs=[['noiseOffsetDb','Noise threshold',-20,20,.5,'dB'],['artifactControl','Artifact control',0,1,.01,'%'],['vocalProtection','Vocal protection',0,1,.01,'%'],['thresholdDb','Threshold',-80,0,1,'dBFS'],['smartMarginDb','Noise margin',3,18,1,'dB'],['smartMaxLiftDb','Max threshold lift',0,24,1,'dB'],['ratio','Ratio',1,20,.5,':1'],['rangeDb','Range',0,96,1,'dB'],['attackMs','Attack',.5,20,.5,'ms'],['holdMs','Hold',0,500,5,'ms'],['releaseMs','Release',10,1000,10,'ms'],['kneeDb','Knee',0,18,1,'dB'],['sidechainHpHz','Detector HPF',20,500,10,'Hz'],['sidechainLpHz','Detector LPF',1000,20000,100,'Hz']];
+const proDefs=[['cleanDb','Reduction',0,40,.5,'dB'],['noiseOffsetDb','Noise threshold',-20,20,.5,'dB'],['artifactControl','Artifact control',0,1,.01,'%'],['vocalProtection','Vocal protection',0,1,.01,'%'],['thresholdDb','Threshold',-80,0,1,'dBFS'],['smartMarginDb','Noise margin',3,18,1,'dB'],['smartMaxLiftDb','Max threshold lift',0,24,1,'dB'],['ratio','Ratio',1,20,.5,':1'],['rangeDb','Range',0,96,1,'dB'],['attackMs','Attack',.5,20,.5,'ms'],['holdMs','Hold',0,500,5,'ms'],['releaseMs','Release',10,1000,10,'ms'],['kneeDb','Knee',0,18,1,'dB'],['sidechainHpHz','Detector HPF',20,500,10,'Hz'],['sidechainLpHz','Detector LPF',1000,20000,100,'Hz']];
 const bounds=[['cleanDb','Clean',0,40],['silenceDb','Silence',0,48],['musicProtect','Music Protect',0,1],...proDefs];
 export const normalize=s=>({...defaults,...s});
 export function valid(s){if(!s||!['Auto','Voice','Singing','Music'].includes(s.mode)||typeof s.enabled!=='boolean')return false;const n=Object.keys(s).length;if(n!==5&&n!==18&&n!==21&&n!==24)return false;if(n===5&&s.cleanDb>24)return false;const v=normalize(s);return Object.keys(defaults).every(k=>Object.hasOwn(v,k))&&Object.keys(s).every(k=>Object.hasOwn(defaults,k))&&['spectralManual','manualExpander','gate','spectralEnabled','smartVoice'].every(k=>typeof v[k]==='boolean')&&bounds.every(([k,_,min,max])=>Number.isFinite(v[k])&&v[k]>=min&&v[k]<=max)&&['cleanDb','silenceDb','musicProtect'].every(k=>Object.hasOwn(s,k))&&(n===5||Object.keys(defaults).filter(k=>(n>=21||!['spectralEnabled','artifactControl','vocalProtection'].includes(k))&&(n>=24||!['smartVoice','smartMarginDb','smartMaxLiftDb'].includes(k))).every(k=>Object.hasOwn(s,k)));}
@@ -117,7 +117,7 @@ export function mount(root,transport,options={}){
  <div class="an-pro-row an-pro-heading"><span>Residual dynamics</span><div><label class="an-switch" title="Replace automatic Silence with user-owned dynamics"><input type="checkbox" data-pro-flag="manualExpander"><span>Manual</span></label><label class="an-switch" title="Use fixed range below threshold; 96 dB mutes"><input type="checkbox" data-pro-flag="gate"><span>Gate</span></label></div></div>
  <div class="an-pro-metrics"><span>Detector <output data-detector>—</output></span><span>Threshold <output data-smart-threshold>—</output></span><span>Reduction <output data-pro-residual>—</output></span></div>
  <svg class="an-pro-curve" viewBox="0 0 300 88" role="img" aria-label="Static expander transfer curve and measured detector"><path class="an-pro-gridlines" d="M28 8V74H292 M28 30H292 M28 52H292 M116 8V74 M204 8V74"/><path class="an-pro-reference" d="M28 41L292 8"/><path data-pro-threshold class="an-pro-threshold"/><path data-pro-curve class="an-pro-transfer"/><circle data-pro-dot r="3" hidden/><text x="28" y="85">−90</text><text x="116" y="85">−60</text><text x="204" y="85">−30</text><text x="292" y="85" text-anchor="end">0 IN</text><text x="24" y="11" text-anchor="end">0</text><text x="24" y="33" text-anchor="end">−60</text><text x="24" y="55" text-anchor="end">−120</text><text x="24" y="76" text-anchor="end">−180</text></svg><div class="an-pro-grid" data-pro-expander></div>
- <small data-expander-help>Manual replaces automatic Silence. Gate + Range 96 dB = digital mute; Range 0 = bypass.</small></section>
+ <small data-expander-help>Manual replaces automatic Silence (main Silence knob inactive). Gate + Range 96 dB = digital mute; Range 0 = bypass.</small></section>
  <section class="an-pro-page" role="tabpanel" id="an-page-spectral" data-pro-page="spectral" aria-labelledby="an-tab-spectral" hidden>
  <div class="an-pro-row an-pro-heading"><span>Noise profile</span><div><label class="an-switch" title="Independent spectral bypass"><input type="checkbox" data-pro-flag="spectralEnabled"><span>On</span></label><label class="an-switch" title="Use the learned reference and manual controls"><input type="checkbox" data-pro-flag="spectralManual"><span>Manual</span></label></div></div>
  <div class="an-pro-metrics"><span>Reduction limit <output data-pro-clean>—</output></span><span>Deepest cut <output data-pro-spectral-gr>—</output></span><span>Profile <output data-pro-profile>—</output></span></div>
@@ -130,7 +130,7 @@ export function mount(root,transport,options={}){
  <div class="an-pro-grid" data-pro-sidechain></div><small data-smart-status>Learned peak + margin, limited by maximum lift. Relearn after changing HPF / LPF.</small></section></div></details>
  <footer><button data-learn data-learning="false">Learn noise</button><span data-status role="status"></span><span class="an-stereo" title="Stereo processing is linked; not a toggle">STEREO<span>LINK</span></span></footer></section>`;
  const $=s=>root.querySelector(s), controls=[],proControls=[];
- const spectralKeys=new Set(["noiseOffsetDb","artifactControl","vocalProtection"]),sidechainKeys=new Set(["sidechainHpHz","sidechainLpHz","smartMarginDb","smartMaxLiftDb"]);
+ const spectralKeys=new Set(["cleanDb","noiseOffsetDb","artifactControl","vocalProtection"]),sidechainKeys=new Set(["sidechainHpHz","sidechainLpHz","smartMarginDb","smartMaxLiftDb"]);
  const proTabs=[...root.querySelectorAll("[data-pro-tab]")],proPages=[...root.querySelectorAll("[data-pro-page]")];
  let proPage="expander",curveKey="";
  for(const [key,name,min,max,step,unit] of proDefs){
@@ -237,6 +237,7 @@ export function mount(root,transport,options={}){
    const dot=$("[data-pro-dot]"),show=observed&&!hostOff&&p.manualExpander&&Number.isFinite(level)&&Number.isFinite(observation?.residualGain);
    dot.toggleAttribute('hidden',!show);if(show){const x=20*Math.log10(Math.max(1e-6,level)),gr=20*Math.log10(Math.max(1e-8,observation.residualGain));dot.setAttribute("cx",px(x));dot.setAttribute("cy",py(x+gr));}
   }
+  if(!accepted){curveKey="";setPath($("[data-pro-curve]"),"");setPath($("[data-pro-threshold]"),"");$("[data-pro-dot]").setAttribute("hidden","");}
   setText($("[data-detector]"),observed&&!hostOff&&accepted?.manualExpander&&Number.isFinite(level)?(20*Math.log10(Math.max(1e-6,level))).toFixed(1)+" dBFS":"—");
   const reference=observed&&!hostOff&&observation?.sidechainReference===true;
   const formatPeak=x=>Number.isFinite(x)&&x>0?(20*Math.log10(x)).toFixed(1)+" dBFS":"—";
@@ -251,10 +252,10 @@ export function mount(root,transport,options={}){
   setText($("[data-pro-profile]"),observed&&!hostOff?(observation.learning?"Learning":observation.profile?"Ready":"Not learned"):"Offline");
   setText($("[data-pro-summary]"),accepted?(accepted.manualExpander?(accepted.smartVoice?"Smart":"Manual"):"Auto")+" dynamics · "+(!accepted.spectralEnabled?"Spectral off":accepted.spectralManual?"Manual spectral":"Auto spectral"):"Waiting for DSP");
   setText($("[data-smart-status]"),!accepted?.smartVoice?"Manual threshold · Smart Voice optional":reference?"Learned sidechain active · margin and max lift set by you":"No matching sidechain profile · manual threshold fallback. Learn again after HPF / LPF changes.");
-  for(const f of proFlags){f.checked=!!accepted?.[f.dataset.proFlag];f.disabled=!accepted||pending||unavailable||(f.dataset.proFlag==="smartVoice"&&!accepted?.manualExpander);}
+  for(const f of proFlags){f.checked=!!accepted?.[f.dataset.proFlag];f.disabled=!accepted||pending||unavailable||(["smartVoice","gate"].includes(f.dataset.proFlag)&&!accepted?.manualExpander);}
   for(const c of proControls){
    const value=view.desired?.[c.key]??accepted?.[c.key];
-   const disabled=!accepted||(pending&&!adjusting)||unavailable||(spectralKeys.has(c.key)?!accepted?.spectralManual||!accepted?.spectralEnabled:!accepted?.manualExpander||(["smartMarginDb","smartMaxLiftDb"].includes(c.key)&&!accepted?.smartVoice));
+   const disabled=!accepted||(pending&&!adjusting)||unavailable||(spectralKeys.has(c.key)?!accepted?.spectralEnabled||(c.key!=="cleanDb"&&!accepted?.spectralManual):!accepted?.manualExpander||(["smartMarginDb","smartMaxLiftDb"].includes(c.key)&&!accepted?.smartVoice));
    if(Number.isFinite(value)){if(Number(c.input.value)!==value)c.input.value=value;if(!c.editing||disabled||view.error)c.number.value=Number((value*c.scale).toFixed(2));}else if(!c.editing)c.number.value="";
    c.input.disabled=disabled;c.number.disabled=disabled;
    if(disabled||view.error)c.editing=false;
@@ -285,7 +286,9 @@ export function mount(root,transport,options={}){
   const audition=$("[data-audition]"),active=live&&observation?.audition===true&&!hostOff;
   audition.disabled=!canCommand||(!active&&(!accepted.enabled||!accepted.spectralEnabled||!accepted.spectralManual||accepted.cleanDb===0||!observation?.profile||observation?.learning||observation?.effectiveMode==="Music"||(!accepted.manualExpander&&accepted.silenceDb!==0)));
   setText(audition,active?"Stop noise audition":"Noise only · 2s");setPressed(audition,active);
-  for(const c of controls){c.input.disabled=!accepted||(pending&&!adjusting)||unavailable;if(c.input.disabled){cancel(c);if(accepted){c.input.value=accepted[c.key];paintDial(c,accepted[c.key]);}}}
+  for(const c of controls){c.input.disabled=!accepted||(pending&&!adjusting)||unavailable||(c.key==="silenceDb"&&accepted?.manualExpander)||(c.key==="cleanDb"&&!accepted?.spectralEnabled);
+   c.el.dataset.inactive=String(!!accepted&&((c.key==="silenceDb"&&accepted.manualExpander)||(c.key==="cleanDb"&&!accepted.spectralEnabled)));
+   c.el.title=c.el.dataset.inactive==="true"?(c.key==="silenceDb"?"Manual expander owns residual reduction":"Spectral stage bypassed"):"";if(c.input.disabled){cancel(c);if(accepted){c.input.value=accepted[c.key];paintDial(c,accepted[c.key]);}}}
  }
  const model=controller(transport,view=>{
   lastView=view;
