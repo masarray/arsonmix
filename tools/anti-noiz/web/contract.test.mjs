@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import assert from 'node:assert/strict';
-import {controller,defaults,antiNoizSpectrumPresentation} from './editor.mjs';
+import {controller,defaults,antiNoizSpectrumPresentation,factoryPresets,factoryValue,sameSettings,valid} from './editor.mjs';
 let listener,view,sent;const t={subscribe(f){listener=f;return()=>{};},read(){listener({kind:'snapshot',settings:defaults});},send(c){sent=c;}};
 const m=controller(t,v=>view=v);assert.equal(view.accepted.cleanDb,14);assert(!m.submit('settings',{cleanDb:99}));assert(m.submit('settings',{cleanDb:8}));assert(view.pending);assert.equal(view.accepted.cleanDb,14);assert(!m.submit('settings',{cleanDb:3}));listener({kind:'ack',id:sent.id+1,applied:true,settings:sent.settings});assert(view.pending);listener({kind:'ack',id:sent.id,applied:true,settings:sent.settings});assert.equal(view.accepted.cleanDb,8);assert(!view.pending);assert(m.submit('learn'));listener({kind:'ack',id:sent.id,applied:false,settings:view.accepted});assert(view.error);m.dispose();assert(!m.submit('learn'));console.log('Anti Noiz Web ACK contract PASS');
 
@@ -52,3 +52,5 @@ let l3,v3,w3;const m3=controller({subscribe(f){l3=f;return()=>{};},read(){l3({ki
 assert.equal(v3.accepted.manualExpander,false);assert(m3.submit('settings',{manualExpander:true,gate:true,rangeDb:96,spectralManual:true,cleanDb:40,noiseOffsetDb:6}));assert.equal(w3.settings.rangeDb,96);assert.equal(v3.accepted.cleanDb,14);l3({kind:'ack',id:w3.id,applied:true,settings:w3.settings});assert.equal(v3.accepted.cleanDb,40);assert(m3.adjust('thresholdDb',-34));assert(m3.adjust('thresholdDb',-36));assert(!m3.adjust('thresholdDb',2));l3({kind:'ack',id:w3.id,applied:true,settings:w3.settings});assert.equal(w3.settings.thresholdDb,-36);l3({kind:'ack',id:w3.id,applied:true,settings:w3.settings});assert.equal(v3.accepted.thresholdDb,-36);m3.dispose();console.log('Anti Noiz manual migration, parameter bounds and ACK PASS');
 
 assert.equal(defaults.spectralEnabled,true);assert.equal(defaults.artifactControl,.5);assert.equal(defaults.vocalProtection,.5);
+
+assert.equal(factoryPresets.length,6);for(const p of factoryPresets){assert(valid(p.settings));assert.equal(factoryValue(p.settings),p.id);assert.equal(factoryValue({...p.settings,enabled:false}),p.id);assert(!sameSettings(p.settings,{...p.settings,enabled:false}));}assert(sameSettings({...defaults,artifactControl:.72},{...defaults,artifactControl:Math.fround(.72)}));assert(sameSettings(defaults,{mode:'Auto',cleanDb:14,silenceDb:32,musicProtect:1,enabled:true}));assert.equal(factoryValue({...defaults,cleanDb:13}),'CUSTOM');console.log('AN-PRO-05 factory and legacy float32 equality PASS');

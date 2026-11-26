@@ -175,6 +175,34 @@ int main() {
         REQUIRE(!BuiltInFxUserPresetStore::validateSettings(rejected.catalogId,rejected.settings));
         REQUIRE(store.saveNew(rejected).isNotEmpty());
     }
+    {
+        using Codec=armix::builtin_fx::AntiNoizPortableSettings;
+        Codec::Core::Settings s;s.cleanDb=40;s.spectralManual=true;s.manual.enabled=true;
+        s.manual.smartVoice=true;s.manual.gate=true;s.manual.rangeDb=96;s.artifactControl=.72f;
+        const auto full=Codec::settings(s);
+        for(int count:{18,21,24}){
+            auto item=antiNoiz();item.name="Pro schema "+juce::String(count);
+            item.settings=Codec::settings(s);
+            auto* o=item.settings.getDynamicObject();
+            if(count<24)for(const char* k:{"smartVoice","smartMarginDb","smartMaxLiftDb"})o->removeProperty(k);
+            if(count<21)for(const char* k:{"spectralEnabled","artifactControl","vocalProtection"})o->removeProperty(k);
+            REQUIRE(store.saveNew(item).isEmpty());
+            BuiltInFxUserPreset cold;
+            REQUIRE(BuiltInFxUserPresetStore(testRoot).read(item.catalogId,item.id,cold).isEmpty());
+            Codec::Core::Settings decoded;
+            REQUIRE(Codec::parseSettings(cold.settings,decoded)&&decoded.cleanDb==40&&decoded.manual.rangeDb==96);
+            REQUIRE(decoded.manual.smartVoice==(count==24));
+            REQUIRE(decoded.artifactControl==(count>=21?.72f:.5f));
+            REQUIRE(store.remove(item.catalogId,item.id).isEmpty());
+        }
+        for(const char* k:{"profile","audition","sidechainReference","deviceEpoch","sourceRole"}){
+            auto bad=Codec::settings(s);bad.getDynamicObject()->setProperty(k,true);
+            REQUIRE(!BuiltInFxUserPresetStore::validateSettings("armix.builtin.anti-noiz.v1",bad));
+        }
+        auto invalid=Codec::settings(s);invalid.getDynamicObject()->setProperty("smartMarginDb",19);
+        REQUIRE(!Codec::parseSettings(invalid,s));
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings("armix.builtin.anti-noiz.v1",full));
+    }
     auto album=reverb();album.settings.getDynamicObject()->setProperty("voicing",1);
     REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
     album.settings.getDynamicObject()->setProperty("voicing",2);

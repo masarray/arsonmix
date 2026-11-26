@@ -504,6 +504,13 @@ def main():
         root.locator(".an-pro summary").click()
         expect(root.locator(".an-knobs")).to_be_visible()
         assert float(root.locator('input[aria-label="Clean"]').input_value())==18.5
+        select=root.locator('[data-preset]')
+        select.select_option('VOCAL_LIVE')
+        edit=last_action(page,'nativeAntiNoizSet')
+        assert edit['settings']['manualExpander'] and edit['settings']['spectralManual'] and edit['settings']['cleanDb']==12
+        respond(page,edit,'arMixBuiltinAntiNoizAck',status='APPLIED',settings=edit['settings'])
+        accepted=edit['settings']
+        expect(select).to_have_value('VOCAL_LIVE')
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
         root.locator(".mx-fxp-save-as").click()

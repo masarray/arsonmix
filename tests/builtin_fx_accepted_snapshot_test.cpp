@@ -188,6 +188,7 @@ int main(){
   auto settings=an.acceptedSettings();
   settings.mode=AntiNoizProcessor::Core::Mode::Singing;
   settings.cleanDb=9.5f;settings.silenceDb=21.f;settings.musicProtect=.75f;
+  settings.spectralManual=true;settings.manual.enabled=true;settings.manual.smartVoice=true;settings.manual.rangeDb=96;settings.artifactControl=.72f;settings.manual.smartMarginDb=7;
   REQUIRE(an.queueSettings(settings,1));
   REQUIRE(!an.stateSnapshotQuiescent());
   const auto before=BuiltInFxAcceptedSnapshot::acceptedSettings(&an,catalogs[6]);
@@ -209,6 +210,8 @@ int main(){
   REQUIRE(AntiNoizNativeBinding::parseSettings(coldAn.settings,decoded));
   REQUIRE(decoded.mode==settings.mode&&decoded.cleanDb==settings.cleanDb&&
           decoded.silenceDb==settings.silenceDb&&decoded.musicProtect==settings.musicProtect);
+  using State=armix::builtin_fx::anti_noiz::NativeState;
+  REQUIRE(State::encode(decoded)==State::encode(settings));
   // Saved mixer state is settings-only and is restored before publication.
   juce::MemoryBlock state;
   an.getStateInformation(state);
@@ -216,7 +219,8 @@ int main(){
   restored.prepareToPlay(96000.,128);
   REQUIRE(restored.restoreUnpublishedState(state.getData(),static_cast<int>(state.getSize())));
   REQUIRE(restored.getLatencySamples()==512&&restored.acceptedSettings().mode==settings.mode);
-  REQUIRE(!restored.readObservation().profile);
+  REQUIRE(State::encode(restored.acceptedSettings())==State::encode(settings));
+  REQUIRE(!restored.readObservation().profile&&!restored.readObservation().sidechainReference&&!restored.readObservation().audition);
   restored.releaseResources();
   for(auto* p:processors)p->releaseResources();
   for(int i=0;i<7;++i)
