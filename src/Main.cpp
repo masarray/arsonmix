@@ -4367,14 +4367,18 @@ private:
         if(!lease||mixerSessionWorker_.busy()||pendingRetainedFxCapture_||
            retainedOfflineFxActive_||pendingSecondaryStop_||engine_.hasRuntimeFxFault()||
            nativeShowBusy_||studioBackupBusy_||ep!=engine_.dryRoutingLabEpoch()||
-           rev!=engine_.outputArmRevision())return result;
+           !engine_.nativeTopologyMatches(ep,rev))return result;
+        const auto beforeControlRevision=engine_.outputArmRevision();
         auto stream=engine_.captureSecondaryResumeIntent();
         if(!stream&&pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
-           pendingVendorStream_->revision==rev)stream=pendingVendorStream_->intent;
+           pendingVendorStream_->revision==beforeControlRevision)stream=pendingVendorStream_->intent;
         if(!stream&&secondaryContinuity_&&secondaryContinuity_->epoch==ep&&
-           secondaryContinuity_->revision==rev&&secondaryRetry_.pending())
+           secondaryContinuity_->revision==beforeControlRevision&&secondaryRetry_.pending())
             stream=secondaryContinuity_->intent;
-        if(engine_.secondaryArmed()&&!stream)return result;
+        if(engine_.secondaryArmed()&&(!stream||!engine_.secondarySourceMatches(*stream))) {
+            result.error="Disconnect additional output before editing this non-ASIO route";
+            return result;
+        }
         pendingVendorStream_.reset();
         cancelSecondaryContinuity();
         const auto generation=secondaryRetry_.generation();
@@ -4384,7 +4388,8 @@ private:
         result=edit();
         const auto acceptedRevision=engine_.outputArmRevision();
         if(generation==secondaryRetry_.generation()&&!pendingSecondaryStop_&&
-           engine_.dryRoutingLabEpoch()==ep&&(result.accepted||acceptedRevision==rev)) {
+           engine_.dryRoutingLabEpoch()==ep&&(result.accepted||
+                (acceptedRevision==beforeControlRevision&&engine_.nativeTopologyMatches(ep,rev)))) {
             if(hardwareWanted||(result.accepted&&startOnSuccess&&!operatorOutputMuted_))
                 requestAutomaticMain(!hardwareWanted);
             if(stream&&engine_.secondarySourceMatches(*stream))
@@ -4455,11 +4460,20 @@ private:
     void serviceVendorStreamRecovery() {
         if(!pendingVendorStream_)return;
         const auto& p=*pendingVendorStream_;
-        if(monotonicMilliseconds()>=p.deadline||engine_.dryRoutingLabEpoch()!=p.epoch||
+        if(engine_.dryRoutingLabEpoch()!=p.epoch||
            engine_.outputArmRevision()!=p.revision||nativeShowBusy_||studioBackupBusy_||
            retainedOfflineFxActive_||pendingRetainedFxCapture_||engine_.hasRuntimeFxFault()){
             pendingVendorStream_.reset();
             emitNotice("Additional output paused · enable it again when ready",true);
+            return;
+        }
+        if(monotonicMilliseconds()>=p.deadline) {
+            // A slow callback or vendor readiness is not an operator Stop.
+            // Retain only the same epoch/control identity; bounded recovery
+            // will revalidate the native source and full endpoint before ARM.
+            secondaryContinuity_=SecondaryContinuity{p.intent,p.epoch,p.revision};
+            pendingVendorStream_.reset();
+            secondaryRetry_.fault(static_cast<std::uint64_t>(monotonicMilliseconds()));
             return;
         }
         if(deviceApply_.busy()||mixerSessionWorker_.busy()||!engine_.secondaryResumeReady()||
@@ -10062,7 +10076,7 @@ private:
                 const auto generation=secondaryRetry_.generation();
                 if(!lease||!intent||!engine_.secondarySourceMatches(*intent)||
                    !engine_.secondaryResumeReady()||ep!=engine_.dryRoutingLabEpoch()||
-                   rev!=engine_.outputArmRevision()||mixerSessionWorker_.busy()||
+                   !engine_.nativeTopologyMatches(ep,rev)||mixerSessionWorker_.busy()||
                    pendingSecondaryStop_||pendingRetainedFxCapture_||retainedOfflineFxActive_||engine_.hasRuntimeFxFault())
                     error="Connect the additional output and wait for audio to be ready";
                 else {

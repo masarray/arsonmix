@@ -7810,9 +7810,10 @@ test("U5 first sound is a contextual shortcut to a verified empty ChannelId inpu
 test("U5 ordinary topology edits share one secondary continuity owner, no duplicated gate",()=>{
  const n=read("src/Main.cpp");const h=n.slice(n.indexOf("NativeBusResult withNativeTopologyContinuity("),n.indexOf("void serviceSecondaryContinuity()"));
  assert.match(h,/deviceApply_\.tryBegin/);
- assert.match(h,/rev!=engine_\.outputArmRevision\(\)/);
+ assert.match(h,/!engine_\.nativeTopologyMatches\(ep,rev\)/);
+ assert.match(h,/beforeControlRevision=engine_\.outputArmRevision\(\)/);
  assert.match(h,/generation==secondaryRetry_\.generation\(\)/);
- assert.match(h,/result.accepted\|\|acceptedRevision==rev/);
+ assert.match(h,/acceptedRevision==beforeControlRevision&&engine_\.nativeTopologyMatches\(ep,rev\)/);
  assert.match(h,/engine_\.secondarySourceMatches/);
  assert.match(h,/pendingSecondaryStop_/);
  assert.equal((n.match(/result=withNativeTopologyContinuity\(ep,rev,/g)||[]).length,5);
@@ -7820,4 +7821,13 @@ test("U5 ordinary topology edits share one secondary continuity owner, no duplic
    const start=n.lastIndexOf('if(action=="'+action+'"');
    assert.ok(start>=0);assert.match(n.slice(start,start+8500),/withNativeTopologyContinuity/);
  }
+});
+
+
+test("U5 pristine ChannelId topology uses native graph identity instead of M4 control revision",()=>{
+ const e=read("src/LiveAudioEngine.h"),l=read("src/LiveDryRoutingLab.h"),n=read("src/Main.cpp");
+ assert.match(e,/return dryRoutingLab_\.nativeTopologyMatches\(ep,rev\)/);
+ assert.match(l,/bool nativeTopologyMatches[\s\S]*?nativeAccepted_\.matches\(nativePublisher_,ep,rev\)/);
+ const r=n.slice(n.indexOf("void serviceVendorStreamRecovery()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(r,/monotonicMilliseconds\(\)>=p.deadline[\s\S]*?secondaryRetry_\.fault/);
 });

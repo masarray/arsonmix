@@ -4628,8 +4628,9 @@
     if(!firstSoundButton)return;
     const plan=protocol.firstSoundPlan(next);
     const busy=matrixBusy()||Boolean(controller?.state()?.pending||pendingBusCreate||pendingTrackDelete);
-    firstSoundButton.hidden=!plan;
-    firstSoundButton.disabled=busy||!deviceReady();
+    if(firstSoundButton.hidden!==!plan)firstSoundButton.hidden=!plan;
+    const disabled=busy||!deviceReady();
+    if(firstSoundButton.disabled!==disabled)firstSoundButton.disabled=disabled;
     const label=plan?.pins.length===1?"Connect input":"Connect microphone";
     if(firstSoundButton.textContent!==label)firstSoundButton.textContent=label;
     if(firstSoundDialog?.open){

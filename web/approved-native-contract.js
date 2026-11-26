@@ -609,8 +609,9 @@
        !Array.isArray(g?.channels)||!Array.isArray(g.edges))return null;
     const inputs=g.channels.filter(ch=>ch.role==="INPUT");
     if(inputs.some(ch=>ch.source!=null))return null;
-    const target=inputs.find(ch=>ch.controls?.mute===false&&
-      g.edges.some(e=>e.from===ch.id&&e.to===g.mainChannelId&&e.primaryOutput===true&&e.enabled===true));
+    const directMain=new Set(g.edges.filter(e=>e.to===g.mainChannelId&&
+      e.primaryOutput===true&&e.enabled===true).map(e=>e.from));
+    const target=inputs.find(ch=>ch.controls?.mute===false&&directMain.has(ch.id));
     const pins=(d.inputEndpoints||[]).filter(p=>p.active===true&&d.enabledInputs?.includes(p.port)&&
       Number.isInteger(p.port)&&typeof p.label==="string"&&p.label.length>0);
     if(!target||!pins.length)return null;

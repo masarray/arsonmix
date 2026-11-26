@@ -3881,6 +3881,12 @@ public:
             topologyFault_.store(true,std::memory_order_release);
         else channelIdPcmEpoch_.store(0,std::memory_order_release);
     }
+    // Native PCM identity is not the M4 compatibility control revision.
+    // A pristine ChannelId starter can be admitted before its first edit.
+    bool nativeTopologyMatches(std::uint64_t ep,std::uint64_t rev) const noexcept {
+        return ready()&&channelIdPhysicalPcmActive()&&
+            nativeAccepted_.matches(nativePublisher_,ep,rev);
+    }
     std::uint64_t controlRevision() const noexcept {
         return channelIdPhysicalPcmActive() && nativeStructureLive_
             ?nativeAccepted_.pcmRevision:revision();

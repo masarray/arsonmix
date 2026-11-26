@@ -2302,6 +2302,9 @@ public:
     std::uint64_t dryRoutingLabEpoch() const noexcept {return dryRoutingLab_.epoch();}
     std::uint64_t dryRoutingLabRevision() const noexcept {return dryRoutingLab_.revision();}
     std::uint64_t outputArmRevision() const noexcept {return dryRoutingLab_.controlRevision();}
+    bool nativeTopologyMatches(std::uint64_t ep,std::uint64_t rev) const noexcept {
+        return dryRoutingLab_.nativeTopologyMatches(ep,rev);
+    }
     // One native ChannelId bus transaction on the installed DIRECT device.
     // The GUI only obtains accepted state after successful native publisher
     // commit; no speculative UI role or second audio engine.
