@@ -42,18 +42,23 @@ struct DynamicPlayerPcmBlock final {
     const float* left=nullptr;
     const float* right=nullptr;
 };
+// Default keeps all physical buses time-aligned. Independent monitoring
+// removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
+// This is an explicit prepared-graph policy, not a realtime control.
+enum class MonitorLatencyPolicy : std::uint8_t { aligned, independent };
 struct DynamicGraphRequest final {
     std::vector<DynamicSourcePatch> sources;
     int physicalInputs=0;
     int maxFrames=512;
     std::size_t maxScratchBytes=64U*1024U*1024U; // admission, not channel-count cap
     bool mainMonoAfterFx=false; // legacy MAIN mono occurs after MAIN VST+balance
+    MonitorLatencyPolicy monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
 };
 enum class DynamicGraphFault : std::uint8_t {
     none, noMaster, multipleMasters, invalidFrameCapacity,
     invalidPhysicalCount, missingSource, invalidSource,
     invalidSendDestination, duplicateSend, mainFeedback, cycle, invalidChannel,
-    scratchBudget, overflow, multipleMonitors, monitorFeedback
+    scratchBudget, overflow, multipleMonitors, monitorFeedback, invalidMonitorLatencyPolicy
 };
 struct DynamicGraphError final {
     DynamicGraphFault fault=DynamicGraphFault::none;
@@ -339,8 +344,11 @@ public:
     // A potential direct tap is not proof that a hardware patch is armed.
     struct LatencyPlanSummary final {
         bool valid=false,hasMonitor=false;
+        MonitorLatencyPolicy monitorPolicy=MonitorLatencyPolicy::aligned;
         int alignedSamples=0,mainBeforeAlignment=0,monitorBeforeAlignment=0;
-        int potentialDirectMaxSamples=0;
+        int potentialDirectMaxSamples=0,monitorOutputSamples=0;
+        int monitorAlignmentPad() const noexcept {return monitorOutputSamples-monitorBeforeAlignment;}
+        int monitorIndependentSaving() const noexcept {return hasMonitor?alignedSamples-monitorBeforeAlignment:0;}
         ChannelId potentialDirectMaxChannel{};
         unsigned potentialDirectMaxTies=0;
         bool directTapRaisesTarget() const noexcept {
@@ -383,6 +391,7 @@ public:
         int terminal=0,externalTerminal=0;
         LatencyPlanSummary summary;
         summary.hasMonitor=monitor_!=notScheduled;
+        summary.monitorPolicy=monitorLatencyPolicy_;
         summary.mainBeforeAlignment=output[main_];
         if(summary.hasMonitor)summary.monitorBeforeAlignment=output[monitor_];
         for(const auto i:renderOrder_){
@@ -403,6 +412,11 @@ public:
         summary.potentialDirectMaxSamples=externalTerminal;
         terminal=std::max(terminal,externalTerminal);
         externalTerminal=terminal;
+        // MAIN and every potential direct output remain on the existing
+        // global reference, even when MONITOR is explicitly independent.
+        summary.monitorOutputSamples=!summary.hasMonitor?0:
+            monitorLatencyPolicy_==MonitorLatencyPolicy::independent?
+                summary.monitorBeforeAlignment:terminal;
         for(const auto i:renderOrder_) {
             const auto& lane=lanes_[i];
             if((lane.inputL>=0 || lane.playerDeckId!=0) &&
@@ -413,7 +427,8 @@ public:
                 if(!allocate(edgeDelays_[e],arrival[edges_[e].destination]-output[i])) {
                     error={DynamicGraphFault::scratchBudget,lane.id};return false;
                 }
-            if((i==main_||i==monitor_)&&!allocate(sinkDelays_[i],terminal-output[i])) {
+            if((i==main_||i==monitor_)&&!allocate(sinkDelays_[i],
+                   (i==monitor_?summary.monitorOutputSamples:terminal)-output[i])) {
                 error={DynamicGraphFault::scratchBudget,lane.id};return false;
             }
             // All potential direct taps are prepared on CONTROL so changing
@@ -444,7 +459,12 @@ public:
         if(req.physicalInputs<0 || req.physicalInputs>256) {
             error.fault=DynamicGraphFault::invalidPhysicalCount;return false;
         }
+        if(req.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned &&
+           req.monitorLatencyPolicy!=MonitorLatencyPolicy::independent){
+            error.fault=DynamicGraphFault::invalidMonitorLatencyPolicy;return false;
+        }
         DynamicPreparedMixerBlock next;
+        next.monitorLatencyPolicy_=req.monitorLatencyPolicy;
         next.capacity_=req.maxFrames;
         next.physicalInputs_=req.physicalInputs;
         const auto& rows=roster.channels();
@@ -491,6 +511,9 @@ public:
         if(main==notScheduled){error.fault=DynamicGraphFault::noMaster;return false;}
         next.main_=main;
         next.monitor_=monitor;
+        if(monitor==notScheduled && req.monitorLatencyPolicy==MonitorLatencyPolicy::independent){
+            error.fault=DynamicGraphFault::invalidMonitorLatencyPolicy;return false;
+        }
         next.mainMonoAfterFx_=req.mainMonoAfterFx;
         for(const auto& patch:req.sources) {
             const auto it=byId.find(patch.id.value);
@@ -1082,6 +1105,7 @@ private:
     std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;
     LatencyPlanSummary latencyPlan_{};
+    MonitorLatencyPolicy monitorLatencyPolicy_=MonitorLatencyPolicy::aligned;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
     std::unique_ptr<SourceFade[]> sourceFades_;

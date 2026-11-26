@@ -3165,9 +3165,14 @@ public:
             o->setProperty("nativeLatencyPlanMainBeforeAlignment",latencyPlan.mainBeforeAlignment);
             o->setProperty("nativeLatencyPlanMainAlignmentPad",latencyPlan.alignedSamples-latencyPlan.mainBeforeAlignment);
             o->setProperty("nativeLatencyPlanHasMonitor",latencyPlan.hasMonitor);
+            o->setProperty("nativeLatencyPlanMonitorPolicy",
+                latencyPlan.monitorPolicy==armix::mixer::MonitorLatencyPolicy::independent?
+                    "INDEPENDENT_MONITOR":"GLOBAL_ALIGNED");
             if(latencyPlan.hasMonitor) {
                 o->setProperty("nativeLatencyPlanMonitorBeforeAlignment",latencyPlan.monitorBeforeAlignment);
-                o->setProperty("nativeLatencyPlanMonitorAlignmentPad",latencyPlan.alignedSamples-latencyPlan.monitorBeforeAlignment);
+                o->setProperty("nativeLatencyPlanMonitorAlignmentPad",latencyPlan.monitorAlignmentPad());
+                o->setProperty("nativeLatencyPlanMonitorOutputSamples",latencyPlan.monitorOutputSamples);
+                o->setProperty("nativeLatencyPlanMonitorIndependentSaving",latencyPlan.monitorIndependentSaving());
             }
             o->setProperty("nativeLatencyPlanPotentialDirectMax",latencyPlan.potentialDirectMaxSamples);
             if(latencyPlan.potentialDirectMaxTies) {

@@ -1344,6 +1344,8 @@ private:
                  "nativeLatencyPlanAlignedSamples", "nativeLatencyPlanMainBeforeAlignment",
                  "nativeLatencyPlanMainAlignmentPad", "nativeLatencyPlanHasMonitor",
                  "nativeLatencyPlanMonitorBeforeAlignment", "nativeLatencyPlanMonitorAlignmentPad",
+                 "nativeLatencyPlanMonitorPolicy", "nativeLatencyPlanMonitorOutputSamples",
+                 "nativeLatencyPlanMonitorIndependentSaving",
                  "nativeLatencyPlanPotentialDirectMax", "nativeLatencyPlanPotentialDirectChannel",
                  "nativeLatencyPlanPotentialDirectTies", "nativeLatencyPlanPotentialDirectRaisesTarget",
                  "callbackModulo4Observed", "callbackModulo4OverBudget",

@@ -29,11 +29,12 @@ ARMIX_TEST_NOINLINE void operator delete[](void* p,std::size_t) noexcept {std::f
 #undef ARMIX_TEST_NOINLINE
 using namespace armix::mixer;
 struct Effects {
-    ChannelId a{},receiver{},isolated{};
-    armix::dsp::StereoLatencyDelay delayA,delayReceiver,delayIsolated;
-    int latency(ChannelId id) const noexcept{return id==a?7:id==receiver?3:id==isolated?19:0;}
+    ChannelId a{},receiver{},isolated{},monitor{};
+    int monitorLatency=0;
+    armix::dsp::StereoLatencyDelay delayA,delayReceiver,delayIsolated,delayMonitor;
+    int latency(ChannelId id) const noexcept{return id==a?7:id==receiver?3:id==isolated?19:id==monitor?monitorLatency:0;}
     void render(ChannelId id,float* l,float* r,int n) noexcept {
-        auto* delay=id==a?&delayA:id==receiver?&delayReceiver:id==isolated?&delayIsolated:nullptr;
+        auto* delay=id==a?&delayA:id==receiver?&delayReceiver:id==isolated?&delayIsolated:id==monitor?&delayMonitor:nullptr;
         if(delay)for(int i=0;i<n;++i)delay->process(l[i],r[i]);
     }
 };
@@ -90,7 +91,8 @@ int main(){
     assert(probe.prepare(0)&&!probe.active());
     assert(probe.prepare(7)&&probe.active());
     assert(probe.prepare(0)&&!probe.active());
-    for(bool pre:{false,true}) for(bool potentialOnly:{false,true}) {
+    for(bool pre:{false,true}) for(bool potentialOnly:{false,true})
+    for(bool independent:{false,true}) for(int ownMonitorLatency:{0,5}) {
         DynamicChannelRoster roster;
         std::vector<ChannelEdit> edits;
         for(int i=0;i<(potentialOnly?6:5);++i){ChannelEdit e;e.kind=ChannelEdit::Kind::add;
@@ -106,7 +108,10 @@ int main(){
         // Physical receiver input is mixed alongside internally delayed PCM.
         DynamicGraphRequest request;request.physicalInputs=6;request.maxFrames=16;
         request.sources={{a,0,1,true},{b,2,3,true},{r,4,5,true}};
+        request.monitorLatencyPolicy=independent?MonitorLatencyPolicy::independent:MonitorLatencyPolicy::aligned;
         auto fx=std::make_shared<Effects>();fx->a=a;fx->receiver=r;
+        fx->monitor=monitor;fx->monitorLatency=ownMonitorLatency;
+        assert(fx->delayMonitor.prepare(ownMonitorLatency));
         if(potentialOnly) {
             // No WIRE to MAIN/MONITOR and no armed direct output. A source
             // only lane nevertheless participates in today's global PDC.
@@ -123,10 +128,15 @@ int main(){
         plan.latency=+[](void* p,ChannelId id) noexcept{return static_cast<Effects*>(p)->latency(id);};
         assert(publisher.commit(roster,request,0,9,9,true,plan).ok());
         const int expected=potentialOnly?19:10;
+        const int expectedMonitor=independent?ownMonitorLatency:expected;
         assert(publisher.latencySamples(9,1)==expected);
         const auto summary=publisher.latencyPlanSummary(9,1);
         assert(summary.valid&&summary.hasMonitor&&summary.alignedSamples==expected);
-        assert(summary.mainBeforeAlignment==10&&summary.monitorBeforeAlignment==0);
+        assert(summary.mainBeforeAlignment==10&&summary.monitorBeforeAlignment==ownMonitorLatency);
+        assert(summary.monitorPolicy==request.monitorLatencyPolicy);
+        assert(summary.monitorOutputSamples==expectedMonitor);
+        assert(summary.monitorAlignmentPad()==expectedMonitor-ownMonitorLatency);
+        assert(summary.monitorIndependentSaving()==expected-ownMonitorLatency);
         assert(summary.potentialDirectMaxSamples==expected);
         assert(summary.potentialDirectMaxChannel==(potentialOnly?ids[5]:r));
         assert(summary.potentialDirectMaxTies==1);
@@ -146,7 +156,7 @@ int main(){
             for(int i=0;i<n;++i){
                 assert(std::abs(l[i]-(time+i==expected?8.f:0.f))<1.e-5f);
                 assert(std::abs(right[i]-l[i])<1.e-5f);
-                assert(std::abs(ml[i]-(time+i==expected?2.f:0.f))<1.e-5f);
+                assert(std::abs(ml[i]-(time+i==expectedMonitor?2.f:0.f))<1.e-5f);
                 assert(std::abs(mr[i]-ml[i])<1.e-5f);
             }
             time+=n;
@@ -180,5 +190,42 @@ int main(){
         assert(!publisher.commit(roster,request,1,9,9,true,plan).ok());
         assert(publisher.acceptedRevision()==1);
         assert(publisher.latencyPlanSummary(9,1).alignedSamples==expected);
+        // Policy switching cannot use armed WIRE or FX-only commit
+        // exceptions, even if the caller attests unchanged physical pins.
+        request.maxScratchBytes=64U*1024U*1024U;
+        request.monitorLatencyPolicy=independent?MonitorLatencyPolicy::aligned:MonitorLatencyPolicy::independent;
+        for(bool fxOnly:{false,true}){
+            const auto refused=publisher.commit(roster,request,1,9,9,false,plan,!fxOnly,fxOnly);
+            assert(refused.fault==DynamicNativeSessionPublisher::Fault::outputArmed);
+            assert(publisher.acceptedRevision()==1);
+            assert(publisher.latencyPlanSummary(9,1).monitorOutputSamples==expectedMonitor);
+        }
+        // Invalid enum is rejected and leaves the accepted graph untouched.
+        auto invalid=request;invalid.monitorLatencyPolicy=static_cast<MonitorLatencyPolicy>(255);
+        assert(!publisher.commit(roster,invalid,1,9,9,true,plan).ok());
+        assert(publisher.acceptedRevision()==1);
+        assert(publisher.commit(roster,request,1,9,9,true,plan).ok());
+        const auto switched=publisher.latencyPlanSummary(9,2);
+        assert(switched.valid&&switched.alignedSamples==expected);
+        assert(switched.monitorOutputSamples==(independent?expected:ownMonitorLatency));
+        assert(!publisher.latencyPlanSummary(9,1).valid);
+        // Same-policy independent rebuilds also cannot silently retime.
+        if(!independent){
+            plan.graphRevision=3;
+            const auto refused=publisher.commit(roster,request,2,9,9,false,plan,true);
+            assert(refused.fault==DynamicNativeSessionPublisher::Fault::outputArmed);
+        }
     }
+    // Without an actual independent MONITOR sink the policy is invalid.
+    DynamicChannelRoster mainOnly;
+    ChannelEdit add;add.kind=ChannelEdit::Kind::add;add.role=ChannelRole::main;
+    add.text="MAIN";add.position=0;add.format=ProcessingFormat::stereo;
+    assert(mainOnly.edit(0,std::span<const ChannelEdit>(&add,1)).ok());
+    DynamicGraphRequest request;request.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher publisher;
+    const auto refused=publisher.commit(mainOnly,request,0,9,9,true);
+    assert(refused.fault==DynamicNativeSessionPublisher::Fault::invalidGraph);
+    assert(refused.graphError.fault==DynamicGraphFault::invalidMonitorLatencyPolicy);
+    assert(publisher.acceptedRevision()==0);
+    std::puts("PASS: 16 monitor policy/latency/topology fixtures and disarmed transition fences");
 }

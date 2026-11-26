@@ -113,8 +113,14 @@ public:
         if(verifiedInternalFxOnly && !fx.owner) {
             report.fault=Fault::invalidCandidate;return report;
         }
-        if(!allOutputsDisarmed && !verifiedInternalWireOnly &&
-           !verifiedInternalFxOnly) {
+        // A monitor timing-domain change cannot be hidden in the existing
+        // live WIRE/FX exceptions. While independent monitoring is active,
+        // even rebuilding the same policy requires an explicit disarm:
+        // fan-in changes can otherwise change the singer's delay mid-note.
+        if(!allOutputsDisarmed &&
+           (independentMonitorPublished_ ||
+            request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned ||
+            (!verifiedInternalWireOnly && !verifiedInternalFxOnly))) {
             report.fault=Fault::outputArmed;return report;
         }
         // CONTROL: validate every physical source against ONE actual
@@ -222,6 +228,7 @@ public:
                                              expectedRevision,activeDeviceEpoch);
         switch(status) {
             case Publisher::Result::applied: {
+                independentMonitorPublished_=request.monitorLatencyPolicy==MonitorLatencyPolicy::independent;
                 cueBus_.cancel(false); // new graph revision requires a new explicit listen request
                 const auto source=musicTempo_.selectedSource();
                 if(source.value) {
@@ -550,7 +557,9 @@ public:
         return p?p->graph.latencyPlanSummary():DynamicPreparedMixerBlock::LatencyPlanSummary{};
     }
     NativeFxCueBus& cueControl() noexcept {return cueBus_;} // CONTROL only
-    void unpublish() noexcept {cueBus_.cancel(false);publisher_.unpublish();}
+    void unpublish() noexcept {
+        cueBus_.cancel(false);publisher_.unpublish();independentMonitorPublished_=false;
+    }
     void pollRetirement() noexcept {publisher_.pollRetirement();}
     std::uint64_t acceptedRevision() const noexcept {
         return publisher_.lastRevision(); // CONTROL only
@@ -560,6 +569,7 @@ public:
     }
 private:
     Publisher publisher_;
+    bool independentMonitorPublished_=false; // CONTROL-only accepted-policy fence
     NativeMusicTempoMonitor musicTempo_{};
     NativeFxCueBus cueBus_{};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT;
