@@ -15,13 +15,14 @@ struct PortablePreset final {
         o->setProperty("mode",int(p.mode));o->setProperty("style",int(p.style));
         o->setProperty("adaptiveFocus",p.adaptiveFocus);o->setProperty("spillover",p.spillover);
         if(p.smartStage)o->setProperty("smartStage",true);
+        if(p.throwMode!=ThrowMode::off)o->setProperty("throwMode",int(p.throwMode));
         o->setProperty("bpmQuarter",int(p.bpmQuarter));o->setProperty("division",int(p.division));
         return juce::var(o.release());
     }
     static bool decode(const juce::var& v,Parameters& out){
         if(!v.isObject())return false;
         const auto count=v.getDynamicObject()->getProperties().size();
-        if(count!=14&&count!=15)return false;
+        if(count<14||count>16)return false;
         auto p=Parameters{};
         const auto number=[&](const char* k,float& target){
             const auto x=v.getProperty(k,{});if(!x.isInt()&&!x.isDouble())return false;
@@ -39,7 +40,8 @@ struct PortablePreset final {
            !integer("mode",2,mode)||!integer("style",4,style)||!integer("bpmQuarter",960,bpm)||
            !integer("division",6,division)||!boolean("adaptiveFocus",p.adaptiveFocus)||
            !boolean("spillover",p.spillover))return false;
-        if(count==15&&(!boolean("smartStage",p.smartStage)||!p.smartStage))return false;
+        if(count>=15&&(!boolean("smartStage",p.smartStage)||!p.smartStage))return false;
+        if(count==16){int modeValue=0;if(!integer("throwMode",8,modeValue)||modeValue==0)return false;p.throwMode=static_cast<ThrowMode>(modeValue);}
         p.mode=static_cast<StereoMode>(mode);p.style=static_cast<EchoStyle>(style);
         p.bpmQuarter=static_cast<std::uint16_t>(bpm);p.division=static_cast<std::uint8_t>(division);
         if(!valid(p))return false;

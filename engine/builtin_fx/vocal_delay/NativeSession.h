@@ -23,6 +23,7 @@ struct Snapshot final {Lease lease{};std::uint32_t revision=0,lastSubmitted=0;Pa
 enum class Submit { queued, stale, invalid, busy, notReady };
 class NativeSession final {
 public:
+    explicit NativeSession(bool wetOnly=false) noexcept:wetOnly_(wetOnly),core_(wetOnly) {}
     // CONTROL/device while unpublished or fully stopped; never callback.
     bool prepareStopped(double rate,Lease lease,const State& state){
         if(!lease.valid()||!validRate(rate)||state.kind!=State::Kind::continuous||
@@ -68,6 +69,7 @@ public:
     void processStereo(float* l,float* r,std::size_t n) noexcept{
         consumeRealtimeEdits();
         if(ready_&&!fullyBypassed_)core_.processStereo(l,r,n);
+        else if(wetOnly_&&l&&r){std::fill_n(l,n,0.f);if(r!=l)std::fill_n(r,n,0.f);}
     }
     // CONTROL only, exclusively for an unpublished detached editor with
     // no PCM reader. No dummy render or optimistic audio ACK. Same prepared
@@ -106,7 +108,8 @@ private:
         Command c{};while(commands_.pop(c)){}
         Receipt r{};while(receipts_.pop(r)){}
     }
-    ContinuousDelayCore core_{};
+    const bool wetOnly_;
+    ContinuousDelayCore core_;
     FxSpsc<Command,4> commands_{};
     FxSpsc<Receipt,4> receipts_{};
     Lease lease_{};double rate_=0.;

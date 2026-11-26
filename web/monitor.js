@@ -4,6 +4,7 @@
   const api = window.__JUCE__?.backend;
   if (!api?.emitEvent || !api?.addEventListener) return;
   let state = {};
+  let streamPending=false;
   let catalogItems = []; // native VST3 catalog, never a WebView file path
   const catalogNames=new Map();
   const css = document.createElement("style");
@@ -264,6 +265,7 @@
       '<button id="arStreamConnect" type="button">CONNECT</button>' +
       '<button id="arStreamArm" type="button">ARM OUTPUT</button>' +
       '<button id="arStreamStop" type="button">DISCONNECT</button></div>' +
+      '<div class="arPatchNote"><button id="arDmxSplit" type="button" class="btn-180">MAIN → STREAM / MONITOR → ASIO</button> <span id="arDmxSplitStatus">Connect a separate playback endpoint, then mute both outputs before switching.</span></div>' +
       '<div id="arStreamStatus" role="status">Choose a playback endpoint available on Windows. Hardware or virtual devices are both supported.</div></section>' +
     '</section>' +
     '<footer class="arPatchFooter"><div id="arRouteFeedback" role="status">Select actual input ports, then APPLY while output is muted.</div><div class="arRouteFoot"><button class="btn-180" id="arPatchRevert">REVERT DRAFT</button><button class="btn-180" id="arRouteSaveDry" title="Save real native VST3 state, routing and AUX sends while OUTPUT is muted">SAVE SHOW</button><button class="btn-180" id="arRouteBrowseShows" title="Browse SHA-verified native Shows stored in Studio/Shows">BROWSE SHOWS</button><button class="btn-180" id="arRouteApply">APPLY ROUTING</button><button class="btn-180" id="arRouteClear" title="Discard the native input patch; keep the mixer prepared and output muted">CLEAR PATCH</button></div></footer><section id="arNativeShowBrowser" hidden role="region" aria-label="Native Show browser"><div class="arNativeShowLine"><strong>NATIVE SHOWS</strong><select id="arNativeShowSelect" aria-label="Select a saved native Show"><option value="">Choose a saved Show...</option></select><button class="btn-180" id="arNativeShowRecall" type="button" disabled>RECALL SELECTED</button><span id="arNativeShowStatus" role="status">Browse saved routing snapshots; hardware OUTPUT remains MUTED on recall.</span></div></section><section id="arPatchFxPicker" role="dialog" aria-label="Choose native VST3" aria-modal="false"><label for="arPatchFxSearch">FIND VST3 · SHARED PICKER</label><input id="arPatchFxSearch" type="search" autocomplete="off" placeholder="Search plugin name or ID"><div id="arPatchFxResults"></div><div id="arPatchFxCount"></div></section></section>';
@@ -544,12 +546,17 @@
   function renderPatchOutput(){
     const pins=state.dryRoutingLab?.outputPorts;
     const list=Array.isArray(pins)?pins:[];
-    document.getElementById("arPatchOutputMap").innerHTML=["MAIN L","MAIN R"].map((side,i)=>{
-      const n=list[i],valid=Number.isInteger(n)&&n>=0;
+    const d=state.dryRoutingLab||{},split=d.secondaryMainOnly===true;
+    const mapped=split?d.monitorOutputs:d.mainOutputs;
+    const pair=Array.isArray(mapped)&&mapped.length===2?mapped:split?[]:list;
+    const html=(split?["MONITOR L","MONITOR R"]:["MAIN L","MAIN R"]).map((side,i)=>{
+      const n=pair[i],valid=Number.isInteger(n)&&n>=0;
       return '<div class="arPatchOutput"><b>'+side+'</b><span>'+
         (valid?'DEVICE OUTPUT '+(n+1)+' · CURRENT / READ-ONLY':'NOT AVAILABLE · SETUP REQUIRED')+
         '</span></div>';
-    }).join("");
+    }).join("")+(split?'<div class="arPatchOutput"><b>MAIN</b><span>SECONDARY STREAM ONLY · NO ASIO PIN</span></div>':"");
+    const map=document.getElementById("arPatchOutputMap");
+    if(map.innerHTML!==html)map.innerHTML=html;
   }
   function renderPatchMatrix(){
     if(patchTab!=="input")return;
@@ -1942,6 +1949,7 @@
         document.getElementById("arRouteFeedback").textContent=
           "AUDIO DEVICE CHANGED · all input assignments reset. Select ports again.";
       } else updateRouteLabIdentity();
+      if(patchTab==="output")renderPatchOutput();
     }
     setTextIfChanged(el("arSignalBadge"),!d.monitor ? "OUTPUT MUTED" : d.masterMute ? "MASTER MUTED" : d.channelMute ? "CH1 MUTED" : "OUTPUT ARMED");
     const outputBadge=el("arSignalBadge");
@@ -1973,6 +1981,15 @@
     el("arStreamArm").disabled=!streamConnected || !!d.secondaryOutputFault ||
       !d.dryRoutingLab?.acceptedRoute || !!d.adaptiveClockActive;
     el("arStreamStop").disabled=!streamConnected && !d.secondaryOutputFault;
+    const split=d.dryRoutingLab?.secondaryMainOnly===true;
+    const canSplit=!!d.dryRoutingLab?.nativeChannelIdPcmActive &&
+      d.dryRoutingLab?.outputPorts?.length===2 && !!d.dryRoutingLab?.busOutputObserved;
+    el("arDmxSplit").disabled=streamPending || !!d.monitor || streamArmed ||
+      !canSplit || (!split && (!streamConnected || !!d.secondaryOutputFault));
+    setTextIfChanged(el("arDmxSplit"),split?"RESTORE PHYSICAL MAIN":"MAIN → STREAM / MONITOR → ASIO");
+    setTextIfChanged(el("arDmxSplitStatus"),split?
+      "Split routing accepted. Patch MONITOR WIREs, then arm each output separately.":
+      "Connect a separate playback endpoint, mute both outputs, then switch.");
     setTextIfChanged(el("arStreamArm"),streamArmed?"DISARM OUTPUT":"ARM OUTPUT");
     setTextIfChanged(el("arStreamStatus"),
       d.secondaryOutputFault?"OUTPUT FAULT / SOURCE CLOCK CHANGED · DISCONNECT AND RECONNECT":
@@ -2049,7 +2066,6 @@
     }
     repaint(d);
   });
-  let streamPending=false;
   const requestStreamInventory=()=>
     api.emitEvent("arMixAction",{action:"audioDeviceInventory"});
   api.addEventListener("arMixAudioDeviceInventory",data=>{
@@ -2078,6 +2094,15 @@
     if(streamPending || !state.secondaryOutputReady)return;
     streamPending=true;
     api.emitEvent("arMixAction",{action:"secondaryOutputArm",value:!state.secondaryOutputArmed});
+  });
+  el("arDmxSplit").addEventListener("click",()=>{
+    if(streamPending || el("arDmxSplit").disabled)return;
+    const d=state.dryRoutingLab||{},bus=d.nativeBus||{};
+    if(!d.dmxDeviceEpoch||!bus.graphRevision||!bus.rosterRevision)return;
+    streamPending=true;
+    api.emitEvent("arMixAction",{action:"secondaryOutputSplit",value:{
+      enabled:d.secondaryMainOnly!==true,deviceEpoch:d.dmxDeviceEpoch,
+      graphRevision:bus.graphRevision,rosterRevision:bus.rosterRevision}});
   });
   el("arStreamStop").addEventListener("click",()=>{
     if(streamPending)return;

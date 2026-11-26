@@ -107,6 +107,11 @@ public:
     // Host-selected voicing, immutable during processing. Existing core/C ABI
     // keeps original behavior; Reverb-Sis selects the calibrated musical return.
     void prepare(double sampleRate, bool musicalReturn);
+    // Explicit stopped-only send/return render mode. Dry gain is identically
+    // zero from the first sample; saved/automated insert Mix cannot leak dry.
+    // The host must own return gain, wet-only bypass, and mode persistence.
+    // Existing prepare overloads restore normal insert behavior.
+    void prepareWetReturn(double sampleRate, bool musicalReturn);
     void reset() noexcept;
     bool prepared() const noexcept;
 
@@ -127,6 +132,7 @@ public:
                  float* outputLeft, float* outputRight, std::size_t frames) noexcept;
 
 private:
+    void prepareMode(double sampleRate, bool musicalReturn, bool wetOnly);
     struct State;
     std::unique_ptr<State> state_;
     std::array<std::atomic<float>, parameterCount> parameters_;

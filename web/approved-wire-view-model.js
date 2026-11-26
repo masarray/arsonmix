@@ -187,17 +187,23 @@
       payload:{changes:[{op:"SET_TAP",from:sourceId,edgeId,tap:targetTap}]}};
   }
 
-  // Only one parallel SEND can own a selected SOF destination. It must be
-  // an actual GROUP/FX_RETURN ChannelId, never MAIN/primary, an ordinal or
-  // an ambiguous duplicate. SOF gain, PRE/POST, and enable share this edge.
+  // DMX: a return or group can feed a terminal MONITOR without rerendering
+  // its DSP. All gestures still resolve one installed parallel EdgeId.
+  function sofSourceRole(role) {
+    return ["INPUT","GROUP","FX_RETURN"].includes(role);
+  }
+  function sofTargetRole(role) {
+    return ["GROUP","FX_RETURN","MONITOR"].includes(role);
+  }
+  // Never MAIN/primary, self, ordinal, stale or ambiguous duplicate.
   function sofSendEdge(snapshot,{sourceId,destinationId}={}) {
     if(snapshot?.admitted!==true||snapshot.retained===true||
        !nativeId(sourceId)||!nativeId(destinationId))return null;
     const graph=snapshot.graph;
     const source=graph?.channels?.filter(ch=>ch.id===sourceId);
     const target=graph?.channels?.filter(ch=>ch.id===destinationId);
-    if(source?.length!==1||source[0].role!=="INPUT"||
-       target?.length!==1||!["GROUP","FX_RETURN"].includes(target[0].role))
+    if(sourceId===destinationId||source?.length!==1||!sofSourceRole(source[0].role)||
+       target?.length!==1||!sofTargetRole(target[0].role))
       return null;
     const matches=graph.edges?.filter(e=>e.enabled===true&&
       e.from===sourceId&&e.to===destinationId&&
@@ -396,7 +402,7 @@
 
   return Object.freeze({gainDb,edgePresentation,parallelEdge,
     acceptedParallelEdge,primaryChannelLevelPlan,channelSumLevelPlan,gainReadback,canEditTap,gestureTap,sofAvailable,
-    compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,
+    compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,sofSourceRole,sofTargetRole,
     channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,
     gainDispatchPlan,nativeRecoveryPlan});
 });

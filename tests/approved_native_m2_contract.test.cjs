@@ -4065,7 +4065,7 @@ test("SOF double-click and target selection never commandeer MAIN fader",()=>{
   const bundle=read("scripts/build_approved_native_gui.py");
   assert.match(html,/function selectedSofDestination\(\)/);
   assert.match(html,/sofTargetId=target\?\.id\?\?null/);
-  assert.match(html,/const send=sofEnabled&&t\.kind==='audio'/);
+  assert.match(html,/const send=sofEnabled&&isSofSource\(t\)/);
   assert.match(html,/fader\.dispatchEvent\(new Event\('change'/);
   assert.match(bundle,/get sofTargetId\(\)\{return sofTargetId;\}/);
   assert.match(bridge,/x\.id===scope\.sofTargetId/);
@@ -7258,6 +7258,64 @@ test("P0 native busy guard and all physical presentations produce explicit recei
  assert.match(w,/win32::ensureOwnedPopupVisible/);
  assert.equal(protocol.operatorMessage("This VST3 has no native editor"),
   "FX editor unavailable · Reopen from FX Rack");
+});
+
+// DMX native source/target roles: no terminal sends, no guessed IDs.
+test("DMX SOF selects exact independent FX return to monitor edge",()=>{
+ const fx="9007199254740993",mon="9007199254740994",main="18446744073709551615";
+ const edge={edgeId:"9223372036854775809",from:fx,to:mon,enabled:true,
+   primaryOutput:false,tap:"PRE_FADER",sendEnabled:true,gainLinear:.125};
+ const graph={channels:[{id:fx,role:"FX_RETURN"},{id:mon,role:"MONITOR"},
+   {id:main,role:"MAIN"}],mainChannelId:main,edges:[edge],
+   capabilities:{supportedOps:["SET_WIRE_GAIN","SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION"]}};
+ const snap={admitted:true,graph};
+ const find=(sourceId,destinationId,state=snap)=>wireVM.sofSendEdge(state,{sourceId,destinationId});
+ assert.equal(find(fx,mon),edge);
+ assert.equal(find(fx,mon,{...snap,retained:true}),null);
+ assert.equal(find(fx,mon,{...snap,graph:{...graph,edges:[edge,edge]}}),null);
+ assert.equal(find(fx,mon,{...snap,graph:{...graph,edges:[{...edge,primaryOutput:true}]}}),null);
+ assert.equal(find(fx,main),null);
+ assert.equal(find(mon,fx,{...snap,graph:{...graph,edges:[{...edge,from:mon,to:fx}]}}),null);
+ assert.equal(find(fx,fx),null);
+ assert.equal(wireVM.sofSourceRole("MONITOR"),false);
+ assert.equal(wireVM.sofTargetRole("MONITOR"),true);
+ assert.equal(wireVM.sofTargetRole("MAIN"),false);
+});
+
+test("DMX conversion ACK needs a new actual wet return and preserved source identity",()=>{
+ const setup=()=>{
+  const base=acceptedFixture(),source=base.graph.channels.find(c=>c.role==="INPUT");
+  const main=base.graph.channels.find(c=>c.role==="MAIN");
+  base.graph.mainChannelId=main.id;source.primaryOutId=main.id;
+  source.inserts=[{id:"fx-existing",catalogId:"test.eq",name:"EQ"},
+    {id:"fx-reverb",catalogId:"armix.builtin.vocal-reverb.v1",name:"Reverb-Sis"}];
+  base.graph.capabilities.supportedOps.push("CONVERT_REVERB_RETURN");
+  const c=protocol.createController({emit(){}});
+  assert.ok(c.onSnapshot(base));return {base,source,main,c};
+ };
+ const run=(corrupt)=>{
+  const {base,source,main,c}=setup();
+  assert.equal(c.intent("CONVERT_REVERB_RETURN",source.id,{slot:0,instanceId:"fx-existing"}).ok,false);
+  assert.equal(c.intent("CONVERT_REVERB_RETURN",source.id,{slot:1,instanceId:"stale"}).ok,false);
+  const r=c.intent("CONVERT_REVERB_RETURN",source.id,{slot:1,instanceId:"fx-reverb"});
+  assert.ok(r.ok);
+  c.onAck({requestId:r.requestId,status:"ACCEPTED",errorCode:"NONE",
+    deviceEpoch:base.device.epoch,graphRevision:"6",rosterRevision:"8"});
+  assert.equal(c.state().current.graph.channels.find(x=>x.id===source.id).inserts.length,2);
+  const next=clone(base);
+  next.graph.revision="6";next.graph.rosterRevision="8";
+  next.graph.channels.find(x=>x.id===source.id).inserts.pop();
+  const wet=clone(source);wet.id="9007199254740999";wet.role="FX_RETURN";
+  wet.name="Reverb-Sis Return";wet.inserts=[{id:"fx-wet",catalogId:"armix.builtin.vocal-reverb-return.v1",name:"Reverb-Sis Return"}];
+  next.graph.channels.push(wet);
+  next.graph.edges.push({edgeId:"9223372036854775991",from:source.id,to:wet.id,
+    signalKind:"AUDIO",enabled:true,primaryOutput:false,gainLinear:1,tap:"POST_FADER"});
+  if(corrupt)corrupt(next,wet);
+  return {ok:c.onSnapshot(next),c,wet};
+ };
+ assert.ok(run(null).ok);
+ assert.equal(run((n,w)=>{w.inserts[0].catalogId="armix.builtin.vocal-reverb.v1";}).ok,false);
+ assert.equal(run(n=>{n.graph.edges.pop();}).ok,false);
 });
 
 

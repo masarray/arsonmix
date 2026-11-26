@@ -753,11 +753,14 @@
     window.setTimeout(()=>controller?.expire(result.requestId),8000);
     return true;
   }
+  function nativeSofSource(t) {
+    return !!t && (t.nativeRole?wireVM.sofSourceRole(t.nativeRole):t.kind==="audio");
+  }
   function selectedNativeSofEdge(t) {
-    if(!scope?.sofEnabled||!t||t.kind!=="audio")return null;
+    if(!scope?.sofEnabled||!nativeSofSource(t))return null;
     const current=controller?.state()?.current;
     const matches=scope?.tracks?.filter(x=>x.id===scope.sofTargetId&&
-      (x.kind==="bus"||x.kind==="fx"))||[];
+      (x.nativeRole?wireVM.sofTargetRole(x.nativeRole):x.kind==="bus"||x.kind==="fx"))||[];
     if(matches.length!==1)return null;
     return wireVM.sofSendEdge(current,{sourceId:nativeIdFor(t),
       destinationId:nativeIdFor(matches[0])});
@@ -799,7 +802,7 @@
       // No Number(ch.id): all native identities stay canonical uint64 strings.
       localByNative.set(ch.id,t.id);
       nextNativeByUi.set(t.id,ch.id);
-      t.name=displayNameFor(ch);t.kind=kind;
+      t.name=displayNameFor(ch);t.kind=kind;t.nativeRole=ch.role;
       const appearance=channelPresentation.get(ch.id);
       if(appearance?.color)t.color=appearance.color;
       if(appearance?.icon)t.icon=appearance.icon;
@@ -810,9 +813,9 @@
       t.nativeGainAvailable=(native.admitted===true||native.logical===true) && kind==="audio" &&
         native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
         Number.isFinite(ch.controls.inputGainDb);
-      t.nativeTapAvailable=native.admitted===true&&kind==="audio"&&
+      t.nativeTapAvailable=native.admitted===true&&nativeSofSource(t)&&
         native.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION");
-      t.nativeSendAvailable=native.admitted===true&&kind==="audio"&&
+      t.nativeSendAvailable=native.admitted===true&&nativeSofSource(t)&&
         native.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED");
       // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
       t.pan=ch.controls.pan*100;
@@ -1030,7 +1033,15 @@
       }
       if(scope?.sofEnabled && local.destId===scope?.sofTargetId){
         const t=scope?.tracks?.find(x=>x.id===tId);
-        const slider=document.querySelector('.strip[data-id="'+tId+'"] input.fader');
+        const root=document.querySelector('.strip[data-id="'+tId+'"]');
+        const slider=root?.querySelector('input.fader');
+        // Update accepted SEND readback without replacing the captured fader.
+        const readout=root?.querySelector('.sof-info small');
+        if(readout&&Number.isFinite(local.levelDb)){
+          const db=local.levelDb<=-60?'-∞':(local.levelDb>0?'+':'')+local.levelDb.toFixed(1);
+          const label=(local.sendEnabled===false?'OFF · saved ':'LEVEL ')+db+' dB';
+          if(readout.textContent!==label)readout.textContent=label;
+        }
         if(t&&slider&&document.activeElement!==slider){
           slider.value=String(local.levelDb);
           scope.syncFaderVisual?.(t);
@@ -1922,6 +1933,26 @@
   const pendingSlotPowers=new Map(); // ACK/readback, never demo FX flags
   // The rack header restores exact prior per-insert state, including
   // deliberately bypassed plugins; it never blindly turns ALL FX on.
+  function dmxReverbConversionTarget(t,slot){
+    const state=controller?.state(),current=state?.current;
+    if(!current?.admitted||current.retained||state.pending||
+       !current.graph.capabilities.supportedOps.includes("CONVERT_REVERB_RETURN"))return null;
+    const ch=current.graph.channels.find(c=>c.id===nativeIdFor(t));
+    const insert=ch?.inserts?.[slot];
+    return ch?.role==="INPUT"&&ch.primaryOutId===current.graph.mainChannelId&&
+      Number.isInteger(slot)&&slot>=0&&slot+1===ch.inserts.length&&
+      insert?.catalogId==="armix.builtin.vocal-reverb.v1"?{channelId:ch.id,instanceId:insert.id}:null;
+  }
+  function convertDmxReverb(t,slot){
+    const target=dmxReverbConversionTarget(t,slot);
+    if(!target)return false;
+    const result=controller.intent("CONVERT_REVERB_RETURN",target.channelId,
+      {slot,instanceId:target.instanceId});
+    if(!result.ok){status("FX Return conversion rejected · "+result.error);return false;}
+    window.setTimeout(()=>controller?.expire(result.requestId),15000);
+    status("Preparing Reverb-Sis Return · outputs must be disarmed");
+    return true;
+  }
   function editNativeFx(t,slot,target,position,token){
     const current=controller?.state()?.current,id=nativeIdFor(t);
     const decision=fxRackVM.nativeEditPlan(current,{
@@ -5552,6 +5583,8 @@
     canDeleteStrip:canDeleteNativeStrip,
     renameStrip:openNativeIdentity,
     orbitTarget:nativeOrbitTarget,
+    canConvertReverbReturn:dmxReverbConversionTarget,
+    convertReverbReturn:convertDmxReverb,
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
       const labels=stripVM.inputChoices(t,sourceChoicesFor(),
@@ -5624,7 +5657,7 @@
         }
         return true;
       }
-      if(field==="level"&&scope?.sofEnabled&&t.kind==="audio"){
+      if(field==="level"&&scope?.sofEnabled&&nativeSofSource(t)){
         const edge=selectedNativeSofEdge(t),db=Number(el.value);
         const uiId=edge&&uiByWireId.get(edge.edgeId);
         if(!edge||uiId===undefined||!Number.isFinite(db)||db< -60||db>6){
@@ -6207,6 +6240,13 @@
     },
     nativeIdFor(t){return nativeIdFor(t);},
     insertPlugin(id,target){
+      if(id==="armix.builtin.vocal-reverb-return.v1"){
+        const row=[...(scope?.tracks||[]),scope?.master].find(t=>t?.id===target?.channelId);
+        if(row?.nativeRole!=="FX_RETURN"){
+          nativeToast("Reverb-Sis Return requires an FX Return strip · or right-click last Reverb-Sis insert");
+          return true;
+        }
+      }
       if(logicalView){
         const t=scope?.tracks?.find(x=>x.id===target?.channelId)||
           (scope?.master?.id===target?.channelId?scope.master:null);
@@ -6297,7 +6337,7 @@
       // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
       // write the main channel's SET_FADER or M4 faderDb by accident.
       if (event.target.closest?.(".fader-box")||event.target.classList.contains("fader")){
-        if(scope?.sofEnabled&&t?.kind==="audio"){
+        if(scope?.sofEnabled&&nativeSofSource(t)){
           const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
           if(!edge||id===undefined||
              !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))

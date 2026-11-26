@@ -1537,6 +1537,32 @@ public:
     // O1 physical External OUT: solely CONTROL, on the already-approved
     // single ASIO/ChannelId PCM callback. Hardware pin masks and labels
     // are read atomically with the current device lifecycle generation.
+    juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t rosterRev,bool enable) {
+        if(!allOutputsDisarmed()||wantsMainContinuation()||independent_.active()||
+           !attached_||!directFence_.permitted()||handoff_.busy()||
+           savedDirectSetup_||savedLiveSetup_||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute()!=armix::diagnostics::Route::normal||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO")
+            return "DMX: explicitly MUTE hardware and DISARM STREAM first";
+        if(enable&&(!secondaryOutput_.ready()||secondaryOutput_.faulted()))
+            return "DMX: connect a verified Windows playback endpoint first";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!device||!device->isOpen()||!acceptedMixerBinding_||
+           !armix::device::JuceActivePortSnapshot::capture(device,ep,pins,fault))
+            return "DMX: verified device pin inventory unavailable";
+        const auto live=readMixerBinding(*device);
+        if(!armix::session::MixerDeviceBindingPolicy::sameBinding(*acceptedMixerBinding_,live)||
+           acceptedMixerBinding_->outputNames!=live.outputNames||
+           deviceManager_.getCurrentAudioDevice()!=device)
+            return "DMX: verified playback identity changed";
+        return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins,allOutputsDisarmed());
+    }
+
     juce::String patchPhysicalBusOutput(std::uint64_t ep,std::uint64_t rev,
             bool monitor,std::array<int,2> previous,std::array<int,2> wanted,
             const juce::String& leftName,const juce::String& rightName) {
@@ -2440,6 +2466,21 @@ public:
                 append,rack.rackBypassed,removeSlot,token,allOutputsDisarmed());
             return result.accepted?juce::String{}:juce::String(result.error);
         }catch(...){return "FX rack preparation failed; current rack retained";}
+    }
+    LiveDryRoutingLab::NativeBusResult convertNativeReverbReturn(std::uint64_t ep,
+            std::uint64_t revision,std::uint64_t roster,armix::mixer::ChannelId source,
+            std::size_t slot,const juce::String& token) {
+        LiveDryRoutingLab::NativeBusResult fail;fail.error="DMX_CONVERSION_DISARM_MONITOR_AND_STREAM";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||independent_.active()||!attached_||!directFence_.permitted()||
+           isMonitorEnabled()||secondaryOutput_.armed()||
+           routeReconfiguring_.load(std::memory_order_acquire)||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute_.load(std::memory_order_acquire)!=armix::diagnostics::Route::normal)
+            return fail;
+        return dryRoutingLab_.convertNativeReverbReturn(ep,revision,roster,source,slot,token,
+            device->getCurrentSampleRate(),juce::jmax(32,device->getCurrentBufferSizeSamples()),
+            armix::builtin_fx::prepareNativeVocalReverbReturn,true);
     }
     LiveDryRoutingLab::NativeBusResult editNativeFxRack(std::uint64_t ep,
             std::uint64_t revision,std::uint64_t roster,armix::mixer::ChannelId source,
@@ -3624,6 +3665,7 @@ private:
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
     armix::device::LiveSecondaryOutputDevice secondaryOutput_;
+    std::atomic_flag primaryCallbackLease_=ATOMIC_FLAG_INIT;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
     // Strong ownership stays on CONTROL. The admitted native ChannelId
@@ -3958,6 +4000,14 @@ private:
     {
         if (samples <= 0) {renderPressure_.breakSequence();cadence_.breakSequence();return;}
         const std::uint64_t beginUs = clockMicros(); // actual host callback entry
+        // Hold the primary callback lease through the post-render MAIN
+        // scratch tap and FIFO publication, not just the graph render.
+        armix::rt::RealtimeRenderPermit primaryLease(primaryCallbackLease_);
+        if(!primaryLease){
+            for(int c=0;c<outputChannels;++c)
+                if(outputs&&outputs[c])juce::FloatVectorOperations::clear(outputs[c],samples);
+            return;
+        }
         // Fail closed if JUCE silently rerouted ASIO/WASAPI after hotplug or
         // while the user is changing devices. Atomic gate only: no name hash,
         // allocations, OS calls or device restart on the realtime callback.
@@ -4098,6 +4148,7 @@ private:
             LegacyChannelOneLease ch1Lease{cycle.graph};
             std::array<int,2> nativeMainPair{{-1,-1}};
             std::array<int,2> nativeMonitorPair{{-1,-1}};
+            std::array<float*,2> secondaryMainTap{{nullptr,nullptr}};
             // Deck A is pulled ONCE per hardware callback, independently
             // from how many ChannelIds have PLAYER A as their IN. The existing
             // ChannelId FX/WIRE/MAIN graph owns the ONLY mixing/rendering pass.
@@ -4125,11 +4176,13 @@ private:
                      std::span<const armix::mixer::DynamicPlayerPcmBlock>(
                          deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease,
                      outputGate.hardware&&!mainOnlyMuted&&!cycle.fadeOut&&!cycle.fadeIn&&
-                     fxMovePhase_.load(std::memory_order_acquire)==0&&privateDeEzzerCueAllowed());
+                     fxMovePhase_.load(std::memory_order_acquire)==0&&privateDeEzzerCueAllowed(),
+                     &secondaryMainTap);
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
-            const auto nativeMain=armix::mixer::NativeOutputPairTap::select(
-                outputs,outputChannels,nativeMainPair);
+            const bool splitMain=secondaryMainTap[0]&&secondaryMainTap[1];
+            const auto nativeMain=splitMain?secondaryMainTap:
+                armix::mixer::NativeOutputPairTap::select(outputs,outputChannels,nativeMainPair);
             const auto nativeMonitor=armix::mixer::NativeOutputPairTap::select(
                 outputs,outputChannels,nativeMonitorPair);
             // STOP can race after the outer active() check. Never leave a
@@ -4155,6 +4208,11 @@ private:
                 armix::mixer::NativeOutputTransition::apply(
                     outputs,outputChannels,samples,routedFxMove,
                     cycle.fadeOut,cycle.fadeIn,
+                    nativeMain[0],nativeMain[1],movedPeakL,movedPeakR);
+                // The internal MAIN buffer is not in the driver output list.
+                // Apply the same post-render envelope exactly once to it.
+                if(splitMain)armix::mixer::NativeOutputTransition::apply(
+                    secondaryMainTap.data(),2,samples,routedFxMove,cycle.fadeOut,cycle.fadeIn,
                     nativeMain[0],nativeMain[1],movedPeakL,movedPeakR);
                 if(routedFxMove==1 && cycle.graph) {
                     cycle.graph->orderPacked.store(
@@ -4211,9 +4269,16 @@ private:
                     if(outputs && outputs[channel])
                         juce::FloatVectorOperations::clear(outputs[channel],samples);
             // Reuse the exact post-DSP/fade peaks rather than re-scanning PCM.
-            const bool wroteMain=outputGate.hardware&&routed&&nativeMain[0]&&nativeMain[1];
-            publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
-            const auto pressureRevision=nativePcm&&wroteMain&&!cycle.fadeIn&&!cycle.fadeOut&&
+            const bool wroteMain=outputGate.hardware&&routed&&!splitMain&&nativeMain[0]&&nativeMain[1];
+            if(splitMain&&outputGate.hardware&&routed&&nativeMonitor[0]&&nativeMonitor[1]){
+                // Physical telemetry describes the actual singer output,
+                // not the isolated stream MAIN scratch.
+                float l=0.f,r=0.f;
+                for(int i=0;i<samples;++i){l=std::max(l,std::abs(nativeMonitor[0][i]));
+                    r=std::max(r,std::abs(nativeMonitor[1][i]));}
+                publishDriverBufferPeaks(l,r);
+            }else publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
+            const auto pressureRevision=nativePcm&&outputGate.hardware&&routed&&(wroteMain||(splitMain&&nativeMonitor[0]&&nativeMonitor[1]))&&!cycle.fadeIn&&!cycle.fadeOut&&
                 routedFxMove==0&&!probePermit?dryRoutingLab_.renderedNativeRevision():0;
             recordRenderTiming(beginUs,periodUs,outputLease.epoch,pressureRevision);
             return;

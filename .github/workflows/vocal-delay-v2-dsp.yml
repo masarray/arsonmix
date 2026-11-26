@@ -45,6 +45,8 @@ jobs:
           /tmp/vdfocus
           ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_performance_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vdperformance
           /tmp/vdperformance
+          ${{ matrix.cxx }} -std=c++17 -Wall -Wextra -Werror ${{ matrix.flags }} tests/vocal_delay_v2_concert_test.cpp tests/vocal_delay_v2_heap_probe.cpp -o /tmp/vdconcert
+          /tmp/vdconcert
       - name: Report synthetic callback profile (not ASIO FAT)
         if: matrix.cxx == 'g++'
         run: |
@@ -56,14 +58,20 @@ jobs:
           g++ -std=c++17 -Wall -Wextra -Werror -O2 tools/vocal-delay/audition.cpp -o /tmp/vd-audition
           /tmp/vd-audition vd-audition
           /tmp/vd-audition vd-audition-roundtrip "vd-audition/00 Dry reference.wav"
-          test "$(find vd-audition -name '*.wav' | wc -l)" -eq 14
+          /tmp/vd-audition vd-concert-audition --concert
+          test "$(find vd-concert-audition -name '*.wav' | wc -l)" -eq 22
+          cat vd-concert-audition/metrics.csv
+          git rev-parse HEAD > vd-concert-audition/source-sha.txt
+          test "$(find vd-audition -name '*.wav' | wc -l)" -eq 22
           cat vd-audition/metrics.csv
           git rev-parse HEAD > vd-audition/source-sha.txt
       - uses: actions/upload-artifact@v4
         if: matrix.cxx == 'g++'
         with:
           name: vocal-delay-audition
-          path: vd-audition/
+          path: |
+            vd-audition/
+            vd-concert-audition/
           if-no-files-found: error
   ui-contract:
     runs-on: ubuntu-latest

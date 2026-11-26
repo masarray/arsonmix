@@ -262,6 +262,34 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  dmx-preview:
+    name: DMX native SOF Chromium (MAIN and MONITOR)
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/dual-mix-experience-20261126' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install scoped Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Existing and DMX native SOF, exact EdgeId, MAIN protected
+        run: python tests/approved_native_sof_chromium_smoke.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ArSonMix-DMX-Console-${{ github.run_id }}
+          path: arsonmix-native-dmx-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   sonku-preview:
     name: 8D-SonKu native insert/editor Chromium FAT (desktop and narrow)
     needs: quick

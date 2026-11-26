@@ -171,6 +171,8 @@
           '<div class="detail">Disarm MAIN / STREAM first</div>';
       }else if(kind==="fx"){
         menu.innerHTML=
+          (hooks.canConvertReverbReturn?.(menuTrack,menuSlot)?
+            '<button role="menuitem" data-menu="convert-reverb-return">Move to FX Return…</button>':'')+
           (hooks.rackFileTarget?.(menuTrack)?
             '<button role="menuitem" data-menu="rack-deactivate">Deactivate &amp; Save FX…</button>'+
             '<button role="menuitem" data-menu="rack-save">Save FX Rack…</button>'+
@@ -728,6 +730,11 @@
         dismissMenu();if(op)hooks.rackFile?.(track,op,slot,selected?.insertId);return;
       }
       if(action==="hotkey-register"){dismissMenu();openHotkeyRegister();return;}
+      if(action==="convert-reverb-return"){
+        // Explicit conversion changes serial dry attenuation and creates a
+        // new wet-only lease; no destructive implicit drag interpretation.
+        dismissMenu();hooks.convertReverbReturn?.(track,slot);return;
+      }
       if(action==="fx-param-last"||action==="fx-param-browse"){
         const mode=action==="fx-param-last"?"last":"browse";
         dismissMenu();openFxParamBrowser(track,slot,mode,originX,originY);return;

@@ -394,6 +394,20 @@
         ch.inserts[payload.slot].id.length>0 &&
         !ch.inserts.slice(0,payload.slot).some(insert=>
           insert.id===ch.inserts[payload.slot].id);
+    if(operation==="CONVERT_REVERB_RETURN"){
+      const expected=pending.fxExpected;
+      if(!expected||cmp(next.graph.revision,pending.baseGraphRevision)<=0||
+         cmp(next.graph.rosterRevision,pending.baseRosterRevision)<=0)return false;
+      const ids=ch.inserts.map(x=>x.id);
+      if(ids.length!==expected.source.length||ids.some((x,i)=>x!==expected.source[i]))return false;
+      const created=next.graph.channels.filter(c=>!expected.previous.includes(c.id)&&
+        c.role==="FX_RETURN"&&c.inserts?.length===1&&
+        c.inserts[0].catalogId==="armix.builtin.vocal-reverb-return.v1");
+      if(created.length!==1||created[0].primaryOutId!==next.graph.mainChannelId)return false;
+      return next.graph.edges.some(e=>e.enabled&&e.from===targetChannelId&&e.to===created[0].id&&
+        e.primaryOutput===false&&e.tap==="POST_FADER") &&
+        !next.graph.channels.some(c=>c.inserts.some(x=>x.id===payload.instanceId));
+    }
     if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
       const expected=pending.fxExpected;
       if(!expected||cmp(next.graph.revision,pending.baseGraphRevision)<=0||
@@ -766,6 +780,17 @@
       }
       if (!object(payload)) return refuseIntent("INVALID_PAYLOAD");
       let fxExpected=null;
+      if(operation==="CONVERT_REVERB_RETURN"){
+        const source=current.graph.channels.find(c=>c.id===targetChannelId);
+        const slot=payload.slot,token=payload.instanceId;
+        if(source?.role!=="INPUT"||source.primaryOutId!==current.graph.mainChannelId||
+           !Number.isInteger(slot)||slot<0||slot+1!==source.inserts?.length||
+           source.inserts[slot]?.id!==token||
+           source.inserts[slot]?.catalogId!=="armix.builtin.vocal-reverb.v1")
+          return refuseIntent("DMX_CONVERSION_REQUIRES_LAST_REVERB_DIRECT_MAIN_INPUT");
+        fxExpected={source:source.inserts.slice(0,slot).map(x=>x.id),
+          previous:current.graph.channels.map(c=>c.id)};
+      }
       if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
         const source=current.graph.channels.find(c=>c.id===targetChannelId);
         const slot=payload.slot,token=payload.instanceId;

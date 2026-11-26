@@ -1044,7 +1044,81 @@ static void verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm() {
     assert(pcm.channelCount()==3);
 }
 
+// DMX: one real accepted graph, one FX callback, independent MAIN and MONITOR
+// returns. A deterministic wet-only stand-in isolates the routing algebra;
+// this is NOT qualification of a native delay/reverb wet-only adapter.
+static void verifyDualMixSharedReturnPcm() {
+    constexpr std::uint64_t epoch=9601;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest route;route.physicalInputs=2;route.maxFrames=64;
+    const std::array<ChannelEdit,4> creates{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::fxReturn,"DELAY",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto a=session.edit(0,0,creates,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0],wet=a.edit.createdIds[1],
+        main=a.edit.createdIds[2],monitor=a.edit.createdIds[3];
+    const std::array<ChannelEdit,5> links{
+        output(voice,main),output(wet,main),send(voice,monitor,1.f,true),
+        send(voice,wet,1.f,true),send(wet,monitor,.125f,true)};
+    route.sources={{voice,0,1,true}};
+    a=session.edit(1,1,links,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto* wetRow=session.acceptedRoster().find(wet);
+    assert(wetRow&&wetRow->sends.size()==2);
+    const auto edge=std::find_if(wetRow->sends.begin(),wetRow->sends.end(),
+        [&](const auto& e){return e.destination==monitor&&!e.primaryOutput;});
+    assert(edge!=wetRow->sends.end()&&edge->edgeId&&edge->preFader);
+    const auto edgeId=edge->edgeId;
+    std::array<float,64> inL{},inR{},mainL{},mainR{},monL{},monR{};
+    inL.fill(.2f);inR.fill(.1f);
+    const float* pins[]{inL.data(),inR.data()};
+    int wetCalls=0;
+    const auto fx=[&](ChannelId id,float* l,float* r,int n) noexcept {
+        if(id==wet){++wetCalls;for(int i=0;i<n;++i){l[i]*=.5f;r[i]*=.5f;}}
+    };
+    const auto render=[&](int frames=64){
+        const int before=wetCalls;
+        const bool ok=session.render(epoch,pins,2,mainL.data(),mainR.data(),
+            frames,false,fx,monL.data(),monR.data());
+        assert(ok&&wetCalls==before+1);
+    };
+    const auto check=[&](int i,float m,float c){
+        assert(near(mainL[i],m)&&near(mainR[i],m*.5f));
+        assert(near(monL[i],c)&&near(monR[i],c*.5f));
+    };
+    render();check(0,.3f,.2125f);check(63,.3f,.2125f);
+    // Wet return fader controls MAIN; pre-fader cue edge is independent.
+    assert(session.setLiveMix(epoch,2,wet,.5f,0.f));
+    render(4);assert(mainL[3]<.3f&&mainL[3]>.25f);
+    assert(near(monL[3],.2125f));
+    render(60);check(59,.25f,.2125f);
+    // Cue send gain modifies MONITOR only, never MAIN or graph identity.
+    assert(session.setLiveParallelSend(epoch,2,wet,monitor,true,.5f));
+    render(4);assert(monL[3]>.2125f&&monL[3]<.25f);
+    assert(near(mainL[3],.25f));
+    render(60);check(59,.25f,.25f);
+    assert(!session.setLiveParallelSend(epoch-1,2,wet,monitor,true,1.f));
+    assert(!session.setLiveParallelSend(epoch,1,wet,monitor,true,1.f));
+    const auto* accepted=session.acceptedRouting(epoch,2);
+    assert(accepted&&accepted->find(wet)->primaryOutput==main);
+    assert(std::any_of(accepted->find(wet)->parallelSends.begin(),
+        accepted->find(wet)->parallelSends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;}));
+    // A terminal MONITOR is not a source. Failure keeps live graph intact.
+    const std::array<ChannelEdit,1> invalid{send(monitor,wet,1.f,true)};
+    const auto rejected=session.edit(session.acceptedRosterRevision(),2,
+        invalid,route,epoch,epoch,true);
+    assert(!rejected.ok()&&session.acceptedGraphRevision()==2);
+    render();check(63,.25f,.25f);
+    session.unpublish();session.pollRetirement();
+    std::puts("DMX_SHARED_RETURN_PCM_PASS one render, first sample dry, independent return, slew, stable edge, terminal rejection");
+}
+
 int main() {
+    verifyDualMixSharedReturnPcm();
     verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm();
     verifyNativeDeleteTrackRetainsUnrelatedWires();
     verifyGroupMuteAffectsRealNativePcm();

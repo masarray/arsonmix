@@ -422,7 +422,8 @@ public:
         // Allow editing a valid bypassed insert; a removed/replaced lease
         // is unavailable, not bypassed and not a new target.
         const bool available=next!=HostOverlay::unavailable;
-        for(auto& knob:knobs_)knob.setEnabled(available);
+        for(std::size_t i=0;i<knobs_.size();++i)
+            knobs_[i].setEnabled(available&&!(i==0&&processor_.wetReturnMode()));
         preset_.setEnabled(available);algorithm_.setEnabled(available);
         prev_.setEnabled(available);next_.setEnabled(available);
         save_.setEnabled(available&&static_cast<bool>(saveUserPreset_));
@@ -434,7 +435,7 @@ public:
         draft_=processor_.desiredSettings();
         const auto pale=reverb_ui::rgb(200,242,255);
         const auto cyan=reverb_ui::rgb(107,201,243);
-        title_.setText("REVERB-SIS",juce::dontSendNotification);
+        title_.setText(processor_.wetReturnMode()?"REVERB-SIS RETURN":"REVERB-SIS",juce::dontSendNotification);
         title_.setFont(reverb_ui::uiFont(22.f));
         title_.setColour(juce::Label::textColourId,reverb_ui::rgb(241,245,247));
         title_.setComponentID("armix.reverb.title");
@@ -611,7 +612,12 @@ public:
             labels_[i].setInterceptsMouseClicks(false,false);
             addAndMakeVisible(labels_[i]);
         }
-        labels_[0].setText("Dry/Wet Mix",juce::dontSendNotification);
+        labels_[0].setText(processor_.wetReturnMode()?"Wet Only":"Dry/Wet Mix",juce::dontSendNotification);
+        if(processor_.wetReturnMode()){
+            knobs_[0].setValue(1.,juce::dontSendNotification);
+            knobs_[0].setEnabled(false);
+            knobs_[0].setTooltip("100% wet; use the return fader or monitor send to set level");
+        }
         labels_[2].setText("Reverb Time",juce::dontSendNotification);
         setSize(reverb_ui::FaceplateLayout::width,reverb_ui::FaceplateLayout::height);
         layoutPage();
@@ -854,7 +860,7 @@ private:
     void syncControls() {
         algorithm_.setSelectedId(draft_.algorithm+1,juce::dontSendNotification);
         for(std::size_t i=0;i<knobs_.size();++i)
-            knobs_[i].setValue(draft_.values[i],juce::dontSendNotification);
+            knobs_[i].setValue(i==0&&processor_.wetReturnMode()?1.f:draft_.values[i],juce::dontSendNotification);
         repaint();
     }
     void layoutPage() {

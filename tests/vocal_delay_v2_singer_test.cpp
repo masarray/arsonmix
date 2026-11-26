@@ -14,7 +14,15 @@ int main(){
         CHECK(sameParameters(q,smartVoicing(q)));
         p.duck=.99f;CHECK(styleIndex(p)==-1);
     }
-    CHECK(stagePresetCount==12&&singerPresets.size()==25);
+    CHECK(stagePresetCount==12&&singerPresets.size()==33);
+    for(std::size_t i=0;i<concertPresetCount;++i){
+        const auto p=presetSettings(concertPresetStart+i);CHECK(valid(p)&&p.smartStage&&p.throwMode!=ThrowMode::off);
+        State s{};s.continuous=p;StateCodec::Bytes b{};State out{};
+        CHECK(StateCodec::encode(s,b)&&b[4]==7&&StateCodec::decode(b.data(),b.size(),out)&&sameParameters(p,out.continuous));
+        auto bad=b;bad[44]=0;CHECK(!StateCodec::decode(bad.data(),bad.size(),out));
+        bad=b;bad[44]=19;CHECK(!StateCodec::decode(bad.data(),bad.size(),out));
+        CHECK(styleIndex(p)==int(concertPresetStart+i));
+    }
     for(std::size_t i=0;i<stagePresetCount;++i){
         const auto p=presetSettings(i);
         CHECK(p.enabled&&p.adaptiveFocus&&p.spillover&&p.smartStage&&p.style!=EchoStyle::classic);
