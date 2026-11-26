@@ -2079,11 +2079,11 @@ static void verifyNativeFxRackTransactions() {
     DynamicNativeSessionPublisher publisher;DynamicGraphRequest request;
     request.physicalInputs=4;request.maxFrames=64;request.sources={{source,0,1,true},{dest,2,3,true}};
     std::uint64_t revision=0;
-    const auto publish=[&](){
+    const auto publish=[&](bool disarmed=false){
         DynamicNativeSessionPublisher::FxPlan fx;fx.owner=bank;fx.context=bank.get();fx.deviceEpoch=11;fx.graphRevision=revision+1;
         fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept{(*static_cast<DynamicChannelFxLeaseBank*>(p))(id,l,r,n);};
         fx.latency=+[](void* p,ChannelId id) noexcept{return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);};
-        assert(publisher.commit(roster,request,revision,11,11,false,fx,false,true).ok());++revision;
+        assert(publisher.commit(roster,request,revision,11,11,disarmed,fx,false,!disarmed).ok());++revision;
     };
     const auto samples=[&](float expected){
         std::array<float,64> input{},other{},l{},r{};input.fill(.25f);other.fill(.1f);
@@ -2130,11 +2130,11 @@ static void verifyNativeFxRackTransactions() {
         source,{saved},true,candidate,candidateBank));
     assert(candidateBank.latencySamples(source)==19&&candidateBank.rackBypassed(source));
     assert(!bank->rackBypassed(source)&&bank->insertCount(source)==0);
-    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish();
+    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish(true);
     assert(publisher.latencySamples(11,revision)==19);
     assert(prepareNativeFxRackReplacement(11,revision,roster.revision(),roster,*bank,
         source,{},false,candidate,candidateBank));
-    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish();
+    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish(true);
     assert(publisher.latencySamples(11,revision)==0&&!bank->retainsEditor(saved));
     // Portable rack file round trip; opaque states and ordering, not IDs.
     armix::storage::FxRackFile rack;rack.rackBypassed=true;

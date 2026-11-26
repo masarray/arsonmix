@@ -172,10 +172,11 @@
           '<div class="detail">Disarm MAIN / STREAM first</div>';
       }else if(kind==="fx"){
         menu.innerHTML=
-          '<button role="menuitem" data-menu="rack-deactivate">Deactivate &amp; Save FX…</button>'+
-          '<button role="menuitem" data-menu="rack-save">Save FX Rack…</button>'+
-          '<button role="menuitem" data-menu="rack-open">Open FX Rack (replace)…</button>'+
-          '<button role="menuitem" data-menu="rack-insert">Insert Saved FX…</button>'+
+          (hooks.rackFileTarget?.(menuTrack)?
+            '<button role="menuitem" data-menu="rack-deactivate">Deactivate &amp; Save FX…</button>'+
+            '<button role="menuitem" data-menu="rack-save">Save FX Rack…</button>'+
+            '<button role="menuitem" data-menu="rack-open">Open FX Rack (replace)…</button>'+
+            '<button role="menuitem" data-menu="rack-insert">Insert Saved FX…</button>':'')+
           '<button role="menuitem" data-menu="fx-param-last">Last Touched Hotkey…</button>'+
           '<button role="menuitem" data-menu="fx-param-browse">Browse Parameters…</button>'+
           (hooks.orbitTarget(menuTrack,menuSlot)?
@@ -183,7 +184,14 @@
           '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';
       }else if(kind==="hotkey"){
         const existing=hotkeyEntries.find(m=>sameHotkeyTarget(m,menuTarget));
-        menu.innerHTML='<button role="menuitem" data-menu="hotkey-add">'+
+        const rackActions=hooks.rackFileTarget?.(menuTrack)&&
+          ["SET_FX_RACK_BYPASS","SET_FX_SLOT_BYPASS"].includes(menuTarget?.operation)?
+          (menuTarget.operation==="SET_FX_SLOT_BYPASS"?
+            '<button role="menuitem" data-menu="rack-deactivate">Deactivate &amp; Save FX…</button>':'')+
+          '<button role="menuitem" data-menu="rack-save">Save FX Rack…</button>'+
+          '<button role="menuitem" data-menu="rack-open">Open FX Rack (replace)…</button>'+
+          '<button role="menuitem" data-menu="rack-insert">Insert Saved FX…</button>':'';
+        menu.innerHTML=rackActions+'<button role="menuitem" data-menu="hotkey-add">'+
           (existing?'Change Hotkey…':'Assign Hotkey…')+'</button>'+
           (existing?'<button role="menuitem" data-menu="hotkey-remove">Remove Hotkey</button>':'')+
           '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';

@@ -5502,7 +5502,7 @@ private:
         const armix::mixer::ChannelId channel{id};
         if(fxRackFileChooser_||namedIoFileChooser_||mixerFileDialogOpen_||
            deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
-           logicalVendorEditor_||!engine_.rackFileAllowed(ep,rev,roster,channel))
+           catalog_.busy()||logicalVendorEditor_||!engine_.rackFileAllowed(ep,rev,roster,channel))
             return emitNotice("FX rack file: disarm MAIN and STREAM; use a current native rack",true);
         auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
         if(save)start=start.getChildFile(deactivate?"Saved-FX.arfx":"Vocal-Rack.arfx");
@@ -5521,7 +5521,7 @@ private:
                 if(file!=juce::File{}){
                     try{
                         if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
-                           safe->mixerSessionWorker_.busy()||safe->logicalVendorEditor_||
+                           safe->mixerSessionWorker_.busy()||safe->catalog_.busy()||safe->logicalVendorEditor_||
                            !safe->engine_.rackFileAllowed(ep,rev,roster,channel))
                             error="Device or rack changed; retry";
                         else{

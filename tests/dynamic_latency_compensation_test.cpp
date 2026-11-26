@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/DynamicNativeSessionPublisher.h"
+#include "../engine/core/FxRackCatalogReplacement.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -215,6 +216,40 @@ int main(){
             const auto refused=publisher.commit(roster,request,2,9,9,false,plan,true);
             assert(refused.fault==DynamicNativeSessionPublisher::Fault::outputArmed);
         }
+    }
+    // Explicit deactivation: one prepared rack removal, disarm fence,
+    // actual impulse at zero samples after removing the only latent FX.
+    {
+        DynamicChannelRoster roster;
+        ChannelEdit input;input.kind=ChannelEdit::Kind::add;input.role=ChannelRole::input;
+        input.text="Vocal";input.position=0;input.format=ProcessingFormat::stereo;input.connectMainOnCreate=true;
+        ChannelEdit main=input;main.role=ChannelRole::main;main.text="MAIN";main.position=1;main.connectMainOnCreate=false;
+        const std::array edits{input,main};
+        const auto created=roster.edit(0,edits);assert(created.ok());
+        const auto vocal=created.createdIds[0];
+        ChannelEdit insert;insert.kind=ChannelEdit::Kind::addInsertReference;insert.id=vocal;insert.text="latent";
+        assert(roster.edit(1,std::span<const ChannelEdit>(&insert,1)).ok());
+        DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=16;req.sources={{vocal,0,1,true}};
+        auto effects=std::make_shared<Effects>();effects->a=vocal;assert(effects->delayA.prepare(7));
+        DynamicNativeSessionPublisher pub;DynamicNativeSessionPublisher::FxPlan plan;
+        plan.owner=effects;plan.context=effects.get();plan.deviceEpoch=17;plan.graphRevision=1;
+        plan.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {static_cast<Effects*>(p)->render(id,l,r,n);};
+        plan.latency=+[](void* p,ChannelId id) noexcept{return static_cast<Effects*>(p)->latency(id);};
+        assert(pub.commit(roster,req,0,17,17,true,plan).ok());
+        assert(pub.latencySamples(17,1)==7);
+        DynamicChannelRoster cleared;
+        assert(prepareRackCatalogReplacement(roster,roster.revision(),vocal,{},cleared));
+        assert(pub.commit(cleared,req,1,17,17,false).fault==DynamicNativeSessionPublisher::Fault::outputArmed);
+        assert(pub.latencySamples(17,1)==7);
+        assert(pub.commit(cleared,req,1,17,17,true).ok());
+        assert(pub.latencySamples(17,2)==0);
+        std::array<float,16> impulse{},left{},right{};impulse[0]=.5f;
+        const float* pins[]{impulse.data(),impulse.data()};
+        const auto before=allocations;
+        assert(pub.render(17,pins,2,left.data(),right.data(),16,false,[](ChannelId,float*,float*,int) noexcept{}));
+        assert(allocations==before&&left[0]==.5f&&right[0]==.5f);
+        for(int i=1;i<16;++i)assert(left[i]==0.f&&right[i]==0.f);
+        std::puts("PASS: disarmed FX deactivation removes 7-sample graph PDC, exact dry impulse");
     }
     // Without an actual independent MONITOR sink the policy is invalid.
     DynamicChannelRoster mainOnly;
