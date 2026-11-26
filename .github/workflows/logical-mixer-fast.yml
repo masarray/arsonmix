@@ -16,6 +16,8 @@ on:
       - 'engine/core/DynamicNativeSessionPublisher.h'
       - 'tests/dynamic_accepted_session_test.cpp'
       - 'tests/dmx_reverb_wet_return_test.cpp'
+      - 'tests/dmx_output_sink_plan_test.cpp'
+      - 'engine/core/DmxOutputSinkPlan.h'
       - 'third_party/arsonverb/include/arverb/Reverb.hpp'
       - 'third_party/arsonverb/src/Reverb.cpp'
       - 'tests/physical_external_output_pcm_test.cpp'
@@ -53,3 +55,7 @@ jobs:
             tests/dmx_reverb_wet_return_test.cpp third_party/arsonverb/src/Reverb.cpp \
             third_party/arsonverb/src/Presets.cpp -o /tmp/arsonmix-dmx-reverb
           /tmp/arsonmix-dmx-reverb
+      - name: Exhaustive two-pin MAIN/MONITOR sink ownership
+        run: |
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror tests/dmx_output_sink_plan_test.cpp -o /tmp/arsonmix-dmx-sinks
+          /tmp/arsonmix-dmx-sinks
