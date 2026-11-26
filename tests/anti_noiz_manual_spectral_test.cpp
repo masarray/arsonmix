@@ -47,6 +47,33 @@ int main(){
   std::fill(bL.begin(),bL.end(),0.f);std::fill(bR.begin(),bR.end(),0.f);
   manualB.process(bL.data(),channels==2?bR.data():nullptr,int(bL.size()));
   check(manualB.residualGain()<.1f&&manualB.spectrum().noise==anchor,"fresh automatic idle evidence and immutable profile");
+  // A second Learn must never bypass the trusted manual spectral mask.
+  Core capture=c,control=c;check(capture.beginLearn(),"relearn start");
+  std::vector<float> captureL(rate/2),captureR(rate/2);
+  for(auto& v:captureL)v=rnd(rng);captureR=captureL;
+  auto controlL=captureL,controlR=captureR;
+  capture.process(captureL.data(),channels==2?captureR.data():nullptr,int(captureL.size()));
+  control.process(controlL.data(),channels==2?controlR.data():nullptr,int(controlL.size()));
+  check(capture.learning()&&captureL==controlL&&captureR==controlR,"relearn PCM equals live trusted processing");
+  capture.cancelNativeLearn();check(!capture.learning()&&capture.spectrum().noise==anchor,"cancel keeps anchor");
+  captureL=controlL=dry;captureR=controlR=dry;
+  capture.process(captureL.data(),channels==2?captureR.data():nullptr,int(captureL.size()));
+  control.process(controlL.data(),channels==2?controlR.data():nullptr,int(controlL.size()));
+  check(captureL==controlL&&captureR==controlR,"cancel preserves mask and signal timeline");
+  // Direct profile handover: accepted anchor is immediately authoritative
+  // for readback, while processing traverses a 100 ms bounded interpolation.
+  NoiseProfile<257> profile;const int hop=rate>48000?256:128;
+  profile.prepare(rate,hop,channels,hop+1);
+  NoiseProfile<257>::Powers powers{};
+  for(auto& ch:powers)ch.fill(1.f);
+  check(profile.begin(),"first profile");while(profile.learning())profile.observe(powers);
+  check(profile.anchor()[0][1]==1.f,"first profile immediate");
+  for(auto& ch:powers)ch.fill(4.f);
+  check(profile.begin(),"replacement profile");while(profile.learning())profile.observe(powers);
+  check(profile.anchor()[0][1]==4.f&&profile.processingAnchor()[0][1]==1.f,"commit isolated from rendering");
+  const int frames=int(std::ceil(.1*rate/hop));float previous=1.f;
+  for(int i=0;i<frames;++i){profile.advanceHandover();const float value=profile.processingAnchor()[0][1];check(value>=previous&&value<=4.f&&value-previous<.2f,"bounded monotonic handover");previous=value;}
+  check(profile.processingAnchor()[0][1]==4.f,"handover endpoint");
   check(c.clearProfile()&&!c.hasProfile()&&!c.audition()&&!c.spectrum().noiseValid,"clear");
   check(!c.setSettings([](Core::Settings q){q.artifactControl=NAN;return q;}(s)),"invalid reject");
   s.spectralEnabled=false;check(c.setSettings(s),"bypass");

@@ -21,6 +21,7 @@ public:
         seedFloor_=float(4.*hop*hop*1e-12);
         trackHold_=int(std::ceil(.5*rate/hop));
         alpha_=float(1.-std::exp(-double(hop)/(rate*2.)));
+        blendFrames_=std::max(1,int(std::ceil(.1*rate/hop)));blendRemaining_=0;
         drift_.prepare(rate,hop,channels,bins);
         valid_=false;qualified_=false;anchor_={};working_={};variability_={};cancel();
     }
@@ -32,13 +33,14 @@ public:
         boundary_=windowAccepted_=seedReset_=seedRetried_=windowVeto_=false; seedWindows_=0;seedLevel_={};
         learning_=true;idle_=0;drift_.reset();return true;
     }
-    void clear() noexcept {cancel();valid_=qualified_=false;anchor_={};working_={};variability_={};checkpoint_={};checkpointCount_=0;}
+    void clear() noexcept {cancel();blendRemaining_=0;valid_=qualified_=false;anchor_={};working_={};variability_={};checkpoint_={};checkpointCount_=0;}
     void cancel() noexcept {learning_=false;idle_=0;drift_.reset();}
     // Revoke the extra Voice authority at a policy boundary, not on each
     // foreground frame. No Learn invalidation or new profile transaction.
     void limitToIdleBounds() noexcept {
         if(valid_)for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k)
-            working_[c][k]=std::clamp(working_[c][k],.7f*anchor_[c][k],1.3f*anchor_[c][k]);
+            {working_[c][k]=std::clamp(working_[c][k],.7f*anchor_[c][k],1.3f*anchor_[c][k]);
+             if(blendRemaining_)blendWorking_[c][k]=std::clamp(blendWorking_[c][k],.7f*blendAnchor_[c][k],1.3f*blendAnchor_[c][k]);}
         idle_=0;drift_.reset();
     }
     // Native lifecycle readback, only queried on the AUDIO owner after a
@@ -50,6 +52,18 @@ public:
     bool valid() const noexcept {return valid_;}
     const Powers& powers() const noexcept {return working_;}
     const Powers& anchor() const noexcept {return anchor_;}
+    // Display/storage see the committed anchor; DSP sees a bounded handover.
+    const Powers& processingAnchor() const noexcept {return blendRemaining_?blendAnchor_:anchor_;}
+    const Powers& processingPowers() const noexcept {return blendRemaining_?blendWorking_:working_;}
+    void advanceHandover() noexcept {
+        if(!blendRemaining_)return;
+        const float a=1.f/float(blendRemaining_);
+        for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k){
+            blendAnchor_[c][k]+=a*(anchor_[c][k]-blendAnchor_[c][k]);
+            blendWorking_[c][k]+=a*(working_[c][k]-blendWorking_[c][k]);
+        }
+        --blendRemaining_;
+    }
     // Visualization may read only the committed 50 ms checkpoint, never
     // an unqualified current window or a rejected transaction.
     const Powers& captured() const noexcept {return checkpoint_;}
@@ -153,6 +167,10 @@ public:
         if(observed_<target_||!boundary_)return LearnResult::waiting;
         cancel();
         if(count_<minimumUsable_||!std::isfinite(energy_[0]+energy_[1])||energy_[0]+energy_[1]<=0.f)return LearnResult::rejected;
+        if(valid_){
+            if(!blendRemaining_){blendAnchor_=anchor_;blendWorking_=working_;}
+            blendRemaining_=blendFrames_;
+        }
         const float inv=1.f/float(count_);
         for(int c=0;c<channels_;++c)for(int k=0;k<bins_;++k)
             anchor_[c][k]=working_[c][k]=candidate_[c][k]*inv;
@@ -167,7 +185,7 @@ public:
     // An independently qualified coherent upward drift may extend working PSD,
     // but never the immutable anchor or the caller's idle/foreground decision.
     void track(const Powers& power,bool idle,bool allowCoherent=false,float broadband=0.f,float subbandPeak=0.f) noexcept {
-        if(!valid_||learning_){idle_=0;drift_.reset();return;}
+        if(!valid_||learning_||blendRemaining_){idle_=0;drift_.reset();return;}
         if(!idle){
             idle_=0;
             if(!allowCoherent){drift_.reset();return;}
@@ -193,7 +211,8 @@ public:
         }
     }
 private:
-    Powers anchor_{},working_{},candidate_{},checkpoint_{};
+    Powers anchor_{},working_{},candidate_{},checkpoint_{},blendAnchor_{},blendWorking_{};
+    int blendFrames_=1,blendRemaining_=0;
     NoiseDriftGuard<MaxBins> drift_{};
     std::array<float,2> energy_{},checkpointEnergy_{},windowEnergy_{},variability_{};
     std::array<double,2> acceptedSquares_{},windowSquares_{};

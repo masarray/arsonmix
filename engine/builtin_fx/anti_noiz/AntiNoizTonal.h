@@ -34,8 +34,8 @@ public:
         lineCount_=0;lines_={};begin();
     }
     void clear() noexcept {lineCount_=0;lines_={};begin();}
-    void begin() noexcept {
-        votes_={};harmonicVotes_={};score_={};primaryScore_={};candidatePower_={};primaryPower_={};windows_=0;phase_=0;partial_={};clearWindow();resetSignal();
+    void begin(bool preserveSignal=false) noexcept {
+        votes_={};harmonicVotes_={};score_={};primaryScore_={};candidatePower_={};primaryPower_={};windows_=0;phase_=0;partial_={};clearWindow();if(!preserveSignal)resetSignal();
     }
     void resetSignal() noexcept {
         for(auto& line:lines_){line.index=line.anchor;line.state={};line.livePower={};line.mix=0.;}

@@ -157,7 +157,8 @@ public:
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
         cancelAudition();manual_.beginReference();
-        context_.reset();  voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
+        if(!profile_.valid()){context_.reset();voiceGain_.reset();tonalIdle_=false;powerValid_=false;}
+        tonal_.begin(profile_.valid());return true;
     }
     // Audio-owned transient commands; preserve WOLA timeline on reset.
     bool clearProfile() noexcept {
@@ -210,7 +211,7 @@ public:
                 tonal_.observe(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
                 manual_.observeReference(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
             }
-            else if(settings_.enabled&&!settings_.spectralManual&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&tonal_.selected()>=0){
+            if(settings_.enabled&&!settings_.spectralManual&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&tonal_.selected()>=0){
                 tonal_.track(in_[0][pos_],channels_==2?in_[1][pos_]:0.f,tonalIdle_);
                 // Apply to the already latency-aligned WOLA output.
                 float unused=0.f;
@@ -240,7 +241,7 @@ public:
     // Native host lifecycle only. Keep the qualified stationary DSP path,
     // coefficient preparation and signal arithmetic unchanged.
     void cancelNativeLearn() noexcept {
-        if(profile_.learning()){profile_.cancel();manual_.cancelReference();context_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
+        if(profile_.learning()){profile_.cancel();manual_.cancelReference();if(!profile_.valid()){context_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}}
     }
     bool lastNativeLearnQualified() const noexcept {return profile_.lastAttemptQualified();}
     void processNativeDry(float* left,float* right,int samples) noexcept {
@@ -305,6 +306,8 @@ private:
         }
         powerValid_=true;
         // FFT powers are finite/nonnegative by sanitized bounded PCM and fixed FFT size.
+        profile_.advanceHandover();
+        const bool hadProfile=profile_.valid();
         const auto result=profile_.observe<true>(power_);
         if(profile_.atCheckpointBoundary())
             manual_.checkpointReference(profile_.lastWindowAccepted(),profile_.checkpointReset());
@@ -313,13 +316,14 @@ private:
         if(result==NoiseProfile<maxBins>::LearnResult::accepted){
             if(profile_.tonalCaptureSafe())tonal_.commit();else tonal_.clear();
         }
-        if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
-        const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
+        if(!hadProfile&&result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
+        const bool protect=!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         // Only Voice with nonzero Silence may use the extra residual label.
         // Strict idle remains the sole authority for profile and spectral DSP.
         const auto* variability=!protect&&!settings_.manual.enabled&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f?
             &profile_.variability():nullptr;
-        const bool idle=needsContext(settings_)&&context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
+        const auto& liveAnchor=profile_.processingAnchor();
+        const bool idle=needsContext(settings_)&&context_.update(power_,liveAnchor,channels_,bins,!protect,variability);
         tonalIdle_=!settings_.spectralManual&&idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
         const float expTarget=settings_.manual.enabled?1.f:idle?silenceFloor_:context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
@@ -344,30 +348,30 @@ private:
         for(int k=0;k<bins;++k) {
             float evidence=0;
             for(int c=0;c<channels_;++c)
-                evidence=std::max(evidence,power_[c][k]/std::max(settings_.spectralManual?profile_.anchor()[c][k]:profile_.powers()[c][k],eps));
+                evidence=std::max(evidence,power_[c][k]/std::max(settings_.spectralManual?liveAnchor[c][k]:profile_.processingPowers()[c][k],eps));
             // Only explicit Voice opts into the stronger causal estimator.
             if(settings_.spectralManual){target_[k]=ManualSpectral::target(evidence,inverseNoiseScale_,floor,settings_.vocalProtection);continue;}
-            float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
+            float gain=selective?AutoGain::target(floor,context_.temporalRatio(liveAnchor,channels_,bins,k),evidence):
                 activeVoice?voiceGain_.estimate(k,evidence):
                 std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
             // Only noise-overlap bands in explicit/source-aware Voice.
             // A quiet neighboring bin must independently show foreground.
             // The existing temporal neighborhood is reused; no FFT or delay.
             if(!settings_.spectralManual&&activeVoice&&ratio>=2.f&&evidence>1.f) {
-                const float relative=context_.relativeNoise(profile_.anchor(),channels_,k);
+                const float relative=context_.relativeNoise(liveAnchor,channels_,k);
                 if(relative>1.f) {
                     float neighbor=0.f;
                     for(int j=std::max(0,k-3);j<=std::min(bins-1,k+3);++j){
-                        if(j==k||context_.relativeNoise(profile_.anchor(),channels_,j)>=1.f)continue;
+                        if(j==k||context_.relativeNoise(liveAnchor,channels_,j)>=1.f)continue;
                         for(int c=0;c<channels_;++c)
-                            neighbor=std::max(neighbor,power_[c][j]/std::max(profile_.anchor()[c][j],eps));
+                            neighbor=std::max(neighbor,power_[c][j]/std::max(liveAnchor[c][j],eps));
                     }
                     if(neighbor>4.f)gain=VoiceGain<maxBins>::restore(gain,evidence,relative,
-                        context_.temporalRatio(profile_.anchor(),channels_,bins,k),neighbor);
+                        context_.temporalRatio(liveAnchor,channels_,bins,k),neighbor);
                 }
             }
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
-                context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
+                context_.relativeNoise(liveAnchor,channels_,k)):floor;
             target_[k]=std::max(localFloor,gain);
         }
         for(int k=0;k<bins;++k) {
