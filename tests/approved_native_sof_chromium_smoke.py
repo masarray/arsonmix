@@ -182,6 +182,84 @@ def exercise(browser, out, width, height):
     page.close()
 
 
+def exercise_dmx(browser, out, width, height):
+    """Actual existing console, one FX return, MAIN fader vs MONITOR PRE."""
+    page = browser.new_page(viewport={"width":width, "height":height})
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){
+          if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
+        },
+        ...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled", timeout=15000)
+    state = admitted_session()
+    graph = state["graph"]
+    graph["channels"][1].update(role="FX_RETURN",name="DELAY RETURN")
+    graph["channels"][1]["controls"]["faderDb"]=-6
+    monitor="9007199254740997"
+    mon_edge="9223372036854775814"
+    mon=copy.deepcopy(graph["channels"][1])
+    mon.update(id=monitor,name="SINGER MONITOR",role="MONITOR")
+    mon.pop("primaryOutId",None)
+    mon["controls"]["faderDb"]=-3
+    graph["channels"].append(mon)
+    graph["capabilities"]["monitor"]=True
+    graph["edges"].append(dict(graph["edges"][1],edgeId=mon_edge,
+        **{"from":RECEIVER,"to":monitor,"gainLinear":.125,
+           "tap":"PRE_FADER","primaryOutput":False,"sendEnabled":True}))
+    graph["destinations"]=[{k:c[k] for k in ("id","role","name")}
+                          for c in graph["channels"]]
+    state["mixerSession"]["channels"]=copy.deepcopy(graph["channels"])
+    emit(page,"arMixConsoleSnapshot",state)
+    wet=page.locator('#tracks .strip[data-native-role="FX_RETURN"]')
+    cue=page.locator('#tracks .strip[data-native-role="MONITOR"]')
+    wet.wait_for(state="attached",timeout=15000)
+    cue.wait_for(state="attached",timeout=15000)
+    assert abs(float(wet.locator(".fader").input_value())+6)<.01
+    target=page.locator("#sofTarget")
+    target.select_option(label="SINGER MONITOR")
+    toggle=page.locator("#sofToggle")
+    toggle.click()
+    assert page.locator("#mixContext").inner_text()=="MONITOR MIX"
+    assert wet.locator(".sof-badge").inner_text()=="PRE-FADER"
+    assert wet.locator(".fader").is_enabled()
+    assert cue.locator(".sof-badge").count()==0, "terminal monitor must not flip into send"
+    assert abs(float(cue.locator(".fader").input_value())+3)<.01
+    assert abs(float(wet.locator(".fader").input_value())-20*__import__("math").log10(.125))<.06
+    source=page.locator('#tracks .strip[data-native-role="INPUT"]')
+    assert source.locator(".fader").is_disabled(), "no auto-patching missing monitor send"
+    fader=wet.locator(".fader")
+    fader.evaluate("""el=>{
+      el.value='-12';
+      el.dispatchEvent(new Event('input',{bubbles:true}));
+      el.dispatchEvent(new Event('change',{bubbles:true}));
+    }""")
+    level=wait_for_intents(page,"SET_WIRE_GAIN",1)
+    assert level["targetChannelId"]==RECEIVER
+    assert level["payload"]["edgeId"]==mon_edge
+    assert abs(level["payload"]["gainLinear"]-10**(-12/20))<1e-8
+    assert intent_list(page,"SET_FADER")==[]
+    ack(page,state,level)
+    graph["edges"][-1]["gainLinear"]=level["payload"]["gainLinear"]
+    fader.evaluate("el=>el.blur()")
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("""()=>document.querySelector(
+      '#tracks .strip[data-native-role="FX_RETURN"] .fader-readout')?.textContent.includes('-12.0')""")
+    page.screenshot(path=f"arsonmix-native-dmx-monitor-{width}.png")
+    toggle.click()
+    assert page.locator("#mixContext").inner_text()=="MAIN MIX"
+    assert abs(float(wet.locator(".fader").input_value())+6)<.01
+    assert abs(float(cue.locator(".fader").input_value())+3)<.01
+    assert intent_list(page,"SET_FADER")==[]
+    page.screenshot(path=f"arsonmix-native-dmx-main-{width}.png")
+    assert not errors,errors
+    page.close()
+
+
 def main():
     spec=importlib.util.spec_from_file_location(
         "native_bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -195,6 +273,7 @@ def main():
             try:
                 for width,height in ((1366,900),(1024,768)):
                     exercise(browser,out,width,height)
+                    exercise_dmx(browser,out,width,height)
             finally:
                 browser.close()
     print("PASS native SOF actual Chromium: exact EdgeId ON/OFF, PRE tap, gain, ACK/readback, no ghost patch or MAIN fader write; two viewports")

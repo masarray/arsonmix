@@ -19,3 +19,5 @@ DMX6 independent physical ASIO MONITOR + WASAPI MAIN needs exact hardware FAT; s
 DMX7 exact Windows build, .smix old/new roundtrip, safe restore, hardware listening and rollback still open. No installer/release claim from unit tests.
 
 Test plan: existing logical mixer C++20, Node native contracts, actual compiled native /preview/ Chromium (new return-to-monitor scenario), exact Windows qualification and physical FAT. No new heavy workflow per edit. Prior #933 not merged here, no shared plugin changes.
+
+First exact PCM run 45753036777 passed with DMX_SHARED_RETURN_PCM_PASS and fast UI job 139685077125 passed including exact-role/EdgeId tests. Follow-up adds native WebView transport emulation in actual Chromium at 1366x900 and 1024x768 (same single assembled GUI), MONITOR MIX context, explicit native-role strip identity and read-only terminal input/output labels. Test must prove missing edge disabled, exact PRE return gain, no SET_FADER, and return MAIN -6 dB restored. Windows/physical not claimed.
