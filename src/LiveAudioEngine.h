@@ -3228,6 +3228,7 @@ public:
         o->setProperty ("callbackCadenceLastExpectedUs",
             static_cast<double> (cadenceLastExpectedUs_.load (std::memory_order_relaxed)));
         o->setProperty ("callbackCadenceGapThresholds", "SUGGESTIVE_1_5X_AND_2_3X_PREVIOUS_BLOCK_PERIOD");
+        const auto renderScopeBefore=renderPressure_.scope();
         const auto pressure=renderPressure_.snapshot();
         o->setProperty("renderPressureWindowValid",pressure.valid);
         if(pressure.valid){
@@ -3291,6 +3292,14 @@ public:
             ? 1000000.0 * d->getCurrentBufferSizeSamples() / d->getCurrentSampleRate() : 0.0);
         o->setProperty ("performanceNote", "Over-budget and callback-gap counts are timing indicators, not driver-confirmed xruns.");
         auto histogram = realtimeHistogram_.snapshot();
+        const auto renderScopeAfter=renderPressure_.scope();
+        // Cumulative counters include diagnostic/muted work. Only difference
+        // snapshots inside one uninterrupted armed native render segment.
+        if(renderScopeBefore.token && renderScopeBefore==renderScopeAfter){
+            o->setProperty("performanceRenderToken",juce::String(static_cast<juce::int64>(renderScopeAfter.token)));
+            o->setProperty("performanceRenderEpoch",juce::String(static_cast<juce::int64>(renderScopeAfter.epoch)));
+            o->setProperty("performanceRenderRevision",juce::String(static_cast<juce::int64>(renderScopeAfter.revision)));
+        }
         o->setProperty ("callbackP95BudgetUpperPct", histogram.p95Ceiling < 0
             ? juce::var() : juce::var (histogram.p95Ceiling * 100.0));
         o->setProperty ("callbackP99BudgetUpperPct", histogram.p99Ceiling < 0

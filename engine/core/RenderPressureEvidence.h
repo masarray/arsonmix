@@ -15,8 +15,21 @@ public:
         bool valid=false;
         unsigned withinThenOnTime=0,withinThenLate=0,overThenOnTime=0,overThenLate=0;
     };
+    // One uninterrupted eligible render run. Publish only on boundaries,
+    // never per callback; reader is bounded and does not spin.
+    struct Scope {
+        std::uint64_t token=0,epoch=0,revision=0;
+        bool operator==(const Scope&) const noexcept = default;
+    };
+    Scope scope() const noexcept {
+        const auto token=scopeToken_.load();
+        if(!token)return {};
+        const Scope value{token,scopeEpoch_.load(),scopeRevision_.load()};
+        return scopeToken_.load()==token?value:Scope{};
+    }
     void breakSequence() noexcept {
         if(previousStart_||count_){
+            scopeToken_.store(0);
             previousStart_=0;count_=0;bins_={};
             published_.store(0,std::memory_order_release);
         }
@@ -39,6 +52,11 @@ public:
                 count_=0;bins_={};
             }
         }
+        if(!previousStart_){
+            scopeEpoch_.store(epoch);
+            scopeRevision_.store(revision);
+            if(++scopeSerial_!=0)scopeToken_.store(scopeSerial_);
+        }
         epoch_=epoch;revision_=revision;previousStart_=start;previousElapsed_=elapsed;
         previousPeriod_=period;previousOver_=static_cast<double>(elapsed)>period;
     }
@@ -56,5 +74,7 @@ private:
     unsigned count_=0;
     std::array<unsigned,4> bins_{};
     std::atomic<std::uint64_t> published_{0};
+    std::uint64_t scopeSerial_=0; // audio owner, lifetime counter
+    std::atomic<std::uint64_t> scopeToken_{0},scopeEpoch_{0},scopeRevision_{0};
 };
 }

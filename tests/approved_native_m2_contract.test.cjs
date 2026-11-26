@@ -7278,7 +7278,8 @@ const m4Accepted=(armed=true)=>({
   graph:{revision:"9"}
 });
 const m4Live=(sequence,buckets,extra={})=>({
-  connected:true,directRouteAuthorized:true,deviceGeneration:42,
+  connected:true,directRouteAuthorized:true,deviceGeneration:42,adaptiveClockActive:false,
+  performanceRenderToken:"11",performanceRenderEpoch:"42",performanceRenderRevision:"9",
   rate:48000,buffer:128,periodUs:2666.667,nativeFxGraphRevision:"9",
   footerHealthSequence:sequence,callbackBudgetBuckets:buckets,...extra
 });
@@ -7374,4 +7375,21 @@ test("M4 refuses green while disarmed, discards invalid FX fields and uses a sin
   assert.match(bridge,/row.textContent=value; \/\/ Plugin names are data/);
   assert.match(bridge,/data-audio-tab="performance"/);
   assert.doesNotMatch(bridge,/action:"autoBypassForM4"|action:"autoBufferIncreaseForM4"/);
+});
+
+test("M6 continuous live evidence excludes skipped samples, mute cycles, diagnostic callbacks and wrong scope",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=(seq,extra={},accepted=m4Accepted(),prior=first.cursor)=>
+    protocol.smartPerformanceView(m4Live(seq,m4Buckets({7:100}),extra),accepted,prior);
+  assert.equal(next(2).state,"OBSERVED_MARGIN");
+  for(const extra of [{performanceRenderToken:"12"},{performanceRenderToken:null},
+    {performanceRenderEpoch:"43"},{performanceRenderRevision:"10"}])
+    assert.equal(next(2,extra).headroom,null);
+  assert.equal(next(3).headroom,null);
+  assert.equal(next(2,{adaptiveClockActive:true}).state,"UNAVAILABLE");
+  const muted=next(2,{},m4Accepted(false));
+  assert.equal(muted.state,"MUTED");assert.equal(muted.headroom,null);
+  assert.equal(next(3,{},m4Accepted(),muted.cursor).headroom,null);
+  assert.equal(next(2,{renderPressureWindowValid:true,renderPressureWithinThenLate:65,
+    renderPressureWithinThenOnTime:0,renderPressureOverThenLate:0,renderPressureOverThenOnTime:0}).correlation,null);
 });

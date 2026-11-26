@@ -3362,8 +3362,9 @@
     const epoch=hardware?.device?.epoch||"";
     const valid=p?.cursor?.epoch===epoch&&
       p?.cursor?.graphRevision===hardware?.graph?.revision&&
+      p?.cursor?.armed===(hardware?.device?.outputArmed===true)&&
       hardware?.admitted===true&&!hardware.retained;
-    const key=(valid?p.cursor.epoch+":"+p.cursor.seq:"unavailable:"+epoch);
+    const key=(valid?p.cursor.epoch+":"+p.cursor.seq:"unavailable:"+epoch+":"+String(hardware?.device?.outputArmed));
     if(!force&&key===m4PaintKey)return;
     m4PaintKey=key;
     const put=(field,value)=>{
@@ -3398,6 +3399,8 @@
     const advice=panel.querySelector("[data-m4-advice]");
     const addRows=(host,items)=>{
       if(!host)return;
+      // Stable text rows need no DOM allocation or layout invalidation.
+      if(host.children.length===items.length&&items.every((v,i)=>host.children[i].textContent===v))return;
       host.replaceChildren(...items.map(value=>{
         const row=document.createElement("div");
         row.className="armix-m4-line";
@@ -3414,7 +3417,13 @@
   }
 
   function updateHardwarePanel(next) {
+    const prev=hardware;
     hardware=next || null;
+    if(prev?.device?.epoch!==hardware?.device?.epoch||
+       prev?.device?.outputArmed!==hardware?.device?.outputArmed||
+       prev?.graph?.revision!==hardware?.graph?.revision||
+       prev?.admitted!==hardware?.admitted||prev?.retained!==hardware?.retained)
+      lastM4Performance=null;
     refreshRealM4Inputs(next);
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&

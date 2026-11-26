@@ -914,6 +914,7 @@
     });
     if(!accepted?.admitted||accepted.retained||!accepted.device ||
        !live||live.connected!==true||live.directRouteAuthorized!==true||
+       live.adaptiveClockActive!==false||
        accepted.device.epoch!==String(live.deviceGeneration)||
        accepted.device.sampleRate!==live.rate ||
        accepted.device.bufferFrames!==live.buffer ||
@@ -927,14 +928,20 @@
        !counts.every(n=>integer(n)!==null))
       return unavailable("Waiting for the native 1 Hz callback histogram");
     const epoch=accepted.device.epoch,graphRevision=accepted.graph.revision;
-    const cursor=Object.freeze({epoch,graphRevision,seq,buckets:Object.freeze([...counts])});
-    const same=prior?.epoch===epoch&&prior.graphRevision===graphRevision&&
-      integer(prior.seq)!==null&&prior.seq<seq&&
+    const armed=accepted.device.outputArmed===true;
+    const token=armed&&decimal(live.performanceRenderToken)!==null&&
+      live.performanceRenderToken!=="0"&&live.performanceRenderEpoch===epoch&&
+      live.performanceRenderRevision===graphRevision?live.performanceRenderToken:null;
+    const cursor=Object.freeze({epoch,graphRevision,seq,token,armed,buckets:Object.freeze([...counts])});
+    const same=token!==null&&prior?.token===token&&prior.armed===true&&
+      prior.epoch===epoch&&prior.graphRevision===graphRevision&&
+      integer(prior.seq)!==null&&prior.seq+1===seq&&
       Array.isArray(prior.buckets)&&prior.buckets.length===13&&
       prior.buckets.every(n=>integer(n)!==null);
     const delta=same?counts.map((n,i)=>n-prior.buckets[i]):null;
     const valid=delta!==null&&delta.every(n=>integer(n)!==null);
-    const callbacks=valid?delta.reduce((sum,n)=>sum+n,0):null;
+    const total=valid?delta.reduce((sum,n)=>sum+n,0):null;
+    const callbacks=integer(total);
     const enough=callbacks!==null&&callbacks>=64;
     const buckets=Object.freeze([1,2,4,8,12,20,30,40,55,70,85,100,null]);
     const pct=(percentage)=>percentage===null?">100%":percentage+"%";
@@ -949,15 +956,15 @@
       return null;
     };
     const ceiling=p99();
-    const over=valid?delta[12]:null;
+    const over=callbacks!==null?delta[12]:null;
     const headroom=enough?Object.freeze({
       p99:pct(ceiling),margin:ceiling===null?"none verified":(100-ceiling)+"%",
-      confidence:"HOST_RENDER_1HZ_DELTA_P99_BUCKET_CEILING_NOT_XRUN"
+      confidence:"CONTINUOUS_ARMED_NATIVE_RENDER_NOMINAL_1HZ_DELTA_P99_BUCKET_CEILING_NOT_XRUN"
     }):null;
-    const correlation=live.renderPressureWindowValid===true &&
-      ["renderPressureWithinThenLate","renderPressureOverThenLate",
-       "renderPressureWithinThenOnTime","renderPressureOverThenOnTime"]
-        .every(k=>integer(live[k])!==null)?
+    const pairCounts=["renderPressureWithinThenLate","renderPressureOverThenLate",
+       "renderPressureWithinThenOnTime","renderPressureOverThenOnTime"].map(k=>integer(live[k]));
+    const correlation=token!==null&&live.renderPressureWindowValid===true&&
+      pairCounts.every(n=>n!==null&&n<=64)&&pairCounts.reduce((a,b)=>a+b,0)===64?
       Object.freeze({withinLate:live.renderPressureWithinThenLate,
         overLate:live.renderPressureOverThenLate,
         provenance:"LAST_COMPLETE_64_PAIRS_MAY_BE_OLD_NOT_CAUSAL"}):null;
@@ -1000,11 +1007,10 @@
         live.nativeMaxInsertLatencyName.slice(0,90):"",
       provenance:"DECLARED_FX_GRAPH_SAMPLES_NOT_DRIVER_OR_ACOUSTIC_ROUNDTRIP"
     }):null;
-    const armed=accepted.device.outputArmed===true;
     const recommendations=[];
     let state=armed?"COLLECTING":"MUTED";
     if(!armed)recommendations.push("Outputs disarmed. Inspect routing before enabling monitoring.");
-    else if(!enough)recommendations.push("Collect at least 64 render callbacks within one valid 1-second interval.");
+    else if(!enough)recommendations.push("Collect at least 64 render callbacks within one uninterrupted nominal 1-second interval.");
     else if(over>0)recommendations.push("Render deadline exceeded in "+over+
       "/"+callbacks+" measured blocks. Review FX workload before any operator-approved change.");
     else if(ceiling===null||ceiling>=85)
