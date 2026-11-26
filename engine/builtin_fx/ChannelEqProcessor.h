@@ -67,6 +67,10 @@ public:
         ready_=restored;
     }
     void releaseResources() override {ready_=false;}
+    bool supportsExactIdle() const noexcept override {return true;}
+    bool tryExactIdle(const float* l,const float* r,int n) noexcept override {
+        return ready_ && l && r && n>0 && queued_.empty() && eq_.exactIdentity();
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;

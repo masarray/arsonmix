@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -124,6 +125,17 @@ public:
         kneeGuardLinear_=std::min(kneeGuardLinear_,edit.kneeStartLinear);
         target_=edit;
         rampRemaining_=fadeSamples_;
+        return true;
+    }
+    // The detector and parameter ramp must be fully settled before sleep.
+    // Positive zero only: no epsilon/quiet-vocal threshold, DAZ ambiguity,
+    // signed-zero rewriting, or sanitization of invalid PCM by the shortcut.
+    bool tryExactIdle(const float* left,const float* right,std::size_t frames) noexcept {
+        if(!ready_||!left||!right||!frames||rampRemaining_!=0||envelope_!=0.f)return false;
+        for(std::size_t i=0;i<frames;++i)
+            if(std::bit_cast<std::uint32_t>(left[i])!=0u ||
+               std::bit_cast<std::uint32_t>(right[i])!=0u)return false;
+        inputPeak_=outputPeak_=gainReductionDb_=0.f;
         return true;
     }
     void processMono(float* samples,std::size_t frames) noexcept {

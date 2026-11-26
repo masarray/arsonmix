@@ -259,7 +259,16 @@ static void testNoHeapAndVariableQuantum() {
               std::isfinite(r[count-1]),"variable quantum finite stereo");
     }
 }
+static void testExactIdentityAdmission(){
+    ChannelEq eq;check(eq.prepare(48000),"prepare exact identity");
+    check(eq.exactIdentity(),"flat EQ identity");
+    onBand(eq,0,1000.f);check(!eq.exactIdentity(),"active filter not identity");
+    runUntilSettled(eq);check(!eq.exactIdentity(),"settled active filter");
+    check(eq.resetToFlat(),"reset flat");check(!eq.exactIdentity(),"fade must finish");
+    runUntilSettled(eq);check(eq.exactIdentity(),"settled flat identity");
+}
 int main() {
+    testExactIdentityAdmission();
     testCatalogAndDefault();
     testResponse();
     testValidationAndReset();

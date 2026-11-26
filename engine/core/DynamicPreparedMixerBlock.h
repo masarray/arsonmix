@@ -781,6 +781,8 @@ public:
                 const float* oldR=resolve(fade.current,1);
                 const float* newL=fade.remaining?resolve(fade.next,0):oldL;
                 const float* newR=fade.remaining?resolve(fade.next,1):oldR;
+                auto* const physicalDelay=!physicalDelays_.empty() && physicalDelays_[i].active()?
+                    &physicalDelays_[i]:nullptr;
                 for(int f=0;f<frames;++f) {
                     float vl=oldL?oldL[f]:0.f,vr=oldR?oldR[f]:0.f;
                     if(fade.remaining>0) {
@@ -790,7 +792,7 @@ public:
                         vr+=((newR?newR[f]:0.f)-vr)*alpha;
                         if(--fade.remaining==0){fade.current=fade.next;oldL=newL;oldR=newR;}
                     }
-                    if(!physicalDelays_.empty())physicalDelays_[i].process(vl,vr);
+                    if(physicalDelay)physicalDelay->process(vl,vr);
                     l[f]+=vl;r[f]+=vr;
                 }
             }
@@ -804,11 +806,12 @@ public:
                 // Even when the worker runs dry, advance the prepared PDC
                 // delay with silence: otherwise returning music would release
                 // stale buffered frames at the wrong callback time.
+                auto* const physicalDelay=!physicalDelays_.empty() && physicalDelays_[i].active()?
+                    &physicalDelays_[i]:nullptr;
                 for(int f=0;f<frames;++f) {
                     float vl=(found&&found->left)?found->left[f]:0.f;
                     float vr=(found&&found->right)?found->right[f]:0.f;
-                    if(!physicalDelays_.empty())
-                        physicalDelays_[i].process(vl,vr);
+                    if(physicalDelay)physicalDelay->process(vl,vr);
                     l[f]+=vl;r[f]+=vr;
                 }
             }
@@ -841,10 +844,12 @@ public:
                 // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
                 // ASIO callback advances only 4/64 of the requested change.
                 target.applied.retarget(goal);
+                auto* const edgeDelay=!edgeDelays_.empty() && edgeDelays_[e].active()?
+                    &edgeDelays_[e]:nullptr;
                 for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
                     float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
-                    if(!edgeDelays_.empty())edgeDelays_[e].process(vl,vr);
+                    if(edgeDelay)edgeDelay->process(vl,vr);
                     dl[f]+=vl;dr[f]+=vr;
                 }
             }
@@ -892,10 +897,12 @@ public:
                 // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
                 // ASIO callback advances only 4/64 of the requested change.
                 target.applied.retarget(goal);
+                auto* const edgeDelay=!edgeDelays_.empty() && edgeDelays_[e].active()?
+                    &edgeDelays_[e]:nullptr;
                 for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
                     float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
-                    if(!edgeDelays_.empty())edgeDelays_[e].process(vl,vr);
+                    if(edgeDelay)edgeDelay->process(vl,vr);
                     dl[f]+=vl;dr[f]+=vr;
                 }
             }
@@ -920,7 +927,8 @@ public:
             const float* const source=scratch_.data()+slot*2*block;
             std::copy_n(source,frames,l);
             std::copy_n(source+block,frames,r);
-            if(!sinkDelays_.empty())for(int f=0;f<frames;++f)sinkDelays_[sink].process(l[f],r[f]);
+            if(!sinkDelays_.empty() && sinkDelays_[sink].active())
+                for(int f=0;f<frames;++f)sinkDelays_[sink].process(l[f],r[f]);
         };
         copySink(main_,outputL,outputR);
         if(mainMonoAfterFx_) {

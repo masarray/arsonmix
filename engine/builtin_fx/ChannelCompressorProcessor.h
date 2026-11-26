@@ -58,6 +58,17 @@ public:
         // inferred on the UI thread when the serial stops advancing.
     }
     void releaseResources() override {ready_=false;}
+    bool supportsExactIdle() const noexcept override {return true;}
+    bool tryExactIdle(const float* l,const float* r,int n) noexcept override {
+        if(!ready_||n<=0||!queued_.empty()||
+           !core_.tryExactIdle(l,r,static_cast<std::size_t>(n)))return false;
+        // Preserve meter freshness and the processor's logical block serial.
+        inputPeak_.store(0.f,std::memory_order_relaxed);
+        outputPeak_.store(0.f,std::memory_order_relaxed);
+        meter_.store(0.f,std::memory_order_relaxed);
+        processedBlocks_.fetch_add(1,std::memory_order_release);
+        return true;
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals denormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;

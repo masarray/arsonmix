@@ -3366,7 +3366,9 @@ public:
                 // CONTROL readback of the exact admitted ChannelId/instance.
                 // Retained unbound rows must not claim a live processing state.
                 item->setProperty("dspTelemetryLive",!retained);
-                item->setProperty("dspIdleSupported",(*lease)->immerseIdleAdmitted);
+                item->setProperty("dspIdleSupported",(*lease)->immerseIdleAdmitted||(*lease)->nativeExactIdleAdmitted);
+                item->setProperty("dspIdlePolicy",(*lease)->nativeExactIdleAdmitted?"NATIVE_EXACT_STATE":
+                    (*lease)->immerseIdleAdmitted?"IMMERSIB_QUALIFIED_TAIL":"CONSERVATIVE");
                 item->setProperty("dspSleeping",!retained && (*lease)->dspSleeping.load(std::memory_order_relaxed));
                 item->setProperty("dspLastUs",retained?juce::var():juce::var(static_cast<double>((*lease)->dspLastUs.load(std::memory_order_relaxed))));
                 item->setProperty("dspWorstUs",static_cast<double>((*lease)->dspWorstUs.load(std::memory_order_relaxed)));

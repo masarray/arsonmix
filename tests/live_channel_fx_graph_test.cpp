@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
+#include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "../engine/core/NativeFxRackTransaction.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
@@ -1925,6 +1926,38 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+static void verifyNativeExactIdle() {
+    using Eq=armix::builtin_fx::ChannelEqProcessor;
+    using Comp=armix::builtin_fx::ChannelCompressorProcessor;
+    auto eq=std::make_unique<Eq>();eq->prepareToPlay(48000,64);
+    auto* live=eq.get();
+    LiveChannelFxGraph::FxInstance lease(std::move(eq),Eq::catalogIdentity,"EQ",64);
+    std::array<float,64> l{},r{};l.fill(.125f);r.fill(-.25f);
+    const auto before=heapCalls.load();
+    lease.render(l.data(),r.data(),64);
+    assert(lease.dspSleeping.load()&&lease.dspSleepBlocks.load()==1);
+    assert(l[0]==.125f&&r[63]==-.25f&&heapCalls.load()==before);
+    auto band=live->acceptedBands()[0];band.enabled=true;band.frequencyHz=1000.f;
+    assert(live->queueBand(0,band,71));
+    lease.render(l.data(),r.data(),64);
+    Eq::Completion ack{};
+    assert(!lease.dspSleeping.load()&&live->pollCompletion(ack)&&ack.applied&&ack.requestId==71);
+    assert(lease.dspProcessedBlocks.load()==1&&heapCalls.load()==before);
+    auto c=std::make_unique<Comp>();c->prepareToPlay(48000,64);
+    auto* compressor=c.get();
+    LiveChannelFxGraph::FxInstance cl(std::move(c),Comp::catalogIdentity,"Comp",64);
+    l.fill(0);r.fill(0);const auto serial=compressor->observedBlockSerial();
+    cl.render(l.data(),r.data(),16);
+    assert(cl.dspSleeping.load()&&compressor->observedBlockSerial()==serial+1);
+    l[0]=1.e-20f;
+    cl.render(l.data(),r.data(),16);
+    assert(!cl.dspSleeping.load()&&l[0]!=0.f);
+    // Vendor fixture can generate output with zero input. Never sleep it.
+    auto vendor=std::make_unique<GainFx>(1.f,0,.2f);vendor->prepareToPlay(48000,64);
+    LiveChannelFxGraph::FxInstance external(std::move(vendor),"unknown","Vendor",64);
+    l.fill(0);r.fill(0);external.render(l.data(),r.data(),16);
+    assert(!external.dspSleeping.load()&&l[0]==.2f&&r[0]==.2f);
+}
 static void verifyFxTimingSampled() {
     auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(48000,64);
     LiveChannelFxGraph::FxInstance fx(std::move(p),"sampled","timed gain",64);
@@ -2696,6 +2729,7 @@ int main(int argc,char** argv) {
     verifyNativePuzzleV8FixtureAndWire();
     verifyChannelIdGroupPreservesHostedFx();
     verifyFxTimingSampled();
+    verifyNativeExactIdle();
     verifyZeroLatencyFxFastPath();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();

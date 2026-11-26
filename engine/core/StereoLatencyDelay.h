@@ -14,6 +14,7 @@ public:
         data_.assign(static_cast<std::size_t>(samples)*2,0.f);cursor_=0;
         return true;
     }
+    [[nodiscard]] bool active() const noexcept {return !data_.empty();}
     void process(float& left,float& right) noexcept {
         if(data_.empty())return;
         const float l=data_[cursor_],r=data_[cursor_+1];

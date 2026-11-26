@@ -25,6 +25,10 @@ struct Effects {
     }
 };
 int main(){
+    armix::dsp::StereoLatencyDelay probe;
+    assert(probe.prepare(0)&&!probe.active());
+    assert(probe.prepare(7)&&probe.active());
+    assert(probe.prepare(0)&&!probe.active());
     for(bool pre:{false,true}) {
         DynamicChannelRoster roster;
         std::vector<ChannelEdit> edits;

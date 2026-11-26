@@ -57,6 +57,7 @@ public:
         std::atomic<unsigned> exceptions{0};
         armix::rt::FxTimingSampler processTiming;
         // Lease-local: survives MOVE and accepted graph revisions, not a new DSP owner.
+        bool nativeExactIdleAdmitted=false; // explicit native processor contract
         bool immerseIdleAdmitted=false; // CONTROL only, exact trusted native identity
         armix::dsp::ImmerSIBIdlePolicy immerseIdle;
         std::atomic<bool> dspSleeping{false};
@@ -108,6 +109,8 @@ public:
                     continuousBypassProcessing=
                         nativeControl->requiresContinuousBypassProcessing();
                     nativeControl->sealForRealtime();
+                    nativeExactIdleAdmitted=latencySamples==0 && !continuousBypassProcessing &&
+                        nativeControl->supportsExactIdle();
                     // Only the fixed, non-moving native ImmerSIB scene contract.
                     // Never infer support for arbitrary VST3, generators or Harmony.
                     immerseIdleAdmitted=catalogId=="armix.builtin.imersip.v1" &&
@@ -228,6 +231,18 @@ public:
             if(immerseIdleAdmitted && immerseIdle.shouldSleep(left,right,samples,idleStable)) {
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
+                dspSleeping.store(true,std::memory_order_relaxed);
+                dspLastUs.store(0,std::memory_order_relaxed);
+                addRealtimeCounter(dspSleepFrames,static_cast<std::uint64_t>(samples));
+                addRealtimeCounter(dspSleepBlocks,1);
+                processing.clear(std::memory_order_release);
+                return;
+            }
+            // Exact native idle does not clear or modify the input PCM.
+            // The processor owns all state/ACK/meter requirements. A pending
+            // edit or non-equivalent input wakes in this very block.
+            if(nativeExactIdleAdmitted && !requestedBypass && !fading &&
+               nativeControl->tryExactIdle(left,right,samples)) {
                 dspSleeping.store(true,std::memory_order_relaxed);
                 dspLastUs.store(0,std::memory_order_relaxed);
                 addRealtimeCounter(dspSleepFrames,static_cast<std::uint64_t>(samples));

@@ -173,6 +173,12 @@ public:
     }
     [[nodiscard]] std::size_t activeBands() const noexcept { return current_.activeCount; }
     [[nodiscard]] int addedLatencySamples() const noexcept { return 0; }
+    // Settled all-bands-disabled EQ is an exact identity for any PCM.
+    // Do not skip while the old filter bank is still fading out.
+    [[nodiscard]] bool exactIdentity() const noexcept {
+        return prepared_ && current_.activeCount==0 &&
+            fadeRemaining_==0 && externalFadeRemaining_==0 && externalWet_==externalTarget_;
+    }
     [[nodiscard]] bool transitioning() const noexcept {
         return fadeRemaining_>0 || externalFadeRemaining_>0;
     }
