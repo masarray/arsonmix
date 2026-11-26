@@ -147,19 +147,21 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skPreset").is_disabled(),(
         "Old schema v2 must NOT offer P9.1+P9.2 factory scenes")
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
-    assert editor.locator("#skMap #skFarArc").count()==1
-    assert editor.locator("#skMap #skNearArc").count()==1
-    # Top-rear camera: FRONT/far (upper) is behind head, REAR/near overlays back.
+    assert editor.locator("#skMap ellipse#skOrbitRail").count()==1
+    assert editor.locator("#skMap #skFarArc, #skMap #skNearArc").count()==0
+    # Single complete geometry; foreground is a masked reference, not an arc.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
-      const far=map.querySelector('#skFarArc');
+      const rail=map.querySelector('#skOrbitRail');
       const art=map.querySelector('#skListenerArt');
-      const near=map.querySelector('#skNearArc');
-      return Boolean((far.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     (art.compareDocumentPosition(near) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     far.getAttribute('d').startsWith('M348 174 A148 83') &&
-                     near.getAttribute('d').startsWith('M52 174 A148 83'));
-    }"""), "Front/back ring painter layering incorrect"
+      const front=map.querySelector('#skOrbitForeground');
+      return Boolean((rail.compareDocumentPosition(art)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (art.compareDocumentPosition(front)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     rail.getAttribute('rx')==='148' && rail.getAttribute('ry')==='83' &&
+                     front.getAttribute('href')==='#skOrbitRail' &&
+                     front.getAttribute('mask')==='url(#skListenerCoverage)' &&
+                     getComputedStyle(map.querySelector('#skRail')).display!=='none');
+    }"""), "Continuous rail or foreground occlusion incorrect"
     # Each moving speaker is depth-sorted against the listener alpha silhouette.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
@@ -179,14 +181,14 @@ def exercise(browser,out,width,height):
     assert art.count()==1 and art.get_attribute("data-orientation")=="front-up-rear"
     assert art.get_attribute("href")=="assets/sonku-listener-top.png"
     # The rear-view alpha PNG must actually resolve in the BUILT
-    # native /preview/ bundle, and have transparent palette metadata.
+    # native /preview/ bundle, as the true-color RGBA asset.
     assert page.evaluate("""async () => new Promise(resolve => {
        const image=document.querySelector('#skListenerArt');
        const href=image.getAttribute('href');
        // file:// origins prohibit fetch(); SVG images still resolve from
        // the compiled GUI resource. Exercise actual Image.decode instead.
        const im=new Image();
-       im.onload=()=>resolve(im.naturalWidth===256&&im.naturalHeight===256);
+       im.onload=()=>resolve(im.naturalWidth===512&&im.naturalHeight===512);
        im.onerror=()=>resolve(false);
        im.src=href;
     })"""),"Rear-view transparent PNG missing from native GUI bundle"

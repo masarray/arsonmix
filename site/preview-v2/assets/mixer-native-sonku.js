@@ -154,14 +154,17 @@ root.innerHTML=[
  '<svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-rear listener with two depth-aware draggable binaural speakers">',
  '<defs><radialGradient id="skBg" cx="50%" cy="48%" r="73%"><stop offset="0" stop-color="#263b49"/><stop offset=".65" stop-color="#152533"/><stop offset="1" stop-color="#0a1622"/></radialGradient>',
  '<radialGradient id="skFloor" cx="50%" cy="55%" r="65%"><stop offset="0" stop-color="#7fdae7" stop-opacity=".14"/><stop offset="1" stop-color="#46758b" stop-opacity="0"/></radialGradient>',
- '<linearGradient id="skRail" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#80dce8"/><stop offset="1" stop-color="#355969"/></linearGradient>',
+ // One continuous rail: front/back share geometry, stroke and depth gradient.
+ '<linearGradient id="skRail" gradientUnits="userSpaceOnUse" x1="200" x2="200" y1="91" y2="257"><stop stop-color="#729baa" stop-opacity=".38"/><stop offset=".50" stop-color="#69a8b8" stop-opacity=".62"/><stop offset="1" stop-color="#8edce6" stop-opacity=".94"/></linearGradient>',
+ // Only the part of the SAME rail occluded by the shoulder is composited over it.
+ '<clipPath id="skForegroundClip" clipPathUnits="userSpaceOnUse"><rect x="0" y="174" width="400" height="156"/></clipPath>',
+ '<mask id="skListenerCoverage" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="400" height="330" style="mask-type:alpha"><image href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet"/></mask>',
  '</defs>',
  '<rect width="400" height="330" rx="10" fill="url(#skBg)"/>',
  '<ellipse cx="200" cy="174" rx="148" ry="83" fill="url(#skFloor)"/>',
  '<path class="sk-axis" d="M200 79V270 M45 174H355" fill="none" stroke="#597d89" stroke-opacity=".21" stroke-width=".8" stroke-dasharray="2 9"/>',
  // FRONT is the far upper orbit, behind head from this top-rear camera.
- '<path id="skFarArc" class="sk-orbit-far" d="M348 174 A148 83 0 0 0 52 174" fill="none" stroke="#679aaa" stroke-opacity=".47" stroke-width="1.4" stroke-dasharray="4 7"/>',
- '<path class="sk-secondary-rail" d="M336 174 A136 70 0 0 0 64 174" fill="none" stroke="#538096" stroke-opacity=".19" stroke-width="1"/>',
+ '<ellipse id="skOrbitRail" class="sk-orbit-rail" cx="200" cy="174" rx="148" ry="83" fill="none" stroke="url(#skRail)" stroke-width="1.7" pointer-events="none"/>',
  '<text class="sk-direction sk-front" x="200" y="55" text-anchor="middle">FRONT</text>',
  '<text class="sk-direction" x="200" y="317" text-anchor="middle">REAR</text>',
  '<text class="sk-direction" x="11" y="149">LEFT</text><text class="sk-direction" x="352" y="149">RIGHT</text>',
@@ -170,9 +173,9 @@ root.innerHTML=[
  '<ellipse class="sk-head-shadow" cx="200" cy="246" rx="76" ry="22" fill="#031621" fill-opacity=".27"/>',
  '<g id="skFarSources" class="sk-far-sources"></g>',
  '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-rear" aria-label="Rear/top-view listener facing front at top" pointer-events="none"/>',
- // REAR is the near lower orbit, overlaying upper back from this camera.
- '<path id="skNearArc" class="sk-orbit-near-shadow" d="M52 174 A148 83 0 0 0 348 174" fill="none" stroke="#061723" stroke-opacity=".7" stroke-width="4.5"/>',
- '<path class="sk-orbit-near" d="M52 174 A148 83 0 0 0 348 174" fill="none" stroke="url(#skRail)" stroke-opacity=".9" stroke-width="1.8" stroke-dasharray="5 7"/>',
+ // The near portion is visible over the listener's back only where its alpha
+ // silhouette covers the underlying rail. No independent arc or horizon join.
+ '<g clip-path="url(#skForegroundClip)" pointer-events="none"><use id="skOrbitForeground" href="#skOrbitRail" mask="url(#skListenerCoverage)"/></g>',
  // Paint independent rear/near speakers above the back; far speakers behind head.
  '<g id="skNearSources" class="sk-near-sources"></g>',
  '<path d="M193 68 L200 60 L207 68" fill="none" stroke="#77d9e6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".83"/>',
@@ -546,7 +549,13 @@ function drawSpeakers(){
   const depth=Math.cos(deg*Math.PI/180);
   const near=depth<0;
   const layer=near?depthLayers.near:depthLayers.far;
-  if(g.parentNode!==layer)layer.appendChild(g);
+  if(g.parentNode!==layer){
+   // Preserve the proven front/back painter ordering and map-owned pointer
+   // capture. A focused monitor must remain keyboard-accessible at crossover.
+   const focused=document.activeElement===g;
+   layer.appendChild(g);
+   if(focused)g.focus({preventScroll:true});
+  }
   const scale=(.96-.20*depth).toFixed(3); // far .76, side .96, near 1.16
   g.setAttribute("transform","translate("+visible.x.toFixed(2)+","+visible.y.toFixed(2)+") scale("+scale+")");
   g.style.opacity=(.83-.14*depth).toFixed(3);

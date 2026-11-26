@@ -26,8 +26,27 @@ const same=g.displayPair([0,0]);
 assert(Math.abs(same[0].anchor.x-same[1].anchor.x)<1.e-9);
 assert(Math.hypot(same[0].visible.x-same[1].visible.x,
                   same[0].visible.y-same[1].visible.y)>=45);
-assert.match(source,/M348 174 A148 83 0 0 0 52 174/);
-assert.match(source,/M52 174 A148 83 0 0 0 348 174/);
+assert.match(source,/<ellipse id="skOrbitRail"[^>]*cx="200" cy="174" rx="148" ry="83"/);
+assert.equal((source.match(/id="skOrbitRail"/g)||[]).length,1);
+assert.match(source,/<use id="skOrbitForeground" href="#skOrbitRail" mask="url\(#skListenerCoverage\)"/);
+assert.doesNotMatch(source,/skFarArc|skNearArc|sk-secondary-rail/);
+assert.doesNotMatch(css,/#sk(?:Far|Near)Sources\s+\.sk-src\s*\{[^}]*filter/);
+// Exhaustive projected near-plane clearance from the existing cranial
+// silhouette envelope (body/shoulder may naturally be behind foreground).
+for(let phase=0;phase<360;++phase)for(let spread=0;spread<=180;spread+=5){
+ const az=[phase-spread/2,phase+spread/2];
+ const pair=g.displayPair(az);
+ for(let i=0;i<2;++i){
+  const cos=Math.cos(az[i]*Math.PI/180);
+  if(cos>=0)continue; // far plane is correctly occluded by the PNG
+  const scale=.96-.20*cos,p=pair[i].visible;
+  const left=p.x-14*scale,right=p.x+14*scale;
+  const top=p.y-18*scale,bottom=p.y+18*scale;
+  // Conservative head + ears box in the unchanged SVG viewBox.
+  assert(right<150||left>250||bottom<100||top>193,
+    "Foreground speaker penetrates head envelope "+JSON.stringify({phase,spread,p}));
+ }
+}
 const f=between("const factoryPresets=Object.freeze","const valid=s=>");
 const p=vm.runInNewContext("(function(){"+f+
  "return {factoryPresets,matchFactoryPreset};})()",{});
