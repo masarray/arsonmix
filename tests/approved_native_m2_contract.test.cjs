@@ -2063,8 +2063,9 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
  assert.match(menu,/Confirm Delete AUX/);
  assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
- assert.match(bridge,/extraOutput\.addEventListener\("click",\(\)=>window\.__arMixOpenAdditionalOutput\?\.\(\)\)/);
- assert.match(read("web/monitor.js"),/window\.__arMixOpenAdditionalOutput=\(\)=>\{\s*openRoutingLab\(\);\s*selectPatchTab\("output"\);/);
+ assert.match(bridge,/extraOutput\.addEventListener\("click",openAdditionalOutput\)/);
+ assert.match(bridge,/querySelector\("\[data-audio-extra-output\]"\)\.onclick=openAdditionalOutput/);
+ assert.doesNotMatch(bridge,/__arMixOpenAdditionalOutput/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
@@ -7556,4 +7557,18 @@ test("DMX split topology transaction uses native ChannelId edits, not legacy str
   assert.match(body,/armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::remove;/);
   assert.equal((body.match(/std::span<const armix::mixer::ChannelEdit>/g)||[]).length,2);
   assert.doesNotMatch(body,/(?<!::)\bChannelEdit\b/);
+});
+
+
+test("U1 output rejects preserve actionable native reasons without weakening generic QA filtering",()=>{
+ const reasons=["EXTERNAL OUT: stale ASIO device, epoch or PCM revision",
+  "EXTERNAL OUT: native graph rejected; previous sound retained",
+  "EXTERNAL OUT: physical pair reserved by logical output",
+  "EXTERNAL OUT: wait for native bus mapping callback readback",
+  "BUS OUTPUT: explicitly MUTE MAIN and STREAM first"];
+ for(const reason of reasons)assert.equal(protocol.operatorMessage(reason),reason);
+ assert.equal(protocol.operatorMessage("INVALID_NATIVE_SNAPSHOT"),"Change not applied · Previous mixer settings kept");
+ const b=read("web/approved-native-bridge.js"),host=read("src/Main.cpp");
+ assert.match(b,/ack\?\.requestId!==extraPending\.requestId\|\|ack\.action!==extraPending\.action/);
+ assert.match(host,/EXTERNAL_OUTPUT_REJECTED/);
 });

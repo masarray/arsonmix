@@ -2499,7 +2499,7 @@
         });
         if(plan.kind==="UNAVAILABLE"){
           if(el)el.value=previous;
-          nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
+          nativeToast("EXTERNAL OUT: unavailable · check verified ASIO pins, pending mapping or logical output assignment");
           return true;
         }
         if(plan.kind==="NO_CHANGE"){if(el)el.value=previous;return true;}
@@ -3594,6 +3594,87 @@
   },true);
   let loopbackSerial=0,loopbackId="",loopbackPending=false;
   const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
+  // U1: approved native bundle owns this workflow. monitor.js belongs to
+  // the retired console and is deliberately NOT shipped in this bundle.
+  let extraPanel=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
+      extraError="",extraInventoryKnown=false;
+  const extraField=name=>extraPanel?.querySelector("[data-extra-"+name+"]");
+  function paintAdditionalOutput(){
+    if(!extraPanel?.open)return;
+    const live=extraLive, busy=Boolean(extraPending),ready=live?.secondaryOutputReady===true,
+      armed=live?.secondaryOutputArmed===true,fault=live?.secondaryOutputFault===true;
+    const select=extraField("device"), prior=select.value||live?.secondaryOutputName||"";
+    const options=extraInventory;
+    const sig=JSON.stringify(options);
+    if(select.dataset.signature!==sig){
+      select.replaceChildren(new Option("Select Windows playback device…",""),
+        ...options.map(name=>new Option(name,name)));
+      select.dataset.signature=sig;
+      if(options.includes(prior))select.value=prior;
+    }
+    const allowed=live?.directRouteAuthorized===true&&live?.adaptiveClockActive!==true&&
+      live?.dryRoutingLab?.hasAcceptedRoute===true&&live?.diagnosticRoute==="NORMAL";
+    const hardwareMuted=live?.monitor===false;
+    select.disabled=busy||armed;
+    extraField("refresh").disabled=busy;
+    extraField("connect").disabled=busy||!allowed||!hardwareMuted||armed||!options.includes(select.value);
+    extraField("arm").disabled=busy||(!armed&&(!ready||fault||!allowed));
+    extraField("arm").textContent=armed?"Disarm output":"Arm output";
+    extraField("stop").disabled=busy||(!ready&&!fault&&!live?.secondaryOutputName);
+    const message=busy?"Waiting for native output response…":!live?"Reading audio engine status…":
+      fault?"Output fault · disconnect and reconnect the same endpoint.":
+      armed?"Output armed · "+live.secondaryOutputName+" · receiving app must verify audio":
+      ready?"Connected · "+live.secondaryOutputName+" · arm to send MAIN":
+      !allowed?"Apply verified input routing and use DIRECT audio mode first.":
+      !hardwareMuted?"Mute hardware output before connecting (close this panel to use mixer Output mute).":
+      !extraInventoryKnown?"Reading Windows playback devices…":
+      !options.length?"No Windows playback endpoint found. Install/enable a virtual cable, then Refresh.":
+      "Select a playback endpoint, then Connect.";
+    const status=extraField("status");
+    if(status.textContent!==message)status.textContent=message;
+    const error=extraField("error");
+    error.hidden=!extraError;
+    if(error.textContent!==extraError)error.textContent=extraError;
+  }
+  function requestAdditionalOutput(action,value){
+    if(extraPending||!extraPanel?.open)return;
+    const requestId="extra-out-"+(++extraSerial);
+    extraError="";
+    extraPending={requestId,action};
+    paintAdditionalOutput();
+    backend.emitEvent("arMixAction",{action,value,requestId});
+    window.setTimeout(()=>{
+      if(extraPending?.requestId!==requestId)return;
+      extraPending=null;
+      extraError="Output response timed out · inspect current device state before retrying.";
+      paintAdditionalOutput();
+    },15000);
+  }
+  function openAdditionalOutput(){
+    if(deviceBusy()){nativeToast("Finish applying the audio device first.");return;}
+    if(!extraPanel){
+      const panel=document.createElement("dialog");
+      panel.setAttribute("aria-label","Additional Output");
+      panel.style.cssText="width:min(510px,90vw);box-sizing:border-box;background:#192b36;color:#dcebf2;border:1px solid #527889;border-radius:7px;padding:16px;font:12px system-ui,sans-serif;box-shadow:0 16px 56px #0009";
+      panel.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Additional Output · OBS / Virtual Cable</strong><button type="button" data-extra-close aria-label="Close Additional Output">×</button></div>
+        <label style="display:grid;gap:5px">Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0"><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-connect>Connect</button><button type="button" data-extra-arm>Arm output</button><button type="button" data-extra-stop>Disconnect</button></div>
+        <div data-extra-status role="status"></div><div data-extra-error role="alert" hidden style="color:#ffb7a5;margin-top:8px"></div>
+        <div style="margin-top:10px;color:#9fb9c8">MAIN post-FX → Windows playback. In OBS select the corresponding recording endpoint (for VB-CABLE: CABLE Output). ASIO remains the primary audio device.</div>`;
+      for(const el of panel.querySelectorAll("button,select"))el.style.cssText="background:#102631;color:#e1eff6;border:1px solid #527889;border-radius:4px;padding:6px 9px;font:inherit";
+      extraPanel=panel;
+      document.body.appendChild(panel);
+      extraField("close").onclick=()=>panel.close();
+      extraField("refresh").onclick=()=>{extraError="";backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});paintAdditionalOutput();};
+      extraField("device").onchange=paintAdditionalOutput;
+      extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputConnect",extraField("device").value);
+      extraField("arm").onclick=()=>requestAdditionalOutput("secondaryOutputArm",extraLive?.secondaryOutputArmed!==true);
+      extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
+    }
+    if(!extraPanel.open)extraPanel.showModal();
+    paintAdditionalOutput();
+    backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+  }
   function closeNativeAudioIO(){
     if(deviceBusy())return;
     if(loopbackPending)backend.emitEvent("arMixAction",{action:"audioLoopbackCancel"});
@@ -4015,11 +4096,7 @@
         if(!deviceBusy() && deviceState.remapGeneration!==null)
           sendDeviceApply(true);
       };
-      devicePanel.querySelector("[data-audio-extra-output]").onclick=()=>{
-        if(deviceBusy()||typeof window.__arMixOpenAdditionalOutput!=="function")return;
-        closeNativeAudioIO();
-        window.__arMixOpenAdditionalOutput();
-      };
+      devicePanel.querySelector("[data-audio-extra-output]").onclick=openAdditionalOutput;
       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
@@ -4362,7 +4439,13 @@
   }
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
-      if(!inventory||!Array.isArray(inventory.types)||deviceBusy())return;
+      if(!inventory||!Array.isArray(inventory.types))return;
+      const windows=inventory.types.find(x=>x.name==="Windows Audio");
+      extraInventory=[...new Set((Array.isArray(windows?.outputs)?windows.outputs:[])
+        .filter(x=>typeof x==="string"&&x.length>0&&x.length<=240))];
+      extraInventoryKnown=true;
+      paintAdditionalOutput();
+      if(deviceBusy())return;
       // Inventory is a native observation, not accepted Apply proof.
       deviceInventory=inventory;
       deviceChoice=null;
@@ -4751,7 +4834,7 @@
       extraOutput.type="button";
       extraOutput.title="Send MAIN to OBS, virtual cable or another Windows playback device";
       extraOutput.dataset.nativeExtraOutput="true";
-      extraOutput.addEventListener("click",()=>window.__arMixOpenAdditionalOutput?.());
+      extraOutput.addEventListener("click",openAdditionalOutput);
       toolbar.insertBefore(extraOutput,document.getElementById("moreTools"));
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
@@ -5264,7 +5347,16 @@
     // each second contains the native health sequence/CPU/RAM sample.
     // Rendering changes ONLY two existing footer spans; no new DOM,
     // browser polling, requestAnimationFrame or audio callback work.
+    backend.addEventListener("arMixSecondaryOutputAck",ack=>{
+      if(!extraPending||ack?.requestId!==extraPending.requestId||ack.action!==extraPending.action)return;
+      extraPending=null;
+      extraError=ack.ok===true?"":String(ack.error||"Additional output rejected");
+      // ACK acknowledges the command; status telemetry owns connected/armed state.
+      paintAdditionalOutput();
+    });
     backend.addEventListener("arMixStatus", live=>{
+      extraLive=live;
+      paintAdditionalOutput();
       const health=protocol.footerHealthFromLive(live);
       if(!health || health.sequence===lastFooterHealth?.sequence)return;
       lastFooterHealth=health;

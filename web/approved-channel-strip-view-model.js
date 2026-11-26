@@ -169,6 +169,10 @@
     const channel=graph.channels.find(ch=>ch?.id===channelId);
     if(!channel||!["INPUT","GROUP","FX_RETURN"].includes(channel.role))
       return unavailable;
+    if((typeof graph.revision==="string"&&graph.revision!==revision)||
+       hardware.raw.physicalBusOutputObserved===false||
+       hardware.raw.logicalOutputRegistry?.references?.some(r=>r.channelId===channelId))
+      return unavailable;
     const matches=Array.isArray(choices)?
       choices.filter(p=>p?.label===selectedLabel):[];
     if(matches.length!==1)return unavailable;

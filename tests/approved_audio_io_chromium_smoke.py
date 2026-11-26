@@ -445,6 +445,55 @@ def verify_io_defaults(page,out):
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingLogicalOutputEdit')")
     assert not errors,errors
 
+def verify_additional_output(page,out):
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    errors=[]
+    page.on("pageerror",lambda error:errors.append(str(error)))
+    page.goto((out / "index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    emit(page,"arMixConsoleSnapshot",state)
+    live={"monitor":False,"directRouteAuthorized":True,"adaptiveClockActive":False,
+          "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True},
+          "secondaryOutputReady":False,"secondaryOutputArmed":False}
+    emit(page,"arMixStatus",live)
+    page.locator("[data-native-extra-output]").click()
+    panel=page.get_by_role("dialog",name="Additional Output")
+    assert panel.is_visible()
+    assert page.evaluate("()=>typeof window.__arMixOpenAdditionalOutput")== "undefined"
+    emit(page,"arMixAudioDeviceInventory",{"types":[{"name":"Windows Audio","outputs":["CABLE Input","Speakers"]}]})
+    panel.get_by_label("Windows playback device").select_option("CABLE Input")
+    panel.get_by_role("button",name="Connect",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputConnect').at(-1)")
+    assert req["value"]=="CABLE Input" and req["requestId"]
+    emit(page,"arMixSecondaryOutputAck",{"requestId":"wrong","action":req["action"],"ok":False})
+    assert panel.get_by_role("button",name="Connect",exact=True).is_disabled()
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":False,"error":"Endpoint rejected"})
+    assert panel.get_by_role("alert").inner_text()=="Endpoint rejected"
+    panel.get_by_role("button",name="Connect",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputConnect').at(-1)")
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    assert panel.get_by_role("button",name="Arm output").is_disabled()
+    live.update(secondaryOutputReady=True,secondaryOutputName="CABLE Input")
+    emit(page,"arMixStatus",live)
+    panel.get_by_role("button",name="Arm output").click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputArm').at(-1)")
+    assert req["value"] is True
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    live["secondaryOutputArmed"]=True
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Disarm output").is_enabled()
+    panel.get_by_role("button",name="Close Additional Output").click()
+    # The Audio I/O entry opens the very same dialog, not legacy monitor.js.
+    open_verified_audio_io(page,state,"routing")
+    page.locator("[data-audio-extra-output]").click()
+    assert panel.is_visible()
+    assert not errors,errors
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -456,6 +505,9 @@ def main():
             page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_external_output(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_additional_output(page,out)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_bus_remap(page,out)

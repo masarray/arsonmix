@@ -52,6 +52,9 @@
       if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
       return "Mixer ready";
     }
+    // U1: native output validation already emits operator-actionable reasons.
+    // Do not normalize those into a generic success/failure toast.
+    if(/^EXTERNAL OUT:|^BUS OUTPUT:|^DMX:|^Secondary output requires|^MUTE hardware OUTPUT/i.test(raw))return raw;
     const failure=/\b(reject(?:ed|ion)?|fail(?:ed|ure)?|error|timed out|not applied|unavailable|invalid)\b|(?:^|[^A-Z0-9])(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING|UNSUPPORTED|UNKNOWN|MISMATCH|CONFLICTING)(?:\b|_)/i.test(raw);
     // Editor navigation cannot be reported as a successful FX edit.
     if(/\b(?:FX|VST3|plugin|effect|built-in)\b.*\beditor\b|\beditor\b.*\b(?:FX|VST3|plugin|effect|built-in)\b/i.test(raw)){

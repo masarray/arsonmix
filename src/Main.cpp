@@ -7841,6 +7841,9 @@ private:
             if(browser_.loaded)
                 browser_.emitEventIfBrowserIsVisible(
                     "arMixExternalOutputAck",juce::var(ack.release()));
+            diagnostics_.record(error.isEmpty()?"EXTERNAL_OUTPUT_ACCEPTED":"EXTERNAL_OUTPUT_REJECTED",
+                error.isEmpty()?("channel="+channelText+" pair="+juce::String(left)+"/"+juce::String(right)):
+                    ("channel="+channelText+" pair="+juce::String(left)+"/"+juce::String(right)+" · "+error));
             if(error.isNotEmpty())emitNotice(error,true);
             else {
                 // The operator has already confirmed this exact ASIO pair.
@@ -9645,6 +9648,8 @@ private:
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
             const auto latest=engine_.status();
+            ack->setProperty("requestId",args.getProperty("requestId",{}));
+            ack->setProperty("action",action);
             ack->setProperty("ready",latest.getProperty("secondaryOutputReady",false));
             ack->setProperty("armed",latest.getProperty("secondaryOutputArmed",false));
             ack->setProperty("endpoint",latest.getProperty("secondaryOutputName",""));
