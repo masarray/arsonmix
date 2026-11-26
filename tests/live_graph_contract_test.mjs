@@ -38,7 +38,7 @@ test('single engine production selection forbids old VST processing in diagnosti
   assert.match(e,/NativeRenderAuthority::select\(/);
   assert.match(e,/NativeRenderOwner::acceptedM4Session/);
   const start=e.indexOf('// The only remaining stereo renderer is DIAGNOSTIC');
-  const end=e.indexOf('const auto elapsedUs = clockMicros() - beginUs',start);
+  const end=e.indexOf('void recordRenderTiming(',start);
   assert.ok(start>0 && end>start,'explicit diagnostic-only tail must exist');
   const fallback=e.slice(start,end);
   assert.doesNotMatch(fallback,/processor->processBlock|MidiBuffer midi|make_unique|make_shared/,
@@ -146,10 +146,12 @@ test('R0B B3 NORMAL output is fail-silent while FX graph retirement still progre
   const fence=e.indexOf('if (!independent_.active()',beginning);
   const lease=e.indexOf('const auto cycle = handoff_.beginCycle()',beginning);
   const failSilent=e.indexOf('if (renderOwner ==',lease);
-  const callbackMetrics=e.indexOf('const std::uint64_t beginUs = clockMicros()',beginning);
-  assert.ok(beginning>=0 && fence>beginning && lease>fence &&
-    failSilent>lease && callbackMetrics>failSilent,
-    'DIRECT fence first, then FX cycle lease, then fail-silent native gate');
+  const entryTimestamp=e.indexOf('const std::uint64_t beginUs = clockMicros()',beginning);
+  const callbackMetrics=e.indexOf('const double periodUs =',beginning);
+  assert.ok(beginning>=0 && entryTimestamp>beginning && fence>entryTimestamp &&
+    lease>fence && failSilent>lease && callbackMetrics>failSilent,
+    'entry timestamp, DIRECT fence, FX cycle lease, fail-silent native gate, then measured render');
+  assert.match(e.slice(entryTimestamp,fence),/clockMicros\(\)/);
   const gate=e.slice(failSilent,callbackMetrics);
   assert.match(e,/NativeRenderAuthority::select\(/);
   assert.match(gate,/NativeRenderOwner::failSilentUnpatched/);
@@ -157,6 +159,8 @@ test('R0B B3 NORMAL output is fail-silent while FX graph retirement still progre
   assert.match(gate,/outputPeakL_\.store\(0\.f/);
   assert.match(gate,/handoff_\.endCycle\(cycle\)/,
     'FX ADD/REMOVE and recall must ACK even when the production route is unpatched');
+  assert.match(gate,/renderPressure_\.breakSequence\(\);cadence_\.breakSequence\(\);\s*return;/,
+    'excluded callbacks cannot join adjacent production pressure windows');
   assert.doesNotMatch(gate,/detach\(|attach\(|new |malloc\(|prepareToPlay|processBlock|AudioDeviceManager/);
   assert.match(e,/setProperty \("productionRoutingState",/);
   assert.match(e,/"UNPATCHED_SILENT"/);
