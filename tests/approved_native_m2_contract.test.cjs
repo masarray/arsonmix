@@ -7248,3 +7248,23 @@ test("P0 native busy guard and all physical presentations produce explicit recei
  assert.equal(protocol.operatorMessage("This VST3 has no native editor"),
   "FX editor unavailable · Reopen from FX Rack");
 });
+
+
+test("M3 MONITOR timing requires admitted physical pairs, disarm and observed revision",()=>{
+  const raw=gmv20AcceptedGraph();
+  raw.device.backend="ASIO";raw.device.outputArmed=false;
+  raw.device.enabledOutputs=[0,1,4,5];
+  raw.device.outputEndpoints=[0,1,4,5].map((port,callback)=>({port,callback,id:"out:"+port,label:"Out "+port,active:true}));
+  raw.physicalMainOutputs=[0,1];raw.physicalMonitorOutputs=[4,5];
+  raw.physicalBusOutputObserved=true;raw.operatorOutputMuted=true;raw.physicalBusSecondaryArmed=false;
+  raw.monitorTiming={policy:"GLOBAL_ALIGNED",mainSamples:1456,monitorSamples:1456,potentialSaving:1152};
+  const read=()=>protocol.monitorTimingView(protocol.normalizeSnapshot(raw));
+  assert.equal(read()?.editable,true);
+  raw.physicalBusSecondaryArmed=true;assert.equal(read()?.editable,false);
+  raw.physicalBusSecondaryArmed=false;raw.physicalBusOutputObserved=false;assert.equal(read()?.editable,false);
+  raw.physicalBusOutputObserved=true;
+  raw.monitorTiming.policy="INDEPENDENT_MONITOR";raw.monitorTiming.monitorSamples=304;
+  assert.equal(read()?.monitorSamples,304);
+  raw.monitorTiming.monitorSamples=305;assert.equal(read(),null);
+  raw.monitorTiming.monitorSamples=304;raw.physicalMonitorOutputs=[1,5];assert.equal(read(),null);
+});

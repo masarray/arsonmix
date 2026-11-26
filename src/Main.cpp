@@ -3062,6 +3062,17 @@ private:
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
             obj->setProperty("physicalBusSecondaryArmed",engine_.secondaryArmed());
+            // Accepted plan, not requested browser state. Graph revision
+            // callback readback is a separate condition for UI completion.
+            if(bool(live.getProperty("nativeLatencyPlanValid",false))&&
+               bool(live.getProperty("nativeLatencyPlanHasMonitor",false))){
+                auto plan=std::make_unique<juce::DynamicObject>();
+                plan->setProperty("policy",live.getProperty("nativeLatencyPlanMonitorPolicy",{}));
+                plan->setProperty("mainSamples",live.getProperty("nativeLatencyPlanAlignedSamples",{}));
+                plan->setProperty("monitorSamples",live.getProperty("nativeLatencyPlanMonitorOutputSamples",{}));
+                plan->setProperty("potentialSaving",live.getProperty("nativeLatencyPlanMonitorIndependentSaving",{}));
+                obj->setProperty("monitorTiming",juce::var(plan.release()));
+            }
         }
         return accepted;
     }
@@ -7534,6 +7545,46 @@ private:
         }
         // O1: native CONTROL intent, exact verified ASIO physical pair.
         // Never reinterpret an external destination as internal WIRE/M4 OUT.
+        if(action=="routingMonitorTiming") {
+            const auto id=args.getProperty("requestId",{}).toString();
+            const auto policy=args.getProperty("policy",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{}),rv=args.getProperty("revision",{}),
+                       rr=args.getProperty("rosterRevision",{});
+            const auto confirmed=args.getProperty("confirmed",{});
+            const auto main=args.getProperty("main",{}),monitor=args.getProperty("monitor",{});
+            const auto pair=[](const juce::var& v){
+                return v.isArray()&&v.size()==2&&v[0].isInt()&&v[1].isInt();
+            };
+            const auto status=engine_.status().getProperty("dryRoutingLab",{});
+            const auto native=status.getProperty("nativeBus",{});
+            juce::String error="MONITOR timing: invalid/stale request or output not explicitly muted";
+            if(id.startsWith("monitor-timing-")&&id.length()<=64&&operatorOutputMuted_&&
+               !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !fxRackFileChooser_&&!mixerFileDialogOpen_&&!namedIoFileChooser_&&
+               confirmed.isBool()&&bool(confirmed)&&pair(main)&&pair(monitor)&&
+               (policy=="GLOBAL_ALIGNED"||policy=="INDEPENDENT_MONITOR")&&
+               armix::console::nativeSessionTokenMatches(ep,status.getProperty("epoch",{}))&&
+               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{}))&&
+               armix::console::nativeSessionTokenMatches(rr,native.getProperty("rosterRevision",{})))
+                error=engine_.setMonitorTimingPolicy(
+                    armix::console::nativeSessionTokenValue(ep),armix::console::nativeSessionTokenValue(rv),
+                    armix::console::nativeSessionTokenValue(rr),
+                    policy=="GLOBAL_ALIGNED"?armix::mixer::MonitorLatencyPolicy::aligned:
+                        armix::mixer::MonitorLatencyPolicy::independent,
+                    {static_cast<int>(main[0]),static_cast<int>(main[1])},
+                    {static_cast<int>(monitor[0]),static_cast<int>(monitor[1])});
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",id);ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            if(error.isEmpty()){
+                const auto snapshot=approvedNativeSnapshot();
+                ack->setProperty("revision",snapshot.getProperty("graph",{}).getProperty("revision",{}));
+                autoMainEpoch_=0;engine_.cancelAsioResetMonitorIntent();
+            }
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixMonitorTimingAck",juce::var(ack.release()));
+            if(error.isEmpty())emitApprovedNativeSnapshot();else emitNotice(error,true);
+            return;
+        }
         if(action=="routingPhysicalBusOutput") {
             const auto id=args.getProperty("requestId",{}).toString();
             const auto bus=args.getProperty("bus",{}).toString();

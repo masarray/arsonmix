@@ -595,6 +595,7 @@ public:
         armix::session::MixerSessionDocument document;
         if(!dryRoutingLab_.describeRetainedAsioSession(document))return false;
         document.binding=*acceptedMixerBinding_;
+        const bool resetIndependent=document.request.monitorLatencyPolicy==armix::mixer::MonitorLatencyPolicy::independent;
         MixerBindingInspection inspected;
         constexpr auto mode=Policy::Mode::verifiedAsioRestart;
         if(inspectNativeMixerSessionBinding(document,inspected,mode).isNotEmpty() ||
@@ -603,6 +604,7 @@ public:
            !dryRoutingLab_.rebindRetainedAsioSession(std::move(document),inspected.pins,
                                                     inspected.live.frames))return false;
         acceptedMixerBinding_=std::move(inspected.live);
+        if(resetIndependent)setMonitorEnabled(false); // explicit re-arm after changed timing domain
         return true;
     }
     // A SOURCE NONE starter is not an authored Show: it has no FX/WIRE to
@@ -1557,6 +1559,30 @@ public:
            deviceManager_.getCurrentAudioDevice()!=device)
             return "BUS OUTPUT: verified playback identity changed";
         return dryRoutingLab_.patchNativeBusOutput(ep,rev,monitor,previous,wanted,leftName,rightName,pins);
+    }
+
+    juce::String setMonitorTimingPolicy(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::MonitorLatencyPolicy wanted,std::array<int,2> main,std::array<int,2> monitor) {
+        if(!allOutputsDisarmed()||wantsMainContinuation()||independent_.active()||
+           !attached_||!directFence_.permitted()||handoff_.busy()||savedDirectSetup_||savedLiveSetup_||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute()!=armix::diagnostics::Route::normal||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO")
+            return "MONITOR timing: explicitly disarm MAIN and STREAM first";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!device||!device->isOpen()||!acceptedMixerBinding_||
+           !armix::device::JuceActivePortSnapshot::capture(device,ep,pins,fault))
+            return "MONITOR timing: device inventory unavailable";
+        const auto live=readMixerBinding(*device);
+        if(!armix::session::MixerDeviceBindingPolicy::sameBinding(*acceptedMixerBinding_,live)||
+           acceptedMixerBinding_->outputNames!=live.outputNames||
+           deviceManager_.getCurrentAudioDevice()!=device)
+            return "MONITOR timing: playback identity changed";
+        return dryRoutingLab_.setMonitorTimingPolicy(ep,rev,roster,wanted,main,monitor,pins,
+            allOutputsDisarmed()&&!wantsMainContinuation());
     }
 
     juce::String setPhysicalExternalOutput(armix::mixer::ChannelId channel,

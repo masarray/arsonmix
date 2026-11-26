@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/FxRackCatalogReplacement.h"
+#include "../engine/core/MonitorTimingEdit.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -88,6 +89,23 @@ static void verifyExactHistoryAndSend() {
 }
 int main(){
     verifyExactHistoryAndSend();
+    {
+        using Edit=MonitorTimingEdit;
+        const std::array pins{0,1,4,5,8,9};
+        const auto allowed=[&](bool disarmed,bool observed,Edit::Pair main,Edit::Pair monitor,
+                               Edit::Pair expectedMain,Edit::Pair expectedMonitor){
+            return Edit::allowed(disarmed,observed,true,MonitorLatencyPolicy::aligned,
+                MonitorLatencyPolicy::independent,pins,main,monitor,expectedMain,expectedMonitor);
+        };
+        assert(allowed(true,true,{0,1},{2,3},{0,1},{4,5}));
+        assert(!allowed(false,true,{0,1},{2,3},{0,1},{4,5}));
+        assert(!allowed(true,false,{0,1},{2,3},{0,1},{4,5}));
+        assert(!allowed(true,true,{0,1},{1,3},{0,1},{1,5}));
+        assert(!allowed(true,true,{0,1},{2,3},{0,1},{5,4}));
+        assert(!allowed(true,true,{0,1},{2,3},{0,1},{8,9}));
+        assert(!Edit::allowed(true,true,false,MonitorLatencyPolicy::aligned,MonitorLatencyPolicy::independent,
+            pins,{0,1},{2,3},{0,1},{4,5}));
+    }
     armix::dsp::StereoLatencyDelay probe;
     assert(probe.prepare(0)&&!probe.active());
     assert(probe.prepare(7)&&probe.active());
@@ -151,9 +169,10 @@ int main(){
             if(time==0){inA[0]=1;inB[0]=2;inR[0]=4;}
             const float* physical[]{inA.data(),inA.data(),inB.data(),inB.data(),inR.data(),inR.data(),silent.data(),silent.data()};
             const auto before=allocations;
+            std::uint64_t rendered=0;
             assert(publisher.render(9,physical,request.physicalInputs,l.data(),right.data(),n,false,
-                [](ChannelId,float*,float*,int) noexcept {},ml.data(),mr.data()));
-            assert(allocations==before);
+                [](ChannelId,float*,float*,int) noexcept {},ml.data(),mr.data(),{},{},{},nullptr,0,{},0,&rendered));
+            assert(rendered==1&&allocations==before);
             for(int i=0;i<n;++i){
                 assert(std::abs(l[i]-(time+i==expected?8.f:0.f))<1.e-5f);
                 assert(std::abs(right[i]-l[i])<1.e-5f);

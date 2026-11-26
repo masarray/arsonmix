@@ -273,7 +273,9 @@ public:
                 float* const* hardwareOutputs=nullptr,
                 int hardwareOutputCount=0,
                 std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
-                    qualifiedCaptureBlocks={},std::uint64_t cueRoute=0) noexcept {
+                    qualifiedCaptureBlocks={},std::uint64_t cueRoute=0,
+                    std::uint64_t* renderedRevision=nullptr) noexcept {
+        if(renderedRevision)*renderedRevision=0;
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -379,6 +381,7 @@ public:
             snap->prepared->graph.invalidateAppliedExternalOutputs();
             clearOutputs();
         }
+        if(ok&&renderedRevision)*renderedRevision=snap->graphRevision;
         return ok;
     }
 

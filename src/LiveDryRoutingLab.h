@@ -13,6 +13,7 @@
 #include "../engine/core/NativeDryRouteCommand.h"
 #include "NativeVerifiedSourcePatch.h"
 #include "NativeOutputBusPatch.h"
+#include "../engine/core/MonitorTimingEdit.h"
 #include "NativeTopologyEditSafety.h"
 #include "NativeMixerSessionDocument.h"
 #include "NativeFxRackArchive.h"
@@ -3065,6 +3066,8 @@ public:
            !channelIdPhysicalPcmActive()||pins.epoch!=ep||pins.typeName!="ASIO"||
            !matchesSessionDevice(pins)||!nativeBusOutputObserved())
             return "BUS OUTPUT: stale or unobserved native mapping";
+        if(nativeAccepted_.graph.request.monitorLatencyPolicy!=armix::mixer::MonitorLatencyPolicy::aligned)
+            return "BUS OUTPUT: restore Aligned MONITOR timing before changing physical pairs";
         if(wanted[0]<0||wanted[1]<0||wanted[0]>=pins.outputNames.size()||
            wanted[1]>=pins.outputNames.size()||leftName.isEmpty()||rightName.isEmpty()||
            armix::device::uniqueNamedPin(pins.outputNames,leftName)!=wanted[0]||
@@ -3103,8 +3106,67 @@ public:
     }
     bool nativeBusOutputObserved() const noexcept {
         return nativeMeterEpoch_.load(std::memory_order_acquire)==epoch()&&
+            nativeMeterRevision_.load(std::memory_order_acquire)==nativeAccepted_.pcmRevision&&
             nativeHardwareObserved_.load(std::memory_order_acquire)==
             nativeHardware_.load(std::memory_order_acquire);
+    }
+    // AUDIO readback of the completed outer callback, never CONTROL roster.
+    std::uint64_t renderedNativeRevision() const noexcept {
+        return nativeMeterEpoch_.load(std::memory_order_acquire)==epoch()?
+            nativeMeterRevision_.load(std::memory_order_acquire):0;
+    }
+    // Session-local timing policy. No processor preparation, no routing or
+    // physical pin changes. Retain exact FX leases and all fan-in PDC.
+    juce::String setMonitorTimingPolicy(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t rosterRev,armix::mixer::MonitorLatencyPolicy wanted,
+            std::array<int,2> expectedMain,std::array<int,2> expectedMonitor,
+            const armix::device::JuceActivePortSnapshot& pins,bool disarmed) {
+        using namespace armix::mixer;
+        if(!disarmed||!ready()||!channelIdPhysicalPcmActive()||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev)||!nativeAccepted_.fxOwners||
+           nativeAccepted_.graph.roster.revision()!=rosterRev||
+           pins.epoch!=ep||pins.typeName!="ASIO"||!matchesSessionDevice(pins))
+            return "MONITOR timing: stale native graph or output armed";
+        const auto& hw=nativeAccepted_.hardware;
+        const auto& old=nativeAccepted_.graph.request;
+        if(!hw.valid()||hw.activeOutputChannels!=pins.outputCount||
+           !MonitorTimingEdit::allowed(disarmed,nativeBusOutputObserved(),hw.monitorEnabled,
+              old.monitorLatencyPolicy,wanted,
+              {pins.outputByCallback.data(),static_cast<std::size_t>(pins.outputCount)},
+              {hw.mainL,hw.mainR},{hw.monitorL,hw.monitorR},expectedMain,expectedMonitor))
+            return "MONITOR timing: distinct callback-observed MAIN/MONITOR pairs required";
+        for(int pin:{expectedMain[0],expectedMain[1],expectedMonitor[0],expectedMonitor[1]}){
+            if(pin<0||pin>=pins.outputNames.size()||pins.outputNames[pin].isEmpty()||
+               armix::device::uniqueNamedPin(pins.outputNames,pins.outputNames[pin])!=pin)
+                return "MONITOR timing: unique physical pin labels required";
+        }
+        try{
+            auto request=old;request.monitorLatencyPolicy=wanted;
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>();
+            if(DynamicChannelFxLeaseBank::reuseRevision(ep,rev+1,*nativeAccepted_.fxOwners,*owner)
+                !=DynamicChannelFxLeaseBank::Fault::none)return "MONITOR timing: FX lease rejected";
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=owner;fx.context=owner.get();fx.deviceEpoch=ep;fx.graphRevision=rev+1;
+            fx.render=+[](void* p,ChannelId id,float* left,float* right,int n) noexcept{
+                (*static_cast<DynamicChannelFxLeaseBank*>(p))(id,left,right,n);
+            };
+            fx.latency=+[](void* p,ChannelId id) noexcept{
+                return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
+            };
+            if(!matchesSessionDevice(pins)||!nativeAccepted_.matches(nativePublisher_,ep,rev))
+                return "MONITOR timing: device changed";
+            const auto committed=nativePublisher_.commit(nativeAccepted_.graph.roster,request,
+                rev,ep,epoch(),true,std::move(fx));
+            if(!committed.ok())return "MONITOR timing: PCM publication rejected";
+            nativeAccepted_.graph.request=std::move(request);
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=committed.revision;
+            reapplyExternalOutputsSameEpoch();
+            nativeControlDirty_=true;nativeStructureLive_=true;
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            return {};
+        }catch(...){return "MONITOR timing: preparation failed; previous policy retained";}
     }
     bool nativeBusPatchAwaitingCallback() const noexcept {
         return busPatchEpoch_!=0&&busPatchEpoch_==epoch()&&
@@ -3190,6 +3252,9 @@ public:
         if(document.request.maxFrames<32 || document.request.maxFrames>Block::hardFrameLimit)
             return "Invalid native mixer quantum";
         try {
+            // Independent timing is a session-only operator decision.
+            // Show recall / retained ASIO remap cannot silently inherit it.
+            document.request.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
             // The outer device binding policy and native snapshot attest
             // the exact current layout. Resolve logical inputs before the
             // single existing native graph publication, never on AUDIO.
@@ -3983,6 +4048,8 @@ public:
         // only the original ten. No allocation or graph iteration on AUDIO.
         std::array<float,nativeMeterCapacity> nativeMaxL{},nativeMaxR{};
         std::array<float,auxCount> perAuxPeaks{};
+        std::uint64_t completedNativeRevision=0;
+        bool mixedNativeRevisions=false;
         for(int offset=0;offset<frames;offset+=max) {
             const int n=std::min(max,frames-offset);
             for(int c=0;c<inputCount;++c)
@@ -4009,6 +4076,7 @@ public:
                               source.right?source.right+offset:nullptr};
                 }
                 const auto noExtraFx=[](armix::mixer::ChannelId,float*,float*,int) noexcept {};
+                std::uint64_t sliceRevision=0;
                 processed=nativePublisher_.render(
                     generation,shifted.data(),inputCount,
                     meterOnly?mutedMain_[0].data():mainL+offset,
@@ -4020,8 +4088,11 @@ public:
                         slice.data(),playerPcm.size()),
                      meterOnly?nullptr:outputSlices.data(),
                      meterOnly?0:outputCount,{},
-                     privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0);
+                     privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0,&sliceRevision);
                 if(processed) {
+                    if(completedNativeRevision&&completedNativeRevision!=sliceRevision)
+                        mixedNativeRevisions=true;
+                    completedNativeRevision=sliceRevision;
                     for(std::size_t ch=0;ch<nativeMeterCapacity;++ch) {
                         nativeMaxL[ch]=std::max(nativeMaxL[ch],tapsL[ch]);
                         nativeMaxR[ch]=std::max(nativeMaxR[ch],tapsR[ch]);
@@ -4123,6 +4194,7 @@ public:
             }
             if(nativeHardwareObserved_.load(std::memory_order_relaxed)!=native)
                 nativeHardwareObserved_.store(native,std::memory_order_release);
+            nativeMeterRevision_.store(mixedNativeRevisions?0:completedNativeRevision,std::memory_order_relaxed);
             nativeMeterEpoch_.store(generation,std::memory_order_release);
         } else nativeMeterEpoch_.store(0,std::memory_order_release);
         renderAudit_.completed(auditPath);
@@ -4399,7 +4471,7 @@ private:
     // telemetry, not how many channels the audio graph can admit.
     static constexpr std::size_t nativeMeterCapacity=128;
     std::array<std::atomic<float>,nativeMeterCapacity> nativeMeterPeaksL_{},nativeMeterPeaksR_{};
-    std::atomic<std::uint64_t> nativeMeterEpoch_{0};
+    std::atomic<std::uint64_t> nativeMeterEpoch_{0},nativeMeterRevision_{0};
     // Exclusive render-producer state. Bounded fade starts from the exact
     // previously output sample, preventing a topology switch discontinuity.
     static constexpr int rampFrames=256;

@@ -2462,11 +2462,69 @@
   // Matrix edits use the same queue/lease and native dispatcher as strips.
   // No synthetic PCM, no independent routing graph or optimistic crosspoint.
   let busOutputPending=null,busOutputSerial=0;
+  let monitorTimingPending=null,monitorTimingSerial=0;
+  function paintMonitorTiming(next){
+    const row=devicePanel?.querySelector("[data-monitor-timing]");
+    if(!row)return;
+    const p=protocol.monitorTimingView(next),busy=Boolean(monitorTimingPending);
+    row.hidden=!p;
+    if(!p)return;
+    const value=row.querySelector("[data-monitor-timing-value]");
+    const toggle=row.querySelector("[data-monitor-timing-toggle]");
+    const ms=n=>(n*1000/next.device.sampleRate).toFixed(2)+" ms";
+    const summary=(p.policy==="INDEPENDENT_MONITOR"?"Singer low latency":"Aligned")+" · MAIN "+
+      ms(p.mainSamples)+" · MONITOR "+ms(p.monitorSamples)+(p.observed?"":" · awaiting callback");
+    if(value.textContent!==summary)value.textContent=summary;
+    toggle.textContent=busy?"Applying…":p.policy==="INDEPENDENT_MONITOR"?"Use aligned":"Use singer low latency";
+    toggle.disabled=busy||!p.editable||matrixBusy()||!matrixReady(next);
+    toggle.onclick=()=>{
+      const live=protocol.monitorTimingView(hardware);
+      if(!live?.editable||live.revision!==p.revision||live.epoch!==p.epoch||matrixBusy()||!matrixReady(hardware))return;
+      const policy=live.policy==="GLOBAL_ALIGNED"?"INDEPENDENT_MONITOR":"GLOBAL_ALIGNED";
+      const warning=policy==="INDEPENDENT_MONITOR"?
+        "Use a separate singer monitor only. MAIN and MONITOR may have different timing; do not sum them acoustically or electrically. Removes up to "+ms(live.potentialSaving)+" of graph alignment, not hardware or insert latency.":
+        "Restore global MAIN/MONITOR alignment?";
+      if(!window.confirm(warning+" Outputs remain disarmed. Session only."))return;
+      const requestId="monitor-timing-"+(++monitorTimingSerial);
+      monitorTimingPending={requestId,epoch:live.epoch,roster:live.rosterRevision,
+        base:live.revision,policy,config:hardware.hardwareConfiguration,main:live.main,monitor:live.monitor,ack:null};
+      backend.emitEvent("arMixAction",{action:"routingMonitorTiming",requestId,confirmed:true,
+        policy,deviceEpoch:live.epoch,revision:live.revision,rosterRevision:live.rosterRevision,
+        main:live.main,monitor:live.monitor});
+      paintMonitorTiming(hardware);
+      window.setTimeout(()=>{
+        if(monitorTimingPending?.requestId!==requestId)return;
+        monitorTimingPending=null;nativeToast("MONITOR timing confirmation timed out · keep outputs muted");
+        paintMonitorTiming(hardware);
+      },5000);
+    };
+  }
+  function settleMonitorTiming(next){
+    const q=monitorTimingPending;
+    if(!q)return;
+    const p=protocol.monitorTimingView(next);
+    if(!p||p.epoch!==q.epoch||p.rosterRevision!==q.roster||next.hardwareConfiguration!==q.config||
+       JSON.stringify(p.main)!==JSON.stringify(q.main)||JSON.stringify(p.monitor)!==JSON.stringify(q.monitor)||
+       (q.ack&&protocol.cmp(p.revision,q.ack)>0)){
+      monitorTimingPending=null;nativeToast("MONITOR timing lease changed · verify before START AUDIO");return;
+    }
+    if(q.ack&&p.revision===q.ack&&p.policy===q.policy&&p.observed){
+      monitorTimingPending=null;nativeToast("MONITOR timing verified · outputs remain disarmed");
+    }
+  }
+  if(connected)backend.addEventListener("arMixMonitorTimingAck",ack=>{
+    const q=monitorTimingPending;
+    if(!q||q.requestId!==ack?.requestId)return;
+    if(ack.ok!==true||protocol.decimal(ack.revision)===null||protocol.cmp(ack.revision,q.base)<=0){
+      monitorTimingPending=null;nativeToast(ack.error||"MONITOR timing rejected");paintMonitorTiming(hardware);return;
+    }
+    q.ack=ack.revision;settleMonitorTiming(hardware);controller?.subscribe();paintMonitorTiming(hardware);
+  });
   let logicalIoPending=null,logicalIoSerial=0,logicalIoEditorOpen=false;
   let logicalIoPort="",logicalIoChannel="";
   let logicalOutPort="",logicalOutChannel="",logicalOutEditorOpen=false;
   let ioDefaultsPending=null,ioDefaultsSerial=0;
-  const matrixBusy=()=>Boolean(ioDefaultsPending||logicalIoPending||busOutputPending||deviceBusy()||activeNativeSource||pendingNativeSources.size||
+  const matrixBusy=()=>Boolean(ioDefaultsPending||logicalIoPending||busOutputPending||monitorTimingPending||deviceBusy()||activeNativeSource||pendingNativeSources.size||
     nativeUiSourcePending||pendingSourceQueue.size||pendingExternal.size);
   function matrixReady(snapshot){
     return deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState)&&
@@ -3146,6 +3204,7 @@
   }
   function paintPhysicalOutputs(next) {
     if(devicePanel&&!devicePanel.hidden){
+      paintMonitorTiming(next);
       const page=devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab;
       if(page==="inputs")paintRouteMatrix(next,"input");
       if(page==="routing")paintRouteMatrix(next,"output");
@@ -3669,6 +3728,11 @@
         <section class="armix-output-overview" data-audio-output-overview>
           <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
           <div class="armix-device-note">External stereo outputs are editable. Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
+          <div data-monitor-timing hidden class="armix-device-note">
+            <strong>MONITOR timing</strong> · <span data-monitor-timing-value></span>
+            <button type="button" data-monitor-timing-toggle disabled>Use singer low latency</button>
+            <div>Graph latency only · separate singer monitor, do not combine with MAIN · session only</div>
+          </div>
           <div class="armix-output-heading">OUTPUTS · physical routing</div>
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
@@ -4600,6 +4664,7 @@
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
     settleBusOutput(next);
+    settleMonitorTiming(next);
     settleLogicalIo(next);
     settleIoDefaults(next);
     // Reconcile pending leases before the final matrix paint. The graph

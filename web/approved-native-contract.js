@@ -259,6 +259,28 @@
 
   // Read-only physical OUTPUTS projection from the authoritative JUCE snapshot.
   // No guessed ports, UI-owned routing, monitor activation or audible claims.
+  // Strict native timing projection. No inferred monitor from UI labels.
+  function monitorTimingView(snapshot) {
+    const raw=snapshot?.raw,p=raw?.monitorTiming,d=snapshot?.device;
+    if(!snapshot?.admitted||snapshot.retained||!p||d?.backend!=="ASIO"||
+       !["GLOBAL_ALIGNED","INDEPENDENT_MONITOR"].includes(p.policy)||
+       ![p.mainSamples,p.monitorSamples,p.potentialSaving].every(n=>Number.isInteger(n)&&n>=0)||
+       p.monitorSamples>p.mainSamples||p.potentialSaving>p.mainSamples||
+       (p.policy==="GLOBAL_ALIGNED"&&p.monitorSamples!==p.mainSamples)||
+       (p.policy==="INDEPENDENT_MONITOR"&&p.mainSamples-p.monitorSamples!==p.potentialSaving))return null;
+    const main=raw.physicalMainOutputs,monitor=raw.physicalMonitorOutputs;
+    if(!Array.isArray(main)||!Array.isArray(monitor)||main.length!==2||monitor.length!==2||
+       new Set([...main,...monitor]).size!==4||
+       ![...main,...monitor].every(pin=>Number.isInteger(pin)&&d.enabledOutputs.includes(pin)&&
+          d.outputEndpoints.some(e=>e.port===pin&&e.active&&e.label&&
+              d.outputEndpoints.filter(x=>x.label===e.label).length===1)))return null;
+    return {policy:p.policy,mainSamples:p.mainSamples,monitorSamples:p.monitorSamples,
+      potentialSaving:p.potentialSaving,main:[...main],monitor:[...monitor],
+      observed:raw.physicalBusOutputObserved===true,
+      editable:raw.physicalBusOutputObserved===true&&raw.operatorOutputMuted===true&&
+        raw.physicalBusSecondaryArmed===false&&d.outputArmed===false,
+      epoch:d.epoch,revision:snapshot.graph.revision,rosterRevision:snapshot.graph.rosterRevision};
+  }
   function physicalOutputOverview(snapshot) {
     const d=snapshot?.device,raw=snapshot?.raw;
     if(d?.backend!=="ASIO" || !Array.isArray(d.enabledOutputs) ||
@@ -881,5 +903,5 @@
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview});
+    operatorMessage,physicalOutputOverview,monitorTimingView});
 });

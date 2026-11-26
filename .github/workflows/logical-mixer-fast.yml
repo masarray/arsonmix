@@ -18,6 +18,7 @@ on:
       - 'engine/core/FxWorkloadEvidence.h'
       - 'engine/core/FxLifecyclePolicy.h'
       - 'engine/core/FxRackCatalogReplacement.h'
+      - 'engine/core/MonitorTimingEdit.h'
       - 'engine/core/LiveChannelFxGraph.h'
       - 'tests/fx_global_workload_test.cpp'
       - 'engine/builtin_fx/GraphicEq31Core.h'
