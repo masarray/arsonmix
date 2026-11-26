@@ -12,9 +12,11 @@ import tempfile
 from pathlib import Path
 from verify_sonku_p104_externalization import ROOT, FX, FLAGS, candidate_copy
 from verify_sonku_p108_acoustic_callback import identities
+from verify_sonku_p11_motion import static_copy
 
 CASES = [(0,48000,b,s) for b in (64,128) for s in range(3)] + [
     (brand,48000,64,s) for brand in (1,2) for s in (1,2)]
+MOTION_CASES=CASES+[(0,44100,64,s) for s in range(4)]+[(0,48000,b,3) for b in (64,128)]
 N=1024
 TRIALS=6
 DRIVER=ROOT/"tests/sonku_p112_callback_trace.cpp"
@@ -51,21 +53,29 @@ def summarize(rows,budget):
                 missIndices=[i for i,x in enumerate(wall) if x>=budget])
 
 
-def compare(rows):
-    if len(rows)!=TRIALS*len(CASES)*2:
+def compare(rows,cases=CASES):
+    if len(rows)!=TRIALS*len(cases)*2:
         raise ValueError("Incomplete paired matrix")
     index={(r["trial"],tuple(r["case"]),r["variant"]):r for r in rows}
     if len(index)!=len(rows):
         raise ValueError("Duplicate paired row")
     results=[]
-    for case in CASES:
+    for case in cases:
         delta={}
         for metric in ("wallP99","workP99","workP50"):
             delta[metric]=statistics.median(100*(index[t,case,"candidate"][metric]/
                                       index[t,case,"reference"][metric]-1) for t in range(TRIALS))
         misses={v:sum(index[t,case,v]["deadlineMisses"] for t in range(TRIALS))
                 for v in ("reference","candidate")}
-        results.append(dict(case=case,medianPairedDeltaPercent=delta,deadlineMisses=misses))
+        row=dict(case=case,medianPairedDeltaPercent=delta,deadlineMisses=misses)
+        if case[3]==3:
+            row["transitionCallbackMaxUs"]={v:max(index[t,case,v]["transitionWallMax"] for t in range(TRIALS))
+                for v in ("reference","candidate")}
+            row["transitionMedianPairedDeltaPercent"]={
+                metric:statistics.median(100*(index[t,case,"candidate"][metric]/
+                         index[t,case,"reference"][metric]-1) for t in range(TRIALS))
+                for metric in ("transitionWallMax","transitionWorkMax")}
+        results.append(row)
     flags=[r for r in results if r["medianPairedDeltaPercent"]["wallP99"]>5
            or r["medianPairedDeltaPercent"]["workP99"]>5 or sum(r["deadlineMisses"].values())]
     return results, "HOLD" if flags else "NO_HOSTED_TIMING_FLAGS"
@@ -94,16 +104,19 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument("--msvc",action="store_true")
     p.add_argument("--self-test",action="store_true")
+    p.add_argument("--motion",action="store_true",help="P11 stationary-only cue, exact fresh orbit protection and repeated timed retargets")
     p.add_argument("--out",type=Path,default=ROOT/"sonku-p112-trace")
     a=p.parse_args()
     self_test()
     if a.self_test:return
+    if a.out.exists() and any(a.out.iterdir()):p.error("output must be empty")
     a.out.mkdir(parents=True,exist_ok=True)
+    cases=MOTION_CASES if a.motion else CASES
     baseline=identities(FX)
     rows=[];hashes={}
     with tempfile.TemporaryDirectory(prefix="sonku-p112-") as d:
         tmp=Path(d)
-        candidate_copy(tmp/"candidate")
+        (static_copy if a.motion else candidate_copy)(tmp/"candidate")
         candidate=identities(tmp/"candidate")
         assert all(baseline[k]!=candidate[k] for k in baseline)
         exes={}
@@ -122,8 +135,8 @@ def main():
             writer=csv.writer(f)
             writer.writerow(["trial","brand","rate","block","scenario","variant","callback","wall_us","thread_work","clock_wall_us","clock_work"])
             for trial in range(TRIALS):
-                cases=list(CASES);rng.shuffle(cases)
-                for case in cases:
+                order_cases=list(cases);rng.shuffle(order_cases)
+                for case in order_cases:
                     brand,rate,block,scenario=case
                     # Alternate A/B within each stratum, not whole matrices.
                     order=("reference","candidate") if trial%2==0 else ("candidate","reference")
@@ -136,16 +149,25 @@ def main():
                         key=(case,v)
                         assert hashes.setdefault(key,h)==h,("nondeterministic PCM",key)
                         for i,row in enumerate(trace):writer.writerow([trial,*case,v,i,*row])
-                        rows.append(dict(trial=trial,case=case,variant=v,sha256=h,**summarize(trace,1e6*block/rate)))
-                    if brand:assert hashes[case,"reference"]==hashes[case,"candidate"],("protected PCM",case)
+                        stats=summarize(trace,1e6*block/rate)
+                        if scenario==3:
+                            edges=trace[::128]
+                            stats["transitionWallMax"]=max(x[0] for x in edges)
+                            stats["transitionWorkMax"]=max(x[1] for x in edges)
+                        rows.append(dict(trial=trial,case=case,variant=v,sha256=h,**stats))
+                    if brand or (a.motion and scenario==1):
+                        assert hashes[case,"reference"]==hashes[case,"candidate"],("protected PCM",case)
+                    elif a.motion:
+                        assert hashes[case,"reference"]!=hashes[case,"candidate"],("missing candidate effect",case)
                     print("P112_PAIR",trial,case,flush=True)
         assert any(hashes[c,"reference"]!=hashes[c,"candidate"] for c in CASES if c[0]==0)
     assert identities(FX)==baseline
-    summary,disposition=compare(rows)
-    report=dict(baseline=baseline,candidate=candidate,workUnit="thread_cycles" if a.msvc else "thread_cpu_ns",
+    summary,disposition=compare(rows,cases)
+    report=dict(candidateKind="P11_STATIC_ONLY" if a.motion else "P10_FULL",baseline=baseline,candidate=candidate,workUnit="thread_cycles" if a.msvc else "thread_cpu_ns",
                 rows=rows,summary=summary,timingDisposition=disposition,productionAdmission="NOT_EVALUATED",
                 physicalASIO="NOT_RUN",listening="NOT_EVALUATED",
-                caveat="Timer overhead included. Windows cycle counts are not CPU elapsed time or proof of scheduler causality.")
+                transitionCallbacksTimed=a.motion,
+                caveat="Timer overhead included. Scenario 3 times setSettings plus process at each 128th callback. Other scenarios retain prior process-only timing. Windows cycles are not elapsed CPU time or proof of scheduler causality.")
     (a.out/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n",encoding="utf-8")
     print("P112_NUMERICAL_PASS",len(rows)*N,"callbacks",disposition,flush=True)
 

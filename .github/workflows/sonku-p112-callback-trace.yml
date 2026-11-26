@@ -1,4 +1,4 @@
-name: SonKu P10.12 focused callback trace
+name: SonKu P11.2 motion-aware callback and retarget trace
 on:
   pull_request:
     paths:
@@ -23,7 +23,7 @@ jobs:
         run: python scripts/verify_immersib_approved_pcm_sources.py
       - name: Linux callback trace
         if: runner.os == 'Linux'
-        run: python3 scripts/verify_sonku_p112_callback_trace.py
+        run: python3 scripts/verify_sonku_p112_callback_trace.py --motion
       - name: Windows callback trace
         if: runner.os == 'Windows'
         shell: pwsh
@@ -33,12 +33,12 @@ jobs:
           $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
           if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
           $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
-          $cmdline = 'call "' + $vcvars + '" >nul && python scripts/verify_sonku_p112_callback_trace.py --msvc'
+          $cmdline = 'call "' + $vcvars + '" >nul && python scripts/verify_sonku_p112_callback_trace.py --msvc --motion'
           & cmd.exe /D /C $cmdline
           if ($LASTEXITCODE -ne 0) { throw 'SONKU_P112_TRACE_FAILED' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: SonKu-P112-trace-${{ matrix.os }}
+          name: SonKu-P112-motion-trace-${{ matrix.os }}
           path: sonku-p112-trace/
           if-no-files-found: error
           retention-days: 14

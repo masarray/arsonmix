@@ -39,11 +39,11 @@ int main(int argc,char** argv){
     const int selectedBrand=std::atoi(argv[2]),selectedRate=std::atoi(argv[3]),
               selectedBlock=std::atoi(argv[4]),selectedScenario=std::atoi(argv[5]);
     if(selectedBrand<0||selectedBrand>2||(selectedRate!=44100&&selectedRate!=48000)||
-       (selectedBlock!=64&&selectedBlock!=128&&selectedBlock!=256)||selectedScenario<0||selectedScenario>2)return 2;
+       (selectedBlock!=64&&selectedBlock!=128&&selectedBlock!=256)||selectedScenario<0||selectedScenario>3)return 2;
     auto* file=std::fopen(argv[1],"wb");if(!file)return 2;
     constexpr double pi=3.14159265358979323846;
     for(int brand:{0,1,2})for(int rate:{44100,48000})
-    for(int block:{64,128,256})for(int scenario:{0,1,2}){
+    for(int block:{64,128,256})for(int scenario:{0,1,2,3}){
         if(brand!=selectedBrand||rate!=selectedRate||block!=selectedBlock||scenario!=selectedScenario)continue;
         auto dsp=std::make_unique<SonKuSpatialCore>();
         if(brand!=1)dsp->optInP99ForSonKuInsert();
@@ -51,7 +51,7 @@ int main(int argc,char** argv){
         if(!dsp->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch))return 3;
         auto s=brand!=1?p99::DefaultOrbitStage::settings():armix::builtin_fx::imersipP92Factory(2);
         if(brand==2)s.sceneVoicing=0; // exact protected Venue
-        s.moving=scenario==1;
+        s.moving=scenario==1||scenario==3;
         if(!dsp->setSettings(s))return 4;
         dsp->reset();
         const int warm=(rate+block-1)/block;
@@ -82,6 +82,11 @@ int main(int argc,char** argv){
             std::copy_n(inR.data()+k*block,block,r.data());
             const auto a=std::chrono::steady_clock::now();
             const auto c0=threadWork();
+            // Repeated play/pause includes geometry retarget cost in the
+            // measured callback; original scenarios remain unchanged.
+            if(scenario==3 && k>=warm && (k-warm)%128==0){
+                s.moving=!s.moving;if(!dsp->setSettings(s))return 5;
+            }
             dsp->process(l.data(),r.data(),block);
             const auto c1=threadWork();
             const auto b=std::chrono::steady_clock::now();
