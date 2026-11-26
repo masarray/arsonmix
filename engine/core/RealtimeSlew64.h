@@ -37,6 +37,24 @@ struct RealtimeSlew64 final {
         }
         for(int i=0;i<frames;++i){const float gain=next();left[i]*=gain;right[i]*=gain;}
     }
+    // Zero-PDC PRE/POST route. Preserve the original two multiplications
+    // and accumulation order, including zero gain and nonfinite PCM.
+    // A settled gain has no per-sample ramp-state reads or writes.
+    void accumulateStereo(const float* left,const float* right,
+                          float* destL,float* destR,int frames,
+                          float panL,float panR) noexcept {
+        if(remaining==0){
+            const float gain=current;
+            for(int i=0;i<frames;++i){
+                destL[i]+=left[i]*gain*panL;destR[i]+=right[i]*gain*panR;
+            }
+            return;
+        }
+        for(int i=0;i<frames;++i){
+            const float gain=next();
+            destL[i]+=left[i]*gain*panL;destR[i]+=right[i]*gain*panR;
+        }
+    }
     float next() noexcept {
         if(remaining>0) {
             --remaining;

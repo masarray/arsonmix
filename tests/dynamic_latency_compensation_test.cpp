@@ -7,13 +7,26 @@
 #include <cassert>
 #include <cstdlib>
 #include <new>
+#include <bit>
+#include <cstdint>
+#include <cstdio>
+// Keep the intentional test replacement malloc/free pair opaque to GCC's
+// inlined mismatched-new-delete diagnostic. No warning flags are disabled.
+#if defined(__GNUC__)
+#define ARMIX_TEST_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define ARMIX_TEST_NOINLINE __declspec(noinline)
+#else
+#define ARMIX_TEST_NOINLINE
+#endif
 static std::size_t allocations=0;
-void* operator new(std::size_t n){++allocations;if(auto* p=std::malloc(n?n:1))return p;throw std::bad_alloc();}
-void* operator new[](std::size_t n){return ::operator new(n);}
-void operator delete(void* p) noexcept {std::free(p);}
-void operator delete[](void* p) noexcept {std::free(p);}
-void operator delete(void* p,std::size_t) noexcept {std::free(p);}
-void operator delete[](void* p,std::size_t) noexcept {std::free(p);}
+ARMIX_TEST_NOINLINE void* operator new(std::size_t n){++allocations;if(auto* p=std::malloc(n?n:1))return p;throw std::bad_alloc();}
+ARMIX_TEST_NOINLINE void* operator new[](std::size_t n){return ::operator new(n);}
+ARMIX_TEST_NOINLINE void operator delete(void* p) noexcept {std::free(p);}
+ARMIX_TEST_NOINLINE void operator delete[](void* p) noexcept {std::free(p);}
+ARMIX_TEST_NOINLINE void operator delete(void* p,std::size_t) noexcept {std::free(p);}
+ARMIX_TEST_NOINLINE void operator delete[](void* p,std::size_t) noexcept {std::free(p);}
+#undef ARMIX_TEST_NOINLINE
 using namespace armix::mixer;
 struct Effects {
     ChannelId a{},receiver{},isolated{};
@@ -24,7 +37,55 @@ struct Effects {
         if(delay)for(int i=0;i<n;++i)delay->process(l[i],r[i]);
     }
 };
+static void verifyExactHistoryAndSend() {
+    auto bits=[](float x){return std::bit_cast<std::uint32_t>(x);};
+    std::uint32_t rng=0x9e3779b9u;
+    auto next=[&](){rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;};
+    auto pcm=[&](){return static_cast<float>(static_cast<int>(next()%2049)-1024)/1024.f;};
+    std::array<float,257> l{},r{},dl{},dr{},refL{},refR{};
+    for(int length:{0,1,7,16,19,64,127,256,1024}){
+        armix::dsp::StereoLatencyDelay fast,ref;
+        assert(fast.prepare(length)&&ref.prepare(length));
+        for(int block=0;block<1000;++block){
+            const int n=1+static_cast<int>(next()%257);
+            for(int i=0;i<n;++i){l[i]=pcm();r[i]=pcm();}
+            const auto before=allocations;
+            if(block%5!=0){
+                fast.advanceHistory(l.data(),r.data(),n);
+                for(int i=0;i<n;++i){float x=l[i],y=r[i];ref.process(x,y);}
+            }else for(int i=0;i<n;++i){
+                float x=l[i],y=r[i],a=x,b=y;
+                fast.process(x,y);ref.process(a,b);
+                assert(bits(x)==bits(a)&&bits(y)==bits(b));
+            }
+            assert(allocations==before);
+        }
+    }
+    armix::dsp::RealtimeSlew64 fast,ref;
+    for(int block=0;block<4000;++block){
+        const int n=1+static_cast<int>(next()%257);
+        if(block%3==0){const float v=static_cast<float>(next()%17)/8.f;
+            fast.retarget(v);ref.retarget(v);}
+        const float panL=static_cast<float>(next()%9)/8.f;
+        const float panR=static_cast<float>(next()%9)/8.f;
+        for(int i=0;i<n;++i){
+            l[i]=i%13==0?-0.f:pcm();r[i]=i%17==0?1.e-20f:pcm();
+            dl[i]=refL[i]=pcm();dr[i]=refR[i]=pcm();
+        }
+        const auto before=allocations;
+        fast.accumulateStereo(l.data(),r.data(),dl.data(),dr.data(),n,panL,panR);
+        for(int i=0;i<n;++i){
+            const float gain=ref.next();
+            const float x=l[i]*gain*panL,y=r[i]*gain*panR;
+            refL[i]+=x;refR[i]+=y;
+            assert(bits(dl[i])==bits(refL[i])&&bits(dr[i])==bits(refR[i]));
+        }
+        assert(allocations==before&&fast.remaining==ref.remaining&&fast.current==ref.current);
+    }
+    std::puts("PASS: 9000 variable history blocks and 4000 exact stereo SEND blocks");
+}
 int main(){
+    verifyExactHistoryAndSend();
     armix::dsp::StereoLatencyDelay probe;
     assert(probe.prepare(0)&&!probe.active());
     assert(probe.prepare(7)&&probe.active());
@@ -90,6 +151,29 @@ int main(){
             }
             time+=n;
         }
+        // Exercise the actual disconnected PDC tap, not just the primitive.
+        // Feed an identifiable timeline while disconnected, then reconnect
+        // with the existing 64-sample fade. No stale tail or missing frame.
+        std::array<float,16> extL{},extR{};
+        float* hardware[]{l.data(),right.data(),ml.data(),mr.data(),extL.data(),extR.data()};
+        const auto signal=[](int frame){return static_cast<float>(frame+1)/512.f;};
+        for(int block=0;block<12;++block){
+            if(block==6)assert(publisher.setExternalOutput(9,1,b,4,5,6));
+            inA.fill(0);inR.fill(0);
+            for(int i=0;i<16;++i)inB[i]=signal(block*16+i);
+            const float* physical[]{inA.data(),inA.data(),inB.data(),inB.data(),inR.data(),inR.data(),silent.data(),silent.data()};
+            const auto before=allocations;
+            assert(publisher.render(9,physical,request.physicalInputs,l.data(),right.data(),16,false,
+                [](ChannelId,float*,float*,int) noexcept {},ml.data(),mr.data(),{},{},{},hardware,6));
+            assert(allocations==before);
+            for(int i=0;i<16;++i){
+                const int elapsed=(block-6)*16+i;
+                const float expectedTap=elapsed<0?0.f:signal(block*16+i-expected)*
+                    std::min(1.f,static_cast<float>(elapsed+1)/64.f);
+                assert(std::abs(extL[i]-expectedTap)<1.e-6f&&std::abs(extR[i]-expectedTap)<1.e-6f);
+            }
+        }
+        assert(publisher.appliedExternalOutput(9,1,b)==std::make_pair(4,5));
         // Failed candidate budget/admission never replaces the live graph.
         request.maxScratchBytes=16*2*sizeof(float)*5;
         plan.graphRevision=2;

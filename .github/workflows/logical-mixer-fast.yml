@@ -13,6 +13,8 @@ on:
       - 'engine/core/DeviceIndependentMixerSession.h'
       - 'engine/core/DynamicChannelRoster.h'
       - 'engine/core/DynamicPreparedMixerBlock.h'
+      - 'engine/core/StereoLatencyDelay.h'
+      - 'engine/core/RealtimeSlew64.h'
       - 'engine/core/DynamicAcceptedSession.h'
       - 'engine/core/DynamicNativeSessionPublisher.h'
       - 'tests/dynamic_accepted_session_test.cpp'

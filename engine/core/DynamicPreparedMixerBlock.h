@@ -875,10 +875,12 @@ public:
                 target.applied.retarget(goal);
                 auto* const edgeDelay=!edgeDelays_.empty() && edgeDelays_[e].active()?
                     &edgeDelays_[e]:nullptr;
-                for(int f=0;f<frames;++f){
+                if(!edgeDelay)
+                    target.applied.accumulateStereo(l,r,dl,dr,frames,edge.panL,edge.panR);
+                else for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
                     float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
-                    if(edgeDelay)edgeDelay->process(vl,vr);
+                    edgeDelay->process(vl,vr);
                     dl[f]+=vl;dr[f]+=vr;
                 }
             }
@@ -928,10 +930,12 @@ public:
                 target.applied.retarget(goal);
                 auto* const edgeDelay=!edgeDelays_.empty() && edgeDelays_[e].active()?
                     &edgeDelays_[e]:nullptr;
-                for(int f=0;f<frames;++f){
+                if(!edgeDelay)
+                    target.applied.accumulateStereo(l,r,dl,dr,frames,edge.panL,edge.panR);
+                else for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
                     float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
-                    if(edgeDelay)edgeDelay->process(vl,vr);
+                    edgeDelay->process(vl,vr);
                     dl[f]+=vl;dr[f]+=vr;
                 }
             }
@@ -1029,15 +1033,16 @@ public:
                 }
                 auto* const externalDelay=!externalDelays_.empty() && externalDelays_[i].active()?
                     &externalDelays_[i]:nullptr;
-                // A disconnected zero-delay tap has no history or output
-                // work. Keep advancing real delay lines and ongoing fades.
-                if(!externalDelay && fade.remaining==0 && fade.current==noExternal){
-                    externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
-                    continue;
-                }
                 const auto slot=lane.slot;
                 const float* src=scratch_.data()+slot*2*block;
                 const float* srcR=src+block;
+                // Disconnected taps still retain exact latency history for
+                // immediate reconnect, but never read discarded delayed PCM.
+                if(fade.remaining==0 && fade.current==noExternal){
+                    if(externalDelay)externalDelay->advanceHistory(src,srcR,frames);
+                    externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
+                    continue;
+                }
                 for(int f=0;f<frames;++f) {
                     float l=src[f],r=srcR[f];
                     if(externalDelay)externalDelay->process(l,r);
