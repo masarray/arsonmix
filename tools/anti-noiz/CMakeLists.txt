@@ -152,3 +152,7 @@ set_tests_properties(AntiNoizBroadbandFastpath PROPERTIES TIMEOUT 60)
 anti_noiz_target(anti_noiz_reference_mask_probe tools/anti-noiz/reference_mask_probe.cpp)
 add_test(NAME AntiNoizReferenceMaskProbe COMMAND anti_noiz_reference_mask_probe --self-test)
 set_tests_properties(AntiNoizReferenceMaskProbe PROPERTIES TIMEOUT 60)
+
+anti_noiz_target(anti_noiz_manual_test tests/anti_noiz_manual_test.cpp)
+add_test(NAME AntiNoizManual COMMAND anti_noiz_manual_test)
+set_tests_properties(AntiNoizManual PROPERTIES TIMEOUT 60)

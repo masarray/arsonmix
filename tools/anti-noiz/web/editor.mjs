@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Shared editor: isolated harness and approved native mixer use this exact
 // renderer. Transport is the only authority for settings and observations.
-export const defaults=Object.freeze({mode:'Auto',cleanDb:14,silenceDb:32,musicProtect:1,enabled:true});
-export function valid(s){return !!s&&['Auto','Voice','Singing','Music'].includes(s.mode)&&typeof s.enabled==='boolean'&&[['cleanDb',24],['silenceDb',48],['musicProtect',1]].every(([k,max])=>Number.isFinite(s[k])&&s[k]>=0&&s[k]<=max);}
+export const defaults=Object.freeze({mode:'Auto',cleanDb:14,silenceDb:32,musicProtect:1,enabled:true,spectralManual:false,noiseOffsetDb:0,manualExpander:false,gate:false,thresholdDb:-40,ratio:4,rangeDb:60,attackMs:1,holdMs:100,releaseMs:120,kneeDb:0,sidechainHpHz:120,sidechainLpHz:12000});
+const proDefs=[['noiseOffsetDb','Noise threshold',-20,20,.5,'dB'],['thresholdDb','Threshold',-80,0,1,'dBFS'],['ratio','Ratio',1,20,.5,':1'],['rangeDb','Range',0,96,1,'dB'],['attackMs','Attack',.5,20,.5,'ms'],['holdMs','Hold',0,500,5,'ms'],['releaseMs','Release',10,1000,10,'ms'],['kneeDb','Knee',0,18,1,'dB'],['sidechainHpHz','Detector HPF',20,500,10,'Hz'],['sidechainLpHz','Detector LPF',1000,20000,100,'Hz']];
+const bounds=[['cleanDb','Clean',0,40],['silenceDb','Silence',0,48],['musicProtect','Music Protect',0,1],...proDefs];
+export const normalize=s=>({...defaults,...s});
+export function valid(s){if(!s||!['Auto','Voice','Singing','Music'].includes(s.mode)||typeof s.enabled!=='boolean')return false;const n=Object.keys(s).length;if(n!==5&&n!==18)return false;if(n===5&&s.cleanDb>24)return false;const v=normalize(s);return Object.keys(defaults).every(k=>Object.hasOwn(v,k))&&Object.keys(s).every(k=>Object.hasOwn(defaults,k))&&['spectralManual','manualExpander','gate'].every(k=>typeof v[k]==='boolean')&&bounds.every(([k,_,min,max])=>Number.isFinite(v[k])&&v[k]>=min&&v[k]<=max)&&['cleanDb','silenceDb','musicProtect'].every(k=>Object.hasOwn(s,k))&&(n===5||Object.keys(defaults).every(k=>Object.hasOwn(s,k)));}
 export function controller(transport,render){
  let accepted=null,pending=null,queued=null,seq=0,closed=false,error='Waiting for DSP',observation=null,appliedId='';
  const state=()=>({accepted,pending:!!pending,adjusting:!!pending?.continuous,desired:pending?.continuous?{...pending.settings,...queued}:null,error,observation,appliedId});
@@ -19,9 +22,9 @@ export function controller(transport,render){
   if(!valid(m.settings))return;
   if(m.kind==='snapshot'){
    observation=m.observation||null;
-   if(!pending){if(!accepted)error='';accepted={...m.settings};}
+   if(!pending){if(!accepted)error='';accepted=normalize(m.settings);}
   }else if(m.kind==='ack'&&pending&&m.id===pending.id&&typeof m.applied==='boolean'){
-   const next=queued;queued=null;accepted={...m.settings};pending=null;error=m.applied?'':(m.error||'DSP rejected request');
+   const next=queued;queued=null;accepted=normalize(m.settings);pending=null;error=m.applied?'':(m.error||'DSP rejected request');
    if(m.applied&&next&&Object.keys(next).some(k=>next[k]!==accepted[k])){
     submit('settings',next,true);return;
    }
@@ -39,7 +42,7 @@ export function controller(transport,render){
  }
  draw();transport.read();
  function adjust(key,value){
-  if(closed||!accepted||!['cleanDb','silenceDb','musicProtect'].includes(key)||!valid({...accepted,[key]:value}))return false;
+  if(closed||!accepted||!bounds.some(d=>d[0]===key)||!valid({...accepted,[key]:value}))return false;
   if(pending){
    if(!pending.continuous)return false;
    queued={...queued,[key]:value};draw();return true;
@@ -106,11 +109,14 @@ export function mount(root,transport,options={}){
  root.innerHTML=`<section class="an-panel" aria-label="Anti Noiz">
  <header class="an-head"><div class="an-identity"><h1>ANTI<span> NOIZ</span></h1><small>ARSONMIX <span class="an-brand-divider">/</span> ADAPTIVE DENOISER</small></div><div class="an-head-actions"><button class="armix-builtin-fx-power" data-power data-fx-state="unknown" type="button" aria-label="FX state unavailable" aria-pressed="false" disabled>⏻</button><button class="armix-builtin-fx-close" data-close type="button" aria-label="Close Anti Noiz" title="Close Anti Noiz"></button></div></header>
  <div class="an-presets" hidden><span class="an-engraved">PROGRAM</span><select data-preset aria-label="Anti Noiz preset"><option value="CUSTOM">Custom</option><option value="DEFAULT">Default</option></select></div>
- <div class="an-display" data-lcd-mode="gr"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-lcd-cue" aria-hidden="true"><span data-lcd-hint>Tap for spectrum</span><span class="an-lcd-pages"><i></i><i></i></span></div></div><div class="an-lcd-content"><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>12</span><span>24</span><span>36</span><span>48</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><div class="an-spectrum-plot"><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-noise-fill" data-noise-fill/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div></div></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div><button class="an-lcd-hit" data-lcd-switch type="button" aria-label="Noise spectrum display" aria-pressed="false" title="Click or tap LCD for noise spectrum"></button></div>
+ <div class="an-display" data-lcd-mode="gr"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-lcd-cue" aria-hidden="true"><span data-lcd-hint>Tap for spectrum</span><span class="an-lcd-pages"><i></i><i></i></span></div></div><div class="an-lcd-content"><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>24</span><span>48</span><span>72</span><span>96</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><div class="an-spectrum-plot"><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-noise-fill" data-noise-fill/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div></div></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div><button class="an-lcd-hit" data-lcd-switch type="button" aria-label="Noise spectrum display" aria-pressed="false" title="Click or tap LCD for noise spectrum"></button></div>
  <div class="an-knobs"></div><div class="an-source"><span class="an-engraved">SOURCE</span><div class="an-modes" role="group" aria-label="Source mode"></div></div>
+ <details class="an-pro"><summary>Advanced · manual noise control</summary><div class="an-pro-body"><div class="an-pro-row"><label><input type="checkbox" data-pro-flag="spectralManual"> Manual spectral</label><span>Clean = reduction · profile required</span></div><div class="an-pro-grid" data-pro-spectral></div><div class="an-pro-row"><label><input type="checkbox" data-pro-flag="manualExpander"> Manual expander</label><label><input type="checkbox" data-pro-flag="gate"> Gate</label></div><div class="an-pro-grid" data-pro-expander></div><div class="an-pro-row"><span>Detector <output data-detector>—</output></span><span>Range 96 dB + Gate = mute</span></div><small>Manual expander replaces adaptive Silence. Range 0 = bypass; Clean 0 = spectral bypass. Music mode protects the full signal.</small></div></details>
  <footer><button data-learn data-learning="false">Learn noise</button><span data-status role="status"></span><span class="an-stereo" title="Stereo processing is linked; not a toggle">STEREO<span>LINK</span></span></footer></section>`;
- const $=s=>root.querySelector(s), controls=[];
- const defs=[['cleanDb','Clean',24,.5,'dB'],['silenceDb','Silence',48,.5,'dB'],['musicProtect','Music Protect',1,.01,'%']];
+ const $=s=>root.querySelector(s), controls=[],proControls=[];
+ for(const [key,name,min,max,step,unit] of proDefs){const el=document.createElement("label");el.className="an-pro-param";el.innerHTML=`<span>${name}<output>—</output></span><input type="range" min="${min}" max="${max}" step="${step}" aria-label="${name}"></label>`.replace("</label>","");$(key==="noiseOffsetDb"?"[data-pro-spectral]":"[data-pro-expander]").append(el);proControls.push({key,unit,input:el.querySelector("input"),out:el.querySelector("output")});}
+ const proFlags=[...root.querySelectorAll("[data-pro-flag]")];
+ const defs=[['cleanDb','Clean',40,.5,'dB'],['silenceDb','Silence',48,.5,'dB'],['musicProtect','Music Protect',1,.01,'%']];
  // Tangential dashed LED arc: every segment has the SAME radius.
  // Stationary metallic PNG, independent shadow and rotating pointer.
  const arcPoint=deg=>{const t=deg*Math.PI/180;return `${(50+45.5*Math.sin(t)).toFixed(2)} ${(50-45.5*Math.cos(t)).toFixed(2)}`;};
@@ -125,11 +131,11 @@ export function mount(root,transport,options={}){
  const cancel=c=>{clearTimeout(c.timer);c.timer=null;c.draft=null;const g=c.gesture;c.gesture=null;if(g&&c.input.hasPointerCapture(g.id))c.input.releasePointerCapture(g.id);};
  const meterEls=new Map();
  function meter(name,gain,live){
-  const db=live&&Number.isFinite(gain)?Math.max(0,Math.min(48,-20*Math.log10(Math.max(1e-8,gain)))):null;
+  const db=live&&Number.isFinite(gain)?Math.max(0,Math.min(96,-20*Math.log10(Math.max(1e-8,gain)))):null;
   let els=meterEls.get(name);if(!els){els={out:$(name),bar:$(name.slice(0,-1)+'-bar]'),value:undefined};meterEls.set(name,els);}
   const v=db===null?null:Math.round(db*10)/10;if(els.value===v)return;els.value=v;
   setText(els.out,v===null?'—':v.toFixed(1)+' dB');
-  els.bar.style.transform='scaleX('+(v===null?0:v/48)+')';
+  els.bar.style.transform='scaleX('+(v===null?0:v/96)+')';
  }
  // Existing host polling cadence (~5.6 Hz). No extra IPC, FFT, timer,
  // animation loop or PCM processing; smooth only newly observed frames.
@@ -194,6 +200,10 @@ export function mount(root,transport,options={}){
   meter('[data-spectral]',observation?.spectralGain,live&&!hostOff&&accepted?.enabled);
   meter('[data-residual]',observation?.residualGain,live&&!hostOff&&accepted?.enabled);
   const observed=live&&!unavailable;
+  const level=observation?.detectorLevel;
+  setText($("[data-detector]"),observed&&!hostOff&&accepted?.manualExpander&&Number.isFinite(level)?(20*Math.log10(Math.max(1e-6,level))).toFixed(1)+" dBFS":"—");
+  for(const f of proFlags){f.checked=!!accepted?.[f.dataset.proFlag];f.disabled=!accepted||pending||unavailable;}
+  for(const c of proControls){const value=view.desired?.[c.key]??accepted?.[c.key];if(Number.isFinite(value)){c.input.value=value;setText(c.out,String(value)+(c.unit===":1"?":1":" "+c.unit));}else setText(c.out,"—");c.input.disabled=!accepted||(pending&&!adjusting)||unavailable||(c.key==="noiseOffsetDb"?!accepted?.spectralManual:!accepted?.manualExpander);}
   const learning=observed&&observation.learning===true&&!hostOff&&accepted?.enabled===true;
   const learn=$('[data-learn]'), learningValue=String(learning);
   if(learn.dataset.learning!==learningValue)learn.dataset.learning=learningValue;
@@ -255,6 +265,8 @@ export function mount(root,transport,options={}){
   c.input.addEventListener('input',()=>{if(!c.gesture){const v=Number(c.input.value);preview(v);flush();c.draft=null;}});
   c.input.addEventListener('dblclick',e=>{e.preventDefault();if(!c.input.disabled){preview(defaults[c.key]);flush();c.draft=null;}});
  }
+ for(const c of proControls)c.input.addEventListener("input",()=>model.adjust(c.key,Number(c.input.value)));
+ for(const f of proFlags)f.addEventListener("change",()=>model.submit("settings",{[f.dataset.proFlag]:f.checked}));
  for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.submit('settings',{mode:b.dataset.mode});
  $('[data-power]').onclick=()=>{if(!current||$('[data-power]').disabled)return;if(options.hostPower?.()==='SLOT')options.enableSlot?.();else model.submit('settings',{enabled:!current.enabled});};$('[data-learn]').onclick=()=>{if((!options.hostPower||options.hostPower()==='ON')&&!$('[data-learn]').disabled)model.submit('learn');};
  $('[data-close]').onclick=()=>options.onClose?.();

@@ -15,6 +15,7 @@
 #include "AntiNoizWind.h"
 #include "AntiNoizCoherence.h"
 #include "AntiNoizBroadband.h"
+#include "AntiNoizManualExpander.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -30,6 +31,9 @@ public:
         float silenceDb=32.f;
         float musicProtect=1.f;
         bool enabled=true;
+        bool spectralManual=false;
+        float noiseOffsetDb=0;
+        ManualExpander::Settings manual{};
     };
     // Opaque validated packet: only Core can construct usable coefficients.
     // The control producer prepares it; the audio owner applies it atomically
@@ -38,19 +42,25 @@ public:
         friend class Core;
         Settings settings_{};
         float clean_=1,singing_=1,silence_=1,auto_=1;
+        ManualExpander::Prepared manual_{};
+        float inverseNoiseScale_=1;
         bool valid_=false;
     };
     static PreparedSettings prepareSettings(Settings s) noexcept {
         PreparedSettings p;
-        if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>24||
-           s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U)return p;
+        if(!std::isfinite(s.cleanDb)||!std::isfinite(s.silenceDb)||s.cleanDb<0||s.cleanDb>40||
+           s.silenceDb<0||s.silenceDb>48||!std::isfinite(s.musicProtect)||s.musicProtect<0||s.musicProtect>1||static_cast<unsigned>(s.mode)>3U||
+           !std::isfinite(s.noiseOffsetDb)||s.noiseOffsetDb< -20||s.noiseOffsetDb>20||!ManualExpander::valid(s.manual))return p;
         p.settings_=s;
         p.clean_=gainDb(s.cleanDb);
         p.singing_=gainDb(std::min(12.f-6.f*s.musicProtect,s.cleanDb));
         p.silence_=gainDb(s.silenceDb);
         p.auto_=gainDb(std::min(12.f-4.f*s.musicProtect,s.cleanDb));
+        p.manual_=ManualExpander::prepareSettings(s.manual);
+        p.inverseNoiseScale_=std::pow(10.f,-s.noiseOffsetDb/10.f);
         p.valid_=true;return p;
     }
+    static bool validSettings(Settings s) noexcept {return prepareSettings(s).valid_;}
     static constexpr int maxN=FftPlan::maxN, maxBins=maxN/2+1;
     // Native observation only; fixed-size power bins, no PCM/FFT allocation.
     // Linear mean-square (one-sided window-energy normalized) per FFT bin.
@@ -108,6 +118,7 @@ public:
         fft_.prepare(n_);
         prepareTiming();
         context_.prepare(rate_,hop_);
+        manual_.prepare(rate_,channels_,n_);manualActive_=false;
         wind_.prepare(rate_,hop_,n_,channels_);
         coherence_.prepare(rate_,hop_,channels_);
         broadband_.prepare(rate_,hop_,n_,channels_);
@@ -134,24 +145,28 @@ public:
             profile_.limitToIdleBounds();
         if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();tonalIdle_=false;}
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();wind_.reset();coherence_.reset();broadband_.reset();profile_.track(power_,false);}
+        if(s.spectralManual!=settings_.spectralManual||s.noiseOffsetDb!=settings_.noiseOffsetDb)voiceGain_.reset();
+        if(next!=effectiveMode_||s.enabled!=settings_.enabled){manual_.reset();manualActive_=false;}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
+        manual_.reset();manualActive_=false;
         context_.reset(); wind_.reset();coherence_.reset();broadband_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
         for(auto& a:in_)a.fill(0);
         for(auto& a:out_)a.fill(0);
-        mask_.fill(1); expansion_=1;
+        mask_.fill(1); expansion_=1;manual_.reset();manualActive_=false;
         pos_=ticks_=0;powerValid_=false;
         profile_.cancel(); context_.reset(); wind_.reset();coherence_.reset();broadband_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
-    float residualGain() const noexcept {return expansion_;}
+    float residualGain() const noexcept {return manualActive_?manual_.gain():expansion_;}
+    float detectorLevel() const noexcept {return manualActive_?manual_.detector():0.f;}
     bool ready() const noexcept {return ready_;}
     bool hasProfile() const noexcept {return profile_.valid();}
     bool learning() const noexcept {return profile_.learning();}
@@ -173,6 +188,12 @@ public:
                 float unused=0.f;
                 tonal_.apply(left[i],channels_==2?right[i]:unused,1.f-cleanFloor_);
             }
+            const bool useManual=settings_.enabled&&settings_.manual.enabled&&effectiveMode_!=Mode::Music&&!profile_.learning();
+            if(useManual){
+                const float gain=manual_.step(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
+                left[i]*=gain;if(channels_==2)right[i]*=gain;
+            }else if(manualActive_)manual_.reset();
+            manualActive_=useManual;
             if(++pos_==n_)pos_=0;
             if(++ticks_==hop_){ticks_=0; frame();}
         }
@@ -205,7 +226,7 @@ private:
     }
     void applyGains(const PreparedSettings& p) noexcept {
         cleanFloor_=p.clean_;singingFloor_=p.singing_;
-        silenceFloor_=p.silence_;autoFloor_=p.auto_;
+        silenceFloor_=p.silence_;autoFloor_=p.auto_;manual_.apply(p.manual_);inverseNoiseScale_=p.inverseNoiseScale_;
     }
     void renderUnity() noexcept {
         // Algebraically equivalent unity WOLA, with the same delay and overlap.
@@ -234,7 +255,7 @@ private:
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         // Only Voice with nonzero Silence may use the extra residual label.
         // Strict idle remains the sole authority for profile and spectral DSP.
-        const auto* variability=!protect&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f?
+        const auto* variability=!protect&&!settings_.manual.enabled&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f?
             &profile_.variability():nullptr;
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
         const bool windEnabled=!protect&&!idle&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&wind_.eligible();
@@ -245,25 +266,25 @@ private:
         coherence_.update(work_,coherenceEnabled);
         const bool broadEligible=!protect&&effectiveMode_==Mode::Voice&&broadband_.eligible()&&tonal_.selected()<0;
         const bool broadEnabled=broadEligible&&cleanFloor_<1.f;
-        const bool broadResidual=broadEligible&&silenceFloor_<1.f;
+        const bool broadResidual=broadEligible&&!settings_.manual.enabled&&silenceFloor_<1.f;
         broadband_.update(power_,profile_.anchor(),broadEnabled||broadResidual,broadResidual);
         tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
         const bool broadIdle=broadResidual&&broadband_.residualIdle();
-        const float expTarget=idle?silenceFloor_:broadIdle?std::max(silenceFloor_,.12589254f):context_.adaptiveIdle()?
+        const float expTarget=settings_.manual.enabled?1.f:idle?silenceFloor_:broadIdle?std::max(silenceFloor_,.12589254f):context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
         // Only explicit Voice or source-aware SpeechMic permits independently
         // qualified coherent drift. Unknown/Mixed and musical policies keep
         // the original confirmed-idle tracking; anchor-based guards unchanged.
         profile_.track(power_,idle,!protect&&effectiveMode_==Mode::Voice,
                        context_.broadbandRatio(),context_.subbandPeakRatio());
-        const bool selective=!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
+        const bool selective=!settings_.spectralManual&&!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;
         const float ratio=context_.broadbandRatio();
-        const float floor=protect?1.f:idle||effectiveMode_==Mode::Voice?cleanFloor_:
+        const float floor=protect?1.f:settings_.spectralManual||idle||effectiveMode_==Mode::Voice?cleanFloor_:
             effectiveMode_==Mode::Singing?singingFloor_:AutoGain::activeFloor(autoFloor_,ratio,context_.subbandPeakRatio());
         // Uncertainty reserve is prepared once per frame. The band-local
         // budget avoids giving dominant learned noise a global dry path.
-        const float reserve=activeVoice?AutoGain::detailReserve(ratio,.75f):
+        const float reserve=settings_.spectralManual?0.f:activeVoice?AutoGain::detailReserve(ratio,.75f):
             selective?AutoGain::detailReserve(ratio,.25f+.55f*settings_.musicProtect):0.f;
         if(protect||idle)voiceGain_.reset();
         // Analysis remains live, but when both gains are exactly unity no
@@ -274,13 +295,14 @@ private:
             for(int c=0;c<channels_;++c)
                 evidence=std::max(evidence,power_[c][k]/std::max(profile_.powers()[c][k],eps));
             // Only explicit Voice opts into the stronger causal estimator.
+            const float estimateEvidence=settings_.spectralManual?evidence*inverseNoiseScale_:evidence;
             float gain=selective?AutoGain::target(floor,context_.temporalRatio(profile_.anchor(),channels_,bins,k),evidence):
-                activeVoice?voiceGain_.estimate(k,evidence):
-                std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,evidence)));
+                activeVoice?voiceGain_.estimate(k,estimateEvidence):
+                std::sqrt(std::max(0.f,1.f-1.f/std::max(1.f,estimateEvidence)));
             // Only noise-overlap bands in explicit/source-aware Voice.
             // A quiet neighboring bin must independently show foreground.
             // The existing temporal neighborhood is reused; no FFT or delay.
-            if(activeVoice&&ratio>=2.f&&evidence>1.f) {
+            if(!settings_.spectralManual&&activeVoice&&ratio>=2.f&&evidence>1.f) {
                 const float relative=context_.relativeNoise(profile_.anchor(),channels_,k);
                 if(relative>1.f) {
                     float neighbor=0.f;
@@ -296,7 +318,7 @@ private:
             // P1: positive evidence only. Independent narrow-band phase
             // coherence can restore soft upper harmonics without opening
             // the entire gate or lifting the dominant DC/low noise bins.
-            if(coherenceEnabled&&k>=2&&k<=4&&ratio<4.f){
+            if(!settings_.spectralManual&&coherenceEnabled&&k>=2&&k<=4&&ratio<4.f){
                 float support=0.f;
                 for(int c=0;c<channels_;++c){
                     const float local=coherence_.support(c,k);
@@ -310,7 +332,7 @@ private:
             }
             // Restore foreground outside the learned dominant band only
             // when independent local excess is present.
-            if(broadEnabled&&activeVoice&&evidence>2.f&&broadband_.outsideNoiseBand(k))
+            if(!settings_.spectralManual&&broadEnabled&&activeVoice&&evidence>2.f&&broadband_.outsideNoiseBand(k))
                 gain=broadband_.restoreOutsideNoise(k,gain,evidence,
                     context_.hasTemporalExcess(profile_.anchor(),channels_,bins,k));
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
@@ -321,8 +343,8 @@ private:
             const float smooth=0.25f*target_[std::max(0,k-1)]+0.5f*target_[k]+0.25f*target_[std::min(bins-1,k+1)];
             // A protected band must not be pulled down by neighboring bins.
             float g=std::max(selective||reserve>0.f?target_[k]:floor,smooth);
-            if(windEnabled&&k==0)g=std::min(g,wind_.cap(k,floor));
-            if(broadEnabled&&broadband_.mayLimit(k,g,floor))g=std::min(g,broadband_.cap(k,power_,floor));
+            if(!settings_.spectralManual&&windEnabled&&k==0)g=std::min(g,wind_.cap(k,floor));
+            if(!settings_.spectralManual&&broadEnabled&&broadband_.mayLimit(k,g,floor))g=std::min(g,broadband_.cap(k,power_,floor));
             mask_[k]=g>=mask_[k]?g:mask_[k]+maskClose_*(g-mask_[k]);
         }
         // Immediate opening in the next overlap; slow closure. No hard gate.
@@ -354,6 +376,9 @@ private:
     ForegroundCoherence<maxN> coherence_{};
     BroadbandNoise<maxBins> broadband_{};
     VoiceGain<maxBins> voiceGain_{};
+    ManualExpander manual_{};
+    bool manualActive_=false;
+    float inverseNoiseScale_=1.f;
     TonalNoise tonal_{};
     bool tonalIdle_=false;
     float maskClose_=0.18f,expandClose_=0.035f,voiceExpandClose_=0.09f;

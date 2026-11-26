@@ -14,10 +14,14 @@ int main(){
     const auto bytes=NativeState::encode(s);
     Core::Settings decoded;check(NativeState::decode(bytes,decoded)&&decoded.cleanDb==18,"state codec");
     for(std::size_t n=0;n<bytes.size();++n)check(!NativeState::decode({bytes.data(),n},decoded),"truncation");
-    for(auto [index,value]:std::array<std::pair<int,std::uint32_t>,5>{{{0,0},{4,2},{8,4},{12,0x7fc00000u},{24,2}}}){
+    for(auto [index,value]:std::array<std::pair<int,std::uint32_t>,5>{{{0,0},{4,3},{8,4},{12,0x7fc00000u},{24,2}}}){
         auto corrupt=bytes;NativeState::put(corrupt,std::size_t(index),value);
         check(!NativeState::decode(corrupt,decoded)&&decoded.cleanDb==18,"transactional reject");
     }
+    auto legacy=bytes;NativeState::put(legacy,4,1);
+    check(NativeState::decode({legacy.data(),NativeState::legacySize},decoded)&&!decoded.manual.enabled&&decoded.cleanDb==18,"v1 migration");
+    auto pro=s;pro.manual.enabled=true;pro.manual.gate=true;pro.manual.rangeDb=96;pro.spectralManual=true;pro.noiseOffsetDb=7;pro.cleanDb=40;
+    check(NativeState::decode(NativeState::encode(pro),decoded)&&decoded.manual.enabled&&decoded.manual.gate&&decoded.manual.rangeDb==96&&decoded.cleanDb==40&&decoded.noiseOffsetDb==7,"v2 manual persistence");
     for(unsigned rate:{44100u,48000u,88200u,96000u})for(int channels:{1,2}){
         NativeSession native;check(native.restore(bytes),"cold restore");
         check(native.prepare(rate,channels),"prepare");

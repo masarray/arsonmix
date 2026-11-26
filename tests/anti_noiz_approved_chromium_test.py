@@ -335,7 +335,7 @@ def main():
         page.mouse.move(x,y-65,steps=7);page.wait_for_timeout(70)
         desired=float(knob.input_value())
         assert desired>first["settings"]["cleanDb"]
-        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==1+int(26*desired/24)
+        assert root.locator(".an-led-on").first.get_attribute("d").count("M")==1+int(26*desired/40)
         expect(knob).to_be_enabled()
         # Require a new snapshot request, rather than silently responding
         # to the previously consumed request.

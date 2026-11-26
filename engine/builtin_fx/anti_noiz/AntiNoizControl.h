@@ -17,6 +17,7 @@ public:
         int latency=0;
         Core::SourceRole sourceRole=Core::SourceRole::Unknown;
         Core::Mode effectiveMode=Core::Mode::AutoProtect;
+        float detectorLevel=0;
     };
     struct Completion { std::uint64_t id=0; bool applied=false; Snapshot state{}; };
     bool prepare(double rate,int channels,Core::SourceRole role=Core::SourceRole::Unknown) noexcept {
@@ -55,7 +56,7 @@ public:
     }
     // AUDIO owner or unpublished/quiescent only. No UI thread access.
     Snapshot snapshot() const noexcept {
-        return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples(),core_.sourceRole(),core_.effectiveMode()};
+        return {core_.settings(),core_.hasProfile(),core_.learning(),core_.spectralGain(),core_.residualGain(),core_.latencySamples(),core_.sourceRole(),core_.effectiveMode(),core_.detectorLevel()};
     }
     // Native-only seams. Do not change the qualified standalone process,
     // command packet, Snapshot layout or steady-state DSP.

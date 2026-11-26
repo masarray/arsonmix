@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import {mount,valid,defaults} from './editor.mjs';
+import {mount,valid,defaults,normalize} from './editor.mjs';
 import {nativeTransport} from './native_transport.mjs';
 // In the approved resource bundle only, style is injected from the same
 // editor.css. No browser PCM, no second mixer, no public preview fallback.
@@ -47,12 +47,12 @@ import {nativeTransport} from './native_transport.mjs';
   }});
   const select=root.querySelector('[data-preset]');
   const bar=root.querySelector('.an-presets');
-  const factoryValue=s=>valid(s)&&Object.keys(defaults).every(k=>s[k]===defaults[k])?'DEFAULT':'CUSTOM';
+  const factoryValue=s=>valid(s)&&Object.keys(defaults).every(k=>normalize(s)[k]===defaults[k])?'DEFAULT':'CUSTOM';
   presets=window.ArSonMixBuiltinFxPresetBar?.create({
     host:root,select,label:'Anti Noiz',catalogId:ID,context,
     stable:()=>!!latest?.accepted&&!latest.pending,readAccepted:()=>latest?.accepted||{},
     validate:valid,factoryValue,notice:m=>{const el=root.querySelector('[data-status]');if(el)el.textContent=m;},
-    apply:s=>view?.model.submit('settings',s)?transport.lastRequestId():null
+    apply:s=>view?.model.submit('settings',normalize(s))?transport.lastRequestId():null
   });
   if(presets){
    bar.hidden=false;
