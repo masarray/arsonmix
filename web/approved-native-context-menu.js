@@ -167,6 +167,8 @@
         }
       }else if(kind==="fx"){
         menu.innerHTML=
+          (hooks.canConvertReverbReturn?.(menuTrack,menuSlot)?
+            '<button role="menuitem" data-menu="convert-reverb-return">Move to FX Return…</button>':'')+
           '<button role="menuitem" data-menu="fx-param-last">Last Touched Hotkey…</button>'+
           '<button role="menuitem" data-menu="fx-param-browse">Browse Parameters…</button>'+
           (hooks.orbitTarget(menuTrack,menuSlot)?
@@ -695,6 +697,11 @@
       // Read coordinates before dismissMenu(): hidden menu offset is zero.
       const originX=menu.offsetLeft,originY=menu.offsetTop+menu.offsetHeight;
       if(action==="hotkey-register"){dismissMenu();openHotkeyRegister();return;}
+      if(action==="convert-reverb-return"){
+        // Explicit conversion changes serial dry attenuation and creates a
+        // new wet-only lease; no destructive implicit drag interpretation.
+        dismissMenu();hooks.convertReverbReturn?.(track,slot);return;
+      }
       if(action==="fx-param-last"||action==="fx-param-browse"){
         const mode=action==="fx-param-last"?"last":"browse";
         dismissMenu();openFxParamBrowser(track,slot,mode,originX,originY);return;

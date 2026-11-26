@@ -402,6 +402,31 @@ public:
         return prepare(epoch,revision,retained,destination,prior.external_);
     }
 
+    // A stopped, explicitly requested insert-to-return conversion replaces
+    // exactly one lease and adds one new lane. All unrelated leases survive.
+    static Fault replaceOwnedOnNewChannel(std::uint64_t epoch,std::uint64_t revision,
+            const DynamicChannelFxLeaseBank& prior,ChannelId source,std::size_t slot,
+            const juce::String& token,ChannelId target,Lease replacement,
+            DynamicChannelFxLeaseBank& destination) {
+        if(!epoch||epoch!=prior.epoch_||revision<=prior.revision_)return Fault::invalidEpoch;
+        if(!target.value||target==source||prior.find(target)||prior.external_.id==source)
+            return Fault::invalidExternalLease;
+        const auto* old=prior.ownerForControl(source,slot);
+        if(!old||!*old||(*old)->instanceId!=token||!replacement||
+           replacement->instanceId==token||!replacement->silenceBypass)
+            return Fault::staleInstance;
+        std::vector<Assignment> list;list.reserve(prior.rows_.size()+1);
+        for(const auto& row:prior.rows_){
+            Assignment a;a.id=row.id;a.format=row.format;a.rackBypassed=row.rackBypassed;
+            for(std::size_t i=0;i<row.count;++i)
+                if(row.id!=source||i!=slot)a.inserts.push_back(row.owners[i]);
+            list.push_back(std::move(a));
+        }
+        Assignment a;a.id=target;a.format=ProcessingFormat::stereo;
+        a.inserts.push_back(std::move(replacement));list.push_back(std::move(a));
+        return prepare(epoch,revision,list,destination,prior.external_);
+    }
+
     // CONTROL thread: publish a newly instantiated vendor insert on an
     // independently owned ChannelId, retaining old leases/state/tails.
     // This does NOT call a vendor or allocate from the audio callback.

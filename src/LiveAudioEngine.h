@@ -2348,6 +2348,21 @@ public:
             fail.error="NATIVE_VST3_VENDOR_PREPARE_FAILED";return fail;
         }
     }
+    LiveDryRoutingLab::NativeBusResult convertNativeReverbReturn(std::uint64_t ep,
+            std::uint64_t revision,std::uint64_t roster,armix::mixer::ChannelId source,
+            std::size_t slot,const juce::String& token) {
+        LiveDryRoutingLab::NativeBusResult fail;fail.error="DMX_CONVERSION_DISARM_MONITOR_AND_STREAM";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||independent_.active()||!attached_||!directFence_.permitted()||
+           isMonitorEnabled()||secondaryOutput_.armed()||
+           routeReconfiguring_.load(std::memory_order_acquire)||handoff_.busy()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute_.load(std::memory_order_acquire)!=armix::diagnostics::Route::normal)
+            return fail;
+        return dryRoutingLab_.convertNativeReverbReturn(ep,revision,roster,source,slot,token,
+            device->getCurrentSampleRate(),juce::jmax(32,device->getCurrentBufferSizeSamples()),
+            armix::builtin_fx::prepareNativeVocalReverbReturn,true);
+    }
     LiveDryRoutingLab::NativeBusResult editNativeFxRack(std::uint64_t ep,
             std::uint64_t revision,std::uint64_t roster,armix::mixer::ChannelId source,
             std::size_t slot,const juce::String& token,armix::mixer::ChannelId target,std::size_t position) {

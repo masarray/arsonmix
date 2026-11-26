@@ -8,6 +8,7 @@
 #include "../engine/core/NativeMusicTempoMonitor.h"
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/core/NativeFxRackTransaction.h"
+#include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
@@ -1311,6 +1312,9 @@ public:
         if(!current || current->role==ChannelRole::monitor) {
             out.error="NATIVE_INSERT_TARGET_UNAVAILABLE";return out;
         }
+        if(processor->silenceBypass&&current->role!=ChannelRole::fxReturn){
+            out.error="WET_RETURN_REQUIRES_FX_RETURN_CHANNEL";return out;
+        }
         // PCM authority, not historical strip ordinal, owns every new FX.
         // An occupied external CH1 chain still needs a combined lease contract.
         if(nativeAccepted_.fxOwners->externalChannel()==target) {
@@ -1371,6 +1375,69 @@ public:
         } catch(...) {
             out.error="NATIVE_VST3_ADMISSION_FAILED";return out;
         }
+    }
+    // Explicit stopped conversion: capture accepted preset, prepare one
+    // replacement lease and both WIREs, then publish once. No audio rebind.
+    NativeBusResult convertNativeReverbReturn(std::uint64_t ep,std::uint64_t revision,
+            std::uint64_t rosterRevision,armix::mixer::ChannelId source,std::size_t slot,
+            const juce::String& token,double rate,int frames,
+            std::unique_ptr<juce::AudioProcessor>(*factory)(double,int,const void*,int),
+            bool outputsDisarmed) {
+        using namespace armix::mixer;
+        NativeBusResult out;out.error="DMX_CONVERSION_REQUIRES_DISARMED_OUTPUTS";
+        if(!outputsDisarmed||!channelIdPhysicalPcmActive()||!ready()||
+           ep!=epoch()||nativeAccepted_.deviceEpoch!=ep||
+           nativeAccepted_.pcmRevision!=revision||!nativeAccepted_.fxOwners||
+           nativeAccepted_.graph.roster.revision()!=rosterRevision||!factory)return out;
+        out.error="DMX_CONVERSION_STALE_OR_UNSUPPORTED_INSERT";
+        const auto* old=nativeAccepted_.fxOwners->ownerForControl(source,slot);
+        if(!old||!*old||(*old)->instanceId!=token||
+           (*old)->catalogId!=armix::builtin_fx::VocalReverbProcessor::catalogIdentity)return out;
+        try {
+            juce::MemoryBlock bytes;
+            if(!(*old)->tryCaptureState(bytes)||bytes.isEmpty()){
+                out.error="DMX_CONVERSION_PRESET_PENDING";return out;
+            }
+            armix::builtin_fx::VocalReverbSettings settings;
+            if(!armix::builtin_fx::VocalReverbProcessor::decodeState(bytes.getData(),
+                static_cast<int>(bytes.getSize()),settings))return out;
+            auto processor=factory(rate,frames,bytes.getData(),static_cast<int>(bytes.getSize()));
+            if(!processor){out.error="DMX_CONVERSION_PREPARE_FAILED";return out;}
+            auto replacement=std::make_shared<FxGraph::FxInstance>(std::move(processor),
+                armix::builtin_fx::VocalReverbProcessor::wetReturnIdentity,
+                "Reverb-Sis Return",Block::hardFrameLimit);
+            replacement->bypassRequested.store((*old)->bypassRequested.load(std::memory_order_acquire)||
+                nativeAccepted_.fxOwners->rackBypassed(source),std::memory_order_release);
+            // Match the original calibrated wet multiplier (not its serial
+            // dry attenuation/pan). Conversion deliberately restores dry unity.
+            const float mix=settings.values[0],x=std::clamp(2.f*mix-1.f,0.f,1.f);
+            const float gain=std::clamp(std::sin(1.5707963267948966f*mix)*
+                (1.f+.5f*x*x*(3.f-2.f*x))/1.5f,0.f,1.f);
+            DynamicChannelRoster roster;DynamicChannelFxLeaseBank prepared;ChannelId created{};
+            if(!prepareNativeReverbReturnConversion(ep,revision,rosterRevision,
+                nativeAccepted_.graph.roster,*nativeAccepted_.fxOwners,source,slot,token,
+                std::move(replacement),gain,roster,prepared,created)){
+                out.error="DMX_CONVERSION_REQUIRES_LAST_REVERB_DIRECT_MAIN_INPUT";return out;
+            }
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(prepared));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=owner;fx.context=owner.get();fx.deviceEpoch=ep;fx.graphRevision=revision+1;
+            fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {
+                (*static_cast<DynamicChannelFxLeaseBank*>(p))(id,l,r,n);
+            };
+            fx.latency=+[](void* p,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
+            };
+            const auto committed=nativePublisher_.commit(roster,nativeAccepted_.graph.request,
+                revision,ep,epoch(),true,std::move(fx));
+            if(!committed.ok()){out.error="DMX_CONVERSION_PCM_REJECTED";return out;}
+            nativeAccepted_.graph.roster=std::move(roster);nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=committed.revision;reapplyExternalOutputsSameEpoch();
+            nativeStructureLive_=true;nativeMeterEpoch_.store(0,std::memory_order_release);
+            out.accepted=true;out.error="";out.created=created;out.pcmRevision=committed.revision;
+            out.rosterRevision=nativeAccepted_.graph.roster.revision();return out;
+        }catch(...){out.error="DMX_CONVERSION_EXCEPTION";return out;}
     }
     NativeBusResult editNativeFxRack(std::uint64_t ep,std::uint64_t revision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId source,std::size_t slot,
@@ -3239,7 +3306,7 @@ public:
                              "NATIVE_SET_WIRE_SUM_GAIN",
                              "NATIVE_SET_CHANNEL_MUTE_SOLO",
                              "NATIVE_SET_BUS_MUTE_SOLO",
-                             "NATIVE_LOAD_INSERT","NATIVE_REMOVE_INSERT","NATIVE_MOVE_INSERT",
+                             "NATIVE_LOAD_INSERT","NATIVE_REMOVE_INSERT","NATIVE_MOVE_INSERT","NATIVE_CONVERT_REVERB_RETURN",
                              "NATIVE_SET_INSERT_BYPASS",
                              "NATIVE_OPEN_INSERT_EDITOR"})
             allowed.add(juce::var(juce::String(op)));

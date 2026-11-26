@@ -1903,6 +1903,26 @@
   const pendingSlotPowers=new Map(); // ACK/readback, never demo FX flags
   // The rack header restores exact prior per-insert state, including
   // deliberately bypassed plugins; it never blindly turns ALL FX on.
+  function dmxReverbConversionTarget(t,slot){
+    const state=controller?.state(),current=state?.current;
+    if(!current?.admitted||current.retained||state.pending||
+       !current.graph.capabilities.supportedOps.includes("CONVERT_REVERB_RETURN"))return null;
+    const ch=current.graph.channels.find(c=>c.id===nativeIdFor(t));
+    const insert=ch?.inserts?.[slot];
+    return ch?.role==="INPUT"&&ch.primaryOutId===current.graph.mainChannelId&&
+      Number.isInteger(slot)&&slot>=0&&slot+1===ch.inserts.length&&
+      insert?.catalogId==="armix.builtin.vocal-reverb.v1"?{channelId:ch.id,instanceId:insert.id}:null;
+  }
+  function convertDmxReverb(t,slot){
+    const target=dmxReverbConversionTarget(t,slot);
+    if(!target)return false;
+    const result=controller.intent("CONVERT_REVERB_RETURN",target.channelId,
+      {slot,instanceId:target.instanceId});
+    if(!result.ok){status("FX Return conversion rejected · "+result.error);return false;}
+    window.setTimeout(()=>controller?.expire(result.requestId),15000);
+    status("Preparing Reverb-Sis Return · outputs must be disarmed");
+    return true;
+  }
   function editNativeFx(t,slot,target,position,token){
     const current=controller?.state()?.current,id=nativeIdFor(t);
     const decision=fxRackVM.nativeEditPlan(current,{
@@ -5268,6 +5288,8 @@
     canDeleteStrip:canDeleteNativeStrip,
     renameStrip:openNativeIdentity,
     orbitTarget:nativeOrbitTarget,
+    canConvertReverbReturn:dmxReverbConversionTarget,
+    convertReverbReturn:convertDmxReverb,
     orbitAction:nativeOrbitAction,
     inputChoices(t) {
       const labels=stripVM.inputChoices(t,sourceChoicesFor(),
@@ -5923,6 +5945,13 @@
     },
     nativeIdFor(t){return nativeIdFor(t);},
     insertPlugin(id,target){
+      if(id==="armix.builtin.vocal-reverb-return.v1"){
+        const row=[...(scope?.tracks||[]),scope?.master].find(t=>t?.id===target?.channelId);
+        if(row?.nativeRole!=="FX_RETURN"){
+          nativeToast("Reverb-Sis Return requires an FX Return strip · or right-click last Reverb-Sis insert");
+          return true;
+        }
+      }
       if(logicalView){
         const t=scope?.tracks?.find(x=>x.id===target?.channelId)||
           (scope?.master?.id===target?.channelId?scope.master:null);

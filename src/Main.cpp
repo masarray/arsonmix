@@ -3154,6 +3154,24 @@ private:
                             result.error[0]==0;
                     if(!applied)nativeError=result.error;
                 }
+            } else if(command.getProperty("operation","").toString()=="NATIVE_CONVERT_REVERB_RETURN"){
+                std::uint64_t ep=0,rev=0,roster=0,target=0;
+                const auto args=command.getProperty("payload",{});
+                const int slot=static_cast<int>(args.getProperty("slot",-1));
+                if(nativeShowBusy_||studioBackupBusy_||slot<0||slot>=8||
+                   !armix::console::approvedNativeId(command.getProperty("deviceEpoch",{}),ep)||
+                   !armix::console::approvedNativeId(command.getProperty("baseGraphRevision",{}),rev)||
+                   !armix::console::approvedNativeId(command.getProperty("baseRosterRevision",{}),roster)||
+                   !armix::console::approvedNativeId(command.getProperty("targetChannelId",{}),target))
+                    nativeError="DMX_CONVERSION_INVALID_OR_BUSY";
+                else{
+                    const auto result=engine_.convertNativeReverbReturn(ep,rev,roster,
+                        armix::mixer::ChannelId{target},static_cast<std::size_t>(slot),
+                        args.getProperty("instanceId",{}).toString());
+                    applied=result.accepted;
+                    if(applied)closeAllPluginEditors();
+                    else nativeError=result.error;
+                }
             } else {
                 applied=armix::console::executeApprovedNativeControl(engine_,command,&nativeError);
             }
