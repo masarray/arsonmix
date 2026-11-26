@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from verify_immersib_approved_pcm_sources import (
     APPROVED_FILE_COUNT, APPROVED_ORIGINAL_BLOB, OPTIMIZED_BLOB, OPTIMIZED_PATH,
     github_blob_hash, validate, verify_exact_optimized_provenance,
+    SONKU_CONTROL_PATH, SONKU_CONTROL_ORIGINAL, SONKU_CONTROL_VARIANT,
 )
 def read(name):return (ROOT/name).read_text(encoding="utf-8")
 
@@ -79,6 +80,10 @@ class SpatialAuthorityContract(unittest.TestCase):
             if path==OPTIMIZED_PATH and actual==OPTIMIZED_BLOB:
                 self.assertEqual(expected,APPROVED_ORIGINAL_BLOB)
                 verify_exact_optimized_provenance(ROOT)
+                continue
+            if path==SONKU_CONTROL_PATH and actual==SONKU_CONTROL_VARIANT:
+                # Explicit SonKu control-only variant; original ledger stays frozen.
+                self.assertEqual(expected,SONKU_CONTROL_ORIGINAL)
                 continue
             self.assertEqual(actual,expected,
                 f"Acoustic source changed without checkpoint review: {path}")

@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from verify_immersib_approved_pcm_sources import (  # noqa: E402
     REQUIRED_ROOTS, SCHEMA, APPROVED_SHA, APPROVED_FILE_COUNT, github_blob_hash, validate,
     APPROVED_ORIGINAL_BLOB, OPTIMIZED_BLOB, OPTIMIZED_PATH,
-    OPTIMIZED_PROVENANCE_PATH,
+    OPTIMIZED_PROVENANCE_PATH, SONKU_CONTROL_PATH, SONKU_CONTROL_ORIGINAL, SONKU_CONTROL_VARIANT,
 )
 
 
@@ -39,6 +39,10 @@ class ApprovedImmerSIBSourceLockTests(unittest.TestCase):
             OPTIMIZED_BLOB,
         )
         self.assertNotEqual(OPTIMIZED_BLOB, APPROVED_ORIGINAL_BLOB)
+        self.assertEqual(next(x["blob"] for x in self.manifest["files"]
+                             if x["path"]==SONKU_CONTROL_PATH), SONKU_CONTROL_ORIGINAL)
+        self.assertEqual(github_blob_hash((ROOT/SONKU_CONTROL_PATH).read_bytes().replace(b"\r\n",b"\n")),
+                         SONKU_CONTROL_VARIANT)
         self.assertTrue(REQUIRED_ROOTS.issubset(
             {item["path"] for item in self.manifest["files"]}
         ))

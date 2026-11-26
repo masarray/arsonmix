@@ -140,6 +140,7 @@ inline bool decodeSettings(const juce::var& values,armix::sonku::Settings& out) 
         return false; // P8.3 LF480 is forbidden throughout native v5.
 #endif
     if(!armix::sonku::valid8DSonKuInsertSettings(proposed))return false;
+    proposed.spatialMix=1.f; // validated legacy mix migrates to full wet
     out=proposed;
     return true;
 }
