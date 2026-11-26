@@ -493,11 +493,21 @@ def verify_additional_output(page,out):
     assert panel.get_by_role("button",name="Disconnect").is_enabled()
     assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
     panel.get_by_role("button",name="Close Additional Output").click()
-    # The Audio I/O entry opens the very same dialog, not legacy monitor.js.
+    # Audio I/O uses the same control instance inline, without another dialog.
     inventory=open_verified_audio_io(page,state,"routing")
-    page.locator("[data-audio-extra-output]").click()
-    assert panel.is_visible()
-    panel.get_by_role("button",name="Close Additional Output").click()
+    inline=page.locator("[data-audio-extra-output]")
+    assert inline.get_by_label("Windows playback device").is_visible()
+    assert inline.get_by_role("button",name="Disconnect").is_enabled()
+    assert not panel.is_visible()
+    assert page.locator("[data-extra-device]").count()==1
+    assert page.locator("[data-audio-output-matrix]").get_by_text("MAIN MIRROR",exact=False).is_visible()
+    inline.get_by_role("button",name="Disconnect").click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputStop').at(-1)")
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,secondaryOutputName="")
+    emit(page,"arMixStatus",live)
+    assert inline.get_by_role("button",name="Disconnect").is_disabled()
+    assert not page.locator("[data-audio-output-matrix]").get_by_text("MAIN MIRROR",exact=False).count()
     inventory["active"]["hasControlPanel"]=True
     emit(page,"arMixAudioDeviceInventory",inventory)
     page.locator('button[data-audio-tab="device"]').click()

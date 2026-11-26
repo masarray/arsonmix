@@ -3282,15 +3282,20 @@
       if(page==="inputs")paintRouteMatrix(next,"input");
       if(page==="routing")paintRouteMatrix(next,"output");
     }
+    paintOutputOverview(next);
+  }
+  function paintOutputOverview(next) {
     const view=devicePanel?.querySelector?.("[data-audio-output-matrix]");
     if(!view || devicePanel.hidden||
        devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab!=="routing")return;
-    const patches=protocol.physicalOutputOverview(next);
+    const patches=protocol.physicalOutputOverview(next).filter(row=>row.pair!=="STREAM");
+    const stream=protocol.secondaryOutputRow(next,extraLive);
+    if(stream)patches.push(stream);
     const signature=JSON.stringify([patches,String(next?.device?.backend||"")]);
     if(devicePanel.dataset.outputSignature===signature)return;
     devicePanel.dataset.outputSignature=signature;
     const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
-    if(summary)summary.textContent="OUTPUTS · "+patches.length+" physical patches";
+    if(summary)summary.textContent="Destinations · "+patches.length;
     view.replaceChildren();
     if(!patches.length){
       const backendName=String(next?.device?.backend||"");
@@ -3604,9 +3609,25 @@
   const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
   // U1: approved native bundle owns this workflow. monitor.js belongs to
   // the retired console and is deliberately NOT shipped in this bundle.
-  let extraPanel=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
-      extraError="",extraInventoryKnown=false;
-  const extraField=name=>extraPanel?.querySelector("[data-extra-"+name+"]");
+  let extraPanel=null,extraControls=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
+      extraError="",extraInventoryKnown=false,extraInventoryPending=false;
+  const extraField=name=>extraControls?.querySelector("[data-extra-"+name+"]");
+  const extraInlineHost=()=>devicePanel?.querySelector("[data-audio-extra-output]");
+  const extraInlineVisible=()=>!devicePanel?.hidden&&
+    devicePanel?.querySelector(".armix-audio-dialog")?.dataset.audioTab==="routing";
+  const extraSurfaceOpen=()=>Boolean(extraPanel?.open||extraInlineVisible());
+  function refreshAdditionalInventory(){
+    if(extraInventoryPending)return;
+    extraInventoryPending=true;extraInventoryKnown=false;extraError="";
+    paintAdditionalOutput();
+    backend.emitEvent("arMixAction",{action:"secondaryOutputInventory"});
+    window.setTimeout(()=>{
+      if(!extraInventoryPending)return;
+      extraInventoryPending=false;extraInventoryKnown=false;
+      extraError="Could not read Windows playback devices. Select Refresh to retry.";
+      paintAdditionalOutput();
+    },8000);
+  }
   function settleAdditionalOutput(live){
     const p=extraPending;
     if(!p?.acked||!live)return;
@@ -3618,10 +3639,11 @@
     else if(live.secondaryOutputFault===true){extraPending=null;extraError="Output fault · disconnect and reconnect the endpoint.";}
   }
   function paintAdditionalOutput(){
-    if(!extraPanel?.open)return;
-    const live=extraLive, busy=Boolean(extraPending),ready=live?.secondaryOutputReady===true,
-      armed=live?.secondaryOutputArmed===true,fault=live?.secondaryOutputFault===true;
-    const select=extraField("device"), prior=select.value||live?.secondaryOutputName||"";
+    if(!extraControls||!extraSurfaceOpen())return;
+    const live=extraLive, busy=Boolean(extraPending)||deviceBusy(),
+      destination=protocol.secondaryOutputView(hardware,live),
+      {ready,armed,fault,name,split}=destination;
+    const select=extraField("device"), prior=name||select.value||"";
     const options=extraInventory;
     const sig=JSON.stringify(options);
     if(select.dataset.signature!==sig){
@@ -3629,21 +3651,32 @@
         ...options.map(name=>new Option(name,name)));
       select.dataset.signature=sig;
       if(options.includes(prior))select.value=prior;
+      else if(!prior){
+        // Suggest a unique known virtual cable, never a default loudspeaker.
+        // Explicit Enable remains required.
+        const cables=options.filter(n=>/^CABLE Input(?:\s|\(|$)/i.test(n));
+        if(cables.length===1)select.value=cables[0];
+      }
     }
+    if(armed&&options.includes(name)&&select.value!==name)select.value=name;
     const allowed=live?.directRouteAuthorized===true&&live?.adaptiveClockActive!==true&&
       live?.dryRoutingLab?.hasAcceptedRoute===true&&live?.diagnosticRoute==="NORMAL";
-    select.disabled=busy||armed;
-    extraField("refresh").disabled=busy;
-    extraField("connect").disabled=busy||!allowed||armed||!options.includes(select.value);
-    extraField("stop").disabled=busy||(!ready&&!fault&&!live?.secondaryOutputName);
-    const message=busy?(extraPending.acked?"Waiting for native output state…":"Waiting for native output response…"):!live?"Reading audio engine status…":
-      fault?"Output fault · disconnect and reconnect the same endpoint.":
-      armed?"Output armed · "+live.secondaryOutputName+" · receiving app must verify audio":
-      ready?"Connected · "+live.secondaryOutputName+" · Enable to send MAIN":
+    select.disabled=busy||armed||extraInventoryPending;
+    extraField("refresh").disabled=busy||extraInventoryPending;
+    extraField("connect").disabled=busy||!allowed||armed||!extraInventoryKnown||!options.includes(select.value);
+    extraField("stop").disabled=busy||(!ready&&!fault&&!name);
+    extraField("mode").textContent=split?"MAIN → Windows · independent monitor":"MAIN → Windows · same mix";
+    extraControls.dataset.state=extraPending?"PENDING":destination.state;
+    const message=extraPending?(extraPending.acked?"Verifying output…":"Applying output…"):
+      busy?"Audio device is applying…":!live?"Reading audio engine status…":
+      fault?"Output disconnected unexpectedly. Enable the selected device again or disconnect.":
+      armed?"Enabled · "+name+" · check audio in receiving app":
+      ready?"Connected · "+name+" · Enable to send MAIN":
       !allowed?"Audio device or mixer routing is not ready. Check Audio I/O.":
-      !extraInventoryKnown?"Reading Windows playback devices…":
+      extraInventoryPending?"Reading Windows playback devices…":
+      !extraInventoryKnown?"Refresh to read available Windows playback devices.":
       !options.length?"No Windows playback endpoint found. Install/enable a virtual cable, then Refresh.":
-      "Choose where to send MAIN, then Enable output.";
+      "Choose a destination, then Enable output.";
     const status=extraField("status");
     if(status.textContent!==message)status.textContent=message;
     const error=extraField("error");
@@ -3651,7 +3684,7 @@
     if(error.textContent!==extraError)error.textContent=extraError;
   }
   function requestAdditionalOutput(action,value){
-    if(extraPending||!extraPanel?.open)return;
+    if(extraPending||deviceBusy()||!extraSurfaceOpen())return;
     const requestId="extra-out-"+(++extraSerial);
     extraError="";
     extraPending={requestId,action,value,acked:false};
@@ -3664,29 +3697,69 @@
       paintAdditionalOutput();
     },15000);
   }
+  function ensureAdditionalControls(){
+    if(extraControls)return;
+    const style=document.createElement("style");
+    style.textContent=`
+      .armix-stream-dialog{width:min(520px,92vw);max-height:90vh;overflow:auto;box-sizing:border-box;background:#1a252d;color:#e3eff4;border:1px solid #506778;border-radius:8px;padding:0;font:12px system-ui,sans-serif;box-shadow:0 16px 56px #0009}
+      .armix-stream-dialog::backdrop{background:#020b1290}
+      .armix-stream-dialog [data-extra-close]{float:right;margin:10px 12px 0 0}
+      .armix-stream-controls{padding:12px 14px;border:1px solid #3c5765;border-radius:5px;background:#10232e;display:grid;gap:7px;font:12px system-ui,sans-serif;color:#dcebf2}
+      .armix-stream-dialog .armix-stream-controls{border:0;padding:14px}
+      .armix-stream-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+      .armix-stream-heading strong{font-size:12px;font-weight:550}
+      .armix-stream-mode{font-size:11px;color:#9cb9c8}
+      .armix-stream-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+      .armix-stream-controls label{display:grid;gap:4px;color:#a9c5d2}
+      .armix-stream-controls button,.armix-stream-controls select,.armix-stream-dialog [data-extra-close]{background:#102631;color:#e1eff6;border:1px solid #527889;border-radius:4px;min-height:30px;padding:4px 9px;font:inherit}
+      .armix-stream-controls select{width:100%;min-width:0}
+      .armix-stream-controls button[data-extra-connect]{background:#2c5268}
+      .armix-stream-controls button:disabled,.armix-stream-controls select:disabled{opacity:.5}
+      .armix-stream-controls [data-extra-status]{color:#b6c9d1;overflow-wrap:anywhere}
+      .armix-stream-controls[data-state="ENABLED"] [data-extra-status]{color:#9bd3b8}
+      .armix-stream-controls[data-state="FAULT"] [data-extra-status],.armix-stream-controls [data-extra-error]{color:#ffb7a5}
+      .armix-stream-controls[data-state="PENDING"] [data-extra-status]{color:#e5c17d}
+      .armix-stream-hint{font-size:11px;color:#9fb9c8;line-height:1.4}
+      .armix-stream-inline{margin-bottom:12px}
+    `;
+    document.head.appendChild(style);
+    const panel=document.createElement("dialog");
+    panel.className="armix-stream-dialog";panel.setAttribute("aria-label","Additional Output");
+    const close=document.createElement("button");close.type="button";close.setAttribute("data-extra-close","");
+    close.setAttribute("aria-label","Close Additional Output");close.textContent="×";close.onclick=()=>panel.close();
+    panel.append(close);
+    const content=document.createElement("section");content.className="armix-stream-controls";
+    content.setAttribute("aria-label","Additional Output controls");
+    content.innerHTML=`<div class="armix-stream-heading"><strong>Send to OBS / virtual cable</strong><span class="armix-stream-mode" data-extra-mode></span></div>
+      <label>Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
+      <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button></div>
+      <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
+      <div class="armix-stream-hint">Post-FX MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
+    panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
+    extraField("refresh").onclick=refreshAdditionalInventory;
+    extraField("device").onchange=paintAdditionalOutput;
+    extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
+    extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
+  }
+  function mountInlineAdditionalOutput(){
+    const host=extraInlineHost();
+    if(!host)return;
+    ensureAdditionalControls();
+    if(extraPanel.open)extraPanel.close();
+    host.append(extraControls);
+    paintAdditionalOutput();
+    refreshAdditionalInventory();
+  }
   function openAdditionalOutput(){
     if(deviceBusy()){nativeToast("Finish applying the audio device first.");return;}
-    if(!extraPanel){
-      const panel=document.createElement("dialog");
-      panel.setAttribute("aria-label","Additional Output");
-      panel.style.cssText="width:min(510px,90vw);box-sizing:border-box;background:#192b36;color:#dcebf2;border:1px solid #527889;border-radius:7px;padding:16px;font:12px system-ui,sans-serif;box-shadow:0 16px 56px #0009";
-      panel.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Additional Output · OBS / Virtual Cable</strong><button type="button" data-extra-close aria-label="Close Additional Output">×</button></div>
-        <label style="display:grid;gap:5px">Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0"><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button></div>
-        <div data-extra-status role="status"></div><div data-extra-error role="alert" hidden style="color:#ffb7a5;margin-top:8px"></div>
-        <div style="margin-top:10px;color:#9fb9c8">MAIN post-FX → Windows playback. In OBS select the corresponding recording endpoint (for VB-CABLE: CABLE Output). ASIO remains the primary audio device.</div>`;
-      for(const el of panel.querySelectorAll("button,select"))el.style.cssText="background:#102631;color:#e1eff6;border:1px solid #527889;border-radius:4px;padding:6px 9px;font:inherit";
-      extraPanel=panel;
-      document.body.appendChild(panel);
-      extraField("close").onclick=()=>panel.close();
-      extraField("refresh").onclick=()=>{extraError="";backend.emitEvent("arMixAction",{action:"secondaryOutputInventory"});paintAdditionalOutput();};
-      extraField("device").onchange=paintAdditionalOutput;
-      extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
-      extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
+    if(extraInlineVisible()){
+      mountInlineAdditionalOutput();extraField("device").focus();return;
     }
+    ensureAdditionalControls();
+    extraPanel.append(extraControls);
     if(!extraPanel.open)extraPanel.showModal();
     paintAdditionalOutput();
-    backend.emitEvent("arMixAction",{action:"secondaryOutputInventory"});
+    refreshAdditionalInventory();
   }
   function closeNativeAudioIO(){
     if(deviceBusy())return;
@@ -3746,6 +3819,7 @@
       item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
     const apply=devicePanel.querySelector("[data-audio-apply]");
     apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics"||page==="performance";
+    if(page==="routing")mountInlineAdditionalOutput();
     if(page==="inputs"||page==="routing")paintPhysicalOutputs(hardware);
     if(page==="performance")paintSmartPerformance(true);
     if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
@@ -4009,18 +4083,20 @@
           <div class="armix-device-note">Choose Mono or Stereo, then Apply on the row. Blue = installed; amber = draft.</div>
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
-          <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
-          <div class="armix-device-note">Assign mixer channels and buses to verified hardware pins below. To duplicate MAIN to OBS, a virtual cable or another Windows device, use Additional Output.</div>
-          <button type="button" data-audio-extra-output>Additional Output · OBS / Virtual Cable</button>
-          <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
+          <div class="armix-stream-inline" data-audio-extra-output></div>
+          <div class="armix-output-heading">Destinations</div>
+          <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
+          <details data-audio-hardware-routing>
+            <summary>Advanced hardware routing</summary>
+            <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
+            <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair. Blue = installed; amber = draft.</div>
+          </details>
           <div data-monitor-timing hidden class="armix-device-note">
             <strong>MONITOR timing</strong> · <span data-monitor-timing-value></span>
             <button type="button" data-monitor-timing-toggle disabled>Use singer low latency</button>
             <div>Graph latency only · separate singer monitor, do not combine with MAIN · session only</div>
           </div>
-          <div class="armix-output-heading">OUTPUTS · physical routing</div>
-          <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
-          <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
+          <div class="armix-device-note">Status from the audio engine · listening in the receiving app is not verified</div>
         </section>
         <section class="armix-driver-inventory" aria-label="Driver channel inventory">
           <div class="armix-output-heading">DRIVER CHANNELS · available / enabled</div>
@@ -4108,8 +4184,7 @@
         if(!deviceBusy() && deviceState.remapGeneration!==null)
           sendDeviceApply(true);
       };
-      devicePanel.querySelector("[data-audio-extra-output]").onclick=openAdditionalOutput;
-      document.body.appendChild(devicePanel);
+       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
     const dialog=devicePanel.querySelector(".armix-audio-dialog");
@@ -5357,7 +5432,8 @@
     backend.addEventListener("arMixSecondaryOutputInventory",inventory=>{
       if(!inventory||!Array.isArray(inventory.outputs))return;
       extraInventory=[...new Set(inventory.outputs.filter(x=>typeof x==="string"&&x.length>0&&x.length<=240))];
-      extraInventoryKnown=true;
+      extraInventoryPending=false;
+      extraInventoryKnown=!inventory.error;
       if(inventory.error)extraError=String(inventory.error);
       paintAdditionalOutput();
     });
@@ -5371,9 +5447,13 @@
       paintAdditionalOutput();
     });
     backend.addEventListener("arMixStatus", live=>{
+      const previous=protocol.secondaryOutputView(hardware,extraLive);
       extraLive=live;
       settleAdditionalOutput(live);
       paintAdditionalOutput();
+      const current=protocol.secondaryOutputView(hardware,live);
+      if(previous.name!==current.name||previous.state!==current.state||previous.split!==current.split)
+        paintOutputOverview(hardware);
       const health=protocol.footerHealthFromLive(live);
       if(!health || health.sequence===lastFooterHealth?.sequence)return;
       lastFooterHealth=health;

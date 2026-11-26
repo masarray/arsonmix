@@ -2064,7 +2064,8 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/Confirm Delete AUX/);
  assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
  assert.match(bridge,/extraOutput\.addEventListener\("click",openAdditionalOutput\)/);
- assert.match(bridge,/querySelector\("\[data-audio-extra-output\]"\)\.onclick=openAdditionalOutput/);
+ assert.match(bridge,/if\(page==="routing"\)mountInlineAdditionalOutput\(\)/);
+ assert.match(bridge,/host\.append\(extraControls\)/);
  assert.doesNotMatch(bridge,/__arMixOpenAdditionalOutput/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
@@ -7648,4 +7649,23 @@ test("U2 physical bus candidates and overview respect existing logical reservati
  assert.equal(protocol.physicalOutputOverview(installed).find(x=>x.pair==="OUT 5/6").status,"MUTED");
  const unrelated={...snapshot,raw:{...raw,logicalOutputRegistry:{ports:[{...raw.logicalOutputRegistry.ports[0],playback:"Other driver"}],references:[]}}};
  assert.deepEqual(deviceVM.busOutputChoices(unrelated,"physicalMainOutputs").map(x=>x.left),[0,2,4,6]);
+});
+
+
+test("U2-B one secondary readback represents mirror, split, fault and disconnected without inventing PCM",()=>{
+ const snapshot={raw:{secondaryMainOnly:false,secondaryMainReady:false,physicalBusSecondaryArmed:false}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.equal(protocol.secondaryOutputView(snapshot,live).state,"ENABLED");
+ assert.deepEqual(protocol.secondaryOutputRow(snapshot,live),{pair:"STREAM",pins:"CABLE Input",role:"MAIN MIRROR",owners:"MAIN",status:"ENABLED",shared:0});
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...live,secondaryOutputArmed:false}).status,"MUTED");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...live,secondaryOutputFault:true}).status,"FAULT");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{secondaryOutputReady:false,secondaryOutputArmed:false}),null);
+ const split={...live,dryRoutingLab:{secondaryMainOnly:true}};
+ assert.equal(protocol.secondaryOutputRow(snapshot,split).role,"MAIN");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...split,secondaryOutputReady:false,secondaryOutputName:""}).status,"NEEDS_REMAP");
+ assert.equal(protocol.secondaryOutputView(snapshot,{secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:""}).armed,false);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/host\.append\(extraControls\)/);
+ assert.match(bridge,/extraPanel\.append\(extraControls\)/);
+ assert.match(bridge,/protocol\.secondaryOutputView\(hardware,live\)/);
 });

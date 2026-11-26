@@ -284,6 +284,28 @@
         raw.physicalBusSecondaryArmed===false&&d.outputArmed===false,
       epoch:d.epoch,revision:snapshot.graph.revision,rosterRevision:snapshot.graph.rosterRevision};
   }
+  // One secondary destination projection for the quick output controller and
+  // unified workspace. No ACK, friendly name or browser draft proves PCM.
+  function secondaryOutputView(snapshot,live) {
+    const raw=snapshot?.raw;
+    const current=live&&typeof live.secondaryOutputReady==="boolean"&&
+      typeof live.secondaryOutputArmed==="boolean";
+    const split=typeof live?.dryRoutingLab?.secondaryMainOnly==="boolean"?
+      live.dryRoutingLab.secondaryMainOnly:raw?.secondaryMainOnly===true;
+    const fault=current&&live.secondaryOutputFault===true;
+    const name=current?String(live.secondaryOutputName||""):String(raw?.secondaryMainEndpoint||"");
+    const ready=current?live.secondaryOutputReady===true:raw?.secondaryMainReady===true;
+    const armed=current?live.secondaryOutputArmed===true:raw?.physicalBusSecondaryArmed===true;
+    const state=fault?"FAULT":!ready||!name?(split?"NEEDS_REMAP":"DISCONNECTED"):
+      armed?"ENABLED":"MUTED";
+    return {split,name,ready:ready&&!fault,armed:ready&&!fault&&!!name&&armed,fault:!!fault,state};
+  }
+  function secondaryOutputRow(snapshot,live) {
+    const v=secondaryOutputView(snapshot,live);
+    if(!v.split&&v.state==="DISCONNECTED")return null;
+    return {pair:"STREAM",pins:v.name||"Windows playback endpoint disconnected",
+      role:v.split?"MAIN":"MAIN MIRROR",owners:"MAIN",status:v.state,shared:0};
+  }
   function physicalOutputOverview(snapshot) {
     const d=snapshot?.device,raw=snapshot?.raw;
     if(d?.backend!=="ASIO" || !Array.isArray(d.enabledOutputs) ||
@@ -1082,5 +1104,5 @@
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview,monitorTimingView});
+    operatorMessage,physicalOutputOverview,secondaryOutputView,secondaryOutputRow,monitorTimingView});
 });
