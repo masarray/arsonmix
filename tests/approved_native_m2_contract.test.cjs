@@ -7526,3 +7526,22 @@ test("intentional rack edits retire only affected pending native HWND feedback",
  assert.match(b,/retirePendingRackEditor\(\[identity.channelId\]\)/);
  assert.match(b,/retirePendingRackEditor\(\);\s*inlineFxClip\?\.closeRackEditors\(\)/);
 });
+
+test("DMX sole ASIO pair belongs to MONITOR; MAIN readback names only the secondary sink",()=>{
+  const raw=gmv20AcceptedGraph();
+  raw.device.backend="ASIO";raw.device.outputArmed=false;
+  raw.device.enabledOutputs=[4,5];
+  raw.device.outputEndpoints=[4,5].map((port,callback)=>({port,callback,id:"out:"+port,label:"Out "+port,active:true}));
+  raw.physicalMainOutputs=[];raw.physicalMonitorOutputs=[4,5];
+  raw.secondaryMainOnly=true;raw.secondaryMainReady=true;
+  raw.secondaryMainEndpoint="CABLE Input";raw.physicalBusSecondaryArmed=true;
+  const read=()=>protocol.physicalOutputOverview(protocol.normalizeSnapshot(raw));
+  assert.deepEqual(read().map(x=>[x.pair,x.role,x.status]),
+    [["OUT 5/6","MONITOR","MUTED"],["STREAM","MAIN","ENABLED"]]);
+  assert.equal(read()[1].pins,"CABLE Input");
+  raw.secondaryMainReady=false;
+  assert.equal(read()[1].status,"NEEDS_REMAP");
+  assert.equal(read()[1].pins,"WASAPI endpoint disconnected");
+  raw.secondaryMainOnly=false;
+  assert.equal(read().some(x=>x.pair==="STREAM"),false);
+});

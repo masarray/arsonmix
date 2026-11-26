@@ -3204,6 +3204,11 @@ private:
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
             obj->setProperty("physicalBusSecondaryArmed",engine_.secondaryArmed());
+            const bool streamReady=bool(live.getProperty("secondaryOutputReady",false))&&
+                !bool(live.getProperty("secondaryOutputFault",false));
+            obj->setProperty("secondaryMainReady",streamReady);
+            obj->setProperty("secondaryMainEndpoint",streamReady?
+                live.getProperty("secondaryOutputName",{}):juce::var(""));
             // Accepted plan, not requested browser state. Graph revision
             // callback readback is a separate condition for UI completion.
             if(bool(live.getProperty("nativeLatencyPlanValid",false))&&

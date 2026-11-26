@@ -316,8 +316,9 @@
     }
     if(raw.secondaryMainOnly===true&&raw.physicalMainOutputs?.length===0&&
        raw.physicalMonitorOutputs?.length===2&&good(...raw.physicalMonitorOutputs)){
-      rows.push({pair:"STREAM",pins:"Separate WASAPI endpoint",role:"MAIN",
-        owners:"MAIN",status:raw.physicalBusSecondaryArmed===true?"ENABLED":"MUTED",shared:0});
+      const ready=raw.secondaryMainReady===true&&typeof raw.secondaryMainEndpoint==="string"&&!!raw.secondaryMainEndpoint;
+      rows.push({pair:"STREAM",pins:ready?raw.secondaryMainEndpoint:"WASAPI endpoint disconnected",role:"MAIN",
+        owners:"MAIN",status:!ready?"NEEDS_REMAP":raw.physicalBusSecondaryArmed===true?"ENABLED":"MUTED",shared:0});
     }
     const activeExternal=new Set();
     for(const left of [...ports.keys()].sort((a,b)=>a-b)){

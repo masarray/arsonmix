@@ -1976,13 +1976,14 @@
     // Keep the controls compact; never claim a device is active without native ACK.
     const streamConnected=!!d.secondaryOutputReady;
     const streamArmed=!!d.secondaryOutputArmed;
-    el("arStreamConnect").disabled=!!d.monitor || !!d.adaptiveClockActive ||
-      !d.directRouteAuthorized || !d.dryRoutingLab?.acceptedRoute;
-    el("arStreamArm").disabled=!streamConnected || !!d.secondaryOutputFault ||
-      !d.dryRoutingLab?.acceptedRoute || !!d.adaptiveClockActive;
+    const nativeRoute=d.dryRoutingLab?.ready===true&&d.dryRoutingLab?.hasAcceptedRoute===true;
+    el("arStreamConnect").disabled=streamPending || !!d.monitor || streamArmed || !!d.adaptiveClockActive ||
+      !d.directRouteAuthorized || !nativeRoute;
+    el("arStreamArm").disabled=streamPending || (!streamArmed&&(!streamConnected || !!d.secondaryOutputFault ||
+      !nativeRoute || !!d.adaptiveClockActive));
     el("arStreamStop").disabled=!streamConnected && !d.secondaryOutputFault;
     const split=d.dryRoutingLab?.secondaryMainOnly===true;
-    const canSplit=!!d.dryRoutingLab?.nativeChannelIdPcmActive &&
+    const canSplit=d.driver==="ASIO"&&!!d.dryRoutingLab?.nativeChannelIdPcmActive &&
       d.dryRoutingLab?.outputPorts?.length===2 && !!d.dryRoutingLab?.busOutputObserved;
     el("arDmxSplit").disabled=streamPending || !!d.monitor || streamArmed ||
       !canSplit || (!split && (!streamConnected || !!d.secondaryOutputFault));

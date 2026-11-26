@@ -3497,7 +3497,9 @@
     // Keep the SAME verified playback device for mixer master projection.
     // Footer display is independent; device identity must never be dropped.
     const playback=String(d?.playbackDevice||"unknown output");
-    const mainOutput=next?.retained?NEEDS_REMAP:deviceOpen?playback:null;
+    const mainOutput=next?.retained?NEEDS_REMAP:next?.admitted&&next.raw?.secondaryMainOnly===true?
+      (next.raw.secondaryMainReady===true&&next.raw.secondaryMainEndpoint?
+        String(next.raw.secondaryMainEndpoint):"STREAM DISCONNECTED"):deviceOpen?playback:null;
     if(scope?.master && mainOutput && scope.master.output!==mainOutput){
       scope.master.output=mainOutput;
       if(!next?.admitted && !next?.retained)scope.render?.();
