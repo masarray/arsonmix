@@ -332,18 +332,25 @@ export function mount(root,transport,options={}){
  }
  $("[data-clear-profile]").onclick=()=>model.submit("clear");
  $("[data-audition]").onclick=()=>model.submit("audition");
+ function fitPro(){
+  if(!options.nativeAssets||!$(".an-pro").open||!root.isConnected)return;
+  const r=root.getBoundingClientRect(),inset=8;
+  if(r.bottom>window.innerHeight-inset||r.top<inset)root.style.top=Math.max(inset,Math.min(r.top,window.innerHeight-r.height-inset))+"px";
+  if(r.right>window.innerWidth-inset||r.left<inset)root.style.left=Math.max(inset,Math.min(r.left,window.innerWidth-r.width-inset))+"px";
+ }
+ const onProResize=()=>fitPro();window.addEventListener("resize",onProResize);
  function selectPro(page,focus=false){
   proPage=page;
   for(const b of proTabs){const active=b.dataset.proTab===page;b.setAttribute("aria-selected",String(active));b.tabIndex=active?0:-1;if(active&&focus)b.focus();}
   for(const panel of proPages)panel.hidden=panel.dataset.proPage!==page;
-  if(lastView)paintHost(lastView);
+  if(lastView)paintHost(lastView);fitPro();
  }
  for(const [index,b] of proTabs.entries()){
   b.onclick=()=>selectPro(b.dataset.proTab);
   b.onkeydown=event=>{const next=event.key==="ArrowRight"?(index+1)%proTabs.length:event.key==="ArrowLeft"?(index+proTabs.length-1)%proTabs.length:event.key==="Home"?0:event.key==="End"?proTabs.length-1:-1;if(next>=0){event.preventDefault();selectPro(proTabs[next].dataset.proTab,true);}};
  }
  $("[data-pro-learn]").onclick=()=>{if(!$("[data-learn]").disabled)$("[data-learn]").click();};
- $(".an-pro").addEventListener("toggle",()=>{if(lastView)paintHost(lastView);});
+ $(".an-pro").addEventListener("toggle",()=>{if(lastView)paintHost(lastView);fitPro();});
  for(const c of proControls){
   c.input.addEventListener("input",()=>model.adjust(c.key,Number(c.input.value)));
   c.input.addEventListener("dblclick",()=>{if(!c.input.disabled)model.adjust(c.key,defaults[c.key]);});
@@ -360,5 +367,5 @@ export function mount(root,transport,options={}){
  $('[data-power]').onclick=()=>{if(!current||$('[data-power]').disabled)return;if(options.hostPower?.()==='SLOT')options.enableSlot?.();else model.submit('settings',{enabled:!current.enabled});};$('[data-learn]').onclick=()=>{if((!options.hostPower||options.hostPower()==='ON')&&!$('[data-learn]').disabled)model.submit('learn');};
  $('[data-close]').onclick=()=>options.onClose?.();
  $('[data-close]').hidden=!options.onClose;
- return {model,refreshHostPower(){if(lastView)paintHost(lastView);},dispose(){for(const c of controls)cancel(c);model.dispose();root.replaceChildren();}};
+ return {model,refreshHostPower(){if(lastView)paintHost(lastView);},dispose(){window.removeEventListener("resize",onProResize);for(const c of controls)cancel(c);model.dispose();root.replaceChildren();}};
 }

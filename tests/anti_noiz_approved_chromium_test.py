@@ -450,6 +450,7 @@ def main():
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
         accepted=edit["settings"]
         assert float(root.locator('input[aria-label="Clean"]').input_value())==18.5
+        expect(root.locator(".an-knobs")).to_be_hidden()
         artifact=root.locator('input[aria-label="Artifact control"]')
         artifact.focus();page.keyboard.press("ArrowRight")
         edit=last_action(page,"nativeAntiNoizSet")
@@ -486,7 +487,7 @@ def main():
             assert root.locator(".an-panel").evaluate("el=>el.scrollWidth<=el.clientWidth+2")
             assert root.locator(f'[data-pro-page="{name}"]').evaluate("el=>el.scrollWidth<=el.clientWidth+2")
             assert root.evaluate("""el=>{const panel=el.querySelector('.an-panel'),p=panel.getBoundingClientRect();
-              return ['.an-head','footer','.an-pro-tabs'].every(s=>{const r=el.querySelector(s).getBoundingClientRect();
+              return p.top>=-1&&p.left>=-1&&p.right<=innerWidth+1&&p.bottom<=innerHeight+1&&['.an-head','footer','.an-pro-tabs'].every(s=>{const r=el.querySelector(s).getBoundingClientRect();
                 return r.top>=p.top-.5&&r.bottom<=p.bottom+.5;})&&panel.scrollTop===0;
             }"""),"professional chrome and Learn must remain inside the face"
 
@@ -495,6 +496,8 @@ def main():
         expect(root.locator('[data-pro-tab="expander"]')).to_have_attribute("aria-selected","true")
         page.set_viewport_size({"width":1366,"height":768})
         root.locator(".an-pro summary").click()
+        expect(root.locator(".an-knobs")).to_be_visible()
+        assert float(root.locator('input[aria-label="Clean"]').input_value())==18.5
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
         root.locator(".mx-fxp-save-as").click()

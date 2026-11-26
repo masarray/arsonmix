@@ -171,3 +171,10 @@
 .an-pro-page>*{flex-shrink:0}
 .an-pro-page{display:flex;flex-direction:column}
 @media(max-height:540px){.an-panel:has(.an-pro[open]){overflow-y:auto}.an-pro[open],.an-pro[open]>.an-pro-body{display:block;flex:none;overflow:visible}.an-pro-tabs{margin-bottom:8px}.an-pro-page{overflow:visible}}
+
+/* Professional mode is a workspace, not an extra full-size hardware rack.
+   Main dials return unchanged when the section is collapsed. The spectral
+   page already exposes Reduction; legacy Silence/Music Protect live on face. */
+.an-panel:has(.an-pro[open])>.an-knobs{display:none}
+.an-panel:has(.an-pro[open]) .an-lcd-content{height:94px;min-height:94px}
+.an-pro-page{flex:1 1 auto}
