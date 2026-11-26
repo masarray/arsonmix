@@ -178,12 +178,23 @@ jobs:
           test "$(wc -l < "$RUNNER_TEMP/pro-rt/legacy-old.csv")" -eq 96
           cmp "$RUNNER_TEMP/pro-rt/legacy-old.csv" "$RUNNER_TEMP/pro-rt/legacy-new.csv"
           echo LEGACY_PCM_96_EXACT_PASS
-      - name: Enforce 50 percent P99 thread CPU headroom (wall misses reported separately)
-        if: ${{ !cancelled() }}
+      # Owner policy: shared-runner CPU timing is advisory, not a product
+      # admission gate. The same probe still fails on PCM, ACK, allocation,
+      # nonfinite output or other correctness errors. Never mask those exits.
+      - name: Native-session correctness and advisory 50 percent CPU headroom
         run: |
-          set -o pipefail
-          "$RUNNER_TEMP/pro-rt-test" --enforce-headroom | tee "$RUNNER_TEMP/pro-rt/native-session.csv"
-      - name: Preserve timing evidence even when headroom fails
+          set -euo pipefail
+          "$RUNNER_TEMP/pro-rt-test" | tee "$RUNNER_TEMP/pro-rt/native-session.csv"
+          if grep -qx 'PRO_RT_HEADROOM,0' "$RUNNER_TEMP/pro-rt/native-session.csv"; then
+            echo "::warning title=Anti Noiz advisory CPU headroom::P99 exceeded the 50 percent target on this runner; timing evidence retained. Not a product integration blocker."
+            echo "Anti Noiz CPU headroom: advisory target missed; inspect native-session.csv." >> "$GITHUB_STEP_SUMMARY"
+          elif grep -qx 'PRO_RT_HEADROOM,1' "$RUNNER_TEMP/pro-rt/native-session.csv"; then
+            echo "Anti Noiz CPU headroom: advisory target met." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Missing native-session headroom result"
+            exit 1
+          fi
+      - name: Preserve timing and correctness evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
