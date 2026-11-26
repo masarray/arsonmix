@@ -46,6 +46,8 @@ public:
         setupButton(smart_,"vd.smart");smart_.setButtonText("Smart");
         setupButton(stageToggle_,"vd.stageView");stageToggle_.setTooltip("Switch between one-click stage sounds and manual controls");
         stageToggle_.onClick=[this]{stageView_=!stageView_;resized();refresh();};
+        setupButton(concertToggle_,"vd.concertView");concertToggle_.setTooltip("Switch continuous stage sounds and selective concert throws");
+        concertToggle_.onClick=[this]{concertBank_=!concertBank_;resized();refresh();};
         for(std::size_t i=0;i<stagePresetCount;++i){
             const auto id="vd.stage."+juce::String(int(i));
             auto& b=stageButtons_[i];setupButton(b,id.toRawUTF8());
@@ -65,7 +67,7 @@ public:
         smart_.setTooltip("Balance echo tone and ducking for your current time, repeats and level. Dry vocal stays unchanged.");
         expert_.setTooltip("Show precise controls without changing your sound.");
         expert_.onClick=[this]{expertMode_=!expertMode_;resized();refresh();};
-        smart_.onClick=[this]{if(stageView_){concertBank_=!concertBank_;resized();refresh();}else offer(smartVoicing(processor_.singerDisplay()));};
+        smart_.onClick=[this]{offer(smartVoicing(processor_.singerDisplay()));};
         attack_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckAttackMs=float(attack_.getValue());offer(p);};
         release_.onValueChange=[this]{auto p=processor_.singerDisplay();p.duckReleaseMs=float(release_.getValue());offer(p);};
         power_.onClick=[this]{auto p=processor_.singerDisplay();p.enabled=!p.enabled;if(p.enabled)p.hit=false;offer(p);};
@@ -99,7 +101,7 @@ public:
         stopTimer();if(admitted_)processor_.endSingerEditor();
         for(auto* d:dials())d->setLookAndFeel(nullptr);bpm_.setLookAndFeel(nullptr);
         for(auto* c:{&preset_,&mode_,&division_,&algorithm_})c->setLookAndFeel(nullptr);
-        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_,&save_,&music_,&stageToggle_})b->setLookAndFeel(nullptr);
+        for(auto* b:{&power_,&tap_,&expert_,&smart_,&focus_,&hit_,&tail_,&save_,&music_,&stageToggle_,&concertToggle_})b->setLookAndFeel(nullptr);
         for(auto& b:stageButtons_)b.setLookAndFeel(nullptr);
     }
     // Host owns the exact retained FxInstance/workspace guard. No captured
@@ -168,6 +170,7 @@ public:
         smart_.setVisible(!expertMode_);smart_.setBounds(440,177,69,27);
         stageToggle_.setVisible(!expertMode_);stageToggle_.setBounds(515,177,69,27);
         stageToggle_.setButtonText(stageView_?"Controls":"Presets");
+        concertToggle_.setBounds(250,235,110,25);concertToggle_.setVisible(!expertMode_&&stageView_);
         for(std::size_t i=0;i<stagePresetCount;++i){
             auto& b=stageButtons_[i];b.setVisible(!expertMode_&&stageView_&&(!concertBank_||i<concertPresetCount));
             b.setBounds(24+int(i%3)*132,91+int(i/3)*31,126,26);
@@ -189,8 +192,7 @@ public:
         preset_.setSelectedId(presetId,juce::dontSendNotification);
         save_.setEnabled(available&&processor_.stateSnapshotQuiescent()&&bool(saveUserPreset_));
         smart_.setEnabled(available);stageToggle_.setEnabled(available);
-        smart_.setButtonText(stageView_?(concertBank_?"Stage":"Concert"):"Smart");
-        smart_.setTooltip(stageView_?"Switch between continuous stage sounds and selective concert throws":"Balance echo tone and ducking");
+        concertToggle_.setEnabled(available);concertToggle_.setButtonText(concertBank_?"Stage Bank":"Concert Bank");
         for(std::size_t i=0;i<stagePresetCount;++i){auto& b=stageButtons_[i];b.setEnabled(available);
             const auto idx=concertBank_&&i<concertPresetCount?concertPresetStart+i:i;
             b.setButtonText(singerPresets[idx].name);b.setTitle(singerPresets[idx].name);b.setTooltip(singerPresets[idx].description);
@@ -339,7 +341,7 @@ private:
     }
     JuceVocalDelayProcessor& processor_;hardware::Look look_;std::function<bool()> hostAccess_;
     juce::Slider time_,feedback_,echo_,duck_,hp_,lp_,attack_,release_,bpm_;juce::ComboBox preset_,mode_,division_,algorithm_;
-    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_,save_,music_,stageToggle_;
+    juce::TextButton power_,tap_,expert_,smart_,focus_,hit_,tail_,save_,music_,stageToggle_,concertToggle_;
     std::array<juce::TextButton,stagePresetCount> stageButtons_;
     std::function<HostBypass()> readBypass_;
     std::function<std::vector<MusicSource>()> listMusic_;

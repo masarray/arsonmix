@@ -108,7 +108,7 @@ int main(){
         stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);
         ballad->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(2))&&!hosted.singerPending());
         liveButton->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(0)));
-        auto* concert=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.smart"));CHECK(concert);
+        auto* concert=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.concertView"));CHECK(concert&&concert->isVisible());
         concert->onClick();CHECK(liveButton->getButtonText()=="Idol Concert"&&liveButton->isVisible());
         CHECK(!editor->findChildWithID("vd.stage.8")->isVisible());
         stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);

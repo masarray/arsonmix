@@ -6,6 +6,7 @@ No dependencies on source corpus at runtime. No copyrighted TV performance.
 import array
 import csv
 import hashlib
+import io
 import math
 import pathlib
 import subprocess
@@ -40,14 +41,26 @@ def fetch_clip(name, digest, directory):
     actual = hashlib.sha1(("blob %d\0" % len(data)).encode() + data).hexdigest()
     if actual != digest:
         raise ValueError("source Git blob mismatch: " + name)
-    path = directory / name
-    path.write_bytes(data)
-    pcm = subprocess.check_output(["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1",
-                                   "-ar", str(RATE), "-f", "s16le", "-"])
-    samples = array.array("h", pcm)
-    if sys.byteorder != "little":
-        samples.byteswap()
-    return [v / 32768 for v in samples]
+    # Source is pinned PCM WAV. No system ffmpeg dependency; controlled
+    # fixture-only linear resampling is not part of the shipping DSP.
+    (directory / name).write_bytes(data)
+    with wave.open(io.BytesIO(data),"rb") as wav:
+        channels,width,rate=wav.getnchannels(),wav.getsampwidth(),wav.getframerate()
+        if channels not in (1,2) or width not in (2,3,4) or not 8000<=rate<=192000:
+            raise ValueError("unsupported source PCM: "+name)
+        raw=wav.readframes(wav.getnframes())
+    scale=float(1<<(width*8-1))
+    step=channels*width
+    samples=[sum(int.from_bytes(raw[i+k*width:i+(k+1)*width],"little",signed=True) for k in range(channels))/(channels*scale)
+             for i in range(0,len(raw),step)]
+    if rate==RATE:
+        return samples
+    result=[]
+    for i in range(int((len(samples)-1)*RATE/rate)):
+        at=i*rate/RATE
+        left=int(at)
+        result.append(samples[left]+(samples[left+1]-samples[left])*(at-left))
+    return result
 
 def stable_segment(samples):
     # Find a stable 700ms region using original 10ms RMS frames.
