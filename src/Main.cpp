@@ -9727,10 +9727,10 @@ public:
     void shutdown() override
     {
         stopTimer();
+        const bool hadMixerWindow=window_!=nullptr;
 #if defined(_WIN32)
         updateNotice_.reset();
 #endif
-        const bool hadMixerWindow=window_!=nullptr;
         window_.reset();
         // Vendor processors, editors and driver owners have now been destroyed.
         // A GUI-only update health probe must not erase crash evidence.
