@@ -58,7 +58,9 @@ def candidate_copy(root):
     p.write_text(t)
     p=root/"sonku/SonKuP94FrontBackDepthCue.h"
     t=p.read_text()
-    t=replace_once(t,"target_=0.f;weight_=0.f;enabled_=false;","target_=0.f;weight_=0.f;enabled_=false;research_=false;")
+    t=replace_once(t,"target_=0.f;weight_=0.f;enabled_=false;",
+        "target_=0.f;weight_=0.f;enabled_=false;research_=false;"
+        "coherentTarget_=coherentWeight_=transition_=0.f;")
     t=replace_once(t,"        enabled_=roomWithEarly;","        research_=false;\n        enabled_=roomWithEarly;")
     t=replace_once(t,"    Gains next() noexcept {",'''    // Experimental blend of phantom center and real emitter geometry.
     // c is the EXACT blend already used by P90 compose, not a second update.
@@ -67,13 +69,34 @@ def candidate_copy(root):
         retarget(center,roomWithEarly);
         const float centerWeight=target_;
         retargetStereo(left,right,roomWithEarly);
-        target_=c*centerWeight+(1.f-c)*target_;
+        coherentTarget_=c*centerWeight+(1.f-c)*target_;
+        target_=centerWeight; // original P94 baseline evolves independently
         research_=roomWithEarly;
     }
     Gains next() noexcept {''')
-    t=replace_once(t,"        return {1.f-.045f*w,1.f+.28f*w};",
-        "        if(research_)return {1.f-.065f*w,1.f+.42f*w};\n        return {1.f-.045f*w,1.f+.28f*w};")
-    t=replace_once(t,"    bool enabled_=false;","    bool enabled_=false,research_=false;")
+    t=replace_once(t,"        if(!enabled_)return {};",
+        "        if(!enabled_){coherentWeight_=transition_=0.f;return {};}")
+    t=replace_once(t,"        return {1.f-.045f*w,1.f+.28f*w};",'''        const Gains baseline{1.f-.045f*w,1.f+.28f*w};
+        // Preserve the original base weight even during Signature.
+        // A separate, 45ms envelope fades only the additional cue in/out.
+        if(!research_ && transition_==0.f)return baseline;
+        const float targetBlend=research_?1.f:0.f;
+        if(research_){
+            coherentWeight_+=slew_*(coherentTarget_-coherentWeight_);
+            if(std::abs(coherentWeight_-coherentTarget_)<1.e-6f)
+                coherentWeight_=coherentTarget_;
+        }
+        transition_+=slew_*(targetBlend-transition_);
+        if(std::abs(transition_-targetBlend)<1.e-6f)transition_=targetBlend;
+        if(transition_==0.f){coherentWeight_=0.f;return baseline;}
+        const float cw=std::clamp(coherentWeight_,0.f,1.f);
+        const Gains candidate{1.f-.065f*cw,1.f+.42f*cw};
+        if(transition_==1.f)return candidate;
+        return {baseline.direct+transition_*(candidate.direct-baseline.direct),
+                baseline.early+transition_*(candidate.early-baseline.early)};''')
+    t=replace_once(t,"    bool enabled_=false;",
+        "    bool enabled_=false,research_=false;\n"
+        "    float coherentTarget_=0.f,coherentWeight_=0.f,transition_=0.f;")
     p.write_text(t)
     p=root/"sonku/SonKuSpatialCore.h"
     t=p.read_text()
@@ -120,6 +143,13 @@ def main():
     rng=random.Random(1042026);rows=[];key=[]
     with tempfile.TemporaryDirectory(prefix="sonku-depth-") as tmp:
         tmp=Path(tmp);candidate_copy(tmp/"candidate")
+        # Focused coefficient test on the exact isolated candidate used by
+        # the full native renderer, before generating listening artifacts.
+        transition=tmp/"transition-test"
+        subprocess.run(["g++","-std=c++20","-O2","-ffp-contract=off",
+            "-I",str(tmp/"candidate"/"sonku"),
+            str(ROOT/"tests/sonku_p106_depth_transition.cpp"),"-o",str(transition)],check=True)
+        subprocess.run([str(transition)],check=True)
         for name,src in (("reference",FX),("candidate",tmp/"candidate")):
             exe=tmp/(name+"-render")
             subprocess.run(["g++","-std=c++20","-O2","-ffp-contract=off",

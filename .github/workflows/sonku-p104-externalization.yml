@@ -7,6 +7,7 @@ on:
       - '.github/workflows/sonku-p104-externalization.yml'
       - 'scripts/verify_sonku_p105_program_material.py'
       - 'tests/sonku_p105_program_material.cpp'
+      - 'tests/sonku_p106_depth_transition.cpp'
 permissions:
   contents: read
 jobs:
