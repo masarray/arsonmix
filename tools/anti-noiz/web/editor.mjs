@@ -57,6 +57,11 @@ export function controller(transport,render){
   return true;
  }
  draw();transport.read();
+ function selectMode(mode){
+  if(closed||!accepted||!['Auto','Voice','Singing','Music'].includes(mode))return false;
+  if(pending){if(!pending.continuous)return false;queued={...queued,mode};draw();return true;}
+  return accepted.mode===mode||submit('settings',{mode});
+ }
  function adjust(key,value){
   if(closed||!accepted||!bounds.some(d=>d[0]===key)||!valid({...accepted,[key]:value}))return false;
   if(pending){
@@ -65,7 +70,7 @@ export function controller(transport,render){
   }
   return accepted[key]===value||submit('settings',{[key]:value},true);
  }
- return {submit:(kind,patch)=>submit(kind,patch),adjust,state,dispose(){closed=true;queued=null;unsubscribe();},refresh(){if(!closed)transport.read();}};
+ return {submit:(kind,patch)=>submit(kind,patch),adjust,selectMode,state,dispose(){closed=true;queued=null;unsubscribe();},refresh(){if(!closed)transport.read();}};
 }
 // Presentation-only: one value per measured non-DC FFT bin. Never infer
 // sub-bin detail or insert synthetic points. Work in linear mean-square power.
@@ -125,7 +130,7 @@ export function mount(root,transport,options={}){
  root.innerHTML=`<section class="an-panel" aria-label="Anti Noiz">
  <header class="an-head"><div class="an-identity"><h1>ANTI<span> NOIZ</span></h1><small>ARSONMIX <span class="an-brand-divider">/</span> ADAPTIVE DENOISER</small></div><div class="an-head-actions"><button class="armix-builtin-fx-power" data-power data-fx-state="unknown" type="button" aria-label="FX state unavailable" aria-pressed="false" disabled>⏻</button><button class="armix-builtin-fx-close" data-close type="button" aria-label="Close Anti Noiz" title="Close Anti Noiz"></button></div></header>
  <div class="an-presets" hidden><span class="an-engraved">PROGRAM</span><select data-preset aria-label="Anti Noiz preset"><option value="CUSTOM">Custom</option><optgroup label="FACTORY · STARTING POINTS">${factoryPresets.map(p=>`<option value="${p.id}">${p.label}</option>`).join("")}</optgroup></select></div>
- <div class="an-display" data-lcd-mode="gr"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-lcd-cue" aria-hidden="true"><span data-lcd-hint>Tap for spectrum</span><span class="an-lcd-pages"><i></i><i></i></span></div></div><div class="an-lcd-content"><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>24</span><span>48</span><span>72</span><span>96</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><div class="an-spectrum-plot"><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-noise-fill" data-noise-fill/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div></div></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div><button class="an-lcd-hit" data-lcd-switch type="button" aria-label="Noise spectrum display" aria-pressed="false" title="Click or tap LCD for noise spectrum"></button></div>
+ <div class="an-display" data-lcd-mode="gr"><div class="an-top"><div class="an-display-heading"><span class="an-display-title"><span data-display-title>GAIN REDUCTION</span><b data-display-unit>dB</b></span><span data-state>Waiting for DSP</span></div><div class="an-lcd-cue" aria-hidden="true"><span data-lcd-hint>Tap for spectrum</span><span class="an-lcd-pages"><i></i><i></i></span></div></div><div class="an-lcd-content"><div class="an-meter-view"><div class="an-meter"><label>Deepest spectral cut <output data-spectral>—</output></label><div class="an-meter-track"><i data-spectral-bar></i></div></div><div class="an-meter"><label>Residual expander <output data-residual>—</output></label><div class="an-meter-track"><i data-residual-bar></i></div></div><div class="an-meter-scale" aria-hidden="true"><span>0</span><span>24</span><span>48</span><span>72</span><span>96</span></div></div><div class="an-spectrum-view" hidden><div class="an-spectrum-key"><span class="an-input-key">Live input</span><span class="an-noise-key" data-curve-label>Captured noise</span><span data-progress></span></div><div class="an-spectrum-plot"><svg class="an-spectrum" viewBox="0 0 480 88" preserveAspectRatio="none" role="img" aria-label="Input spectrum and learned noise power per FFT bin"><path class="an-spectrum-grid" data-grid/><path class="an-noise-fill" data-noise-fill/><path class="an-input-curve" data-input-curve/><path class="an-noise-curve" data-noise-curve/></svg><span class="an-spectrum-empty" data-spectrum-empty>No spectrum available</span></div><div class="an-freq-axis" aria-hidden="true"><span>200 Hz</span><span>1k</span><span>5k</span><span>20k</span></div><div class="an-db-axis" aria-hidden="true"><span>0</span><span>−60</span><span>−120</span></div></div></div><div class="an-legend" data-observation><span data-profile>No live telemetry</span><span data-learn-state>Learn —</span><span data-latency>Latency —</span></div><button class="an-lcd-hit" data-lcd-switch type="button" aria-label="Noise spectrum display" aria-pressed="false" title="Click or tap LCD for noise spectrum"></button></div>
  <div class="an-knobs"></div><div class="an-source"><span class="an-engraved">SOURCE</span><div class="an-modes" role="group" aria-label="Source mode"></div></div>
  <details class="an-pro"><summary><span>Professional controls</span><small data-pro-summary>Waiting for DSP</small></summary>
  <div class="an-pro-body"><div class="an-pro-tabs" role="tablist" aria-label="Noise control sections"><button type="button" role="tab" id="an-tab-expander" data-pro-tab="expander" aria-selected="true" aria-controls="an-page-expander">Expander</button><button type="button" role="tab" id="an-tab-spectral" data-pro-tab="spectral" aria-selected="false" aria-controls="an-page-spectral" tabindex="-1">Spectral</button><button type="button" role="tab" id="an-tab-sidechain" data-pro-tab="sidechain" aria-selected="false" aria-controls="an-page-sidechain" tabindex="-1">Sidechain</button></div>
@@ -221,8 +226,8 @@ export function mount(root,transport,options={}){
   setPath(inputPath,curves.input);
   setPath(noisePath,curves.noise);
   setPath(noiseFill,curves.fill);
-  setText($('[data-curve-label]'),spec?.candidate?'Captured noise':'Trusted noise');
-  setText($('[data-progress]'),spec?.candidate?Math.round(spec.progress*100)+'%':phase==='Rejected'?'Rejected':phase==='Cancelled'?'Cancelled':'');
+  setText($('[data-curve-label]'),spec?.candidate?'Capturing noise':lastView?.accepted?.spectralManual?'Fixed profile':'Noise reference');
+  setText($('[data-progress]'),spec?.candidate?(spec.progress>=.99?'Finishing…':Math.round(spec.progress*100)+'%'):phase==='Rejected'?'Rejected':phase==='Cancelled'?'Cancelled':'');
   $('[data-spectrum-empty]').hidden=!!(spec?.input.length||spec?.noise.length);
  }
  // A single native button covers the glass; mouse, touch, Enter and Space
@@ -266,12 +271,12 @@ export function mount(root,transport,options={}){
   setText($("[data-pro-spectral-gr]"),$("[data-spectral]").textContent);
   setText($("[data-pro-clean]"),accepted?(view.desired?.cleanDb??accepted.cleanDb).toFixed(1)+" dB":"—");
   setText($("[data-pro-profile]"),observed&&!hostOff?(observation.learning?"Learning":observation.profile?"Ready":"Not learned"):"Offline");
-  setText($("[data-pro-summary]"),accepted?(accepted.manualExpander?(accepted.smartVoice?"Smart":"Manual"):"Auto")+" dynamics · "+(!accepted.spectralEnabled?"Spectral off":accepted.spectralManual?"Manual spectral":"Auto spectral"):"Waiting for DSP");
+  setText($("[data-pro-summary]"),accepted?(accepted.manualExpander?(accepted.smartVoice?"Smart":"Manual"):"Auto")+" dynamics · "+(!accepted.spectralEnabled?"Spectral off":accepted.spectralManual?"Fixed spectral":"Adaptive spectral"):"Waiting for DSP");
   setText($("[data-smart-status]"),!accepted?.smartVoice?"Manual threshold · Smart Voice optional":reference?"Learned sidechain active · margin and max lift set by you":"No matching sidechain profile · manual threshold fallback. Learn again after HPF / LPF changes.");
   for(const f of proFlags){f.checked=!!accepted?.[f.dataset.proFlag];f.disabled=!accepted||pending||unavailable||(["smartVoice","gate"].includes(f.dataset.proFlag)&&!accepted?.manualExpander);}
   for(const c of proControls){
    const value=view.desired?.[c.key]??accepted?.[c.key];
-   const disabled=!accepted||(pending&&!adjusting)||unavailable||(spectralKeys.has(c.key)?!accepted?.spectralEnabled||(c.key!=="cleanDb"&&!accepted?.spectralManual):!accepted?.manualExpander||(["smartMarginDb","smartMaxLiftDb"].includes(c.key)&&!accepted?.smartVoice));
+   const disabled=!accepted||(pending&&!adjusting)||unavailable||(spectralKeys.has(c.key)?!accepted?.spectralEnabled||(c.key!=="cleanDb"&&!accepted?.spectralManual):!accepted?.manualExpander||(["smartMarginDb","smartMaxLiftDb"].includes(c.key)&&!accepted?.smartVoice)||(["ratio","kneeDb"].includes(c.key)&&accepted?.gate));
    if(Number.isFinite(value)){if(Number(c.input.value)!==value)c.input.value=value;if(!c.editing||disabled||view.error)c.number.value=Number((value*c.scale).toFixed(2));}else if(!c.editing)c.number.value="";
    c.input.disabled=disabled;c.number.disabled=disabled;
    if(disabled||view.error)c.editing=false;
@@ -279,9 +284,12 @@ export function mount(root,transport,options={}){
   const learning=observed&&observation.learning===true&&!hostOff&&accepted?.enabled===true;
   const learn=$('[data-learn]'), learningValue=String(learning);
   if(learn.dataset.learning!==learningValue)learn.dataset.learning=learningValue;
+  setText(learn,learning?'Capturing…':'Learn noise');
+  if(learn.getAttribute('aria-busy')!==learningValue)learn.setAttribute('aria-busy',learningValue);
   setText($('[data-profile]'),observed?(observation.profile?'Profile ready':'No profile'):'No live telemetry');
-  setText($('[data-learn-state]'),observed?(observation.learning?'Learning':observation.learnStatus==='Idle'?'Learn idle':observation.learnStatus):'Learn —');
+  setText($('[data-learn-state]'),observed?(observation.learning?'Learning':observation.learnStatus==='Idle'?'Learn idle':observation.learnStatus==='Rejected'?'No usable capture':observation.learnStatus):'Learn —');
   setText($('[data-latency]'),observed?observation.latency+' samples':'Latency —');
+  const learnState=$('[data-learn-state]');learnState.title=observation?.learnStatus==='Rejected'?'No usable noise capture; check live mic signal or retry in a quiet moment. Previous profile, if any, is retained. Manual Gate needs no Learn.':'Learn captures noise for 2 s; short bursts are skipped, with up to 4 s if more noise is needed.';
   paintSpectrum(observation,observed,hostOff||!accepted?.enabled);
   const profile=$('[data-profile]'), ready=String(observed&&observation.profile===true);
   if(profile.dataset.ready!==ready)profile.dataset.ready=ready;
@@ -294,7 +302,7 @@ export function mount(root,transport,options={}){
   const powerTitle=fxState==='unknown'?'FX state unavailable':fxState==='rack-off'?'FX rack/global bypassed · enable upstream first':power==='SLOT'?'FX slot bypassed · click to enable slot':fxState==='on'?'DSP on · click to bypass':'DSP bypassed · click to enable';
   if(powerButton.title!==powerTitle){powerButton.title=powerTitle;powerButton.setAttribute('aria-label',powerTitle);}
   powerButton.disabled=pending||fxState==='unknown'||fxState==='rack-off'||(power==='SLOT'&&!options.enableSlot);
-  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-lcd-switch')&&!b.hasAttribute('data-power')&&!b.hasAttribute("data-pro-tab"))b.disabled=!accepted||pending||unavailable;
+  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-lcd-switch')&&!b.hasAttribute('data-power')&&!b.hasAttribute("data-pro-tab"))b.disabled=!accepted||unavailable||(pending&&(!adjusting||!b.hasAttribute("data-mode")));
   $("[data-pro-learn]").disabled=$("[data-learn]").disabled;
   setText($("[data-pro-learn]"),learning?"Capturing…":"Learn noise");
   const canCommand=!!accepted&&!pending&&live&&!hostOff&&!unavailable;
@@ -383,7 +391,7 @@ export function mount(root,transport,options={}){
   c.number.addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.preventDefault();finish();c.number.blur();}else if(ev.key==="Escape"){ev.preventDefault();ev.stopPropagation();c.editing=false;if(lastView)paintHost(lastView);c.number.blur();}});
  }
  for(const f of proFlags)f.addEventListener("change",()=>model.submit("settings",{[f.dataset.proFlag]:f.checked}));
- for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.submit('settings',{mode:b.dataset.mode});
+ for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.selectMode(b.dataset.mode);
  $('[data-power]').onclick=()=>{if(!current||$('[data-power]').disabled)return;if(options.hostPower?.()==='SLOT')options.enableSlot?.();else model.submit('settings',{enabled:!current.enabled});};$('[data-learn]').onclick=()=>{if((!options.hostPower||options.hostPower()==='ON')&&!$('[data-learn]').disabled)model.submit('learn');};
  $('[data-close]').onclick=()=>options.onClose?.();
  $('[data-close]').hidden=!options.onClose;

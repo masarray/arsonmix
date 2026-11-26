@@ -14,12 +14,17 @@ int main(){
         for(int i=0;i<2;++i)check(p.observe(old)==Profile::LearnResult::waiting,"discard pre-command overlap");
         const int frames=int(std::ceil(2.*rate/hop));
         for(int i=0;i<frames;++i)check(p.observe(noise)==(i==frames-1?Profile::LearnResult::accepted:Profile::LearnResult::waiting),"learn duration");
-        check(p.valid()&&!p.learning(),"trusted profile");const auto anchor=p.anchor();
-        check(p.begin(),"relearn");for(int i=0;i<12;++i)p.observe(noise);
+        check(p.valid()&&!p.learning(),"trusted profile");auto anchor=p.anchor();
+        const int seedFrames=int(std::ceil(.05*rate/hop));
+        check(p.begin(),"relearn");for(int i=0;i<seedFrames+2;++i)p.observe(noise);
         auto polluted=noise;polluted[1].fill(.001f);
-        // Total stereo energy rises <1%, but the quiet channel rises 10x.
-        check(p.observe(polluted)==Profile::LearnResult::rejected,"quiet channel contamination");
-        check(p.valid()&&p.anchor()==anchor&&p.powers()==anchor,"transaction rollback");
+        // Total stereo energy changes little, but the quiet channel rises 10x.
+        for(int i=0;i<seedFrames;++i)check(p.observe(polluted)==Profile::LearnResult::waiting,"quiet-channel transient must not abort");
+        for(int i=2*seedFrames;i<frames;++i)p.observe(noise);
+        check(p.lastAttemptQualified(),"quiet channel transient recovers");
+        check(p.valid()&&p.anchor()==p.powers(),"trusted replacement");
+        for(int c=0;c<2;++c)for(int k=0;k<129;++k)check(std::abs(p.anchor()[c][k]-anchor[c][k])<1e-5f,"quiet channel burst excluded");
+        anchor=p.anchor();
         auto drift=noise;for(auto& c:drift)for(float& v:c)v*=1.2f;
         const int hold=int(std::ceil(.5*rate/hop));
         for(int i=0;i<hold;++i)p.track(drift,true);
@@ -135,7 +140,7 @@ int main(){
         const auto safe=p.anchor();const auto safeVariability=p.variability();
         check(p.begin(),"persistent contamination");
         for(int i=0;i<2;++i)p.observe(base);
-        for(int i=0;i<frames&&p.learning();++i){
+        for(int i=0;i<2*frames&&p.learning();++i){
             auto v=base;
             if(i>=4*learnWindow)for(float& x:v[0])x*=10.f;
             p.observe(v);
@@ -145,8 +150,37 @@ int main(){
         for(int i=0;i<2;++i)p.observe(base);
         for(int i=0;i<learnWindow;++i)p.observe(base);
         auto extreme=base;for(float& x:extreme[0])x*=64.f;
-        for(int i=0;i<learnWindow&&p.learning();++i)p.observe(extreme);
-        check(!p.learning()&&!p.lastAttemptQualified()&&p.anchor()==safe,"extreme window veto");
+        for(int i=0;i<2*frames&&p.learning();++i)p.observe(extreme);
+        check(!p.learning()&&!p.lastAttemptQualified()&&p.anchor()==safe,"sustained extreme capture rejects at bounded deadline");
+        // 2 s nominal capture: 40% nonconsecutive bursts no longer abort.
+        check(p.begin(),"burst-tolerant learn");for(int i=0;i<2;++i)p.observe(base);
+        for(int i=0;i<frames;++i){auto v=base;const int w=i/learnWindow;
+            if(w%5==2||w%5==3)for(float& x:v[0])x*=64.f;
+            p.observe(v);}
+        check(p.lastAttemptQualified(),"40 percent burst coverage accepted");
+        for(float x:p.anchor()[0])check(std::abs(x-.1f)<2e-6f,"burst excluded");
+        // True low-level hiss, below the former absolute cutoff, is learnable.
+        auto tiny=base;for(float& x:tiny[0])x=1e-13f;
+        check(p.begin(),"tiny learn");for(int i=0;i<frames+2;++i)p.observe(tiny);
+        check(p.lastAttemptQualified()&&p.anchor()[0][0]>0.f,"nonzero quiet floor accepted");
+        // Device fade-in from a single near-zero seed: bounded reseed.
+        check(p.begin(),"fade learn");for(int i=0;i<2+learnWindow;++i)p.observe(tiny);
+        for(int i=learnWindow;i<frames;++i)p.observe(base);
+        check(p.lastAttemptQualified()&&p.anchor()[0][0]>.099f,"fade-in does not trap profile");
+        // Initial mute plus intermittent digital zero: only nonzero noise enters PSD.
+        check(p.begin(),"mute gaps learn");for(int i=0;i<2;++i)p.observe(zero);
+        for(int i=0;i<frames;++i)p.observe(i/learnWindow%4==0?zero:base);
+        check(p.lastAttemptQualified()&&p.anchor()[0][0]>.099f,"digital mute excluded");
+        // Insufficient initial coverage extends automatically, then succeeds.
+        check(p.begin(),"extended learn");for(int i=0;i<2;++i)p.observe(base);
+        for(int i=0;i<frames;++i)p.observe(i<4*learnWindow?base:zero);
+        check(p.learning()&&!p.lastAttemptQualified(),"capture extends instead of rejecting");
+        for(int i=0;i<frames&&p.learning();++i)p.observe(base);
+        check(p.lastAttemptQualified(),"extended capture accepts usable noise");
+        const auto last=p.anchor();check(p.begin(),"zero-only learn");
+        for(int i=0;i<frames+2;++i)p.observe(zero);
+        check(!p.learning()&&!p.lastAttemptQualified()&&p.anchor()==last,"true silence rejects without erasing trusted profile");
+        std::cout<<rate<<" Hz: tolerant Learn / low floor / fade-in / mute gaps / extension / rollback PASS\n";
         std::cout<<rate<<" Hz: window Learn acceptance, exclusion, coverage and catastrophic veto PASS\n";
         std::cout<<rate<<" Hz: drift ratio "<<ratio<<", rollback, freeze and bounds PASS\n";
     }

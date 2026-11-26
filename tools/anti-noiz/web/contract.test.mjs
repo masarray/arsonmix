@@ -54,3 +54,10 @@ assert.equal(v3.accepted.manualExpander,false);assert(m3.submit('settings',{manu
 assert.equal(defaults.spectralEnabled,true);assert.equal(defaults.artifactControl,.5);assert.equal(defaults.vocalProtection,.5);
 
 assert.equal(factoryPresets.length,6);for(const p of factoryPresets){assert(valid(p.settings));assert.equal(factoryValue(p.settings),p.id);assert.equal(factoryValue({...p.settings,enabled:false}),p.id);assert(!sameSettings(p.settings,{...p.settings,enabled:false}));}assert(sameSettings({...defaults,artifactControl:.72},{...defaults,artifactControl:Math.fround(.72)}));assert(sameSettings(defaults,{mode:'Auto',cleanDb:14,silenceDb:32,musicProtect:1,enabled:true}));assert.equal(factoryValue({...defaults,cleanDb:13}),'CUSTOM');console.log('AN-PRO-05 factory and legacy float32 equality PASS');
+
+// A mode click while a continuous slider ACK is pending joins the same queue;
+// the source indicator remains authoritative until its ACK.
+let l4,v4;const w4=[];const m4=controller({subscribe(f){l4=f;return()=>{};},read(){l4({kind:'snapshot',settings:defaults});},send(c){w4.push(c);}},v=>v4=v);
+assert(m4.adjust('cleanDb',18));assert(m4.selectMode('Voice'));assert(m4.adjust('cleanDb',19));assert.equal(w4.length,1);assert.equal(v4.accepted.mode,'Auto');assert.equal(v4.desired.mode,'Voice');
+l4({kind:'ack',id:w4[0].id,applied:true,settings:w4[0].settings});assert.equal(w4[1].settings.mode,'Voice');assert.equal(w4[1].settings.cleanDb,19);assert.equal(v4.accepted.mode,'Auto');
+l4({kind:'ack',id:w4[1].id,applied:true,settings:w4[1].settings});assert.equal(v4.accepted.mode,'Voice');assert(!v4.pending);m4.dispose();console.log('Continuous slider + source selection ACK PASS');

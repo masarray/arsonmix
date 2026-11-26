@@ -1,0 +1,14 @@
+# FIELD-03 — Natural Dynamics Engine
+
+Parent 38b00942423821cf2a4981deadcfd2c125f61560; PR #948. User prioritizes singer comfort, natural transitions, light CPU, zero additional latency and full manual authority. The installed da57dd7 preview is not this candidate.
+
+## Implementation
+- Hard gate: finite cubic smoothstep between current and new target, zero analytical endpoint slope, exact floor/zero at completion. The selected attack and release specify full-transition duration (bounded to sample rounding); hysteresis and hold remain. At mid-ramp reversal restart from current gain, not unity; this preserves value continuity but not necessarily first derivative at reversal.
+- Expander: continuous amplitude-domain target follower, coefficients computed in apply rather than per sample, ~60 dB settling over selected time, bounded epsilon snap. Static threshold/ratio/knee/range curve unchanged. Not a claim of a speech classifier or program-dependent release equivalent to any proprietary plugin.
+- Preserve manual state across mode, filter and enable edits; release to unity using attack envelope when leaving manual authority; fully dry rack bypass retains host-owned fade and exact dry contract. No extra buffering, delay or persisted state changes. Raw detector already precedes WOLA output 256/512 samples. A deliberately slow attack or below-threshold consonant still cannot guarantee preservation.
+- Bounded FFT butterflies use explicit real arithmetic and compile-time direction, no general complex overflow recovery branch on bounded finite Core input. Legacy exact fingerprints checked with identical strict FP flags.
+
+## Qualification
+Local deterministic A/B fixture compiled unchanged on parent and candidate. 8 rate/channel configurations at 44.1/48/88.2/96 kHz. Gate -45 dBFS, 96dB, 2ms attack, 80ms hold, 150ms release, spectral disabled. At 48k, first opening gain increment old .0104167 -> .00032326 (32.2x smaller), closing .000138879 -> 5.96046e-8; peak mid-ramp slope increases (not a claim of lower maximum slew). Both old/new preserve weak 2ms synthetic precursor/strong onset/tail (projection 1 in this fixture), exact settled mute, partition equality. New tests enforce soft endpoints and bounded times, manual disable/Music/power handoff and filter edit continuity, unchanged latency. Eight candidate cases PASS locally. 96/96 parent legacy fingerprints byte-identical. No actual singer listening claim; the fixture is deliberately synthetic, not a phoneme detector. Exact current CI and performance gate required, no thresholds relaxed. Further spectral transaction isolation, real recorded voice/paired listening and final GUI/installer remain separate FIELD-04–06.
+
+Prior FIELD-02 full GCC/Clang, Chromium, corpus PASS; headroom still red. Do not promote until all required exact-source checks complete. No extra PDC does not mean total system zero latency.

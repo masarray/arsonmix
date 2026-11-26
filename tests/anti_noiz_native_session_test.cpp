@@ -53,7 +53,13 @@ int main(){
         std::mt19937 gen(9);std::uniform_real_distribution<float> noise(-.003f,.003f);
         bool sawCandidate=false;
         for(unsigned pos=0;pos<3*rate;pos+=128){
-            for(int i=0;i<128;++i){l[i]=noise(gen);r[i]=noise(gen);}
+            // Field regression: quiet microphone, initial mute, intermittent
+            // large bursts. The old >32x abort / 15% discard cap rejected it.
+            for(int i=0;i<128;++i){
+                const double t=double(pos+unsigned(i))/rate;
+                const float scale=t<.08?0.f:t<1.9&&int(t*10)%4==2?50.f:1.f;
+                l[i]=noise(gen)*scale;r[i]=noise(gen)*scale;
+            }
             process();while(native.pollTelemetry(meter))last=meter;
             if(!pos)check(native.poll(ack)&&ack.applied,"resume ACK");
             if(last.spectrum.candidate&&last.spectrum.noiseValid){sawCandidate=true;check(last.learning&&last.spectrum.progress>0&&last.spectrum.progress<=1,"checkpoint progress");}
@@ -64,7 +70,8 @@ int main(){
         check(trusted.inputValid&&trusted.noiseValid&&!trusted.candidate&&trusted.bins==native.latency()/2+1,"trusted spectrum");
         check(std::abs(trusted.binHz-float(rate)/native.latency())<.01f,"frequency mapping");
         float sum=0.f;for(int k=0;k<trusted.bins;++k){check(std::isfinite(trusted.noise[k])&&trusted.noise[k]>=0.f,"finite noise PSD");sum+=trusted.noise[k];}
-        check(sum>1.e-6f&&sum<5.e-6f,"window-normalized noise power");
+        check(sum>1.e-6f&&sum<5.e-6f,"window-normalized noise power excludes bursts");
+        check(last.sidechainReference&&last.sidechainNoisePeak<.02f,"sidechain capture excludes large bursts");
         // Rejected relearn must remain distinguishable from the trusted profile.
         check(native.submit({5,Control::Kind::learn,{}}),"relearn");
         for(unsigned pos=0;pos<3*rate;pos+=128){

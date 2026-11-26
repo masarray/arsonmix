@@ -42,17 +42,9 @@ public:
 #endif
     }
     void transform(std::array<Complex,maxN>& a,bool inverse) noexcept {
-        for(int i=0;i<n_;++i)if(i<rev_[i])std::swap(a[i],a[rev_[i]]);
-        for(int len=2;len<=n_;len*=2) {
-            const int half=len/2, step=n_/len;
-            for(int base=0;base<n_;base+=len)for(int j=0;j<half;++j) {
-                const auto w=inverse?std::conj(twiddle_[j*step]):twiddle_[j*step];
-                const auto u=a[base+j],v=a[base+j+half]*w;
-                a[base+j]=u+v;a[base+j+half]=u-v;
-            }
-        }
-        if(inverse)for(int i=0;i<n_;++i)a[i]/=float(n_);
+        if(inverse)run<true>(a);else run<false>(a);
     }
+    // Packed kernel stays public; scalar specialization is below.
     // Only the packed manual-stereo path uses this finite-input kernel.
     // Input PCM is sanitized and bounded to +/-64, with bounded real masks;
     // no fast-math, reciprocal approximation, new buffering or CPU dispatch.
@@ -88,6 +80,22 @@ public:
 #endif
     }
 private:
+    template<bool inverse> void run(std::array<Complex,maxN>& a) noexcept {
+        for(int i=0;i<n_;++i)if(i<rev_[i])std::swap(a[i],a[rev_[i]]);
+        for(int len=2;len<=n_;len*=2) {
+            const int half=len/2, step=n_/len;
+            for(int base=0;base<n_;base+=len)for(int j=0;j<half;++j) {
+                const auto w=inverse?std::conj(twiddle_[j*step]):twiddle_[j*step];
+                const auto u=a[base+j],x=a[base+j+half];
+                // Core sanitizes and bounds PCM; a 512-point FFT cannot
+                // overflow. Avoid generic complex NaN/Inf recovery branches.
+                const Complex v{x.real()*w.real()-x.imag()*w.imag(),
+                                x.real()*w.imag()+x.imag()*w.real()};
+                a[base+j]=u+v;a[base+j+half]=u-v;
+            }
+        }
+        if(inverse)for(int i=0;i<n_;++i)a[i]/=float(n_);
+    }
     int n_=256;
 #if defined(ARSONMIX_ANTI_NOIZ_PACKED_SSE2)
     int swaps_=0;

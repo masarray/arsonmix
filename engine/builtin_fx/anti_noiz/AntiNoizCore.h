@@ -81,7 +81,7 @@ public:
         const int captured=profile_.capturedFrames();
         out.candidate=capturing;
         out.noiseValid=capturing?captured>0:profile_.valid();
-        if(capturing)out.progress=std::clamp(float(profile_.observedFrames())/float(std::max(1,profile_.targetFrames())),0.f,1.f);
+        if(capturing)out.progress=std::clamp(float(profile_.observedFrames())/float(std::max(1,profile_.targetFrames())),0.f,.99f);
         if(!out.inputValid&&!out.noiseValid)return out;
         const auto& noise=capturing?profile_.captured():profile_.anchor();
         const float normal=4.f/(float(n_)*float(n_)*float(channels_));
@@ -146,13 +146,17 @@ public:
         if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f||s.spectralEnabled!=settings_.spectralEnabled||s.spectralManual!=settings_.spectralManual){tonal_.resetSignal();tonalIdle_=false;}
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
         if(s.spectralManual!=settings_.spectralManual||s.noiseOffsetDb!=settings_.noiseOffsetDb)voiceGain_.reset();
-        if(next!=effectiveMode_||s.enabled!=settings_.enabled){manual_.reset();manualActive_=false;}
+        // Automatic context has no authority while both manual stages own
+        // the mask and dynamics. Restart its evidence at authority changes,
+        // never reuse stale idle classification after returning to Auto.
+        if(needsContext(s)!=needsContext(settings_)){context_.reset();voiceGain_.reset();profile_.track(power_,false);}
+        if(s.spectralManual!=settings_.spectralManual)profile_.track(power_,false);
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        cancelAudition();manual_.reset();manual_.beginReference();manualActive_=false;
+        cancelAudition();manual_.beginReference();
         context_.reset();  voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
     }
     // Audio-owned transient commands; preserve WOLA timeline on reset.
@@ -213,12 +217,16 @@ public:
                 tonal_.apply(left[i],channels_==2?right[i]:unused,1.f-cleanFloor_);
             }
             if(preview)for(int c=0;c<channels_;++c)dry[c]-=p[c][i];
-            const bool useManual=settings_.enabled&&settings_.manual.enabled&&effectiveMode_!=Mode::Music&&!profile_.learning();
+            const bool useManual=settings_.enabled&&settings_.manual.enabled&&effectiveMode_!=Mode::Music;
             if(useManual){
                 const float gain=manual_.step(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
                 left[i]*=gain;if(channels_==2)right[i]*=gain;
-            }else if(manualActive_)manual_.reset();
-            manualActive_=useManual;
+                manualActive_=true;
+            }else if(manualActive_){
+                const float gain=manual_.releaseToUnity();
+                left[i]*=gain;if(channels_==2)right[i]*=gain;
+                if(gain==1.f){manual_.reset();manualActive_=false;}
+            }
             if(preview){
                 const float target=auditionRemaining_>0?1.f:0.f,step=200.f/float(rate_);
                 auditionMix_=target>auditionMix_?std::min(target,auditionMix_+step):std::max(target,auditionMix_-step);
@@ -240,6 +248,8 @@ public:
         // no second delay. Existing disabled WOLA path advances the timeline.
         const bool enabled=settings_.enabled;
         cancelAudition();settings_.enabled=false;
+        // Fully bypassed host owns the preceding fade; dry must be unity.
+        if(manualActive_){manual_.reset();manualActive_=false;}
         tonal_.resetSignal();tonalIdle_=false;
         process(left,right,samples);
         settings_.enabled=enabled;
@@ -248,6 +258,9 @@ private:
     using Complex=std::complex<float>;
     static constexpr float eps=1e-16f;
     static float gainDb(float db) noexcept {return std::pow(10.f,-db/20.f);}
+    static bool needsContext(const Settings& s) noexcept {
+        return !s.spectralManual||(!s.manual.enabled&&s.silenceDb>0.f);
+    }
     void prepareTiming() noexcept {
         // Preserve the 48 kHz reference behavior, not hop-count-dependent timing.
         const double hops=double(hop_)*48000./(rate_*128.);
@@ -291,27 +304,29 @@ private:
             }
         }
         powerValid_=true;
-        const int beforeCheckpoint=profile_.checkpointFrameCount();
-        const auto result=profile_.observe(power_);
-        if(result==NoiseProfile<maxBins>::LearnResult::accepted||profile_.atCheckpointBoundary())
-            manual_.checkpointReference(profile_.checkpointFrameCount()>beforeCheckpoint);
+        // FFT powers are finite/nonnegative by sanitized bounded PCM and fixed FFT size.
+        const auto result=profile_.observe<true>(power_);
+        if(profile_.atCheckpointBoundary())
+            manual_.checkpointReference(profile_.lastWindowAccepted(),profile_.checkpointReset());
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting)
             manual_.finishReference(result==NoiseProfile<maxBins>::LearnResult::accepted);
-        if(result==NoiseProfile<maxBins>::LearnResult::accepted){tonal_.commit();}
+        if(result==NoiseProfile<maxBins>::LearnResult::accepted){
+            if(profile_.tonalCaptureSafe())tonal_.commit();else tonal_.clear();
+        }
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         // Only Voice with nonzero Silence may use the extra residual label.
         // Strict idle remains the sole authority for profile and spectral DSP.
         const auto* variability=!protect&&!settings_.manual.enabled&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f?
             &profile_.variability():nullptr;
-        const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
-        tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
+        const bool idle=needsContext(settings_)&&context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
+        tonalIdle_=!settings_.spectralManual&&idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
         const float expTarget=settings_.manual.enabled?1.f:idle?silenceFloor_:context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
         // Only explicit Voice or source-aware SpeechMic permits independently
         // qualified coherent drift. Unknown/Mixed and musical policies keep
         // the original confirmed-idle tracking; anchor-based guards unchanged.
-        profile_.track(power_,idle&&!settings_.spectralManual,!settings_.spectralManual&&!protect&&effectiveMode_==Mode::Voice,
+        if(!settings_.spectralManual)profile_.track(power_,idle,!protect&&effectiveMode_==Mode::Voice,
                        context_.broadbandRatio(),context_.subbandPeakRatio());
         const bool selective=!settings_.spectralManual&&!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;

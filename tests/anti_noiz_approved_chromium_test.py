@@ -275,6 +275,8 @@ def main():
         expect(root.locator('[data-learn]')).to_be_disabled()
         expect(root.locator('[data-observation]')).to_contain_text("Learning")
         expect(root.locator('[data-learn]')).to_have_attribute("data-learning","true")
+        expect(root.locator('[data-learn]')).to_have_attribute("aria-busy","true")
+        expect(root.locator('[data-learn]')).to_have_text("Capturing…")
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         expect(root.locator(".an-meter-view")).to_be_hidden()
         expect(root.locator('[data-display-title]')).to_have_text("NOISE SPECTRUM")
@@ -300,9 +302,11 @@ def main():
         readback(page,accepted,{**OBS,"serial":"4","effectiveMode":"Voice","profile":True,"learnStatus":"Accepted","spectrum":{**SPECTRUM,"candidate":False,"progress":0}})
         expect(root.locator('[data-observation]')).to_contain_text("Profile ready")
         expect(root.locator('[data-learn]')).to_have_attribute("data-learning","false")
+        expect(root.locator('[data-learn]')).to_have_attribute("aria-busy","false")
+        expect(root.locator('[data-learn]')).to_have_text("Learn noise")
         expect(root.locator('[data-profile]')).to_have_attribute("data-ready","true")
         expect(root.locator('[data-latency]')).to_have_text("256 samples")
-        expect(root.locator('[data-curve-label]')).to_have_text("Trusted noise")
+        expect(root.locator('[data-curve-label]')).to_have_text("Noise reference")
         assert root.locator('[data-noise-curve]').get_attribute("d")==captured_noise_path
         expect(root.locator(".an-spectrum-view")).to_be_visible()
         assert_lcd_fixed(root,gr_baseline)
@@ -403,13 +407,28 @@ def main():
         accepted=edit["settings"]
         expect(manual).to_be_checked()
         expect(root.locator('input[aria-label="Silence"]')).to_be_disabled()
+        assert root.evaluate("""el=>{const i=el.querySelector('input[aria-label="Silence"]'),d=i.closest('.an-dial');return getComputedStyle(i).opacity==='0'&&getComputedStyle(d).opacity==='1'&&getComputedStyle(i).pointerEvents==='none'}"""),"disabled knob exposes native range overlay"
         threshold=root.locator('input[aria-label="Threshold"]')
         expect(threshold).to_be_enabled()
-        threshold.focus();page.keyboard.press("ArrowRight")
-        edit=last_action(page,"nativeAntiNoizSet")
-        assert edit["settings"]["thresholdDb"]==-39
-        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
-        accepted=edit["settings"]
+        # Real slider key gestures with delayed native ACK. Observe attribute
+        # mutations, not just final style: no mode disable/dim/pressed flicker.
+        root.evaluate("""el=>{
+          const buttons=[...el.querySelectorAll('[data-mode]')];
+          window.__anModeMutations=[];
+          window.__anModeObserver=new MutationObserver(rows=>window.__anModeMutations.push(...rows.map(r=>r.attributeName)));
+          for(const b of buttons)window.__anModeObserver.observe(b,{attributes:true,attributeFilter:['disabled','aria-pressed']});
+        }""")
+        threshold.focus()
+        for key,value in (("ArrowRight",-39),("ArrowRight",-38),("ArrowLeft",-39)):
+            page.keyboard.press(key)
+            edit=last_action(page,"nativeAntiNoizSet")
+            assert edit["settings"]["thresholdDb"]==value
+            assert root.evaluate("""el=>[...el.querySelectorAll('[data-mode]')].every(b=>!b.disabled&&getComputedStyle(b).opacity==='1'&&b.getAttribute('aria-pressed')===String(b.dataset.mode==='Voice'))""")
+            # Pending remains unresolved until the explicit ACK below.
+            respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+            accepted=edit["settings"]
+            expect(threshold).to_have_value(str(value))
+        assert page.evaluate("""()=>{const rows=window.__anModeObserver.takeRecords();window.__anModeObserver.disconnect();return window.__anModeMutations.length+rows.length===0}"""),"source mode buttons flicker during slider edits"
         readback(page,accepted,{**OBS,"serial":"19","effectiveMode":"Voice","profile":True,"detectorLevel":.01})
         expect(root.locator("[data-detector]")).to_have_text("-40.0 dBFS")
         expect(root.locator("[data-pro-dot]")).to_be_visible()

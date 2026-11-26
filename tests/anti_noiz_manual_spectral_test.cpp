@@ -18,7 +18,7 @@ void checkPackedFftOracle(){
  double worst=0,roundWorst=0;
  for(int n:{256,512}){
   fft.prepare(n);std::array<D,FftPlan::maxN> roots{};
-  for(int k=0;k<n;++k)roots[k]=std::polar(1.,-2.*std::numbers::pi*k/n);
+  for(int k=0;k<n;++k){const long double angle=-2.L*std::numbers::pi_v<long double>*k/n;roots[k]={double(std::cos(angle)),double(std::sin(angle))};}
   for(int trial=0;trial<96;++trial){
    std::array<FftPlan::Complex,FftPlan::maxN> input{},ref{},packed{};
    const float scale=trial%3==0?1.f:trial%3==1?1e-12f:0.f;
@@ -30,10 +30,20 @@ void checkPackedFftOracle(){
    ref=packed=input;fft.transform(ref,false);fft.transformPacked<false>(packed);
    const double norm=std::sqrt(norm2);double err2[2]{};
    for(int k=0;k<n;++k){
-    D exact{};for(int i=0;i<n;++i)exact+=D(input[i])*roots[(k*i)%n];
+    // Independent scalar extended-precision accumulation.
+    long double re=0,im=0;for(int i=0;i<n;++i){const auto w=roots[(k*i)%n];
+     const long double x=input[i].real(),y=input[i].imag();
+     re+=x*w.real()-y*w.imag();im+=x*w.imag()+y*w.real();
+    }
+    const D exact{double(re),double(im)};
     for(int j=0;j<2;++j){
      const double err=std::abs(D(j?packed[k]:ref[k])-exact);
-     check(err<=2e-6*norm,"FFT forward double oracle");
+     if(!(err<=2e-6*norm)){
+      std::cerr<<"FFT_ORACLE_FAIL n="<<n<<" trial="<<trial<<" bin="<<k<<" packed="<<j
+       <<" input_norm="<<norm<<" error="<<err<<" expected="<<exact
+       <<" actual="<<(j?packed[k]:ref[k])<<'\n';
+      check(false,"FFT forward double oracle");
+     }
      err2[j]+=err*err;if(norm>0)worst=std::max(worst,err/norm);
     }
    }
@@ -77,6 +87,18 @@ int main(){
   check(!c.auditionActive(),"audition auto expiry");
   for(int i=rate*5/2;i<rate*3;++i)check(x[i]==wet[i],"post audition exact return");
   check(c.spectrum().noise==anchor,"immutable learned anchor");
+  // The manual expander owns residual gain, irrespective of the old Silence
+  // knob. Auto context must not consume CPU or leak authority into this path.
+  Core manualA=c,manualB=c;auto q=s;q.manual.enabled=true;q.manual.rangeDb=0;q.silenceDb=0;
+  check(manualA.setSettings(q),"manual authority A");q.silenceDb=48;
+  check(manualB.setSettings(q),"manual authority B");auto aL=dry,aR=dry,bL=dry,bR=dry;
+  manualA.process(aL.data(),channels==2?aR.data():nullptr,int(aL.size()));
+  manualB.process(bL.data(),channels==2?bR.data():nullptr,int(bL.size()));
+  check(aL==bL&&aR==bR,"legacy Silence cannot affect manual expander PCM");
+  q.manual.enabled=false;check(manualB.setSettings(q),"return automatic dynamics");
+  std::fill(bL.begin(),bL.end(),0.f);std::fill(bR.begin(),bR.end(),0.f);
+  manualB.process(bL.data(),channels==2?bR.data():nullptr,int(bL.size()));
+  check(manualB.residualGain()<.1f&&manualB.spectrum().noise==anchor,"fresh automatic idle evidence and immutable profile");
   check(c.clearProfile()&&!c.hasProfile()&&!c.audition()&&!c.spectrum().noiseValid,"clear");
   check(!c.setSettings([](Core::Settings q){q.artifactControl=NAN;return q;}(s)),"invalid reject");
   s.spectralEnabled=false;check(c.setSettings(s),"bypass");
