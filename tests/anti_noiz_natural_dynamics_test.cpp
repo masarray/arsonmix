@@ -29,6 +29,32 @@ void run(int rate,int ch,bool enforce){
         if(delta>0){if(closeSamples==0)closeFirst=delta;closeLast=delta;closePeak=std::max(closePeak,delta);++closeSamples;}previous=g;}
     require(e.gain()==0,"finite exact gate zero");
     if(enforce){
+        // The detector level between opening and closing thresholds must
+        // neither wake a closed gate nor retrigger a gate that is open.
+        for(int i=0;i<rate/5;++i)e.step(.0048f*sine(i,rate,600),0);
+        require(e.gain()==0,"hysteresis holds closed");
+        for(int i=0;i<rate/10;++i)e.step(.1f*sine(i,rate,600),0);
+        require(e.gain()==1,"reopen");
+        for(int i=0;i<rate/5;++i)e.step(.0048f*sine(i,rate,600),0);
+        require(e.gain()==1,"hysteresis holds open");
+        for(int i=0;i<rate/25;++i)e.step(0,0);
+        require(e.gain()==1,"short gap does not chatter");
+        // Re-time a closing segment without resetting to unity.
+        for(int i=0;i<rate/10;++i)e.step(0,0);
+        const float before=e.gain();auto edit=s;edit.releaseMs=300;
+        e.apply(ManualExpander::prepareSettings(edit));
+        const float after=e.step(0,0);
+        require(after<=before&&before-after<.005f,"live release edit continuous");
+        for(int i=0;i<rate/2;++i)e.step(0,0);
+        require(e.gain()==0,"retimed closure settles");
+        // Maximum release and attack settings must remain bounded and
+        // reach exactly zero rather than leave a floating-point tail.
+        edit.attackMs=20;edit.releaseMs=1000;e.apply(ManualExpander::prepareSettings(edit));
+        for(int i=0;i<rate/10;++i)e.step(.1f*sine(i,rate,600),0);
+        require(e.gain()==1,"slow attack reaches unity");
+        float prior=1.f;
+        for(int i=0;i<2*rate;++i){const float g=e.step(0,0);require(g>=0&&g<=prior,"long closure bounded");prior=g;}
+        require(e.gain()==0,"long closure exact zero");
         require(first<.1f*peak&&last<.1f*peak,"soft opening endpoints");
         require(closeFirst<.1f*closePeak&&closeLast<.1f*closePeak,"soft closing endpoints");
         require(openSamples<=int(rate*.002f)+2&&closeSamples<=int(rate*.15f)+2,"bounded configured time");
