@@ -57,6 +57,11 @@ export function controller(transport,render){
   return true;
  }
  draw();transport.read();
+ function selectMode(mode){
+  if(closed||!accepted||!['Auto','Voice','Singing','Music'].includes(mode))return false;
+  if(pending){if(!pending.continuous)return false;queued={...queued,mode};draw();return true;}
+  return accepted.mode===mode||submit('settings',{mode});
+ }
  function adjust(key,value){
   if(closed||!accepted||!bounds.some(d=>d[0]===key)||!valid({...accepted,[key]:value}))return false;
   if(pending){
@@ -65,7 +70,7 @@ export function controller(transport,render){
   }
   return accepted[key]===value||submit('settings',{[key]:value},true);
  }
- return {submit:(kind,patch)=>submit(kind,patch),adjust,state,dispose(){closed=true;queued=null;unsubscribe();},refresh(){if(!closed)transport.read();}};
+ return {submit:(kind,patch)=>submit(kind,patch),adjust,selectMode,state,dispose(){closed=true;queued=null;unsubscribe();},refresh(){if(!closed)transport.read();}};
 }
 // Presentation-only: one value per measured non-DC FFT bin. Never infer
 // sub-bin detail or insert synthetic points. Work in linear mean-square power.
@@ -280,8 +285,9 @@ export function mount(root,transport,options={}){
   const learn=$('[data-learn]'), learningValue=String(learning);
   if(learn.dataset.learning!==learningValue)learn.dataset.learning=learningValue;
   setText($('[data-profile]'),observed?(observation.profile?'Profile ready':'No profile'):'No live telemetry');
-  setText($('[data-learn-state]'),observed?(observation.learning?'Learning':observation.learnStatus==='Idle'?'Learn idle':observation.learnStatus):'Learn —');
+  setText($('[data-learn-state]'),observed?(observation.learning?'Learning':observation.learnStatus==='Idle'?'Learn idle':observation.learnStatus==='Rejected'?'No usable capture':observation.learnStatus):'Learn —');
   setText($('[data-latency]'),observed?observation.latency+' samples':'Latency —');
+  const learnState=$('[data-learn-state]');learnState.title=observation?.learnStatus==='Rejected'?'No usable noise capture; check live mic signal or retry in a quiet moment. Previous profile, if any, is retained. Manual Gate needs no Learn.':'Learn captures noise for 2 s; short bursts are skipped, with up to 4 s if more noise is needed.';
   paintSpectrum(observation,observed,hostOff||!accepted?.enabled);
   const profile=$('[data-profile]'), ready=String(observed&&observation.profile===true);
   if(profile.dataset.ready!==ready)profile.dataset.ready=ready;
@@ -294,7 +300,7 @@ export function mount(root,transport,options={}){
   const powerTitle=fxState==='unknown'?'FX state unavailable':fxState==='rack-off'?'FX rack/global bypassed · enable upstream first':power==='SLOT'?'FX slot bypassed · click to enable slot':fxState==='on'?'DSP on · click to bypass':'DSP bypassed · click to enable';
   if(powerButton.title!==powerTitle){powerButton.title=powerTitle;powerButton.setAttribute('aria-label',powerTitle);}
   powerButton.disabled=pending||fxState==='unknown'||fxState==='rack-off'||(power==='SLOT'&&!options.enableSlot);
-  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-lcd-switch')&&!b.hasAttribute('data-power')&&!b.hasAttribute("data-pro-tab"))b.disabled=!accepted||pending||unavailable;
+  for(const b of buttons)if(!b.hasAttribute('data-learn')&&!b.hasAttribute('data-lcd-switch')&&!b.hasAttribute('data-power')&&!b.hasAttribute("data-pro-tab"))b.disabled=!accepted||unavailable||(pending&&(!adjusting||!b.hasAttribute("data-mode")));
   $("[data-pro-learn]").disabled=$("[data-learn]").disabled;
   setText($("[data-pro-learn]"),learning?"Capturing…":"Learn noise");
   const canCommand=!!accepted&&!pending&&live&&!hostOff&&!unavailable;
@@ -383,7 +389,7 @@ export function mount(root,transport,options={}){
   c.number.addEventListener("keydown",ev=>{if(ev.key==="Enter"){ev.preventDefault();finish();c.number.blur();}else if(ev.key==="Escape"){ev.preventDefault();ev.stopPropagation();c.editing=false;if(lastView)paintHost(lastView);c.number.blur();}});
  }
  for(const f of proFlags)f.addEventListener("change",()=>model.submit("settings",{[f.dataset.proFlag]:f.checked}));
- for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.submit('settings',{mode:b.dataset.mode});
+ for(const b of root.querySelectorAll('[data-mode]'))b.onclick=()=>model.selectMode(b.dataset.mode);
  $('[data-power]').onclick=()=>{if(!current||$('[data-power]').disabled)return;if(options.hostPower?.()==='SLOT')options.enableSlot?.();else model.submit('settings',{enabled:!current.enabled});};$('[data-learn]').onclick=()=>{if((!options.hostPower||options.hostPower()==='ON')&&!$('[data-learn]').disabled)model.submit('learn');};
  $('[data-close]').onclick=()=>options.onClose?.();
  $('[data-close]').hidden=!options.onClose;

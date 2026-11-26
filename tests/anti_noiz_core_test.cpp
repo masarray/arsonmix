@@ -51,7 +51,9 @@ int main(){
     std::vector<float> q(8192,.001f),w(8192,.001f);
     for(std::size_t i=4096;i<q.size();++i)q[i]=w[i]=.5f;
     a.process(q.data(),w.data(),int(q.size()));
-    require(!a.learning()&&a.hasProfile(),"contaminated relearn retains profile");
+    require(a.learning()&&a.hasProfile(),"burst does not abort Learn");
+    for(int i=0;i<4*48000&&a.learning();i+=8192){q.assign(8192,.5f);w.assign(8192,.5f);a.process(q.data(),w.data(),int(q.size()));}
+    require(!a.learning()&&a.hasProfile()&&!a.lastNativeLearnQualified(),"sustained contamination rejects at bounded deadline and retains profile");
     // A stationary sinusoidal proxy is NOT a real vocal/music acceptance test.
     // Exercise separate stereo sources and check that Voice attenuation does not
     // remove the main tone while Music mode remains available for full mixes.

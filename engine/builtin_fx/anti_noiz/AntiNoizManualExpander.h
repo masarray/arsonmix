@@ -60,8 +60,9 @@ public:
         ++window_[std::min<std::size_t>(std::size_t(i),edges_.size()-1)];
     }
     // The spectral Learn transaction owns acceptance of each window.
-    void checkpointReference(bool accepted) noexcept {
+    void checkpointReference(bool accepted,bool restart=false) noexcept {
         if(!capture_)return;
+        if(restart)accepted_={};
         if(accepted)for(unsigned i=0;i<window_.size();++i)accepted_[i]+=window_[i];
         window_={};
     }

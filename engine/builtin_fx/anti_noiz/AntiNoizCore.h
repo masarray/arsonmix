@@ -291,13 +291,14 @@ private:
             }
         }
         powerValid_=true;
-        const int beforeCheckpoint=profile_.checkpointFrameCount();
         const auto result=profile_.observe(power_);
-        if(result==NoiseProfile<maxBins>::LearnResult::accepted||profile_.atCheckpointBoundary())
-            manual_.checkpointReference(profile_.checkpointFrameCount()>beforeCheckpoint);
+        if(profile_.atCheckpointBoundary())
+            manual_.checkpointReference(profile_.lastWindowAccepted(),profile_.checkpointReset());
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting)
             manual_.finishReference(result==NoiseProfile<maxBins>::LearnResult::accepted);
-        if(result==NoiseProfile<maxBins>::LearnResult::accepted){tonal_.commit();}
+        if(result==NoiseProfile<maxBins>::LearnResult::accepted){
+            if(profile_.tonalCaptureSafe())tonal_.commit();else tonal_.clear();
+        }
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         // Only Voice with nonzero Silence may use the extra residual label.

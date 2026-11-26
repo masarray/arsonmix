@@ -405,11 +405,25 @@ def main():
         expect(root.locator('input[aria-label="Silence"]')).to_be_disabled()
         threshold=root.locator('input[aria-label="Threshold"]')
         expect(threshold).to_be_enabled()
-        threshold.focus();page.keyboard.press("ArrowRight")
-        edit=last_action(page,"nativeAntiNoizSet")
-        assert edit["settings"]["thresholdDb"]==-39
-        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
-        accepted=edit["settings"]
+        # Real slider key gestures with delayed native ACK. Observe attribute
+        # mutations, not just final style: no mode disable/dim/pressed flicker.
+        root.evaluate("""el=>{
+          const buttons=[...el.querySelectorAll('[data-mode]')];
+          window.__anModeMutations=[];
+          window.__anModeObserver=new MutationObserver(rows=>window.__anModeMutations.push(...rows.map(r=>r.attributeName)));
+          for(const b of buttons)window.__anModeObserver.observe(b,{attributes:true,attributeFilter:['disabled','aria-pressed']});
+        }""")
+        threshold.focus()
+        for key,value in (("ArrowRight",-39),("ArrowRight",-38),("ArrowLeft",-39)):
+            page.keyboard.press(key)
+            edit=last_action(page,"nativeAntiNoizSet")
+            assert edit["settings"]["thresholdDb"]==value
+            assert root.evaluate("""el=>[...el.querySelectorAll('[data-mode]')].every(b=>!b.disabled&&getComputedStyle(b).opacity==='1'&&b.getAttribute('aria-pressed')===String(b.dataset.mode==='Voice'))""")
+            # Pending remains unresolved until the explicit ACK below.
+            respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+            accepted=edit["settings"]
+            expect(threshold).to_have_value(str(value))
+        assert page.evaluate("""()=>{const rows=window.__anModeObserver.takeRecords();window.__anModeObserver.disconnect();return window.__anModeMutations.length+rows.length===0}"""),"source mode buttons flicker during slider edits"
         readback(page,accepted,{**OBS,"serial":"19","effectiveMode":"Voice","profile":True,"detectorLevel":.01})
         expect(root.locator("[data-detector]")).to_have_text("-40.0 dBFS")
         expect(root.locator("[data-pro-dot]")).to_be_visible()
