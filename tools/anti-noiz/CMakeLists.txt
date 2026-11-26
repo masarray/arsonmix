@@ -166,3 +166,7 @@ set_tests_properties(AntiNoizPreampHiss PROPERTIES TIMEOUT 90)
 anti_noiz_target(anti_noiz_natural_dynamics_test tests/anti_noiz_natural_dynamics_test.cpp)
 add_test(NAME AntiNoizNaturalDynamics COMMAND anti_noiz_natural_dynamics_test)
 set_tests_properties(AntiNoizNaturalDynamics PROPERTIES TIMEOUT 90)
+
+anti_noiz_target(anti_noiz_fft_test tests/anti_noiz_fft_test.cpp)
+add_test(NAME AntiNoizFFT COMMAND anti_noiz_fft_test)
+set_tests_properties(AntiNoizFFT PROPERTIES TIMEOUT 60)

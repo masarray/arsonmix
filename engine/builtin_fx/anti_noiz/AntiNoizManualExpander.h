@@ -42,16 +42,18 @@ public:
         hp_=1.f/(1.f+rate_/(2.f*std::numbers::pi_v<float>*s.hpHz));
         lp_=1.f/(1.f+rate_/(2.f*std::numbers::pi_v<float>*s.lpHz));
         decay_=1.f/(1.f+rate_*.008f);
-        attack_=1000.f/(rate_*s.attackMs);release_=1000.f/(rate_*s.releaseMs);
+        attackSamples_=std::max(1,int(std::lround(double(rate_)*s.attackMs*.001)));
+        releaseSamples_=std::max(1,int(std::lround(double(rate_)*s.releaseMs*.001)));
+        attack_=1.f/float(attackSamples_);release_=1.f/float(releaseSamples_);
         attackFollow_=6.907755f*attack_/(1.f+6.907755f*attack_);
         releaseFollow_=6.907755f*release_/(1.f+6.907755f*release_);
         holdSamples_=int(rate_*s.holdMs*.001f)+delay_;
         // Parameter changes retain the current gain. Re-time only when the
         // selected attack/release changes; no reset-to-unity on a slider edit.
-        if(timingChanged){phase_=1.f;segmentTarget_=gain_;}
+        if(timingChanged){segmentRemaining_=0;segmentTarget_=gain_;}
         hold_=std::min(hold_,holdSamples_);ticks_=0;
     }
-    void reset() noexcept {resetDetector();gain_=target_=segmentStart_=segmentTarget_=phase_=1;hold_=ticks_=0;open_=true;}
+    void reset() noexcept {resetDetector();gain_=target_=segmentStart_=segmentTarget_=1;segmentRemaining_=hold_=ticks_=0;open_=true;}
     void beginReference() noexcept {cancelReference();capture_=true;referenceLow_={};referenceBand_={};referenceEnv_=0;}
     void cancelReference() noexcept {capture_=false;window_={};accepted_={};sampleTick_=0;}
     void clearReference() noexcept {cancelReference();referenceValid_=false;noisePeak_=0;updateThreshold();}
@@ -100,7 +102,7 @@ public:
         if(above){hold_=holdSamples_;open_=true;}
         else if(hold_>0)--hold_;
         else open_=false;
-        if(above||hold_>0)target_=1.f;
+        if(above||hold_>0||s.rangeDb==0.f||(!s.gate&&s.ratio==1.f))target_=1.f;
         else if(s.gate)target_=s.rangeDb>=96?0.f:p_.floor;
         else if(ticks_==0){
             const float db=s.smartVoice&&referenceValid_&&effectiveThreshold_!=p_.threshold?s.thresholdDb+20.f*std::log10(std::max(env_,1e-12f)/effectiveThreshold_):20.f*std::log10(std::max(env_,1e-12f));
@@ -119,19 +121,33 @@ public:
 private:
     float envelope(float target,bool gate) noexcept {
         if(gate){
-            if(target!=segmentTarget_){segmentStart_=gain_;segmentTarget_=target;phase_=0.f;}
-            if(phase_<1.f){
-                phase_=std::min(1.f,phase_+(segmentTarget_>segmentStart_?attack_:release_));
-                const float u=phase_*phase_*(3.f-2.f*phase_);
-                gain_=phase_>=1.f?segmentTarget_:segmentStart_+(segmentTarget_-segmentStart_)*u;
+            if(target!=segmentTarget_){
+                segmentStart_=gain_;segmentTarget_=target;
+                const bool opening=target>gain_;
+                segmentSize_=segmentRemaining_=opening?attackSamples_:releaseSamples_;
+                segmentInv_=opening?attack_:release_;
+            }
+            if(segmentRemaining_>0){
+                if(--segmentRemaining_==0)gain_=segmentTarget_;
+                else{
+                    // Evaluate from the nearer endpoint to avoid subtracting
+                    // almost equal floats during the final fade to silence.
+                    const int elapsed=segmentSize_-segmentRemaining_;
+                    const bool firstHalf=elapsed<=segmentRemaining_;
+                    const float phase=float(firstHalf?elapsed:segmentRemaining_)*segmentInv_;
+                    const float u=phase*phase*(3.f-2.f*phase);
+                    const float change=(segmentTarget_-segmentStart_)*u;
+                    gain_=firstHalf?segmentStart_+change:segmentTarget_-change;
+                }
             }
         }else{
             // Approximate 60 dB settling over the selected time. A fixed
             // epsilon snap removes asymptotic tails and denormal work.
             const float difference=target-gain_;
             const float speed=difference>0.f?attackFollow_:releaseFollow_;
-            gain_=std::abs(difference)<=1e-6f?target:gain_+difference*speed;
-            segmentTarget_=gain_;phase_=1.f;
+            const float next=gain_+difference*speed;
+            gain_=std::abs(difference)<=1e-6f||next==gain_?target:next;
+            segmentTarget_=gain_;segmentRemaining_=0;
         }
         return gain_;
     }
@@ -160,7 +176,8 @@ private:
     int sampleEvery_=48,sampleTick_=0;bool capture_=false,referenceValid_=false;
     float rate_=48000,hp_=0,lp_=0,decay_=0,attack_=1,release_=1,env_=0,gain_=1,target_=1;
     float attackFollow_=1.f,releaseFollow_=1.f;
-    float segmentStart_=1.f,segmentTarget_=1.f,phase_=1.f;
+    float segmentStart_=1.f,segmentTarget_=1.f,segmentInv_=1.f;
+    int attackSamples_=1,releaseSamples_=1,segmentSize_=1,segmentRemaining_=0;
     int channels_=1,delay_=256,holdSamples_=0,hold_=0,ticks_=0;bool open_=true;
 };
 }
