@@ -4270,7 +4270,8 @@ private:
                         juce::FloatVectorOperations::clear(outputs[channel],samples);
             // Reuse the exact post-DSP/fade peaks rather than re-scanning PCM.
             const bool wroteMain=outputGate.hardware&&routed&&!splitMain&&nativeMain[0]&&nativeMain[1];
-            if(splitMain&&outputGate.hardware&&routed&&nativeMonitor[0]&&nativeMonitor[1]){
+            const bool wroteMonitor=splitMain&&outputGate.hardware&&routed&&nativeMonitor[0]&&nativeMonitor[1];
+            if(wroteMonitor){
                 // Physical telemetry describes the actual singer output,
                 // not the isolated stream MAIN scratch.
                 float l=0.f,r=0.f;
@@ -4278,7 +4279,7 @@ private:
                     r=std::max(r,std::abs(nativeMonitor[1][i]));}
                 publishDriverBufferPeaks(l,r);
             }else publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
-            const auto pressureRevision=nativePcm&&outputGate.hardware&&routed&&(wroteMain||(splitMain&&nativeMonitor[0]&&nativeMonitor[1]))&&!cycle.fadeIn&&!cycle.fadeOut&&
+            const auto pressureRevision=nativePcm&&(wroteMain||wroteMonitor)&&!cycle.fadeIn&&!cycle.fadeOut&&
                 routedFxMove==0&&!probePermit?dryRoutingLab_.renderedNativeRevision():0;
             recordRenderTiming(beginUs,periodUs,outputLease.epoch,pressureRevision);
             return;

@@ -2977,7 +2977,7 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
  assert.match(restore,/if\(!isNativeMixerActive\(\)\)acceptSessionIdentity\(\);/);
  assert.match(restore,/restoreNativeMixerSession\(std::move\(doc\),states,[\s\S]*?return error;\s*\}\s*mixerSessionRecoveryPending_=false;\s*acceptSessionIdentity\(\);/);
  assert.match(recovery,/context.nativeAlreadyActive && fromDisk &&/);
- assert.match(recovery,/Source::head && doc.resumeMain.value_or\(true\)/);
+ assert.match(recovery,/Source::head && !doc.outputs.secondaryMain\(\) && doc.resumeMain.value_or\(true\)/);
  assert.match(engine,/dryRoutingLab_\.canReplacePristineStartupMixer\(\)/);
  assert.match(route,/bool canReplacePristineStartupMixer\(\) const noexcept/);
  assert.match(route,/!nativeControlDirty_ && nativeAccepted_\.fxOwners/);
