@@ -21,8 +21,11 @@ public:
     float tick(float peak,float attack,float release,bool stage=false) noexcept{
         fast_=clean(fast_+(peak-fast_)*(peak>fast_?fastAttack_:fastRelease_));
         reference_=std::max(fast_,clean(reference_+(fast_-reference_)*referenceRelease_));
-        const float lower=std::max(.005f,.10f*reference_);
-        const float upper=std::max(.025f,.50f*reference_);
+        // A loud phrase must not desensitize the next quiet lyric for seconds.
+        // Stage caps the relative thresholds; the absolute floor remains.
+        // Legacy V4/V5 detector is unchanged.
+        const float lower=stage?std::clamp(.10f*reference_,.005f,.010f):std::max(.005f,.10f*reference_);
+        const float upper=stage?std::clamp(.50f*reference_,.025f,.035f):std::max(.025f,.50f*reference_);
         const float x=std::clamp((fast_-lower)/(upper-lower),0.f,1.f);
         const float goal=x*x*(3.f-2.f*x);
         if(goal>=activity_){

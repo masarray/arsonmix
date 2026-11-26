@@ -53,7 +53,8 @@ inline bool sameParameters(const Parameters& a,const Parameters& b) noexcept{
 // keeps the selected style identifiable even after state restore.
 inline bool sameVoicing(const Parameters& a,const Parameters& b) noexcept{
     return a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
-        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style&&a.smartStage==b.smartStage;
+        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style&&a.smartStage==b.smartStage&&
+        (!a.smartStage||(a.adaptiveFocus==b.adaptiveFocus&&a.spillover==b.spillover));
 }
 inline int styleIndex(const Parameters& p) noexcept{
     for(std::size_t i=0;i<singerPresets.size();++i)

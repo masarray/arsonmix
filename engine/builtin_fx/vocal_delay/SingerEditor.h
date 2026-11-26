@@ -142,7 +142,7 @@ public:
             drawMeter(g,"DUCK",meterFresh_?meter_.duckReduction:0.f,108);
             drawMeter(g,"WET",meterFresh_?meter_.wetPeak:0.f,140);
             g.setColour(hardware::col(0x91aaa3));g.setFont(hardware::font(9.f));
-            g.drawText(meterFresh_?(processor_.singerDisplay().smartStage?"SMART STAGE / LIVE":"LIVE BLOCK PEAK"):"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
+            g.drawText(meterFresh_?(processor_.singerDisplay().smartStage&&processor_.singerDisplay().adaptiveFocus?"SMART STAGE / LIVE":"LIVE BLOCK PEAK"):"NO LIVE PCM",438,161,148,12,juce::Justification::centredLeft);
         }
         const auto p=processor_.singerDisplay();
         const auto tempo=tempoNotice_.isNotEmpty()?tempoNotice_:tempoLabel(p);

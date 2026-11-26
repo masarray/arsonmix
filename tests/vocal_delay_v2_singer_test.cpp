@@ -26,6 +26,8 @@ int main(){
         invalid=bytes;invalid[43]&=0x7f;CHECK(!StateCodec::decode(invalid.data(),invalid.size(),out));
     }
     CHECK(presetSettings(0).style==EchoStyle::dual&&presetSettings(0).duck>=.9f);
+    auto changed=presetSettings(0);changed.adaptiveFocus=false;CHECK(styleIndex(changed)==-1);
+    changed=presetSettings(0);changed.spillover=false;CHECK(styleIndex(changed)==-1);
     auto quiet=presetSettings(1),heavy=quiet;heavy.echo=.9f;heavy.feedback=.9f;heavy.timeMs=4000;
     auto soft=smartVoicing(quiet),strong=smartVoicing(heavy);
     CHECK(strong.duck>soft.duck&&strong.highPassHz>soft.highPassHz&&strong.lowPassHz<soft.lowPassHz);

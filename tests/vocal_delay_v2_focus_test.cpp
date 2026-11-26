@@ -43,7 +43,30 @@ static void scenario(double rate,float amplitude){
     std::printf("FOCUS rate=%.0f amp=%.3f during_classic=%.6f during_adaptive=%.6f ratio=%.4f tail=%.6f\n",
         rate,amplitude,classicWet,adaptiveWet,adaptiveWet/classicWet,lateWet);
 }
+static void quietReentry(double rate){
+    AdaptiveVocalFocus old,stage;old.prepare(rate);stage.prepare(rate);
+    const float attack=float(-std::expm1(-1./(rate*.005)));
+    const float release=float(-std::expm1(-1./(rate*.110)));
+    const auto duration=[rate](double ms){return std::size_t(rate*ms*.001);};
+    float a=0,b=0;
+    const auto drive=[&](float peak,double ms){
+        for(std::size_t i=0;i<duration(ms);++i){
+            a=old.tick(peak,attack,release,false);
+            b=stage.tick(peak,attack,release,true);
+        }
+    };
+    drive(.6f,600);CHECK(a>.95f&&b>.95f);
+    drive(0.f,500);CHECK(a<.08f&&b<.12f);
+    drive(.035f,100);
+    CHECK(b>.85f&&a<.12f);
+    std::printf("VD9_REENTRY rate=%.0f legacy=%.4f stage=%.4f\n",rate,a,b);
+    drive(0.f,30);CHECK(b>.80f); // short gap must not open the echo
+    drive(0.f,750);CHECK(b<.02f); // real gap must release
+    stage.reset();for(std::size_t i=0;i<duration(600);++i)
+        CHECK(stage.tick(.003f,attack,release,true)==0.f);
+}
 int main(){
+    for(double rate:{8000.,44100.,48000.,96000.,192000.})quietReentry(rate);
     for(double rate:{8000.,44100.,48000.,96000.,192000.})for(float amplitude:{.035f,.3f})scenario(rate,amplitude);
     Parameters p{};p.timeMs=20;p.echo=.5f;p.feedback=0;p.highPassHz=p.lowPassHz=0;p.duck=0;p.adaptiveFocus=true;
     State s{};s.continuous=p;StateCodec::Bytes bytes{};State decoded{};
