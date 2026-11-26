@@ -290,12 +290,12 @@ test('FAT upload is independently retryable without a second Windows compiler an
   assert.ok(upload,'dedicated artifact delivery job must exist');
   assert.match(build,/Seal exact-SHA FAT delivery payload after all installer tests/);
   assert.match(build,/Save completed FAT packages for retryable upload job/);
-  assert.match(build,/actions\/cache\/save@v4/);
+  assert.match(build,/actions\/cache\/save@[a-f0-9]{40}/);
   assert.equal((build.match(/actions\/upload-artifact@v4/g)||[]).length,1);
   assert.match(build,/Upload portable Windows field preview\n +if: \$\{\{ env\.FIELD_PREVIEW == 'true' \}\}\n +uses: actions\/upload-artifact@v4/);
   assert.match(upload,/needs: windows-build/);
   assert.match(upload,/runs-on: windows-2022/);
-  assert.match(upload,/actions\/cache\/restore@v4/);
+  assert.match(upload,/actions\/cache\/restore@[a-f0-9]{40}/);
   assert.match(upload,/fail-on-cache-miss: true/);
   assert.match(upload,/FAT_UPLOAD_HASH_MISMATCH/);
   assert.match(upload,/FAT_UPLOAD_RECEIPT_MISMATCH/);
