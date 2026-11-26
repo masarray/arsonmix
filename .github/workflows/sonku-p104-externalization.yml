@@ -35,6 +35,10 @@ jobs:
           persist-credentials: false
       - name: Verify approved native PCM source identity
         run: python3 scripts/verify_immersib_approved_pcm_sources.py
+      - name: Install offline FFmpeg measurement tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: LUFS-matched program material and all seven protected ImmerSIB scenes
         run: |
           ffmpeg -version
