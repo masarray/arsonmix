@@ -355,10 +355,75 @@
    Real out-of-mixer popout requires a JUCE-owned separate HWND. */
 (()=>{
  'use strict';
- const selectors=[
-  '#mxNativeGeq31','#mxNativePeq','#mxNativeComp',
-  '#mxNativeHarmony','#mxNativeVocalThrow','#mxNativeSonKu'
- ];
+ // One bounded layer range for the eight approved inline editor surfaces.
+ // Native leases and audio state remain exclusively in their existing owners.
+ const owners=Object.freeze({
+  '#mxNativeGeq31':'ArSonMixGraphicEq31','#mxNativePeq':'ArSonMixNativeEq',
+  '#mxNativeComp':'ArSonMixNativeCompressor','#mxNativeHarmony':'ArSonMixNativeHarmony',
+  '#mxNativeVocalThrow':'ArSonMixNativeVocalThrow','#mxNativeSonKu':'ArSonMixNativeSonKu',
+  '#mxNativeAntiNoiz':'ArSonMixNativeAntiNoiz','#mxNativeDeEzzerHost':'ArSonMixNativeDeEzzer'
+ });
+ const selectors=Object.keys(owners),rootSelector=selectors.join(',');
+ const layerBase=16000;
+ let order=[];
+ const popupSelector='.mx-fxp-form,.mx-fxp-menu,#mxHPresetMenu';
+ const modalSelector='[aria-modal="true"],dialog[open],#fastPicker,#routeChoice,#channelIdentity,#nativeFxSelector,#nativePluginManager,#nativeMySounds,#nativeOrbit';
+ const activeModal=()=>Array.from(document.querySelectorAll(modalSelector)).find(isVisible);
+ const popupIn=root=>Array.from(root?.querySelectorAll(popupSelector)||[]).find(isVisible);
+ function paintOrder(){
+  order=order.filter(isVisible);
+  for(let i=0;i<order.length;i++){
+   const panel=order[i],layer=String(layerBase+i);
+   if(panel.style.zIndex!==layer)panel.style.zIndex=layer;
+   if(panel.dataset.fxActive!==(i===order.length-1?'true':'false'))
+    panel.dataset.fxActive=i===order.length-1?'true':'false';
+  }
+ }
+ function raise(panel){
+  if(!panel?.matches?.(rootSelector)||!isVisible(panel)||activeModal())return false;
+  // Populate only untracked visible roots; then move the selected existing
+  // node to the top. No growing counter, DOM reparenting or geometry writes.
+  for(const {el} of visibleEditors())if(!order.includes(el))order.push(el);
+  order=order.filter(el=>el!==panel);order.push(panel);paintOrder();
+  return true;
+ }
+ function activeEditor(){
+  paintOrder();
+  return order.at(-1)||visibleEditors().at(-1)?.el||null;
+ }
+ function focusInsert(trackId,slot){
+  const matched=visibleEditors().find(({el})=>el.dataset.fxTrackId===String(trackId)&&
+    el.dataset.fxSlot===String(slot));
+  return matched?raise(matched.el):false;
+ }
+ function closeActive(){
+  const panel=activeEditor();
+  if(!panel)return false;
+  const key=owners['#'+panel.id];
+  const host=window[key];
+  if(typeof host?.close!=='function')return false;
+  host.close(); // original close lifecycle, never remove/alter an audio insert
+  if(panel.hidden){delete panel.dataset.fxActive;paintOrder();}
+  return panel.hidden;
+ }
+ // Capture all editor interactions BEFORE panel-specific drag/knob handlers.
+ // Neither pointerdown nor focusin is cancelled or redirected.
+ document.addEventListener('pointerdown',event=>{
+  if(event.isTrusted&&event.button===0&&event.isPrimary!==false)
+   raise(event.target?.closest?.(rootSelector));
+ },true);
+ document.addEventListener('focusin',event=>{
+  if(event.isTrusted)raise(event.target?.closest?.(rootSelector));
+ },true);
+ window.addEventListener('keydown',event=>{
+  if(event.key!=='Escape'||event.repeat||event.defaultPrevented||
+     event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||activeModal())return;
+  const panel=activeEditor();
+  // Let the editor's own preset form/menu consume Escape before the editor.
+  // Native menus and dialogs retain their established close behavior.
+  if(!panel||popupIn(panel)||event.target?.closest?.(popupSelector))return;
+  if(closeActive()){event.preventDefault();event.stopImmediatePropagation();}
+ },true);
  const isVisible=el=>el&&!el.hidden&&!el.closest('[hidden]')&&
    el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
  const center=el=>{
@@ -423,11 +488,11 @@
   // A row must NEVER recenter an unrelated open built-in editor. The header
   // shortcut may still rescue the top visible modeless editor.
   const focus=(row?matched:windows).at(-1);
-  if(focus)center(focus.el);
+  if(focus){raise(focus.el);center(focus.el);}
  });
  window.ArSonMixFxWorkspace=Object.freeze({
-  centerVisible:()=>{const w=visibleEditors();return w.length?
-    center(w[w.length-1].el):false;},
+  raise,focusInsert,activeEditor,closeActive,
+  centerVisible:()=>{const panel=activeEditor();return panel?center(panel):false;},
   recenter:center,
   centerInsert:(trackId,slot)=>{
    const matches=visibleEditors().filter(item=>

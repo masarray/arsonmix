@@ -274,6 +274,7 @@ public:
         // The RAII owner notifies the processor before deletion, including
         // exceptions during construction. JUCE window is presentation only.
         setContentNonOwned (editor, true);
+        addMouseListener(this,true); // descendant JUCE controls, not a new editor owner
         // Do not offer false host resizing for fixed-geometry built-in FX.
         setResizable (editor->isResizable(), false);
         if(reverbFaceplate)centreWithSize(getWidth(),getHeight());
@@ -296,7 +297,20 @@ public:
         if (!isVisible()) setVisible (true);
         toFront (true);
     }
+    void mouseDown(const juce::MouseEvent& event) override {
+        juce::DocumentWindow::mouseDown(event);
+        if(event.mods.isLeftButtonDown())
+            (void)armix::ui::raiseOwnedFloatingWindow(*this,mixer_);
+    }
+    bool keyPressed(const juce::KeyPress& key) override {
+        // Unhandled Escape only; vendor text fields/menus keep first refusal.
+        if(key==juce::KeyPress::escapeKey && isActiveWindow()){
+            closeButtonPressed();return true;
+        }
+        return juce::DocumentWindow::keyPressed(key);
+    }
     ~PluginEditorWindow() override {
+        removeMouseListener(this);
         clearContentComponent();
         ownedEditor_.reset(); // unregister active editor before the lease is released
     }
@@ -349,7 +363,8 @@ public:
               .withEventListener("arMixFloatingActivate",[this](juce::var){
                   // Child WebView pointer/focus does not always raise its top-level HWND.
                   // No recenter, recreation, global topmost or keyboard focus steal.
-                  if(isVisible()&&hasMeasuredPanel_)toFront(false);
+                  if(isVisible()&&hasMeasuredPanel_)
+                      (void)armix::ui::raiseOwnedFloatingWindow(*this,mixer_);
               })
               .withEventListener("arMixFloatingDrag",[this](juce::var){
                   startDesktopDrag(); // native OS drag, not a DOM card move

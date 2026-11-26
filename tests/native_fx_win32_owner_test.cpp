@@ -63,6 +63,35 @@ int main(){
         assert(::GetWindow(popup,GW_OWNER)==mixer);
         assert((::GetWindowLongPtrW(popup,GWL_EXSTYLE)&WS_EX_TOPMOST)==0);
     }
+    // Overlapping sibling HWNDs: activate alternately, preserving geometry,
+    // keyboard focus, visibility and owner. The OS may deny foreground on
+    // service runners; arrange our own active window and report explicitly.
+    ::ShowWindow(mixer,SW_SHOW);
+    ::SetForegroundWindow(mixer);
+    ::SetActiveWindow(mixer);
+    RECT before{};assert(::GetWindowRect(popup,&before));
+    const auto foreground=::GetForegroundWindow();
+    if(!foreground||::GetAncestor(foreground,GA_ROOTOWNER)==mixer){
+        const auto higher=[](HWND first,HWND second){
+            for(auto h=::GetWindow(first,GW_HWNDNEXT);h;h=::GetWindow(h,GW_HWNDNEXT))
+                if(h==second)return true;
+            return false;
+        };
+        for(int i=0;i<100;++i){
+            assert(armix::ui::win32::raiseOwnedPopup(popup,mixer)&&higher(popup,alternate));
+            assert(armix::ui::win32::raiseOwnedPopup(alternate,mixer)&&higher(alternate,popup));
+        }
+        RECT after{};assert(::GetWindowRect(popup,&after)&&::EqualRect(&before,&after));
+        assert(::GetForegroundWindow()==foreground);
+        assert((::GetWindowLongPtrW(popup,GWL_EXSTYLE)&WS_EX_TOPMOST)==0);
+        ::EnableWindow(mixer,FALSE);
+        assert(!armix::ui::win32::raiseOwnedPopup(popup,mixer));
+        ::EnableWindow(mixer,TRUE);
+        std::puts("PASS: owned sibling z-order and unchanged geometry/focus");
+    }else{
+        assert(!armix::ui::win32::raiseOwnedPopup(popup,mixer));
+        std::puts("LIMITATION: runner denied foreground; only foreign-app refusal verified");
+    }
     ::ShowWindow(mixer,SW_MINIMIZE);
     assert(!armix::ui::win32::ensureOwnedPopupVisible(popup,mixer));
     ::ShowWindow(mixer,SW_RESTORE);

@@ -61,7 +61,7 @@ function close(){active?.editor.dispose();}
 function open(track,slot){
  const context=()=>{const n=root.__ARMIX_NATIVE_M2__;return contextFor(n?.fxEditorState?.(),n?.nativeIdFor?.(track),slot);};
  const initialContext=context();if(!initialContext)return false;
- close();host.hidden=false;
+ close();host.dataset.fxTrackId=String(track.id);host.dataset.fxSlot=String(slot);host.hidden=false;
  const token="dez-"+root.crypto.randomUUID();let editor,timer;
  const transport=createTransport({backend,context,initialContext,token,onInitial:s=>editor.model.attach(s)});
  editor=api.mount(host,{transport,monitorSafe:false,presetContext:()=>same(context(),initialContext)?initialContext:null,close:()=>{clearInterval(timer);host.hidden=true;active=null;}});

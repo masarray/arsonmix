@@ -188,22 +188,46 @@ OPEN=" if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);retur
 OPEN_NEW=""" if(a==='openPlugin'){
   const index=Number(btn.dataset.slot);
   if(t.fx[index]==='Parametric EQ'){
-   window.ArSonMixNativeEq?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+    window.ArSonMixNativeEq?.open(t,index);
+    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativePeq'));
+   }
+   return;
   }
   if(t.fx[index]==='Graphic EQ 31'){
-   window.ArSonMixGraphicEq31?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+    window.ArSonMixGraphicEq31?.open(t,index);
+    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeGeq31'));
+   }
+   return;
   }
   if(t.fx[index]==='Compressor'){
-   window.ArSonMixNativeCompressor?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+    window.ArSonMixNativeCompressor?.open(t,index);
+    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeComp'));
+   }
+   return;
   }
   if(t.fx[index]==='Harmonice'||t.fx[index]==='ArSon Harmony'){
-   window.ArSonMixNativeHarmony?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+    window.ArSonMixNativeHarmony?.open(t,index);
+    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeHarmony'));
+   }
+   return;
   }
   if(t.fx[index]==='Vocal Delay'||t.fx[index]==='ArSon Vocal Throw'){
-   window.ArSonMixNativeVocalThrow?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+    window.ArSonMixNativeVocalThrow?.open(t,index);
+    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeVocalThrow'));
+   }
+   return;
   }
   if(t.fx[index]==='8D-SonKu'){
-   window.ArSonMixNativeSonKu?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index)){
+    window.ArSonMixNativeSonKu?.open(t,index);
+    window.ArSonMixFxWorkspace?.raise(document.getElementById('mxNativeSonKu'));
+   }
+   return;
   }
   openFastPicker(t,index,btn);return;
  }"""

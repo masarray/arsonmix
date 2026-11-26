@@ -334,7 +334,7 @@ $("vtClose").addEventListener("click",()=>{
  panel.hidden=true;pending=null;tempoPending=null;readId="";presetBar.close();
 });
 window.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&!panel.hidden){
+ if(!window.ArSonMixFxWorkspace&&e.key==="Escape"&&!panel.hidden){
  if(e.target.closest?.(".mx-fxp-form"))return;
  panel.hidden=true;pending=null;readId="";presetBar.close();
 }
@@ -371,7 +371,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
   panel.dataset.fxTrackId=String(track.id);panel.dataset.fxSlot=String(slot);
   panel.hidden=false;paint();refreshMusicChannels();requestSnapshot(true);
  },
- close(){panel.hidden=true;presetBar.close();}
+ close(){panel.hidden=true;pending=null;readId="";presetBar.close();}
 });
 backend()?.addEventListener?.("arMixBuiltinThrowTempoAck",reply=>{
  if(!tempoPending||reply?.requestId!==tempoPending.requestId)return;

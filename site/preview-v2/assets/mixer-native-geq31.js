@@ -634,7 +634,7 @@ header.addEventListener("pointermove",e=>{
 });
 header.addEventListener("pointerup",e=>{dragHeader=null;try{header.releasePointerCapture(e.pointerId);}catch{}});
 header.addEventListener("pointercancel",()=>{dragHeader=null;});
-window.addEventListener("keydown",e=>{if(e.key==="Escape"&&!root.hidden&&!e.target.closest?.(".mx-fxp-form"))dismiss();});
+window.addEventListener("keydown",e=>{if(!window.ArSonMixFxWorkspace&&e.key==="Escape"&&!root.hidden&&!e.target.closest?.(".mx-fxp-form"))dismiss();});
 window.addEventListener("resize",()=>{
  // Native viewport resize (including F11) is clamped once by the shared
  // FX clip owner; this old rule snapped wide GEQ31 to x=0 every time.

@@ -43,6 +43,17 @@ inline bool attachOwnedFloatingWindow(juce::Component& floating,
     return true; // Native non-Windows foreground policy remains JUCE-owned.
 #endif
 }
+// Explicit pointer/focus activation uses the existing peer, never geometry,
+// lifetime or keyboard focus. JUCE owns non-Windows peer policy.
+inline bool raiseOwnedFloatingWindow(juce::Component& floating,juce::Component& mixer) noexcept {
+    if(!floating.isVisible()||!mixer.isVisible())return false;
+#if defined(_WIN32)
+    const auto* peer=floating.getPeer();const auto* owner=mixer.getPeer();
+    return peer&&owner&&win32::raiseOwnedPopup(peer->getNativeHandle(),owner->getNativeHandle());
+#else
+    floating.toFront(false);return true;
+#endif
+}
 // UI thread only. Preserve a reachable editor on surviving displays; an
 // explicit FX Rack double-click always centres the SAME window in the mixer
 // work area. Screen coordinates are JUCE logical pixels (per-monitor DPI).

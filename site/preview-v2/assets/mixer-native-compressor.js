@@ -422,7 +422,7 @@ window.addEventListener("resize",()=>{
  panel.style.top=clamp(r.top,0,Math.max(0,innerHeight-r.height))+"px";
 });
 window.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&!panel.hidden){
+ if(!window.ArSonMixFxWorkspace&&e.key==="Escape"&&!panel.hidden){
  if(e.target.closest?.(".mx-fxp-form"))return;
  panel.hidden=true;pending=null;delayed=null;presetBar.close();
 }
@@ -449,7 +449,7 @@ window.ArSonMixNativeCompressor=Object.freeze({
   panel.dataset.fxTrackId=String(track.id);panel.dataset.fxSlot=String(slot);
   panel.hidden=false;paint();
  },
- close(){panel.hidden=true;presetBar.close();}
+ close(){panel.hidden=true;pending=null;delayed=null;presetBar.close();}
 });
 backend()?.addEventListener?.("arMixBuiltinCompQueue",reply=>{
  if(!pending||reply?.requestId!==pending.id)return;

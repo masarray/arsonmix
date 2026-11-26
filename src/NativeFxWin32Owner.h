@@ -9,5 +9,7 @@ namespace armix::ui::win32 {
 void preferDarkTitleBar(void* nativeWindow) noexcept;
 bool attachOwnedPopup(void* nativePopup, void* nativeOwner) noexcept;
 bool ensureOwnedPopupVisible(void* nativePopup, void* nativeMixer) noexcept;
+// Raise only a visible owned peer, preserving focus, bounds and owner order.
+bool raiseOwnedPopup(void* nativePopup, void* nativeMixer) noexcept;
 } // namespace armix::ui::win32
 #endif

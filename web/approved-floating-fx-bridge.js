@@ -55,6 +55,16 @@
     event.stopImmediatePropagation();
     backend.emitEvent("arMixFloatingDrag",{});
   },true);
+  window.addEventListener("keydown",event=>{
+    if(event.key!=="Escape"||event.repeat||event.defaultPrevented||!identity||
+       event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||
+       event.target.closest?.(".mx-fxp-form,.mx-fxp-menu,#mxHPresetMenu"))return;
+    const entry=registry[identity.catalogId],root=document.querySelector(entry[2]);
+    if(!root||root.hidden||Array.from(root.querySelectorAll(".mx-fxp-form,.mx-fxp-menu,#mxHPresetMenu"))
+       .some(el=>!el.hidden&&el.getClientRects().length))return;
+    window[entry[1]]?.close?.();
+    if(root.hidden){event.preventDefault();event.stopImmediatePropagation();}
+  },true);
   const same=(a,b)=>String(a)===String(b);
   function project(snapshot,expected) {
     const next=protocol.normalizeSnapshot(snapshot);
@@ -175,7 +185,10 @@
       // after its original Close button hid the DOM/owned HWND. Merely
       // raising the HWND would show an empty dark panel.
       const host=window[registry[proposed.catalogId][1]];
-      if(host?.open) {
+      const root=document.querySelector(registry[proposed.catalogId][2]);
+      // Repeated rack focus must not reset an already visible module.
+      // A logical rekey or hidden panel still needs the original open.
+      if(host?.open && (!root||root.hidden||payload.rekeyFrom)) {
         host.open({id:proposed.channelId,nativeId:proposed.channelId,
           name:next.channel.name||"Channel",slotBypass:[]},proposed.slot);
         if(banner)banner.hidden=true;

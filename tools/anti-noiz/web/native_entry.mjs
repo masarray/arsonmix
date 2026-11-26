@@ -71,5 +71,5 @@ import {nativeTransport} from './native_transport.mjs';
  // Current global/rack/slot readback is authoritative even between DSP
  // telemetry polls. One singleton listener, not one per editor opening.
  backend.addEventListener('arMixConsoleSnapshot',()=>queueMicrotask(()=>view?.refreshHostPower()));
- window.addEventListener('keydown',e=>{if(e.key==='Escape'&&!root.hidden&&!e.target.closest?.('.mx-fxp-form'))close();});
+ window.addEventListener('keydown',e=>{if(!window.ArSonMixFxWorkspace&&e.key==='Escape'&&!root.hidden&&!e.target.closest?.('.mx-fxp-form'))close();});
 })();

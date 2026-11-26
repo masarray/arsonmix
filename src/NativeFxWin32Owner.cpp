@@ -54,5 +54,20 @@ bool ensureOwnedPopupVisible(void* nativePopup, void* nativeMixer) noexcept {
     return ::IsWindowVisible(popup)&&!::IsIconic(popup)&&
            ::GetWindow(popup,GW_OWNER)==mixer;
 }
+// Trusted UI activation only. Refuse stale requests after app switch or
+// while the native owner is disabled by a modal. HWND_TOP is non-topmost;
+// NOACTIVATE keeps keyboard input in the original vendor/WebView control.
+bool raiseOwnedPopup(void* nativePopup, void* nativeMixer) noexcept {
+    const auto popup=static_cast<HWND>(nativePopup);
+    const auto mixer=static_cast<HWND>(nativeMixer);
+    if(!popup||!mixer||!::IsWindow(popup)||!::IsWindow(mixer)||
+       ::GetWindow(popup,GW_OWNER)!=mixer||!::IsWindowVisible(popup)||
+       !::IsWindowVisible(mixer)||::IsIconic(mixer)||::IsIconic(popup)||
+       !::IsWindowEnabled(mixer)||!::IsWindowEnabled(popup))return false;
+    const auto foreground=::GetForegroundWindow();
+    if(foreground&&::GetAncestor(foreground,GA_ROOTOWNER)!=mixer)return false;
+    return ::SetWindowPos(popup,HWND_TOP,0,0,0,0,
+        SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_NOOWNERZORDER)!=FALSE;
+}
 } // namespace armix::ui::win32
 #endif

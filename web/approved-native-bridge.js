@@ -74,7 +74,7 @@
     const identities=new WeakMap(); // exact FX owner, not its slot
     const bypassOwners=new Map(); // navigation lease only
     const editorOwners=new Map(); // includes GEQ, whose bypass UI is internal
-    let drag=null,layer=16000;
+    let drag=null;
     const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
     const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
     function move(root,dx,dy) {
@@ -174,7 +174,7 @@
         editorOwners.delete(root);
         bypassOwners.delete(root);
         if(drag?.root===root){
-          try{drag.capture.releasePointerCapture?.(drag.pointerId);}catch(_){}
+          try{drag.capture.releasePointerCapture?.(drag.id);}catch(_){}
           drag=null;
         }
         if(root.isConnected&&!root.hidden){
@@ -185,12 +185,26 @@
     function openExact(host,key,track,slot,instanceId,lease=null) {
       const selector=selectors[key],root=document.querySelector(selector||"#__none__");
       if(!root||typeof host?.open!=="function"||!instanceId)return false;
-      const identity=String(instanceId);
-      // New FX owner gets first-open placement; the same owner keeps its
-      // dragged position across rack clicks, hide/show and readback updates.
-      if(identities.get(root)!==identity || root.hidden) {
-        // Closing a wide PEQ while panned to its right edge must not
-        // strand the next opening. Visible GEQ rack refocus never moves.
+      const identity=JSON.stringify([lease?.authority,lease?.workspaceToken,
+        lease?.deviceEpoch,String(instanceId)]);
+      const previous=editorOwners.get(root)?.lease;
+      const sameOwner=identities.get(root)===identity;
+      // Same exact visible instance: focus only. Do not reset pending DSP
+      // edits, recreate Anti Noiz/De-Ezzer, or re-read default parameters.
+      // A changed binding (MOVE or revision-bound De-Ezzer transport) must
+      // still use the original verified open lifecycle.
+      const sameBinding=sameOwner&&previous&&lease&&
+        previous.channelId===lease.channelId&&previous.slot===lease.slot&&
+        (key!=="ArSonMixNativeDeEzzer"||previous.graphRevision===lease.graphRevision);
+      if(!root.hidden&&sameBinding){
+        editorOwners.set(root,{key,lease});
+        if(key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
+        window.ArSonMixFxWorkspace?.raise(root);
+        return true;
+      }
+      // A new FX identity gets first-open placement; a hidden SAME owner
+      // retains the existing geometry and only rebinds its module lifecycle.
+      if(identities.get(root)!==identity) {
         offsets.delete(root);
         root.style.removeProperty("translate");
         identities.set(root,identity);
@@ -201,7 +215,7 @@
         editorOwners.set(root,{key,lease});
         if(key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
       }
-      root.style.zIndex=String(++layer);
+      window.ArSonMixFxWorkspace?.raise(root);
       if(!offsets.has(root))center(root);
       else keepReachable(root);
       return true;
@@ -241,7 +255,11 @@
     }
     document.addEventListener("pointerup",finishDrag,true);
     document.addEventListener("pointercancel",finishDrag,true);
-    window.addEventListener("blur",()=>{drag=null;});
+    window.addEventListener("blur",()=>{
+      if(!drag)return;
+      const held=drag;drag=null;
+      try{held.capture.releasePointerCapture?.(held.id);}catch(_){}
+    });
     // When the whole header is cropped into its right-side control buttons,
     // Shift+wheel still slides the exact same FX; Alt+drag works anywhere.
     document.addEventListener("wheel",event=>{
@@ -4896,6 +4914,7 @@
     if(workspaceGeneration!==undefined && workspaceGeneration!==lastWorkspaceGeneration){
       if(lastWorkspaceGeneration!==undefined){
         scope?.cancelNativeSessionGestures?.();
+        inlineFxClip?.closeRackEditors();
         discardTransientNativeUi();pendingLogical=null;logicalRenameId=null;
         pendingRetainedEditor=null;
         lastPaintedSignature="";lastNativeTopologySignature="";lastM4Controls="";
