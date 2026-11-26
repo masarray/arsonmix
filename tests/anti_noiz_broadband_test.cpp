@@ -55,10 +55,18 @@ int main(){
             spectral.update(p,anchor,true,false);residual.update(p,anchor,true,true);
             for(int j=0;j<bins;++j)require(std::abs(spectral.cap(j,p,.063f)-residual.cap(j,p,.063f))<1e-6f,"Silence must not change spectral cap");
         }
-        require(spectral.restoreOutsideNoise(first,.25f,32.f)==.25f,"no restore inside noise band");
-        require(spectral.restoreOutsideNoise(1,.25f,2.f)==.25f,"no restore without excess");
-        require(spectral.restoreOutsideNoise(1,.25f,32.f)>.90f,"restore strong independent foreground");
-        require(spectral.restoreOutsideNoise(1,1.f,32.f)==1.f,"no amplification");
+        require(spectral.restoreOutsideNoise(first,.25f,32.f,true)==.25f,"no restore inside noise band");
+        require(spectral.restoreOutsideNoise(1,.25f,2.f,true)==.25f,"no restore without excess");
+        require(spectral.restoreOutsideNoise(1,.25f,32.f,true)>.90f,"restore strong independent foreground");
+        require(spectral.restoreOutsideNoise(1,1.f,32.f,true)==1.f,"no amplification");
+        require(spectral.restoreOutsideNoise(1,.25f,32.f,false)==.25f,"isolated instantaneous peak cannot restore");
+        require(spectral.restoreOutsideNoise(1,.25f,4.f,true)>.25f,"weak corroborated foreground restores");
+        using Estimator=BroadbandNoise<257>;
+        require(Estimator::noiseScale(2.f,6.f,0.f)==2.f,"uncertain shape retains lower quartile");
+        require(Estimator::noiseScale(2.f,6.f,.5f)==4.f,"soft shape interpolation");
+        require(Estimator::noiseScale(2.f,6.f,1.f)==6.f,"matched shape median");
+        require(Estimator::noiseScale(2.f,1.f,1.f)==2.f,"no downward bias from stale median");
+        require(Estimator::noiseScale(.1f,.2f,1.f)==1.f&&Estimator::noiseScale(4.f,20.f,1.f)==12.f,"bounded scale");
         spectral.reset();require(spectral.cap(k,p,.063f)==1.f,"reset clears slow confidence");
         for(auto& c:anchor)c.fill(1.f);
         g.configure(anchor);require(!g.eligible(),"flat profile excluded");

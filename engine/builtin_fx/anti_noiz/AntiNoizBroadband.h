@@ -45,10 +45,16 @@ public:
     bool residualIdle() const noexcept {return engaged_;}
     // A high-band profile must not unnecessarily darken foreground outside
     // its dominant region. Positive-only restoration, on local excess.
-    float restoreOutsideNoise(int k,float gain,float evidence) const noexcept {
-        if(k>=first_&&k<last_)return gain;
-        const float amount=std::clamp((evidence-4.f)/12.f,0.f,1.f);
-        return gain+.90f*amount*(1.f-gain);
+    bool outsideNoiseBand(int k) const noexcept {return k<first_||k>=last_;}
+    float restoreOutsideNoise(int k,float gain,float evidence,bool temporalConfirmed) const noexcept {
+        if(!outsideNoiseBand(k)||!temporalConfirmed)return gain;
+        const float amount=std::clamp((evidence-2.f)/6.f,0.f,1.f);
+        return gain+amount*(1.f-gain);
+    }
+    // Blend the low-biased robust quartile toward the median only when
+    // the slower profile shape is consistent. No anchor mutation.
+    static float noiseScale(float lower,float median,float confidence) noexcept {
+        return std::clamp(lower+std::clamp(confidence,0.f,1.f)*std::max(0.f,median-lower),1.f,12.f);
     }
     // The cap cannot lower a gain at or below this exact bound.
     bool mayLimit(int k,float gain,float floor) const noexcept {
@@ -79,7 +85,6 @@ private:
             if(n>=4){
                 std::sort(groups.begin(),groups.begin()+n);
                 const float middle=groups[n/2],lower=groups[n/4],upper=groups[(3*n)/4];
-                inverseScale_[c]=1.f/std::clamp(lower,1.f,12.f);
                 const float shape=std::min(std::clamp((lower/std::max(middle,eps)-.65f)*5.f,0.f,1.f),
                     std::clamp((1.75f-upper/std::max(middle,eps))*2.f,0.f,1.f));
                 confidence_[c]=shape*std::clamp((lower-.30f)*3.f,0.f,1.f);
@@ -90,7 +95,9 @@ private:
                 const float sm=slowGroups[n/2],sl=slowGroups[n/4],su=slowGroups[(3*n)/4];
                 const float ss=std::min(std::clamp((sl/std::max(sm,eps)-.65f)*5.f,0.f,1.f),
                     std::clamp((1.75f-su/std::max(sm,eps))*2.f,0.f,1.f));
-                confidence_[c]=std::max(confidence_[c],.85f*ss*std::clamp((sl-.30f)*3.f,0.f,1.f));
+                const float slowConfidence=ss*std::clamp((sl-.30f)*3.f,0.f,1.f);
+                confidence_[c]=std::max(confidence_[c],.93f*slowConfidence);
+                inverseScale_[c]=1.f/noiseScale(lower,sm,slowConfidence);
                 // Independent lower and upper frequency evidence, with no
                 // authority to modify the trusted learned PSD.
                 if constexpr(Residual){

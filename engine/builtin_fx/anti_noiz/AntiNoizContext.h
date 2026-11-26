@@ -36,6 +36,16 @@ public:
         }
         return ratio;
     }
+    // Boolean corroboration for foreground restoration. Compare linear
+    // powers directly and stop on the first independent channel; no division.
+    bool hasTemporalExcess(const Powers& profile,int channels,int bins,int bin) const noexcept {
+        for(int c=0;c<channels;++c){
+            float p=0,q=0;
+            for(int k=std::max(0,bin-1);k<=std::min(bins-1,bin+1);++k){p+=average_[c][k];q+=profile[c][k];}
+            if(p>2.f*std::max(q,eps))return true;
+        }
+        return false;
+    }
     bool update(const Powers& power,const Powers& profile,int channels,int bins,
                 bool eligible,const std::array<float,2>* variability=nullptr) noexcept {
         if(!eligible){reset();return false;}

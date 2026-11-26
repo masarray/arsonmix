@@ -130,6 +130,26 @@ def compare_active(prior, new, failures, case):
           "longest_ms",a["windows"]["longest_under_6db_ms"],b["windows"]["longest_under_6db_ms"],flush=True)
 
 
+def compare_shape(prior, new, failures, case):
+    """Development-set no-regression gate for the new noise-scale estimator."""
+    foreground_pairs(prior, new, failures, case)
+    a,b=prior["max"],new["max"]
+    old_active=aggregate(a["rows"],"active","error_improvement_db")
+    active=aggregate(b["rows"],"active","error_improvement_db")
+    projection=aggregate(b["rows"],"active","desired_projection")
+    old_weak=aggregate(a["rows"],"weak","desired_projection")
+    weak=aggregate(b["rows"],"weak","desired_projection")
+    idle=aggregate(b["rows"],"idle","idle_attenuation_db")
+    old_idle=aggregate(a["rows"],"idle","idle_attenuation_db")
+    residual=idle-aggregate(new["spectral"]["rows"],"idle","idle_attenuation_db")
+    if active<old_active or not .97<=projection<=1.03 or abs(weak-1)>abs(old_weak-1):
+        failures.append([case,"shape estimator active/weak regression",old_active,active,projection,old_weak,weak])
+    if idle<old_idle or idle<12 or residual<3 or b["windows"]["p10_db"]<a["windows"]["p10_db"] or b["windows"]["longest_under_6db_ms"]>a["windows"]["longest_under_6db_ms"]:
+        failures.append([case,"shape estimator idle regression",old_idle,idle,residual])
+    print("FIELD_SHAPE",case,"active",old_active,active,"weak_projection",old_weak,weak,
+          "idle",old_idle,idle,"p10",a["windows"]["p10_db"],b["windows"]["p10_db"],flush=True)
+
+
 def run():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("old",type=Path,nargs="?")
@@ -138,6 +158,8 @@ def run():
     p.add_argument("--self-test",action="store_true")
     p.add_argument("--prior",type=Path,help="exact pre-residual broadband comparator")
     p.add_argument("--pre-active",type=Path,help="exact pre-active spectral-policy comparator")
+    p.add_argument("--pre-shape",type=Path,help="exact previous noise-scale comparator")
+    p.add_argument("--reference-probe",type=Path,help="offline reference-known mask diagnostic")
     args=p.parse_args()
     self_test()
     if args.self_test:return
@@ -147,6 +169,8 @@ def run():
     if args.pre_active:
         if not args.prior:raise ValueError("historical residual comparator required")
         binaries["pre-active"]=args.pre_active.resolve(strict=True)
+    if args.pre_shape:binaries["pre-shape"]=args.pre_shape.resolve(strict=True)
+    probe=args.reference_probe.resolve(strict=True) if args.reference_probe else None
     root=args.output.resolve();root.mkdir(parents=True,exist_ok=False)
     download("README.md",README_SHA,root/"SOURCE-README.md")
     stereo,credit=recorded_noise(SOURCE,root/SOURCE[3])
@@ -184,6 +208,13 @@ def run():
             report["cases"][key]=results
             if all(len(v)==2 for v in results.values()):
                 compare(results["old"],results["new"],report["failures"],key)
+                if "pre-shape" in results:
+                    compare_shape(results["pre-shape"],results["new"],report["failures"],key)
+                if probe:
+                    for segment in ("active","weak"):
+                        _,lo,hi,_=next(x for x in labels if x[0]==segment)
+                        diagnostic=subprocess.run([str(probe),str(case/"clean.wav"),str(case/"noise.wav"),str(lo),str(hi),str(case/"new-max-processed.wav")],capture_output=True,text=True,check=True,timeout=60)
+                        (case/f"reference-mask-{segment}.csv").write_text(diagnostic.stdout)
                 if "pre-active" in results:
                     compare_active(results["pre-active"],results["new"],report["failures"],key)
                 if "prior" in results:

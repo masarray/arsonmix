@@ -110,15 +110,24 @@ jobs:
           ref: 54af7eea34b264e03f123302051aaf5d2ebf61c8
           path: active-reference
           persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 14c87a874e615350f5cf5cdf149dc4848f084a9a
+          path: shape-reference
+          persist-credentials: false
       - name: Build exact field baseline and candidate
         run: |
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror field-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-old"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-new"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror residual-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-prior"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror active-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-pre-active"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror shape-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-pre-shape"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/anti-noiz/reference_mask_probe.cpp -o "$RUNNER_TEMP/reference-mask"
+          "$RUNNER_TEMP/reference-mask" --self-test
+          "$RUNNER_TEMP/reference-mask" --rumble-probe > "$RUNNER_TEMP/reference-mask-rumble.csv"
           python3 tools/anti-noiz/recorded_field_wind.py --self-test
       - name: Measure paired real breeze and preserve foreground
-        run: python3 tools/anti-noiz/recorded_field_wind.py "$RUNNER_TEMP/field-old" "$RUNNER_TEMP/field-new" "$RUNNER_TEMP/field-wind" --prior "$RUNNER_TEMP/field-prior" --pre-active "$RUNNER_TEMP/field-pre-active"
+        run: python3 tools/anti-noiz/recorded_field_wind.py "$RUNNER_TEMP/field-old" "$RUNNER_TEMP/field-new" "$RUNNER_TEMP/field-wind" --prior "$RUNNER_TEMP/field-prior" --pre-active "$RUNNER_TEMP/field-pre-active" --pre-shape "$RUNNER_TEMP/field-pre-shape" --reference-probe "$RUNNER_TEMP/reference-mask"
       - name: Preserve unnormalized A/B and machine evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -126,6 +135,9 @@ jobs:
           name: anti-noiz-field-wind-ab
           path: |
             ${{ runner.temp }}/field-wind/report.json
+            ${{ runner.temp }}/reference-mask-rumble.csv
+            ${{ runner.temp }}/field-wind/*/reference-mask-*.csv
+            ${{ runner.temp }}/field-wind/*/pre-shape-max-processed.wav
             ${{ runner.temp }}/field-wind/*/provenance.tsv
             ${{ runner.temp }}/field-wind/*/segments.tsv
             ${{ runner.temp }}/field-wind/*/old-max-input.wav

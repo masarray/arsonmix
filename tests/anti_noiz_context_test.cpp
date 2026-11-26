@@ -34,6 +34,17 @@ int main(){try{
         guard.reset();const std::array<float,2> stationary{.2f,.2f};
         for(int i=0;i<frames;++i)guard.update(varying,profile,2,129,true,&stationary);
         offline::require(!guard.adaptiveIdle(),"stationary profile not eligible");
+        // Boolean temporal corroboration is stereo-union and must not
+        // confuse a single instantaneous peak with persistent evidence.
+        guard.reset();auto probe=profile;
+        guard.update(probe,profile,2,129,true);
+        offline::require(!guard.hasTemporalExcess(profile,2,129,40),"noise-only temporal guard");
+        for(int k=39;k<=41;++k)probe[1][k]*=4.f;
+        for(int i=0;i<frames;++i)guard.update(probe,profile,2,129,true);
+        offline::require(guard.hasTemporalExcess(profile,2,129,40),"independent stereo temporal evidence");
+        offline::require(!guard.hasTemporalExcess(profile,1,129,40),"mono cannot see other leg");
+        offline::require(!guard.hasTemporalExcess(profile,2,129,0),"DC boundary stays noise-only");
+        offline::require(!guard.hasTemporalExcess(profile,2,129,128),"Nyquist boundary stays noise-only");
         std::mt19937 gen(318);std::uniform_real_distribution<float> random(-.003f,.003f);
         offline::Audio learn{rate,2,std::vector<float>(std::size_t(rate)*6)};
         for(auto& x:learn.samples)x=random(gen);

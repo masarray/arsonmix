@@ -308,8 +308,9 @@ private:
             }
             // Restore foreground outside the learned dominant band only
             // when independent local excess is present.
-            if(broadEnabled&&activeVoice&&evidence>4.f)
-                gain=broadband_.restoreOutsideNoise(k,gain,evidence);
+            if(broadEnabled&&activeVoice&&evidence>2.f&&broadband_.outsideNoiseBand(k))
+                gain=broadband_.restoreOutsideNoise(k,gain,evidence,
+                    context_.hasTemporalExcess(profile_.anchor(),channels_,bins,k));
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
                 context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
             target_[k]=std::max(localFloor,gain);
