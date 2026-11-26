@@ -21,6 +21,7 @@ public:
         std::array<std::uint64_t,13> counts {};
         std::uint64_t total = 0;
         double p95Ceiling = 0.0, p99Ceiling = 0.0;
+        std::array<std::uint64_t,4> phaseObserved{},phaseOverBudget{};
     };
     void observe (std::uint64_t elapsedMicroseconds, double periodMicroseconds) noexcept
     {
@@ -29,6 +30,17 @@ public:
         unsigned i = 0;
         for (; i < bounds.size() && fraction > bounds[i]; ++i) {}
         counts_[i].fetch_add (1, std::memory_order_relaxed);
+        // Sequence of measured renders, not driver callbacks. Publish every
+        // 64 observations; no extra locked increment per render. Cumulative
+        // phase deltas help test every-fourth workload hypotheses.
+        const auto phase=sequence_++&3u;
+        ++phaseObserved_[phase];
+        if(i==bounds.size())++phaseOverBudget_[phase];
+        if((sequence_&63u)==0)
+            for(unsigned p=0;p<4;++p){
+                observedPublished_[p].store(phaseObserved_[p],std::memory_order_relaxed);
+                overPublished_[p].store(phaseOverBudget_[p],std::memory_order_relaxed);
+            }
     }
     Snapshot snapshot() const noexcept
     {
@@ -37,6 +49,10 @@ public:
         {
             v.counts[i] = counts_[i].load (std::memory_order_relaxed);
             v.total += v.counts[i];
+        }
+        for(unsigned p=0;p<4;++p){
+            v.phaseObserved[p]=observedPublished_[p].load(std::memory_order_relaxed);
+            v.phaseOverBudget[p]=overPublished_[p].load(std::memory_order_relaxed);
         }
         auto percentile = [&](std::uint64_t numerator) noexcept {
             if (!v.total) return 0.0;
@@ -55,5 +71,8 @@ public:
     }
 private:
     std::array<std::atomic<std::uint64_t>,13> counts_ {};
+    std::uint64_t sequence_=0; // single audio writer, lifetime of engine
+    std::array<std::uint64_t,4> phaseObserved_{},phaseOverBudget_{};
+    std::array<std::atomic<std::uint64_t>,4> observedPublished_{},overPublished_{};
 };
 } // namespace armix::rt

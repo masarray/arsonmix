@@ -1337,6 +1337,9 @@ private:
                  "lateCallbackIntervals", "callbackCadenceClockRegressions",
                  "callbackCadenceComparedIntervals", "worstCallbackUs",
                  "worstPluginUs", "slowPluginCount",
+                 "nativeFxWorstUs", "nativeFxWorstName", "nativeFxTimingLeases",
+                 "callbackModulo4Observed", "callbackModulo4OverBudget",
+                 "masterAnalysisState", "masterAnalysisDroppedFramesLifetime",
                  "backendXrunCount", "backendXrunMeaning",
                  "renderUnderrunSource", "secondaryOutputUnderflow",
                  "secondaryOutputOverflow", "secondaryOutputFrames"})
@@ -9469,6 +9472,16 @@ private:
                 compactMemoryWindowReport(window));
             diagnostics_.record ("AUDIO_GLITCH_WINDOW",
                 crackleWindowReport(window));
+            // Separate bounded attribution record: preserve parseable native
+            // evidence even if the full device/FX status is truncated.
+            auto rtr=std::make_unique<juce::DynamicObject>();
+            for(const char* key:{"callbackCount","overBudgetCount","deviceGeneration",
+                "callbackModulo4Observed","callbackModulo4OverBudget","callbackModulo4Provenance",
+                "nativeFxWorstUs","nativeFxWorstName","nativeFxWorstInstance","nativeFxTimingLeases",
+                "masterAnalysisState","masterAnalysisDroppedFramesLifetime"})
+                if(const auto value=status.getProperty(key,{});!value.isVoid())
+                    rtr->setProperty(key,value);
+            diagnostics_.record("AUDIO_GLITCH_RTR",juce::JSON::toString(juce::var(rtr.release()),true));
             emitNotice ("Crackle marker saved with source-labeled pre-mark evidence (up to 5 s).");
         }
         else if (action == "backupStudio")

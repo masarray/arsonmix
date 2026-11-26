@@ -10,7 +10,7 @@
 #include "LiveDryRoutingLab.h"
 #include "NativeMixerSessionFxRestore.h"
 #include "NativeTopologyEditSafety.h"
-#include "../engine/dsp/NativeMasterLoudness.h"
+#include "../engine/dsp/NativeMasterAnalysisTap.h"
 #include "../engine/player/NativePlayerShowDeck.h"
 #include "../engine/player/PlayerOutputTrim.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
@@ -2799,6 +2799,9 @@ public:
         // generated CONTROL readback. No extra render/FX scan on RT.
         const bool globalFxBypassed = dryRoutingLab_.globalFxBypassed();
         int installedNativeFx = 0, processingNativeFx = 0, sleepingNativeFx = 0;
+        double nativeWorst=-1.;
+        juce::String nativeWorstName,nativeWorstInstance;
+        int nativeTimingLeases=0;
         const auto accountInserts = [&] (const juce::var& inserts,
                                          bool rackBypassed)
         {
@@ -2807,6 +2810,14 @@ public:
                     if (insert.isObject())
                     {
                         ++installedNativeFx;
+                        if(bool(insert.getProperty("dspTelemetryLive",false)) &&
+                           static_cast<double>(insert.getProperty("dspProcessedBlocks",0.))>0.) {
+                            ++nativeTimingLeases;
+                            const auto worst=static_cast<double>(insert.getProperty("dspWorstUs",0.));
+                            if(worst>nativeWorst){nativeWorst=worst;
+                                nativeWorstName=insert.getProperty("name","").toString();
+                                nativeWorstInstance=insert.getProperty("instanceId","").toString();}
+                        }
                         if (!globalFxBypassed && !rackBypassed &&
                             !bool (insert.getProperty ("bypassed", false))) {
                             ++processingNativeFx; // historical effective-enabled count
@@ -2873,6 +2884,12 @@ public:
             installedNativeFx += externalCh1Installed;
             processingNativeFx += externalCh1Processing;
         }
+        o->setProperty("nativeFxWorstUs",nativeWorst>=0.?juce::var(nativeWorst):juce::var());
+        o->setProperty("nativeFxWorstName",nativeWorstName);
+        o->setProperty("nativeFxWorstInstance",nativeWorstInstance);
+        o->setProperty("nativeFxTimingLeases",nativeTimingLeases);
+        o->setProperty("nativeFxTimingProvenance","LIVE_NATIVE_INSERT_LIFETIME_WALL_US_EXCLUDES_EXTERNAL_CH1");
+        o->setProperty("legacyFxTimingProvenance","LEGACY_GRAPH_SLOT_TIMING_NOT_NATIVE_INSERT_TIMING");
         o->setProperty ("nativeFxActivityComplete", externalFxActivityComplete);
         o->setProperty ("nativeExternalCh1Leased", externalCh1Leased);
         o->setProperty ("nativeExternalCh1InstalledCount", externalCh1Installed);
@@ -3046,6 +3063,14 @@ public:
         for (const auto count : histogram.counts)
             budgetBuckets.add (static_cast<double> (count));
         o->setProperty ("callbackBudgetBuckets", juce::var (budgetBuckets));
+        juce::Array<juce::var> phaseObserved,phaseOver;
+        for(unsigned i=0;i<4;++i){
+            phaseObserved.add(static_cast<double>(histogram.phaseObserved[i]));
+            phaseOver.add(static_cast<double>(histogram.phaseOverBudget[i]));
+        }
+        o->setProperty("callbackModulo4Observed",juce::var(phaseObserved));
+        o->setProperty("callbackModulo4OverBudget",juce::var(phaseOver));
+        o->setProperty("callbackModulo4Provenance","MEASURED_RENDER_SEQUENCE_CUMULATIVE_BATCH64_NOT_DRIVER_XRUN");
         o->setProperty ("callbackBudgetBucketProvenance",
             "HOST_CALLBACK_BUDGET_CUMULATIVE_13_BUCKETS_NOT_DRIVER_RENDER_XRUN");
         o->setProperty ("inputPeak", inputPeak_.load());
@@ -3081,9 +3106,16 @@ public:
         o->setProperty ("driverBufferProvenance","JUCE_CALLBACK_OUTPUT_POST_GATE");
         o->setProperty ("mainTestLastPeak",mainTestPeak_.load(std::memory_order_relaxed));
         const auto loudness = masterLoudness_.read();
-        const bool measuredDirect = !dual && loudness.supported;
+        const bool measuredDirect = !dual && loudness.state==armix::dsp::NativeMasterAnalysisTap::State::measured;
         o->setProperty ("masterAnalysisProvenance",
             measuredDirect ? "MEASURED_48K_BS1770_K_4X_FIR" : "UNSUPPORTED");
+        o->setProperty("masterAnalysisState",dual?"UNSUPPORTED":
+            armix::dsp::NativeMasterAnalysisTap::stateName(loudness.state));
+        o->setProperty("masterAnalysisExecution","NON_REALTIME_SPSC_ANALYSIS_ONLY");
+        o->setProperty("masterAnalysisGeneration",static_cast<double>(loudness.generation));
+        o->setProperty("masterAnalysisProcessedFrames",static_cast<double>(loudness.processedFrames));
+        o->setProperty("masterAnalysisPendingBlocks",static_cast<int>(loudness.pendingBlocks));
+        o->setProperty("masterAnalysisDroppedFramesLifetime",static_cast<double>(loudness.droppedFramesLifetime));
         if (measuredDirect && loudness.integratedValid)
             o->setProperty ("masterLufs", loudness.integratedLufs);
         if (measuredDirect && loudness.truePeakValid)
@@ -3335,7 +3367,7 @@ private:
     double playerPendingCueIn_=0.,playerPendingCueOut_=0.;
     std::uint64_t playerBoundEpoch_=0; // never borrow old device approval
     std::array<std::array<float,maxFrames>,2> playerScratch_{}; // preallocated RT block
-    armix::dsp::NativeMasterLoudness masterLoudness_;
+    armix::dsp::NativeMasterAnalysisTap masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     LiveDryRoutingLab dryRoutingLab_;
     std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
@@ -3469,7 +3501,7 @@ private:
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
         playerDeck_.deviceRate(sampleRateHz_); // worker resampler rebind, no ASIO disk I/O
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
-        masterLoudness_.prepare (sampleRateHz_); // fixed buffers, 48k DIRECT only
+        masterLoudness_.prepare (sampleRateHz_); // epoch only; worker owns 48k analyzer
         for (int i = 0; i < maxFx; ++i)
         {
             lastPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
@@ -3854,7 +3886,7 @@ private:
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};
-            masterLoudness_.process(measured,2,samples);
+            masterLoudness_.publish(measured,2,samples);
             // Only actually routed audio can produce a live output meter.
             const float left=routed?dryRoutingLab_.peakLeft():0.f;
             const float right=routed?dryRoutingLab_.peakRight():0.f;
@@ -4002,7 +4034,7 @@ private:
                 outputs && outputChannels>0 ? outputs[0] : nullptr,
                 outputs && outputChannels>1 ? outputs[1] : nullptr
             };
-            masterLoudness_.process(measured,juce::jmin(outputChannels,2),samples);
+            masterLoudness_.publish(measured,juce::jmin(outputChannels,2),samples);
         }
         inputPeak_.store (juce::jmin (1.f, inPeak), std::memory_order_relaxed);
         postFxPeak_.store (juce::jmin (1.f, postFxPeak), std::memory_order_relaxed);

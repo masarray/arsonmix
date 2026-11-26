@@ -1840,6 +1840,7 @@ if(BUILD_TESTING)
 
   add_executable(ARMixNativeMasterLoudnessTests tests/native_master_loudness_test.cpp engine/dsp/NativeMasterLoudness.h)
   target_compile_features(ARMixNativeMasterLoudnessTests PRIVATE cxx_std_20)
+  target_link_libraries(ARMixNativeMasterLoudnessTests PRIVATE Threads::Threads)
   add_test(NAME P1KMeasuredNativeBS1770StereoAnd4xTruePeak COMMAND ARMixNativeMasterLoudnessTests)
 
 endif()
