@@ -71,7 +71,18 @@ def gh_json(*args):
 
 def release_inventory():
     pages = gh_json("--paginate", "--slurp", "repos/" + REPO + "/releases?per_page=100")
-    return [release for page in pages for release in page if not release["draft"]]
+    releases = [release for page in pages for release in page if not release["draft"]]
+    seen = set()
+    for release in releases:
+        rid = release["id"]
+        if type(rid) is not int or rid <= 0 or rid in seen:
+            raise ValueError("invalid or duplicate release id")
+        seen.add(rid)
+        # Embedded release assets may not be a complete inventory; page explicitly.
+        asset_pages = gh_json("--paginate", "--slurp", "repos/" + REPO +
+                              "/releases/" + str(rid) + "/assets?per_page=100")
+        release["assets"] = [asset for page in asset_pages for asset in page]
+    return releases
 
 
 def archive_releases(root):

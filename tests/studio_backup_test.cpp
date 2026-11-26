@@ -5,6 +5,9 @@
 #include <cassert>
 #include <iostream>
 #include "../src/StudioBackup.h"
+#if !JUCE_WINDOWS
+ #include <sys/stat.h>
+#endif
 
 int main()
 {
@@ -94,6 +97,14 @@ int main()
     assert (st::StudioBackup::verify (copy.folder).isNotEmpty());
     assert (extraDir.deleteFile());
     assert (st::StudioBackup::verify (copy.folder).isEmpty());
+   #if !JUCE_WINDOWS
+    // A FIFO must be rejected BEFORE any stream read (which could block forever).
+    assert (manifestFile.deleteFile());
+    assert (::mkfifo (manifestFile.getFullPathName().toRawUTF8(), 0600) == 0);
+    assert (st::StudioBackup::verify (copy.folder).isNotEmpty());
+    assert (manifestFile.deleteFile());
+    assert (manifestFile.replaceWithText (manifestText));
+   #endif
     // Cold portable recovery drill: verify original, copy into a NEW location,
     // verify the copy before use; no live workspace replacement or execution.
     const auto recovery = temp.getChildFile ("Recovered Studio");

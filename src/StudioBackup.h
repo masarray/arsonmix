@@ -36,7 +36,7 @@ public:
                           const juce::File& destinationRoot)
     {
         if (!validExecutableName (executable.getFileName()) ||
-            !executable.existsAsFile() || !studio.isDirectory() ||
+            !regular (executable) || !studio.isDirectory() ||
             !destinationRoot.isDirectory() || linked (executable) ||
             linked (studio) || linked (destinationRoot))
             return { {}, "App, Studio or backup destination is missing" };
@@ -66,7 +66,7 @@ public:
                               const juce::String& relative) -> juce::String
         {
             if (!PortableWorkspace::safeRelativePath (relative) ||
-                !from.existsAsFile() || linked (from))
+                !regular (from))
                 return "Backup rejected missing/linked file: " + relative;
             if (to.getParentDirectory().createDirectory().failed())
                 return "Backup destination cannot create directory for: " + relative;
@@ -147,7 +147,7 @@ public:
         if (catalogFile.exists())
         {
             juce::String catalogText;
-            if (linked (catalogFile) || !BoundedDataInput::text (catalogFile, manifestLimit, catalogText) ||
+            if (!regular (catalogFile) || !BoundedDataInput::text (catalogFile, manifestLimit, catalogText) ||
                 !BoundedDataInput::jsonStructure (catalogText))
                 return fail ("Plugin catalog is not bounded valid text");
             catalog = juce::JSON::parse (catalogText);
@@ -196,12 +196,12 @@ public:
             return "Backup folder missing or is a link";
         const auto marker = backupFolder.getChildFile ("portable_mode.txt");
         juce::String markerText;
-        if (linked (marker) || !BoundedDataInput::text (marker, 256, markerText) ||
+        if (!regular (marker) || !BoundedDataInput::text (marker, 256, markerText) ||
             markerText.trim() != "ARSONMIX_PORTABLE_WORKSPACE_V1")
             return "Portable startup marker missing or invalid";
         const auto manifestFile = backupFolder.getChildFile ("backup-manifest.json");
         juce::String manifestText;
-        if (linked (manifestFile) || !BoundedDataInput::text (manifestFile, manifestLimit, manifestText) ||
+        if (!regular (manifestFile) || !BoundedDataInput::text (manifestFile, manifestLimit, manifestText) ||
             !BoundedDataInput::jsonStructure (manifestText))
             return "Backup manifest missing, invalid or exceeds integrity limit";
         const auto manifest = juce::JSON::parse (manifestText);
@@ -254,8 +254,7 @@ public:
                     return "Linked or escaping backup folder: " + relative;
                 parent = parent.getParentDirectory();
             }
-            std::error_code fileError;
-            if (!std::filesystem::is_regular_file (std::filesystem::symlink_status (native (target), fileError)) || fileError)
+            if (!regular (target))
                 return "Missing or unsafe backup file: " + relative;
             const auto expected = record.getProperty ("bytes", {});
             const auto expectedHash = record.getProperty ("sha256", {}).toString();
@@ -309,6 +308,13 @@ public:
         const auto lower = name.toLowerCase();
         return PortableWorkspace::safeRelativePath (name) && !name.containsChar ('/') &&
             lower != "studio" && lower != "portable_mode.txt" && lower != "backup-manifest.json";
+    }
+
+    static bool regular (const juce::File& file)
+    {
+        std::error_code ec;
+        return !linked (file) &&
+            std::filesystem::is_regular_file (std::filesystem::symlink_status (native (file), ec)) && !ec;
     }
 
     static bool linked (const juce::File& file)

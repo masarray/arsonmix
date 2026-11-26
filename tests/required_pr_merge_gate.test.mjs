@@ -266,3 +266,12 @@ test("Security regression requires exact-head run and actual successful job",()=
   assert.equal(evaluate(lanes,matched,{92:[job(name)]}).state,"success");
   assert.equal(evaluate(lanes,matched,{92:[job("fake check")]}).state,"failure");
 });
+
+ test("ZBSH-11 backup and recovery changes require security regression",()=>{
+  for(const path of ["src/StudioBackup.h","tests/studio_backup_test.cpp",
+    "scripts/disaster_recovery.py","scripts/tests/test_disaster_recovery.py"]){
+    const lanes=requiredLanes([path]);
+    assert.equal(lanes.securityRegression,true,path);
+    assert.equal(evaluate(lanes,{},{}).state,"pending",path);
+  }
+});

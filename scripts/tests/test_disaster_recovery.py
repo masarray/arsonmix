@@ -81,6 +81,15 @@ class DisasterRecovery(unittest.TestCase):
                 self.make()
         self.assertFalse(self.archive.exists())
 
+    def test_release_inventory_pages_assets_and_ignores_drafts(self):
+        with patch.object(dr, "gh_json", side_effect=[
+                [[{"id": 1, "draft": False, "assets": []}], [{"id": 2, "draft": True}]],
+                [[{"id": 101}], [{"id": 102}]]]) as api:
+            releases = dr.release_inventory()
+        self.assertEqual([a["id"] for a in releases[0]["assets"]], [101, 102])
+        self.assertEqual(len(releases), 1)
+        self.assertEqual(api.call_count, 2)
+
     def test_release_asset_digest_failure(self):
         target = self.root / "release-fixture"
         target.mkdir()
