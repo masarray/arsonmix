@@ -81,8 +81,8 @@ public:
         alive_.store (false);
         lifetime_->store (false);
         worker_.signalThreadShouldExit();
-        // Scanning cannot be forcibly cancelled inside a third-party scanner.
-        // Never detach a worker that still references this object.
+        // Child discovery has a bounded cancellation path. Never detach a
+        // worker that still references this object (filesystem I/O may block).
         worker_.stopThread (-1);
     }
 
@@ -283,6 +283,15 @@ private:
                     const juce::ScopedLock lock (owner_.progressLock_);
                     owner_.current_ = juce::File (path).getFileName();
                 }
+                const bool explicitRetry = !factoryOnly_ && requested_.size()==1 &&
+                    juce::File(requested_[0]).hasFileExtension("vst3");
+                if (!explicitRetry && armix::vst::ScanIsolation::blocked(path)) {
+                    importErrors << (importErrors.isNotEmpty() ? " | " : "")
+                                 << juce::File(path).getFileName() << ": "
+                                 << armix::vst::ScanIsolation::message(armix::vst::ScanIsolation::Outcome::quarantined);
+                    owner_.completed_.store(n+1,std::memory_order_release);
+                    continue;
+                }
                 bool usedVerifiedCache = false;
                 if (factoryOnly_ && verifiedCache != nullptr && verifiedCache->size() <= 64)
                 {
@@ -323,7 +332,15 @@ private:
                         });
                     if(descriptions.isEmpty()||missingFactoryType) {
                         descriptions.clear();
-                        format.findAllTypesForFile(descriptions,path);
+                        const auto outcome=armix::vst::ScanIsolation::inspect(path,descriptions,
+                            explicitRetry,[this]{return threadShouldExit();});
+                        if(outcome!=armix::vst::ScanIsolation::Outcome::ok) {
+                            importErrors << (importErrors.isNotEmpty() ? " | " : "")
+                                         << juce::File(path).getFileName() << ": "
+                                         << armix::vst::ScanIsolation::message(outcome);
+                            owner_.completed_.store(n+1,std::memory_order_release);
+                            continue;
+                        }
                         cache.remember(descriptions);
                     }
                     for (int i = 0; i < descriptions.size(); ++i)

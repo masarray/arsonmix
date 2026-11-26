@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "NativeMixerSessionDocument.h"
+#include "BoundedDataInput.h"
 #include <juce_cryptography/juce_cryptography.h>
 #include <algorithm>
 #include <set>
@@ -15,6 +16,7 @@ class NativeMixerSessionStore final {
 public:
     explicit NativeMixerSessionStore(juce::File studio)
         : root_(studio.getChildFile("MixerSession")) {}
+    using Input=armix::storage::BoundedDataInput;
     // Cold-start emergency path only, before any session worker or driver exists.
     // Preserve even corrupt journals byte-for-byte; do not read or delete them.
     juce::String quarantineForStartupRecovery(juce::File& archived) const {
@@ -58,6 +60,9 @@ public:
             if(total>maxTotal)return "Mixer session exceeds 128 MB budget";
         }
         if(hashes!=referenced)return "Mixer vendor state manifest is incomplete";
+        if(!Input::managedPath(root_,root_.getChildFile("versions"))||
+           !Input::managedPath(root_,root_.getChildFile("HEAD"))||
+           !Input::managedPath(root_,root_.getChildFile("PREVIOUS")))return "Unsafe mixer session storage path";
         if(!root_.isDirectory()&&root_.createDirectory().failed())
             return "MixerSession directory is not writable";
         const auto versions=root_.getChildFile("versions");
@@ -191,11 +196,12 @@ public:
         const auto size=file.getSize();
         if(!file.hasFileExtension(".smix")||!file.existsAsFile()||size<1||size>maxFile)
             return "Mixer file is missing, invalid or too large";
-        juce::FileInputStream input(file);
         juce::MemoryBlock contents;
-        if(!input.openedOk()||input.readIntoMemoryBlock(contents,maxFile+1)>maxFile)
+        if(!Input::read(file,maxFile,contents))
             return "Could not read mixer file";
-        auto root=juce::JSON::parse(contents.toString());
+        juce::String text;
+        if(!Input::decodeUtf8(contents,text)||!Input::jsonStructure(text))return "Mixer JSON exceeds structural bounds";
+        auto root=juce::JSON::parse(text);
         if(!root.isObject())return "Invalid mixer JSON";
         const auto blobs=root.getProperty("pluginState",{});
         if(!blobs.isObject())return "Mixer plug-in state is missing";
@@ -286,11 +292,13 @@ private:
     }
     static juce::String readPointer(const juce::File& file) {
         if(!file.existsAsFile()||file.getSize()<1||file.getSize()>128)return {};
-        const auto name=file.loadFileAsString().trim();
+        juce::String value;
+        if(!Input::text(file,128,value))return {};
+        const auto name=value.trim();
         return armix::shows::detail::uuid(name)?name:juce::String{};
     }
     static juce::String writePointer(const juce::File& file,const juce::String& id) {
-        if(!armix::shows::detail::uuid(id))return "Invalid mixer generation pointer";
+        if(!armix::shows::detail::uuid(id)||file.isSymbolicLink())return "Invalid mixer generation pointer";
         juce::TemporaryFile staging(file);
         auto output=staging.getFile().createOutputStream();
         if(!output||!output->writeText(id+"\n",false,false,"\n"))
@@ -310,8 +318,13 @@ private:
            jsonFile.getSize()<1||jsonFile.getSize()>maxJson||
            !sumFile.existsAsFile()||sumFile.getSize()!=64)
             return "Mixer JSON generation missing/oversized";
-        const auto text=jsonFile.loadFileAsString();
-        const auto expected=sumFile.loadFileAsString().trim();
+        const auto versions=generation.getParentDirectory();
+        const auto root=versions.getFileName()=="versions"?versions.getParentDirectory():versions;
+        if(!Input::managedPath(root,jsonFile)||!Input::managedPath(root,sumFile)||
+           !Input::managedPath(root,generation.getChildFile("blobs")))return "Unsafe mixer generation storage path";
+        juce::String text,sum;
+        if(!Input::text(jsonFile,maxJson,text)||!Input::text(sumFile,64,sum))return "Mixer generation read exceeded bounds";
+        const auto expected=sum.trim();
         if(!safeHash(expected)||
            juce::SHA256(text.toRawUTF8(),text.getNumBytesAsUTF8()).toHexString()!=expected)
             return "Mixer document SHA mismatch";
@@ -328,13 +341,13 @@ private:
             const auto file=generation.getChildFile("blobs").getChildFile(hash+".bin");
             if(!file.existsAsFile()||file.getSize()<0||file.getSize()>maxState)
                 return "Mixer VST3 state missing or oversized";
-            total+=file.getSize();
-            if(total>maxTotal)return "Mixer vendor state budget exceeded";
+            if(!Input::managedPath(root,file))return "Unsafe mixer blob path";
             armix::shows::BinaryState blob;
             blob.sha256=hash;
-            if(!file.loadFileAsData(blob.bytes)||
+            if(!Input::read(file,std::min(maxState,maxTotal-total),blob.bytes,true)||
                juce::SHA256(blob.bytes).toHexString()!=hash)
                 return "Mixer vendor state changed on disk";
+            total+=static_cast<juce::int64>(blob.bytes.getSize());
             binaries.push_back(std::move(blob));
         }
         out=std::move(doc);states=std::move(binaries);

@@ -82,6 +82,7 @@ int main()
         "workspace://Plugins\\escape.vst3", "workspace://Plugins/./bad.vst3" })
         assert (storage::PortableWorkspace::decode (rootB, invalid) == juce::File());
 
+    assert(storage::PortableWorkspace::decode(rootB,"relative.vst3")==juce::File());
     // User intentionally 'Load in Place' remains backward compatible.
     assert (storage::PortableWorkspace::decode (rootB, outside.getFullPathName()) == outside);
 

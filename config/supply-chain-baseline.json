@@ -1,0 +1,75 @@
+{
+  "schema": "arsonmix.supply-chain-baseline.v1",
+  "scope": "source/build inventory only; not a binary SBOM",
+  "components": [
+    {
+      "id": "juce",
+      "version": "8.0.15",
+      "git": "https://github.com/juce-framework/JUCE",
+      "commit": "91ad83ae34a81e0833b1a2b0866f54846370ae53",
+      "license": "AGPL-3.0-only (selected module option; individual file terms apply)"
+    },
+    {
+      "id": "vst3-sdk",
+      "version": "JUCE 8.0.15 bundled snapshot",
+      "license": "MIT; verify component-specific notices",
+      "parent": "juce"
+    },
+    {
+      "id": "asio-sdk",
+      "version": "JUCE 8.0.15 bundled snapshot",
+      "license": "GPL-3.0-only alternative; individual file terms apply",
+      "parent": "juce"
+    },
+    {
+      "id": "signalsmith-stretch",
+      "version": "1.3.2",
+      "git": "https://github.com/Signalsmith-Audio/signalsmith-stretch",
+      "commit": "88061fd4eda56a2353c5d65c74aa3f4ccf76f9da",
+      "license": "MIT"
+    },
+    {
+      "id": "signalsmith-linear",
+      "git": "https://github.com/Signalsmith-Audio/linear",
+      "commit": "7bb1c8f36794d6980080ce817c91f8da8fe56a66",
+      "license": "MIT"
+    },
+    {
+      "id": "webview2-sdk",
+      "version": "1.0.3485.44",
+      "license": "Microsoft terms",
+      "verification": "version pin; actual package hash/redistribution inventory pending"
+    },
+    {
+      "id": "vb-cable",
+      "version": "Driver Pack45",
+      "sha256": "b950e39f01af1d04ea623c8f6d8eb9b6ea5c477c637295fabf20631c85116bfb",
+      "license": "Vendor donationware terms",
+      "lock": "config/vbcable-official-package.json"
+    },
+    {
+      "id": "factoryfx",
+      "lock": "config/factoryfx-approved-releases.json",
+      "verification": "existing per-plugin lock; do not infer approval"
+    },
+    {
+      "id": "inter",
+      "license": "OFL-1.1",
+      "verification": "exact embedded version/hash pending"
+    },
+    {
+      "id": "sonku-hrir",
+      "license": "MIT and original measurement attribution",
+      "verification": "see docs/THIRD_PARTY_8D_SONKU_HRTF.md"
+    }
+  ],
+  "unresolved": [
+    "actual installed artifact dependency/SBOM",
+    "Playwright and browser/tool versions and package hashes",
+    "Inno Setup and OS runner packages",
+    "WebView2 package bytes and individual SDK terms",
+    "transitive dependencies of external Actions",
+    "private scanning settings and historical secrets",
+    "publication job privilege split and attestation (ZBSH-05)"
+  ]
+}

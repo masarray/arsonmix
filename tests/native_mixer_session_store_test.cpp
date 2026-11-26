@@ -2670,6 +2670,15 @@ int main(){
     assert(portable.replaceWithText(juce::JSON::toString(tampered)));
     assert(NativeMixerSessionStore::readFile(portable,roundTrip,readback).isNotEmpty());
     assert(readback.size()==1&&readback[0].bytes==binary.bytes);
+    // Bounded input preflight rejects recursive JSON before JUCE parsing,
+    // with the caller's previous graph and vendor data preserved.
+    juce::String deep;
+    for(int i=0;i<65;++i)deep+="[";
+    for(int i=0;i<65;++i)deep+="]";
+    assert(portable.replaceWithText(deep));
+    assert(NativeMixerSessionStore::readFile(portable,roundTrip,readback).isNotEmpty());
+    assert(readback.size()==1&&readback[0].bytes==binary.bytes);
+    assert(!Codec::decode(deep,roundTrip));
     const auto firstId=studio.getChildFile("MixerSession").getChildFile("HEAD")
         .loadFileAsString().trim();
     assert(armix::shows::detail::uuid(firstId));

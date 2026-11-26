@@ -1,0 +1,54 @@
+name: Native memory safety (isolated sanitizers)
+on:
+  pull_request:
+    paths:
+      - 'engine/core/**'
+      - 'engine/device/**'
+      - 'engine/builtin_fx/FxSpsc.h'
+      - 'src/LiveGraphHandoff.h'
+      - 'tests/native_memory_safety_test.cpp'
+      - 'tests/live_port_epoch_publisher_test.cpp'
+      - 'tests/live_fx_structural_handoff_test.cpp'
+      - 'tests/realtime_control_test.cpp'
+      - 'tests/adaptive_clock_bridge_test.cpp'
+      - 'tests/secondary_capture_clock_stream_test.cpp'
+      - 'scripts/run_native_memory_safety.sh'
+      - '.github/workflows/native-memory-safety.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'engine/core/**'
+      - 'engine/device/**'
+      - 'engine/builtin_fx/FxSpsc.h'
+      - 'src/LiveGraphHandoff.h'
+      - 'tests/native_memory_safety_test.cpp'
+      - 'tests/live_port_epoch_publisher_test.cpp'
+      - 'tests/live_fx_structural_handoff_test.cpp'
+      - 'tests/realtime_control_test.cpp'
+      - 'tests/adaptive_clock_bridge_test.cpp'
+      - 'tests/secondary_capture_clock_stream_test.cpp'
+      - 'scripts/run_native_memory_safety.sh'
+      - '.github/workflows/native-memory-safety.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: memory-safety-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  sanitizers:
+    if: github.repository == 'masarray/arsonmix'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [asan, tsan]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Run actual instrumented native boundary and lifetime tests
+        env:
+          CXX: clang++-18
+        run: bash scripts/run_native_memory_safety.sh ${{ matrix.mode }}

@@ -125,6 +125,7 @@ export async function portDispatch({event,api}) {
     }
     if(release?.draft || release?.tag_name!==cmd.tag || release?.target_commitish!==cmd.sha)
       throw Error('PORT_RELEASE_SOURCE_SHA_MISMATCH');
+    if(release.immutable===true)throw Error('PORT_IMMUTABLE_RELEASE_CANNOT_APPEND');
     if(!release?.assets?.some(a=>a.name?.endsWith('Windows-x64-Setup.exe')
                                     &&a.state==='uploaded'))
       throw Error('PORT_WINDOWS_ASSET_MISSING');

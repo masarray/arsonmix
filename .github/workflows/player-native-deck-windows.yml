@@ -21,7 +21,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Verify exact source SHA
@@ -35,10 +35,10 @@ jobs:
           }
           Write-Host "PLAYER_DECK_SOURCE_SHA=$actual"
       - name: Checkout pinned JUCE 8
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: juce-framework/JUCE
-          ref: 8.0.15
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
           path: third_party/JUCE
       - name: Install WebView2 SDK required by common CMake configure
         shell: pwsh

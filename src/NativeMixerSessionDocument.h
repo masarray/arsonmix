@@ -10,6 +10,7 @@
 #include "../engine/device/LogicalInputRegistry.h"
 #include "../engine/device/LogicalOutputRegistry.h"
 #include "NativeShowStore.h"
+#include "BoundedDataInput.h"
 #include "NativeHotkeyRegistry.h"
 #include <charconv>
 #include <cmath>
@@ -871,7 +872,8 @@ public:
         return juce::JSON::toString(root,false);
     }
     static bool decode(const juce::String& json,MixerSessionDocument& output) {
-        if(json.getNumBytesAsUTF8()>4U*1024U*1024U)return false;
+        if(json.getNumBytesAsUTF8()>4U*1024U*1024U||
+           !armix::storage::BoundedDataInput::jsonStructure(json))return false;
         auto root=juce::JSON::parse(json);
         if(!root.isObject())return false;
         const auto schema=get(root,"schema").toString();

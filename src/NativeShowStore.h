@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "NativeShowSchema.h"
+#include "BoundedDataInput.h"
 #include <juce_cryptography/juce_cryptography.h>
 #include <vector>
 #include <set>
@@ -74,6 +75,10 @@ public:
             return "Studio Shows directory is not writable";
         const auto showRoot=root_.getChildFile(show.id.toLowerCase());
         const auto versions=showRoot.getChildFile("versions");
+        if(!armix::storage::BoundedDataInput::managedPath(root_,versions)||
+           !armix::storage::BoundedDataInput::managedPath(root_,showRoot.getChildFile("HEAD"))||
+           !armix::storage::BoundedDataInput::managedPath(root_,showRoot.getChildFile("PREVIOUS")))
+            return "Unsafe Show storage path";
         if(!versions.isDirectory()&&versions.createDirectory().failed())
             return "Show version directory is not writable";
         const auto generation=juce::Uuid().toDashedString().toLowerCase();
@@ -120,7 +125,7 @@ public:
         if(head.existsAsFile()) {
             if(head.getSize()<1 || head.getSize()>128)
                 return "Existing Show HEAD invalid: refuse to discard recovery history";
-            const auto previousId=head.loadFileAsString().trim();
+            const auto previousId=readPointer(head);
             if(!detail::uuid(previousId))
                 return "Existing Show HEAD invalid: refuse to discard recovery history";
             ShowV2 priorShow;
@@ -148,7 +153,7 @@ public:
         const auto pointer=dir.getChildFile("PREVIOUS");
         if(!pointer.existsAsFile()||pointer.getSize()<1||pointer.getSize()>128)
             return "Previous Show generation missing";
-        const auto id=pointer.loadFileAsString().trim();
+        const auto id=readPointer(pointer);
         if(!detail::uuid(id))return "Unsafe previous Show pointer";
         ShowV2 candidate;
         std::vector<SnapshotV2> items;
@@ -193,7 +198,7 @@ public:
         const auto dir=root_.getChildFile(requestedId.toLowerCase());
         const auto head=dir.getChildFile("HEAD");
         if(!head.existsAsFile() || head.getSize()>128) return "Show pointer missing";
-        const auto generation=head.loadFileAsString().trim();
+        const auto generation=readPointer(head);
         if(!detail::uuid(generation))return "Invalid Show pointer";
         ShowV2 candidate;
         std::vector<SnapshotV2> items;
@@ -233,12 +238,12 @@ public:
             const auto file=generation.getChildFile("blobs").getChildFile(hash+".bin");
             if(!file.existsAsFile()||file.getSize()<0||
                file.getSize()>maxBlobBytes)return "Vendor state missing or oversized";
-            total+=file.getSize();
-            if(total>maxGenerationBytes)return "Vendor state exceeds Show budget";
             BinaryState state;state.sha256=hash;
-            if(!file.loadFileAsData(state.bytes) ||
+            if(!armix::storage::BoundedDataInput::managedPath(generation,file)||
+               !armix::storage::BoundedDataInput::read(file,std::min(maxBlobBytes,maxGenerationBytes-total),state.bytes,true) ||
                juce::SHA256(state.bytes).toHexString()!=hash)
                 return "Vendor binary changed during readback";
+            total+=static_cast<juce::int64>(state.bytes.getSize());
             verified.push_back(std::move(state));
         }
         if(currentGeneration(id)!=generation)return "Show pointer changed during read";
@@ -252,13 +257,22 @@ public:
         const auto base=root_.getChildFile(showId.toLowerCase());
         const auto head=base.getChildFile("HEAD");
         if(!head.existsAsFile()||head.getSize()>128)return {};
-        const auto id=head.loadFileAsString().trim();
+        const auto id=readPointer(head);
         return detail::uuid(id)?base.getChildFile("versions").getChildFile(id):juce::File{};
     }
 private:
     juce::File root_;
-    static juce::String writePointer(const juce::File& target,const juce::String& id) {
-        if(!detail::uuid(id))return "Unsafe Show generation pointer";
+    juce::String readPointer(const juce::File& pointer) const {
+        juce::String value;
+        if(!armix::storage::BoundedDataInput::managedPath(root_,pointer)||
+           !armix::storage::BoundedDataInput::text(pointer,128,value))return {};
+        const auto id=value.trim();
+        if(!detail::uuid(id)||!armix::storage::BoundedDataInput::managedPath(root_,
+            pointer.getParentDirectory().getChildFile("versions").getChildFile(id)))return {};
+        return id;
+    }
+    juce::String writePointer(const juce::File& target,const juce::String& id) const {
+        if(!armix::storage::BoundedDataInput::managedPath(root_,target)||!detail::uuid(id))return "Unsafe Show generation pointer";
         juce::TemporaryFile temp(target);
         auto output=temp.getFile().createOutputStream();
         if(!output)return "Cannot open temporary Show pointer";
@@ -283,18 +297,24 @@ private:
         const auto header=dir.getChildFile("show.json");
         if(!header.existsAsFile()||header.getSize()>maxJsonBytes)return "Show JSON missing/oversized";
         ShowV2 tmp;
-        if(!Codec::decode(header.loadFileAsString(),tmp) ||
+        juce::String headerText;
+        if(!armix::storage::BoundedDataInput::managedPath(dir,header)||
+           !armix::storage::BoundedDataInput::text(header,maxJsonBytes,headerText)||
+           !Codec::decode(headerText,tmp) ||
            tmp.snapshotOrder.size()>maxSnapshotsPerCommit)return "Invalid Show JSON";
         std::vector<SnapshotV2> candidate;
-        juce::int64 total=header.getSize();
+        juce::int64 total=headerText.getNumBytesAsUTF8();
         std::set<juce::String> verifiedHashes;
         for(const auto& id:tmp.snapshotOrder) {
             const auto file=dir.getChildFile("snapshots").getChildFile(id.toLowerCase()+".json");
             if(!file.existsAsFile()||file.getSize()>maxJsonBytes)return "Snapshot JSON missing/oversized";
             SnapshotV2 snap;
-            if(!Codec::decode(file.loadFileAsString(),snap) ||
+            juce::String snapshotText;
+            if(!armix::storage::BoundedDataInput::managedPath(dir,file)||
+               !armix::storage::BoundedDataInput::text(file,maxJsonBytes,snapshotText)||
+               !Codec::decode(snapshotText,snap) ||
                !snap.id.equalsIgnoreCase(id))return "Invalid snapshot metadata";
-            total+=file.getSize();
+            total+=snapshotText.getNumBytesAsUTF8();
             if(total>maxGenerationBytes)return "Generation too large";
             // The same hash verification policy applies to INPUT and AUX FX.
             // No partially readable Show is ever returned to the caller.
@@ -305,9 +325,12 @@ private:
                 if(!blobFile.existsAsFile()||blobFile.getSize()>maxBlobBytes)
                     return "Missing/oversized vendor state";
                 if(verifiedHashes.insert(fx.stateSha256.toLowerCase()).second) {
-                    total+=blobFile.getSize();
-                    if(total>maxGenerationBytes) return "Generation exceeds read budget";
-                    if(!juce::SHA256(blobFile).toHexString().equalsIgnoreCase(fx.stateSha256))
+                    juce::MemoryBlock bounded;
+                    if(!armix::storage::BoundedDataInput::managedPath(dir,blobFile)||
+                       !armix::storage::BoundedDataInput::read(blobFile,std::min(maxBlobBytes,maxGenerationBytes-total),bounded,true))
+                        return "Generation exceeds read budget";
+                    total+=static_cast<juce::int64>(bounded.getSize());
+                    if(!juce::SHA256(bounded).toHexString().equalsIgnoreCase(fx.stateSha256))
                         return "Vendor binary hash mismatch";
                 }
                 return {};

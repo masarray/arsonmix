@@ -46,3 +46,21 @@ test('Windows CTest exercises full VST bundle resources and preserves original f
   assert.match(testNative,/NEVER delete user source VST/);
   assert.match(testNative,/workspace\.copyDirectoryTo \(otherRoot\)/);
 });
+
+test('VST3 discovery is process-isolated on catalog and cache miss, never an in-process fallback',()=>{
+  const scan=read('src/Vst3ScanIsolation.h'),cache=read('src/Vst3DescriptionCache.h');
+  assert.doesNotMatch(catalog,/findAllTypesForFile/);
+  assert.doesNotMatch(cache,/findAllTypesForFile/);
+  assert.match(catalog,/ScanIsolation::inspect\(path,descriptions/);
+  assert.match(cache,/ScanIsolation::inspect\(path,discovered/);
+  assert.match(scan,/child\.start\(args,0\)/);
+  assert.match(scan,/child\.kill\(\)/);
+  assert.match(scan,/waitForProcessToFinish\(1000\)/);
+  assert.match(scan,/markFailure\(path,stamp\)/);
+  assert.match(scan,/format\.findAllTypesForFile\(descriptions,path\)/);
+  const app=main.split('class ConsoleApp final')[1];
+  assert.ok(app.indexOf('ScanIsolation::worker(args)')<app.indexOf('CreateMutexW'));
+  assert.match(app,/if \(scanWorkerMode_\) return/);
+  assert.match(cache,/VST3_DESCRIPTIONS_V2/);
+  assert.match(read('tests/vst3_waves_identity_startup_test.cpp'),/Outcome::timeout/);
+});

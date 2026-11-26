@@ -57,7 +57,8 @@ public:
         inline static std::atomic<std::uint64_t> nextId{1};
         std::atomic_flag processing=ATOMIC_FLAG_INIT;
         std::atomic<unsigned> contention{0};
-        std::atomic<unsigned> exceptions{0};
+        std::atomic<unsigned> exceptions{0}; // nonzero permanently latches this owner
+        bool processFaulted() const noexcept {return exceptions.load(std::memory_order_acquire)!=0;}
         armix::rt::FxTimingSampler processTiming;
         armix::rt::FxWorkloadEvidence workloadEvidence;
         // Lease-local: survives MOVE and accepted graph revisions, not a new DSP owner.
@@ -159,6 +160,7 @@ public:
         bool tryCaptureState(juce::MemoryBlock& out) noexcept {
             if(!processor || processing.test_and_set(std::memory_order_acquire))
                 return false;
+            if(processFaulted()) {processing.clear(std::memory_order_release);return false;}
             bool ok=false;
             try {
                 // Even under the exclusive processor gate, async EQ edits
@@ -193,6 +195,15 @@ public:
             if(samples<=0 || static_cast<std::size_t>(samples)>dryLeft.size()) {
                 juce::FloatVectorOperations::clear(left,std::max(0,samples));
                 juce::FloatVectorOperations::clear(right,std::max(0,samples));
+                processing.clear(std::memory_order_release);
+                return;
+            }
+            // A thrown processBlock may leave vendor state inconsistent.
+            // Keep this exact owner silent even across MOVE or BYPASS toggles.
+            // No dry fallback, retries, allocations, logging or teardown here.
+            if(processFaulted()) {
+                juce::FloatVectorOperations::clear(left,samples);
+                juce::FloatVectorOperations::clear(right,samples);
                 processing.clear(std::memory_order_release);
                 return;
             }
@@ -288,7 +299,7 @@ public:
                 processor->processBlock(buffer,midi);
             } catch(...) {
                 // Vendor exceptions must never unwind through the callback.
-                exceptions.fetch_add(1,std::memory_order_relaxed);
+                exceptions.fetch_add(1,std::memory_order_release);
                 dspOk=false;
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
@@ -316,6 +327,8 @@ public:
             if(immerseIdleAdmitted)
                 immerseIdle.rendered(left,right,samples,dspOk && idleStable &&
                     nativeControl->stateSnapshotQuiescent());
+            // Preserve timing/fault telemetry, but never mix dry into a failed block.
+            if(!dspOk){processing.clear(std::memory_order_release);return;}
             if(silenceBypass){
                 if(fullyBypassed){
                     juce::FloatVectorOperations::clear(left,samples);
@@ -405,6 +418,11 @@ public:
         return setAuxSendGain(source,bus,SendTap::postFader,gain);
     }
     int activeInserts() const noexcept{return activeInserts_;}
+    bool hasRuntimeFxFault() const noexcept {
+        for(const auto& rack:processors_)for(const auto& fx:rack)
+            if(fx&&fx->processFaulted())return true;
+        return false;
+    }
     bool setStripControl(int channel,float gain,float pan,
                          bool mono,bool mute,bool solo) noexcept {
         return controls_.set(channel,gain,pan,mono,mute,solo);

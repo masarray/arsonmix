@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_core/juce_core.h>
+#include "BoundedDataInput.h"
 
 // Portability is a DATA LOCATION, not an edition/entitlement. Native host, VST
 // hosting and UI are identical with or without portable_mode.txt. All methods
@@ -63,16 +64,23 @@ struct PortableWorkspace final
     static bool safeRelativePath (const juce::String& relative)
     {
         if (relative.isEmpty() || relative.length() > 2048 ||
-            relative.startsWithChar ('/') || relative.containsChar ('\\') ||
+            relative.startsWithChar ('/') || relative.endsWithChar ('/') || relative.containsChar ('\\') ||
             relative.containsChar (':') || relative.containsChar ('\0'))
             return false;
         juce::StringArray components;
         components.addTokens (relative, "/", "");
         if (components.isEmpty()) return false;
-        for (const auto& part : components)
+        for (const auto& part : components) {
             if (part.isEmpty() || part == "." || part == ".." ||
-                part.endsWithChar (' ') || part.endsWithChar ('.'))
-                return false;
+                part.endsWithChar (' ') || part.endsWithChar ('.') ||
+                part.containsAnyOf("<>:\"|?*"))return false;
+            for(auto p=part.getCharPointer();!p.isEmpty();++p)
+                if(*p<32)return false;
+            const auto stem=part.upToFirstOccurrenceOf(".",false,false).trimEnd().toUpperCase();
+            if(stem=="CON"||stem=="PRN"||stem=="AUX"||stem=="NUL"||
+               (stem.length()==4&&(stem.startsWith("COM")||stem.startsWith("LPT"))&&
+                ((stem[3]>='1'&&stem[3]<='9')||stem[3]==0xb9||stem[3]==0xb2||stem[3]==0xb3)))return false;
+        }
         // Empty tokens are also invalid (e.g. Plugins//Bad.vst3).
         return !relative.contains ("//");
     }
@@ -91,12 +99,13 @@ struct PortableWorkspace final
     static juce::File decode (const juce::File& workspace, const juce::String& stored)
     {
         if (!stored.startsWith (scheme))
-            return juce::File (stored); // v1 absolute-path compatibility
+            return juce::File::isAbsolutePath(stored)?juce::File(stored):juce::File(); // v1 absolute-path compatibility
         const auto relative = stored.substring (juce::String (scheme).length());
         if (workspace == juce::File() || !safeRelativePath (relative))
             return {}; // invalid workspace reference, not silently treated as CWD
         const auto resolved = workspace.getChildFile (relative);
-        return resolved.isAChildOf (workspace) ? resolved : juce::File();
+        return resolved.isAChildOf (workspace) && BoundedDataInput::managedPath(workspace,resolved)
+            ? resolved : juce::File();
     }
 };
 } // namespace armix::storage
