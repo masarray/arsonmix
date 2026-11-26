@@ -2039,6 +2039,29 @@ static void verifyZeroLatencyFxFastPath() {
         assert(heapCalls.load()==before);
     }
 }
+static void verifyLiveInsertFade() {
+    for(double rate:{44100.,48000.,96000.}){
+        auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(rate,64);
+        LiveChannelFxGraph::FxInstance fx(std::move(p),"live","new insert",64);
+        fx.primeZeroLatencyLiveInsertFade();
+        assert(!fx.bypassRequested.load()&&fx.bypassFade.fullyBypassed());
+        armix::dsp::FxBypassEnvelope reference;reference.prepare(true,rate,0);
+        reference.request(false);
+        std::array<float,64> l{},r{};
+        const auto heap=heapCalls.load();
+        for(int block=0;block<40;++block){
+            const int n=block%2?37:64;
+            l.fill(.125f);r.fill(-.25f);
+            fx.render(l.data(),r.data(),n);
+            for(int i=0;i<n;++i){
+                const auto g=reference.next();
+                assert(near(l[i],.25f*g.wet+.125f*g.dry));
+                assert(near(r[i],-.5f*g.wet-.25f*g.dry));
+            }
+        }
+        assert(!fx.bypassFade.transitioning()&&heapCalls.load()==heap);
+    }
+}
 static void verifyLatencyAlignedBypass() {
     // Real JUCE processing (not merely reporting a latency value): an impulse
     // remains at sample 7 through wet, individual bypass and rack bypass.
@@ -2764,6 +2787,7 @@ int main(int argc,char** argv) {
     verifyFxTimingSampled();
     verifyNativeExactIdle();
     verifyZeroLatencyFxFastPath();
+    verifyLiveInsertFade();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();
     verifyNativeBuiltinEqOrderedPcmAndBypassAck();

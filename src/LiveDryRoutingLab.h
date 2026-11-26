@@ -1341,6 +1341,11 @@ public:
             if(!next.edit(expectedRosterRevision,edits).ok()) {
                 out.error="NATIVE_INSERT_CAPACITY_REJECTED";return out;
             }
+            // The native compressor is zero latency. Only prime a fresh,
+            // unpublished lease; retain existing processors and their histories.
+            if(catalogId=="armix.builtin.channel-compressor.v1" &&
+               !nativeAccepted_.fxOwners->retainsEditor(processor))
+                processor->primeZeroLatencyLiveInsertFade();
             DynamicChannelFxLeaseBank prepared;
             const auto fault=DynamicChannelFxLeaseBank::appendOwned(
                 expectedEpoch,expectedPcmRevision+1,*nativeAccepted_.fxOwners,

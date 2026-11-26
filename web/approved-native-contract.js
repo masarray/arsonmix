@@ -92,6 +92,7 @@
   function normalizeSnapshot(raw) {
     if (!fields(raw, ["schemaVersion","productionCallbackLive","device","graph","telemetry"]) ||
         raw.schemaVersion !== 6 || !isBool(raw.productionCallbackLive)) return null;
+    if(raw.workspaceGeneration!==undefined && decimal(raw.workspaceGeneration)===null)return null;
     const d = raw.device, g = raw.graph, t = raw.telemetry;
     if (!fields(d, ["epoch","backend","captureDevice","playbackDevice","inputEndpoints",
                      "outputEndpoints","enabledInputs","enabledOutputs","sampleRate","bufferFrames","outputArmed"]) ||
@@ -701,6 +702,12 @@
       const next = normalizeSnapshot(raw);
       if (!next) { lastError="INVALID_NATIVE_SNAPSHOT";notify();return false; }
       if (current) {
+        const beforeWorkspace=current.raw.workspaceGeneration;
+        const afterWorkspace=next.raw.workspaceGeneration;
+        // A delayed snapshot from a replaced workspace must not repaint or cancel new edits.
+        if(beforeWorkspace!==undefined && (afterWorkspace===undefined ||
+           cmp(afterWorkspace,beforeWorkspace)<0))return false;
+        const workspaceChanged=afterWorkspace!==undefined && afterWorkspace!==beforeWorkspace;
         const epochCompare = cmp(next.device.epoch,current.device.epoch);
         if (epochCompare < 0) {lastError="OLD_DEVICE_EPOCH";notify();return false;}
         if (epochCompare === 0 &&
@@ -725,12 +732,12 @@
             current.raw?.mixerSession?.authority;
         const physicalStale=epochCompare!==0||next.retained||
           next.hardwareConfiguration!==current.hardwareConfiguration;
-        if (pending && (physicalStale||authorityChanged)) {
+        if (pending && (workspaceChanged||physicalStale||authorityChanged)) {
           pending=null;
           // Preserve existing NEEDS_REMAP/physical-error contracts even if
           // their PCM authority also changes. Distinguish only a pure
           // same-device ChannelId → M4/UNADMITTED owner switch.
-          lastError=physicalStale?"STALE_DEVICE":"STALE_NATIVE_AUTHORITY";
+          lastError=physicalStale?"STALE_DEVICE":authorityChanged?"STALE_NATIVE_AUTHORITY":"STALE_WORKSPACE";
         }
       }
       if (pending && !pending.ack) {

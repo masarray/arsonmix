@@ -38,6 +38,15 @@
   // Document capture beats each original editor's DOM drag listener.
   const dragHeaders=".mx-peq-title,.mx-comp-head,.mx-geq31-head,"+
     ".mx-harm-head,.vt-face-header,.sk-head";
+  // Forward real editor interaction before child controls can stop bubbling.
+  document.addEventListener("pointerdown",event=>{
+    if(event.isTrusted&&event.button===0&&identity&&current)
+      backend.emitEvent("arMixFloatingActivate",{});
+  },true);
+  document.addEventListener("focusin",event=>{
+    if(event.isTrusted&&document.hasFocus()&&identity&&current)
+      backend.emitEvent("arMixFloatingActivate",{});
+  },true);
   document.addEventListener("pointerdown",event=>{
     if(event.button!==0||!event.isTrusted)return;
     const head=event.target.closest?.(dragHeaders);

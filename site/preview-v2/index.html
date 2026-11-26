@@ -922,6 +922,9 @@ function syncFaderVisual(t,element){
  if(!root)return;
  const isSend=sofEnabled&&isSofSource(t),v=isSend?getSofLevel(t):t.level;
  const value=formatDb(v);
+ // Programmatic value assignment is silent; never dispatch an input/change intent.
+ const range=root.querySelector('input.fader');
+ if(range&&Number.isFinite(v)&&Math.abs(Number(range.value)-v)>.049)range.value=String(v);
  const readout=root.querySelector('.fader-readout');
  if(readout)readout.textContent=(isSend?'SEND ':'')+value+' dB';
  const box=root.querySelector('.fader-box');

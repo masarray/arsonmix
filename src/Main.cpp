@@ -346,6 +346,11 @@ public:
                   stopTimer();
                   setVisible(false); // ONLY the approved editor's Close button
               })
+              .withEventListener("arMixFloatingActivate",[this](juce::var){
+                  // Child WebView pointer/focus does not always raise its top-level HWND.
+                  // No recenter, recreation, global topmost or keyboard focus steal.
+                  if(isVisible()&&hasMeasuredPanel_)toFront(false);
+              })
               .withEventListener("arMixFloatingDrag",[this](juce::var){
                   startDesktopDrag(); // native OS drag, not a DOM card move
               })
@@ -876,6 +881,7 @@ private:
     std::optional<LogicalVendorEditor> logicalVendorEditor_;
     juce::String lastLogicalFxRequest_,lastLogicalFxInstance_,lastLogicalFxRevision_;
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
+    std::uint64_t workspaceGeneration_=0; // message-thread committed workspace identity
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
     bool sessionLifecycleShuttingDown_=false;
@@ -3180,6 +3186,7 @@ private:
         if(auto* obj=accepted.getDynamicObject()) {
             // PCM-authoritative global A/B readback; not a mirrored button state.
             obj->setProperty("globalFxBypassed",engine_.globalFxBypassed());
+            obj->setProperty("workspaceGeneration",juce::String(std::to_string(workspaceGeneration_)));
             obj->setProperty("retainedOfflineFxPending",retainedOfflineFxActive_);
             obj->setProperty("operatorOutputMuted",operatorOutputMuted_);
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
@@ -5250,6 +5257,9 @@ private:
     // authorization. This message-thread report is status only, not PCM.
     void emitMixerSessionAck(const juce::String& operation,
                              const juce::String& error={}) {
+        if(error.isEmpty() && (operation=="OPEN" || operation=="ARCHIVE" ||
+                             operation=="NEW" || operation=="NEW_LIVE"))
+            ++workspaceGeneration_;
         auto ack=std::make_unique<juce::DynamicObject>();
         ack->setProperty("operation",operation);
         ack->setProperty("ok",error.isEmpty());
@@ -5668,6 +5678,7 @@ private:
             if(error.isNotEmpty()&&explicitRecovery&&!hadPreviousCrashEvidence)
                 (void)explicitRecovery->complete();
             safe->emitMixerSessionAck("OPEN",error);
+            if(error.isEmpty())safe->emitApprovedNativeSnapshot();
         }))emitMixerSessionAck(archived?"ARCHIVE":"OPEN","Mixer file operation already in progress");
     }
 

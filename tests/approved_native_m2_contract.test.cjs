@@ -7557,3 +7557,22 @@ test("DMX split topology transaction uses native ChannelId edits, not legacy str
   assert.equal((body.match(/std::span<const armix::mixer::ChannelEdit>/g)||[]).length,2);
   assert.doesNotMatch(body,/(?<!::)\bChannelEdit\b/);
 });
+
+
+test("LIVE-OPS committed workspace supersedes an outstanding fader lease",()=>{
+ const base=gmv20AcceptedGraph();
+ base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,
+   routeRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision};
+ base.device.outputArmed=false;base.workspaceGeneration="1";
+ const seen=[],c=protocol.createController({emit:()=>{},onAccepted:s=>seen.push(s)});
+ assert.equal(c.onSnapshot(clone(base)),true);
+ const old=c.intent("SET_FADER","7",{valueDb:-5});assert.equal(old.ok,true);
+ const restored=clone(base);restored.workspaceGeneration="2";
+ assert.equal(c.onSnapshot(restored),true);
+ assert.equal(c.state().pending,null);
+ assert.equal(c.state().current.raw.workspaceGeneration,"2");
+ assert.equal(seen.length,2);
+ assert.equal(c.onSnapshot(base),false);
+ assert.equal(c.state().current.raw.workspaceGeneration,"2");
+ assert.equal(protocol.normalizeSnapshot({...restored,workspaceGeneration:"invalid"}),null);
+});

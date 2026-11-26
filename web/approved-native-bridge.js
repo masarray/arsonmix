@@ -1071,10 +1071,9 @@
       t.nativeGainAvailable=gainAdmitted;
       if(gainAdmitted)paintAcceptedInputGain(t,c.inputGainDb);
       const db=c.faderDb,pan=c.pan*100;
-      const faderChanged=Number.isFinite(db)&&Math.abs(t.level-db)>.015;
       const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
       const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
-      if(faderChanged)t.level=db;
+      if(Number.isFinite(db))t.level=db;
       // Independent WIRE sum scalar, never a fader or sender EdgeId.
       const sumDb=c.wireSumGainDb;
       if(Number.isFinite(sumDb))t.wireSumGainDb=sumDb;
@@ -1093,10 +1092,11 @@
       t.mute=c.mute;t.solo=c.solo;
       if(switchChanged && scope.activeFaderId!==t.id){
         scope.refreshStrip?.(t);
-        if(visualDb!==null)scope.syncFaderVisual?.({...t,level:visualDb});
         meterElements.delete(t.id);
-      }else if(faderChanged&&scope.activeFaderId!==t.id&&visualDb===null)
-        scope.syncFaderVisual?.(t);
+      }
+      // Model equality is not DOM equality (e.g. a newly mounted fader cap).
+      if(Number.isFinite(db)&&scope.activeFaderId!==t.id)
+        scope.syncFaderVisual?.(visualDb===null?t:{...t,level:visualDb});
       const root=document.querySelector('.strip[data-id="'+t.id+'"]');
       const knob=root?.querySelector('.center-pan');
       if(knob&&scope.activeFaderId!==t.id&&
@@ -2311,28 +2311,25 @@
         const db=c?.faderDb,pan=c?.pan*100;
         if(!t||!c||!Number.isFinite(db)||!Number.isFinite(pan)||
            typeof c.mute!=="boolean"||typeof c.solo!=="boolean")return;
-        const oldDb=t.level;
         const visualDb=pendingFaderVisualDb(t,db);
         const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
         t.level=db;t.pan=pan;t.mute=c.mute;t.solo=c.solo;
         if(switchChanged && scope.activeFaderId!==t.id){
           scope.refreshStrip?.(t);
-          if(visualDb!==null)scope.syncFaderVisual?.({...t,level:visualDb});
           m4Meters.delete(t.id);
-        }else if(Math.abs(oldDb-db)>.015 &&
-                 scope.activeFaderId!==t.id&&visualDb===null)
-          scope.syncFaderVisual?.(t);
+        }
+        if(scope.activeFaderId!==t.id)
+          scope.syncFaderVisual?.(visualDb===null?t:{...t,level:visualDb});
         const panKnob=document.querySelector(
           '.strip[data-id="'+t.id+'"] .center-pan');
         if(panKnob && document.activeElement!==panKnob)
           panKnob.value=String(pan);
       }
-      if(scope.master && Number.isFinite(session.main?.db) &&
-         Math.abs(scope.master.level-session.main.db)>.015){
+      if(scope.master && Number.isFinite(session.main?.db)){
         const visualDb=pendingFaderVisualDb(scope.master,session.main.db);
         scope.master.level=session.main.db;
-        if(scope.activeFaderId!==scope.master.id && visualDb===null)
-          scope.syncFaderVisual?.(scope.master);
+        if(scope.activeFaderId!==scope.master.id)
+          scope.syncFaderVisual?.(visualDb===null?scope.master:{...scope.master,level:visualDb});
       }
       if(scope.master && typeof session.main?.mute==="boolean" &&
          scope.master.mute!==session.main.mute){
@@ -4817,7 +4814,7 @@
   // cleanup drops only outstanding WebView intents from an older device or
   // changed PCM authority; the native session, .smix, FX instances and
   // approved controls remain owned by JUCE and will be repainted by readback.
-  let lastNativeLifecycleLease=null;
+  let lastNativeLifecycleLease=null,lastWorkspaceGeneration;
   // G-MV24: ONE complete GUI-only discard path for both physical/authority
   // switches and repeated NEEDS_REMAP readbacks. No second PCM ownership.
   // Keep cosmetic readback signatures separate so retained-mixer telemetry
@@ -4878,6 +4875,15 @@
       confirmed=null;
     }
     lastNativeLifecycleLease=lease;
+    const workspaceGeneration=next.raw.workspaceGeneration;
+    if(workspaceGeneration!==undefined && workspaceGeneration!==lastWorkspaceGeneration){
+      if(lastWorkspaceGeneration!==undefined){
+        discardTransientNativeUi();pendingLogical=null;logicalRenameId=null;
+        lastPaintedSignature="";lastNativeTopologySignature="";lastM4Controls="";
+        confirmed=null;
+      }
+      lastWorkspaceGeneration=workspaceGeneration;
+    }
     // MV-19: commit all hardware-scoped UI only after the common identity
     // fence. Invalid/inconsistent candidates must leave the last accepted
     // Device Setup transaction, selectors and physical output untouched.

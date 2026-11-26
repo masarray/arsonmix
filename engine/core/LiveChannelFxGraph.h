@@ -132,6 +132,13 @@ public:
                 processor->addListener(this);
             }
         }
+        // Fresh unpublished zero-latency insert only: begin at dry unity,
+        // then use the existing sample-wise wet/bypass envelope on first render.
+        // Do not change the saved bypass flag or reset an existing DSP lease.
+        void primeZeroLatencyLiveInsertFade() noexcept {
+            if(latencySamples==0&&!silenceBypass)
+                bypassFade.prepare(true,processor?processor->getSampleRate():48000.0,0);
+        }
         FxInstance(const FxInstance&)=delete;
         FxInstance& operator=(const FxInstance&)=delete;
         ~FxInstance() noexcept {
