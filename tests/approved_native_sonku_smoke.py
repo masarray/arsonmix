@@ -208,7 +208,7 @@ def exercise(browser,out,width,height):
     # Every rotation input remains an accessible native range, wrapped in
     # a tactile rotary shell: no browser PCM, no fake processed state.
     assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
-    for knob in ("skSpeed","skSpread","skMix","skTrim"):
+    for knob in ("skSpeed","skSpread","skHeadYaw","skTrim"):
         assert editor.locator("#"+knob).get_attribute("type")=="range"
         assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
     art=editor.locator("#skListenerArt")
@@ -616,13 +616,12 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skDistance").is_disabled()
     assert editor.locator("#skAmbience").is_disabled()
     assert editor.locator("#skReflections").is_disabled()
-    # Every remaining SonKu rotary (4/4 total) is tested with INPUT ALONE,
+    # Every schema-v2 compatible rotary is tested with INPUT ALONE,
     # not a synthetic input+change pair that could hide release-only audio.
     sceneState={**sceneState,"spacePreset":0}
     for control,value,key in [
         ("skSpeed",18.0,"revolutionSeconds"),
         ("skSpread",45,"stereoSpreadDegrees"),
-        ("skMix",65,"spatialMix"),
         ("skTrim",3.0,"outputTrim"),
     ]:
         before=command_count()
@@ -649,6 +648,94 @@ def exercise(browser,out,width,height):
         "hrtfElevationTrimDegrees":0.0}
     page.wait_for_timeout(300)
     accepted_snapshot(page,state,room11,schema=11)
+    assert editor.locator("#skMix").count()==0
+    assert editor.locator("#skYawRow").count()==0
+    yaw=editor.locator("#skHeadYaw")
+    assert yaw.is_enabled()
+    assert yaw.locator("xpath=ancestor::label").get_attribute("class")=="sk-rotary"
+    before=command_count()
+    yaw.evaluate("""n=>{n.value='-47';n.dispatchEvent(new Event('input',{bubbles:true}));}""")
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Yaw must stream before release"
+    yaw_cmd=last_action(page,"nativeSonKuSet")
+    assert yaw_cmd["settings"]["headYawDegrees"]==-47
+    assert yaw_cmd["settings"]["spatialMix"]==1
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":yaw_cmd["requestId"],"status":"APPLIED"})
+    room11=yaw_cmd["settings"]
+    accepted_snapshot(page,state,room11,applied=yaw_cmd["requestId"],schema=11)
+    assert yaw.input_value()=="-47"
+    assert editor.locator("#skYawValue").inner_text()=="-47°"
+    yaw.evaluate("n=>n.dispatchEvent(new Event('change',{bubbles:true}))")
+    assert command_count()==before+1
+    # Actual mouse gesture through the existing tactile knob path.
+    dial=yaw.locator("..")
+    dial.scroll_into_view_if_needed()
+    bounds=dial.bounding_box()
+    assert bounds
+    x=bounds["x"]+bounds["width"]/2
+    y=bounds["y"]+bounds["height"]/2
+    before=command_count()
+    page.mouse.move(x,y)
+    page.mouse.down()
+    page.mouse.move(x,y-12)
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Yaw drag did not send native edit"
+    drag_cmd=last_action(page,"nativeSonKuSet")
+    assert drag_cmd["settings"]["headYawDegrees"]>-47
+    page.mouse.up()
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":drag_cmd["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,drag_cmd["settings"],applied=drag_cmd["requestId"],schema=11)
+    assert command_count()==before+1
+    assert float(yaw.input_value())==drag_cmd["settings"]["headYawDegrees"]
+    # Bipolar arc must start at 12 o'clock and terminate exactly at the
+    # pointer, including both endpoints and a completely neutral 0°.
+    def check_yaw_arc(value):
+        arc=yaw.evaluate("""n=>{
+          const d=n.closest('.sk-dial');
+          const cs=getComputedStyle(d);
+          const track=getComputedStyle(d.querySelector('.sk-dial-track'));
+          const needle=getComputedStyle(d.querySelector('.sk-dial-needle'));
+          const m=new DOMMatrixReadOnly(needle.transform);
+          return {bipolar:d.classList.contains('sk-dial-bipolar'),
+            start:parseFloat(cs.getPropertyValue('--sk-arc-start')),
+            end:parseFloat(cs.getPropertyValue('--sk-arc-end')),
+            sweep:parseFloat(cs.getPropertyValue('--sk-sweep')),
+            needle:Math.atan2(m.b,m.a)*180/Math.PI,
+            duration:needle.transitionDuration,
+            gradient:track.backgroundImage};
+        }""")
+        sweep=135+value*.75
+        assert arc["bipolar"] and abs(arc["sweep"]-sweep)<.011,arc
+        assert abs(arc["start"]-min(135,sweep))<.011,arc
+        assert abs(arc["end"]-max(135,sweep))<.011,arc
+        assert abs(arc["needle"]-(sweep-135))<.02,arc
+        assert arc["duration"]=="0s",arc
+        # Verify the actually computed paint, not merely custom properties.
+        import re
+        stops=re.findall(r"rgb\(121, 198, 209\) ([0-9.]+)deg",arc["gradient"])
+        assert len(stops)==2 and abs(float(stops[0])-arc["start"])<.011 and abs(float(stops[1])-arc["end"])<.011,arc
+    for value in (-180,-90,0,90,180):
+        before=command_count()
+        yaw.evaluate("""(n,v)=>{n.value=String(v);n.dispatchEvent(new Event('input',{bubbles:true}));}""",value)
+        page.wait_for_timeout(58)
+        assert command_count()==before+1,(value,"yaw native edit missing")
+        cmd=last_action(page,"nativeSonKuSet")
+        assert cmd["settings"]["headYawDegrees"]==value and cmd["settings"]["spatialMix"]==1
+        check_yaw_arc(value) # live draft, before ACK
+        emit(page,"arMixBuiltinSonKuAck",{"requestId":cmd["requestId"],"status":"APPLIED"})
+        accepted_snapshot(page,state,cmd["settings"],applied=cmd["requestId"],schema=11)
+        check_yaw_arc(value) # authoritative readback
+        if value in (-90,0,90):
+            dial.screenshot(path=f"arsonmix-sonku-editor-yaw-{value}-{width}.png")
+    before=command_count()
+    dial.dblclick()
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Double-click must center yaw once"
+    cmd=last_action(page,"nativeSonKuSet")
+    assert cmd["settings"]["headYawDegrees"]==0
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":cmd["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,cmd["settings"],applied=cmd["requestId"],schema=11)
+    check_yaw_arc(0)
     factory=editor.locator("#skPreset")
     assert factory.is_enabled(),"Valid P9.1+P9.2 native capability must unlock presets"
     assert factory.input_value()=="CUSTOM","Saved non-factory scene was overwritten"

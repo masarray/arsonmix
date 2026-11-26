@@ -1233,8 +1233,13 @@
 .mx-sonku .sk-param-name{font-size:9px;color:#b6c8d0;letter-spacing:.1px;font-weight:500;text-align:center;white-space:nowrap}
 .mx-sonku .sk-dial{--sk-sweep:135deg;--sk-needle:0deg;position:relative;display:block;width:62px;height:62px;flex:none;cursor:ns-resize;touch-action:none;user-select:none}
 .mx-sonku .sk-dial-track{position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 225deg,var(--sk-accent) 0deg,var(--sk-accent) var(--sk-sweep),#43535d var(--sk-sweep),#43535d 270deg,transparent 270deg);mask:radial-gradient(circle,transparent 0 57%,black 58% 62%,transparent 63%)}
+.mx-sonku .sk-dial-bipolar{--sk-arc-start:135deg;--sk-arc-end:135deg}
+.mx-sonku .sk-dial-bipolar .sk-dial-track{background:conic-gradient(from 225deg,#43535d 0deg,#43535d var(--sk-arc-start),var(--sk-accent) var(--sk-arc-start),var(--sk-accent) var(--sk-arc-end),#43535d var(--sk-arc-end),#43535d 270deg,transparent 270deg)}
 .mx-sonku .sk-dial-cap{position:absolute;inset:9px;border-radius:50%;background:#45484b url("mixer-gain-knob-brushed-steel.png") center/110% 110% no-repeat;box-shadow:0 2px 3px #000b,0 4px 6px #0007;pointer-events:none}
 .mx-sonku .sk-dial-needle{position:absolute;inset:0;transform:rotate(var(--sk-needle));transition:transform 60ms linear;pointer-events:none}
+/* Arc and pointer share the same rendered angle even during a fast drag.
+   No independent pointer animation that could lag behind the arc. */
+.mx-sonku .sk-dial-bipolar .sk-dial-needle{transition:none}
 .mx-sonku .sk-dial-needle::before{content:"";position:absolute;width:2px;height:9px;left:calc(50% - 1px);top:3px;border-radius:1px;background:#e4f7fb;box-shadow:0 0 1px #08141c}
 .mx-sonku .sk-dial input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;pointer-events:none}
 .mx-sonku .sk-rotary:focus-within .sk-dial-cap{outline:1px solid #9dd5e0;outline-offset:2px}
