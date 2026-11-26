@@ -3701,7 +3701,7 @@
     extraField("stop").disabled=extraPending?.action==="secondaryOutputStop"||
       (!ready&&!fault&&!name&&!recovering&&extraPending?.action!=="secondaryOutputEnable");
     extraField("repair").hidden=!live||allowed||busy||armed||recovering;
-    const mode=split?"Independent headphone mix":"Same mix";
+    const mode=split?"Separate headphone mix":"Same mix";
     if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
     const mix=protocol.secondaryMixMode(hardware,live);
     const modeButton=extraField("mix");
@@ -3718,8 +3718,10 @@
     editButton.hidden=!edit;
     editButton.disabled=busy||!edit;
     const mixHint=extraField("mix-hint");
-    mixHint.hidden=modeButton.hidden&&starterButton.hidden&&editButton.hidden;
-    const hint=starter?"Create a quiet starting mix from MAIN sources, then edit the headphone mix.":mix.reason;
+    mixHint.hidden=modeButton.hidden&&starterButton.hidden&&editButton.hidden&&!armed;
+    const hint=starter?"Headphones are silent until you create a mix. Start at low listening volume. The starter sends follow MAIN channel faders (POST); use PRE in the mixer for independent levels.":
+      split?mix.reason+(edit?" · Edit headphone mix to adjust sends. PRE sends are independent of MAIN channel faders.":""):
+      mix.available?"Headphones and OBS receive the same mix. Separate mix starts silent until you create it.":mix.reason;
     if(mixHint.textContent!==hint)mixHint.textContent=hint;
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
@@ -4684,7 +4686,10 @@
     const choices=sourceChoicesFor(),choice=choices.find(p=>p.mode==="MONO"&&p.left===port);
     const decision=stripVM.sourceQueueSelection({choice,choices,epoch:current.epoch,
       acceptedLabel:"None",hardwareConfiguration:current.config});
-    if(decision.kind!=="QUEUE")return;
+    if(decision.kind!=="QUEUE"){
+      nativeToast("Input selection changed · choose an available input again");
+      paintFirstSound(hardware);return;
+    }
     firstSoundDialog?.close();
     pendingNativeSources.set(current.channelId,decision.entry);
     dispatchNativeSource(); // the SAME native ChannelId queue and ACK owner
@@ -5461,11 +5466,10 @@
     // native graph was unmounted; enable the button only after successful
     // projection, without requiring a second telemetry callback/click.
     syncAddTrack(next);
-    // First Sound requires the accepted ChannelId projection, not just the snapshot.
-    // Do not strand the action until another telemetry packet arrives.
+    syncEmergencyOutputControl(next.device);
+    // Refresh source/output shortcuts only after authoritative projection.
     paintFirstSound(next);
     paintAdditionalOutput();
-    syncEmergencyOutputControl(next.device);
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);

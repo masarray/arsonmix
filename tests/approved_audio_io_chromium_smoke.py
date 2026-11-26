@@ -628,6 +628,8 @@ def verify_independent_output(page,out):
     assert panel.locator("[data-extra-status]").inner_text().startswith("Enabled")
     starter=panel.get_by_role("button",name="Create headphone mix")
     assert starter.is_enabled()
+    assert "silent" in panel.locator("[data-extra-mix-hint]").inner_text()
+    assert "POST" in panel.locator("[data-extra-mix-hint]").inner_text()
     starter.click()
     req=page.evaluate("()=>window.__actions.at(-1)")
     assert req["action"]=="secondaryMonitorStarter" and req["value"]["graphRevision"]=="3"
@@ -655,7 +657,7 @@ def verify_independent_output(page,out):
     assert not errors,errors
 
 
-def verify_first_sound(page,out):
+def verify_first_sound(page,out,single=False):
     page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
@@ -664,20 +666,27 @@ def verify_first_sound(page,out):
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     state=snapshot()
     state["productionCallbackLive"]=True
+    pins=[2] if single else [0,2]
     state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
-        outputArmed=False,enabledInputs=[0,2],inputEndpoints=[
+        outputArmed=False,enabledInputs=pins,inputEndpoints=[
             {"id":"in:"+str(i),"port":i,"callback":j,"label":"Mic "+str(i+1),"active":True}
-            for j,i in enumerate([0,2])])
+            for j,i in enumerate(pins)])
     emit(page,"arMixConsoleSnapshot",state)
     button=page.locator("[data-native-first-sound]")
     assert button.is_visible()
     assert button.is_enabled(), "First accepted projection must enable input without a second snapshot"
+    # Opening the mixer must not automatically patch a microphone.
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').length")==0
     button.click()
     dialog=page.get_by_role("dialog",name="Connect microphone")
-    connect=dialog.get_by_role("button",name="Connect",exact=True)
-    assert connect.is_disabled()
-    dialog.get_by_label("Microphone input").select_option("2")
-    connect.click()
+    if single:
+        assert not dialog.is_visible(), "Unambiguous input is one explicit click, no extra wizard"
+    else:
+        connect=dialog.get_by_role("button",name="Connect",exact=True)
+        assert connect.is_disabled()
+        dialog.get_by_label("Microphone input").select_option("2")
+        connect.click()
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').length")==1
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').at(-1)")
     assert req["channelId"]==SOURCE and req["left"]==2 and req["mode"]=="MONO"
     assert button.is_disabled()
@@ -710,6 +719,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1024,"height":576})
         verify_first_sound(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        verify_first_sound(page,out,single=True)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_bus_remap(page,out)
