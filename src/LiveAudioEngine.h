@@ -2802,6 +2802,9 @@ public:
         double nativeWorst=-1.;
         juce::String nativeWorstName,nativeWorstInstance;
         int nativeTimingLeases=0;
+        int workloadMeasured=0,workloadOverBudget=0;
+        double workloadWorst=-1.;
+        juce::String workloadWorstName,workloadWorstInstance;
         int exactIdleCount=0, nativeLatentCount=0, nativeLatentBypassedCount=0, nativeMaxInsertLatency=0;
         juce::String nativeMaxLatencyName,nativeMaxLatencyInstance;
         bool nativeMaxLatencyBypassRequested=false;
@@ -2813,6 +2816,17 @@ public:
                     if (insert.isObject())
                     {
                         ++installedNativeFx;
+                        if(bool(insert.getProperty("workloadBudgetValid",false))){
+                            ++workloadMeasured;
+                            if(static_cast<double>(insert.getProperty("workloadOverBudgetCalls",0.))>0.)
+                                ++workloadOverBudget;
+                            const double ratio=static_cast<double>(insert.getProperty("workloadWorstPermille",0.));
+                            if(ratio>workloadWorst){
+                                workloadWorst=ratio;
+                                workloadWorstName=insert.getProperty("name","").toString();
+                                workloadWorstInstance=insert.getProperty("instanceId","").toString();
+                            }
+                        }
                         if(bool(insert.getProperty("dspTelemetryLive",false))){
                             const int samples=static_cast<int>(insert.getProperty("latencySamples",0));
                             const bool bypassRequested=globalFxBypassed||rackBypassed||
@@ -2909,6 +2923,13 @@ public:
         o->setProperty("nativeFxWorstName",nativeWorstName);
         o->setProperty("nativeFxWorstInstance",nativeWorstInstance);
         o->setProperty("nativeFxTimingLeases",nativeTimingLeases);
+        o->setProperty("nativeFxWorkloadMeasuredLeases",workloadMeasured);
+        o->setProperty("nativeFxWorkloadOverBudgetLeases",workloadOverBudget);
+        o->setProperty("nativeFxWorkloadWorstPermille",workloadWorst>=0.?juce::var(workloadWorst):juce::var());
+        o->setProperty("nativeFxWorkloadWorstName",workloadWorstName);
+        o->setProperty("nativeFxWorkloadWorstInstance",workloadWorstInstance);
+        o->setProperty("nativeFxWorkloadProvenance",
+            "LEASE_LIFETIME_INVOCATION_WALL_TIME_VS_FRAMES_RATE_EXCLUDES_EXTERNAL_CH1_NOT_XRUN");
         o->setProperty("nativeExactIdleCount",exactIdleCount);
         // These are individual live native lease declarations, NOT the
         // end-to-end critical path or physical round trip. Bypass requests

@@ -6,6 +6,7 @@
 #include "RealtimeNativeFxControl.h"
 #include "ImmerSIBIdlePolicy.h"
 #include "FxTimingSampler.h"
+#include "FxWorkloadEvidence.h"
 #include <chrono>
 #include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -56,6 +57,7 @@ public:
         std::atomic<unsigned> contention{0};
         std::atomic<unsigned> exceptions{0};
         armix::rt::FxTimingSampler processTiming;
+        armix::rt::FxWorkloadEvidence workloadEvidence;
         // Lease-local: survives MOVE and accepted graph revisions, not a new DSP owner.
         bool nativeExactIdleAdmitted=false; // explicit native processor contract
         bool immerseIdleAdmitted=false; // CONTROL only, exact trusted native identity
@@ -102,6 +104,7 @@ public:
             if(!dryDelay.prepare(latencySamples))throw std::invalid_argument("VST3 latency exceeds prepared delay budget");
             midi.ensureSize(1024);
             processTiming.seed(static_cast<std::uint32_t>(instanceId.hashCode()));
+            workloadEvidence.prepare(processor?processor->getSampleRate():0.);
             bypassFade.prepare(false,processor?processor->getSampleRate():48000.0,0);
             if(processor){
                 nativeControl=dynamic_cast<RealtimeNativeFxControl*>(processor.get());
@@ -200,7 +203,12 @@ public:
             // when fully wet. Zero-latency inserts need dry scratch ONLY
             // while mixing a fade or continuously processing a dry bypass.
             // Stable wet and ordinary zero-latency bypass need no copy.
-            if(latencySamples!=0) {
+            if(latencySamples!=0 && !latencyFault && !fading && !fullyBypassed) {
+                // Every latent FX, internal or vendor: a steady wet block
+                // does not consume delayed dry PCM. Keep its exact history
+                // for a future bypass/fault without materializing scratch.
+                dryDelay.advanceHistory(left,right,samples);
+            } else if(latencySamples!=0) {
                 for(int i=0;i<samples;++i) {
                     float l=left[i],r=right[i];dryDelay.process(l,r);
                     dryLeft[static_cast<std::size_t>(i)]=l;
@@ -270,11 +278,11 @@ public:
             // extra clock query and no change to ImmerSIB idle admission.
             const auto duration=std::chrono::steady_clock::now()-dspStart;
             const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-            if(sampled){
-                const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-                processTiming.record(static_cast<std::uint64_t>(std::max<std::int64_t>(0,ns)),
-                    static_cast<unsigned>(samples),fullyBypassed);
-            }
+            const auto ns=static_cast<std::uint64_t>(std::max<std::int64_t>(0,
+                std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count()));
+            workloadEvidence.observe(ns,samples);
+            if(sampled)
+                processTiming.record(ns,static_cast<unsigned>(samples),fullyBypassed);
             const auto us=static_cast<std::uint64_t>(std::max<std::int64_t>(0,elapsed));
             dspLastUs.store(us,std::memory_order_relaxed);
             // Single AUDIO writer under the existing lease gate; no CAS spin.

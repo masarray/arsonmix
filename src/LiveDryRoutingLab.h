@@ -3366,6 +3366,11 @@ public:
                 item->setProperty("processTimingMaxUs",timing.samples?double(timing.maxNs)/1000.:-1.);
                 item->setProperty("processTimingLastUs",timing.samples?double(timing.lastNs)/1000.:-1.);
                 item->setProperty("processTimingFullyBypassedSamples",static_cast<juce::int64>(timing.fullyBypassed));
+                const auto workload=(*lease)->workloadEvidence.snapshot();
+                item->setProperty("workloadBudgetValid",!retained&&workload.validRate&&workload.calls>0);
+                item->setProperty("workloadObservedCalls",static_cast<double>(workload.calls));
+                item->setProperty("workloadOverBudgetCalls",static_cast<double>(workload.overBudget));
+                item->setProperty("workloadWorstPermille",static_cast<double>(workload.worstPermille));
                 item->setProperty("processContentionCount",static_cast<juce::int64>((*lease)->contention.load(std::memory_order_relaxed)));
                 item->setProperty("processExceptionCount",static_cast<juce::int64>((*lease)->exceptions.load(std::memory_order_relaxed)));
                 // CONTROL readback of the exact admitted ChannelId/instance.
