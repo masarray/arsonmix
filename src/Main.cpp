@@ -1338,6 +1338,8 @@ private:
                  "callbackCadenceComparedIntervals", "worstCallbackUs",
                  "worstPluginUs", "slowPluginCount",
                  "nativeFxWorstUs", "nativeFxWorstName", "nativeFxTimingLeases",
+                 "nativeExactIdleCount", "nativeLatentInsertCount", "nativeLatentBypassRequestedCount",
+                 "nativeMaxInsertLatencySamples", "nativeMaxInsertLatencyName",
                  "callbackModulo4Observed", "callbackModulo4OverBudget",
                  "masterAnalysisState", "masterAnalysisDroppedFramesLifetime", "masterAnalysisSegmentRestartsLifetime",
                  "backendXrunCount", "backendXrunMeaning",

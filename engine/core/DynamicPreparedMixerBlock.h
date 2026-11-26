@@ -998,12 +998,20 @@ public:
                     fade.next=wanted;
                     fade.remaining=armix::dsp::RealtimeSlew64::samples;
                 }
+                auto* const externalDelay=!externalDelays_.empty() && externalDelays_[i].active()?
+                    &externalDelays_[i]:nullptr;
+                // A disconnected zero-delay tap has no history or output
+                // work. Keep advancing real delay lines and ongoing fades.
+                if(!externalDelay && fade.remaining==0 && fade.current==noExternal){
+                    externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
+                    continue;
+                }
                 const auto slot=lane.slot;
                 const float* src=scratch_.data()+slot*2*block;
                 const float* srcR=src+block;
                 for(int f=0;f<frames;++f) {
                     float l=src[f],r=srcR[f];
-                    if(!externalDelays_.empty())externalDelays_[i].process(l,r);
+                    if(externalDelay)externalDelay->process(l,r);
                     float nextWeight=1.f,oldWeight=0.f;
                     if(fade.remaining>0) {
                         nextWeight=1.f-static_cast<float>(fade.remaining-1)/

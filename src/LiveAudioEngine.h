@@ -2802,6 +2802,9 @@ public:
         double nativeWorst=-1.;
         juce::String nativeWorstName,nativeWorstInstance;
         int nativeTimingLeases=0;
+        int exactIdleCount=0, nativeLatentCount=0, nativeLatentBypassedCount=0, nativeMaxInsertLatency=0;
+        juce::String nativeMaxLatencyName,nativeMaxLatencyInstance;
+        bool nativeMaxLatencyBypassRequested=false;
         const auto accountInserts = [&] (const juce::var& inserts,
                                          bool rackBypassed)
         {
@@ -2810,6 +2813,24 @@ public:
                     if (insert.isObject())
                     {
                         ++installedNativeFx;
+                        if(bool(insert.getProperty("dspTelemetryLive",false))){
+                            const int samples=static_cast<int>(insert.getProperty("latencySamples",0));
+                            const bool bypassRequested=globalFxBypassed||rackBypassed||
+                                bool(insert.getProperty("bypassed",false));
+                            if(samples>0){
+                                ++nativeLatentCount;
+                                if(bypassRequested)++nativeLatentBypassedCount;
+                                if(samples>nativeMaxInsertLatency){
+                                    nativeMaxInsertLatency=samples;
+                                    nativeMaxLatencyName=insert.getProperty("name","").toString();
+                                    nativeMaxLatencyInstance=insert.getProperty("instanceId","").toString();
+                                    nativeMaxLatencyBypassRequested=bypassRequested;
+                                }
+                            }
+                            if(!bypassRequested && bool(insert.getProperty("dspSleeping",false)) &&
+                               insert.getProperty("dspIdlePolicy","").toString()=="NATIVE_EXACT_STATE")
+                                ++exactIdleCount;
+                        }
                         if(bool(insert.getProperty("dspTelemetryLive",false)) &&
                            static_cast<double>(insert.getProperty("dspProcessedBlocks",0.))>0.) {
                             ++nativeTimingLeases;
@@ -2888,6 +2909,17 @@ public:
         o->setProperty("nativeFxWorstName",nativeWorstName);
         o->setProperty("nativeFxWorstInstance",nativeWorstInstance);
         o->setProperty("nativeFxTimingLeases",nativeTimingLeases);
+        o->setProperty("nativeExactIdleCount",exactIdleCount);
+        // These are individual live native lease declarations, NOT the
+        // end-to-end critical path or physical round trip. Bypass requests
+        // preserve the accepted aligned PDC; no silent delay removal.
+        o->setProperty("nativeLatentInsertCount",nativeLatentCount);
+        o->setProperty("nativeLatentBypassRequestedCount",nativeLatentBypassedCount);
+        o->setProperty("nativeMaxInsertLatencySamples",nativeLatentCount?juce::var(nativeMaxInsertLatency):juce::var());
+        o->setProperty("nativeMaxInsertLatencyName",nativeMaxLatencyName);
+        o->setProperty("nativeMaxInsertLatencyInstance",nativeMaxLatencyInstance);
+        o->setProperty("nativeMaxInsertLatencyBypassRequested",nativeMaxLatencyBypassRequested);
+        o->setProperty("nativeInsertLatencyProvenance","LIVE_NATIVE_DECLARED_INSERT_LATENCY_EXCLUDES_EXTERNAL_CH1_NOT_ROUND_TRIP");
         o->setProperty("nativeFxTimingProvenance","LIVE_NATIVE_INSERT_LIFETIME_WALL_US_EXCLUDES_EXTERNAL_CH1");
         o->setProperty("legacyFxTimingProvenance","LEGACY_GRAPH_SLOT_TIMING_NOT_NATIVE_INSERT_TIMING");
         o->setProperty ("nativeFxActivityComplete", externalFxActivityComplete);

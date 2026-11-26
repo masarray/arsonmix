@@ -87,6 +87,20 @@ struct Harness {
             outputPointers.data(),activePorts);
     }
 };
+static void verifyDisconnectedZeroDelayTapThenWake() {
+    Harness h;
+    for(int i=0;i<32;++i){
+        assert(h.render());assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==-1);
+        assert(near(h.output[2][63],0.f)&&near(h.output[3][63],0.f));
+        assert(near(h.output[0][63],.71f));
+    }
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.render()&&h.callsA==33&&h.callsB==33);
+    assert(near(h.output[2][63],.50f)&&near(h.output[3][63],.20f));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,-1,-1,8));
+    assert(h.render()&&h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==-1);
+    assert(near(h.output[2][63],0.f));
+}
 static void verifyIndependentBusPcmAndOncePerFx() {
     Harness h;
     assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
@@ -364,6 +378,7 @@ static void verifyAtomicInitialExternalPlan() {
 int main() {
     verifyAtomicInitialExternalPlan();
     verifyIndependentBusPcmAndOncePerFx();
+    verifyDisconnectedZeroDelayTapThenWake();
     verifyEightPinIsolationAndAppliedReadback();
     verifyFourPinMainAndOneBus();
     verifyFailClosedAllPhysicalOutputBuffers();
