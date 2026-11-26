@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/FxWorkloadEvidence.h"
+#include "../engine/core/FxLifecyclePolicy.h"
+#include <limits>
 #include "../engine/core/FxBypassEnvelope.h"
 #include "../engine/core/StereoLatencyDelay.h"
 #include <array>
@@ -69,4 +71,42 @@ static void history(){
     }
     assert(blocks==42000);
 }
-int main(){workload();history();std::puts("PASS: 42000 variable latent FX blocks, bypass reversals/fault history and vendor-neutral workload budgets");}
+static void lifecycle(){
+    using namespace armix::rt;
+    unsigned cases=0;
+    for(auto cap:{FxIdleCapability::conservative,FxIdleCapability::exactNative,FxIdleCapability::qualifiedTail})
+    for(unsigned mask=0;mask<32;++mask){
+        const bool continuous=mask&1,requested=mask&2,fully=mask&4,fade=mask&8,fault=mask&16;
+        const auto actual=chooseFxRenderAction(cap,continuous,requested,fully,fade,fault);
+        if(fault||(fully&&!continuous))assert(actual==FxRenderAction::alignedDry);
+        else if(continuous||requested||fully||fade||cap==FxIdleCapability::conservative)
+            assert(actual==FxRenderAction::process);
+        else assert(actual==(cap==FxIdleCapability::exactNative?
+            FxRenderAction::probeExact:FxRenderAction::probeTail));
+        ++cases;
+    }
+    assert(cases==96);
+    float l[]{0.f,-0.f},r[]{-0.f,0.f};
+    assert(exactSilentStereo(l,r,2));
+    for(float nonzero:{std::bit_cast<float>(1u),1.e-20f,1.f,
+                       std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}){
+        r[1]=nonzero;assert(!exactSilentStereo(l,r,2));
+    }
+    assert(!exactSilentStereo(nullptr,r,2));
+    assert(reviewFx(false,0,0,0,0,0,0,false,false)==FxReview::noEvidence);
+    assert(reviewFx(true,1,0,250,63,63,0,false,false)==FxReview::reviewBudget);
+    assert(reviewFx(true,100,0,250,64,64,0,false,false)==FxReview::reviewSilentCost);
+    assert(reviewFx(true,100,0,250,64,63,0,false,false)==FxReview::reviewBudget);
+    assert(reviewFx(false,0,0,0,0,0,304,true,false)==FxReview::reviewLatentBypass);
+    assert(reviewFx(true,100,10,2000,64,64,304,true,true)==FxReview::latencyFault);
+    FxWorkloadEvidence e;e.prepare(48000.);
+    for(int i=0;i<64;++i){e.observe(1000000,16);e.observeSilence(true);}
+    auto s=e.snapshot();assert(s.calls==64&&s.overBudget==64&&s.silenceObserved==64&&s.silentInOut==64);
+    for(int i=0;i<15;++i)e.observe(1000000,16);
+    assert(e.snapshot().calls==64); // bounded publication even in overload
+    e.prepare(96000.);s=e.snapshot();
+    assert(s.validRate&&s.calls==0&&s.overBudget==0&&s.worstPermille==0&&s.silenceObserved==0);
+}
+int main(){workload();history();lifecycle();
+    std::puts("PASS: 42000 latent blocks, 96 lifecycle combinations, silence/overload/reset and advisory fences");
+}

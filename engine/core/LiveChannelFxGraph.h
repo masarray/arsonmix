@@ -7,6 +7,7 @@
 #include "ImmerSIBIdlePolicy.h"
 #include "FxTimingSampler.h"
 #include "FxWorkloadEvidence.h"
+#include "FxLifecyclePolicy.h"
 #include <chrono>
 #include <stdexcept>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -62,6 +63,7 @@ public:
         bool nativeExactIdleAdmitted=false; // explicit native processor contract
         bool immerseIdleAdmitted=false; // CONTROL only, exact trusted native identity
         armix::dsp::ImmerSIBIdlePolicy immerseIdle;
+        armix::rt::FxIdleCapability idleCapability=armix::rt::FxIdleCapability::conservative;
         std::atomic<bool> dspSleeping{false};
         std::atomic<std::uint64_t> dspProcessedBlocks{0},dspSleepBlocks{0};
         std::atomic<std::uint64_t> dspLastUs{0},dspWorstUs{0};
@@ -120,6 +122,9 @@ public:
                         processor->getName()=="ImmerSIB" && latencySamples==0 &&
                         !continuousBypassProcessing;
                 }
+                idleCapability=nativeExactIdleAdmitted?armix::rt::FxIdleCapability::exactNative:
+                    immerseIdleAdmitted?armix::rt::FxIdleCapability::qualifiedTail:
+                    armix::rt::FxIdleCapability::conservative;
                 processor->addListener(this);
             }
         }
@@ -218,7 +223,9 @@ public:
                 juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
                 juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
             }
-            if((fullyBypassed&&!continuousBypassProcessing)||latencyFault) {
+            const auto action=armix::rt::chooseFxRenderAction(idleCapability,
+                continuousBypassProcessing,requestedBypass,fullyBypassed,fading,latencyFault);
+            if(action==armix::rt::FxRenderAction::alignedDry) {
                 immerseIdle.reset();
                 dspSleeping.store(false,std::memory_order_relaxed);
                 dspLastUs.store(0,std::memory_order_relaxed);
@@ -234,8 +241,8 @@ public:
             // Only sleep with exact input silence, fully settled bypass and
             // no pending parameter/mode transaction. A queued edit is handled
             // by the regular real processBlock on the very next callback.
-            const bool idleStable=immerseIdleAdmitted && !requestedBypass &&
-                !fullyBypassed && !fading && nativeControl->stateSnapshotQuiescent();
+            const bool idleStable=action==armix::rt::FxRenderAction::probeTail &&
+                nativeControl->stateSnapshotQuiescent();
             if(immerseIdleAdmitted && immerseIdle.shouldSleep(left,right,samples,idleStable)) {
                 juce::FloatVectorOperations::clear(left,samples);
                 juce::FloatVectorOperations::clear(right,samples);
@@ -249,7 +256,7 @@ public:
             // Exact native idle does not clear or modify the input PCM.
             // The processor owns all state/ACK/meter requirements. A pending
             // edit or non-equivalent input wakes in this very block.
-            if(nativeExactIdleAdmitted && !requestedBypass && !fading &&
+            if(action==armix::rt::FxRenderAction::probeExact &&
                nativeControl->tryExactIdle(left,right,samples)) {
                 dspSleeping.store(true,std::memory_order_relaxed);
                 dspLastUs.store(0,std::memory_order_relaxed);
@@ -260,6 +267,7 @@ public:
             }
             dspSleeping.store(false,std::memory_order_relaxed);
             const bool sampled=processTiming.shouldSample();
+            const bool silentInput=sampled&&armix::rt::exactSilentStereo(left,right,samples);
             const auto dspStart=std::chrono::steady_clock::now();
             bool dspOk=true;
             try {
@@ -281,8 +289,11 @@ public:
             const auto ns=static_cast<std::uint64_t>(std::max<std::int64_t>(0,
                 std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count()));
             workloadEvidence.observe(ns,samples);
-            if(sampled)
+            if(sampled){
                 processTiming.record(ns,static_cast<unsigned>(samples),fullyBypassed);
+                if(dspOk)workloadEvidence.observeSilence(silentInput&&
+                    armix::rt::exactSilentStereo(left,right,samples));
+            }
             const auto us=static_cast<std::uint64_t>(std::max<std::int64_t>(0,elapsed));
             dspLastUs.store(us,std::memory_order_relaxed);
             // Single AUDIO writer under the existing lease gate; no CAS spin.

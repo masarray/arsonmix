@@ -1340,6 +1340,7 @@ private:
                  "nativeFxWorstUs", "nativeFxWorstName", "nativeFxTimingLeases",
                  "nativeFxWorkloadMeasuredLeases", "nativeFxWorkloadOverBudgetLeases",
                  "nativeFxWorkloadWorstPermille", "nativeFxWorkloadWorstName", "nativeFxWorkloadWorstInstance",
+                 "nativeFxWorkloadLegacySampledLeases", "nativeFxWorkloadReviewCount",
                  "nativeExactIdleCount", "nativeLatentInsertCount", "nativeLatentBypassRequestedCount",
                  "nativeMaxInsertLatencySamples", "nativeMaxInsertLatencyName",
                  "nativeLatencyPlanValid", "nativeLatencyPlanProvenance",
@@ -4246,8 +4247,9 @@ private:
                   "Contention/exception counts are lifetime host events, not confirmed hardware underruns.\n";
         result << "workload*: vendor-independent lifetime invocation wall time versus frames/rate; "
                   "1000 permille means the whole invocation quantum, not a hardware xrun. "
-                  "Published counts may lag up to 31 calls; external CH1 is excluded. "
-                  "No automatic FX bypass or suspend is triggered.\n";
+                  "Published counts may lag up to 31 timed calls; external CH1 uses sparse observations "
+                  "and a graph/physical-slot identity, not all-call peaks. Sampled silent PCM is not "
+                  "proof of drained state. Reviews are advisory; no automatic bypass or suspend.\n";
         result << "\n=== STATUS SNAPSHOT (measured / source-labeled) ===\n";
         result << juce::JSON::toString (status, true) << "\n";
         result << "\n=== RECENT EVENTS (latest 48, capture on control thread) ===\n";

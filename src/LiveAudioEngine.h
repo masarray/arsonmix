@@ -35,6 +35,9 @@
 #include "../engine/core/CallbackCadenceEvidence.h"
 #include "../engine/core/CaptureBoundaryEvidence.h"
 #include "../engine/core/FxBypassEnvelope.h"
+#include "../engine/core/FxWorkloadEvidence.h"
+#include "../engine/core/FxLifecyclePolicy.h"
+#include "../engine/core/FxTimingSampler.h"
 #include "../engine/core/NativeOutputPairTap.h"
 #include <array>
 #include <atomic>
@@ -109,6 +112,16 @@ public:
         // Owned and advanced exclusively by the realtime render callback.
         // Physical-slot identity survives an atomic logical reorder (PR #102).
         std::array<armix::dsp::FxBypassEnvelope, maxFx> bypassEnvelope {};
+        // Physical-slot observations survive MOVE, never attach stale
+        // measurements to a replacement graph or changed device format.
+        inline static std::atomic<std::uint64_t> nextWorkloadGraph{1};
+        const std::uint64_t workloadGraphId=nextWorkloadGraph.fetch_add(1,std::memory_order_relaxed);
+        std::array<armix::rt::FxWorkloadEvidence,maxFx> workload{};
+        std::array<armix::rt::FxTimingSampler,maxFx> workloadSampler{};
+        void prepareWorkload(int i,double rate) noexcept {
+            workload[i].prepare(rate);
+            workloadSampler[i].seed(static_cast<std::uint32_t>(workloadGraphId*17u+i+1u));
+        }
         int count = 0;
         int latency = 0;
         bool hasRecallState = false;
@@ -1029,6 +1042,7 @@ public:
             auto& slot=next.slots[i];
             next.bypassFlags[i].store(slot.bypass,std::memory_order_relaxed);
             next.bypassEnvelope[i].prepare(slot.bypass,rate,slot.latency);
+            next.prepareWorkload(i,rate);
             if(!slot.bypass)next.latency+=slot.latency;
         }
     }
@@ -1255,6 +1269,7 @@ public:
             staged->slots[i].latency = staged->slots[i].processor->getLatencySamples();
             staged->bypassEnvelope[i].prepare (staged->slots[i].bypass, rate,
                                                 staged->slots[i].latency);
+            staged->prepareWorkload(i,rate);
             if (!staged->slots[i].bypass) staged->latency += staged->slots[i].latency;
         }
         // Show recall can replace original CH1 owner and all its binary
@@ -2802,21 +2817,56 @@ public:
         double nativeWorst=-1.;
         juce::String nativeWorstName,nativeWorstInstance;
         int nativeTimingLeases=0;
-        int workloadMeasured=0,workloadOverBudget=0;
+        int workloadMeasured=0,workloadOverBudget=0,workloadLegacyMeasured=0;
+        int workloadReviewCount=0;
+        juce::Array<juce::var> workloadReviews;
+        const auto recordReview=[&](const juce::String& name,const juce::String& identity,
+                const juce::String& channel,bool sampledOnly,bool valid,
+                std::uint64_t calls,std::uint64_t over,std::uint64_t worst,
+                std::uint64_t observed,std::uint64_t silent,int latency,bool bypass,bool fault){
+            const auto action=armix::rt::reviewFx(valid,calls,over,worst,observed,silent,latency,bypass,fault);
+            if(action==armix::rt::FxReview::noEvidence||action==armix::rt::FxReview::keep)return;
+            ++workloadReviewCount;
+            // Bounded control-side list. All candidates counted; no callback
+            // allocation, no automatic action and no new render authority.
+            if(workloadReviews.size()>=32)return;
+            auto item=std::make_unique<juce::DynamicObject>();
+            item->setProperty("name",name);item->setProperty("instance",identity);
+            item->setProperty("channel",channel);
+            item->setProperty("recommendation",armix::rt::fxReviewName(action));
+            item->setProperty("sampledOnly",sampledOnly);
+            item->setProperty("worstPermille",valid?juce::var(static_cast<double>(worst)):juce::var());
+            item->setProperty("latencySamples",latency);
+            item->setProperty("silentObservations",static_cast<double>(silent));
+            item->setProperty("observations",static_cast<double>(observed));
+            workloadReviews.add(juce::var(item.release()));
+        };
         double workloadWorst=-1.;
         juce::String workloadWorstName,workloadWorstInstance;
         int exactIdleCount=0, nativeLatentCount=0, nativeLatentBypassedCount=0, nativeMaxInsertLatency=0;
         juce::String nativeMaxLatencyName,nativeMaxLatencyInstance;
         bool nativeMaxLatencyBypassRequested=false;
         const auto accountInserts = [&] (const juce::var& inserts,
-                                         bool rackBypassed)
+                                         bool rackBypassed,const juce::String& channel)
         {
             if (const auto* list = inserts.getArray())
                 for (const auto& insert : *list)
                     if (insert.isObject())
                     {
                         ++installedNativeFx;
-                        if(bool(insert.getProperty("workloadBudgetValid",false))){
+                        const bool measured=bool(insert.getProperty("workloadBudgetValid",false));
+                        if(bool(insert.getProperty("dspTelemetryLive",false))){
+                            const auto count=[&](const char* key){return static_cast<std::uint64_t>(
+                                static_cast<double>(insert.getProperty(key,0.)));};
+                            recordReview(insert.getProperty("name","").toString(),
+                                insert.getProperty("instanceId","").toString(),channel,false,measured,
+                                count("workloadObservedCalls"),count("workloadOverBudgetCalls"),
+                                count("workloadWorstPermille"),count("workloadSilenceObserved"),
+                                count("workloadSilentInOut"),static_cast<int>(insert.getProperty("latencySamples",0)),
+                                globalFxBypassed||rackBypassed||bool(insert.getProperty("bypassed",false)),
+                                bool(insert.getProperty("latencyChanged",false)));
+                        }
+                        if(measured){
                             ++workloadMeasured;
                             if(static_cast<double>(insert.getProperty("workloadOverBudgetCalls",0.))>0.)
                                 ++workloadOverBudget;
@@ -2869,7 +2919,8 @@ public:
                 for (const auto& channel : *channels)
                     accountInserts (
                         channel.getProperty ("inserts", {}),
-                        bool (channel.getProperty ("fxRackBypassed", false)));
+                        bool (channel.getProperty ("fxRackBypassed", false)),
+                        channel.getProperty("id","").toString());
         }
         else
         {
@@ -2882,7 +2933,7 @@ public:
                 for (int lane = 0; lane < racks->size(); ++lane)
                     accountInserts ((*racks)[lane],
                         flags != nullptr && lane < flags->size()
-                        && bool ((*flags)[lane]));
+                        && bool ((*flags)[lane]),juce::String(lane+1));
         }
         // Original Channel 1 vendor/Orbit inserts are one SHARED Graph
         // leased by the admitted ChannelId renderer, not ordinary entries
@@ -2911,6 +2962,24 @@ public:
                 if (!acceptedGraph->slots[physical].processor)
                     continue;
                 ++externalCh1Installed;
+                const auto evidence=acceptedGraph->workload[physical].snapshot();
+                const bool measured=evidence.validRate&&evidence.calls>0;
+                const auto identity="ch1-"+juce::String(static_cast<juce::int64>(
+                    acceptedGraph->workloadGraphId))+"-"+juce::String(physical);
+                const auto& slot=acceptedGraph->slots[physical];
+                recordReview(slot.name,identity,"CH1_EXTERNAL",true,measured,
+                    evidence.calls,evidence.overBudget,evidence.worstPermille,
+                    evidence.silenceObserved,evidence.silentInOut,slot.latency,
+                    globalFxBypassed||externalRackBypassed||
+                        acceptedGraph->bypassFlags[physical].load(std::memory_order_acquire),false);
+                if(measured){
+                    ++workloadMeasured;++workloadLegacyMeasured;
+                    if(evidence.overBudget)++workloadOverBudget;
+                    if(static_cast<double>(evidence.worstPermille)>workloadWorst){
+                        workloadWorst=static_cast<double>(evidence.worstPermille);
+                        workloadWorstName=slot.name;workloadWorstInstance=identity;
+                    }
+                }
                 if (!globalFxBypassed && !externalRackBypassed &&
                     !acceptedGraph->bypassFlags[physical].load (
                         std::memory_order_acquire))
@@ -2928,8 +2997,11 @@ public:
         o->setProperty("nativeFxWorkloadWorstPermille",workloadWorst>=0.?juce::var(workloadWorst):juce::var());
         o->setProperty("nativeFxWorkloadWorstName",workloadWorstName);
         o->setProperty("nativeFxWorkloadWorstInstance",workloadWorstInstance);
+        o->setProperty("nativeFxWorkloadLegacySampledLeases",workloadLegacyMeasured);
+        o->setProperty("nativeFxWorkloadReviewCount",workloadReviewCount);
+        o->setProperty("nativeFxWorkloadReviews",juce::var(workloadReviews));
         o->setProperty("nativeFxWorkloadProvenance",
-            "LEASE_LIFETIME_INVOCATION_WALL_TIME_VS_FRAMES_RATE_EXCLUDES_EXTERNAL_CH1_NOT_XRUN");
+            "NATIVE_ALL_CALLS_EXTERNAL_CH1_SPARSE_SAMPLES_WALL_TIME_VS_FRAMES_RATE_NOT_XRUN");
         o->setProperty("nativeExactIdleCount",exactIdleCount);
         // These are individual live native lease declarations, NOT the
         // end-to-end critical path or physical round trip. Bypass requests
@@ -3602,6 +3674,7 @@ private:
                 slot.latency = slot.processor->getLatencySamples();
                 const bool bypass=graphOwned_->bypassFlags[i].load (std::memory_order_relaxed);
                 graphOwned_->bypassEnvelope[i].prepare(bypass,sampleRateHz_,slot.latency);
+                graphOwned_->prepareWorkload(i,sampleRateHz_);
                 if (!bypass) latency += slot.latency;
             }
         }
@@ -3667,7 +3740,23 @@ private:
             }
             if(bypass.shouldProcessWet())
             {
-                try {slot.processor->processBlock(buffer,midi);}
+                // Sparse, jittered observations: no added clock calls on
+                // the other 24–40 invocations. Not all-call peak evidence.
+                const bool sampled=graph.workloadSampler[physical].shouldSample();
+                const bool silentInput=sampled&&armix::rt::exactSilentStereo(left,right,frames);
+                const auto start=sampled?std::chrono::steady_clock::now():
+                    std::chrono::steady_clock::time_point{};
+                try {
+                    slot.processor->processBlock(buffer,midi);
+                    if(sampled){
+                        const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now()-start).count();
+                        graph.workload[physical].observe(static_cast<std::uint64_t>(
+                            std::max<std::int64_t>(0,elapsed)),frames);
+                        graph.workload[physical].observeSilence(silentInput&&
+                            armix::rt::exactSilentStereo(left,right,frames));
+                    }
+                }
                 catch(...)
                 {
                     juce::FloatVectorOperations::clear(left,frames);

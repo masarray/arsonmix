@@ -3371,6 +3371,8 @@ public:
                 item->setProperty("workloadObservedCalls",static_cast<double>(workload.calls));
                 item->setProperty("workloadOverBudgetCalls",static_cast<double>(workload.overBudget));
                 item->setProperty("workloadWorstPermille",static_cast<double>(workload.worstPermille));
+                item->setProperty("workloadSilenceObserved",static_cast<double>(workload.silenceObserved));
+                item->setProperty("workloadSilentInOut",static_cast<double>(workload.silentInOut));
                 item->setProperty("processContentionCount",static_cast<juce::int64>((*lease)->contention.load(std::memory_order_relaxed)));
                 item->setProperty("processExceptionCount",static_cast<juce::int64>((*lease)->exceptions.load(std::memory_order_relaxed)));
                 // CONTROL readback of the exact admitted ChannelId/instance.
