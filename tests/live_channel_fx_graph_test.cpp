@@ -4,6 +4,7 @@
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "../engine/core/NativeFxRackTransaction.h"
+#include "../src/NativeFxRackArchive.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "../engine/core/NativeOutputPairTap.h"
@@ -2120,6 +2121,34 @@ static void verifyNativeFxRackTransactions() {
     assert(!bank->findEditorLocation(b,b->instanceId));
     edit(dest,0,a->instanceId,{},0);samples(.35f);assert(!bank->retainsEditor(a));
     assert(!bank->findEditorLocation(a,a->instanceId));
+    // Replacement uses a new rack gate and fresh lease; unrelated graph
+    // owners and routing remain untouched. No armed PDC-changing commit.
+    auto latent=std::make_unique<GainFx>(1.f,19);latent->prepareToPlay(48000,64);
+    auto saved=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(latent),"latent","latent",64);
+    DynamicChannelRoster candidate;DynamicChannelFxLeaseBank candidateBank;
+    assert(prepareNativeFxRackReplacement(11,revision,roster.revision(),roster,*bank,
+        source,{saved},true,candidate,candidateBank));
+    assert(candidateBank.latencySamples(source)==19&&candidateBank.rackBypassed(source));
+    assert(!bank->rackBypassed(source)&&bank->insertCount(source)==0);
+    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish();
+    assert(publisher.latencySamples(11,revision)==19);
+    assert(prepareNativeFxRackReplacement(11,revision,roster.revision(),roster,*bank,
+        source,{},false,candidate,candidateBank));
+    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish();
+    assert(publisher.latencySamples(11,revision)==0&&!bank->retainsEditor(saved));
+    // Portable rack file round trip; opaque states and ordering, not IDs.
+    armix::storage::FxRackFile rack;rack.rackBypassed=true;
+    armix::storage::FxState entry;entry.catalogId="gain";entry.name="Gain";entry.bypass=true;
+    const float settings=2.f;entry.binary.append(&settings,sizeof(settings));
+    rack.effects.push_back(entry);entry.catalogId="offset";entry.bypass=false;rack.effects.push_back(entry);
+    juce::MemoryBlock bytes;using Archive=armix::storage::NativeFxRackArchive;
+    assert(Archive::encode(rack,bytes).isEmpty());
+    armix::storage::FxRackFile decoded;
+    assert(Archive::decode(bytes,decoded).isEmpty()&&decoded.rackBypassed&&decoded.effects.size()==2);
+    assert(decoded.effects[0].catalogId=="gain"&&decoded.effects[0].bypass&&
+        decoded.effects[1].catalogId=="offset"&&decoded.effects[0].binary==rack.effects[0].binary);
+    static_cast<char*>(bytes.getData())[10]^=1;
+    assert(Archive::decode(bytes,decoded).isNotEmpty()&&decoded.effects.size()==2);
 }
 
 // Native eight-band Parametric EQ must be the exact ordered rack lease in PCM,

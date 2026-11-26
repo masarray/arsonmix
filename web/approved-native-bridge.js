@@ -5250,7 +5250,29 @@
     status("Native "+operation+" unavailable · verify mixer authority/readback");
     return false;
   }
+  function rackFileTarget(track){
+    const state=controller?.state()?.current,channelId=nativeIdFor(track);
+    const channel=state?.graph?.channels?.find(ch=>ch.id===channelId);
+    if(!state?.admitted||state?.retained||logicalView||mixerSession()?.authority!=="CHANNEL_ID"||
+       !channel||!["INPUT","GROUP","FX_RETURN","MAIN"].includes(channel.role))return null;
+    return {channelId,channel,deviceEpoch:state.device?.epoch,
+      graphRevision:state.graph?.revision,rosterRevision:state.graph?.rosterRevision};
+  }
+  function requestRackFile(track,operation,slot,token){
+    const target=rackFileTarget(track);
+    if(!target||!["SAVE","OPEN","INSERT","DEACTIVATE"].includes(operation)){
+      nativeToast("FX rack file unavailable · verify current native rack");return false;
+    }
+    const {channel,...identity}=target;
+    if(operation==="DEACTIVATE"&&(!Number.isInteger(slot)||channel.inserts?.[slot]?.id!==token)){
+      nativeToast("FX changed · reopen rack menu");return false;
+    }
+    backend.emitEvent("arMixAction",{action:"fxRackFile",operation,...identity,
+      slot:operation==="DEACTIVATE"?slot:-1,instanceId:operation==="DEACTIVATE"?token:""});
+    return true;
+  }
   const nativeHooks=Object.freeze({
+    rackFileTarget,rackFile:requestRackFile,
     enabled:connected,
     requestDeleteTrack:requestNativeTrackDelete,
     requestDeleteStrip:requestNativeStripDelete,

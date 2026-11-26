@@ -17,6 +17,7 @@ on:
       - 'engine/core/RealtimeSlew64.h'
       - 'engine/core/FxWorkloadEvidence.h'
       - 'engine/core/FxLifecyclePolicy.h'
+      - 'engine/core/FxRackCatalogReplacement.h'
       - 'engine/core/LiveChannelFxGraph.h'
       - 'tests/fx_global_workload_test.cpp'
       - 'engine/core/DynamicAcceptedSession.h'

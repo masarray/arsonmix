@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/DeviceIndependentMixerSession.h"
+#include "../engine/core/FxRackCatalogReplacement.h"
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -38,6 +39,18 @@ int main() {
           newTrack->sends.front().destination==logical.mainId() &&
           newTrack->sends.front().primaryOutput);
     const auto stableMain=logical.mainId();
+    {
+        DynamicChannelRoster replaced,cleared;
+        const auto& prior=logical.roster();
+        valid(prepareRackCatalogReplacement(prior,prior.revision(),backing,{"eq","comp","verb"},replaced));
+        valid(replaced.revision()==prior.revision()+1&&replaced.find(backing)->insertCatalogIds.size()==3);
+        valid(prior.find(backing)->insertCatalogIds.empty());
+        valid(replaced.find(backing)->sends.front().destination==stableMain);
+        valid(!prepareRackCatalogReplacement(replaced,prior.revision(),backing,{},cleared));
+        valid(!prepareRackCatalogReplacement(replaced,replaced.revision(),backing,{"valid",""},cleared));
+        valid(prepareRackCatalogReplacement(replaced,replaced.revision(),backing,{},cleared));
+        valid(cleared.find(backing)->insertCatalogIds.empty()&&cleared.find(backing)->sends.size()==1);
+    }
 
     // 2) Optimistic stale writes are rejected without changing the
     // authoritative native descriptor. No browser-only edits.

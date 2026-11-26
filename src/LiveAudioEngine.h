@@ -2363,6 +2363,57 @@ public:
             fail.error="NATIVE_VST3_VENDOR_PREPARE_FAILED";return fail;
         }
     }
+    bool rackFileAllowed(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId target) {
+        return allOutputsDisarmed()&&!independent_.active()&&attached_&&directFence_.permitted()&&
+            !wantsMainContinuation()&&!handoff_.busy()&&
+            fxMovePhase_.load(std::memory_order_acquire)==0&&
+            !routeReconfiguring_.load(std::memory_order_acquire)&&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal&&
+            dryRoutingLab_.rackFileTargetCurrent(ep,rev,roster,target);
+    }
+    juce::String captureRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId target,int slot,const juce::String& token,
+            armix::storage::FxRackFile& rack) {
+        if(!rackFileAllowed(ep,rev,roster,target))return "Disarm MAIN and STREAM; refresh FX rack";
+        return dryRoutingLab_.captureRackFile(ep,rev,roster,target,slot,token,rack);
+    }
+    juce::String applyRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId target,const armix::storage::FxRackFile& rack,
+            bool append,int removeSlot=-1,const juce::String& token={}) {
+        if(!rackFileAllowed(ep,rev,roster,target))return "Disarm MAIN and STREAM; refresh FX rack";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||!device->isOpen())return "Audio device unavailable";
+        const double rate=device->getCurrentSampleRate();
+        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        try{
+            std::vector<armix::mixer::LiveChannelFxGraph::InstanceLease> leases;
+            if(removeSlot<0){
+                if(rack.single!=append||rack.effects.size()>8||
+                   (append&&rack.effects.size()!=1))return "Choose matching rack or single FX file";
+                for(const auto& fx:rack.effects){
+                    armix::session::StoredInsert insert;
+                    insert.catalogId=fx.catalogId;insert.path=fx.path;insert.uid=fx.uid;insert.name=fx.name;
+                    armix::shows::BinaryState state;
+                    state.bytes=fx.binary;state.sha256=juce::SHA256(state.bytes).toHexString();
+                    std::unique_ptr<juce::AudioProcessor> processor;
+                    if(auto error=armix::session::NativeMixerSessionFxRestore::prepareProcessor(
+                           insert,&state,formats_,rate,frames,processor);error.isNotEmpty())return error;
+                    if(!processor)return "FX preparation failed";
+                    auto lease=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
+                        std::move(processor),fx.catalogId,fx.name,LiveDryRoutingLab::Block::hardFrameLimit);
+                    lease->bypassRequested.store(fx.bypass,std::memory_order_release);
+                    leases.push_back(std::move(lease)); // fresh identity, never import tokens
+                }
+            }
+            if(deviceManager_.getCurrentAudioDevice()!=device||device->getCurrentSampleRate()!=rate||
+               juce::jmax(32,device->getCurrentBufferSizeSamples())!=frames||
+               !rackFileAllowed(ep,rev,roster,target))return "Device or rack changed during prepare";
+            auto result=dryRoutingLab_.replaceRackFile(ep,rev,roster,target,std::move(leases),
+                append,rack.rackBypassed,removeSlot,token,allOutputsDisarmed());
+            return result.accepted?juce::String{}:juce::String(result.error);
+        }catch(...){return "FX rack preparation failed; current rack retained";}
+    }
     LiveDryRoutingLab::NativeBusResult editNativeFxRack(std::uint64_t ep,
             std::uint64_t revision,std::uint64_t roster,armix::mixer::ChannelId source,
             std::size_t slot,const juce::String& token,armix::mixer::ChannelId target,std::size_t position) {

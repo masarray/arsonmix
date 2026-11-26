@@ -843,6 +843,7 @@ private:
     armix::io::NamedPatchStore namedPatches_{machineSettingsDirectory()};
     armix::session::NativeIoDefaults ioDefaults_{machineSettingsDirectory()};
     std::unique_ptr<juce::FileChooser> namedIoFileChooser_;
+    std::unique_ptr<juce::FileChooser> fxRackFileChooser_;
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
@@ -5469,6 +5470,92 @@ private:
         }))emitMixerSessionAck(archived?"ARCHIVE":"OPEN","Mixer file operation already in progress");
     }
 
+    // File paths never authorize loading executable code. Match the exact
+    // registered native catalog before passing anything to the FX factory.
+    juce::String resolveRackFileCatalog(armix::storage::FxRackFile& rack,bool capture) {
+        for(auto& fx:rack.effects){
+            if(armix::builtin_fx::findNativeBuiltInFx(fx.catalogId)){
+                if(fx.path.isNotEmpty()||fx.uid!=0)return "Invalid built-in FX identity";
+                continue;
+            }
+            const auto* registered=catalog_.find(fx.catalogId);
+            if(!registered||registered->key()!=fx.catalogId||
+               (!capture&&(registered->path!=fx.path||registered->uid!=fx.uid)))
+                return "Registered VST3 unavailable: "+fx.catalogId;
+            fx.path=registered->path;fx.uid=registered->uid;fx.name=registered->name;
+        }
+        return {};
+    }
+    void chooseFxRackFile(const juce::var& args) {
+        const auto op=args.getProperty("operation",{}).toString();
+        const bool deactivate=op=="DEACTIVATE",save=op=="SAVE"||deactivate,append=op=="INSERT";
+        const auto token=args.getProperty("instanceId",{}).toString();
+        const auto slotValue=args.getProperty("slot",{});
+        const int slot=deactivate&&slotValue.isInt()?static_cast<int>(slotValue):-1;
+        std::uint64_t ep=0,rev=0,roster=0,id=0;
+        if((!save&&!append&&op!="OPEN")||(deactivate&&(slot<0||slot>=8||token.isEmpty()))||
+           !armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)||
+           !armix::console::approvedNativeId(args.getProperty("graphRevision",{}),rev)||
+           !armix::console::approvedNativeId(args.getProperty("rosterRevision",{}),roster)||
+           !armix::console::approvedNativeId(args.getProperty("channelId",{}),id))
+            return emitNotice("FX rack request invalid; refresh rack",true);
+        const armix::mixer::ChannelId channel{id};
+        if(fxRackFileChooser_||namedIoFileChooser_||mixerFileDialogOpen_||
+           deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
+           logicalVendorEditor_||!engine_.rackFileAllowed(ep,rev,roster,channel))
+            return emitNotice("FX rack file: disarm MAIN and STREAM; use a current native rack",true);
+        auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+        if(save)start=start.getChildFile(deactivate?"Saved-FX.arfx":"Vocal-Rack.arfx");
+        fxRackFileChooser_=std::make_unique<juce::FileChooser>(
+            deactivate?"Deactivate and save FX":save?"Save FX Rack":append?
+                "Insert saved FX":"Open FX Rack (replace)",start,"*.arfx",true);
+        using Flags=juce::FileBrowserComponent;
+        fxRackFileChooser_->launchAsync(Flags::canSelectFiles|
+            (save?(Flags::saveMode|Flags::warnAboutOverwriting):Flags::openMode),
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this),ep,rev,roster,channel,
+             token,slot,save,deactivate,append](const juce::FileChooser& picker){
+                if(!safe)return;
+                const auto file=picker.getResult();
+                juce::String error;
+                bool archived=false;
+                if(file!=juce::File{}){
+                    try{
+                        if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
+                           safe->mixerSessionWorker_.busy()||safe->logicalVendorEditor_||
+                           !safe->engine_.rackFileAllowed(ep,rev,roster,channel))
+                            error="Device or rack changed; retry";
+                        else{
+                            armix::storage::FxRackFile rack;
+                            if(save){
+                                error=safe->engine_.captureRackFile(ep,rev,roster,channel,slot,token,rack);
+                                if(error.isEmpty())error=safe->resolveRackFileCatalog(rack,true);
+                                if(error.isEmpty())error=armix::storage::NativeFxRackArchive::save(file,rack);
+                                archived=error.isEmpty();
+                                if(archived&&deactivate)
+                                    error=safe->engine_.applyRackFile(ep,rev,roster,channel,rack,false,slot,token);
+                            }else{
+                                error=armix::storage::NativeFxRackArchive::load(file,rack);
+                                if(error.isEmpty())error=safe->resolveRackFileCatalog(rack,false);
+                                if(error.isEmpty())error=safe->engine_.applyRackFile(ep,rev,roster,channel,rack,append);
+                            }
+                        }
+                    }catch(...){error="FX rack file operation failed";}
+                    if(error.isEmpty()){
+                        if(!save||deactivate){
+                            safe->stopOrbit();
+                            safe->closeAllPluginEditors();
+                            safe->emitApprovedNativeSnapshot();
+                        }
+                        safe->emitNotice(deactivate?"FX saved and deactivated; latency plan rebuilt. MAIN/STREAM remain disarmed.":
+                            save?"FX Rack saved":append?"Saved FX inserted; output remains disarmed":
+                            "FX Rack opened; output remains disarmed");
+                    }else safe->emitNotice((archived?juce::String("FX saved; deactivation rejected: "):
+                        juce::String("FX rack unchanged: "))+error,true);
+                }
+                juce::MessageManager::callAsync([safe]{if(safe)safe->fxRackFileChooser_.reset();});
+            });
+    }
+
     void chooseNamedIoProfile(const juce::var& args) {
         const auto request=args.getProperty("requestId",{}).toString();
         const auto op=args.getProperty("operation",{}).toString();
@@ -6135,6 +6222,7 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        if(action=="fxRackFile")return chooseFxRackFile(args);
         if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
         if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
             if (!deviceApply_.busy())

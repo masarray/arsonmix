@@ -165,8 +165,17 @@
               '<button role="menuitem" data-menu="hotkey-solo">Solo · Assign Hotkey…</button>':'')+
             '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';
         }
+      }else if(kind==="rack"){
+        menu.innerHTML='<button role="menuitem" data-menu="rack-save">Save FX Rack…</button>'+
+          '<button role="menuitem" data-menu="rack-open">Open FX Rack (replace)…</button>'+
+          '<button role="menuitem" data-menu="rack-insert">Insert Saved FX…</button>'+
+          '<div class="detail">Disarm MAIN / STREAM first</div>';
       }else if(kind==="fx"){
         menu.innerHTML=
+          '<button role="menuitem" data-menu="rack-deactivate">Deactivate &amp; Save FX…</button>'+
+          '<button role="menuitem" data-menu="rack-save">Save FX Rack…</button>'+
+          '<button role="menuitem" data-menu="rack-open">Open FX Rack (replace)…</button>'+
+          '<button role="menuitem" data-menu="rack-insert">Insert Saved FX…</button>'+
           '<button role="menuitem" data-menu="fx-param-last">Last Touched Hotkey…</button>'+
           '<button role="menuitem" data-menu="fx-param-browse">Browse Parameters…</button>'+
           (hooks.orbitTarget(menuTrack,menuSlot)?
@@ -673,6 +682,13 @@
       }
       const header=e.target.closest?.(".strip-identity-top");
       const row=e.target.closest?.(".fxslot-row:not(.is-empty)");
+      const rack=e.target.closest?.(".fx-section");
+      if(rack&&!row){
+        const track=scope.findTrack(rack);
+        if(hooks.rackFileTarget?.(track)){
+          menuTrack=track;menuSlot=-1;showMenu(e.clientX,e.clientY,"rack");return;
+        }
+      }
       if(header){
         const track=scope.findTrack(header);
         if(!track||!["audio","fx","bus","master"].includes(track.kind))return;
@@ -683,7 +699,12 @@
         const track=scope.findTrack(row),slot=Number(row.dataset.slot);
         const paramTarget=fxParameterOwner(track,slot);
         const orbitTarget=hooks.orbitTarget(track,slot);
-        if(!paramTarget&&!orbitTarget)return;
+        if(!paramTarget&&!orbitTarget){
+          if(hooks.rackFileTarget?.(track)){
+            menuTrack=track;menuSlot=-1;showMenu(e.clientX,e.clientY,"rack");
+          }
+          return;
+        }
         menuTrack=track;menuSlot=slot;menuTarget=orbitTarget||paramTarget;
         showMenu(e.clientX,e.clientY,paramTarget?"fx":"orbit");
       }
@@ -694,6 +715,11 @@
       const selected=menuTarget;
       // Read coordinates before dismissMenu(): hidden menu offset is zero.
       const originX=menu.offsetLeft,originY=menu.offsetTop+menu.offsetHeight;
+      if(action.startsWith("rack-")){
+        const op={"rack-save":"SAVE","rack-open":"OPEN","rack-insert":"INSERT",
+          "rack-deactivate":"DEACTIVATE"}[action];
+        dismissMenu();if(op)hooks.rackFile?.(track,op,slot,selected?.insertId);return;
+      }
       if(action==="hotkey-register"){dismissMenu();openHotkeyRegister();return;}
       if(action==="fx-param-last"||action==="fx-param-browse"){
         const mode=action==="fx-param-last"?"last":"browse";
