@@ -335,11 +335,12 @@ export function mount(root,transport,options={}){
  function fitPro(){
   if(!options.nativeAssets||!$(".an-pro").open||!root.isConnected)return;
   const r=root.getBoundingClientRect(),inset=8;
-  // Desktop mixer reserves a lower console strip; keep professional chrome
-  // and its scroll viewport above that area, rather than covering it.
-  const bottomInset=window.innerWidth>460&&window.innerHeight>540?80:inset;
-  if(r.bottom>window.innerHeight-bottomInset||r.top<inset)root.style.top=Math.max(inset,Math.min(r.top,window.innerHeight-r.height-bottomInset))+"px";
-  if(r.right>window.innerWidth-inset||r.left<inset)root.style.left=Math.max(inset,Math.min(r.left,window.innerWidth-r.width-inset))+"px";
+  const x=Math.max(inset,Math.min(r.left,window.innerWidth-r.width-inset));
+  const y=Math.max(inset,Math.min(r.top,window.innerHeight-r.height-inset));
+  // The approved shared bridge owns CSS translate and its WeakMap offset.
+  // Never write top/left here: the two coordinate systems would add up.
+  if(Math.abs(x-r.left)>.5||Math.abs(y-r.top)>.5)
+   window.__ARMIX_NATIVE_INLINE_FX_CLIP__?.move(root,x-r.left,y-r.top);
  }
  const onProResize=()=>fitPro();window.addEventListener("resize",onProResize);
  function selectPro(page,focus=false){

@@ -477,7 +477,11 @@ def main():
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
         accepted=edit["settings"]
         root.locator('[data-pro-tab="expander"]').click()
-        assert root.evaluate("""el=>{const q=s=>el.querySelector(s),p=q(".an-panel").getBoundingClientRect();return p.top>=-1&&p.bottom<=innerHeight-79&&["[data-close]","[data-learn]",".an-pro-tabs [aria-selected=true]"].every(s=>{const c=q(s),r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return c===hit||c.contains(hit);});}"""),"desktop chrome and Learn must be unoccluded"
+        desktop=root.evaluate("""el=>{const q=s=>el.querySelector(s),p=q(".an-panel").getBoundingClientRect();
+          return {rect:{top:p.top,left:p.left,bottom:p.bottom,right:p.right},viewport:{w:innerWidth,h:innerHeight},
+            inlinePosition:[el.style.top,el.style.left],targets:["[data-close]","[data-learn]",".an-pro-tabs [aria-selected=true]"].map(s=>{const c=q(s),r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {selector:s,ok:c===hit||c.contains(hit),hit:hit?.outerHTML.slice(0,160)};})};}""")
+        root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-desktop-hit.png"))
+        assert desktop["rect"]["top"]>=-1 and desktop["rect"]["left"]>=-1 and desktop["rect"]["bottom"]<=desktop["viewport"]["h"]+1 and desktop["rect"]["right"]<=desktop["viewport"]["w"]+1 and all(t["ok"] for t in desktop["targets"]) and desktop["inlinePosition"]==["",""], desktop
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-expander-1366.png"))
         root.locator('[data-pro-tab="sidechain"]').click()
         assert root.evaluate("""el=>{const c=el.querySelector("[data-learn]"),r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return c===hit||c.contains(hit);}"""),"desktop sidechain Learn reachable"

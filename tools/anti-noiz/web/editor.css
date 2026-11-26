@@ -179,4 +179,3 @@
 .an-panel:has(.an-pro[open]) .an-lcd-content{height:94px;min-height:94px}
 .an-pro-page{flex:1 1 auto}
 
-@media(min-width:461px) and (min-height:541px){#mxNativeAntiNoiz .an-panel:has(.an-pro[open]){max-height:calc(100vh - 88px)}}
