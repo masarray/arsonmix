@@ -4160,52 +4160,6 @@ private:
         });
     }
 
-    // Direct driver settings, not the generic JUCE AudioDeviceSelector.
-    // Reuse the same device transaction lease and verified mixer recovery.
-    void showAsioControlPanel(const juce::var& args)
-    {
-        const auto active=currentDeviceSnapshot();
-        auto& manager=engine_.devices();
-        auto* device=manager.getCurrentAudioDevice();
-        if(setupLaunching_ || nativeShowBusy_ || studioBackupBusy_ ||
-           mixerSessionWorker_.busy() || pendingRetainedFxCapture_ || retainedOfflineFxActive_ ||
-           engine_.independentClockActive() || engine_.hasTemporaryDiagnosticDevice() ||
-           engine_.isGraphSwitchPending() || !device || !device->isOpen() ||
-           manager.getCurrentAudioDeviceType()!="ASIO" || !device->hasControlPanel() ||
-           args.getProperty("driver",{}).toString()!=device->getName() ||
-           args.getProperty("deviceGeneration",{})!=active.getProperty("deviceGeneration",{}))
-            return emitNotice("ASIO control panel unavailable · refresh Audio I/O and try again",true);
-        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
-        if(!lease)return emitNotice("Audio device is busy · try again",true);
-        const bool resume=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
-        const bool streamWasArmed=engine_.secondaryArmed();
-        autoMainEpoch_=0;
-        engine_.beginManualAudioSetup(true);
-        bool panelError=false;
-        try {
-            // JUCE's own selector uses this driver API and restarts when it
-            // requests a refresh. Never instantiate a second ASIO driver.
-            const bool refresh=device->showControlPanel();
-            if(refresh && manager.getCurrentAudioDevice()==device){
-                manager.closeAudioDevice();
-                manager.restartLastAudioDevice();
-            }
-        } catch(...) {panelError=true;}
-        const bool recovered=finishAudioSetupAndRecoverMixer();
-        if(recovered){
-            deviceSettingsDirty_=true;startupError_.clear();
-            if(resume&&!operatorOutputMuted_)requestAutomaticMain(false);
-        }
-        diagnostics_.record(recovered&&!panelError?"ASIO_PANEL_RETURN":"ASIO_PANEL_RECOVERY_REQUIRED",
-            recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery");
-        emitApprovedNativeSnapshot();
-        emitDeviceInventory(false);
-        if(!recovered||panelError)
-            emitNotice("ASIO settings returned · check Audio I/O; mixer settings retained",true);
-        else if(streamWasArmed)
-            emitNotice("ASIO settings updated · reconnect Additional Output to verify the new clock",false);
-    }
-
     // A Windows native Explorer picker cannot select ordinary files AND folders in
     // the same operation. Split the modes instead of silently falling back to
     // JUCE's non-native browser. .vst3 bundles are folders on Windows.
@@ -4239,6 +4193,83 @@ private:
 
     // The selected location receives a NEW, directly runnable versioned
     // portable folder. IO/hashing stay on StudioBackup's worker thread.
+    // Direct driver settings, not the generic JUCE AudioDeviceSelector.
+    // Reuse the same device transaction lease and verified mixer recovery.
+    struct PendingVendorStream {
+        LiveAudioEngine::SecondaryResumeIntent intent;
+        std::uint64_t epoch,revision,deadline;
+        bool waitForMain;
+    };
+    std::optional<PendingVendorStream> pendingVendorStream_;
+    void serviceVendorStreamRecovery() {
+        if(!pendingVendorStream_)return;
+        const auto& p=*pendingVendorStream_;
+        if(monotonicMilliseconds()>=p.deadline||engine_.dryRoutingLabEpoch()!=p.epoch||
+           engine_.outputArmRevision()!=p.revision||nativeShowBusy_||studioBackupBusy_||
+           retainedOfflineFxActive_||pendingRetainedFxCapture_||engine_.hasRuntimeFxFault()){
+            pendingVendorStream_.reset();
+            emitNotice("Additional output paused · enable it again when ready",true);
+            return;
+        }
+        if(deviceApply_.busy()||mixerSessionWorker_.busy()||!engine_.secondaryResumeReady()||
+           (p.waitForMain&&!engine_.isMonitorEnabled()))return;
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
+        if(!lease)return;
+        auto intent=p.intent;
+        pendingVendorStream_.reset();
+        const auto error=engine_.restoreSecondaryOutput(intent);
+        diagnostics_.record(error.isEmpty()?"SECONDARY_AUTO_RESTORED":"SECONDARY_AUTO_RESTORE_REJECTED",
+                            error.isEmpty()?intent.name:error);
+        emitNotice(error.isEmpty()?"Additional output restored":error,error.isNotEmpty());
+    }
+    void showAsioControlPanel(const juce::var& args)
+    {
+        const auto active=currentDeviceSnapshot();
+        auto& manager=engine_.devices();
+        auto* device=manager.getCurrentAudioDevice();
+        if(setupLaunching_ || nativeShowBusy_ || studioBackupBusy_ ||
+           mixerSessionWorker_.busy() || pendingRetainedFxCapture_ || retainedOfflineFxActive_ ||
+           engine_.independentClockActive() || engine_.hasTemporaryDiagnosticDevice() ||
+           engine_.isGraphSwitchPending() || !device || !device->isOpen() ||
+           manager.getCurrentAudioDeviceType()!="ASIO" || !device->hasControlPanel() ||
+           args.getProperty("driver",{}).toString()!=device->getName() ||
+           args.getProperty("deviceGeneration",{})!=active.getProperty("deviceGeneration",{}))
+            return emitNotice("ASIO control panel unavailable · refresh Audio I/O and try again",true);
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
+        if(!lease)return emitNotice("Audio device is busy · try again",true);
+        const bool resume=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+        pendingVendorStream_.reset();
+        const auto streamIntent=engine_.captureSecondaryResumeIntent();
+        autoMainEpoch_=0;
+        engine_.beginManualAudioSetup(true);
+        bool panelError=false;
+        try {
+            // JUCE's own selector uses this driver API and restarts when it
+            // requests a refresh. Never instantiate a second ASIO driver.
+            const bool refresh=device->showControlPanel();
+            if(refresh && manager.getCurrentAudioDevice()==device){
+                manager.closeAudioDevice();
+                manager.restartLastAudioDevice();
+            }
+        } catch(...) {panelError=true;}
+        const bool recovered=finishAudioSetupAndRecoverMixer();
+        if(recovered){
+            deviceSettingsDirty_=true;startupError_.clear();
+            if(resume&&!operatorOutputMuted_)requestAutomaticMain(false);
+            if(streamIntent&&!panelError)
+                pendingVendorStream_=PendingVendorStream{*streamIntent,engine_.dryRoutingLabEpoch(),
+                    engine_.outputArmRevision(),static_cast<std::uint64_t>(monotonicMilliseconds()+5000),resume};
+        }
+        diagnostics_.record(recovered&&!panelError?"ASIO_PANEL_RETURN":"ASIO_PANEL_RECOVERY_REQUIRED",
+            recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery");
+        emitApprovedNativeSnapshot();
+        emitDeviceInventory(false);
+        if(!recovered||panelError)
+            emitNotice("ASIO settings returned · check Audio I/O; mixer settings retained",true);
+        else if(streamIntent)
+            emitNotice("ASIO settings updated · restoring Additional Output",false);
+    }
+
     void chooseStudioBackup()
     {
         if (studioBackupBusy_ || nativeShowBusy_ || catalog_.busy() || engine_.isGraphSwitchPending())
@@ -6501,6 +6532,11 @@ private:
             }
             return;
         }
+        // New operator intent supersedes deferred recovery, including Stop.
+        if(pendingVendorStream_ && action!="audioDeviceInventory" &&
+           action!="secondaryOutputInventory" && action!="copyDiagnosticReport" &&
+           !editorNavigation)
+            pendingVendorStream_.reset();
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
         if(action=="playerChooseOutput") {
@@ -11068,6 +11104,7 @@ private:
         // restore transaction handles device failures without hot-plug spin.
         serviceDirectRestore();
         serviceAutomaticMain();
+        serviceVendorStreamRecovery();
         // Autosave only while ALL outputs are muted. Vendor-state reads
         // happen on CONTROL; disk commits run on ONE serialized IO worker.
         // A performance with armed speakers/stream is never interrupted for

@@ -455,7 +455,8 @@ def verify_additional_output(page,out):
     page.goto((out / "index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     state=snapshot()
-    state["device"].update(backend="ASIO",outputArmed=False,
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",outputArmed=True,
         enabledOutputs=list(range(8)),
         outputEndpoints=[{"id":"out:"+str(i),"port":i,"callback":i,
                           "label":"Maono "+str(i+1),"active":True} for i in range(8)])

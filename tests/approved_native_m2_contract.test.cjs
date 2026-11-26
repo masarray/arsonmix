@@ -7599,7 +7599,7 @@ test("FAST workflow directly opens active ASIO vendor panel and one native secon
  const panel=b.slice(b.indexOf('querySelector("[data-audio-driver-panel]").onclick'),b.indexOf('const readHealth=devicePanel'));
  assert.match(panel,/action:"audioDriverPanel"/);
  assert.doesNotMatch(panel,/action:"audioSetup"/);
- const vendor=n.slice(n.indexOf("void showAsioControlPanel("),n.indexOf("// A Windows native Explorer picker",n.indexOf("void showAsioControlPanel(")));
+ const vendor=n.slice(n.indexOf("void showAsioControlPanel("),n.indexOf("void chooseStudioBackup()",n.indexOf("void showAsioControlPanel(")));
  assert.match(vendor,/deviceApply_\.tryBegin/);assert.match(vendor,/device->showControlPanel\(\)/);
  assert.match(vendor,/finishAudioSetupAndRecoverMixer\(\)/);
  assert.doesNotMatch(vendor,/AudioSetupWindow|setMonitorEnabled\(true\)/);
@@ -7608,4 +7608,20 @@ test("FAST workflow directly opens active ASIO vendor panel and one native secon
  assert.doesNotMatch(enable,/setMonitorEnabled|setOutputMuted/);
  assert.match(s,/createAudioIODeviceType_WASAPI\(juce::WASAPIDeviceMode::shared\)/);
  assert.match(s,/createDevice\(target,\{\}\)/);assert.doesNotMatch(s,/manager_\.initialise/);
+});
+
+
+test("FAST-U1 vendor restart restores only captured full endpoint identity once",()=>{
+ const n=read("src/Main.cpp"),e=read("src/LiveAudioEngine.h"),s=read("engine/device/LiveSecondaryOutputDevice.h");
+ assert.match(n,/captureSecondaryResumeIntent\(\)/);
+ assert.match(n,/serviceAutomaticMain\(\);\s*serviceVendorStreamRecovery\(\)/);
+ const r=n.slice(n.indexOf("void serviceVendorStreamRecovery()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(r,/dryRoutingLabEpoch\(\)!=p.epoch/);
+ assert.match(r,/outputArmRevision\(\)!=p.revision/);
+ assert.match(r,/p.waitForMain&&!engine_.isMonitorEnabled\(\)/);
+ assert.match(r,/pendingVendorStream_\.reset\(\);\s*const auto error=engine_.restoreSecondaryOutput/);
+ assert.match(e,/connectSecondaryOutput\(intent.name,intent.endpointId\)/);
+ assert.match(s,/selected.selection.id!=expectedEndpointId/);
+ assert.match(s,/endpointId_=selected.selection.id/);
+ assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
 });

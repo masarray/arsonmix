@@ -63,7 +63,8 @@ public:
 
     juce::String open(const juce::String& target,
                       const juce::String& directOutput,
-                      double sourceRate,int sourcePeriod) {
+                      double sourceRate,int sourcePeriod,
+                      const std::wstring& expectedEndpointId={}) {
         if(target.trim().isEmpty() || target==directOutput)
             return "Select a separate, explicit user-selected playback device";
         if(!std::isfinite(sourceRate) || sourceRate<8000 || sourceRate>384000 ||
@@ -71,6 +72,8 @@ public:
             return "Invalid source device sample rate or buffer period";
         const auto selected=WasapiEndpointIdentityGuard::resolveRender(target);
         if(!selected.ok())return selected.error;
+        if(!expectedEndpointId.empty()&&selected.selection.id!=expectedEndpointId)
+            return "Additional output device identity changed; choose the device again";
         // Create ONLY the selected shared-mode render endpoint. A second
         // DeviceManager initialise/setType may transiently open default hardware.
         // Keep all vendor enumeration/open off the primary callback.
@@ -105,7 +108,8 @@ public:
             stop();return "Secondary output clock buffering exceeds safe ASRC capacity";
         }
         name_=target;
-        endpointHash_=WasapiEndpointIdentityGuard::fingerprint(selected.selection.id);
+        endpointId_=selected.selection.id;
+        endpointHash_=WasapiEndpointIdentityGuard::fingerprint(endpointId_);
         renderRate_=rate;targetMs_=sizing.targetMs;
         fault_.store(false,std::memory_order_release);
         ready_.store(true,std::memory_order_release);
@@ -125,7 +129,7 @@ public:
             std::this_thread::yield();
         if(device_){device_->stop();device_->close();device_.reset();}
         type_.reset();
-        name_.clear();endpointHash_.clear();targetMs_=renderRate_=0;
+        name_.clear();endpointId_.clear();endpointHash_.clear();targetMs_=renderRate_=0;
         fault_.store(false,std::memory_order_release);
     }
     bool arm(bool requested) {
@@ -171,6 +175,7 @@ public:
     }
     juce::String name() const {return name_;}
     juce::String endpointHash() const {return endpointHash_;}
+    std::wstring endpointId() const {return endpointId_;} // CONTROL only, never exported to GUI
     double rate() const noexcept{return renderRate_;}
     double targetMs() const noexcept{return targetMs_;}
     AdaptiveClockBridge::Status status() const noexcept {
@@ -183,6 +188,7 @@ private:
     AdaptiveClockBridge bridge_;
     Render render_;
      juce::String name_,endpointHash_;
+    std::wstring endpointId_;
     double renderRate_=0,targetMs_=0;
     std::atomic<bool> ready_{false},armed_{false},fault_{false};
     std::atomic<unsigned> publishers_{0},consumers_{0};

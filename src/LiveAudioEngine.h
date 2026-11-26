@@ -335,7 +335,8 @@ public:
 
     // Route MAIN to a user-selected secondary playback device
     // (hardware or software). No second MIX/FX engine.
-    juce::String connectSecondaryOutput(const juce::String& selected) {
+    juce::String connectSecondaryOutput(const juce::String& selected,
+                                             const std::wstring& expectedEndpointId={}) {
         if(independent_.active() || routeReconfiguring_.load(std::memory_order_acquire) ||
            handoff_.busy() || !directFence_.permitted() || !dryRoutingLab_.hasExplicitRoute() ||
            diagnosticRoute_.load(std::memory_order_acquire)
@@ -349,7 +350,7 @@ public:
         const auto epoch=dryRoutingLab_.epoch();
         const auto rate=device->getCurrentSampleRate();
         const auto period=device->getCurrentBufferSizeSamples();
-        const auto error=secondaryOutput_.open(selected,device->getName(),rate,period);
+        const auto error=secondaryOutput_.open(selected,device->getName(),rate,period,expectedEndpointId);
         if(error.isNotEmpty())return error;
         auto* current=deviceManager_.getCurrentAudioDevice();
         if(!current || current!=device || dryRoutingLab_.epoch()!=epoch ||
@@ -383,6 +384,33 @@ public:
             return "Secondary output requires accepted native route and verified DIRECT clock";
         return secondaryOutput_.arm(wanted) ? juce::String() :
             juce::String("Secondary playback endpoint is unavailable or has a device fault; reconnect explicitly");
+    }
+    // Resume only a previously armed sink with the full endpoint ID.
+    struct SecondaryResumeIntent {
+        juce::String name,driver;
+        std::wstring endpointId;
+    };
+    std::optional<SecondaryResumeIntent> captureSecondaryResumeIntent() {
+        auto* d=deviceManager_.getCurrentAudioDevice();
+        if(!secondaryOutput_.armed()||!d||secondaryOutput_.endpointId().empty())return {};
+        return SecondaryResumeIntent{secondaryOutput_.name(),d->getName(),secondaryOutput_.endpointId()};
+    }
+    bool secondaryResumeReady() const noexcept {
+        return directFence_.permitted()&&dryRoutingLab_.hasExplicitRoute()&&dryRoutingLab_.ready()&&
+            !dryRoutingLab_.nativeBusPatchAwaitingCallback()&&!handoff_.busy()&&
+            !routeReconfiguring_.load(std::memory_order_acquire)&&!independent_.active()&&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal;
+    }
+    juce::String restoreSecondaryOutput(const SecondaryResumeIntent& intent) {
+        auto* d=deviceManager_.getCurrentAudioDevice();
+        if(!secondaryResumeReady()||!d||!d->isOpen()||d->getName()!=intent.driver||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO"||intent.endpointId.empty())
+            return "Additional output could not verify the previous audio route";
+        const auto error=connectSecondaryOutput(intent.name,intent.endpointId);
+        if(error.isNotEmpty())return error;
+        const auto armed=armSecondaryOutput(true);
+        if(armed.isNotEmpty())secondaryOutput_.stop();
+        return armed;
     }
     void disconnectSecondaryOutput(){secondaryOutput_.stop();}
     bool secondaryArmed() const noexcept{return secondaryOutput_.armed();}
