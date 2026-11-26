@@ -531,6 +531,10 @@ def main():
         respond(page,edit,'arMixBuiltinAntiNoizAck',status='APPLIED',settings=edit['settings'])
         accepted=edit['settings']
         expect(select).to_have_value('VOCAL_LIVE')
+        # The native ACK requests a fresh DSP snapshot. Supply it as the
+        # real host does; the lengthy UI fixture otherwise crosses the 1.5 s
+        # stale readback deadline while testing an unrelated preset receipt.
+        readback(page,accepted,{**OBS,"serial":"30","effectiveMode":"Voice"})
         # Show-store/preset plumbing is not mocked as disk success: verify
         # actual UI intent is for the same accepted instance and receipt.
         root.locator(".mx-fxp-save-as").click()
@@ -548,10 +552,16 @@ def main():
         respond(page,listing,preset_event,status="OK",operation="list",catalogId=ID,items=[
             {"id":user_id,"name":"Vocal noise"},{"id":legacy_id,"name":"Old preset"}])
         expect(select).to_have_value("user:"+user_id)
+        # Ensure a distinct, current snapshot request before the recall.
+        prior=last_action(page,"nativeAntiNoizSnapshot")["requestId"]
+        page.wait_for_function("id=>window.__actions.filter(x=>x.action==='nativeAntiNoizSnapshot').at(-1)?.requestId!==id",arg=prior)
+        readback(page,saved,{**OBS,"serial":"31","effectiveMode":"Voice"})
         select.select_option("DEFAULT")
         edit=last_action(page,"nativeAntiNoizSet")
         expect(select).to_have_value("user:"+user_id)
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="REJECTED",settings=saved,errorCode="BUSY")
+        expect(select).to_have_value("user:"+user_id)
+        readback(page,saved,{**OBS,"serial":"32","effectiveMode":"Voice"})
         expect(select).to_have_value("user:"+user_id)
         select.select_option("user:"+legacy_id)
         recall=last_action(page,"nativeBuiltinFxUserPreset")

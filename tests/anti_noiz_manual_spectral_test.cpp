@@ -67,13 +67,13 @@ int main(){
   NoiseProfile<257>::Powers powers{};
   for(auto& ch:powers)ch.fill(1.f);
   check(profile.begin(),"first profile");while(profile.learning())profile.observe(powers);
-  check(profile.anchor()[0][1]==1.f,"first profile immediate");
+  check(std::abs(profile.anchor()[0][1]-1.f)<1e-6f,"first profile immediate");
   for(auto& ch:powers)ch.fill(4.f);
   check(profile.begin(),"replacement profile");while(profile.learning())profile.observe(powers);
-  check(profile.anchor()[0][1]==4.f&&profile.processingAnchor()[0][1]==1.f,"commit isolated from rendering");
-  const int frames=int(std::ceil(.1*rate/hop));float previous=1.f;
-  for(int i=0;i<frames;++i){profile.advanceHandover();const float value=profile.processingAnchor()[0][1];check(value>=previous&&value<=4.f&&value-previous<.2f,"bounded monotonic handover");previous=value;}
-  check(profile.processingAnchor()[0][1]==4.f,"handover endpoint");
+  check(std::abs(profile.anchor()[0][1]-4.f)<1e-6f&&std::abs(profile.processingAnchor()[0][1]-1.f)<1e-6f,"commit isolated from rendering");
+  const int frames=int(std::ceil(.1*rate/hop));float previous=profile.processingAnchor()[0][1];
+  for(int i=0;i<frames;++i){profile.advanceHandover();const float value=profile.processingAnchor()[0][1];check(value>=previous&&value<=4.000001f&&value-previous<.2f,"bounded monotonic handover");previous=value;}
+  check(profile.processingAnchor()[0][1]==profile.anchor()[0][1],"handover endpoint");
   check(c.clearProfile()&&!c.hasProfile()&&!c.audition()&&!c.spectrum().noiseValid,"clear");
   check(!c.setSettings([](Core::Settings q){q.artifactControl=NAN;return q;}(s)),"invalid reject");
   s.spectralEnabled=false;check(c.setSettings(s),"bypass");

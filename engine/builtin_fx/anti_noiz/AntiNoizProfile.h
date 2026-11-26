@@ -185,7 +185,7 @@ public:
     // An independently qualified coherent upward drift may extend working PSD,
     // but never the immutable anchor or the caller's idle/foreground decision.
     void track(const Powers& power,bool idle,bool allowCoherent=false,float broadband=0.f,float subbandPeak=0.f) noexcept {
-        if(!valid_||learning_||blendRemaining_){idle_=0;drift_.reset();return;}
+        if(!valid_||learning_){idle_=0;drift_.reset();return;}
         if(!idle){
             idle_=0;
             if(!allowCoherent){drift_.reset();return;}
