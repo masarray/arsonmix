@@ -28,7 +28,7 @@ assert(Math.hypot(same[0].visible.x-same[1].visible.x,
                   same[0].visible.y-same[1].visible.y)>=45);
 assert.match(source,/<ellipse id="skOrbitRail"[^>]*cx="200" cy="174" rx="148" ry="83"/);
 assert.equal((source.match(/id="skOrbitRail"/g)||[]).length,1);
-assert.match(source,/<ellipse id="skOrbitRail"[^>]*stroke-width="1.7" mask="url\(#skRailOcclusion\)"/);
+assert.match(source,/<ellipse id="skOrbitRail"[^>]*stroke-width="1.15" mask="url\(#skRailOcclusion\)"/);
 assert.doesNotMatch(source,/<use[^>]*href="#skOrbitRail"|skForegroundClip|skListenerCoverage/);
 assert.match(source,/<g id="skFarSources"[^>]*mask="url\(#skFarSpeakerOcclusion\)"/);
 assert(source.indexOf('<ellipse id="skOrbitRail"')<source.indexOf('<g id="skFarSources"'));
@@ -39,6 +39,18 @@ assert.match(source,/<g clip-path="url\(#skFarOcclusion\)"><image[^>]*filter="ur
 assert.doesNotMatch(source,/id="skRenderMode"|class="sk-control-title"|M193 68 L200 60 L207 68/);
 assert.match(source,/class="sk-glass"[^>]*pointer-events="none"/);
 assert.match(css,/mixer-gain-knob-brushed-steel\.png/);
+const material=css.slice(css.indexOf("/* 8D-SonKu"),css.indexOf("/* GEQ31 / ONE approved browser",css.indexOf("/* 8D-SonKu")));
+assert.match(material,/background-image:linear-gradient\([^;]+url\("geq31-brushed-metal\.jpg"\)/);
+assert.match(material,/\.sk-stage\{[^}]+background:transparent/);
+assert.match(material,/\.sk-controls\{[^}]+background:transparent/);
+assert.doesNotMatch(material,/\.sk-right[^}]*\{[^}]*color:/);
+assert.equal((source.match(/class="sk-tether"[^>]*stroke="#91dcef"/g)||[]).length,2);
+assert.match(material,/box-shadow:var\(--sk-button-raised\)/);
+assert.match(material,/\[aria-pressed="true"\]\{[^}]*box-shadow:var\(--sk-button-latched\)/);
+assert.match(material,/:active:not\(:disabled\)\{[^}]*transform:translateY\(1px\)[^}]*box-shadow:inset/);
+assert.match(material,/linear-gradient\(to right,#528a98 0 var\(--sk-fill\),#05080b var\(--sk-fill\) 100%\)/);
+assert.match(material,/::-webkit-slider-runnable-track\{[^}]*box-shadow:inset 0 1px 3px/);
+assert.match(material,/::-moz-range-track\{[^}]*background:#05080b/);
 assert.doesNotMatch(source,/skFarArc|skNearArc|sk-secondary-rail/);
 assert.match(source,/map\.getScreenCTM\(\)/);
 assert.match(source,/p\.matrixTransform\(matrix\.inverse\(\)\)/);

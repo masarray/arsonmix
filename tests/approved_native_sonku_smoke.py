@@ -160,7 +160,7 @@ def exercise(browser,out,width,height):
                      (rail.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING) &&
                      rail.getAttribute('rx')==='148' && rail.getAttribute('ry')==='83' &&
                      rail.getAttribute('mask')==='url(#skRailOcclusion)' &&
-                     rail.getAttribute('stroke-width')==='1.7' &&
+                     rail.getAttribute('stroke-width')==='1.15' &&
                      !map.querySelector('use[href="#skOrbitRail"]') &&
                      getComputedStyle(map.querySelector('#skGlass')).display!=='none');
     }"""), "Single-pass rail / optical stack incorrect"
@@ -173,6 +173,22 @@ def exercise(browser,out,width,height):
       await im.decode();return im.naturalWidth>0&&im.naturalHeight>0;
     }"""),"Shared metal PNG missing from compiled bundle"
     assert editor.locator("#skMap .sk-glass").get_attribute("pointer-events")=="none"
+    # Both cabinets have one material and the L/R labels retain identity.
+    # Chassis texture is decoded once and visible through both transparent decks.
+    assert editor.evaluate("""async n=>{
+      const im=new Image();im.src='assets/geq31-brushed-metal.jpg';await im.decode();
+      const cs=el=>getComputedStyle(el);
+      const sources=[...n.querySelectorAll('.sk-src')];
+      const shells=sources.map(el=>cs(el.querySelector('.sk-speaker-shell')).stroke);
+      const labels=sources.map(el=>cs(el.querySelector('.sk-speaker-label')).fill);
+      return im.naturalWidth>0 && cs(n).backgroundImage.includes('geq31-brushed-metal.jpg') &&
+        ['.sk-stage','.sk-controls'].every(sel=>cs(n.querySelector(sel)).backgroundImage==='none' &&
+          cs(n.querySelector(sel)).backgroundColor==='rgba(0, 0, 0, 0)') &&
+        shells.length===2 && shells[0]===shells[1] &&
+        labels[0]===labels[1] &&
+        sources[0].querySelector('.sk-tether').getAttribute('stroke')===
+          sources[1].querySelector('.sk-tether').getAttribute('stroke');
+    }"""),"Brushed chassis or unified speaker material missing"
     # Each moving speaker is depth-sorted against the listener alpha silhouette.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
@@ -431,7 +447,22 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skReflections").is_disabled()
     assert editor.locator("#skTrimValue").inner_text().endswith("dB")
     assert editor.locator("#skTrim").get_attribute("max")=="12"
-    editor.locator('[data-sk-room="2"]').click()
+    room=editor.locator('[data-sk-room="2"]')
+    room.scroll_into_view_if_needed()
+    assert room.get_attribute("aria-pressed")=="false"
+    released=room.evaluate("n=>getComputedStyle(n).boxShadow")
+    bounds=room.bounding_box()
+    assert bounds
+    page.mouse.move(bounds["x"]+bounds["width"]/2,bounds["y"]+bounds["height"]/2)
+    page.mouse.down()
+    try:
+        assert room.evaluate("n=>n.matches(':active')")
+        assert room.evaluate("n=>getComputedStyle(n).boxShadow")!=released
+        assert room.evaluate("n=>getComputedStyle(n).transform")!="none"
+        assert room.get_attribute("aria-pressed")=="false"
+        editor.screenshot(path=f"arsonmix-sonku-hardware-pressed-{width}.png")
+    finally:
+        page.mouse.up()
     scene=last_action(page,"nativeSonKuSet")
     assert scene["settings"]["spacePreset"]==2,scene
     assert scene["settings"]["sourceDistanceMeters"]==1.6,scene
@@ -445,8 +476,11 @@ def exercise(browser,out,width,height):
                 "revolutionSeconds":dialAction["settings"]["revolutionSeconds"],
                 "spacePreset":2}
     accepted_snapshot(page,state,sceneState,applied=scene["requestId"])
-    assert editor.locator('[data-sk-room="2"]').get_attribute("aria-pressed")=="true"
+    assert room.get_attribute("aria-pressed")=="true"
+    assert room.evaluate("n=>getComputedStyle(n).boxShadow")!=released
+    assert room.evaluate("n=>getComputedStyle(n).transform")=="none"
     assert editor.locator("#skDistance").is_enabled()
+    editor.screenshot(path=f"arsonmix-sonku-hardware-latched-{width}.png")
     assert editor.locator("#skAmbience").is_enabled()
     assert editor.locator("#skReflections").is_enabled()
     # The 0..100% controls must reach independent native wet parameters,

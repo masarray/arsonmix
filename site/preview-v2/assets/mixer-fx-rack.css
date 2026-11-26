@@ -1159,13 +1159,16 @@
 }
 
 
-/* 8D-SonKu — P10.3 optical LCD and compact studio deck.
-   One approved FX Rack CSS owner. PNG cap shared with channel Gain. */
+/* 8D-SonKu — P10.3.2 brushed-metal optical studio instrument.
+   One chassis surface; shared GEQ31 texture and Gain knob. */
 .mx-sonku[hidden]{display:none!important}
 .mx-sonku{position:fixed;z-index:1300;left:50%;transform:translateX(-50%);top:clamp(8px,6vh,64px);
  width:min(790px,calc(100vw - 24px));max-height:calc(100vh - 16px);overflow:auto;box-sizing:border-box;
- --sk-accent:#79c6d1;--sk-line:#374955;--sk-text:#d8e4e9;
- color:var(--sk-text);background:#17232c;border:1px solid #465662;border-top-color:#77858d;
+ --sk-accent:#79c6d1;--sk-line:#36434b;--sk-text:#dce6ea;
+ color:var(--sk-text);background:#26323a;
+ background-image:linear-gradient(180deg,rgba(20,30,37,.76),rgba(14,23,30,.86)),url("geq31-brushed-metal.jpg");
+ background-size:100% 100%,cover;background-position:center;background-repeat:no-repeat;
+ border:1px solid #4b5962;border-top-color:#78868e;
  border-radius:8px;box-shadow:0 18px 42px #0009,inset 0 1px #ffffff12;
  font:400 11px/1.35 Inter,"Segoe UI",Arial,sans-serif}
 .mx-sonku button,.mx-sonku input,.mx-sonku select{font:inherit}
@@ -1173,7 +1176,7 @@
 .mx-sonku button:disabled{cursor:not-allowed;opacity:.55}
 .mx-sonku .sk-head{min-height:38px;box-sizing:border-box;display:flex;align-items:center;gap:9px;
  padding:6px 11px;cursor:move;user-select:none;touch-action:none;
- background:linear-gradient(#35434d,#22313b);border-bottom:1px solid #0a141b;box-shadow:inset 0 1px #ffffff16}
+ background:linear-gradient(#ffffff0c,#00000012);border-bottom:1px solid #0b1419;box-shadow:inset 0 1px #ffffff24,0 1px #ffffff0b}
 .mx-sonku .sk-brand{font-size:15px;font-weight:600;white-space:nowrap;letter-spacing:.12px;color:#f1f7fa}
 .mx-sonku .sk-brand span{color:var(--sk-accent)}
 .mx-sonku .sk-preset{flex:0 1 192px;min-width:105px;max-width:192px;height:25px;padding:2px 6px;background:#15242e;border:1px solid #546571;border-radius:4px;color:#d9e8ee;font-size:10px}
@@ -1182,7 +1185,7 @@
 .mx-sonku #skPower{margin-inline-start:0!important;flex-shrink:0}
 .mx-sonku .sk-close{width:25px;height:25px;flex-shrink:0;border-radius:4px;border:1px solid #53626d;background:#293945;font-size:18px;line-height:1}
 .mx-sonku .sk-content{display:grid;grid-template-columns:minmax(0,1.42fr) minmax(270px,1fr);align-items:stretch}
-.mx-sonku .sk-stage{min-width:0;display:flex;flex-direction:column;gap:9px;padding:10px;background:linear-gradient(145deg,#202f39,#17242d);border-right:1px solid #374955}
+.mx-sonku .sk-stage{min-width:0;display:flex;flex-direction:column;gap:9px;padding:10px;background:transparent;border-right:1px solid var(--sk-line)}
 .mx-sonku .sk-lcd{position:relative;isolation:isolate;overflow:hidden;border:1px solid #4b626e;border-top-color:#0b151d;border-radius:7px;background:#08151e;
  box-shadow:0 1px #ffffff1c,inset 0 2px 9px #000a}
 .mx-sonku .sk-lcd::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;
@@ -1193,19 +1196,37 @@
 .mx-sonku .sk-stage .sk-front{fill:#a1dce4;font-size:10px}
 .mx-sonku .sk-orbit-rail,.mx-sonku .sk-glass,.mx-sonku .sk-listener-art,.mx-sonku .sk-tether{pointer-events:none}
 .mx-sonku .sk-listener-art{opacity:1;image-rendering:auto}
-.mx-sonku .sk-src{cursor:grab;touch-action:none;outline:none;color:#8fd5e0;filter:drop-shadow(0 2px 2px #0008)}
+.mx-sonku .sk-src{cursor:grab;touch-action:none;outline:none;color:#d0e1e6;filter:drop-shadow(0 2px 2px #000a)}
 .mx-sonku .sk-src:active{cursor:grabbing}
-.mx-sonku .sk-right{color:#e6b8d4}
-.mx-sonku .sk-speaker-shell{stroke:#81959e;stroke-width:.65}
-.mx-sonku .sk-right .sk-speaker-shell{stroke:#aa8c9e}
+.mx-sonku .sk-speaker-shell{stroke:#9aadb4;stroke-width:.65}
 .mx-sonku .sk-speaker-inner{stroke:#586772;stroke-width:.45}
 .mx-sonku .sk-src:focus-visible .sk-speaker-shell{stroke:currentColor;stroke-width:1.6}
-.mx-sonku .sk-stage .sk-speaker-label{fill:currentColor;font-size:11px;font-weight:600;stroke:#08141d;stroke-width:1.7px;pointer-events:none}
-.mx-sonku .sk-controls{min-width:0;display:flex;flex-direction:column;gap:10px;padding:11px 13px;background:linear-gradient(150deg,#273640,#1b2933 55%,#17242d)}
+.mx-sonku .sk-stage .sk-speaker-label{fill:currentColor;font-size:11px;font-weight:500;stroke:#08141d;stroke-width:1.5px;pointer-events:none}
+.mx-sonku .sk-controls{min-width:0;display:flex;flex-direction:column;gap:10px;padding:11px 13px;background:transparent}
 .mx-sonku .sk-buttons{display:flex;gap:6px}
-.mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-upgrade){min-width:0;min-height:28px;padding:4px 5px;border:1px solid #52636e;border-bottom-color:#24343e;border-radius:4px;color:#c0cfd7;font-size:10px;font-weight:500;letter-spacing:.2px;background:linear-gradient(#3b4b55,#283943);box-shadow:inset 0 1px #ffffff12,0 1px 2px #0004}
+/* Mechanical controls: dark socket, raised cap, latched recess, momentary travel.
+   aria-pressed is still the existing product state; :active is only physical feedback. */
+.mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-upgrade,.sk-close){
+ --sk-button-raised:inset 0 1px 0 #ffffff38,inset 0 -2px 1px #080e16a0,0 0 0 1px #0a1117,0 2px 0 #0a1117,0 3px 4px #0009;
+ --sk-button-latched:inset 0 2px 4px #000b,inset 0 -1px 0 #82c6d36b,0 0 0 1px #090f15,0 1px 0 #ffffff16;
+ position:relative;border:1px solid #66727a;border-bottom-color:#18242b;border-radius:3px;
+ background:linear-gradient(180deg,#46525a 0%,#343f47 12%,#2b363e 78%,#222c34 100%);
+ box-shadow:var(--sk-button-raised);color:#d0dce1;text-shadow:0 1px 1px #091118;
+}
+.mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-upgrade){min-width:0;min-height:28px;padding:4px 5px;font-size:10px;font-weight:500;letter-spacing:.2px}
 .mx-sonku .sk-buttons button{flex:1}
-.mx-sonku :is(.sk-buttons button,.sk-space-options button)[aria-pressed="true"]{color:#e1f5f7;border-color:#78a4b1;background:linear-gradient(#3f626e,#294653);box-shadow:inset 0 1px #ffffff1b}
+.mx-sonku :is(.sk-buttons button,.sk-space-options button)[aria-pressed="true"]{
+ color:#b9eef1;border-color:#42616a;border-top-color:#101c22;
+ background:linear-gradient(180deg,#17262e,#2b414a 65%,#304750);
+ box-shadow:var(--sk-button-latched);
+}
+.mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-upgrade,.sk-close):active:not(:disabled){
+ transform:translateY(1px);border-top-color:#10191f;
+ box-shadow:inset 0 2px 5px #000d,inset 0 -1px 0 #ffffff12,0 0 0 1px #0a1117;
+}
+.mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-upgrade,.sk-close):disabled{
+ box-shadow:inset 0 1px 1px #0007,0 0 0 1px #131d23;
+}
 .mx-sonku .sk-upgrade[hidden]{display:none}
 .mx-sonku .sk-rotary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;align-items:center;min-height:0}
 .mx-sonku .sk-rotary{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;padding:3px 0}
@@ -1219,7 +1240,7 @@
 .mx-sonku .sk-rotary:focus-within .sk-dial-cap{outline:1px solid #9dd5e0;outline-offset:2px}
 .mx-sonku .sk-rotary output{font-size:12px;font-weight:500;letter-spacing:.12px;font-variant-numeric:tabular-nums;color:#eef4f7}
 .mx-sonku .sk-space-panel{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-content:space-between;flex:1;
- padding:10px 9px;background:#14232d;border:1px solid #3a4e5a;border-radius:5px;box-shadow:inset 0 1px 3px #0003}
+ padding:10px 9px;background:#141d248c;border:1px solid #26343d;border-top-color:#111a20;border-radius:5px;box-shadow:inset 0 2px 5px #0006,0 1px #ffffff12}
 .mx-sonku .sk-space-head{display:flex;justify-content:space-between;align-items:center;letter-spacing:.7px;font-size:10px;color:#c6d5db;font-weight:500}
 .mx-sonku .sk-space-head output{font-size:10px;font-weight:400;color:#a2dbe3;letter-spacing:0;font-variant-numeric:tabular-nums}
 .mx-sonku .sk-space-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
@@ -1228,14 +1249,33 @@
 .mx-sonku .sk-space-slider[hidden]{display:none!important}
 .mx-sonku .sk-space-slider output{color:#e5eef2;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .mx-sonku .sk-space-slider input[type=range]{--sk-fill:0%;grid-column:1/-1;appearance:none;-webkit-appearance:none;width:100%;height:18px;margin:0;cursor:ew-resize;background:transparent;box-sizing:border-box;min-width:0}
-.mx-sonku .sk-space-slider input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;border:1px solid #53636c;background:linear-gradient(to right,#6baab9 0 var(--sk-fill),#0c1922 var(--sk-fill) 100%);box-shadow:inset 0 1px 2px #0006}
-.mx-sonku .sk-space-slider input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:12px;height:17px;margin-top:-6px;border-radius:3px;border:1px solid #a0b1b9;background:linear-gradient(90deg,#4f626e,#a3b1b9 48%,#53636f);box-shadow:0 1px 3px #0009}
-.mx-sonku .sk-space-slider input[type=range]::-moz-range-track{height:5px;border-radius:3px;background:#0c1922;border:1px solid #53636c}
-.mx-sonku .sk-space-slider input[type=range]::-moz-range-progress{height:5px;background:#6baab9;border-radius:3px}
-.mx-sonku .sk-space-slider input[type=range]::-moz-range-thumb{width:12px;height:17px;border:1px solid #a0b1b9;border-radius:3px;background:linear-gradient(90deg,#4f626e,#a3b1b9 48%,#53636f)}
+/* Recessed slot: the unfilled portion is a black cavity, not a gray bar.
+   Native range input retains hit area, keyboard and existing live/ACK handlers. */
+.mx-sonku .sk-space-slider input[type=range]::-webkit-slider-runnable-track{
+ height:6px;border-radius:2px;border:1px solid #070c10;
+ background:linear-gradient(180deg,#0009,transparent 50%,#ffffff0b),
+  linear-gradient(to right,#528a98 0 var(--sk-fill),#05080b var(--sk-fill) 100%);
+ box-shadow:inset 0 1px 3px #000d,0 1px 0 #88959b42;
+}
+.mx-sonku .sk-space-slider input[type=range]::-webkit-slider-thumb{
+ appearance:none;-webkit-appearance:none;box-sizing:border-box;width:13px;height:17px;margin-top:-6.5px;
+ border-radius:2px;border:1px solid #7e8b91;border-bottom-color:#29353c;
+ background:linear-gradient(90deg,#46535a 0%,#aab6bb 19%,#738087 43%,#28343b 47%,#28343b 53%,#8f9da4 57%,#c0c9cd 80%,#4e5b64 100%);
+ box-shadow:inset 0 1px 0 #ffffff6b,inset 0 -1px 0 #0008,0 1px 2px #000c,0 2px 3px #0006;
+}
+.mx-sonku .sk-space-slider input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#05080b;border:1px solid #070c10;box-shadow:inset 0 1px 3px #000d,0 1px 0 #88959b42}
+.mx-sonku .sk-space-slider input[type=range]::-moz-range-progress{height:4px;background:#528a98;border-radius:2px}
+.mx-sonku .sk-space-slider input[type=range]::-moz-range-thumb{
+ box-sizing:border-box;width:13px;height:17px;border:1px solid #7e8b91;border-bottom-color:#29353c;border-radius:2px;
+ background:linear-gradient(90deg,#46535a,#aab6bb 19%,#738087 43%,#28343b 47% 53%,#8f9da4 57%,#c0c9cd 80%,#4e5b64);
+ box-shadow:inset 0 1px 0 #ffffff6b,0 1px 2px #000c,0 2px 3px #0006;
+}
+.mx-sonku .sk-space-slider input[type=range]:active::-webkit-slider-thumb{box-shadow:inset 0 1px 2px #0008,0 1px 1px #000a}
+.mx-sonku .sk-space-slider input[type=range]:active::-moz-range-thumb{box-shadow:inset 0 1px 2px #0008,0 1px 1px #000a}
 .mx-sonku .sk-space-slider input:disabled{opacity:.38;cursor:not-allowed}
 .mx-sonku :is(button,select,input[type=range]):focus-visible{outline:1px solid #a0d7e1;outline-offset:2px}
-.mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-close):not(:disabled):hover{border-color:#92b5bf;color:#f0f8fb}
+.mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-upgrade,.sk-close):not(:disabled):hover{color:#eff8fa}
+.mx-sonku :is(.sk-buttons button,.sk-space-options button)[aria-pressed="true"]:not(:disabled):hover{color:#c9f5f6}
 .mx-sonku .sk-sr,.mx-sonku:not([data-attention="true"]) .sk-status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;pointer-events:none}
 .mx-sonku .sk-status{display:flex;justify-content:flex-end;color:#e1c8a7;background:#17242d;padding:5px 10px;font-size:10px;overflow-wrap:anywhere}
 @media(max-width:680px){:root:not(.armix-native-desktop) .mx-sonku .sk-preset{flex-basis:136px;max-width:136px}}

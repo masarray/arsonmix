@@ -155,7 +155,7 @@ root.innerHTML=[
  '<defs><radialGradient id="skBg" cx="50%" cy="42%" r="72%"><stop offset="0" stop-color="#203a49"/><stop offset=".52" stop-color="#112633"/><stop offset="1" stop-color="#07121b"/></radialGradient>',
  '<radialGradient id="skFloor" cx="50%" cy="55%" r="65%"><stop offset="0" stop-color="#64bac9" stop-opacity=".15"/><stop offset="1" stop-color="#46758b" stop-opacity="0"/></radialGradient>',
  '<radialGradient id="skShadow"><stop stop-color="#02070c" stop-opacity=".66"/><stop offset="1" stop-color="#02070c" stop-opacity="0"/></radialGradient>',
- '<linearGradient id="skRail" gradientUnits="userSpaceOnUse" x1="200" x2="200" y1="91" y2="257"><stop stop-color="#425f6c"/><stop offset=".50" stop-color="#6796a4"/><stop offset="1" stop-color="#91c9d3"/></linearGradient>',
+ '<linearGradient id="skRail" gradientUnits="userSpaceOnUse" x1="200" x2="200" y1="91" y2="257"><stop stop-color="#304852"/><stop offset=".50" stop-color="#435e69"/><stop offset="1" stop-color="#597881"/></linearGradient>',
  // A SINGLE painted ellipse. Only the far half of the alpha silhouette
  // subtracts from its coverage; the rear stroke is never drawn twice.
  '<clipPath id="skFarOcclusion" clipPathUnits="userSpaceOnUse"><rect width="400" height="174"/></clipPath>',
@@ -180,7 +180,7 @@ root.innerHTML=[
  '<ellipse class="sk-head-shadow" cx="200" cy="252" rx="101" ry="28" fill="url(#skShadow)"/>',
  '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-rear" aria-label="Rear/top-view listener facing front at top" pointer-events="none"/>',
  // One continuous stroke above the PNG, with only far silhouette occlusion.
- '<ellipse id="skOrbitRail" class="sk-orbit-rail" cx="200" cy="174" rx="148" ry="83" fill="none" stroke="url(#skRail)" stroke-width="1.7" mask="url(#skRailOcclusion)" pointer-events="none"/>',
+ '<ellipse id="skOrbitRail" class="sk-orbit-rail" cx="200" cy="174" rx="148" ry="83" fill="none" stroke="url(#skRail)" stroke-width="1.15" mask="url(#skRailOcclusion)" pointer-events="none"/>',
  // Both cabinet layers paint ABOVE the rail. The far layer subtracts the
  // listener's full alpha silhouette, retaining actual head occlusion.
  '<g id="skFarSources" class="sk-far-sources" mask="url(#skFarSpeakerOcclusion)"></g>',
@@ -203,7 +203,7 @@ root.innerHTML=[
  '<rect class="sk-speaker-shade" x="-13" y="-17" width="26" height="34" rx="3.3" fill="#03090e" opacity=".12" pointer-events="none"/>',
  '<text class="sk-speaker-label" x="0" y="-22" text-anchor="middle">L</text></g>',
  '<g class="sk-src sk-right" data-index="1" tabindex="0" role="slider" aria-label="Right virtual source position" aria-valuemin="-180" aria-valuemax="180">',
- '<path class="sk-tether" d="" fill="none" stroke="#eac2e3" stroke-width=".9" stroke-dasharray="2 2"/>',
+ '<path class="sk-tether" d="" fill="none" stroke="#91dcef" stroke-width=".9" stroke-dasharray="2 2"/>',
  '<rect class="sk-speaker-shell" x="-13" y="-17" width="26" height="34" rx="3.3" fill="url(#skCabinet)"/>',
  '<path d="M9 -14L12 -16V14L9 16Z" fill="#0b1118" opacity=".85"/>',
  '<rect class="sk-speaker-inner" x="-10" y="-14" width="19" height="28" rx="2" fill="url(#skBaffle)"/>',
