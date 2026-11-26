@@ -18,7 +18,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    uses: ./.github/workflows/fx-change-scope.yml
+    with:
+      paths: |
+        engine/builtin_fx/anti_noiz/**
+        tests/anti_noiz_*.cpp
+        tests/anti_noiz_approved_chromium_test.py
+        src/AntiNoizNativeBinding.h
+        src/AntiNoizPortableSettings.h
+        tools/anti-noiz/**
+        .github/workflows/anti-noiz-fast-dsp.yml
+        .github/workflows/fx-change-scope.yml
   standalone:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     name: Anti Noiz ${{ matrix.lane }} (no JUCE or installer)
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -133,6 +147,8 @@ jobs:
         run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f
 
   professional-rt:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     name: Anti Noiz professional native-session CPU headroom (Release)
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -203,8 +219,9 @@ jobs:
           if-no-files-found: error
 
   numerical-reproducibility:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' && (contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')) }}
     name: Anti Noiz matched PCM reproducibility (opt-in)
-    if: contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
@@ -246,8 +263,9 @@ jobs:
         run: python3 tools/anti-noiz/compare_rt.py "$RUNNER_TEMP/rt-bridge-old" "$RUNNER_TEMP/rt-bridge-new" --capture-evidence "$RUNNER_TEMP/rt-exact-evidence.json"
 
   native-host:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' && (contains(github.event.pull_request.labels.*.name, 'anti-noiz-native-smoke')) }}
     name: Anti Noiz actual JUCE FxInstance (opt-in, no installer)
-    if: contains(github.event.pull_request.labels.*.name, 'anti-noiz-native-smoke')
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
@@ -270,6 +288,8 @@ jobs:
         run: ctest --test-dir build-an-native -C Release --output-on-failure --verbose --no-tests=error
 
   web-contract:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     name: Anti Noiz Web UX contract (Node and focused Chromium)
     runs-on: ubuntu-latest
     timeout-minutes: 7

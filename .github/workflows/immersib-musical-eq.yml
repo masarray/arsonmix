@@ -28,7 +28,28 @@ permissions:
   contents: read
 
 jobs:
+  scope:
+    uses: ./.github/workflows/fx-change-scope.yml
+    with:
+      paths: |
+        .github/workflows/immersib-musical-eq.yml
+        engine/builtin_fx/sonku/SonKuFixedPaMusicalEq.h
+        tests/immersib_fixed_pa_musical_eq_test.cpp
+        scripts/package_immersib_musical_eq.ps1
+        engine/builtin_fx/sonku/SonKuP90StereoDecoder.h
+        engine/builtin_fx/sonku/SonKuP94FrontBackDepthCue.h
+        engine/builtin_fx/sonku/SonKuP98SceneVoicing.h
+        engine/builtin_fx/sonku/SonKuHrtfTonalCalibration.h
+        engine/builtin_fx/sonku/SonKuSpatialCore.h
+        engine/builtin_fx/SonKuSpatialProcessor.h
+        engine/builtin_fx/ImerSipP92Processor.h
+        tests/immersib_fixed_stage_monitor_test.cpp
+        config/immersib_approved_pcm_sources.json
+        config/spatial_audio_authority.json
+        .github/workflows/fx-change-scope.yml
   fixed-pa-math:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     name: Actual 44.1/48k P90/P98 and seven-scene P9 PCM (no JUCE)
     runs-on: ubuntu-latest
     timeout-minutes: 15

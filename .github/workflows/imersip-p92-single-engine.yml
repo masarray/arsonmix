@@ -25,7 +25,22 @@ concurrency:
   group: imersip-p92-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    uses: ./.github/workflows/fx-change-scope.yml
+    with:
+      paths: |
+        .github/workflows/imersip-p92-single-engine.yml
+        engine/builtin_fx/ImerSipP92*.h
+        assets/imersip/**
+        tests/imersip_scene_assets_contract_test.py
+        engine/builtin_fx/SonKuSpatialProcessor.h
+        engine/builtin_fx/sonku/**
+        tests/imersip_p92_native_test.cpp
+        tests/imersip_p92_catalog_contract_test.py
+        .github/workflows/fx-change-scope.yml
   source:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     name: Fast P9 PCM + ImerSip registration guard
     runs-on: ubuntu-latest
     timeout-minutes: 12

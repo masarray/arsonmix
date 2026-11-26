@@ -1,6 +1,7 @@
 name: de-Ezzer focused DSP
 on:
   pull_request:
+    types: [opened, reopened, synchronize, labeled]
     paths:
       - 'engine/builtin_fx/de_ezzer/**'
       - 'tools/de-ezzer/**'
@@ -13,7 +14,19 @@ concurrency:
   group: de-ezzer-dsp-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
+  scope:
+    uses: ./.github/workflows/fx-change-scope.yml
+    with:
+      paths: |
+        engine/builtin_fx/de_ezzer/**
+        tools/de-ezzer/**
+        site/preview-v2/assets/mixer-native-de-ezzer.js
+        site/preview-v2/assets/mixer-native-de-ezzer-host.js
+        .github/workflows/de-ezzer-fast-dsp.yml
+        .github/workflows/fx-change-scope.yml
   dsp:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     strategy:
@@ -57,6 +70,8 @@ jobs:
           node tools/de-ezzer/ui_test.cjs
           node tools/de-ezzer/host_test.cjs
   chromium:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -80,6 +95,8 @@ jobs:
           retention-days: 7
 
   recorded:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' && contains(github.event.pull_request.labels.*.name, 'de-ezzer-corpus-smoke') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

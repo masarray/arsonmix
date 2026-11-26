@@ -12,7 +12,18 @@ concurrency:
   group: vocal-delay-v2-${{ github.event.pull_request.head.sha || github.sha }}
   cancel-in-progress: true
 jobs:
+  scope:
+    uses: ./.github/workflows/fx-change-scope.yml
+    with:
+      paths: |
+        engine/builtin_fx/vocal_delay/**
+        tests/vocal_delay_v2_*.cpp
+        tools/vocal-delay/**
+        .github/workflows/vocal-delay-v2-dsp.yml
+        .github/workflows/fx-change-scope.yml
   isolated:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 8
     strategy:
@@ -74,6 +85,8 @@ jobs:
             vd-concert-audition/
           if-no-files-found: error
   ui-contract:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -83,9 +96,10 @@ jobs:
           persist-credentials: false
       - run: node tools/vocal-delay/parameter-sync.test.mjs
   native-juce-candidate:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' && (github.head_ref != 'staging/io-reverb-integrated-global-20261125') }}
     # Canonical integration push already runs full product link, all CTests
     # and installer FAT. Do not duplicate its scoped MSVC build.
-    if: github.head_ref != 'staging/io-reverb-integrated-global-20261125'
     runs-on: windows-2022
     timeout-minutes: 65
     steps:
@@ -119,7 +133,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'VD_ROOT_CONFIGURE_FAILED' }
           cmake --build vd-build --parallel 2 --target ARMixNativeFxExtensionTests ARMixNativeVocalDelayTests ARMixBuiltInFxPresetStoreTests
           if ($LASTEXITCODE -ne 0) { throw 'VD_NATIVE_TARGET_BUILD_FAILED' }
-          ctest --test-dir vd-build --output-on-failure --no-tests=error -R '^(M4NativeFxCatalogExtensionAndStatePreparation|VocalDelayV2RealJuceAdapter|BuiltInFxUserPresetNativePortableSaveAndRecovery)$'
+          ctest --test-dir vd-build --output-on-failure --no-tests=error -R '^(M4NativeFxCatalogExtensionAndStatePreparation|VocalDelayV2RealJuceAdapter|BuiltInFxUserPresetNativePortableSaveAndRecovery)
           if ($LASTEXITCODE -ne 0) { throw 'VD_NATIVE_CTEST_FAILED' }
           cmake --build vd-build --parallel 2 --target CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj
           if ($LASTEXITCODE -ne 0) { throw 'VD_PRODUCTION_MAIN_COMPILE_FAILED' }
