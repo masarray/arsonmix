@@ -321,6 +321,13 @@ const context=()=>{
 };
 function render(){
  const s=draft;
+ // A timed-out request may still be queued in the native audio callback.
+ // Never replay it or let another control write race it. Keep Close/Power
+ // reachable so the user can recover an unavailable device.
+ const recovering=Boolean(pending?.timedOut);
+ root.querySelector(".sk-stage").inert=recovering;
+ root.querySelector(".sk-controls").inert=recovering;
+ root.dataset.recovering=String(recovering);
  // Header identity is always authoritative, including v2 native, reconnect
  // and logical sessions. A missing capability must never unlock presets.
  syncPower();
@@ -569,6 +576,8 @@ function requestSnapshot(force=false){
 // latest-wins coalescing; ACK + accepted snapshot remain mandatory before
 // issuing the next. Never fill the DSP SPSC queue with raw pointer events.
 const LIVE_INTERVAL_MS=40;
+// Reuse the existing 250ms editor heartbeat; no separate watchdog timer.
+const ACK_DEADLINE_MS=3000;
 const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
  (!xyzCapable || a.directElevationDegrees===b.directElevationDegrees) &&
  (!p88Capable || a.hrtfElevationTrimDegrees===b.hrtfElevationTrimDegrees) &&
@@ -577,6 +586,7 @@ const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
    a.musicCompatibleLowFrequency===b.musicCompatibleLowFrequency &&
    a.headYawDegrees===b.headYawDegrees));
 function send(next,continuous=false){
+ if(pending?.timedOut){render();return false;}
  if(!valid(next))return false;
  draft={...next};render();
  if(!native()){accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");return true;}
@@ -588,7 +598,7 @@ function send(next,continuous=false){
  }
  if(sameSettings(next,accepted))return true;
  const id="sonku-"+String(Date.now()*1000+(++seq%1000));
- pending={requestId:id,settings:{...next},context:c,ack:false};
+ pending={requestId:id,settings:{...next},context:c,ack:false,sentAt:performance.now(),timedOut:false};
  backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next});
  hint(continuous?"DSP LIVE · AWAITING AUDIO ACK":"DSP QUEUED · AWAITING AUDIO ACK");
  return true;
@@ -597,6 +607,7 @@ function cancelLiveTimer(){
  if(liveTimer!==null){clearTimeout(liveTimer);liveTimer=null;}
 }
 function liveInput(next){
+ if(pending?.timedOut){render();return false;}
  if(!valid(next))return false;
  draft={...next};render();
  const now=performance.now(),wait=LIVE_INTERVAL_MS-(now-lastLiveAt);
@@ -618,6 +629,27 @@ function flushLatest(){
   if(!sameSettings(next,accepted))send(next,true);
  }
 }
+function serviceNativeTransaction(){
+ if(!native()||!context()) {
+  if(pending&&!pending.timedOut&&performance.now()-pending.sentAt>=ACK_DEADLINE_MS)
+   enterRecovery();
+  return;
+ }
+ if(pending&&!pending.timedOut&&performance.now()-pending.sentAt>=ACK_DEADLINE_MS)
+  enterRecovery();
+ // An ACK may have arrived while its readback was lost. A missing ACK
+ // gets read-only recovery after the deadline, never another SET.
+ if(!pending||pending.ack||pending.timedOut)requestSnapshot();
+}
+function enterRecovery(){
+ if(!pending||pending.timedOut)return;
+ pending.timedOut=true;
+ cancelLiveTimer();latest=null;
+ drag=null;dialDrag=null;rangeEdits.clear();gestureStart.clear();
+ draft={...accepted};
+ hint("DSP TIMEOUT · RECOVERING READBACK");
+ render();requestSnapshot(true);
+}
 function finishFailure(reason){
  cancelLiveTimer();pending=null;latest=null;
  // Native failure is real. Never display false "applied" audio; read back
@@ -631,7 +663,9 @@ backend()?.addEventListener?.("arMixBuiltinSonKuQueue",r=>{
 backend()?.addEventListener?.("arMixBuiltinSonKuAck",r=>{
  if(!pending||r?.requestId!==pending.requestId)return;
  if(r.status!=="APPLIED")return finishFailure("DSP NOT APPLIED · "+(r.errorCode||"STALE"));
- pending.ack=true;hint("DSP APPLIED · VERIFYING READBACK");requestSnapshot(true);
+ pending.ack=true;
+ hint(pending.timedOut?"DSP TIMEOUT · VERIFYING READBACK":"DSP APPLIED · VERIFYING READBACK");
+ requestSnapshot(true);
 });
 backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  if(r?.requestId!==readId||!current)return;
@@ -697,11 +731,19 @@ backend()?.addEventListener?.("arMixBuiltinSonKuSnapshot",r=>{
  p82MultibandRoom=p8TransparentBass && r.p82MultibandRoom===true;
  readId="";readSentAt=0;
  if(pending) {
-  if(!pending.ack || r.appliedRequestId!==pending.requestId){
-   if(pending.ack)requestSnapshot();
-   return;
-  }
-  accepted={...incoming};pending=null;hint("DSP APPLIED · ACCEPTED");flushLatest();
+  // No synchronous recursive polling on stale readbacks. The heartbeat
+  // retries at a bounded cadence. Before timeout both ACK and readback
+  // remain mandatory; afterwards an exact applied ID from the validated
+  // native snapshot is sufficient to recover, not a fabricated ACK.
+  if(r.appliedRequestId!==pending.requestId ||
+     (!pending.ack&&!pending.timedOut))return;
+  const recovered=pending.timedOut;
+  const acknowledged=pending.ack;
+  accepted={...incoming};pending=null;
+  if(recovered||(!latest&&!drag&&!dialDrag&&rangeEdits.size===0))
+   draft={...incoming};
+  hint(acknowledged?"DSP APPLIED · ACCEPTED":"DSP READBACK RECOVERED");
+  if(!recovered)flushLatest();
  }else if(!drag&&!dialDrag&&rangeEdits.size===0){
   accepted={...incoming};draft={...incoming};
  }else if(!pending){
@@ -971,7 +1013,7 @@ const api={
   if(native())requestSnapshot();
   if(clock!==null)clearInterval(clock);
   clock=setInterval(()=>{if(root.hidden)return;
-    syncPower();syncVisualFrame();if(native()&&!pending&&context())requestSnapshot();},250);
+    syncPower();syncVisualFrame();serviceNativeTransaction();},250);
   if(frame!==null){cancelAnimationFrame(frame);frame=null;}
   render();
  },

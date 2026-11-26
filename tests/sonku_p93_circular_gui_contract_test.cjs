@@ -127,6 +127,12 @@ assert.match(source,/root\.querySelector\("\.sk-stage"\)\.appendChild\(root\.que
 assert.match(source,/head\.setPointerCapture\(e\.pointerId\)/);
 assert.match(source,/window\.addEventListener\("resize",constrainWindow\)/);
 assert.match(source,/if\(!p91p92Capable\|\|draft\.renderMode!==9\|\|!preset\|\|pending\|\|/);
+assert.match(source,/const ACK_DEADLINE_MS=3000/);
+assert.match(source,/if\(!pending\|\|pending\.ack\|\|pending\.timedOut\)requestSnapshot\(\)/);
+assert.match(source,/r\.appliedRequestId!==pending\.requestId\s*\|\|\s*\(!pending\.ack&&!pending\.timedOut\)/);
+assert.match(source,/if\(pending\?\.timedOut\)\{render\(\);return false;\}/);
+assert.match(source,/if\(!recovered\)flushLatest\(\)/);
+assert.match(source,/DSP READBACK RECOVERED/);
 assert.match(source,/picker\.value==="orbitStage"&&!p99Capable/);
 assert.match(source,/root\.dataset\.fxState==="on"/);
 assert.match(source,/if\(previous!==state\)/);
