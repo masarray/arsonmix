@@ -87,8 +87,13 @@ public:
         juce::String error;
         bool ok() const noexcept{return selection.valid() && error.isEmpty();}
     };
-    static RenderResult resolveRender(const juce::String& label) {
-        if(label.isEmpty())return {{}, "Choose an explicit stream output endpoint"};
+    // Read-only Core Audio enumeration. Safe on a dedicated non-RT worker
+    // with its own COM apartment; no JUCE audio device is constructed here.
+    struct RenderInventory {
+        std::vector<EndpointIdentityPolicy::Endpoint> endpoints;
+        juce::String error;
+    };
+    static RenderInventory renderInventory() {
         const HRESULT hr=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
         if(FAILED(hr) && hr!=RPC_E_CHANGED_MODE)
             return {{}, "Cannot inspect Windows render endpoint identities"};
@@ -101,10 +106,16 @@ public:
         std::vector<EndpointIdentityPolicy::Endpoint> endpoints;
         if(!scan(device.Get(),eRender,EndpointIdentityPolicy::Role::render,endpoints))
             return {{}, "Cannot enumerate active Windows playback endpoints"};
+        return {std::move(endpoints),{}};
+    }
+    static RenderResult resolveRender(const juce::String& label) {
+        if(label.isEmpty())return {{}, "Choose an explicit stream output endpoint"};
+        const auto inventory=renderInventory();
+        if(inventory.error.isNotEmpty())return {{},inventory.error};
         RenderSelection found;
         int n=0;
         const std::wstring wanted(label.toWideCharPointer());
-        for(const auto& e:endpoints)
+        for(const auto& e:inventory.endpoints)
             if(e.name==wanted){found={e.name,e.id};++n;}
         if(n!=1)return {{}, n==0 ? "Selected playback endpoint missing" :
                      "Duplicate endpoint names; select an unambiguous device"};
@@ -215,6 +226,12 @@ public:
         juce::String error;
         bool ok() const noexcept{return false;}
     };
+    struct RenderInventory {
+        std::vector<EndpointIdentityPolicy::Endpoint> endpoints;
+        juce::String error;
+    };
+    static RenderInventory renderInventory()
+    {return {{}, "WASAPI virtual cable requires Windows"};}
     static RenderResult resolveRender(const juce::String&)
     {return {{}, "WASAPI virtual cable requires Windows"};}
     static juce::String verifyRender(const RenderSelection&,const juce::String&)

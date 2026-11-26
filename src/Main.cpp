@@ -816,6 +816,9 @@ public:
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
         }
         engine_.stop();
+        // No UI/engine capture in the read-only worker. Join after audio
+        // teardown so a slow endpoint enumeration cannot keep sound alive.
+        if(secondaryInventoryFlight_.valid())secondaryInventoryFlight_.wait();
         // Normal shutdown is not an interrupted startup. Leave marker intact
         // on abnormal vendor termination (destructors never run).
         if(startupFxGuard_)(void)startupFxGuard_->complete();
@@ -4238,11 +4241,69 @@ private:
             secondaryPreference_=SecondaryPreference{intent.name,intent.endpointId};
         else diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Output active; machine-local preference not saved");
     }
-    juce::String verifiedSecondaryPreference() {
+    // One bounded discovery flight for both output surfaces. Worker owns
+    // only read-only MMDevice enumeration, never engine, GUI or audio objects.
+    using SecondaryInventory=armix::device::WasapiEndpointIdentityGuard::RenderInventory;
+    std::future<SecondaryInventory> secondaryInventoryFlight_;
+    std::optional<SecondaryInventory> secondaryInventoryCache_;
+    juce::String secondaryInventoryRequest_;
+    std::uint64_t secondaryInventoryAt_=0;
+    void emitSecondaryInventory() {
+        if(secondaryInventoryRequest_.isEmpty()||!secondaryInventoryCache_)return;
+        const auto request=std::exchange(secondaryInventoryRequest_,juce::String{});
+        const auto& inventory=*secondaryInventoryCache_;
+        juce::Array<juce::var> outputs;
+        juce::String preferred;
         loadSecondaryPreference();
-        if(!secondaryPreference_)return {};
-        const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(secondaryPreference_->name);
-        return current.ok()&&current.selection.id==secondaryPreference_->id?secondaryPreference_->name:juce::String{};
+        // Only unique, selectable names. Full endpoint identity remains native.
+        std::map<std::wstring,unsigned> counts;
+        for(const auto& ep:inventory.endpoints)++counts[ep.name];
+        auto* direct=engine_.devices().getCurrentAudioDevice();
+        const auto directName=direct?direct->getName():juce::String{};
+        for(const auto& ep:inventory.endpoints) {
+            const juce::String label(ep.name.c_str());
+            if(counts[ep.name]!=1||ep.id.empty()||label.isEmpty()||
+               label.length()>240||label==directName)continue;
+            outputs.add(label);
+            if(secondaryPreference_&&label==secondaryPreference_->name&&ep.id==secondaryPreference_->id)
+                preferred=label;
+        }
+        auto result=std::make_unique<juce::DynamicObject>();
+        result->setProperty("requestId",request);
+        result->setProperty("outputs",juce::var(outputs));
+        result->setProperty("preferredOutput",preferred);
+        result->setProperty("hasSavedOutput",secondaryPreference_.has_value());
+        result->setProperty("error",inventory.error);
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputInventory",juce::var(result.release()));
+    }
+    void requestSecondaryInventory(const juce::var& args) {
+        const auto id=args.getProperty("requestId",{}).toString();
+        if(id.isEmpty()||id.length()>64)return;
+        secondaryInventoryRequest_=id; // newest correlated request wins
+        if(secondaryInventoryFlight_.valid())return;
+        const auto now=static_cast<std::uint64_t>(monotonicMilliseconds());
+        if(!bool(args.getProperty("force",false))&&secondaryInventoryCache_&&
+           secondaryInventoryCache_->error.isEmpty()&&now>=secondaryInventoryAt_&&
+           now-secondaryInventoryAt_<2000) {
+            emitSecondaryInventory();
+            return;
+        }
+        try {
+            secondaryInventoryFlight_=std::async(std::launch::async,[] {
+                return armix::device::WasapiEndpointIdentityGuard::renderInventory();
+            });
+        } catch(...) {
+            secondaryInventoryCache_=SecondaryInventory{{},"Cannot start playback discovery"};
+            emitSecondaryInventory();
+        }
+    }
+    void serviceSecondaryInventory() {
+        if(!secondaryInventoryFlight_.valid()||
+           secondaryInventoryFlight_.wait_for(std::chrono::seconds(0))!=std::future_status::ready)return;
+        try {secondaryInventoryCache_=secondaryInventoryFlight_.get();}
+        catch(...) {secondaryInventoryCache_=SecondaryInventory{{},"Cannot read playback devices"};}
+        secondaryInventoryAt_=static_cast<std::uint64_t>(monotonicMilliseconds());
+        emitSecondaryInventory();
     }
     // Same-session, same-graph recovery only. Never carries ARM permission
     // across process restart, explicit disconnect, driver or route change.
@@ -4264,7 +4325,7 @@ private:
         return secondaryRetry_.pending()&&secondaryContinuity_?secondaryContinuity_->intent.name:juce::String{};
     }
     void serviceSecondaryContinuity() {
-        if(pendingVendorStream_)return; // existing vendor transaction owns this recovery
+        if(pendingVendorStream_||deviceApply_.busy())return; // existing transaction owns recovery
         const auto epoch=engine_.dryRoutingLabEpoch(),revision=engine_.outputArmRevision();
         if(engine_.secondaryArmed()) {
             if(!secondaryContinuity_||secondaryContinuity_->epoch!=epoch||
@@ -4292,6 +4353,7 @@ private:
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
         if(!lease)return;
         const auto intent=secondaryContinuity_->intent;
+        const auto generation=secondaryRetry_.generation();
         // Identity preflight avoids opening a default or a replacement device.
         const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(intent.name);
         if(current.ok()&&current.selection.id!=intent.endpointId) {
@@ -4299,7 +4361,7 @@ private:
             emitNotice("Additional output identity changed · choose your destination again",true);
             return;
         }
-        const auto generation=secondaryRetry_.generation();
+        if(generation!=secondaryRetry_.generation())return;
         const auto error=current.ok()?engine_.restoreSecondaryOutput(intent):current.error;
         // A nested native device event or Stop may revoke this request while
         // the vendor open runs. Never publish success for a superseded intent.
@@ -4315,11 +4377,10 @@ private:
             emitNotice("Additional output restored",false);
         } else {
             secondaryRetry_.failed(now);
-            if(secondaryRetry_.attempts()>=5) {
-                cancelSecondaryContinuity();
-                diagnostics_.record("SECONDARY_HOTPLUG_PAUSED",error);
-                emitNotice("Additional output unavailable · Enable to retry",true);
-            }
+            // A missing cable may return after minutes or hours. Keep the
+            // verified session intent with a capped 30s cadence, no toast spam.
+            if(secondaryRetry_.attempts()==1)
+                diagnostics_.record("SECONDARY_HOTPLUG_WAITING",error);
         }
     }
     void serviceVendorStreamRecovery() {
@@ -6628,6 +6689,7 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        if(action=="secondaryOutputInventory")return requestSecondaryInventory(args);
         if(action=="fxRackFile")return chooseFxRackFile(args);
         if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
         if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
@@ -9995,27 +10057,6 @@ private:
             ack->setProperty("error",error);
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNamedPatchAck",juce::var(ack.release()));
         }
-        else if (action == "secondaryOutputInventory")
-        {
-            // Dedicated read-only shared WASAPI discovery. Do not rescan
-            // ASIO, mutate the main setup draft or open an audio endpoint.
-            juce::Array<juce::var> outputs;
-            juce::String error;
-            try {
-                std::unique_ptr<juce::AudioIODeviceType> type(
-                    juce::AudioIODeviceType::createAudioIODeviceType_WASAPI(juce::WASAPIDeviceMode::shared));
-                if(type){
-                    type->scanForDevices();
-                    for(const auto& name:type->getDeviceNames(false))outputs.add(name);
-                }else error="Windows playback discovery unavailable";
-            } catch(...) {error="Cannot refresh Windows playback devices";}
-            auto result=std::make_unique<juce::DynamicObject>();
-            result->setProperty("requestId",args.getProperty("requestId",{}));
-            result->setProperty("outputs",juce::var(outputs));
-            result->setProperty("preferredOutput",verifiedSecondaryPreference());
-            result->setProperty("error",error);
-            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputInventory",juce::var(result.release()));
-        }
         else if (action == "audioDeviceInventory")
         {
             // Fast read-only snapshot, no forced third-party ASIO scan.
@@ -11063,6 +11104,7 @@ private:
             }
 #endif
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
+        serviceSecondaryInventory();
         servicePhysicalLoopback();
         // Always disabled unless the user explicitly starts a bounded trace.
         const bool timing = guiPerf_.active;

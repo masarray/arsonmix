@@ -7679,18 +7679,39 @@ test("U2-C/U3 secondary continuity is identity-pinned and preference is not ARM 
  assert.match(r,/secondaryContinuity_->epoch!=epoch/);
  assert.match(r,/secondaryContinuity_->revision!=revision/);
  assert.match(r,/current.selection.id!=intent.endpointId/);
- assert.match(r,/secondaryRetry_\.attempts\(\)>=5/);
+ assert.match(r,/secondaryRetry_\.failed\(now\)/);
+ assert.doesNotMatch(r,/SECONDARY_HOTPLUG_PAUSED/);
  assert.match(r,/generation!=secondaryRetry_\.generation\(\)/);
  assert.match(r,/engine_\.disconnectSecondaryOutput\(\)/);
  assert.match(r,/deviceApply_\.tryBegin/);
  assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
  assert.match(n,/secondary-output\.json/);
- assert.match(n,/current.selection.id==secondaryPreference_->id/);
- assert.match(bridge,/options.includes\(extraPreferred\)/);
+ assert.match(n,/ep.id==secondaryPreference_->id/);
+ assert.match(bridge,/protocol.secondaryOutputSelection\(options/);
  const live={secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputFault:true,
    secondaryOutputRecovering:true,secondaryOutputRecoveryName:"CABLE Input"};
  const v=protocol.secondaryOutputView({},live);
  assert.equal(v.state,"RECOVERING");assert.equal(v.name,"CABLE Input");assert.equal(v.armed,false);
  assert.equal(protocol.secondaryOutputRow({},live).status,"RECOVERING");
  assert.equal(protocol.secondaryOutputView({},{...live,secondaryOutputRecovering:false}).state,"FAULT");
+});
+
+
+test("U3 canonical output discovery is single-flight and selection never guesses after saved identity loss",()=>{
+ const n=read("src/Main.cpp"),g=read("engine/device/WasapiEndpointIdentityGuard.h");
+ const worker=n.slice(n.indexOf("void requestSecondaryInventory("),n.indexOf("void serviceSecondaryInventory("));
+ assert.match(worker,/secondaryInventoryFlight_\.valid\(\)/);
+ assert.match(worker,/std::async\(std::launch::async,\[\]/);
+ assert.match(worker,/renderInventory\(\)/);
+ assert.doesNotMatch(worker,/createDevice|scanForDevices|engine_/);
+ assert.match(n,/wait_for\(std::chrono::seconds\(0\)\)/);
+ assert.match(g,/static RenderInventory renderInventory\(\)/);
+ const pick=protocol.secondaryOutputSelection, choices=["CABLE Input","Speakers","Broadcast"];
+ assert.equal(pick(choices),"CABLE Input");
+ assert.equal(pick(choices,{preferred:"Broadcast",hasSaved:true}),"Broadcast");
+ assert.equal(pick(choices,{hasSaved:true}),"");
+ assert.equal(pick(choices,{hasSaved:true,selected:"Speakers"}),"Speakers");
+ assert.equal(pick(choices,{active:"Broadcast",selected:"Speakers"}),"Broadcast");
+ assert.equal(pick(["CABLE Input A","CABLE Input B"]),"");
+ assert.equal(pick(["Speakers"]),"");
 });

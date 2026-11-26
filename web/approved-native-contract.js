@@ -286,6 +286,14 @@
   }
   // One secondary destination projection for the quick output controller and
   // unified workspace. No ACK, friendly name or browser draft proves PCM.
+  function secondaryOutputSelection(options,{active="",selected="",preferred="",hasSaved=false}={}) {
+    if(options.includes(active))return active;
+    if(options.includes(selected))return selected;
+    if(options.includes(preferred))return preferred;
+    if(hasSaved)return ""; // never replace a lost verified destination with a guess
+    const cables=options.filter(n=>/^CABLE Input(?:\s|\(|$)/i.test(n));
+    return cables.length===1?cables[0]:"";
+  }
   function secondaryOutputView(snapshot,live) {
     const raw=snapshot?.raw;
     const liveEpoch=live?.dryRoutingLab?.epoch, snapshotEpoch=snapshot?.device?.epoch;
@@ -1108,5 +1116,5 @@
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview,secondaryOutputView,secondaryOutputRow,monitorTimingView});
+    operatorMessage,physicalOutputOverview,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,monitorTimingView});
 });

@@ -480,6 +480,19 @@ def verify_additional_output(page,out):
     assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
     emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],"outputs":["CABLE Input","Speakers"]})
     assert panel.get_by_label("Windows playback device").input_value()=="CABLE Input"
+    # Same list, different verified preference must update selection.
+    panel.get_by_role("button",name="Refresh").click()
+    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    assert inventory_req["force"] is True
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],
+         "outputs":["CABLE Input","Speakers"],"preferredOutput":"Speakers","hasSavedOutput":True})
+    assert panel.get_by_label("Windows playback device").input_value()=="Speakers"
+    panel.get_by_role("button",name="Refresh").click()
+    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],
+         "outputs":["CABLE Input","Speakers"],"preferredOutput":"","hasSavedOutput":True})
+    assert panel.get_by_label("Windows playback device").input_value()==""
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
     panel.get_by_label("Windows playback device").select_option("CABLE Input")
     panel.get_by_role("button",name="Enable output",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")

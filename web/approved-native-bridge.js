@@ -3610,22 +3610,24 @@
   // U1: approved native bundle owns this workflow. monitor.js belongs to
   // the retired console and is deliberately NOT shipped in this bundle.
   let extraPanel=null,extraControls=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
-      extraError="",extraInventoryKnown=false,extraInventoryPending="",extraPreferred="";
+      extraError="",extraInventoryKnown=false,extraInventoryPending="",extraPreferred="",extraHasSaved=false,
+      extraSelected="",extraInventoryRetryAt=0;
   const extraField=name=>extraControls?.querySelector("[data-extra-"+name+"]");
   const extraInlineHost=()=>devicePanel?.querySelector("[data-audio-extra-output]");
   const extraInlineVisible=()=>!devicePanel?.hidden&&
     devicePanel?.querySelector(".armix-audio-dialog")?.dataset.audioTab==="routing";
   const extraSurfaceOpen=()=>Boolean(extraPanel?.open||extraInlineVisible());
-  function refreshAdditionalInventory(){
+  function refreshAdditionalInventory(force=false){
     if(extraInventoryPending)return;
     const requestId="extra-inventory-"+(++extraSerial);
     extraInventoryPending=requestId;extraInventoryKnown=false;extraError="";
     paintAdditionalOutput();
-    backend.emitEvent("arMixAction",{action:"secondaryOutputInventory",requestId});
+    backend.emitEvent("arMixAction",{action:"secondaryOutputInventory",requestId,force:force===true});
     window.setTimeout(()=>{
       if(extraInventoryPending!==requestId)return;
       extraInventoryPending="";extraInventoryKnown=false;
-      extraError="Could not read Windows playback devices. Select Refresh to retry.";
+      extraInventoryRetryAt=performance.now()+5000;
+      extraError="Windows playback devices unavailable. Retrying automatically…";
       paintAdditionalOutput();
     },8000);
   }
@@ -3644,23 +3646,17 @@
     const live=extraLive, busy=Boolean(extraPending)||deviceBusy(),
       destination=protocol.secondaryOutputView(hardware,live),
       {ready,armed,fault,name,split,recovering}=destination;
-    const select=extraField("device"), prior=name||select.value||"";
+    const select=extraField("device");
     const options=extraInventory;
     const sig=JSON.stringify(options);
     if(select.dataset.signature!==sig){
       select.replaceChildren(new Option("Select Windows playback device…",""),
         ...options.map(name=>new Option(name,name)));
       select.dataset.signature=sig;
-      if(options.includes(prior))select.value=prior;
-      else if(!prior&&options.includes(extraPreferred))select.value=extraPreferred;
-      else if(!prior){
-        // Suggest a unique known virtual cable, never a default loudspeaker.
-        // Explicit Enable remains required.
-        const cables=options.filter(n=>/^CABLE Input(?:\s|\(|$)/i.test(n));
-        if(cables.length===1)select.value=cables[0];
-      }
     }
-    if(armed&&options.includes(name)&&select.value!==name)select.value=name;
+    const chosen=protocol.secondaryOutputSelection(options,{active:armed||recovering?name:"",
+      selected:extraSelected,preferred:extraPreferred,hasSaved:extraHasSaved});
+    if(select.value!==chosen)select.value=chosen;
     const allowed=live?.directRouteAuthorized===true&&live?.adaptiveClockActive!==true&&
       live?.dryRoutingLab?.hasAcceptedRoute===true&&live?.diagnosticRoute==="NORMAL";
     select.disabled=busy||armed||recovering||extraInventoryPending;
@@ -3679,8 +3675,9 @@
       ready?"Connected · "+name+" · Enable to send MAIN":
       !allowed?"Audio device or mixer routing is not ready. Check Audio I/O.":
       extraInventoryPending?"Reading Windows playback devices…":
-      !extraInventoryKnown?"Refresh to read available Windows playback devices.":
-      !options.length?"No Windows playback endpoint found. Install/enable a virtual cable, then Refresh.":
+      !extraInventoryKnown?"Waiting for Windows playback devices…":
+      !options.length?"No Windows playback endpoint found. Connect or enable a virtual cable.":
+      extraHasSaved&&!extraPreferred&&!select.value?"Saved output unavailable · choose a destination.":
       "Choose a destination, then Enable output.";
     const status=extraField("status");
     if(status.textContent!==message)status.textContent=message;
@@ -3744,8 +3741,8 @@
       <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
       <div class="armix-stream-hint">Post-FX MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
     panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
-    extraField("refresh").onclick=refreshAdditionalInventory;
-    extraField("device").onchange=paintAdditionalOutput;
+    extraField("refresh").onclick=()=>refreshAdditionalInventory(true);
+    extraField("device").onchange=()=>{extraSelected=extraField("device").value;paintAdditionalOutput();};
     extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
     extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
   }
@@ -5440,9 +5437,14 @@
     backend.addEventListener("arMixSecondaryOutputInventory",inventory=>{
       if(!extraInventoryPending||inventory?.requestId!==extraInventoryPending||!Array.isArray(inventory.outputs))return;
       extraInventory=[...new Set(inventory.outputs.filter(x=>typeof x==="string"&&x.length>0&&x.length<=240))];
+      const oldPreferred=extraPreferred;
       extraPreferred=typeof inventory.preferredOutput==="string"?inventory.preferredOutput:"";
+      extraHasSaved=inventory.hasSavedOutput===true;
+      if(extraHasSaved&&!extraPreferred&&extraSelected===oldPreferred)extraSelected="";
+      if(!extraInventory.includes(extraSelected))extraSelected="";
       extraInventoryPending="";
       extraInventoryKnown=!inventory.error;
+      extraInventoryRetryAt=performance.now()+5000;
       if(inventory.error)extraError=String(inventory.error);
       paintAdditionalOutput();
     });
@@ -5461,6 +5463,13 @@
       settleAdditionalOutput(live);
       paintAdditionalOutput();
       const current=protocol.secondaryOutputView(hardware,live);
+      // Reuse existing status cadence, no interval or hidden-window scan.
+      if(extraSurfaceOpen()&&!extraInventoryPending&&!extraPending&&!current.armed&&!current.recovering&&
+         (!extraInventoryKnown||!extraInventory.length||(extraHasSaved&&!extraPreferred))&&
+         performance.now()>=extraInventoryRetryAt){
+        extraInventoryRetryAt=performance.now()+5000;
+        refreshAdditionalInventory();
+      }
       if(previous.name!==current.name||previous.state!==current.state||previous.split!==current.split)
         paintOutputOverview(hardware);
       const health=protocol.footerHealthFromLive(live);

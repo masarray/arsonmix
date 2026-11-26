@@ -67,7 +67,7 @@ public:
     }
     void failed(std::uint64_t now) noexcept {
         if (!pending_) return;
-        ++attempts_;
+        if(attempts_<4)++attempts_; // saturate after reaching the steady 30s cadence
         const auto waitMs = attempts_ == 1 ? 1000ull
             : attempts_ == 2 ? 3000ull
             : attempts_ == 3 ? 8000ull : 30000ull;
