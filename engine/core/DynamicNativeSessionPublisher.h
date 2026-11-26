@@ -270,6 +270,7 @@ public:
         if(status!=Publisher::Result::applied&&fading)fading->cancelRetirement(retiring);
         switch(status) {
             case Publisher::Result::applied: {
+                continuityEpoch_=proposedDeviceEpoch;
                 independentMonitorPublished_=request.monitorLatencyPolicy==MonitorLatencyPolicy::independent;
                 cueBus_.cancel(false); // new graph revision requires a new explicit listen request
                 const auto source=musicTempo_.selectedSource();
@@ -613,9 +614,20 @@ public:
     }
     NativeFxCueBus& cueControl() noexcept {return cueBus_;} // CONTROL only
     void unpublish() noexcept {
-        cueBus_.cancel(false);publisher_.unpublish();independentMonitorPublished_=false;
+        cueBus_.cancel(false);publisher_.unpublish();independentMonitorPublished_=false;continuityEpoch_=0;
     }
-    void pollRetirement() noexcept {publisher_.pollRetirement();}
+    void pollRetirement() noexcept {
+        publisher_.pollRetirement();
+        // Release the old graph's swapped-out rings on CONTROL, after the
+        // audio handoff receipt. No retained chain and no RT destruction.
+        const auto rev=publisher_.lastRevision();
+        if(continuityEpoch_&&rev)
+            publisher_.updateActiveControl(continuityEpoch_,rev,[](Prepared& p) noexcept {
+                if(!p.adopted.load(std::memory_order_acquire))return false;
+                p.predecessor.reset();p.continuity.lanes.clear();p.continuity.edges.clear();
+                return true;
+            });
+    }
     std::uint64_t acceptedRevision() const noexcept {
         return publisher_.lastRevision(); // CONTROL only
     }
@@ -624,6 +636,7 @@ public:
     }
 private:
     Publisher publisher_;
+    std::uint64_t continuityEpoch_=0; // CONTROL only
     bool independentMonitorPublished_=false; // CONTROL-only accepted-policy fence
     NativeMusicTempoMonitor musicTempo_{};
     NativeFxCueBus cueBus_{};

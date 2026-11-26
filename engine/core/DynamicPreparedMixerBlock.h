@@ -108,6 +108,7 @@ class DynamicPreparedMixerBlock final {
         std::atomic<float> inputGain{1.f}; // CONTROL writes, AUDIO reads
         std::atomic<float> wireSumGain{1.f};
         // A topology retirement is NOT a persisted MUTE/fader edit.
+        static_assert(std::atomic<int>::is_always_lock_free&&std::atomic<bool>::is_always_lock_free);
         std::atomic<int> retireFrames{0};
         std::atomic<bool> retireDone{false};
         float retireGain=1.f,retireGoal=1.f,retireStep=0.f;
@@ -482,10 +483,15 @@ public:
             const auto& n=lanes_[i];const auto found=old.controlIndex_.find(n.id.value);
             if(found==old.controlIndex_.end())return false;
             const auto j=found->second;const auto& o=old.lanes_[j];
+            const bool wasScheduled=old.channelScheduled(n.id),nowScheduled=channelScheduled(n.id);
             if(n.role!=o.role||n.format!=o.format||n.monoPan!=o.monoPan||
                n.inputStereo!=o.inputStereo||n.playerDeckId!=o.playerDeckId||
-               (n.inputL>=0)!=(o.inputL>=0)||
-               channelScheduled(n.id)!=old.channelScheduled(n.id)||
+               (n.inputL>=0)!=(o.inputL>=0))return false;
+            // A fresh zero-latency Compressor may activate an unpatched
+            // dormant lane. It has no physical/player input or prior history.
+            // Never silently drop a previously active surviving lane.
+            if(!wasScheduled&&nowScheduled&&!removed.value&&n.inputL<0&&!n.playerDeckId)continue;
+            if(wasScheduled!=nowScheduled||
                !delayEqual(physicalDelays_,i,old.physicalDelays_,j)||
                !delayEqual(sinkDelays_,i,old.sinkDelays_,j)||
                !delayEqual(externalDelays_,i,old.externalDelays_,j))return false;

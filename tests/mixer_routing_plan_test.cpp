@@ -12,6 +12,9 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <thread>
+#include <atomic>
+#include <chrono>
 
 using namespace armix::mixer;
 static bool close(float a,float b,float tol=1.e-5f){return std::abs(a-b)<tol;}
@@ -1185,7 +1188,125 @@ static void verifyNativePrePostAndSendEnablePcm() {
     assert(!roster.wireTransaction(roster.revision(),std::span<const WireChange>(&tap,1)).ok());
 }
 
+// B1/B2 deterministic nonzero PCM reference, actual publisher and separate
+// callback thread. No hardware claim; report numerical discontinuity bounds.
+static void verifyContinuousLiveEditPcm() {
+    using Kind=ChannelEdit::Kind;
+    for(const int rate:{44100,48000,96000}){
+        DynamicChannelRoster roster;
+        std::array<ChannelEdit,4> create{};
+        for(std::size_t i=0;i<create.size();++i){
+            create[i].kind=Kind::add;create[i].position=i;
+            create[i].role=i<2?ChannelRole::input:i==2?ChannelRole::main:ChannelRole::monitor;
+            create[i].format=ProcessingFormat::stereo;
+        }
+        const auto made=roster.edit(0,create);assert(made.ok());
+        const auto gone=made.createdIds[0],keep=made.createdIds[1];
+        const auto main=made.createdIds[2],mon=made.createdIds[3];
+        std::array<ChannelEdit,4> wires{};
+        for(int i=0;i<4;++i){
+            wires[i].kind=Kind::addSendReference;
+            wires[i].id=i<2?gone:keep;wires[i].target=i%2?mon:main;
+            wires[i].value=i%2?.5f:1.f;wires[i].preFader=i%2!=0;
+        }
+        assert(roster.edit(roster.revision(),wires).ok());
+        DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=512;
+        req.sources={{gone,0,1,true},{keep,2,3,true}};
+        // A real retained delay processor on the surviving lane. The graph
+        // inserts alignment delays on the removed lane's PRE/POST/direct taps.
+        struct FxState {ChannelId keep;armix::dsp::StereoLatencyDelay delay;};
+        auto fxState=std::make_shared<FxState>();fxState->keep=keep;
+        assert(fxState->delay.prepare(37));
+        auto fxPlan=[&](std::uint64_t rev){
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=fxState;fx.context=fxState.get();fx.deviceEpoch=41;fx.graphRevision=rev;
+            fx.latency=+[](void* p,ChannelId id) noexcept {
+                return static_cast<FxState*>(p)->keep==id?37:0;
+            };
+            fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {
+                auto& state=*static_cast<FxState*>(p);
+                if(id==state.keep)for(int i=0;i<n;++i)state.delay.process(l[i],r[i]);
+            };
+            return fx;
+        };
+        DynamicNativeSessionPublisher host;
+        assert(host.commit(roster,req,0,41,41,true,fxPlan(1)).ok());
+        assert(host.setExternalOutput(41,1,gone,4,5,8));
+        assert(host.setExternalOutput(41,1,keep,6,7,8));
+        std::array<float,512> a{},b{},c{},d{},l{},r{},ml{},mr{},xl{},xr{},yl{},yr{};
+        a.fill(.4f);b.fill(-.3f);c.fill(.2f);d.fill(-.1f);
+        const float* inputs[]{a.data(),b.data(),c.data(),d.data()};
+        float* outputs[]{l.data(),r.data(),ml.data(),mr.data(),xl.data(),xr.data(),yl.data(),yr.data()};
+        const auto noFx=[](ChannelId,float*,float*,int) noexcept {};
+        const auto render=[&](int frames){
+            return host.render(41,inputs,4,l.data(),r.data(),frames,false,noFx,
+                ml.data(),mr.data(),{},{},{},outputs,8);
+        };
+        assert(render(512));assert(render(512));
+        assert(close(l[511],.6f)&&close(ml[511],.3f)&&close(xl[511],.4f)&&close(yl[511],.2f));
+        // B2: identical PDC, new FX metadata; mid-fader slew and external tap
+        // must continue from last applied coefficient, not reset to the target.
+        assert(host.setChannelMix(41,1,keep,.5f,0.f));
+        assert(roster.rememberLiveMix(keep,.5f,0.f));
+        assert(render(16));
+        const float previous=l[15];
+        ChannelEdit insert;insert.kind=Kind::addInsertReference;insert.id=gone;insert.text="test.zero.latency";
+        assert(roster.edit(roster.revision(),std::span<const ChannelEdit>(&insert,1)).ok());
+        assert(host.commit(roster,req,1,41,41,false,fxPlan(2),false,true,nullptr,nullptr,true).ok());
+        assert(render(17));
+        const float expectedStep=-.2f*.5f/64.f;
+        assert(close(l[0],previous+expectedStep,2.e-5f));
+        assert(close(xl[0],.4f)&&close(yl[0],l[0]-.4f));
+        assert(render(512));
+        host.pollRetirement();
+        assert(close(l[511],.5f));
+        // B1: same PDC after deletion. Sample trace covers PRE, POST,
+        // dedicated external tap and unaffected surviving signal.
+        auto next=roster;assert(next.removeInputAndDisconnect(next.revision(),gone).ok());
+        auto nextReq=req;nextReq.sources.erase(nextReq.sources.begin());
+        std::atomic<bool> stop{false},failed{false};
+        float maxStep=0.f,maxUnrelated=0.f,maxPreError=0.f,old=.5f,tail=.5f;
+        bool heardRamp=false;
+        std::thread audio([&]{
+            const int blocks[]{16,127,31,512,64,193};
+            unsigned block=0;
+            while(!stop.load(std::memory_order_acquire)){
+                const int n=blocks[block++%6];
+                if(!render(n)){failed.store(true);break;}
+                for(int j=0;j<n;++j){
+                    maxStep=std::max(maxStep,std::abs(l[j]-old));old=l[j];tail=l[j];
+                    maxUnrelated=std::max(maxUnrelated,std::abs(yl[j]-.1f));
+                    maxPreError=std::max(maxPreError,std::abs(ml[j]-(l[j]-.1f)*.5f-.1f));
+                    if(l[j]>.1001f&&l[j]<.4999f)heardRamp=true;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+        const int fade=static_cast<int>(std::ceil(rate*.008));
+        const auto removed=host.commit(next,nextReq,2,41,41,false,fxPlan(3),
+            false,false,nullptr,nullptr,false,gone,fade);
+        // Let the exact new revision render, but never use timing as a fade
+        // completion criterion in the production path.
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        stop.store(true,std::memory_order_release);audio.join();
+        assert(removed.ok()&&!failed.load()&&heardRamp);
+        assert(close(tail,.1f)&&maxUnrelated<2.e-5f);
+        assert(maxStep<=.4f/static_cast<float>(fade)+2.e-5f);
+        assert(maxPreError<2.e-5f);
+        assert(!host.acceptedRouting(41,3)->find(gone));
+        std::printf("P0_B_CONTINUITY rate=%d fade=%d max_step=%.8f unaffected_error=%.8f pre_error=%.8f\n",
+            rate,fade,maxStep,maxUnrelated,maxPreError);
+        // Latency-changing live rebuild is rejected before any fade starts.
+        auto incompatible=fxPlan(4);incompatible.latency=+[](void*,ChannelId) noexcept {return 0;};
+        const auto reject=host.commit(next,nextReq,3,41,41,false,incompatible,
+            false,true,nullptr,nullptr,true);
+        assert(reject.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable);
+        assert(host.acceptedRevision()==3&&render(16)&&close(l[0],.1f));
+    }
+}
+
 int main() {
+    verifyContinuousLiveEditPcm();
     verifyNativePrePostAndSendEnablePcm();
     verifyNativeInputGainBeforeFx();
     verifyDynamicInPlacePhysicalIOBuffers();
