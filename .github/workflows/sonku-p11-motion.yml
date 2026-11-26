@@ -1,0 +1,47 @@
+name: SonKu P11 motion-aware acoustic research
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify_sonku_p11_motion.py'
+      - 'tests/sonku_p105_program_material.cpp'
+      - '.github/workflows/sonku-p11-motion.yml'
+permissions:
+  contents: read
+jobs:
+  motion:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify approved source identity
+        run: python scripts/verify_immersib_approved_pcm_sources.py
+      - name: Install offline audio measurement tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: GNU motion and blind audition
+        if: runner.os == 'Linux'
+        run: python3 scripts/verify_sonku_p11_motion.py
+      - name: MSVC motion PCM
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdline = 'call "' + $vcvars + '" >nul && python scripts/verify_sonku_p11_motion.py --msvc --verify-only'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'SONKU_P11_MOTION_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P11-motion-${{ matrix.os }}
+          path: sonku-p11-motion/
+          if-no-files-found: error
+          retention-days: 14

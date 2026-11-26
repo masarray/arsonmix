@@ -21,9 +21,14 @@ int main(int argc,char** argv){
     src.seekg(0);src.read(reinterpret_cast<char*>(input.data()),bytes);
     if(!src)return 3;
     const std::filesystem::path out=argv[2];std::filesystem::create_directories(out);
-    for(int c=0;c<14;++c){
+#ifdef SONKU_P11_MOTION_AB
+    constexpr int cases=15;
+#else
+    constexpr int cases=14;
+#endif
+    for(int c=0;c<cases;++c){
         auto dsp=std::make_unique<SonKuSpatialCore>();
-        if(c<6||c==13)dsp->optInP99ForSonKuInsert();
+        if(c<6||c>=13)dsp->optInP99ForSonKuInsert();
         else {dsp->optInImmerSIBStageMonitor();dsp->optInImmerSIBVocalRoom();dsp->optInImmerSIBMusicalEq();}
         if(!dsp->prepare(rate,SonKuReflectionProfile::SixSurfaceKemarResearch))return 4;
         auto s=p99::DefaultOrbitStage::settings();
@@ -32,7 +37,7 @@ int main(int argc,char** argv){
         if(c==4){s.spacePreset=0;s.roomAmount=0.f;s.ambience=0.f;}
         if(c==5)s.spatialMix=0.f;
         if(c>=6&&c<13)s=armix::builtin_fx::imersipP92Factory(c-4);
-        if(c==13)s.moving=true;
+        if(c>=13)s.moving=true;
         if(!valid(s)||!dsp->setSettings(s))return 5;
         dsp->reset();
         std::ofstream f(out/(std::to_string(c)+".f32"),std::ios::binary);
@@ -53,6 +58,11 @@ int main(int argc,char** argv){
                     default:edit=false;break;
                 }
                 if(edit&&(!valid(s)||!dsp->setSettings(s)))return 9;
+            }
+            if(c==14 && (pos==3*rate||pos==5*rate||pos==7*rate||
+                          pos==9*rate||pos==11*rate||pos==12*rate)){
+                s.moving=!s.moving;
+                if(!valid(s)||!dsp->setSettings(s))return 10;
             }
             const int n=std::min(block,13*rate-pos);
             for(int i=0;i<n;++i){l[i]=input[2*(pos+i)];r[i]=input[2*(pos+i)+1];}
