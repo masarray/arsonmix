@@ -37,6 +37,9 @@ on:
       - 'tests/downloads_runtime_contract.test.mjs'
       - 'tests/landing_page_download_contract_test.py'
       - 'tests/release_ci_dispatch_contract.test.mjs'
+      - 'scripts/release_trust_manifest.py'
+      - 'tests/test_release_trust_manifest.py'
+      - '.github/workflows/release-attestation-probe.yml'
       - '.github/workflows/release-control.yml'
       - '.github/workflows/alpha-preview-publish.yml'
       - '.github/workflows/crossplatform-native-qualification.yml'
@@ -73,6 +76,9 @@ on:
       - 'tests/downloads_runtime_contract.test.mjs'
       - 'tests/landing_page_download_contract_test.py'
       - 'tests/release_ci_dispatch_contract.test.mjs'
+      - 'scripts/release_trust_manifest.py'
+      - 'tests/test_release_trust_manifest.py'
+      - '.github/workflows/release-attestation-probe.yml'
       - '.github/workflows/release-contracts.yml'
 
 permissions:
@@ -104,6 +110,7 @@ jobs:
           node --test tests/downloads_runtime_contract.test.mjs
           node --check scripts/release_ci_dispatch.mjs
           node --test tests/release_ci_dispatch_contract.test.mjs
+          python -m unittest discover -s tests -p test_release_trust_manifest.py -v
           python tests/test_release_catalog.py
           python tests/test_cloudflare_pages_build.py
           python tests/test_release_setup_zip.py

@@ -19,8 +19,7 @@ on:
         default: ''
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 concurrency:
   group: port-${{ inputs.platform }}-${{ inputs.expected_sha }}
@@ -35,6 +34,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.expected_sha }}
+          persist-credentials: false
           fetch-depth: 0
       - name: Lease exact owner-approved branch SHA and test known portability blockers
         shell: bash
@@ -46,6 +46,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          test "$GITHUB_SHA" = "$EXPECTED_SHA"
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$EXPECTED_SHA"
           python scripts/check_platform_portability.py --platform "$TARGET_PLATFORM"
@@ -53,6 +54,9 @@ jobs:
           if [[ -n "$RELEASE_TAG" ]]; then
             [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
             test "$SOURCE_BRANCH" = "releases/alpha/$RELEASE_TAG"
+            refs="$(git ls-remote --tags origin "refs/tags/$RELEASE_TAG" "refs/tags/$RELEASE_TAG^{}")"
+            actual="$(printf '%s\n' "$refs" | tail -n 1 | cut -f1)"
+            test "$actual" = "$EXPECTED_SHA"
             gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > /tmp/armix-release.json
             python3 - "$EXPECTED_SHA" "$RELEASE_TAG" "$TARGET_PLATFORM" <<'PY'
           import json,sys
@@ -60,6 +64,8 @@ jobs:
           sha,tag,platform=sys.argv[1:]
           if r.get("tag_name")!=tag or r.get("target_commitish")!=sha or r.get("draft"):
               raise SystemExit("Release tag/source SHA mismatch")
+          if r.get("immutable"):
+              raise SystemExit("Immutable release cannot accept an additional platform")
           if not any(a.get("name","").endswith("Windows-x64-Setup.exe")
                      and a.get("state")=="uploaded" for a in r.get("assets",[])):
               raise SystemExit("Exact-SHA Windows preview must be published first")
@@ -78,6 +84,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.expected_sha }}
+          persist-credentials: false
       - name: Linux host prerequisites
         if: ${{ inputs.platform == 'linux' }}
         run: |
@@ -88,6 +95,7 @@ jobs:
           repository: juce-framework/JUCE
           ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
           path: third_party/JUCE
+          persist-credentials: false
       - name: Configure native app against JUCE 8 (one universal Apple build)
         shell: bash
         env:
@@ -116,6 +124,7 @@ jobs:
           set -euo pipefail
           if [[ -z "$TAG" ]]; then TAG=v0.5.0-alpha.0; fi
           bash "scripts/package_native_$PLATFORM.sh" "$SOURCE_SHA" "$TAG" "dist-$PLATFORM"
+          python3 scripts/release_trust_manifest.py create --directory "dist-$PLATFORM" --platform "$PLATFORM" --tag "$TAG" --sha "$SOURCE_SHA"
       - name: Store candidate for inspection (not proof of physical audio)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -123,6 +132,51 @@ jobs:
           path: dist-${{ inputs.platform }}/
           if-no-files-found: error
           retention-days: 14
+  publish:
+    name: Attest and publish exact OS release (no compiler)
+    needs: native
+    if: github.repository == 'masarray/arsonmix' && inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+      id-token: write
+      attestations: write
+    env:
+      SOURCE_SHA: ${{ inputs.expected_sha }}
+      TAG: ${{ inputs.release_tag }}
+      PLATFORM: ${{ inputs.platform }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.expected_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ArSonMix-${{ inputs.platform }}-${{ inputs.expected_sha }}
+          path: dist-${{ inputs.platform }}
+      - name: Verify transferred release identity and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_SHA" = "$SOURCE_SHA"
+          test "$GITHUB_REF" = "refs/heads/releases/alpha/$TAG"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          python3 scripts/release_trust_manifest.py verify --directory "dist-$PLATFORM" --platform "$PLATFORM" --tag "$TAG" --sha "$SOURCE_SHA"
+      - name: Attest exact OS package and metadata
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: 'dist-${{ inputs.platform }}/*'
+      - name: Verify cryptographic publisher identity before publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for asset in "dist-$PLATFORM"/*; do
+            gh attestation verify "$asset" --repo masarray/arsonmix --signer-workflow masarray/arsonmix/.github/workflows/crossplatform-native-qualification.yml --source-ref "$GITHUB_REF" --source-digest "$SOURCE_SHA" --signer-digest "$SOURCE_SHA" --deny-self-hosted-runners
+          done
       - name: Publish genuine OS binary only to matching already published Windows tag
         if: ${{ inputs.release_tag != '' }}
         shell: bash
@@ -136,12 +190,15 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(git ls-remote origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+          refs="$(git ls-remote --tags origin "refs/tags/$TAG" "refs/tags/$TAG^{}")"
+          actual="$(printf '%s\n' "$refs" | tail -n 1 | cut -f1)"
+          test "$actual" = "$SOURCE_SHA"
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" > /tmp/armix-release-check.json
           python3 - "$SOURCE_SHA" "$TAG" "$PLATFORM" <<'PY'
           import json,sys
           r=json.load(open("/tmp/armix-release-check.json",encoding="utf-8"))
           sha,tag,platform=sys.argv[1:]
-          if r.get("target_commitish")!=sha or r.get("tag_name")!=tag:
+          if r.get("draft") or r.get("immutable") or r.get("target_commitish")!=sha or r.get("tag_name")!=tag:
               raise SystemExit("Different release source; never upload")
           prefix="ArSonMix-"+tag+("-Linux-" if platform=="linux" else "-macOS-")
           if any(a.get("name","").startswith(prefix) for a in r.get("assets",[])):
@@ -150,10 +207,10 @@ jobs:
           shopt -s nullglob
           if [[ "$PLATFORM" == "linux" ]]; then
             assets=(dist-linux/ArSonMix-*.tar.gz)
-            extras=(dist-linux/LINUX_PROVENANCE.json dist-linux/SHA256SUMS-Linux.txt)
+            extras=(dist-linux/LINUX_PROVENANCE.json dist-linux/SHA256SUMS-Linux.txt dist-linux/RELEASE_TRUST-linux.json)
           else
             assets=(dist-macos/ArSonMix-*.dmg)
-            extras=(dist-macos/MACOS_PROVENANCE.json dist-macos/SHA256SUMS-macOS.txt)
+            extras=(dist-macos/MACOS_PROVENANCE.json dist-macos/SHA256SUMS-macOS.txt dist-macos/RELEASE_TRUST-macos.json)
           fi
           test "${#assets[@]}" -eq 1
           for asset in "${extras[@]}"; do test -s "$asset"; done
@@ -165,5 +222,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if ! gh workflow run pages-publish.yml --repo "$GITHUB_REPOSITORY" --ref main; then
-            echo "::warning::Published binary is immutable; repair landing sync separately without an OS rebuild."
+            echo "::warning::Published binary is not overwritten; repair landing sync separately without an OS rebuild."
           fi
