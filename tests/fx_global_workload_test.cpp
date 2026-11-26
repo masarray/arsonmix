@@ -66,12 +66,12 @@ static void history(){
     std::uint32_t rng=1234567;
     auto next=[&](){rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;};
     auto bits=[](float x){return std::bit_cast<std::uint32_t>(x);};
-    std::array<float,257> l{},r{},oldL{},oldR{},newL{},newR{};
+    std::array<float,257> l{},r{},oldL{},oldR{},newL{},newR{},directL{},directR{};
     unsigned blocks=0;
     for(int latency:{1,7,19,64,304,1152,4096})
     for(double rate:{44100.,48000.,96000.}){
-        armix::dsp::StereoLatencyDelay oldDelay,newDelay;
-        assert(oldDelay.prepare(latency)&&newDelay.prepare(latency));
+        armix::dsp::StereoLatencyDelay oldDelay,newDelay,directDelay;
+        assert(oldDelay.prepare(latency)&&newDelay.prepare(latency)&&directDelay.prepare(latency));
         armix::dsp::FxBypassEnvelope oldFade,newFade;
         oldFade.prepare(false,rate,latency);newFade.prepare(false,rate,latency);
         bool bypass=false;
@@ -87,6 +87,20 @@ static void history(){
                 r[i]=i%11==0?-0.f:l[i]*-.75f;
                 oldL[i]=l[i];oldR[i]=r[i];oldDelay.process(oldL[i],oldR[i]);
             }
+            // Third implementation: actual in-place aligned dry shortcut
+            // versus the original separate delayed scratch and copy.
+            if(fault||fully){
+                for(int i=0;i<n;++i){
+                    directL[i]=l[i];directR[i]=r[i];
+                    directDelay.process(directL[i],directR[i]);
+                    assert(bits(directL[i])==bits(oldL[i])&&bits(directR[i])==bits(oldR[i]));
+                }
+            }else if(fading){
+                for(int i=0;i<n;++i){
+                    float dl=l[i],dr=r[i];directDelay.process(dl,dr);
+                    assert(bits(dl)==bits(oldL[i])&&bits(dr)==bits(oldR[i]));
+                }
+            }else directDelay.advanceHistory(l.data(),r.data(),n);
             if(!fault&&!fading&&!fully)newDelay.advanceHistory(l.data(),r.data(),n);
             else for(int i=0;i<n;++i){
                 newL[i]=l[i];newR[i]=r[i];newDelay.process(newL[i],newR[i]);

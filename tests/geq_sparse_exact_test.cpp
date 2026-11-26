@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <limits>
 #include <cstdint>
+#include <chrono>
 using armix::builtin_fx::GraphicEq31Core;
 using Reference=armix::test::geq_reference::GraphicEq31Core;
 static std::uint32_t bits(float x){return std::bit_cast<std::uint32_t>(x);}
@@ -52,4 +53,28 @@ int main(){
     }
     assert(count==18000&&unity>1000);
     std::printf("PASS: %u GEQ sparse/flat/automation blocks bit-exact vs frozen prior core; %u unity shortcuts\n",count,unity);
+    // Descriptive same-runner core A/B only. No timing gate: OS scheduling,
+    // compiler and synthetic PCM are not an ASIO field measurement.
+    const auto bench=[](auto& core,int bands){
+        assert(core.prepare(48000.));
+        for(int i=0;i<bands;++i)assert(core.setGain(static_cast<unsigned>(5+i*7),3.));
+        std::array<float,64> l{},r{};
+        double checksum=0.;
+        const auto start=std::chrono::steady_clock::now();
+        for(int block=0;block<100000;++block){
+            for(unsigned i=0;i<64;++i){l[i]=static_cast<float>((i+block)%63)/128.f;r[i]=-l[i];}
+            core.processStereo(l.data(),r.data(),l.size());
+            checksum+=l[static_cast<unsigned>(block)%64];
+        }
+        const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now()-start).count();
+        return std::pair{ns,checksum};
+    };
+    for(int bands:{0,3}){
+        GraphicEq31Core fast;Reference old;
+        const auto baseline=bench(old,bands),optimized=bench(fast,bands);
+        assert(baseline.second==optimized.second);
+        std::printf("GEQ CORE A/B bands=%d old_ns/block=%.1f new_ns/block=%.1f (non-gating)\n",
+            bands,baseline.first/100000.,optimized.first/100000.);
+    }
 }

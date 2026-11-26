@@ -210,6 +210,18 @@ public:
                 nativeControl->canSkipParkedBypass();
             const auto action=armix::rt::chooseFxRenderAction(idleCapability,
                 continuousBypassProcessing,requestedBypass,fullyBypassed,fading,latencyFault,parkedBypass);
+            if(action==armix::rt::FxRenderAction::alignedDry) {
+                if(parkedBypass)addRealtimeCounter(dspParkedBypassBlocks,1);
+                immerseIdle.reset();
+                dspSleeping.store(false,std::memory_order_relaxed);
+                dspLastUs.store(0,std::memory_order_relaxed);
+                // Settled bypass/fault/qualified parked bypass consumes
+                // ONLY delayed dry. Render directly in the caller's PCM:
+                // same ring operations, no redundant scratch round trip.
+                if(latencySamples!=0)
+                    for(int i=0;i<samples;++i)dryDelay.process(left[i],right[i]);
+                processing.clear(std::memory_order_release);return;
+            }
             // Latent inserts must advance their dry delay every block, even
             // when fully wet. Zero-latency inserts need dry scratch ONLY
             // while mixing a fade or continuously processing a dry bypass.
@@ -225,21 +237,9 @@ public:
                     dryLeft[static_cast<std::size_t>(i)]=l;
                     dryRight[static_cast<std::size_t>(i)]=r;
                 }
-            } else if(action!=armix::rt::FxRenderAction::alignedDry &&
-                      (fading || (fullyBypassed&&continuousBypassProcessing))) {
+            } else if(fading || (fullyBypassed&&continuousBypassProcessing)) {
                 juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
                 juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
-            }
-            if(action==armix::rt::FxRenderAction::alignedDry) {
-                if(parkedBypass)addRealtimeCounter(dspParkedBypassBlocks,1);
-                immerseIdle.reset();
-                dspSleeping.store(false,std::memory_order_relaxed);
-                dspLastUs.store(0,std::memory_order_relaxed);
-                if(latencySamples!=0) {
-                    juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
-                    juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
-                }
-                processing.clear(std::memory_order_release);return;
             }
             // Harmony alone remains timeline-warm while fully bypassed.
             // The host consumes real PCM, but publishes the exact PDC dry path:

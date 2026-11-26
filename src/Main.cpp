@@ -4253,6 +4253,9 @@ private:
                   "Published counts may lag up to 31 timed calls; external CH1 uses sparse observations "
                   "and a graph/physical-slot identity, not all-call peaks. Sampled silent PCM is not "
                   "proof of drained state. Reviews are advisory; no automatic bypass or suspend.\n";
+        result << "workloadWindow*: last complete 32 processor observations, frame-weighted mean "
+                  "and observed peak; original CH1 is sparse. Not a time window or current load; "
+                  "may be stale after idle/bypass. Lifetime peak remains separate.\n";
         result << "\n=== STATUS SNAPSHOT (measured / source-labeled) ===\n";
         result << juce::JSON::toString (status, true) << "\n";
         result << "\n=== RECENT EVENTS (latest 48, capture on control thread) ===\n";
