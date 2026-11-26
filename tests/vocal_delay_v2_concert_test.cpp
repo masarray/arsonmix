@@ -31,7 +31,7 @@ static void scenario(double rate,std::size_t preset){
         CHECK(l[i]==a[i]&&r[i]==b[i]&&std::isfinite(l[i])&&std::abs(l[i])<=1.00001f&&std::abs(r[i])<=1.00001f);
         if(i<std::size_t(rate*2.55)||p.throwMode==ThrowMode::manual)CHECK(l[i]==dry[i]&&r[i]==dry[i]);
         if(l[i]!=dry[i]||r[i]!=dry[i])first=std::min(first,i);
-        if(i>=std::size_t(rate*2.55)&&i<std::size_t(rate*4.2)){tail+=std::abs(l[i])+std::abs(r[i]);side+=std::abs(l[i]-r[i]);}
+        if(i>=std::size_t(rate*2.55)&&i<std::size_t(rate*4.2)){tail+=std::abs(l[i]-dry[i])+std::abs(r[i]-dry[i]);side+=std::abs(l[i]-r[i]);}
     }
     if(p.throwMode!=ThrowMode::manual){CHECK(tail>rate*.0005&&side>rate*.0001);CHECK(first>=std::size_t(rate*2.65));}
     else CHECK(tail==0);
