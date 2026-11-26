@@ -91,7 +91,7 @@ test('native LUFS/true peak are shown only with qualified live measurement prove
  assert.match(src,/masterLoudness_\.publish\(measured,juce::jmin\(outputChannels,2\),samples\)/);
  assert.doesNotMatch(src,/masterLoudness_\.process\(/);
  const tap=read('engine/dsp/NativeMasterAnalysisTap.h');
- const producer=tap.slice(tap.indexOf('void publish('),tap.indexOf('Reading read() const'));
+ const producer=tap.slice(tap.indexOf('void publish('),tap.indexOf('Reading read() const')).replace(/\/\/[^\r\n]*/g, ""); // inspect code, not explanatory comments
  assert.match(producer,/queue_->push\(gen,pcm,count,n\)/);
  assert.match(producer,/gapGeneration_\.store\(gen,std::memory_order_release\)/);
  assert.doesNotMatch(producer,/meter\.process|lock_guard|sleep_for|new |make_unique/);
