@@ -999,7 +999,7 @@
     }):null;
     const armed=accepted.device.outputArmed===true;
     const recommendations=[];
-    let state="COLLECTING";
+    let state=armed?"COLLECTING":"MUTED";
     if(!armed)recommendations.push("Outputs disarmed. Inspect routing before enabling monitoring.");
     else if(!enough)recommendations.push("Collect at least 64 render callbacks within one valid 1-second interval.");
     else if(over>0)recommendations.push("Render deadline exceeded in "+over+
