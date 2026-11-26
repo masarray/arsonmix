@@ -3719,9 +3719,9 @@
     editButton.disabled=busy||!edit;
     const mixHint=extraField("mix-hint");
     mixHint.hidden=modeButton.hidden&&starterButton.hidden&&editButton.hidden&&!armed;
-    const hint=starter?"Headphones are silent until you create a mix. Start at low listening volume. The starter sends follow MAIN channel faders (POST); use PRE in the mixer for independent levels.":
-      split?mix.reason+(edit?" · Edit headphone mix to adjust sends. PRE sends are independent of MAIN channel faders.":""):
-      mix.available?"Headphones and OBS receive the same mix. Separate mix starts silent until you create it.":mix.reason;
+    const hint=starter?"Headphones have no sends. Create a quiet PRE-fader mix, or edit existing routing in the mixer.":
+      split?mix.reason+(edit?" · Edit headphone mix to adjust sends. PRE sends ignore the source channel fader.":""):
+      mix.available?"Headphones and OBS receive the same mix. "+mix.reason:mix.reason;
     if(mixHint.textContent!==hint)mixHint.textContent=hint;
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
@@ -4665,7 +4665,12 @@
     if(!firstSoundButton)return;
     const plan=protocol.firstSoundPlan(next);
     const busy=firstSoundBusy();
+    // The shared premium .tool style uses display:inline-flex!important.
+    // Keep semantic hidden AND remove the actual hitbox from the toolbar.
     if(firstSoundButton.hidden!==!plan)firstSoundButton.hidden=!plan;
+    if(!plan)firstSoundButton.style.setProperty("display","none","important");
+    else if(firstSoundButton.style.getPropertyValue("display")==="none")
+      firstSoundButton.style.removeProperty("display");
     const disabled=busy||!deviceReady();
     if(firstSoundButton.disabled!==disabled)firstSoundButton.disabled=disabled;
     const label=plan?.pins.length===1?"Connect input":"Connect microphone";
@@ -5073,7 +5078,7 @@
       firstSoundButton=item("button","tool","Connect microphone");
       firstSoundButton.dataset.nativeFirstSound="true";
       firstSoundButton.hidden=true;
-      firstSoundButton.style.cssText="border-color:#638994;color:#b9e2ed";
+      firstSoundButton.style.cssText="border-color:#638994;color:#b9e2ed;display:none!important";
       firstSoundButton.title="Connect a microphone to an unused native mixer";
       firstSoundButton.addEventListener("click",openFirstSound);
       toolbar.insertBefore(firstSoundButton,io);

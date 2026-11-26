@@ -10083,7 +10083,7 @@ private:
                     autoMainEpoch_=0;
                     engine_.setMonitorEnabled(false);
                     engine_.disarmSecondaryOutput();
-                    error=engine_.patchDmxSplitOutput(ep,rev,roster,bool(enable));
+                    error=engine_.patchDmxSplitOutput(ep,rev,roster,bool(enable),true);
                     const auto acceptedRevision=engine_.outputArmRevision();
                     if(generation==secondaryRetry_.generation()&&!pendingSecondaryStop_&&
                        engine_.dryRoutingLabEpoch()==ep&&
@@ -10108,7 +10108,7 @@ private:
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixSecondaryOutputAck",juce::var(ack.release()));
             return emitNotice(error.isNotEmpty()?error:
-                (bool(enable)?"Independent monitor selected · use MONITOR sends to build your headphone mix":
+                (bool(enable)?"Separate headphone mix selected · edit MONITOR sends in the mixer":
                 "Same mix selected · restoring verified outputs"),error.isNotEmpty());
         }
         if(action=="secondaryOutputEnable" || action=="secondaryOutputConnect" ||

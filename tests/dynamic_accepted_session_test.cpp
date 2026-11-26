@@ -1117,7 +1117,59 @@ static void verifyDualMixSharedReturnPcm() {
     std::puts("DMX_SHARED_RETURN_PCM_PASS one render, first sample dry, independent return, slew, stable edge, terminal rejection");
 }
 
+// The same starter planner used by the production split transaction, plus
+// the explicit unmapped-sink path. No auto-patch of GROUP children or
+// authored monitor routes; MAIN and monitor faders are independent.
+static void verifyHeadphoneStarterAndDormantSinkPcm() {
+    constexpr std::uint64_t epoch=9671;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest route;route.physicalInputs=2;route.maxFrames=64;
+    const std::array<ChannelEdit,4> rows{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::group,"GROUP",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto a=session.edit(0,0,rows,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0],group=a.edit.createdIds[1],
+        main=a.edit.createdIds[2],monitor=a.edit.createdIds[3];
+    route.sources={{voice,0,1,true}};
+    const std::array<ChannelEdit,2> links{output(voice,group),output(group,main)};
+    assert(session.edit(1,1,links,route,epoch,epoch,true).ok());
+    const auto changes=planHeadphoneStarter(session.acceptedRoster(),main,monitor);
+    assert(changes.size()==1&&changes[0].from==group&&changes[0].preFader&&
+           near(changes[0].gain,.25f));
+    assert(session.wireTransaction(2,2,changes,route,epoch,epoch,true).ok());
+    assert(planHeadphoneStarter(session.acceptedRoster(),main,monitor).empty());
+    const auto* row=session.acceptedRoster().find(group);
+    const auto edge=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.destination==monitor;});
+    assert(edge!=row->sends.end()&&edge->preFader&&!edge->primaryOutput&&edge->edgeId);
+    const auto id=edge->edgeId;
+    std::array<float,64> inL{},inR{},mainL{},mainR{},monL{},monR{};
+    inL.fill(.2f);inR.fill(.1f);
+    const float* pins[]{inL.data(),inR.data()};
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    assert(session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx,monL.data(),monR.data()));
+    assert(near(mainL[63],.2f)&&near(monL[63],.05f));
+    assert(session.setLiveMix(epoch,3,group,.5f,0.f));
+    assert(session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx,monL.data(),monR.data()));
+    assert(near(mainL[63],.1f)&&near(monL[63],.05f));
+    // Missing monitor is still rejected unless the installed output plan
+    // explicitly authorizes a dormant logical sink. No scratch copy needed.
+    assert(!session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx));
+    assert(session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx,
+        nullptr,nullptr,{},{},{},true));
+    assert(near(mainL[63],.1f)&&near(mainR[63],.05f));
+    assert(session.setLiveWireGain(epoch,3,group,id,.125f));
+    assert(session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx,monL.data(),monR.data()));
+    assert(near(mainL[63],.1f)&&near(monL[63],.025f));
+    assert(session.acceptedGraphRevision()==3);
+    session.unpublish();session.pollRetirement();
+}
+
 int main() {
+    verifyHeadphoneStarterAndDormantSinkPcm();
     verifyDualMixSharedReturnPcm();
     verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm();
     verifyNativeDeleteTrackRetainsUnrelatedWires();

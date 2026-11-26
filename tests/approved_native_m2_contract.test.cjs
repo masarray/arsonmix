@@ -7765,7 +7765,8 @@ test("U4 independent headphone mix uses admitted two-pin native scope and correl
 test("U4 preserves authored monitor WIREs and reuses healthy prepared render after graph-only mode change",()=>{
  const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[0,1]},graph:{revision:"19",rosterRevision:"23",channels:[{id:"8",role:"MONITOR",inserts:[]}],edges:[{from:"3",to:"8"}]},raw:{physicalBusOutputObserved:true,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1],externalOutputs:[]}};
  const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
- assert.equal(protocol.secondaryMixMode(s,live).available,false);
+ assert.equal(protocol.secondaryMixMode(s,live).available,true);
+ assert.equal(protocol.secondaryMixMode(s,live).value.enabled,false);
  assert.match(protocol.secondaryMixMode(s,live).reason,/preserved/);
  assert.equal(protocol.secondaryMixMode({...s,graph:{...s.graph,edges:[]}},live).available,true);
  const e=read("src/LiveAudioEngine.h");const f=e.slice(e.indexOf("juce::String restoreSecondaryOutput("),e.indexOf("void disarmSecondaryOutput()"));
@@ -7782,10 +7783,18 @@ test("U4 starter mix is an atomic native WIRE transaction, no overwrite of autho
  assert.equal(protocol.secondaryMonitorStarter({...s,graph:{...s.graph,edges:[...s.graph.edges,{from:"3",to:"8"}]}},live),null);
  assert.equal(protocol.secondaryMonitorStarter(s,{...live,secondaryOutputArmed:false}),null);
  const l=read("src/LiveDryRoutingLab.h");const f=l.slice(l.indexOf("NativeBusResult seedIndependentMonitor("),l.indexOf("NativeBusResult applyNativeWireTransaction("));
- assert.match(f,/send.destination==graph.ids.monitor/);
- assert.match(f,/send.destination==graph.ids.main&&send.primaryOutput&&send.enabled/);
- assert.match(f,/std::min\(0.25f,1.f\/static_cast<float>\(changes.size\(\)\)\)/);
+ const core=read("engine/core/DynamicChannelRoster.h");
+ const planner=core.slice(core.indexOf("inline std::vector<WireChange> planHeadphoneStarter("));
+ assert.match(planner,/send.destination==monitor/);
+ assert.match(planner,/send.destination==main&&send.primaryOutput&&send.enabled/);
+ assert.match(planner,/std::min\(0.25f,1.f\/static_cast<float>\(changes.size\(\)\)\)/);
+ assert.match(planner,/change.preFader=true/);
+ assert.match(f,/planHeadphoneStarter\(graph.roster,graph.ids.main,graph.ids.monitor\)/);
  assert.match(f,/return applyNativeWireTransaction\(ep,rev,rosterRev,changes\)/);
+ const split=l.slice(l.indexOf("juce::String patchDmxSplitOutput("),l.indexOf("juce::String patchNativeBusOutput("));
+ assert.match(split,/roster.wireTransaction\(roster.revision\(\),changes\)/);
+ assert.doesNotMatch(split,/ChannelEdit::Kind::remove/);
+ assert.match(l,/nativeDormantMonitorBit/);
 });
 
 

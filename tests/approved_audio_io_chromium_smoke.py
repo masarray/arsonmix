@@ -567,7 +567,7 @@ def verify_additional_output(page,out):
     assert not errors,errors
 
 
-def verify_independent_output(page,out):
+def verify_independent_output(page,out,legacy_empty=False):
     """Two-pin native fixture: one mode action, no manual mute/arm ritual."""
     page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
       window.__JUCE__={backend:{
@@ -620,6 +620,13 @@ def verify_independent_output(page,out):
              "controls":{"faderDb":0,"pan":0,"mute":False,"solo":False},"inserts":[],"sends":[]}
     state["graph"]["channels"].append(monitor)
     state["graph"]["destinations"].append({k:monitor[k] for k in ("id","role","name")})
+    monitor_edge={"edgeId":"9223372036854775900","from":SOURCE,"to":monitor_id,
+        "primaryOutput":False,"gainLinear":.25,"tap":"PRE_FADER","enabled":True,"sendEnabled":True,"signalKind":"AUDIO"}
+    if not legacy_empty:
+        state["graph"]["rosterRevision"]="4" # creation + starter in one graph publication
+        state["graph"]["edges"].append(monitor_edge)
+    state["mixerSession"].update(routeRevision="3",rosterRevision=state["graph"]["rosterRevision"],
+        channels=copy.deepcopy(state["graph"]["channels"]))
     emit(page,"arMixConsoleSnapshot",state)
     live["dryRoutingLab"]["busOutputObserved"]=True
     live.update(secondaryOutputArmed=True,secondaryOutputRecovering=False)
@@ -627,21 +634,23 @@ def verify_independent_output(page,out):
     assert panel.get_by_role("button",name="Use same mix").is_enabled()
     assert panel.locator("[data-extra-status]").inner_text().startswith("Enabled")
     starter=panel.get_by_role("button",name="Create headphone mix")
-    assert starter.is_enabled()
-    assert "silent" in panel.locator("[data-extra-mix-hint]").inner_text()
-    assert "POST" in panel.locator("[data-extra-mix-hint]").inner_text()
-    starter.click()
-    req=page.evaluate("()=>window.__actions.at(-1)")
-    assert req["action"]=="secondaryMonitorStarter" and req["value"]["graphRevision"]=="3"
-    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True,"graphRevision":"4"})
-    assert starter.is_disabled()
-    state["graph"].update(revision="4",rosterRevision="4")
-    state["graph"]["edges"].append({"edgeId":"9223372036854775900","from":SOURCE,"to":monitor_id,
-        "primaryOutput":False,"gainLinear":.25,"tap":"POST_FADER","enabled":True,"signalKind":"AUDIO"})
-    emit(page,"arMixConsoleSnapshot",state)
-    emit(page,"arMixStatus",live)
+    if legacy_empty:
+        assert starter.is_enabled()
+        assert "PRE-fader" in panel.locator("[data-extra-mix-hint]").inner_text()
+        starter.click()
+        req=page.evaluate("()=>window.__actions.at(-1)")
+        assert req["action"]=="secondaryMonitorStarter" and req["value"]["graphRevision"]=="3"
+        emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True,"graphRevision":"4"})
+        assert starter.is_disabled()
+        state["graph"].update(revision="4",rosterRevision="4")
+        state["graph"]["edges"].append(monitor_edge)
+        state["mixerSession"].update(routeRevision="4",rosterRevision="4")
+        emit(page,"arMixConsoleSnapshot",state)
+        emit(page,"arMixStatus",live)
+    else:
+        assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryMonitorStarter').length")==0
     assert not starter.is_visible()
-    assert panel.get_by_role("button",name="Use same mix").is_disabled()
+    assert panel.get_by_role("button",name="Use same mix").is_enabled()
     assert "preserved" in panel.locator("[data-extra-mix-hint]").inner_text()
     # Destination navigation is the existing SOF, not a second mixer or native write.
     edit=panel.get_by_role("button",name="Edit headphone mix")
@@ -653,6 +662,21 @@ def verify_independent_output(page,out):
     assert page.evaluate("()=>window.__actions.length")==before
     page.locator("#sofToggle").click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"
+    page.locator("[data-native-extra-output]").click()
+    panel.get_by_role("button",name="Use same mix").click()
+    same=page.evaluate("()=>window.__actions.at(-1)")
+    assert same["action"]=="secondaryOutputSplit" and same["value"]["enabled"] is False
+    emit(page,"arMixSecondaryOutputAck",{"requestId":same["requestId"],"action":same["action"],"ok":True})
+    next_rev=str(int(state["graph"]["revision"])+1)
+    state.update(secondaryMainOnly=False,physicalMainOutputs=[0,1],physicalMonitorOutputs=[])
+    state["graph"]["revision"]=next_rev
+    state["mixerSession"]["routeRevision"]=next_rev
+    emit(page,"arMixConsoleSnapshot",state)
+    live["dryRoutingLab"]["secondaryMainOnly"]=False
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Separate headphone mix").is_enabled()
+    assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
+    assert any(e["edgeId"]==monitor_edge["edgeId"] for e in state["graph"]["edges"])
     assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
     assert not errors,errors
 
@@ -695,7 +719,8 @@ def verify_first_sound(page,out,single=False):
     state["graph"]["channels"][0]["source"]={"sourceFormat":"MONO","portId":"in:2"}
     state["mixerSession"].update(routeRevision="3",channels=copy.deepcopy(state["graph"]["channels"]))
     emit(page,"arMixConsoleSnapshot",state)
-    assert not button.is_visible()
+    assert button.get_attribute("hidden") is not None, "Native source readback must retire first-sound plan"
+    assert not button.is_visible(), "Hidden action must not occupy a premium toolbar hitbox"
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='monitor').length")==0
 
 
@@ -716,6 +741,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_independent_output(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_independent_output(page,out,legacy_empty=True)
         page.close()
         page=browser.new_page(viewport={"width":1024,"height":576})
         verify_first_sound(page,out)

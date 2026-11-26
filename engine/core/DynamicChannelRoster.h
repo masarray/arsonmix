@@ -100,7 +100,7 @@ struct WireChange final {
     ChannelId from{},to{};
     std::uint64_t edgeId=0;
     float gain=1.f;
-    bool preFader=false; // SET_TAP only: true = post-FX / pre-channel-fader
+    bool preFader=false; // CONNECT/SET_TAP: post-FX / pre-channel-fader; default POST
 };
 
 class DynamicChannelRoster final {
@@ -481,7 +481,7 @@ public:
             }
             if(!op.to.value || op.to==op.from || !std::isfinite(op.gain) ||
                op.gain<0.f || op.gain>4.f ||
-               (op.kind==WireChange::Kind::routeOnly && op.gain!=1.f)){
+               (op.kind==WireChange::Kind::routeOnly && (op.gain!=1.f||op.preFader))){
                 result.fault=ChannelEditFault::invalidValue;break;
             }
             const auto existing=std::find_if(sends.begin(),sends.end(),
@@ -510,12 +510,10 @@ public:
             if(sends.size()>=budget_.maximumSendsPerChannel){
                 result.fault=ChannelEditFault::budgetExceeded;break;
             }
-            // CONNECT means a deliberate parallel POST-fader send, even to
-            // MAIN and even when primary OUT is NONE. Only ROUTE_ONLY may
-            // establish a primary. This prevents silent promotion of a send
-            // into an exclusive route and preserves SOURCE ONLY readback.
+            // CONNECT is a deliberate parallel send (POST by default).
+            // Only ROUTE_ONLY establishes primary OUT; its tap is fixed POST.
             const bool primary=op.kind==WireChange::Kind::routeOnly;
-            sends.push_back({op.to,op.gain,false,0.f,primary,0});
+            sends.push_back({op.to,op.gain,op.preFader,0.f,primary,0});
         }
         if(result.ok()){
             // Legacy PRE and primary edges share the same accepted graph.
@@ -919,4 +917,33 @@ private:
     std::unordered_map<std::uint64_t,std::size_t> index_; // CONTROL ONLY
     std::uint64_t revision_=0, nextId_=1, nextEdgeId_=1;
 };
+
+// CONTROL only. Build the first monitor mix from the last stage of each
+// primary MAIN branch. Do not double-route children of a GROUP, overwrite
+// authored monitor sends, or change any existing ChannelId or EdgeId.
+inline std::vector<WireChange> planHeadphoneStarter(
+        const DynamicChannelRoster& roster,ChannelId main,ChannelId monitor) {
+    const auto* m=roster.find(main);
+    const auto* h=roster.find(monitor);
+    if(!m||m->role!=ChannelRole::main||!h||h->role!=ChannelRole::monitor)return {};
+    std::vector<WireChange> changes;
+    for(const auto& row:roster.channels()) {
+        if(row.role==ChannelRole::main||row.role==ChannelRole::monitor)continue;
+        if(std::any_of(row.sends.begin(),row.sends.end(),[&](const auto& send){
+            return send.destination==monitor;
+        }))return {};
+        if(std::any_of(row.sends.begin(),row.sends.end(),[&](const auto& send){
+            return send.destination==main&&send.primaryOutput&&send.enabled;
+        })) {
+            WireChange change{WireChange::Kind::connect,row.id,monitor};
+            change.preFader=true;
+            changes.push_back(change);
+            if(changes.size()>256)return {};
+        }
+    }
+    if(changes.empty())return {};
+    const float gain=std::min(0.25f,1.f/static_cast<float>(changes.size()));
+    for(auto& change:changes)change.gain=gain;
+    return changes;
+}
 } // namespace armix::mixer

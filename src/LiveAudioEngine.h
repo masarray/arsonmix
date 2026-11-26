@@ -1626,7 +1626,7 @@ public:
     // single ASIO/ChannelId PCM callback. Hardware pin masks and labels
     // are read atomically with the current device lifecycle generation.
     juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
-            std::uint64_t rosterRev,bool enable) {
+            std::uint64_t rosterRev,bool enable,bool seedStarter=false) {
         if(!allOutputsDisarmed()||wantsMainContinuation()||independent_.active()||
            !attached_||!directFence_.permitted()||handoff_.busy()||
            savedDirectSetup_||savedLiveSetup_||
@@ -1648,7 +1648,7 @@ public:
            acceptedMixerBinding_->outputNames!=live.outputNames||
            deviceManager_.getCurrentAudioDevice()!=device)
             return "DMX: verified playback identity changed";
-        return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins,allOutputsDisarmed());
+        return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins,allOutputsDisarmed(),seedStarter);
     }
 
     juce::String patchPhysicalBusOutput(std::uint64_t ep,std::uint64_t rev,

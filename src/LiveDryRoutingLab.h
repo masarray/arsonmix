@@ -1765,7 +1765,7 @@ public:
         const auto p=nativeHardware_.load(std::memory_order_acquire);
         const int ml=nativePin(p,2),mr=nativePin(p,3),l=nativePin(p,0),r=nativePin(p,1);
         return ml>=0&&mr>=0&&l>=0&&r>=0&&ml!=mr&&ml!=l&&ml!=r&&mr!=l&&mr!=r&&
-            (p>>36)<=armix::mixer::NativeFxCueBus::capacity?p:0;
+            nativeFrames(p)<=armix::mixer::NativeFxCueBus::capacity?p:0;
     }
     armix::mixer::NativeFxCueBus& deEzzerCueControl() noexcept {return nativePublisher_.cueControl();}
     NativeBusResult editNativeBus(std::uint64_t expectedEpoch,
@@ -2619,27 +2619,11 @@ public:
            !nativeAccepted_.matches(nativePublisher_,ep,rev)||!nativeBusOutputObserved()||
            graph.roster.revision()!=rosterRev||!graph.ids.monitor.value||!graph.ids.main.value)
             return rejected;
-        const auto* monitor=graph.roster.find(graph.ids.monitor);
-        if(!monitor||monitor->role!=ChannelRole::monitor)return rejected;
-        std::vector<WireChange> changes;
-        for(const auto& row:graph.roster.channels()) {
-            if(row.role==ChannelRole::main||row.role==ChannelRole::monitor)continue;
-            if(std::any_of(row.sends.begin(),row.sends.end(),[&](const auto& send){
-                return send.destination==graph.ids.monitor;
-            }))return rejected;
-            const bool directMain=std::any_of(row.sends.begin(),row.sends.end(),[&](const auto& send){
-                return send.destination==graph.ids.main&&send.primaryOutput&&send.enabled;
-            });
-            if(directMain)changes.push_back({WireChange::Kind::connect,row.id,graph.ids.monitor});
-        }
-        if(changes.empty()||changes.size()>256) {
-            rejected.error="No eligible MAIN sources for a headphone mix";
+        const auto changes=planHeadphoneStarter(graph.roster,graph.ids.main,graph.ids.monitor);
+        if(changes.empty()){
+            rejected.error="No eligible MAIN sources or headphone mix already configured";
             return rejected;
         }
-        // Conservative POST starter, adjustable in existing SOF/WIRE.
-        // No new FX instance, physical rebind or extra callback.
-        const float gain=std::min(0.25f,1.f/static_cast<float>(changes.size()));
-        for(auto& change:changes)change.gain=gain;
         return applyNativeWireTransaction(ep,rev,rosterRev,changes);
     }
 
@@ -3179,7 +3163,8 @@ public:
     // The new monitor is intentionally unpatched (silence) until WIRE/SOF.
     juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
             std::uint64_t rosterRev,bool enable,
-            const armix::device::JuceActivePortSnapshot& pins,bool outputsDisarmed) {
+            const armix::device::JuceActivePortSnapshot& pins,bool outputsDisarmed,
+            bool seedStarter=false) {
         using namespace armix::mixer;
         if(!outputsDisarmed)return "DMX: both outputs must be disarmed";
         if(!ready()||!channelIdPhysicalPcmActive()||pins.epoch!=ep||
@@ -3215,19 +3200,21 @@ public:
                     const auto changed=roster.edit(rosterRev,std::span<const armix::mixer::ChannelEdit>(&edit,1));
                     if(!changed.ok()||changed.createdIds.size()!=1)return "DMX: MONITOR creation rejected";
                     monitor=changed.createdIds.front();
+                    if(seedStarter) {
+                        const auto changes=planHeadphoneStarter(roster,nativeAccepted_.graph.ids.main,monitor);
+                        if(changes.empty()||!roster.wireTransaction(roster.revision(),changes).ok())
+                            return "DMX: no eligible MAIN sources for a safe headphone mix";
+                    }
                 }
                 const auto* row=roster.find(monitor);
                 if(!row||row->role!=ChannelRole::monitor)return "DMX: invalid MONITOR identity";
                 next={2,-1,-1,old.mainL,old.mainR,true};
             }else{
-                if(!monitor.value||nativeAccepted_.fxOwners->insertCount(monitor)!=0)
-                    return "DMX: MONITOR is not removable";
-                // Refuse destructive mode changes: preserve all send IDs
-                // and monitor mix until the operator disconnects WIREs.
-                armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::remove;edit.id=monitor;
-                if(!roster.edit(rosterRev,std::span<const armix::mixer::ChannelEdit>(&edit,1)).ok())
-                    return "DMX: disconnect MONITOR WIREs before restoring physical MAIN";
-                monitor={};
+                const auto* row=roster.find(monitor);
+                if(!row||row->role!=ChannelRole::monitor)return "DMX: invalid MONITOR identity";
+                // Same mix is a physical destination choice, not a delete.
+                // Retain the entire headphone graph and FX lease; its sink
+                // is intentionally unbound until Separate is selected again.
                 next={2,old.monitorL,old.monitorR,-1,-1,false};
             }
             if(!next.valid()||!matchesSessionDevice(pins))return "DMX: device changed";
@@ -3245,8 +3232,8 @@ public:
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
             auto request=nativeAccepted_.graph.request;
-            // The return to a graph without MONITOR cannot carry the
-            // independent timing policy. Preserve existing default on entry.
+            // A dormant MONITOR must not keep independent physical timing.
+            // Preserve its authored sends and FX, not the temporary timing policy.
             if(!enable)request.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
             const auto committed=nativePublisher_.commit(roster,request,
                 rev,ep,epoch(),true,std::move(fx));
@@ -4260,7 +4247,7 @@ public:
         // no heap allocation or new processing object inside callback.
         std::array<const float*,armix::device::LiveInputPortRegistry::limit> shifted{};
         std::array<float*,armix::device::LiveInputPortRegistry::limit> outputSlices{};
-        int max=channelIdRender?static_cast<int>(native>>36):
+        int max=channelIdRender?nativeFrames(native):
             std::min(snapshot->prepared->maxFramesPerPlugin(),
                      reboundQuantum_.load(std::memory_order_acquire));
         if(meterOnly)max=std::min(max,mutedMeterFrames);
@@ -4325,7 +4312,9 @@ public:
                      meterOnly?nullptr:outputSlices.data(),
                      meterOnly?0:outputCount,{},
                      privateCueAllowed&&!splitMain&&!masterMuted&&monitorL&&monitorR?native:0,
-                     &sliceRevision,&sliceMeterCount);
+                     &sliceRevision,&sliceMeterCount,
+                     !splitMain&&!monitorL&&nativePin(native,2)<0&&nativePin(native,3)<0&&
+                         (native&nativeDormantMonitorBit)!=0);
                 if(processed) {
                     if(completedNativeRevision&&(completedNativeRevision!=sliceRevision||
                        completedMeterCount!=sliceMeterCount))mixedNativeRevisions=true;
@@ -4648,17 +4637,24 @@ private:
     std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;
     std::vector<std::uint64_t> externalOutputVerified_; // per amplifier, CONTROL only
     std::uint64_t externalOutputEpoch_=0; // CONTROL only, never callback state
-    // Four 9-bit callback indices (0 means absent) and the prepared quantum.
-    // One atomic read gives AUDIO a coherent destination/quantum contract.
+    // Four 9-bit callback indices (0 means absent), quantum, and a high
+    // bit authorizing an intentionally unbound logical MONITOR. One atomic
+    // read gives AUDIO a coherent destination/quantum contract.
     std::atomic<std::uint64_t> nativeHardware_{0},nativeHardwareObserved_{0};
     std::uint64_t busPatchEpoch_=0; // CONTROL-only, arm awaits exact callback map
+    static constexpr std::uint64_t nativeDormantMonitorBit=std::uint64_t{1}<<63;
+    static int nativeFrames(std::uint64_t hardware) noexcept {
+        return static_cast<int>((hardware&~nativeDormantMonitorBit)>>36);
+    }
     static int nativePin(std::uint64_t hardware,int index) noexcept {
         return static_cast<int>((hardware>>(index*9))&511U)-1;
     }
     void installNativeHardware(std::uint64_t generation,
             const armix::mixer::VerifiedNativeOutputs& hw,int frames) noexcept {
         nativePublisher_.cueControl().cancel(false); // never retain audition across output rebinding
-        nativeHardware_.store((static_cast<std::uint64_t>(frames)<<36) |
+        const auto dormant=nativeAccepted_.graph.ids.monitor.value&&!hw.monitorEnabled&&
+            !hw.secondaryMain()?nativeDormantMonitorBit:std::uint64_t{0};
+        nativeHardware_.store(dormant | (static_cast<std::uint64_t>(frames)<<36) |
             (static_cast<std::uint64_t>(hw.monitorR+1)<<27) |
             (static_cast<std::uint64_t>(hw.monitorL+1)<<18) |
             (static_cast<std::uint64_t>(hw.mainR+1)<<9) |
