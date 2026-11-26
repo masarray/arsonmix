@@ -1,0 +1,115 @@
+name: ArSonMix security regression
+on:
+  pull_request:
+    paths:
+      - 'src/BoundedDataInput.h'
+      - 'src/Vst3ScanIsolation.h'
+      - 'src/Vst3DescriptionCache.h'
+      - 'src/PluginCatalog.h'
+      - 'src/PortableWorkspace.h'
+      - 'src/NativeShowStore.h'
+      - 'src/NativeShowSchema.h'
+      - 'src/NativePresetArchive.h'
+      - 'src/NativeMixerSessionStore.h'
+      - 'src/NativeMixerSessionDocument.h'
+      - 'src/BuiltInFxUserPresetStore.h'
+      - 'src/RuntimeVendorCrashJournal.h'
+      - 'src/StartupVst3RecoveryGuard.h'
+      - 'src/LiveAudioEngine.h'
+      - 'src/LiveDryRoutingLab.h'
+      - 'src/NativeMixerSessionFxRestore.h'
+      - 'src/Main.cpp'
+      - 'engine/core/LiveChannelFxGraph.h'
+      - 'installer/ArSonMixAutoUpdate.ps1'
+      - 'scripts/release_trust_manifest.py'
+      - 'scripts/supply_chain_audit.mjs'
+      - 'scripts/run_native_memory_safety.sh'
+      - 'scripts/run_security_regression.sh'
+      - 'tests/security_adversarial_input_test.cpp'
+      - 'tests/security_show_codec_fuzz.cpp'
+      - 'tests/test_release_trust_manifest.py'
+      - 'tests/native_preset_roundtrip_test.cpp'
+      - 'tests/portable_workspace_test.cpp'
+      - 'tests/native_show_schema_test.cpp'
+      - 'tests/native_show_store_test.cpp'
+      - 'tests/runtime_vendor_crash_journal_test.cpp'
+      - 'tests/vst3_waves_identity_startup_test.cpp'
+      - 'tests/supply_chain_audit.test.mjs'
+      - 'config/supply-chain-baseline.json'
+      - 'scripts/required_pr_merge_gate.mjs'
+      - 'tests/required_pr_merge_gate.test.mjs'
+      - '.github/workflows/security-regression.yml'
+      - '.github/workflows/alpha-preview-publish.yml'
+      - '.github/workflows/crossplatform-native-qualification.yml'
+      - '.github/workflows/required-pr-merge-gate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/BoundedDataInput.h'
+      - 'src/Vst3ScanIsolation.h'
+      - 'src/Vst3DescriptionCache.h'
+      - 'src/PluginCatalog.h'
+      - 'src/PortableWorkspace.h'
+      - 'src/NativeShowStore.h'
+      - 'src/NativeShowSchema.h'
+      - 'src/NativePresetArchive.h'
+      - 'src/NativeMixerSessionStore.h'
+      - 'src/NativeMixerSessionDocument.h'
+      - 'src/BuiltInFxUserPresetStore.h'
+      - 'src/RuntimeVendorCrashJournal.h'
+      - 'src/StartupVst3RecoveryGuard.h'
+      - 'src/LiveAudioEngine.h'
+      - 'src/LiveDryRoutingLab.h'
+      - 'src/NativeMixerSessionFxRestore.h'
+      - 'src/Main.cpp'
+      - 'engine/core/LiveChannelFxGraph.h'
+      - 'installer/ArSonMixAutoUpdate.ps1'
+      - 'scripts/release_trust_manifest.py'
+      - 'scripts/supply_chain_audit.mjs'
+      - 'scripts/run_native_memory_safety.sh'
+      - 'scripts/run_security_regression.sh'
+      - 'tests/security_adversarial_input_test.cpp'
+      - 'tests/security_show_codec_fuzz.cpp'
+      - 'tests/test_release_trust_manifest.py'
+      - 'tests/native_preset_roundtrip_test.cpp'
+      - 'tests/portable_workspace_test.cpp'
+      - 'tests/native_show_schema_test.cpp'
+      - 'tests/native_show_store_test.cpp'
+      - 'tests/runtime_vendor_crash_journal_test.cpp'
+      - 'tests/vst3_waves_identity_startup_test.cpp'
+      - 'tests/supply_chain_audit.test.mjs'
+      - 'config/supply-chain-baseline.json'
+      - 'scripts/required_pr_merge_gate.mjs'
+      - 'tests/required_pr_merge_gate.test.mjs'
+      - '.github/workflows/security-regression.yml'
+      - '.github/workflows/alpha-preview-publish.yml'
+      - '.github/workflows/crossplatform-native-qualification.yml'
+      - '.github/workflows/required-pr-merge-gate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: security-regression-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  security:
+    name: Security regression / native ASan UBSan fuzz and release contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # 8.0.15
+          path: security-juce
+          persist-credentials: false
+      - name: Supply chain and release trust negative tests
+        run: |
+          node --test tests/supply_chain_audit.test.mjs tests/required_pr_merge_gate.test.mjs
+          python3 -m unittest discover -s tests -p test_release_trust_manifest.py -v
+      - name: Instrument production storage code and fuzz native Show codecs
+        run: bash scripts/run_security_regression.sh security-juce

@@ -120,5 +120,12 @@ int main(int argc,char** argv) {
     assert(!Isolation::readReceipt(receipt,"abc",modulePath+"other",parsed));
     assert(receipt.replaceWithText("<!DOCTYPE x [<!ENTITY bad SYSTEM 'file:///no'>]><x/>"));
     assert(!Isolation::readReceipt(receipt,"abc",modulePath,parsed));
+    assert(!Isolation::receiptStructure("<ROOT><PLUGIN><NESTED/></PLUGIN></ROOT>"));
+    assert(!Isolation::receiptStructure("<ROOT><PLUGIN><PLUGIN></PLUGIN></PLUGIN></ROOT>"));
+    assert(Isolation::receiptStructure("<ROOT><PLUGIN name=\"a>b\"/></ROOT>"));
+    assert(receipt.replaceWithText("<ROOT>"+juce::String::repeatedString("<x>",100)+
+        juce::String::repeatedString("</x>",100)+"</ROOT>"));
+    assert(!Isolation::readReceipt(receipt,"abc",modulePath,parsed));
+    assert(parsed.size()==1&&parsed[0]->uniqueId==42);
     assert(temp.deleteRecursively());
 }

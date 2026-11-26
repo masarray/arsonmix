@@ -3,12 +3,55 @@
 // privileged status publisher. Green CI means exact-head source checks, not FAT.
 export const context="ArSonMix / Required CI Merge Gate";
 export const workflowNames={
-  native:"p1-windows.yml",ui:"ui-smoke.yml",release:"release-contracts.yml"
+  native:"p1-windows.yml",ui:"ui-smoke.yml",release:"release-contracts.yml",security:"security-regression.yml"
 };
 const nativeFastName="Fast native contracts (no Windows / JUCE checkout)";
 const nativeFullName="Windows MSVC / realtime CTest";
 const uiFastName="Fast UI contracts (every relevant PR commit)";
 const uiFullName="Full Chromium /preview/ visual and interaction qualification";
+const securityName="Security regression / native ASan UBSan fuzz and release contracts";
+const securityPaths=new Set([
+  "src/BoundedDataInput.h",
+  "src/Vst3ScanIsolation.h",
+  "src/Vst3DescriptionCache.h",
+  "src/PluginCatalog.h",
+  "src/PortableWorkspace.h",
+  "src/NativeShowStore.h",
+  "src/NativeShowSchema.h",
+  "src/NativePresetArchive.h",
+  "src/NativeMixerSessionStore.h",
+  "src/NativeMixerSessionDocument.h",
+  "src/BuiltInFxUserPresetStore.h",
+  "src/RuntimeVendorCrashJournal.h",
+  "src/StartupVst3RecoveryGuard.h",
+  "src/LiveAudioEngine.h",
+  "src/LiveDryRoutingLab.h",
+  "src/NativeMixerSessionFxRestore.h",
+  "src/Main.cpp",
+  "engine/core/LiveChannelFxGraph.h",
+  "installer/ArSonMixAutoUpdate.ps1",
+  "scripts/release_trust_manifest.py",
+  "scripts/supply_chain_audit.mjs",
+  "scripts/run_native_memory_safety.sh",
+  "scripts/run_security_regression.sh",
+  "tests/security_adversarial_input_test.cpp",
+  "tests/security_show_codec_fuzz.cpp",
+  "tests/test_release_trust_manifest.py",
+  "tests/native_preset_roundtrip_test.cpp",
+  "tests/portable_workspace_test.cpp",
+  "tests/native_show_schema_test.cpp",
+  "tests/native_show_store_test.cpp",
+  "tests/runtime_vendor_crash_journal_test.cpp",
+  "tests/vst3_waves_identity_startup_test.cpp",
+  "tests/supply_chain_audit.test.mjs",
+  "config/supply-chain-baseline.json",
+  "scripts/required_pr_merge_gate.mjs",
+  "tests/required_pr_merge_gate.test.mjs",
+  ".github/workflows/security-regression.yml",
+  ".github/workflows/alpha-preview-publish.yml",
+  ".github/workflows/crossplatform-native-qualification.yml",
+  ".github/workflows/required-pr-merge-gate.yml"
+]);
 const releaseName="No native compiler; owner authorization, catalog integrity and YAML shape";
 
 export function requiredLanes(files) {
@@ -86,7 +129,7 @@ export function requiredLanes(files) {
      ".github/workflows/release-control.yml",
      ".github/workflows/alpha-preview-publish.yml",
      ".github/workflows/crossplatform-native-qualification.yml"].includes(f));
-  return {nativeFast,nativeFull:nativeCore,uiFast,uiFull,releaseFast};
+  return {nativeFast,nativeFull:nativeCore,uiFast,uiFull,releaseFast,securityRegression:any(f=>securityPaths.has(f))};
 }
 
 export function workflowPath(run,workflow) {
@@ -117,7 +160,7 @@ export function findRuns(runs,number,sha) {
       "ArSonMix FAT PR"+number+" "+sha].includes(r.display_title||r.name))
     .sort((a,b)=>b.id-a.id)[0];
   return {native:automatic(workflowNames.native),
-    ui:automatic(workflowNames.ui),release:automatic(workflowNames.release),
+    ui:automatic(workflowNames.ui),release:automatic(workflowNames.release),security:automatic(workflowNames.security),
     fullUi,fullWin};
 }
 
@@ -127,7 +170,8 @@ export function evaluate(lanes,matched,jobs) {
     ["nativeFull",matched.fullWin,nativeFullName],
     ["uiFast",matched.ui,uiFastName],
     ["uiFull",matched.fullUi,uiFullName],
-    ["releaseFast",matched.release,releaseName]
+    ["releaseFast",matched.release,releaseName],
+    ["securityRegression",matched.security,securityName]
   ];
   const waiting=[],failed=[],passed=[];
   for(const [key,run,jobName] of checks) {

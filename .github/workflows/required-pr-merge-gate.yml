@@ -14,6 +14,7 @@ on:
       - Windows Native VST3 Host
       - UI smoke (Chromium)
       - Smart Release/Download Contracts (fast only)
+      - ArSonMix security regression
     types: [completed]
 permissions:
   contents: read

@@ -37,7 +37,7 @@ test("GitHub REST workflow.path may omit @ref; both path shapes are trusted",()=
 test("docs-only PR succeeds without Windows/Chromium or release services",()=>{
   const lanes=requiredLanes(["docs/readme.md","README.md"]);
   assert.deepEqual(lanes,{nativeFast:false,nativeFull:false,uiFast:false,
-    uiFull:false,releaseFast:false});
+    uiFull:false,releaseFast:false,securityRegression:false});
   assert.equal(evaluate(lanes,{},{}).state,"success");
 });
 test("native JS bridge and installed GUI assembler require the native fast gate",()=>{
@@ -140,7 +140,7 @@ test("GUI bridge requires both fast native and full Chromium, not Windows CTest"
 test("release-only files use release checks, never expensive Windows",()=>{
   const lanes=requiredLanes(["scripts/build_release_catalog.py"]);
   assert.deepEqual(lanes,{nativeFast:false,nativeFull:false,
-    uiFast:false,uiFull:false,releaseFast:true});
+    uiFast:false,uiFull:false,releaseFast:true,securityRegression:false});
   assert.equal(evaluate(lanes,{release:automatic(40,"release-contracts.yml")},
     {40:[job(names.release)]}).state,"success");
 });
@@ -248,4 +248,19 @@ test("manual UI fallback is fail-closed on stale SHA, unrelated workflow and PR 
   assert.equal(fallbackSourceForWorkflowRun({workflow_run:{
     event:"pull_request",path:".github/workflows/p1-windows.yml",head_sha:sha}}),sha);
   assert.deepEqual(associatedCurrentPrNumbers(ui,null,repo),[]);
+});
+
+test("Security regression requires exact-head run and actual successful job",()=>{
+  const lanes=requiredLanes(["scripts/run_security_regression.sh"]);
+  assert.equal(lanes.securityRegression,true);
+  assert.equal(lanes.nativeFull,false);
+  const name="Security regression / native ASan UBSan fuzz and release contracts";
+  const old=automatic(91,"security-regression.yml");
+  old.head_sha="f".repeat(40);
+  assert.equal(evaluate(lanes,findRuns([old],number,sha),{}).state,"pending");
+  const current=automatic(92,"security-regression.yml");
+  const matched=findRuns([old,current],number,sha);
+  assert.equal(evaluate(lanes,matched,{92:[job(name,"failure")]}).state,"failure");
+  assert.equal(evaluate(lanes,matched,{92:[job(name)]}).state,"success");
+  assert.equal(evaluate(lanes,matched,{92:[job("fake check")]}).state,"failure");
 });
