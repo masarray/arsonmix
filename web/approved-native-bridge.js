@@ -3674,14 +3674,14 @@
       extraPanel=panel;
       document.body.appendChild(panel);
       extraField("close").onclick=()=>panel.close();
-      extraField("refresh").onclick=()=>{extraError="";backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});paintAdditionalOutput();};
+      extraField("refresh").onclick=()=>{extraError="";backend.emitEvent("arMixAction",{action:"secondaryOutputInventory"});paintAdditionalOutput();};
       extraField("device").onchange=paintAdditionalOutput;
       extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
       extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
     }
     if(!extraPanel.open)extraPanel.showModal();
     paintAdditionalOutput();
-    backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
+    backend.emitEvent("arMixAction",{action:"secondaryOutputInventory"});
   }
   function closeNativeAudioIO(){
     if(deviceBusy())return;
@@ -4447,11 +4447,6 @@
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
       if(!inventory||!Array.isArray(inventory.types))return;
-      const windows=inventory.types.find(x=>x.name==="Windows Audio");
-      extraInventory=[...new Set((Array.isArray(windows?.outputs)?windows.outputs:[])
-        .filter(x=>typeof x==="string"&&x.length>0&&x.length<=240))];
-      extraInventoryKnown=true;
-      paintAdditionalOutput();
       if(deviceBusy())return;
       // Inventory is a native observation, not accepted Apply proof.
       deviceInventory=inventory;
@@ -5354,6 +5349,13 @@
     // each second contains the native health sequence/CPU/RAM sample.
     // Rendering changes ONLY two existing footer spans; no new DOM,
     // browser polling, requestAnimationFrame or audio callback work.
+    backend.addEventListener("arMixSecondaryOutputInventory",inventory=>{
+      if(!inventory||!Array.isArray(inventory.outputs))return;
+      extraInventory=[...new Set(inventory.outputs.filter(x=>typeof x==="string"&&x.length>0&&x.length<=240))];
+      extraInventoryKnown=true;
+      if(inventory.error)extraError=String(inventory.error);
+      paintAdditionalOutput();
+    });
     backend.addEventListener("arMixSecondaryOutputAck",ack=>{
       if(!extraPending||ack?.requestId!==extraPending.requestId||ack.action!==extraPending.action)return;
       if(ack.ok!==true){

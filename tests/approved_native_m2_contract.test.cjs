@@ -7599,7 +7599,7 @@ test("FAST workflow directly opens active ASIO vendor panel and one native secon
  const panel=b.slice(b.indexOf('querySelector("[data-audio-driver-panel]").onclick'),b.indexOf('const readHealth=devicePanel'));
  assert.match(panel,/action:"audioDriverPanel"/);
  assert.doesNotMatch(panel,/action:"audioSetup"/);
- const vendor=n.slice(n.indexOf("void showAsioControlPanel("),n.indexOf("void showDeviceSetup()"));
+ const vendor=n.slice(n.indexOf("void showAsioControlPanel("),n.indexOf("// A Windows native Explorer picker",n.indexOf("void showAsioControlPanel(")));
  assert.match(vendor,/deviceApply_\.tryBegin/);assert.match(vendor,/device->showControlPanel\(\)/);
  assert.match(vendor,/finishAudioSetupAndRecoverMixer\(\)/);
  assert.doesNotMatch(vendor,/AudioSetupWindow|setMonitorEnabled\(true\)/);

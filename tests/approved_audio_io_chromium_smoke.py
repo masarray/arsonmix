@@ -470,7 +470,8 @@ def verify_additional_output(page,out):
     panel=page.get_by_role("dialog",name="Additional Output")
     assert panel.is_visible()
     assert page.evaluate("()=>typeof window.__arMixOpenAdditionalOutput")== "undefined"
-    emit(page,"arMixAudioDeviceInventory",{"types":[{"name":"Windows Audio","outputs":["CABLE Input","Speakers"]}]})
+    assert page.evaluate("()=>window.__actions.at(-1).action")=="secondaryOutputInventory"
+    emit(page,"arMixSecondaryOutputInventory",{"outputs":["CABLE Input","Speakers"]})
     panel.get_by_label("Windows playback device").select_option("CABLE Input")
     panel.get_by_role("button",name="Enable output",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")

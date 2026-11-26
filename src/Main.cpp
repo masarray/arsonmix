@@ -4065,52 +4065,6 @@ private:
         emitApprovedNativeSnapshot();
     }
 
-    // Direct driver settings, not the generic JUCE AudioDeviceSelector.
-    // Reuse the same device transaction lease and verified mixer recovery.
-    void showAsioControlPanel(const juce::var& args)
-    {
-        const auto active=currentDeviceSnapshot();
-        auto& manager=engine_.devices();
-        auto* device=manager.getCurrentAudioDevice();
-        if(setupLaunching_ || nativeShowBusy_ || studioBackupBusy_ ||
-           mixerSessionWorker_.busy() || pendingRetainedFxCapture_ || retainedOfflineFxActive_ ||
-           engine_.independentClockActive() || engine_.hasTemporaryDiagnosticDevice() ||
-           engine_.isGraphSwitchPending() || !device || !device->isOpen() ||
-           manager.getCurrentAudioDeviceType()!="ASIO" || !device->hasControlPanel() ||
-           args.getProperty("driver",{}).toString()!=device->getName() ||
-           args.getProperty("deviceGeneration",{})!=active.getProperty("deviceGeneration",{}))
-            return emitNotice("ASIO control panel unavailable · refresh Audio I/O and try again",true);
-        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
-        if(!lease)return emitNotice("Audio device is busy · try again",true);
-        const bool resume=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
-        const bool streamWasArmed=engine_.secondaryArmed();
-        autoMainEpoch_=0;
-        engine_.beginManualAudioSetup(true);
-        bool panelError=false;
-        try {
-            // JUCE's own selector uses this driver API and restarts when it
-            // requests a refresh. Never instantiate a second ASIO driver.
-            const bool refresh=device->showControlPanel();
-            if(refresh && manager.getCurrentAudioDevice()==device){
-                manager.closeAudioDevice();
-                manager.restartLastAudioDevice();
-            }
-        } catch(...) {panelError=true;}
-        const bool recovered=finishAudioSetupAndRecoverMixer();
-        if(recovered){
-            deviceSettingsDirty_=true;startupError_.clear();
-            if(resume&&!operatorOutputMuted_)requestAutomaticMain(false);
-        }
-        diagnostics_.record(recovered&&!panelError?"ASIO_PANEL_RETURN":"ASIO_PANEL_RECOVERY_REQUIRED",
-            recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery");
-        emitApprovedNativeSnapshot();
-        emitDeviceInventory(false);
-        if(!recovered||panelError)
-            emitNotice("ASIO settings returned · check Audio I/O; mixer settings retained",true);
-        else if(streamWasArmed)
-            emitNotice("ASIO settings updated · reconnect Additional Output to verify the new clock",false);
-    }
-
     void showDeviceSetup()
     {
         diagnostics_.record ("SETUP", "Open audio device setup");
@@ -4204,6 +4158,52 @@ private:
             safe->audioSetupWindow_->repaint();
             safe->setupLaunching_ = false;
         });
+    }
+
+    // Direct driver settings, not the generic JUCE AudioDeviceSelector.
+    // Reuse the same device transaction lease and verified mixer recovery.
+    void showAsioControlPanel(const juce::var& args)
+    {
+        const auto active=currentDeviceSnapshot();
+        auto& manager=engine_.devices();
+        auto* device=manager.getCurrentAudioDevice();
+        if(setupLaunching_ || nativeShowBusy_ || studioBackupBusy_ ||
+           mixerSessionWorker_.busy() || pendingRetainedFxCapture_ || retainedOfflineFxActive_ ||
+           engine_.independentClockActive() || engine_.hasTemporaryDiagnosticDevice() ||
+           engine_.isGraphSwitchPending() || !device || !device->isOpen() ||
+           manager.getCurrentAudioDeviceType()!="ASIO" || !device->hasControlPanel() ||
+           args.getProperty("driver",{}).toString()!=device->getName() ||
+           args.getProperty("deviceGeneration",{})!=active.getProperty("deviceGeneration",{}))
+            return emitNotice("ASIO control panel unavailable · refresh Audio I/O and try again",true);
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
+        if(!lease)return emitNotice("Audio device is busy · try again",true);
+        const bool resume=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+        const bool streamWasArmed=engine_.secondaryArmed();
+        autoMainEpoch_=0;
+        engine_.beginManualAudioSetup(true);
+        bool panelError=false;
+        try {
+            // JUCE's own selector uses this driver API and restarts when it
+            // requests a refresh. Never instantiate a second ASIO driver.
+            const bool refresh=device->showControlPanel();
+            if(refresh && manager.getCurrentAudioDevice()==device){
+                manager.closeAudioDevice();
+                manager.restartLastAudioDevice();
+            }
+        } catch(...) {panelError=true;}
+        const bool recovered=finishAudioSetupAndRecoverMixer();
+        if(recovered){
+            deviceSettingsDirty_=true;startupError_.clear();
+            if(resume&&!operatorOutputMuted_)requestAutomaticMain(false);
+        }
+        diagnostics_.record(recovered&&!panelError?"ASIO_PANEL_RETURN":"ASIO_PANEL_RECOVERY_REQUIRED",
+            recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery");
+        emitApprovedNativeSnapshot();
+        emitDeviceInventory(false);
+        if(!recovered||panelError)
+            emitNotice("ASIO settings returned · check Audio I/O; mixer settings retained",true);
+        else if(streamWasArmed)
+            emitNotice("ASIO settings updated · reconnect Additional Output to verify the new clock",false);
     }
 
     // A Windows native Explorer picker cannot select ordinary files AND folders in
@@ -6480,7 +6480,7 @@ private:
             return cancelPhysicalLoopback();
         const bool editorNavigation=action=="routingFxEditor"||
             action=="logicalVendorFxEditor"||action=="retainedFxOfflineOpen"||action=="fxEditor";
-        if (!editorNavigation && action!="audioDeviceInventory" && action!="copyDiagnosticReport")
+        if (!editorNavigation && action!="audioDeviceInventory" && action!="secondaryOutputInventory" && action!="copyDiagnosticReport")
             cancelPhysicalLoopback();
         if(deviceApply_.busy() && action!="audioDeviceApply"){
             // Never silently swallow an operator's correlated editor click.
@@ -9811,6 +9811,25 @@ private:
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNamedPatchAck",juce::var(ack.release()));
+        }
+        else if (action == "secondaryOutputInventory")
+        {
+            // Dedicated read-only shared WASAPI discovery. Do not rescan
+            // ASIO, mutate the main setup draft or open an audio endpoint.
+            juce::Array<juce::var> outputs;
+            juce::String error;
+            try {
+                std::unique_ptr<juce::AudioIODeviceType> type(
+                    juce::AudioIODeviceType::createAudioIODeviceType_WASAPI(juce::WASAPIDeviceMode::shared));
+                if(type){
+                    type->scanForDevices();
+                    for(const auto& name:type->getDeviceNames(false))outputs.add(name);
+                }else error="Windows playback discovery unavailable";
+            } catch(...) {error="Cannot refresh Windows playback devices";}
+            auto result=std::make_unique<juce::DynamicObject>();
+            result->setProperty("outputs",juce::var(outputs));
+            result->setProperty("error",error);
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputInventory",juce::var(result.release()));
         }
         else if (action == "audioDeviceInventory")
         {
