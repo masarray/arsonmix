@@ -335,7 +335,10 @@ export function mount(root,transport,options={}){
  function fitPro(){
   if(!options.nativeAssets||!$(".an-pro").open||!root.isConnected)return;
   const r=root.getBoundingClientRect(),inset=8;
-  if(r.bottom>window.innerHeight-inset||r.top<inset)root.style.top=Math.max(inset,Math.min(r.top,window.innerHeight-r.height-inset))+"px";
+  // Desktop mixer reserves a lower console strip; keep professional chrome
+  // and its scroll viewport above that area, rather than covering it.
+  const bottomInset=window.innerWidth>460&&window.innerHeight>540?80:inset;
+  if(r.bottom>window.innerHeight-bottomInset||r.top<inset)root.style.top=Math.max(inset,Math.min(r.top,window.innerHeight-r.height-bottomInset))+"px";
   if(r.right>window.innerWidth-inset||r.left<inset)root.style.left=Math.max(inset,Math.min(r.left,window.innerWidth-r.width-inset))+"px";
  }
  const onProResize=()=>fitPro();window.addEventListener("resize",onProResize);

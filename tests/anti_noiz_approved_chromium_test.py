@@ -477,8 +477,10 @@ def main():
         respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
         accepted=edit["settings"]
         root.locator('[data-pro-tab="expander"]').click()
+        assert root.evaluate("""el=>{const q=s=>el.querySelector(s),p=q(".an-panel").getBoundingClientRect();return p.top>=-1&&p.bottom<=innerHeight-79&&["[data-close]","[data-learn]",".an-pro-tabs [aria-selected=true]"].every(s=>{const c=q(s),r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return c===hit||c.contains(hit);});}"""),"desktop chrome and Learn must be unoccluded"
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-expander-1366.png"))
         root.locator('[data-pro-tab="sidechain"]').click()
+        assert root.evaluate("""el=>{const c=el.querySelector("[data-learn]"),r=c.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return c===hit||c.contains(hit);}"""),"desktop sidechain Learn reachable"
         root.screenshot(path=str(bundle.parent/"anti-noiz-operator-pro-sidechain-1366.png"))
         page.set_viewport_size({"width":360,"height":720})
         for name in ("expander","spectral","sidechain"):
