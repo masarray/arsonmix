@@ -42,6 +42,7 @@ class VocalReverbProcessor final : public juce::AudioProcessor,
     public armix::mixer::RealtimeNativeFxControl {
 public:
     static constexpr const char* catalogIdentity="armix.builtin.vocal-reverb.v1";
+    static constexpr const char* wetReturnIdentity="armix.builtin.vocal-reverb-return.v1";
     static constexpr int stateBytes=16+static_cast<int>(arverb::parameterCount)*4;
     static constexpr int albumStateBytes=stateBytes+4;
     // v1 original, v2 historical Album, v3 Signature, v4 Vocal Anchor, v5 Studio Finish, v6 Singer Feel.
@@ -58,13 +59,16 @@ public:
         return ((version==1&&flag==0)||(version==2&&(flag==0||flag==1))||
                 (version==3&&flag==2)||(version==4&&flag==3)||(version==5&&flag==4)||(version==6&&flag==5))&&in.isExhausted()&&validVocalReverbSettings(s);
     }
-    VocalReverbProcessor():juce::AudioProcessor(BusesProperties()
+    explicit VocalReverbProcessor(bool wetReturn=false):juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
-        .withOutput("Output",juce::AudioChannelSet::stereo(),true)) {
+        .withOutput("Output",juce::AudioChannelSet::stereo(),true)),wetReturn_(wetReturn) {
         desired_=vocalReverbFactoryPreset(0);
+        if(wetReturn_)desired_.values[0]=1.f;
         storeAccepted(desired_,0);
     }
-    const juce::String getName() const override {return "Reverb-Sis";}
+    const juce::String getName() const override {return wetReturn_?"Reverb-Sis Return":"Reverb-Sis";}
+    bool wetReturnMode() const noexcept {return wetReturn_;}
+    bool bypassToSilence() const noexcept override {return wetReturn_;}
     bool acceptsMidi() const override {return false;}
     bool producesMidi() const override {return false;}
     bool isMidiEffect() const override {return false;}
@@ -89,7 +93,8 @@ public:
         // P8 upstream primes coefficient targets in prepare(). Stage the
         // RESTORED audio settings BEFORE prepare, never in the first callback.
         applyToEngine(s);
-        engine_.prepare(rate,true); // CONTROL/host suspended; only place for allocation
+        if(wetReturn_)engine_.prepareWetReturn(rate,true);
+        else engine_.prepare(rate,true); // CONTROL/host suspended; only place for allocation
         rate_=rate;
         // FxInstance uses AudioProcessor rate metadata for its 8ms bypass
         // transition. Native direct prepare must publish the real rate too.
@@ -127,12 +132,15 @@ public:
     }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
-        if(!isReady()||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
+        if(!isReady()||pcm.getNumChannels()<2||pcm.getNumSamples()<=0){
+            if(wetReturn_)pcm.clear();
+            return;
+        }
         // The existing FxInstance calls consumeRealtimeEdits() ONCE before
         // invoking a fully-bypassed continuous processor. Do not pop another
         // packet here: that would double RT automation work per callback.
         if(!fullyBypassed_)consumeRealtimeEdits();
-        if(fullyBypassed_ && !draining_)return; // parked tank, minimal CPU
+        if(fullyBypassed_ && !draining_){if(wetReturn_)pcm.clear();return;} // parked tank
         const auto frames=static_cast<std::size_t>(pcm.getNumSamples());
         auto* left=pcm.getWritePointer(0);
         auto* right=pcm.getWritePointer(1);
@@ -204,9 +212,10 @@ public:
         if(!validVocalReverbSettings(v))return 0;
         const auto id=++nextId_;
         desired_=v;
+        if(wetReturn_)desired_.values[0]=1.f;
         requestedSequence_.fetch_add(1,std::memory_order_seq_cst);
         for(std::size_t i=0;i<v.values.size();++i)
-            requestedValues_[i].store(v.values[i],std::memory_order_seq_cst);
+            requestedValues_[i].store(desired_.values[i],std::memory_order_seq_cst);
         requestedAlgorithm_.store(v.algorithm,std::memory_order_seq_cst);
         requestedPreset_.store(v.preset,std::memory_order_seq_cst);
         requestedVoicing_.store(v.voicing,std::memory_order_seq_cst);
@@ -290,6 +299,7 @@ public:
         if(published_||settingsPending())return false;
         VocalReverbSettings s;
         if(!decodeState(data,bytes,s))return false;
+        if(wetReturn_)s.values[0]=1.f;
         // Only unpublished, detached/restoring instances may stage state.
         desired_=s;
         storeAccepted(s,appliedRequestId());
@@ -348,6 +358,7 @@ private:
         }
         return false;
     }
+    const bool wetReturn_; // catalog identity, not inferred from mutable Mix
     arverb::Engine engine_;
     VocalReverbSettings desired_{}; // message-thread only
     std::array<std::atomic<float>,arverb::parameterCount> requestedValues_{};

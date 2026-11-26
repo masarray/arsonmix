@@ -37,6 +37,7 @@ public:
         std::unique_ptr<Processor> processor;
         RealtimeNativeFxControl* nativeControl=nullptr; // bound once OFF realtime
         bool continuousBypassProcessing=false; // prepared once; no dynamic cast in RT
+        bool silenceBypass=false; // immutable for this prepared processor lease
         juce::MidiBuffer midi;
         const juce::String catalogId;
         const juce::String name;
@@ -107,6 +108,7 @@ public:
                 if(nativeControl){
                     continuousBypassProcessing=
                         nativeControl->requiresContinuousBypassProcessing();
+                    silenceBypass=nativeControl->bypassToSilence();
                     nativeControl->sealForRealtime();
                     // Only the fixed, non-moving native ImmerSIB scene contract.
                     // Never infer support for arbitrary VST3, generators or Harmony.
@@ -197,13 +199,13 @@ public:
             // when fully wet. Zero-latency inserts need dry scratch ONLY
             // while mixing a fade or continuously processing a dry bypass.
             // Stable wet and ordinary zero-latency bypass need no copy.
-            if(latencySamples!=0) {
+            if(!silenceBypass && latencySamples!=0) {
                 for(int i=0;i<samples;++i) {
                     float l=left[i],r=right[i];dryDelay.process(l,r);
                     dryLeft[static_cast<std::size_t>(i)]=l;
                     dryRight[static_cast<std::size_t>(i)]=r;
                 }
-            } else if(!latencyFault && (fading || (fullyBypassed&&continuousBypassProcessing))) {
+            } else if(!silenceBypass && !latencyFault && (fading || (fullyBypassed&&continuousBypassProcessing))) {
                 juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
                 juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
             }
@@ -211,7 +213,10 @@ public:
                 immerseIdle.reset();
                 dspSleeping.store(false,std::memory_order_relaxed);
                 dspLastUs.store(0,std::memory_order_relaxed);
-                if(latencySamples!=0) {
+                if(silenceBypass) {
+                    juce::FloatVectorOperations::clear(left,samples);
+                    juce::FloatVectorOperations::clear(right,samples);
+                } else if(latencySamples!=0) {
                     juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                     juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
                 }
@@ -271,7 +276,15 @@ public:
             if(immerseIdleAdmitted)
                 immerseIdle.rendered(left,right,samples,dspOk && idleStable &&
                     nativeControl->stateSnapshotQuiescent());
-            if(fullyBypassed){
+            if(silenceBypass){
+                if(fullyBypassed){
+                    juce::FloatVectorOperations::clear(left,samples);
+                    juce::FloatVectorOperations::clear(right,samples);
+                } else if(fading)for(int i=0;i<samples;++i){
+                    const float gain=bypassFade.next().wet;
+                    left[i]*=gain;right[i]*=gain;
+                }
+            } else if(fullyBypassed){
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                 juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
             } else if(fading)for(int i=0;i<samples;++i) {

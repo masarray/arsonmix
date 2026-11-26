@@ -4,6 +4,7 @@
 #endif
 #include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../src/NativeBuiltInFx.h"
+#include "../engine/core/LiveChannelFxGraph.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -15,6 +16,45 @@ int main() {
     juce::ScopedJuceInitialiser_GUI gui;
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
+    // DMX native production registry -> real lease -> bypass and state.
+    {
+        const auto* ret=findNativeBuiltInFx(VocalReverbProcessor::wetReturnIdentity);
+        assert(ret&&ret->showInPicker);
+        auto p=ret->prepare(48000.,128,nullptr,0);
+        auto* typed=dynamic_cast<VocalReverbProcessor*>(p.get());
+        assert(typed&&typed->wetReturnMode()&&typed->bypassToSilence());
+        assert(typed->desiredSettings().values[0]==1.f);
+        juce::MemoryBlock state;
+        p->getStateInformation(state);
+        assert(!state.isEmpty());
+        auto restored=ret->prepare(48000.,128,state.getData(),static_cast<int>(state.getSize()));
+        assert(restored&&restored->getName()=="Reverb-Sis Return");
+        auto ordinary=findNativeBuiltInFx(VocalReverbProcessor::catalogIdentity)->prepare(
+            48000.,128,state.getData(),static_cast<int>(state.getSize()));
+        assert(ordinary&&!dynamic_cast<VocalReverbProcessor*>(ordinary.get())->wetReturnMode());
+        armix::mixer::LiveChannelFxGraph::FxInstance lease(
+            std::move(p),ret->id,ret->name,128);
+        assert(lease.silenceBypass&&lease.latencySamples==0);
+        std::array<float,128> l{},r{};
+        const auto render=[&](bool bypass){
+            l.fill(.2f);r.fill(-.1f);
+            lease.render(l.data(),r.data(),128,bypass);
+        };
+        render(false);assert(l[0]==0.f&&r[0]==0.f);
+        assert(typed->queueSettings(vocalReverbFactoryPreset(7)));
+        render(false);assert(typed->desiredSettings().values[0]==1.f);
+        for(int i=0;i<12;++i)render(true);
+        assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+        assert(std::all_of(r.begin(),r.end(),[](float v){return v==0.f;}));
+        // Explicit slot bypass uses the same silence policy as rack/global.
+        lease.bypassRequested.store(true);
+        render(false);
+        assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+        lease.bypassRequested.store(false);
+        render(false);
+        assert(std::all_of(l.begin(),l.end(),[](float v){return std::isfinite(v);}));
+        std::puts("DMX_NATIVE_REVERB_RETURN_LEASE_PASS");
+    }
     for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
     static_assert(reverbSisPresetCount==19 && reverbSisCustomItem==20);
     for(int i=0;i<reverbSisPresetCount;++i)assert(vocalReverbFactoryPreset(i).voicing==(i>=8&&i<=12?4:5));

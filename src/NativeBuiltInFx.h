@@ -68,18 +68,27 @@ std::unique_ptr<juce::AudioProcessor> prepareNativeBuiltInFx(
 // ArSonVerb P8 first-callback safety: unlike historical generic adapters,
 // restore preset targets BEFORE Engine::prepare() precomputes coefficients.
 // This function runs on CONTROL, never the primary ASIO callback.
-inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalReverb(
-        double rate,int frames,const void* state,int bytes) {
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalReverbMode(
+        double rate,int frames,const void* state,int bytes,bool wetReturn) {
     if(!std::isfinite(rate)||rate<8000.||rate>192000.||
        frames<16||frames>armix::mixer::PreparedMixerBlock::hardFrameLimit||
        bytes<0||bytes>8*1024*1024||
        (state==nullptr&&bytes!=0)||(state!=nullptr&&bytes==0))
         return {};
-    auto p=std::make_unique<VocalReverbProcessor>();
+    auto p=std::make_unique<VocalReverbProcessor>(wetReturn);
     if(state&&!p->restoreUnpublishedState(state,bytes))return {};
     p->prepareToPlay(rate,frames);
     if(!p->isReady())return {};
     return p;
+}
+
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalReverb(
+        double rate,int frames,const void* state,int bytes) {
+    return prepareNativeVocalReverbMode(rate,frames,state,bytes,false);
+}
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalReverbReturn(
+        double rate,int frames,const void* state,int bytes) {
+    return prepareNativeVocalReverbMode(rate,frames,state,bytes,true);
 }
 
 // Continuous delay is a distinct catalog identity; old Vocal Throw remains
@@ -137,6 +146,11 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_VREV_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VREV_PREPARE_REJECTED",
         "NATIVE_VREV_PREPARE_EXCEPTION","Saved Reverb-Sis state rejected; graph unchanged",
         prepareNativeVocalReverb},
+    NativeBuiltInFx{VocalReverbProcessor::wetReturnIdentity,"Reverb-Sis Return","Reverb",true,8000.,192000.,
+        "NATIVE_VREV_RETURN_HOST_UNAVAILABLE","NATIVE_VREV_RETURN_DEVICE_CHANGED",
+        "NATIVE_VREV_RETURN_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VREV_RETURN_PREPARE_REJECTED",
+        "NATIVE_VREV_RETURN_PREPARE_EXCEPTION","Saved Reverb-Sis Return rejected; graph unchanged",
+        prepareNativeVocalReverbReturn},
     NativeBuiltInFx{SonKuSpatialProcessor::catalogIdentity,"8D-SonKu","Spatial",true,44100.,48000.,
         "NATIVE_SONKU_HOST_UNAVAILABLE","NATIVE_SONKU_DEVICE_CHANGED",
         "NATIVE_SONKU_UNSUPPORTED_AUDIO_FORMAT","NATIVE_SONKU_PREPARE_REJECTED",
