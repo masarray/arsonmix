@@ -4,6 +4,7 @@ on:
     types: [opened, reopened, synchronize]
     paths:
       - 'tools/anti-noiz/recorded_environment.py'
+      - 'tools/anti-noiz/recorded_field_wind.py'
       - 'tools/anti-noiz/corpus_qualifier.cpp'
       - 'tools/anti-noiz/compare_environment.py'
       - 'tools/anti-noiz/tonal_benchmark.cpp'
@@ -83,4 +84,40 @@ jobs:
             ${{ runner.temp }}/an08c-harmonic.json
             ${{ runner.temp }}/an07-evidence/*/provenance.tsv
             ${{ runner.temp }}/an07-evidence/*/segments.tsv
+          if-no-files-found: warn
+
+  field-wind:
+    name: Field wind paired PCM and exposed-noise gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: b2800799cffe85c9ec7d2e1addad3dce22627c6a
+          path: field-reference
+          persist-credentials: false
+      - name: Build exact field baseline and candidate
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror field-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-old"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/field-new"
+          python3 tools/anti-noiz/recorded_field_wind.py --self-test
+      - name: Measure paired real breeze and preserve foreground
+        run: python3 tools/anti-noiz/recorded_field_wind.py "$RUNNER_TEMP/field-old" "$RUNNER_TEMP/field-new" "$RUNNER_TEMP/field-wind"
+      - name: Preserve unnormalized A/B and machine evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-field-wind-ab
+          path: |
+            ${{ runner.temp }}/field-wind/report.json
+            ${{ runner.temp }}/field-wind/*/provenance.tsv
+            ${{ runner.temp }}/field-wind/*/segments.tsv
+            ${{ runner.temp }}/field-wind/*/old-max-input.wav
+            ${{ runner.temp }}/field-wind/*/old-max-processed.wav
+            ${{ runner.temp }}/field-wind/*/new-max-processed.wav
+            ${{ runner.temp }}/field-wind/*/clean.wav
           if-no-files-found: warn

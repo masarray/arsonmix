@@ -78,6 +78,19 @@ jobs:
           "$RUNNER_TEMP/anti-noiz-p0-old" > "$RUNNER_TEMP/p0-base.csv"
           "$RUNNER_TEMP/anti-noiz/anti_noiz_p0_response_test" > "$RUNNER_TEMP/p0-candidate.csv"
           python3 tools/anti-noiz/compare_field_p0.py "$RUNNER_TEMP/p0-base.csv" "$RUNNER_TEMP/p0-candidate.csv"
+      - name: Checkout exact pre-P1 candidate (GCC only)
+        if: matrix.benchmark == 'ON'
+        uses: actions/checkout@v4
+        with:
+          ref: a841a31235e4d8d67c1001354978cbaff4ab444d
+          path: .anti-noiz-pre-p1
+          persist-credentials: false
+      - name: Matched positive-only foreground protection gate
+        if: matrix.benchmark == 'ON'
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-pre-p1/tools/anti-noiz tests/anti_noiz_p0_response_test.cpp -o "$RUNNER_TEMP/anti-noiz-p1-old"
+          "$RUNNER_TEMP/anti-noiz-p1-old" > "$RUNNER_TEMP/p1-base.csv"
+          python3 tools/anti-noiz/compare_field_p1.py "$RUNNER_TEMP/p1-base.csv" "$RUNNER_TEMP/p0-candidate.csv"
       - name: Run all regression gates (wind remains hard failure)
         if: ${{ !cancelled() && steps.build_p0.outcome == 'success' }}
         run: ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure --verbose
@@ -89,6 +102,7 @@ jobs:
           path: |
             ${{ runner.temp }}/p0-base.csv
             ${{ runner.temp }}/p0-candidate.csv
+            ${{ runner.temp }}/p1-base.csv
       - name: Record exploratory throughput (not a performance gate)
         if: matrix.benchmark == 'ON'
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'

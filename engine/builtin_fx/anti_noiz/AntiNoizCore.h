@@ -13,6 +13,7 @@
 #include "AntiNoizAutoGain.h"
 #include "AntiNoizTonal.h"
 #include "AntiNoizWind.h"
+#include "AntiNoizCoherence.h"
 
 namespace armix::builtin_fx::anti_noiz {
 // Independent bounded WOLA reference, not a trained context classifier.
@@ -107,6 +108,7 @@ public:
         prepareTiming();
         context_.prepare(rate_,hop_);
         wind_.prepare(rate_,hop_,n_,channels_);
+        coherence_.prepare(rate_,hop_,channels_);
         voiceGain_.prepare(rate_,hop_);
         tonal_.prepare(rate_,channels_);tonalIdle_=false;
         for(auto& a:in_)a.fill(0);
@@ -129,13 +131,13 @@ public:
         if(effectiveMode_==Mode::Voice&&(next!=Mode::Voice||(!s.enabled&&settings_.enabled)))
             profile_.limitToIdleBounds();
         if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f){tonal_.resetSignal();tonalIdle_=false;}
-        if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();wind_.reset();profile_.track(power_,false);}
+        if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();wind_.reset();coherence_.reset();profile_.track(power_,false);}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
     }
     bool beginLearn() noexcept {
         if(!ready_||!profile_.begin())return false;
-        context_.reset(); wind_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
+        context_.reset(); wind_.reset();coherence_.reset(); voiceGain_.reset(); tonal_.begin();tonalIdle_=false;powerValid_=false; return true;
     }
     // Quiescent/offline owner only: restart the signal timeline, keep trusted PSD.
     void resetStreamKeepProfile() noexcept {
@@ -143,7 +145,7 @@ public:
         for(auto& a:out_)a.fill(0);
         mask_.fill(1); expansion_=1;
         pos_=ticks_=0;powerValid_=false;
-        profile_.cancel(); context_.reset(); wind_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
+        profile_.cancel(); context_.reset(); wind_.reset();coherence_.reset(); voiceGain_.reset(); tonal_.resetSignal();tonalIdle_=false;
     }
     Settings settings() const noexcept {return settings_;}
     float spectralGain() const noexcept {return *std::min_element(mask_.begin(),mask_.begin()+hop_+1);}
@@ -176,7 +178,7 @@ public:
     // Native host lifecycle only. Keep the qualified stationary DSP path,
     // coefficient preparation and signal arithmetic unchanged.
     void cancelNativeLearn() noexcept {
-        if(profile_.learning()){profile_.cancel();context_.reset();wind_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
+        if(profile_.learning()){profile_.cancel();context_.reset();wind_.reset();coherence_.reset();voiceGain_.reset();tonal_.resetSignal();tonalIdle_=false;}
     }
     bool lastNativeLearnQualified() const noexcept {return profile_.lastAttemptQualified();}
     void processNativeDry(float* left,float* right,int samples) noexcept {
@@ -213,7 +215,7 @@ private:
     }
     void frame() noexcept {
         if(!profile_.learning()&&(!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music)) {
-            powerValid_=false;context_.reset();wind_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
+            powerValid_=false;context_.reset();wind_.reset();coherence_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
         for(int c=0;c<channels_;++c) {
@@ -226,7 +228,7 @@ private:
         powerValid_=true;
         const auto result=profile_.observe(power_);
         if(result==NoiseProfile<maxBins>::LearnResult::accepted){tonal_.commit();wind_.configure(profile_.anchor());}
-        if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();wind_.reset();voiceGain_.reset();}
+        if(result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();wind_.reset();coherence_.reset();voiceGain_.reset();}
         const bool protect=profile_.learning()||!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;
         // Only Voice with nonzero Silence may use the extra residual label.
         // Strict idle remains the sole authority for profile and spectral DSP.
@@ -235,6 +237,7 @@ private:
         const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
         const bool windEnabled=!protect&&!idle&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&wind_.eligible();
         wind_.update(power_,profile_.anchor(),windEnabled);
+        coherence_.update(work_,windEnabled);
         tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
         const float expTarget=idle?silenceFloor_:context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
@@ -280,6 +283,21 @@ private:
                         context_.temporalRatio(profile_.anchor(),channels_,bins,k),neighbor);
                 }
             }
+            // P1: positive evidence only. Independent narrow-band phase
+            // coherence can restore soft upper harmonics without opening
+            // the entire gate or lifting the dominant DC/low noise bins.
+            if(windEnabled&&k>=2&&k<=4&&ratio<4.f){
+                float support=0.f;
+                for(int c=0;c<channels_;++c){
+                    const float local=coherence_.support(c,k);
+                    float neighbor=0.f;
+                    for(int j=2;j<=4;++j){if(j==k)continue;
+                        const float localRatio=power_[c][j]/std::max(profile_.anchor()[c][j],eps);
+                        neighbor=std::max(neighbor,coherence_.support(c,j)*std::clamp((localRatio-1.f)*.25f,0.f,1.f));}
+                    support=std::max(support,std::min(local,neighbor));
+                }
+                gain+=std::min(.40f,1.f-gain)*std::clamp((support-.06f)*3.f,0.f,1.f);
+            }
             const float localFloor=reserve>0.f?AutoGain::detailFloor(floor,reserve,
                 context_.relativeNoise(profile_.anchor(),channels_,k)):floor;
             target_[k]=std::max(localFloor,gain);
@@ -317,6 +335,7 @@ private:
     FftPlan fft_{};
     ContextGuard<maxBins> context_{};
     WindSpectralGuard<maxBins> wind_{};
+    ForegroundCoherence<maxN> coherence_{};
     VoiceGain<maxBins> voiceGain_{};
     TonalNoise tonal_{};
     bool tonalIdle_=false;
