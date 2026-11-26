@@ -66,6 +66,7 @@ public:
         armix::rt::FxIdleCapability idleCapability=armix::rt::FxIdleCapability::conservative;
         std::atomic<bool> dspSleeping{false};
         std::atomic<std::uint64_t> dspProcessedBlocks{0},dspSleepBlocks{0};
+        std::atomic<std::uint64_t> dspParkedBypassBlocks{0};
         std::atomic<std::uint64_t> dspLastUs{0},dspWorstUs{0};
         // Monotonic lease counters. CONTROL only reads; the existing
         // processing gate guarantees a single writer, so avoid locked RMW.
@@ -204,6 +205,11 @@ public:
             const bool fullyBypassed=bypassFade.fullyBypassed();
             const bool fading=bypassFade.transitioning();
             const bool latencyFault=latencyChanged.load(std::memory_order_acquire);
+            const bool parkedBypass=continuousBypassProcessing&&requestedBypass&&
+                fullyBypassed&&!fading&&!latencyFault&&nativeControl&&
+                nativeControl->canSkipParkedBypass();
+            const auto action=armix::rt::chooseFxRenderAction(idleCapability,
+                continuousBypassProcessing,requestedBypass,fullyBypassed,fading,latencyFault,parkedBypass);
             // Latent inserts must advance their dry delay every block, even
             // when fully wet. Zero-latency inserts need dry scratch ONLY
             // while mixing a fade or continuously processing a dry bypass.
@@ -219,13 +225,13 @@ public:
                     dryLeft[static_cast<std::size_t>(i)]=l;
                     dryRight[static_cast<std::size_t>(i)]=r;
                 }
-            } else if(!latencyFault && (fading || (fullyBypassed&&continuousBypassProcessing))) {
+            } else if(action!=armix::rt::FxRenderAction::alignedDry &&
+                      (fading || (fullyBypassed&&continuousBypassProcessing))) {
                 juce::FloatVectorOperations::copy(dryLeft.data(),left,samples);
                 juce::FloatVectorOperations::copy(dryRight.data(),right,samples);
             }
-            const auto action=armix::rt::chooseFxRenderAction(idleCapability,
-                continuousBypassProcessing,requestedBypass,fullyBypassed,fading,latencyFault);
             if(action==armix::rt::FxRenderAction::alignedDry) {
+                if(parkedBypass)addRealtimeCounter(dspParkedBypassBlocks,1);
                 immerseIdle.reset();
                 dspSleeping.store(false,std::memory_order_relaxed);
                 dspLastUs.store(0,std::memory_order_relaxed);

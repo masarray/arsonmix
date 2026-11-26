@@ -21,6 +21,11 @@ struct RealtimeNativeFxControl {
     // continue processing the actual PCM while its output is bypassed.
     // Ordinary EQ/compressor/vendor FX retain the CPU-saving bypass fast path.
     virtual bool requiresContinuousBypassProcessing() const noexcept {return false;}
+    // Optional exact parked-bypass proof, AUDIO only AFTER onRealtimeBypass
+    // and consumeRealtimeEdits. True means processBlock would do no further
+    // state, meter, event or timeline work; host retains aligned dry PCM.
+    // Default deny. Must become false immediately on wake or new tail work.
+    virtual bool canSkipParkedBypass() const noexcept {return false;}
     // AUDIO callback only. A native performer cue can be dangerous when
     // the rack is OFF: while fully bypassed its capture clock stops.
     // Default no-op preserves Compressor/EQ/Harmony and vendor FX behavior.

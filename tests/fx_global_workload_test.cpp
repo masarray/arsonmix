@@ -86,6 +86,15 @@ static void lifecycle(){
         ++cases;
     }
     assert(cases==96);
+    // A parked hint alone never authorizes skipping active/transitioning
+    // processors. A continuous bypass is the only admitted additional case.
+    for(unsigned mask=0;mask<32;++mask){
+        const bool continuous=mask&1,requested=mask&2,fully=mask&4,fade=mask&8,fault=mask&16;
+        const auto actual=chooseFxRenderAction(FxIdleCapability::conservative,continuous,
+            requested,fully,fade,fault,true);
+        const bool dry=fault||(fully&&!continuous)||(continuous&&requested&&fully&&!fade);
+        assert((actual==FxRenderAction::alignedDry)==dry);
+    }
     float l[]{0.f,-0.f},r[]{-0.f,0.f};
     assert(exactSilentStereo(l,r,2));
     for(float nonzero:{std::bit_cast<float>(1u),1.e-20f,1.f,
@@ -108,5 +117,5 @@ static void lifecycle(){
     assert(s.validRate&&s.calls==0&&s.overBudget==0&&s.worstPermille==0&&s.silenceObserved==0);
 }
 int main(){workload();history();lifecycle();
-    std::puts("PASS: 42000 latent blocks, 96 lifecycle combinations, silence/overload/reset and advisory fences");
+    std::puts("PASS: 42000 latent blocks, 128 lifecycle combinations, silence/overload/reset and advisory fences");
 }

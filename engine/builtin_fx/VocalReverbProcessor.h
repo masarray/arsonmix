@@ -111,6 +111,12 @@ public:
     // native rack's fully-bypassed fast path. The already existing host
     // callback remains the only DSP owner; no additional latency or worker.
     bool requiresContinuousBypassProcessing() const noexcept override {return true;}
+    // Exact same predicate as the early return in processBlock, after the
+    // host has already consumed the bounded edit mailbox. No new tail
+    // threshold, reset or assumption about the FDN's hidden state.
+    bool canSkipParkedBypass() const noexcept override {
+        return isReady()&&fullyBypassed_&&!draining_;
+    }
     void onRealtimeBypass(bool, bool fully) noexcept override {
         if(fully && !fullyBypassed_) {
             clearMeters();
@@ -132,7 +138,7 @@ public:
         // invoking a fully-bypassed continuous processor. Do not pop another
         // packet here: that would double RT automation work per callback.
         if(!fullyBypassed_)consumeRealtimeEdits();
-        if(fullyBypassed_ && !draining_)return; // parked tank, minimal CPU
+        if(canSkipParkedBypass())return; // same proof used by host scheduler
         const auto frames=static_cast<std::size_t>(pcm.getNumSamples());
         auto* left=pcm.getWritePointer(0);
         auto* right=pcm.getWritePointer(1);

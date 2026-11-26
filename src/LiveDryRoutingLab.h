@@ -3386,6 +3386,7 @@ public:
                 item->setProperty("dspWorstUs",static_cast<double>((*lease)->dspWorstUs.load(std::memory_order_relaxed)));
                 item->setProperty("dspProcessedBlocks",static_cast<double>((*lease)->dspProcessedBlocks.load(std::memory_order_relaxed)));
                 item->setProperty("dspSleepBlocks",static_cast<double>((*lease)->dspSleepBlocks.load(std::memory_order_relaxed)));
+                item->setProperty("dspParkedBypassBlocks",static_cast<double>((*lease)->dspParkedBypassBlocks.load(std::memory_order_relaxed)));
                 // Independently sampled lifetime totals, not an atomic snapshot.
                 item->setProperty("dspTotalUs",static_cast<double>((*lease)->dspTotalUs.load(std::memory_order_relaxed)));
                 item->setProperty("dspProcessedFrames",static_cast<double>((*lease)->dspProcessedFrames.load(std::memory_order_relaxed)));

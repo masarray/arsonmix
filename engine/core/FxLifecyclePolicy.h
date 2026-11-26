@@ -10,8 +10,10 @@ enum class FxIdleCapability : std::uint8_t { conservative, exactNative, qualifie
 enum class FxRenderAction : std::uint8_t { process, alignedDry, probeExact, probeTail };
 constexpr FxRenderAction chooseFxRenderAction(FxIdleCapability capability,
         bool continuousBypass,bool requestedBypass,bool fullyBypassed,
-        bool fading,bool latencyFault) noexcept {
+        bool fading,bool latencyFault,bool parkedBypass=false) noexcept {
     if(latencyFault||(fullyBypassed&&!continuousBypass))return FxRenderAction::alignedDry;
+    if(continuousBypass&&requestedBypass&&fullyBypassed&&!fading&&parkedBypass)
+        return FxRenderAction::alignedDry;
     if(continuousBypass||requestedBypass||fullyBypassed||fading)return FxRenderAction::process;
     if(capability==FxIdleCapability::exactNative)return FxRenderAction::probeExact;
     if(capability==FxIdleCapability::qualifiedTail)return FxRenderAction::probeTail;
