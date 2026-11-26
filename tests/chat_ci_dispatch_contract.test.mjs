@@ -291,8 +291,8 @@ test('FAT upload is independently retryable without a second Windows compiler an
   assert.match(build,/Seal exact-SHA FAT delivery payload after all installer tests/);
   assert.match(build,/Save completed FAT packages for retryable upload job/);
   assert.match(build,/actions\/cache\/save@[a-f0-9]{40}/);
-  assert.equal((build.match(/actions\/upload-artifact@v4/g)||[]).length,1);
-  assert.match(build,/Upload portable Windows field preview\n +if: \$\{\{ env\.FIELD_PREVIEW == 'true' \}\}\n +uses: actions\/upload-artifact@v4/);
+  assert.equal((build.match(/actions\/upload-artifact@[a-f0-9]{40}/g)||[]).length,1);
+  assert.match(build,/Upload portable Windows field preview\n +if: \$\{\{ env\.FIELD_PREVIEW == 'true' \}\}\n +uses: actions\/upload-artifact@[a-f0-9]{40}/);
   assert.match(upload,/needs: windows-build/);
   assert.match(upload,/runs-on: windows-2022/);
   assert.match(upload,/actions\/cache\/restore@[a-f0-9]{40}/);
@@ -302,7 +302,7 @@ test('FAT upload is independently retryable without a second Windows compiler an
   assert.match(upload,/sourceSha -ne \$actual/);
   assert.match(upload,/FAT_UPLOAD_EXE_OR_SETUP_INVALID/);
   assert.match(upload,/overwrite: true/);
-  assert.equal((upload.match(/actions\/upload-artifact@v4/g)||[]).length,2);
+  assert.equal((upload.match(/actions\/upload-artifact@[a-f0-9]{40}/g)||[]).length,2);
   assert.equal((upload.match(/compression-level: 0/g)||[]).length,2);
   assert.match(build,/ctest --test-dir build -C Release --output-on-failure/);
   assert.match(build,/Prove two authentic historical Inno releases upgrade and roll back/);
