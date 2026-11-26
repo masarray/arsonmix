@@ -48,6 +48,7 @@ jobs:
           name: anti-noiz-p0-repro-source
           path: |
             engine/builtin_fx/anti_noiz/
+            engine/builtin_fx/FxSpsc.h
             tests/anti_noiz_*.cpp
             tools/anti-noiz/
           if-no-files-found: error
@@ -58,22 +59,36 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ matrix.config }}
           -DANTI_NOIZ_SANITIZERS=${{ matrix.sanitizers }}
           -DANTI_NOIZ_BENCHMARK=${{ matrix.benchmark }}
-      - name: Compile and run regression
-        run: |
-          cmake --build "$RUNNER_TEMP/anti-noiz" --parallel 2
-          ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure --verbose
-      - name: Checkout field-rejected exact source (wind gate, GCC only)
+      - name: Checkout field-rejected exact source (GCC only)
         if: matrix.benchmark == 'ON'
         uses: actions/checkout@v4
         with:
           ref: b2800799cffe85c9ec7d2e1addad3dce22627c6a
           path: .anti-noiz-field-reference
           persist-credentials: false
-      - name: Prove old field build fails the new wind PCM gate
+      - name: Compile isolated regression
+        id: build_p0
+        run: cmake --build "$RUNNER_TEMP/anti-noiz" --parallel 2
+      - name: Matched field baseline and partial response gate
         if: matrix.benchmark == 'ON'
         run: |
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-field-reference/tools/anti-noiz tests/anti_noiz_wind_test.cpp -o "$RUNNER_TEMP/anti-noiz-field-old"
           "$RUNNER_TEMP/anti-noiz-field-old" --baseline
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-field-reference/tools/anti-noiz tests/anti_noiz_p0_response_test.cpp -o "$RUNNER_TEMP/anti-noiz-p0-old"
+          "$RUNNER_TEMP/anti-noiz-p0-old" > "$RUNNER_TEMP/p0-base.csv"
+          "$RUNNER_TEMP/anti-noiz/anti_noiz_p0_response_test" > "$RUNNER_TEMP/p0-candidate.csv"
+          python3 tools/anti-noiz/compare_field_p0.py "$RUNNER_TEMP/p0-base.csv" "$RUNNER_TEMP/p0-candidate.csv"
+      - name: Run all regression gates (wind remains hard failure)
+        if: ${{ !cancelled() && steps.build_p0.outcome == 'success' }}
+        run: ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure --verbose
+      - name: Preserve matched response data
+        if: ${{ always() && matrix.benchmark == 'ON' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: anti-noiz-p0-paired-response
+          path: |
+            ${{ runner.temp }}/p0-base.csv
+            ${{ runner.temp }}/p0-candidate.csv
       - name: Record exploratory throughput (not a performance gate)
         if: matrix.benchmark == 'ON'
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'

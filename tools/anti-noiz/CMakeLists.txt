@@ -131,3 +131,8 @@ anti_noiz_target(anti_noiz_wind_test tests/anti_noiz_wind_test.cpp)
 target_include_directories(anti_noiz_wind_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
 add_test(NAME AntiNoizWindFieldProxy COMMAND anti_noiz_wind_test)
 set_tests_properties(AntiNoizWindFieldProxy PROPERTIES TIMEOUT 90)
+
+anti_noiz_target(anti_noiz_p0_response_test tests/anti_noiz_p0_response_test.cpp)
+target_include_directories(anti_noiz_p0_response_test PRIVATE "${CMAKE_CURRENT_LIST_DIR}")
+add_test(NAME AntiNoizP0Response COMMAND anti_noiz_p0_response_test)
+set_tests_properties(AntiNoizP0Response PROPERTIES TIMEOUT 120)
