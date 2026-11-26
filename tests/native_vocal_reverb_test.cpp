@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <vector>
 #include <thread>
@@ -27,21 +28,60 @@ int main() {
         assert(p&&p->getName()=="Vocal Delay Return");
         juce::MemoryBlock state;p->getStateInformation(state);
         assert(state.getSize()==48);
-        auto old=findNativeBuiltInFx(Delay::catalogIdentity)->prepare(
-            48000.,128,state.getData(),static_cast<int>(state.getSize()));
-        assert(old&&!dynamic_cast<Delay*>(old.get())->bypassToSilence());
-        armix::mixer::LiveChannelFxGraph::FxInstance lease(std::move(p),ret->id,ret->name,128);
-        assert(lease.silenceBypass&&lease.latencySamples==0);
-        std::array<float,128> l{},r{};
-        const auto render=[&](bool bypass){l.fill(.1f);r.fill(.1f);lease.render(l.data(),r.data(),128,bypass);};
-        render(false);
-        assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
-        double energy=0.;
-        for(int i=0;i<500;++i){render(false);for(float v:l)energy+=std::abs(v);}
-        assert(energy>1.);
-        for(int i=0;i<12;++i)render(true);
-        assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
-        assert(std::all_of(r.begin(),r.end(),[](float v){return v==0.f;}));
+        namespace vd=armix::builtin_fx::vocal_delay;
+        vd::State decoded{};
+        assert(vd::StateCodec::decode(state.getData(),state.getSize(),decoded));
+        assert(vd::sameParameters(decoded.continuous,vd::presetSettings(0)));
+        // Smart Live has a 180 Hz high-pass, wet voicing and sustained
+        // speech ducking. A constant DC stimulus is not an audible echo
+        // qualification. Keep it as a reference-equivalence case; use the
+        // same two-second in-band tone as continuousWetAndPower in the
+        // portable concert suite for the nonzero wet-energy requirement.
+        const auto verify=[&](bool dc){
+            auto wet=ret->prepare(48000.,128,state.getData(),static_cast<int>(state.getSize()));
+            auto old=findNativeBuiltInFx(Delay::catalogIdentity)->prepare(
+                48000.,128,state.getData(),static_cast<int>(state.getSize()));
+            assert(wet&&old&&dynamic_cast<Delay*>(wet.get())->bypassToSilence()&&
+                !dynamic_cast<Delay*>(old.get())->bypassToSilence());
+            armix::mixer::LiveChannelFxGraph::FxInstance lease(
+                std::move(wet),ret->id,ret->name,128);
+            armix::mixer::LiveChannelFxGraph::FxInstance insert(
+                std::move(old),Delay::catalogIdentity,"Vocal Delay",128);
+            assert(lease.silenceBypass&&!insert.silenceBypass&&lease.latencySamples==0);
+            vd::ContinuousDelayCore reference(true);
+            assert(reference.prepare(48000.,decoded.continuous));
+            std::array<float,128> dry{},l{},r{},il{},ir{},rl{},rr{};
+            const auto render=[&](int block,bool bypass){
+                for(int i=0;i<128;++i)
+                    dry[i]=dc?.1f:.16f*float(std::sin((block*128+i)*.031));
+                l=r=il=ir=rl=rr=dry;
+                lease.render(l.data(),r.data(),128,bypass);
+                insert.render(il.data(),ir.data(),128,bypass);
+                if(!bypass)reference.processStereo(rl.data(),rr.data(),128);
+            };
+            double energyL=0.,energyR=0.;
+            for(int block=0;block<750;++block){
+                render(block,false);
+                for(int i=0;i<128;++i){
+                    assert(std::isfinite(l[i])&&std::isfinite(r[i]));
+                    assert(std::abs(l[i]-rl[i])<1e-7f&&std::abs(r[i]-rr[i])<1e-7f);
+                    assert(il[i]==dry[i]+l[i]&&ir[i]==dry[i]+r[i]);
+                    if(block==0)assert(l[i]==0.f&&r[i]==0.f);
+                    energyL+=std::abs(l[i]);energyR+=std::abs(r[i]);
+                }
+            }
+            // Preserve the original left-channel threshold for a genuine
+            // signal, and check right independently as well.
+            if(!dc)assert(energyL>1.&&energyR>1.);
+            for(int i=0;i<12;++i)render(750+i,true);
+            assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+            assert(std::all_of(r.begin(),r.end(),[](float v){return v==0.f;}));
+            assert(il==dry&&ir==dry); // legacy insert still bypasses to dry
+            return energyL+energyR;
+        };
+        const double dcEnergy=verify(true),toneEnergy=verify(false);
+        assert(toneEnergy>dcEnergy);
+        std::printf("DMX_NATIVE_DELAY_RETURN_PASS DC=%g tone=%g native/core and dry+wet parity, silence bypass\n",dcEnergy,toneEnergy);
     }
     // DMX native production registry -> real lease -> bypass and state.
     {
