@@ -135,8 +135,8 @@ public:
         juce::MemoryBlock contents;
         if(!Input::read(file,maxFile,contents))
             return "Could not read mixer file";
-        const auto text=contents.toString();
-        if(!Input::jsonStructure(text))return "Mixer JSON exceeds structural bounds";
+        juce::String text;
+        if(!Input::decodeUtf8(contents,text)||!Input::jsonStructure(text))return "Mixer JSON exceeds structural bounds";
         auto root=juce::JSON::parse(text);
         if(!root.isObject())return "Invalid mixer JSON";
         const auto blobs=root.getProperty("pluginState",{});

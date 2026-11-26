@@ -3,11 +3,43 @@
 #include <juce_core/juce_core.h>
 #include <array>
 #include <utility>
+#include <limits>
 
 // CONTROL / IO only. Limits apply to actual bytes, not just file/ZIP metadata.
 // This is structural preflight; the existing typed JSON codecs remain authoritative.
 namespace armix::storage {
 struct BoundedDataInput final {
+    // Strict UTF-8 for persisted text and receipts, including embedded NUL
+    // rejection. JUCE String alone cannot distinguish truncated NUL input.
+    static bool decodeUtf8(const juce::MemoryBlock& bytes,juce::String& result) {
+        const auto* p=static_cast<const unsigned char*>(bytes.getData());
+        const auto n=bytes.getSize();
+        if(n==0||n>static_cast<std::size_t>(std::numeric_limits<int>::max()))return false;
+        std::size_t i=0;
+        if(n>=3&&p[0]==0xef&&p[1]==0xbb&&p[2]==0xbf)i=3;
+        const auto start=i;
+        if(start==n)return false;
+        while(i<n) {
+            const auto a=p[i++];
+            if(a==0)return false;
+            if(a<0x80)continue;
+            unsigned remaining=0; unsigned cp=0,minimum=0;
+            if(a>=0xc2&&a<=0xdf){remaining=1;cp=a&0x1f;minimum=0x80;}
+            else if(a>=0xe0&&a<=0xef){remaining=2;cp=a&0x0f;minimum=0x800;}
+            else if(a>=0xf0&&a<=0xf4){remaining=3;cp=a&7;minimum=0x10000;}
+            else return false;
+            if(n-i<remaining)return false;
+            for(unsigned j=0;j<remaining;++j){
+                const auto b=p[i++];if((b&0xc0)!=0x80)return false;
+                cp=(cp<<6)|(b&0x3f);
+            }
+            if(cp<minimum||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff))return false;
+        }
+        auto value=juce::String::fromUTF8(reinterpret_cast<const char*>(p+start),static_cast<int>(n-start));
+        if(value.getNumBytesAsUTF8()!=n-start)return false;
+        result=std::move(value);
+        return true;
+    }
     static bool jsonStructure(const juce::String& text) {
         const auto* bytes=text.toRawUTF8();
         const auto size=text.getNumBytesAsUTF8();
@@ -52,7 +84,7 @@ struct BoundedDataInput final {
     }
     static bool read(const juce::File& file,juce::int64 maximum,
                      juce::MemoryBlock& result,bool allowEmpty=false) {
-        if(maximum<0||!file.existsAsFile()||file.isSymbolicLink())return false;
+        if(maximum<0||maximum==std::numeric_limits<juce::int64>::max()||!file.existsAsFile()||file.isSymbolicLink())return false;
         juce::FileInputStream input(file);
         if(!input.openedOk())return false;
         const auto size=input.getTotalLength();
@@ -67,10 +99,7 @@ struct BoundedDataInput final {
     static bool text(const juce::File& file,juce::int64 maximum,juce::String& result) {
         juce::MemoryBlock bytes;
         if(!read(file,maximum,bytes))return false;
-        const auto value=bytes.toString();
-        if(value.getNumBytesAsUTF8()>static_cast<std::size_t>(maximum))return false;
-        result=value;
-        return true;
+        return decodeUtf8(bytes,result);
     }
 };
 } // namespace armix::storage

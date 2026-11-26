@@ -120,14 +120,48 @@ struct ScanIsolation final {
             d.numOutputChannels>=0 && d.numOutputChannels<=4096;
     }
 
+    static bool receiptStructure(const juce::String& data) {
+        const auto* p=data.toRawUTF8();
+        const auto n=data.getNumBytesAsUTF8();
+        int depth=0;
+        for(std::size_t i=0;i<n;++i){
+            if(p[i]!='<')continue;
+            if(i+1>=n||p[i+1]=='!')return false;
+            const bool closing=p[i+1]=='/', declaration=p[i+1]=='?';
+            if(declaration&&i!=0)return false;
+            char quote=0;
+            std::size_t j=i+1;
+            for(;j<n;++j) {
+                const char c=p[j];
+                if(quote){if(c==quote)quote=0;continue;}
+                if(c=='"'||c=='\''){quote=c;continue;}
+                if(c=='<')return false;
+                if(c=='>')break;
+            }
+            if(j==n||quote)return false;
+            if(!declaration){
+                const bool empty=j>i&&p[j-1]=='/';
+                if(closing){if(depth==0||empty)return false;--depth;}
+                else if(!empty){if(++depth>2)return false;}
+                else if(depth>=2)return false;
+            }
+            i=j;
+        }
+        return depth==0;
+    }
+
     static bool readReceipt(const juce::File& file,const juce::String& nonce,
                             const juce::String& path,Descriptions& out) {
         if (!file.existsAsFile() || file.isSymbolicLink() || file.getSize()<=0 ||
             file.getSize()>maxBytes) return false;
-        const auto data=file.loadFileAsString();
+        juce::String data;
+        if(!storage::BoundedDataInput::text(file,maxBytes,data))return false;
         // No DTD/entity declarations or arbitrarily nested markup.
         if (data.contains("<!") || data.getNumBytesAsUTF8()>maxBytes ||
             data.retainCharacters("<").length()>maxDescriptions*2+4) return false;
+        // Receipt grammar permits exactly root + flat PLUGIN children.
+        // Reject pathological XML depth BEFORE entering JUCE recursive parser.
+        if(!receiptStructure(data))return false;
         const auto xml=juce::XmlDocument::parse(data);
         if (!xml || !xml->hasTagName("ARSONMIX_VST3_SCAN_V1") ||
             xml->getStringAttribute("nonce")!=nonce ||

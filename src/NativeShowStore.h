@@ -75,6 +75,10 @@ public:
             return "Studio Shows directory is not writable";
         const auto showRoot=root_.getChildFile(show.id.toLowerCase());
         const auto versions=showRoot.getChildFile("versions");
+        if(!armix::storage::BoundedDataInput::managedPath(root_,versions)||
+           !armix::storage::BoundedDataInput::managedPath(root_,showRoot.getChildFile("HEAD"))||
+           !armix::storage::BoundedDataInput::managedPath(root_,showRoot.getChildFile("PREVIOUS")))
+            return "Unsafe Show storage path";
         if(!versions.isDirectory()&&versions.createDirectory().failed())
             return "Show version directory is not writable";
         const auto generation=juce::Uuid().toDashedString().toLowerCase();
@@ -121,7 +125,7 @@ public:
         if(head.existsAsFile()) {
             if(head.getSize()<1 || head.getSize()>128)
                 return "Existing Show HEAD invalid: refuse to discard recovery history";
-            const auto previousId=head.loadFileAsString().trim();
+            const auto previousId=readPointer(head);
             if(!detail::uuid(previousId))
                 return "Existing Show HEAD invalid: refuse to discard recovery history";
             ShowV2 priorShow;
@@ -149,7 +153,7 @@ public:
         const auto pointer=dir.getChildFile("PREVIOUS");
         if(!pointer.existsAsFile()||pointer.getSize()<1||pointer.getSize()>128)
             return "Previous Show generation missing";
-        const auto id=pointer.loadFileAsString().trim();
+        const auto id=readPointer(pointer);
         if(!detail::uuid(id))return "Unsafe previous Show pointer";
         ShowV2 candidate;
         std::vector<SnapshotV2> items;
@@ -194,7 +198,7 @@ public:
         const auto dir=root_.getChildFile(requestedId.toLowerCase());
         const auto head=dir.getChildFile("HEAD");
         if(!head.existsAsFile() || head.getSize()>128) return "Show pointer missing";
-        const auto generation=head.loadFileAsString().trim();
+        const auto generation=readPointer(head);
         if(!detail::uuid(generation))return "Invalid Show pointer";
         ShowV2 candidate;
         std::vector<SnapshotV2> items;
@@ -253,13 +257,22 @@ public:
         const auto base=root_.getChildFile(showId.toLowerCase());
         const auto head=base.getChildFile("HEAD");
         if(!head.existsAsFile()||head.getSize()>128)return {};
-        const auto id=head.loadFileAsString().trim();
+        const auto id=readPointer(head);
         return detail::uuid(id)?base.getChildFile("versions").getChildFile(id):juce::File{};
     }
 private:
     juce::File root_;
-    static juce::String writePointer(const juce::File& target,const juce::String& id) {
-        if(!detail::uuid(id))return "Unsafe Show generation pointer";
+    juce::String readPointer(const juce::File& pointer) const {
+        juce::String value;
+        if(!armix::storage::BoundedDataInput::managedPath(root_,pointer)||
+           !armix::storage::BoundedDataInput::text(pointer,128,value))return {};
+        const auto id=value.trim();
+        if(!detail::uuid(id)||!armix::storage::BoundedDataInput::managedPath(root_,
+            pointer.getParentDirectory().getChildFile("versions").getChildFile(id)))return {};
+        return id;
+    }
+    juce::String writePointer(const juce::File& target,const juce::String& id) const {
+        if(!armix::storage::BoundedDataInput::managedPath(root_,target)||!detail::uuid(id))return "Unsafe Show generation pointer";
         juce::TemporaryFile temp(target);
         auto output=temp.getFile().createOutputStream();
         if(!output)return "Cannot open temporary Show pointer";

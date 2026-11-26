@@ -33,7 +33,7 @@ def file_hash(path):
 def json_file(path):
     if path.stat().st_size > MAX_METADATA:
         raise ValueError("Metadata too large: " + path.name)
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    return json.loads(path.read_text(encoding="utf-8-sig"), object_pairs_hook=unique_object)
 
 def layout(platform, tag):
     prefix = f"ArSonMix-{tag}-"
@@ -47,6 +47,24 @@ def layout(platform, tag):
         return [prefix + "macOS-universal.dmg"], ["MACOS_PROVENANCE.json"], "SHA256SUMS-macOS.txt"
     raise ValueError("Unsupported platform")
 
+def unique_object(pairs):
+    out = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError("Duplicate JSON metadata key")
+        out[key] = value
+    return out
+
+def safe_member_part(part):
+    # Windows aliases and reserved names are unsafe even when validation
+    # runs on Ubuntu; reject before a user extracts a portable ZIP.
+    if (not part or part in (".", "..") or part[-1] in " ." or
+            any(ord(c) < 32 or c in '<>:"|?*' for c in part)):
+        return False
+    stem = part.split(".", 1)[0].rstrip(" ").upper()
+    return not (stem in {"CON", "PRN", "AUX", "NUL"} or
+                re.fullmatch(r"(?:COM|LPT)[1-9¹²³]", stem))
+
 def zip_inventory(path):
     # Enumerate and hash actual portable ZIP members without extracting them.
     rows, seen, expanded = [], set(), 0
@@ -59,7 +77,7 @@ def zip_inventory(path):
             normalized = name.rstrip("/")
             parts = normalized.split("/")
             if (not normalized or name.startswith("/") or "\\" in name or
-                    any(x in ("", ".", "..") or ":" in x for x in parts) or
+                    any(not safe_member_part(x) for x in parts) or
                     PurePosixPath(normalized).is_absolute()):
                 raise ValueError("Unsafe portable ZIP member")
             key = normalized.casefold()
@@ -78,6 +96,12 @@ def zip_inventory(path):
             rows.append({"path": normalized, "bytes": info.file_size, "sha256": sha256})
     if not rows:
         raise ValueError("Empty portable ZIP")
+    # Reject file-as-parent ambiguity, including case-folded aliases.
+    files = {row["path"].casefold() for row in rows}
+    for name in seen:
+        parts = name.split("/")
+        if any("/".join(parts[:i]) in files for i in range(1, len(parts))):
+            raise ValueError("Portable ZIP file/directory collision")
     return sorted(rows, key=lambda row: row["path"])
 
 def calculate(root, platform, tag, sha, existing=False):
@@ -115,7 +139,11 @@ def calculate(root, platform, tag, sha, existing=False):
         with zipfile.ZipFile(root / binary[1]) as z:
             if z.namelist() != [binary[0]]:
                 raise ValueError("Setup ZIP content mismatch")
-            with z.open(binary[0]) as f:
+            info = z.getinfo(binary[0])
+            if (stat.S_ISLNK(info.external_attr >> 16) or
+                    info.file_size != (root / binary[0]).stat().st_size):
+                raise ValueError("Setup ZIP installer size/type mismatch")
+            with z.open(info) as f:
                 if digest(f) != hashes[binary[0]]:
                     raise ValueError("Setup ZIP installer mismatch")
         portable = zip_inventory(root / binary[2])

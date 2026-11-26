@@ -64,16 +64,23 @@ struct PortableWorkspace final
     static bool safeRelativePath (const juce::String& relative)
     {
         if (relative.isEmpty() || relative.length() > 2048 ||
-            relative.startsWithChar ('/') || relative.containsChar ('\\') ||
+            relative.startsWithChar ('/') || relative.endsWithChar ('/') || relative.containsChar ('\\') ||
             relative.containsChar (':') || relative.containsChar ('\0'))
             return false;
         juce::StringArray components;
         components.addTokens (relative, "/", "");
         if (components.isEmpty()) return false;
-        for (const auto& part : components)
+        for (const auto& part : components) {
             if (part.isEmpty() || part == "." || part == ".." ||
-                part.endsWithChar (' ') || part.endsWithChar ('.'))
-                return false;
+                part.endsWithChar (' ') || part.endsWithChar ('.') ||
+                part.containsAnyOf("<>:\"|?*"))return false;
+            for(auto p=part.getCharPointer();!p.isEmpty();++p)
+                if(*p<32)return false;
+            const auto stem=part.upToFirstOccurrenceOf(".",false,false).trimEnd().toUpperCase();
+            if(stem=="CON"||stem=="PRN"||stem=="AUX"||stem=="NUL"||
+               (stem.length()==4&&(stem.startsWith("COM")||stem.startsWith("LPT"))&&
+                juce::String("123456789¹²³").containsChar(stem[3])))return false;
+        }
         // Empty tokens are also invalid (e.g. Plugins//Bad.vst3).
         return !relative.contains ("//");
     }

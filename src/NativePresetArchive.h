@@ -167,8 +167,8 @@ public:
         const auto declared=zip.getEntry(manifestIndex)->uncompressedSize;
         if(declared<1||manifestStream->readIntoMemoryBlock(manifestBytes,256*1024+1)!=declared||
            manifestBytes.getSize()>256*1024)return "Manifest exceeds limit or length mismatch";
-        const auto data=manifestBytes.toString();
-        if(!BoundedDataInput::jsonStructure(data))return "Invalid preset manifest structure";
+        juce::String data;
+        if(!BoundedDataInput::decodeUtf8(manifestBytes,data)||!BoundedDataInput::jsonStructure(data))return "Invalid preset manifest structure";
         const auto manifest = juce::JSON::parse (data);
         if (!manifest.isObject() ||
             manifest.getProperty ("format", {}).toString() != "arsonmix.native.fx-snapshot" ||

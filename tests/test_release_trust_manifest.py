@@ -92,6 +92,24 @@ class TrustTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 trust.zip_inventory(path)
 
+    def test_windows_aliases_and_file_directory_collisions(self):
+        for names in [("CON.txt",), ("file. ",), ("dir/LPT1.bin",),
+                      ("App", "app/child"), ("x?y",), ("x\u0001y",)]:
+            with self.subTest(names=names):
+                path = self.root / "bad.zip"
+                with zipfile.ZipFile(path, "w") as z:
+                    for name in names:
+                        z.writestr(name, b"test")
+                with self.assertRaises(ValueError):
+                    trust.zip_inventory(path)
+
+    def test_duplicate_metadata_keys(self):
+        self.fixture("linux")
+        path = self.root / "LINUX_PROVENANCE.json"
+        path.write_text('{"sourceCommit":"a","sourceCommit":"b"}')
+        with self.assertRaisesRegex(ValueError, "Duplicate JSON"):
+            trust.calculate(self.root, "linux", TAG, SHA)
+
     def test_draft_uploaded_asset_identity(self):
         self.fixture("windows")
         m = trust.calculate(self.root, "windows", TAG, SHA)
