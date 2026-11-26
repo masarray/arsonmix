@@ -59,7 +59,8 @@ private:
 // Exactly the previous meter algorithm, on a non-realtime worker. No
 // callback mutex, wake syscall, waiting, heap, DSP or UI notification.
 // A gap invalidates the whole integrated segment (no fake continuous LUFS).
-// Recovery is the next device generation, not an automatic audio reset.
+// Recovery begins a new, explicitly numbered analysis segment after the
+// queue drains. It never changes the audio device or playback state.
 class NativeMasterAnalysisTap final {
 public:
     using Queue=MasterAnalysisQueue<>;
@@ -67,7 +68,7 @@ public:
     enum class State { unsupported, workerUnavailable, warming, measured, stale, gap };
     struct Reading : NativeMasterLoudness::Reading {
         State state=State::unsupported;
-        std::uint64_t generation=0,processedFrames=0,droppedFramesLifetime=0;
+        std::uint64_t generation=0,processedFrames=0,droppedFramesLifetime=0,segmentRestartsLifetime=0;
         unsigned pendingBlocks=0;
     };
     NativeMasterAnalysisTap() {
@@ -89,12 +90,20 @@ public:
         generation_.store(((old>>1)+1)*2+(supported?1:0),std::memory_order_release);
     }
     void publish(const float* const* output,int channels,int frames) noexcept {
-        const auto gen=generation_.load(std::memory_order_acquire);
+        auto gen=generation_.load(std::memory_order_acquire);
         if(!available_ || !(gen&1) || channels<1 || frames<=0)return;
         if(gapGeneration_.load(std::memory_order_relaxed)==gen){
-            dropped_.store(dropped_.load(std::memory_order_relaxed)+
-                static_cast<std::uint64_t>(frames),std::memory_order_relaxed);
-            return;
+            if(queue_.pending()!=0){
+                dropped_.store(dropped_.load(std::memory_order_relaxed)+
+                    static_cast<std::uint64_t>(frames),std::memory_order_relaxed);
+                return;
+            }
+            // The producer and device lifecycle are serialized; advance
+            // only the analysis generation. A new segment cannot inherit
+            // a prior integrated measurement or restart the sound device.
+            gen+=2;
+            restarts_.store(restarts_.load(std::memory_order_relaxed)+1,std::memory_order_relaxed);
+            generation_.store(gen,std::memory_order_release);
         }
         const int count=std::min(channels,2);
         for(int offset=0;offset<frames;) {
@@ -118,6 +127,7 @@ public:
         out.generation=gen>>1;
         out.pendingBlocks=queue_.pending();
         out.droppedFramesLifetime=dropped_.load(std::memory_order_relaxed);
+        out.segmentRestartsLifetime=restarts_.load(std::memory_order_relaxed);
         out.supported=(gen&1)!=0;
         if(!out.supported)return out;
         if(!available_){out.state=State::workerUnavailable;return out;}
@@ -140,7 +150,7 @@ public:
             case State::warming:return "WARMING";
             case State::measured:return "MEASURED";
             case State::stale:return "STALE";
-            case State::gap:return "ANALYSIS_GAP_RESET_ON_DEVICE_EPOCH";
+            case State::gap:return "ANALYSIS_GAP_NEW_SEGMENT_PENDING";
             default:return "UNSUPPORTED";
         }
     }
@@ -150,26 +160,33 @@ private:
         std::uint64_t current=0,frames=0;
         auto lastPublish=Clock::now(),lastProcessed=lastPublish;
         bool dirty=false;
+        const auto activate=[&](std::uint64_t gen){
+            if(gen==current)return;
+            current=gen;frames=0;dirty=false;
+            meter.prepare(gen&1?48000.0:0.0);
+            std::lock_guard<std::mutex> lock(snapshotMutex_);
+            snapshotGeneration_=gen;snapshotFrames_=0;snapshot_={};
+        };
         while(!stop_.load(std::memory_order_acquire)){
             const auto gen=generation_.load(std::memory_order_acquire);
-            if(gen!=current){
-                current=gen;frames=0;dirty=false;
-                meter.prepare(gen&1?48000.0:0.0);
-                std::lock_guard<std::mutex> lock(snapshotMutex_);
-                snapshotGeneration_=gen;snapshotFrames_=0;snapshot_={};
-            }
-            bool processed=false,drained=false;
+            activate(gen);
+            bool drained=false;
             for(unsigned i=0;i<64;++i){
                 if(!queue_.consume([&](const Queue::Block& b) noexcept {
-                    if(b.generation!=current || !(current&1) ||
-                       gapGeneration_.load(std::memory_order_acquire)==current)return;
+                    // Read the live generation at consumption, not only at
+                    // the start of the batch: a new epoch can publish its
+                    // first PCM while this worker is draining an old one.
+                    const auto live=generation_.load(std::memory_order_acquire);
+                    if(b.generation!=live || !(live&1) ||
+                       gapGeneration_.load(std::memory_order_acquire)==live)return;
+                    activate(live);
                     const float* pcm[2]{b.pcm[0].data(),b.pcm[1].data()};
                     meter.process(pcm,b.channels,b.frames);
-                    frames+=static_cast<std::uint64_t>(b.frames);processed=true;
+                    frames+=static_cast<std::uint64_t>(b.frames);
+                    dirty=true;lastProcessed=Clock::now();
                 })){drained=true;break;}
             }
             const auto now=Clock::now();
-            if(processed){dirty=true;lastProcessed=now;}
             // Publish at most 40 times/s, including a final partial batch
             // after producer stops. Avoid scanning the histogram on every
             // small ASIO block, even on the normal-priority worker.
@@ -183,7 +200,7 @@ private:
         }
     }
     Queue queue_;
-    std::atomic<std::uint64_t> generation_{0},gapGeneration_{0},dropped_{0};
+    std::atomic<std::uint64_t> generation_{0},gapGeneration_{0},dropped_{0},restarts_{0};
     std::atomic<bool> stop_{false};
     mutable std::mutex snapshotMutex_;
     NativeMasterLoudness::Reading snapshot_{};

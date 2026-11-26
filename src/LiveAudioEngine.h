@@ -3116,6 +3116,7 @@ public:
         o->setProperty("masterAnalysisProcessedFrames",static_cast<double>(loudness.processedFrames));
         o->setProperty("masterAnalysisPendingBlocks",static_cast<int>(loudness.pendingBlocks));
         o->setProperty("masterAnalysisDroppedFramesLifetime",static_cast<double>(loudness.droppedFramesLifetime));
+        o->setProperty("masterAnalysisSegmentRestartsLifetime",static_cast<double>(loudness.segmentRestartsLifetime));
         if (measuredDirect && loudness.integratedValid)
             o->setProperty ("masterLufs", loudness.integratedLufs);
         if (measuredDirect && loudness.truePeakValid)

@@ -105,5 +105,17 @@ int main()
  assert(reading.integratedLufs==reference.integratedLufs&&reading.dbtp==reference.dbtp);
  tap->prepare(44100.0);assert(!tap->read().supported&&!tap->read().integratedValid);
  tap->prepare(48000.0);assert(!tap->read().integratedValid&&!tap->read().truePeakValid);
+ // The first block of a new generation must never be discarded while
+ // the worker is draining old PCM. Repeatedly invalidate and republish.
+ for(int epoch=0;epoch<20;++epoch){
+    tap->prepare(48000.0);
+    tap->publish(output,2,chunk);
+    const auto limit=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+    auto fresh=tap->read();
+    while(fresh.processedFrames!=chunk&&std::chrono::steady_clock::now()<limit){
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));fresh=tap->read();
+    }
+    assert(fresh.processedFrames==chunk&&!fresh.integratedValid&&!fresh.truePeakValid);
+ }
  std::cout<<"PASS: exact 48k BS1770 K-weight gated LUFS, mono/stereo, 4x intersample TP, silence and epoch reset\n";
 }
