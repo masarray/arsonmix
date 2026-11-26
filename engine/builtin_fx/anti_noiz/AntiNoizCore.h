@@ -146,6 +146,11 @@ public:
         if(next!=effectiveMode_||s.enabled!=settings_.enabled||s.cleanDb==0.f||settings_.cleanDb==0.f||s.spectralEnabled!=settings_.spectralEnabled||s.spectralManual!=settings_.spectralManual){tonal_.resetSignal();tonalIdle_=false;}
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){voiceGain_.reset();context_.reset();profile_.track(power_,false);}
         if(s.spectralManual!=settings_.spectralManual||s.noiseOffsetDb!=settings_.noiseOffsetDb)voiceGain_.reset();
+        // Automatic context has no authority while both manual stages own
+        // the mask and dynamics. Restart its evidence at authority changes,
+        // never reuse stale idle classification after returning to Auto.
+        if(needsContext(s)!=needsContext(settings_)){context_.reset();voiceGain_.reset();profile_.track(power_,false);}
+        if(s.spectralManual!=settings_.spectralManual)profile_.track(power_,false);
         if(next!=effectiveMode_||s.enabled!=settings_.enabled){manual_.reset();manualActive_=false;}
         effectiveMode_=next;
         settings_=s; applyGains(p); return true;
@@ -248,6 +253,9 @@ private:
     using Complex=std::complex<float>;
     static constexpr float eps=1e-16f;
     static float gainDb(float db) noexcept {return std::pow(10.f,-db/20.f);}
+    static bool needsContext(const Settings& s) noexcept {
+        return !s.spectralManual||(!s.manual.enabled&&s.silenceDb>0.f);
+    }
     void prepareTiming() noexcept {
         // Preserve the 48 kHz reference behavior, not hop-count-dependent timing.
         const double hops=double(hop_)*48000./(rate_*128.);
@@ -291,7 +299,8 @@ private:
             }
         }
         powerValid_=true;
-        const auto result=profile_.observe(power_);
+        // FFT powers are finite/nonnegative by sanitized bounded PCM and fixed FFT size.
+        const auto result=profile_.observe<true>(power_);
         if(profile_.atCheckpointBoundary())
             manual_.checkpointReference(profile_.lastWindowAccepted(),profile_.checkpointReset());
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting)
@@ -305,14 +314,14 @@ private:
         // Strict idle remains the sole authority for profile and spectral DSP.
         const auto* variability=!protect&&!settings_.manual.enabled&&effectiveMode_==Mode::Voice&&silenceFloor_<1.f?
             &profile_.variability():nullptr;
-        const bool idle=context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
-        tonalIdle_=idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
+        const bool idle=needsContext(settings_)&&context_.update(power_,profile_.anchor(),channels_,bins,!protect,variability);
+        tonalIdle_=!settings_.spectralManual&&idle&&!protect&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
         const float expTarget=settings_.manual.enabled?1.f:idle?silenceFloor_:context_.adaptiveIdle()?
             std::max(silenceFloor_,.25118864f):1.f; // at most 12 dB extra
         // Only explicit Voice or source-aware SpeechMic permits independently
         // qualified coherent drift. Unknown/Mixed and musical policies keep
         // the original confirmed-idle tracking; anchor-based guards unchanged.
-        profile_.track(power_,idle&&!settings_.spectralManual,!settings_.spectralManual&&!protect&&effectiveMode_==Mode::Voice,
+        if(!settings_.spectralManual)profile_.track(power_,idle,!protect&&effectiveMode_==Mode::Voice,
                        context_.broadbandRatio(),context_.subbandPeakRatio());
         const bool selective=!settings_.spectralManual&&!protect&&!idle&&effectiveMode_==Mode::AutoProtect;
         const bool activeVoice=!protect&&!idle&&effectiveMode_==Mode::Voice;

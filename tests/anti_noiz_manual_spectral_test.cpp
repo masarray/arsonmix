@@ -35,6 +35,18 @@ int main(){
   check(!c.auditionActive(),"audition auto expiry");
   for(int i=rate*5/2;i<rate*3;++i)check(x[i]==wet[i],"post audition exact return");
   check(c.spectrum().noise==anchor,"immutable learned anchor");
+  // The manual expander owns residual gain, irrespective of the old Silence
+  // knob. Auto context must not consume CPU or leak authority into this path.
+  Core manualA=c,manualB=c;auto q=s;q.manual.enabled=true;q.manual.rangeDb=0;q.silenceDb=0;
+  check(manualA.setSettings(q),"manual authority A");q.silenceDb=48;
+  check(manualB.setSettings(q),"manual authority B");auto aL=dry,aR=dry,bL=dry,bR=dry;
+  manualA.process(aL.data(),channels==2?aR.data():nullptr,int(aL.size()));
+  manualB.process(bL.data(),channels==2?bR.data():nullptr,int(bL.size()));
+  check(aL==bL&&aR==bR,"legacy Silence cannot affect manual expander PCM");
+  q.manual.enabled=false;check(manualB.setSettings(q),"return automatic dynamics");
+  std::fill(bL.begin(),bL.end(),0.f);std::fill(bR.begin(),bR.end(),0.f);
+  manualB.process(bL.data(),channels==2?bR.data():nullptr,int(bL.size()));
+  check(manualB.residualGain()<.1f&&manualB.spectrum().noise==anchor,"fresh automatic idle evidence and immutable profile");
   check(c.clearProfile()&&!c.hasProfile()&&!c.audition()&&!c.spectrum().noiseValid,"clear");
   check(!c.setSettings([](Core::Settings q){q.artifactControl=NAN;return q;}(s)),"invalid reject");
   s.spectralEnabled=false;check(c.setSettings(s),"bypass");

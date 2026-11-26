@@ -64,7 +64,7 @@ public:
     // Coefficient of variation of accepted FFT-frame broadband power.
     // Trusted only on successful Learn; rejected windows and attempts cannot replace it.
     const std::array<float,2>& variability() const noexcept {return variability_;}
-    LearnResult observe(const Powers& power) noexcept {
+    template<bool BoundedFftPower=false> LearnResult observe(const Powers& power) noexcept {
         boundary_=windowAccepted_=seedReset_=false;
         if(!learning_)return LearnResult::waiting;
         // Exclude the two first overlapping frames, which may include PCM
@@ -74,7 +74,8 @@ public:
         for(int c=0;c<channels_;++c)
             for(int k=0;k<bins_;++k){
                 const float v=power[c][k];
-                if(!std::isfinite(v)||v<0.f)windowVeto_=true;
+                if constexpr(BoundedFftPower){total[c]+=v;candidate_[c][k]+=v;}
+                else if(!std::isfinite(v)||v<0.f)windowVeto_=true;
                 else{total[c]+=v;candidate_[c][k]+=v;}
             }
         // Retain a narrow fail-closed protection for a previously learned
