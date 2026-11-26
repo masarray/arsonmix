@@ -72,7 +72,8 @@ def main():
     require(all((a.intake, a.old, a.new, a.output)), 'intake, old/new binaries and output required')
     intake = a.intake.resolve(strict=True)
     manifest = json.loads((intake/'manifest.json').read_text())
-    require('varying' in manifest['selected'] and 'outdoor' in manifest['selected'], 'incomplete source intake')
+    require(set(manifest['selected']) == {'indoor','outdoor-normal','outdoor-strong'} and
+            len({x['sha256'] for x in manifest['selected'].values()}) == 3, 'incomplete or duplicated source intake')
     root = a.output.resolve(); root.mkdir(parents=True, exist_ok=False)
     binaries = {'old': a.old.resolve(strict=True), 'new': a.new.resolve(strict=True)}
     report = dict(scope='16kHz microphone wind, offline mixed foreground; not live mic/ASIO acceptance',
@@ -87,7 +88,7 @@ def main():
         require(ch == 1, 'independent mono source only; no duplicated stereo claim')
         clips.append((name, file, sha, resample_clean(clip, ch, rate)))
     for kind, meta in sorted(manifest['selected'].items()):
-        require(meta['file'] == f'{kind}.wav' and kind in ('constant','varying','outdoor'), 'unexpected source identity')
+        require(meta['file'] == f'{kind}.wav' and kind in ('indoor','outdoor-normal','outdoor-strong'), 'unexpected source identity')
         stereo = source_pcm(intake/meta['file'], meta)
         for name, file, sha, clip in clips:
             for snr in (0, 10):

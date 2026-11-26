@@ -176,7 +176,7 @@ jobs:
           if-no-files-found: warn
 
   raw-mic-wind:
-    name: Independent RWTH microphone wind discovery (not acceptance)
+    name: Pinned RWTH microphone wind objective qualification
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -193,13 +193,13 @@ jobs:
         run: |
           python3 tools/anti-noiz/raw_wind_intake.py --self-test
           python3 tools/anti-noiz/recorded_raw_wind.py --self-test
-      - name: Acquire official archive and record actual source hashes
+      - name: Acquire SHA256-pinned archive and record unique source hashes
         run: python3 tools/anti-noiz/raw_wind_intake.py "$RUNNER_TEMP/raw-wind-intake"
       - name: Build exact native baseline and candidate
         run: |
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror raw-field-reference/tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/raw-field-old"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror tools/anti-noiz/corpus_qualifier.cpp -o "$RUNNER_TEMP/raw-field-new"
-      - name: Run independent raw wind diagnostic (first discovery must not qualify)
+      - name: Run pinned raw microphone wind objective gate
         run: python3 tools/anti-noiz/recorded_raw_wind.py "$RUNNER_TEMP/raw-wind-intake" "$RUNNER_TEMP/raw-field-old" "$RUNNER_TEMP/raw-field-new" "$RUNNER_TEMP/raw-wind-report"
       - name: Preserve actual selected source bytes, licenses and diagnostic report
         if: always()

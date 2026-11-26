@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
 """Acquire independent RWTH microphone-wind data, not a DSP acceptance test.
-First discovery records the archive SHA; a pinned SHA is required for reuse.
+The first discovery exposed identical indoor files under two labels.
+Use unique source bytes and pin the reviewed archive for qualification.
 No archive paths are extracted. Preserve license and exact selected WAV bytes.
 """
 import argparse
@@ -20,6 +21,8 @@ MAX_ARCHIVE = 256 * 1024 * 1024
 MAX_MEMBER = 32 * 1024 * 1024
 MAX_LICENSE = 64 * 1024
 MIN_FRAMES = 17 * 16000
+# Actual archive obtained on exact CI 45750792084, manifest artifact 15085013465.
+RWTH_SHA256 = "d32bfa809ce4ab759613ce1abab3027a4e5e428b2e972d65dce1f389114cc222"
 
 
 def require(ok, message):
@@ -69,16 +72,15 @@ def inspect(archive, root, expected=None):
         require(licenses, 'no MIT license text in archive; do not redistribute')
         selected = {}
         manifest = []
+        seen_sha = {}
         for x in entries:
             if x.is_dir() or not x.filename.lower().endswith('.wav'):
                 continue
             path = x.filename.lower().replace('\\', '/')
-            if '/varying_wind/' in '/' + path:
-                category = 'varying'
-            elif '/constant_wind/' in '/' + path:
-                category = 'constant'
-            elif '/outdoor' in '/' + path:
-                category = 'outdoor'
+            if '/audio_booth/' in '/' + path:
+                category = 'indoor'  # archive condition labels share identical bytes
+            elif '/outdoors/' in '/' + path and PurePosixPath(path).name in ('wind_normal.wav','wind_strong.wav'):
+                category = 'outdoor-' + PurePosixPath(path).stem.removeprefix('wind_')
             else:
                 continue
             if x.file_size > MAX_MEMBER:
@@ -93,8 +95,11 @@ def inspect(archive, root, expected=None):
             meta = dict(member=x.filename, category=category, rate=rate,
                         channels=ch, sample_bytes=width, frames=frames,
                         sha256=sha(b), bytes=len(b))
+            digest_wav = meta["sha256"]
+            meta["duplicate_of"] = seen_sha.get(digest_wav)
+            seen_sha.setdefault(digest_wav, x.filename)
             manifest.append(meta)
-            if category in selected or rate != 16000 or ch not in (1, 2) or width not in (2, 3, 4) or frames < MIN_FRAMES:
+            if meta["duplicate_of"] is not None or category in selected or rate != 16000 or ch not in (1, 2) or width not in (2, 3, 4) or frames < MIN_FRAMES:
                 continue
             # Select first valid recording by lexical path, not by DSP score.
             # Flat controlled name: no user/archive-provided extraction path.
@@ -106,27 +111,34 @@ def inspect(archive, root, expected=None):
                       licenses=licenses, selected=selected, recordings=manifest)
         (root / 'manifest.json').write_text(json.dumps(result, indent=2, allow_nan=False) + '\n')
         print('RAW_WIND_INTAKE', digest, 'pinned', result['pinned'], 'selected', sorted(selected), flush=True)
-        require('varying' in selected and 'outdoor' in selected,
-                'missing eligible varying/outdoor microphone recording; inspect manifest')
+        require(set(selected) == {'indoor','outdoor-normal','outdoor-strong'} and
+                len({v['sha256'] for v in selected.values()}) == len(selected),
+                'missing eligible unique indoor/outdoor microphone recordings; inspect manifest')
         return result
 
 
 def self_test():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        b = io.BytesIO()
-        with wave.open(b, 'wb') as w:
-            w.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
-            w.writeframes(b'\x01\x00' * MIN_FRAMES)
+        def fixture(value):
+            b = io.BytesIO()
+            with wave.open(b, 'wb') as w:
+                w.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+                w.writeframes(value.to_bytes(2, 'little', signed=True) * MIN_FRAMES)
+            return b.getvalue()
+        indoor = fixture(1)
         archive = root / 'fixture.zip'
         with zipfile.ZipFile(archive, 'w') as z:
             z.writestr('LICENSE.txt', 'Permission is hereby granted. WITHOUT WARRANTY. Test fixture only.')
-            z.writestr('audio_booth/varying_wind/mic_dist_2cm/a.wav', b.getvalue())
-            z.writestr('outdoors/a.wav', b.getvalue())
+            z.writestr('audio_booth/constant_wind/mic_dist_2cm/a.wav', indoor)
+            z.writestr('audio_booth/varying_wind/mic_dist_2cm/a.wav', indoor)
+            z.writestr('outdoors/wind_normal.wav', fixture(2))
+            z.writestr('outdoors/wind_strong.wav', fixture(3))
         actual = sha(archive.read_bytes())
         result = inspect(archive, root / 'out', actual)
-        require(result['pinned'] and len(result['selected']) == 2, 'fixture selection')
-        require((root / 'out' / 'varying.wav').read_bytes() == b.getvalue(), 'byte preservation')
+        require(result['pinned'] and len(result['selected']) == 3, 'unique fixture selection')
+        require(sum(v['duplicate_of'] is not None for v in result['recordings']) == 1, 'duplicate detection')
+        require((root / 'out' / 'indoor.wav').read_bytes() == indoor, 'byte preservation')
         try:
             inspect(archive, root / 'bad', '0' * 64)
         except ValueError:
@@ -140,7 +152,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('output', type=Path, nargs='?')
     p.add_argument('--archive', type=Path)
-    p.add_argument('--sha256')
+    p.add_argument('--sha256', default=RWTH_SHA256, help='reviewed archive SHA256 (default: pinned RWTH)')
     p.add_argument('--self-test', action='store_true')
     a = p.parse_args()
     if a.self_test:
