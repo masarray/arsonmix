@@ -3066,6 +3066,7 @@ private:
                 const auto newId=doc.id;
                 error=self.engine_.restoreNativeMixerSession(std::move(doc),{},true);
                 if(error.isNotEmpty())return reject(error+" · previous project archived");
+                ++self.workspaceGeneration_; // graph committed even if checkpoint fails
                 self.mixerSessionId_=newId;
                 self.lastMixerFile_=juce::File{};
                 self.lastMixerSessionFingerprint_.clear();
@@ -3115,6 +3116,7 @@ private:
                     const auto keyError=safe->hotkeys_.activateSession(safe->logicalMixer_.workspace().document().id);
                     if(keyError.isNotEmpty())safe->emitNotice("Hotkey activation: "+keyError,true);
                 }
+                ++safe->workspaceGeneration_; // committed new logical workspace or I/O reset
                 safe->mixerSessionStatus_=reset?"OFFLINE_IO_RESET_MUTED":"NEW_LOGICAL_SESSION_MUTED";
                 safe->emitApprovedNativeSnapshot();
             }
@@ -5257,9 +5259,6 @@ private:
     // authorization. This message-thread report is status only, not PCM.
     void emitMixerSessionAck(const juce::String& operation,
                              const juce::String& error={}) {
-        if(error.isEmpty() && (operation=="OPEN" || operation=="ARCHIVE" ||
-                             operation=="NEW" || operation=="NEW_LIVE"))
-            ++workspaceGeneration_;
         auto ack=std::make_unique<juce::DynamicObject>();
         ack->setProperty("operation",operation);
         ack->setProperty("ok",error.isEmpty());
@@ -5604,6 +5603,7 @@ private:
                         safe->retainedOfflineEpoch_=0;
                         safe->retainedOfflineOwnerEpoch_=0;
                         safe->retainedOfflineRevision_=0;
+                        ++safe->workspaceGeneration_; // durable logical Open/Archive commit
                         safe->mixerSessionId_=importedId;
                         const auto keyError=safe->hotkeys_.activateSession(importedId,&importedHotkeys);
                         if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
@@ -5656,6 +5656,7 @@ private:
                     safe->retainedOfflineRevision_=0;
                     safe->closeAllPluginEditors();
                     safe->stopOrbit();
+                    ++safe->workspaceGeneration_; // admitted physical Open commit
                     safe->mixerSessionId_=id;
                     const auto keyError=safe->hotkeys_.activateSession(id,&importedHotkeys);
                     if(keyError.isNotEmpty())safe->emitNotice("Hotkey import: "+keyError,true);
@@ -5678,7 +5679,6 @@ private:
             if(error.isNotEmpty()&&explicitRecovery&&!hadPreviousCrashEvidence)
                 (void)explicitRecovery->complete();
             safe->emitMixerSessionAck("OPEN",error);
-            if(error.isEmpty())safe->emitApprovedNativeSnapshot();
         }))emitMixerSessionAck(archived?"ARCHIVE":"OPEN","Mixer file operation already in progress");
     }
 

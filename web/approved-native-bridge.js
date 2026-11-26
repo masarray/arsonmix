@@ -4878,6 +4878,7 @@
     const workspaceGeneration=next.raw.workspaceGeneration;
     if(workspaceGeneration!==undefined && workspaceGeneration!==lastWorkspaceGeneration){
       if(lastWorkspaceGeneration!==undefined){
+        scope?.cancelNativeSessionGestures?.();
         discardTransientNativeUi();pendingLogical=null;logicalRenameId=null;
         lastPaintedSignature="";lastNativeTopologySignature="";lastM4Controls="";
         confirmed=null;

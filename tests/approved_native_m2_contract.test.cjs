@@ -7576,3 +7576,18 @@ test("LIVE-OPS committed workspace supersedes an outstanding fader lease",()=>{
  assert.equal(c.state().current.raw.workspaceGeneration,"2");
  assert.equal(protocol.normalizeSnapshot({...restored,workspaceGeneration:"invalid"}),null);
 });
+
+
+test("LIVE-OPS accepted fader repaints a stale range, cap and readout without emitting an intent",()=>{
+ const html=read("site/preview-v2/index.html");
+ const start=html.indexOf("function syncFaderVisual("),end=html.indexOf("\nfunction setDensity",start);
+ assert.ok(start>=0&&end>start);
+ const range={value:"-60"},lcd={textContent:""},db={textContent:""},css=new Map();
+ const box={style:{setProperty:(k,v)=>css.set(k,v)}};
+ const root={querySelector:s=>({"input.fader":range,".fader-readout":lcd,".fader-box":box,".db-value":db})[s]};
+ const vm=require("node:vm");
+ const context={document:{querySelector:()=>root},sofEnabled:false,formatDb:v=>String(v),faderPercent:v=>v+60};
+ vm.runInNewContext(html.slice(start,end)+"\nsyncFaderVisual({id:1,level:-9});",context);
+ assert.equal(range.value,"-9");assert.equal(lcd.textContent,"-9 dB");
+ assert.equal(db.textContent,"-9");assert.equal(css.get("--fader-y"),"49%");
+});
