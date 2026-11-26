@@ -7,7 +7,7 @@ import {selectWindowsFeatureScope} from './windows_feature_scope.mjs';
 
 export function parseMilestoneCommand(body) {
   if(typeof body!=='string')return null;
-  const m=/^\/arsonmix-ci (check|fast|full|ui|native|fat|field|feature|immersib|stop) ([0-9a-f]{40})$/.exec(body.trim());
+  const m=/^\/arsonmix-ci (check|fast|full|resume|qualify|ui|native|fat|field|feature|immersib|stop) ([0-9a-f]{40})$/.exec(body.trim());
   return m?{lane:m[1],sha:m[2]}:null;
 }
 export function isTrustedOwnerComment(event,repo) {
@@ -188,7 +188,7 @@ export function quickResult(jobs,lane) {
     'Fast native contracts (no Windows / JUCE checkout)';
   return jobs.find(j=>j.name===name)?.conclusion??null;
 }
-export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(5000)}) {
+export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(5000),resumeMissing=false}) {
   if(!isTrustedOwnerComment(event,repo))throw Error('CI_OWNER_ONLY');
   const target=validateMilestone(event,repo,await api('/pulls/'+event.issue.number));
   const older=[];
@@ -198,7 +198,7 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
     if(c.length<100)break;
     if(page===20)throw Error('CI_COMMENTS_PAGINATION_LIMIT');
   }
-  if(hadEarlierIdenticalRequest(older,event,repo))
+  if(!resumeMissing&&hadEarlierIdenticalRequest(older,event,repo))
     return {kind:'skipped',reason:'duplicate',target};
   // STOP is an owner-authorized safety action. It NEVER dispatches a job
   // and cancels ONLY this exact PR and immutable HEAD; never another PR.
@@ -298,8 +298,13 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
   if(target.lane==='ui'){
     const q='/actions/workflows/'+target.workflow+
       '/runs?event=workflow_dispatch&branch='+encodeURIComponent(target.branch)+'&per_page=100';
-    if(hasPriorDispatch((await api(q)).workflow_runs,target.sha))
+    const runs=(await api(q)).workflow_runs;
+    if(!Array.isArray(runs))throw Error('CI_UI_RUNS_INVALID');
+    if(hasPriorDispatch(runs,target.sha))
       return {kind:'skipped',reason:'already-qualified-or-scheduled',target};
+    // RESUME only fills missing work, never retries a known red same-SHA run.
+    if(resumeMissing&&runs.some(r=>r.event==='workflow_dispatch'&&r.head_sha===target.sha))
+      return {kind:'skipped',reason:'failed-ui-use-explicit-job-retry-or-fix',target};
   }else{
     const gate=await guardWindowsMilestone({target,api});
     if(gate)return gate;
@@ -324,7 +329,7 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
 // the independently protected native and/or Chromium gates. Nothing here
 // rewrites branch protection or silently upgrades a FIELD preview to a FAT.
 export function planSmartMilestone(files,mode) {
-  if(!['check','fast','full'].includes(mode))throw Error('CI_SMART_MODE_INVALID');
+  if(!['check','fast','full','resume','qualify'].includes(mode))throw Error('CI_SMART_MODE_INVALID');
   const scope=requiredLanes(files); // same reviewed file policy as merge gate
   // The status publisher requests nativeFull only for actual C++/graph
   // changes. Package, native bridge, and installer changes need a Windows
@@ -339,7 +344,7 @@ export function planSmartMilestone(files,mode) {
     /^config\/immersib_approved_pcm_sources\.json$/.test(f));
   const targets=mode==='check'?[]:
     mode==='fast'?(nativeBinary?['field']:[]):
-    [...(scope.uiFull?['ui']:[]),...(nativeBinary?['native']:[])];
+    [...(scope.uiFull?['ui']:[]),...(nativeBinary?[mode==='qualify'?'fat':'native']:[])];
   return {scope,nativeBinary,targets};
 }
 
@@ -352,7 +357,7 @@ const fastJobs=[
 // Fail closed if *any* required fast lane is missing, failed, cancelled or
 // stale. Checking only the target Windows quick lane can miss UI/release reds
 // on a mixed PR and burn 30+ minutes of CI unnecessarily.
-export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5000)}) {
+export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5000),waitForRegistration=false}) {
   const proof=[];
   for(const [key,workflow,jobName] of fastJobs) {
     if(!scope[key])continue;
@@ -366,16 +371,17 @@ export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5
         (r.path===undefined ||
           r.path.split('@',1)[0]==='.github/workflows/'+workflow))
         .sort((a,b)=>b.id-a.id)[0];
-      if(!exact)throw Error('CI_SMART_FAST_MISSING: '+key+' '+target.sha);
-      const jobs=(await api('/actions/runs/'+exact.id+'/jobs?per_page=100'))?.jobs;
+      if(!exact&&(!waitForRegistration||attempt===12))throw Error('CI_SMART_FAST_MISSING: '+key+' '+target.sha);
+      const jobs=exact?(await api('/actions/runs/'+exact.id+'/jobs?per_page=100'))?.jobs:[];
       if(!Array.isArray(jobs))throw Error('CI_SMART_FAST_JOBS_INVALID: '+key);
       const job=jobs.filter(j=>j.name===jobName);
-      if(job.length!==1)throw Error('CI_SMART_FAST_JOB_MISSING: '+key);
-      if(job[0].conclusion==='success'){
+      if(job.length>1||(!job.length&&(!waitForRegistration||attempt===12||exact?.status==='completed')))
+        throw Error('CI_SMART_FAST_JOB_MISSING: '+key);
+      if(job[0]?.conclusion==='success'){
         proof.push({lane:key,run:exact.id,job:jobName});
         break;
       }
-      if(job[0].conclusion)
+      if(job[0]?.conclusion)
         throw Error('CI_SMART_FAST_FAILED: '+key+' '+job[0].conclusion);
       if(attempt===12)throw Error('CI_SMART_FAST_PENDING: '+key);
       await waitForQuick();
@@ -392,7 +398,7 @@ export async function performSmartMilestone({event,repo,api,
   if(!isTrustedOwnerComment(event,repo))throw Error('CI_OWNER_ONLY');
   const target=validateMilestone(event,repo,
     await api('/pulls/'+event.issue.number));
-  if(!['check','fast','full'].includes(target.lane))
+  if(!['check','fast','full','resume','qualify'].includes(target.lane))
     throw Error('CI_SMART_MODE_INVALID');
   const earlier=[];
   for(let page=1;page<=20;page++) {
@@ -403,11 +409,14 @@ export async function performSmartMilestone({event,repo,api,
     if(comments.length<100)break;
     if(page===20)throw Error('CI_COMMENTS_PAGINATION_LIMIT');
   }
-  if(hadEarlierIdenticalRequest(earlier,event,repo))
+  // Serialized owner-only RESUME/QUALIFY are repeatable: actual run
+  // identities, rather than an earlier comment, decide whether work exists.
+  const recoverable=['resume','qualify'].includes(target.lane);
+  if(!recoverable&&hadEarlierIdenticalRequest(earlier,event,repo))
     return {kind:'skipped',reason:'duplicate',target};
   const files=await readChangedFiles(api,target.number);
   const {scope,targets}=planSmartMilestone(files,target.lane);
-  const proof=await verifySmartFast({target,scope,api,waitForQuick});
+  const proof=await verifySmartFast({target,scope,api,waitForQuick,waitForRegistration:recoverable});
   // One last current HEAD check immediately before any dispatch.
   validateMilestone(event,repo,await api('/pulls/'+target.number));
   if(targets.length===0)
@@ -416,8 +425,16 @@ export async function performSmartMilestone({event,repo,api,
   for(const lane of targets) {
     const request={...event,comment:{...event.comment,
       body:'/arsonmix-ci '+lane+' '+target.sha}};
-    const outcome=await performMilestone({event:request,repo,api,waitForQuick});
-    results.push({lane,kind:outcome.kind,reason:outcome.reason||null});
+    try {
+      const outcome=await performMilestone({event:request,repo,api,waitForQuick,
+        resumeMissing:recoverable});
+      results.push({lane,kind:outcome.kind,reason:outcome.reason||null});
+    } catch(error) {
+      // One known red lane must not prevent recovery of another missing lane.
+      // Never convert unexpected API/auth/stale errors to success.
+      if(!recoverable||!/^CI_(?:NATIVE|FAT)_FAILED_FIX_SOURCE_BEFORE_REDISPATCH$/.test(error.message))throw error;
+      results.push({lane,kind:'skipped',reason:error.message});
+    }
   }
   return {kind:'selected',target,proof,results};
 }
@@ -439,7 +456,7 @@ async function main(){
     return response.status===204?null:response.json();
   };
   const command=parseMilestoneCommand(event?.comment?.body);
-  const result=command && ['check','fast','full'].includes(command.lane)
+  const result=command && ['check','fast','full','resume','qualify'].includes(command.lane)
     ? await performSmartMilestone({event,repo,api})
     : await performMilestone({event,repo,api});
   console.log('CI_'+result.kind.toUpperCase()+' mode='+result.target.lane+

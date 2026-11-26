@@ -87,7 +87,7 @@ async def render(browser, path, viewport, state):
         assert screenshot is not None, (
             "GUI screenshot never stabilized; check active JS/PNG animation",
             viewport,state,hashlib.sha256(previous or b"").hexdigest())
-        return styles,hashlib.sha256(screenshot).hexdigest()
+        return styles,screenshot
     finally:
         await page.close()
 
@@ -117,9 +117,18 @@ async def main():
                         "computed CSS cascade changed",viewport,state,
                         next(((a,b) for a,b in zip(original_style,optimized_style)
                               if a!=b),None))
+                    if original_image != optimized_image:
+                        # Preserve exact failing images for diagnosis; no tolerance,
+                        # masking, golden rewrite or automatic acceptance.
+                        evidence=ROOT/"stage-c-parity-evidence"
+                        evidence.mkdir(exist_ok=True)
+                        prefix=f"{viewport[0]}x{viewport[1]}-{state}"
+                        (evidence/(prefix+"-original.png")).write_bytes(original_image)
+                        (evidence/(prefix+"-compiled.png")).write_bytes(optimized_image)
                     assert original_image==optimized_image,(
                         "approved GUI pixel screenshot changed",viewport,state,
-                        original_image,optimized_image)
+                        hashlib.sha256(original_image).hexdigest(),
+                        hashlib.sha256(optimized_image).hexdigest())
                     print("PASS Stage C computed/screenshot parity:",
                           viewport,state,len(original_style),"elements")
             finally:
