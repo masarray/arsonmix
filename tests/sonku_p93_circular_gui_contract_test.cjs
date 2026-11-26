@@ -138,6 +138,24 @@ assert.match(source,/root\.dataset\.fxState==="on"/);
 assert.match(source,/if\(previous!==state\)/);
 assert.match(css,/\.mx-sonku \.sk-space-panel\{display:grid/);
 assert.match(source,/current\.track\.slotBypass\[current\.slot\]/);
+// Actual production draw function, not a duplicate geometry algorithm.
+const draw=between("function drawSpeakers(){","// rAF is a VISUAL");
+const paint=vm.runInNewContext("(function(){"+
+ "let draft={moving:false,startAzimuthDegrees:0,stereoSpreadDegrees:127},visualPhase=0,lastSpeakerPhase=null,lastSpeakerSpread=null;"+
+ "let writes=0,aria=0;const layer={appendChild(n){n.parentNode=this;writes++}};const depthLayers={near:layer,far:layer};"+
+ "const document={activeElement:null};const angle=v=>((v%360)+360)%360;"+
+ "function node(){return {parentNode:layer,dataset:new Proxy({},{set(t,k,v){writes++;t[k]=v;return true}}),style:{},attrs:{},setAttribute(k,v){writes++;if(k.startsWith('aria-'))aria++;this.attrs[k]=v},getAttribute(k){return this.attrs[k]}}};"+
+ "const speakerNodes=[node(),node()],speakerShades=[node(),node()],speakerTethers=[node(),node()];"+
+ "const displayPair=__pair;"+draw+
+ "return {draw:drawSpeakers,counts:()=>[writes,aria],set(phase,spread){draft.startAzimuthDegrees=phase;draft.stereoSpreadDegrees=spread},reset(){lastSpeakerPhase=lastSpeakerSpread=null}}})()",{__pair:g.displayPair});
+paint.draw();const firstPaint=paint.counts();
+assert(firstPaint[0]>0);
+for(let i=0;i<100;++i)paint.draw();
+assert.deepEqual(paint.counts(),firstPaint,"Identical static snapshots must not mutate orbit");
+paint.set(.01,127);paint.draw();const smallPaint=paint.counts();
+assert(smallPaint[0]>firstPaint[0]);assert.equal(smallPaint[1],firstPaint[1]);
+paint.set(90,127);paint.draw();assert(paint.counts()[1]>smallPaint[1]);
+const beforeReset=paint.counts()[0];paint.reset();paint.draw();assert(paint.counts()[0]>beforeReset);
 const scheduler=between("function canAnimate(){","function hint(s)");
 const visual=vm.runInNewContext("(function(){"+
  "let root={hidden:false,dataset:{fxState:'on'}},current={},draft={moving:true,revolutionSeconds:24,clockwise:true},drag=null,frame=null,visualAt=0,visualPhase=0,observedAt=0,pending=null,observed=0;"+

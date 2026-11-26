@@ -273,6 +273,7 @@ let current=null,accepted=defaults(),draft=defaults(),pending=null,latest=null,
  readId="",readSentAt=0,seq=1,clock=null,frame=null,observed=0,observedAt=0,
  drag=null,dialDrag=null,rangeEdits=new Set(),gestureStart=new Map(),
  visualPhase=0,visualAt=0,liveTimer=null,lastLiveAt=0;
+let lastSpeakerPhase=null,lastSpeakerSpread=null;
 function syncPower(){
  const p=$("skPower");
  if(!current){
@@ -482,6 +483,10 @@ function render(){
 function drawSpeakers(){
  const s=draft;
  const phase=s.moving?visualPhase:s.startAzimuthDegrees;
+ // Native snapshot polling must not repaint unchanged static SVG geometry.
+ // Cache only the two exact presentation inputs, never native audio state.
+ if(phase===lastSpeakerPhase&&s.stereoSpreadDegrees===lastSpeakerSpread)return;
+ lastSpeakerPhase=phase;lastSpeakerSpread=s.stereoSpreadDegrees;
  const angles=[phase-s.stereoSpreadDegrees/2,phase+s.stereoSpreadDegrees/2];
  const pair=displayPair(angles);
  for(let source=0;source<2;++source) {
@@ -515,9 +520,13 @@ function drawSpeakers(){
   const leader=speakerTethers[source];
   leader.setAttribute("d","M0 0 L"+deltaX.toFixed(2)+" "+deltaY.toFixed(2));
   leader.style.opacity=Math.hypot(deltaX,deltaY)>4?".65":"0";
-  g.setAttribute("aria-valuenow",String(Math.round(deg>180?deg-360:deg)));
+  // Screen-reader value is integer degrees. Do not emit accessibility
+  // mutations at display frame rate when the spoken value did not change.
+  const value=String(Math.round(deg>180?deg-360:deg));
+  if(g.getAttribute("aria-valuenow")!==value)g.setAttribute("aria-valuenow",value);
   const direction=deg<45||deg>=315?"FRONT":deg<135?"RIGHT":deg<225?"REAR":"LEFT";
-  g.setAttribute("aria-valuetext",direction+" "+Math.round(deg)+"° ("+(near?"near":"far")+" view)");
+  const spoken=direction+" "+Math.round(deg)+"° ("+(near?"near":"far")+" view)";
+  if(g.getAttribute("aria-valuetext")!==spoken)g.setAttribute("aria-valuetext",spoken);
  }
 }
 // rAF is a VISUAL interpolator, not an audio clock or optimistic DSP ACK.
@@ -588,19 +597,24 @@ const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
 function send(next,continuous=false){
  if(pending?.timedOut){render();return false;}
  if(!valid(next))return false;
- draft={...next};render();
- if(!native()){accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");return true;}
- const c=context();if(!c){hint("NATIVE INSERT NOT ACCEPTED");return false;}
+ draft={...next};
+ if(!native()){accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");render();return true;}
+ const c=context();
+ if(!c){draft={...accepted};hint("NATIVE INSERT NOT ACCEPTED");render();return false;}
  if(pending){
   latest=sameSettings(next,pending.settings)?null:{...next};
   if(!continuous)hint("DSP FOLLOWING · FINAL VALUE PENDING");
-  return true;
+  render();return true;
  }
- if(sameSettings(next,accepted))return true;
+ if(sameSettings(next,accepted)){render();return true;}
  const id="sonku-"+String(Date.now()*1000+(++seq%1000));
  pending={requestId:id,settings:{...next},context:c,ack:false,sentAt:performance.now(),timedOut:false};
- backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next});
  hint(continuous?"DSP LIVE · AWAITING AUDIO ACK":"DSP QUEUED · AWAITING AUDIO ACK");
+ // Render after recording pending so preset controls cannot appear
+ // unlocked while a transaction is already in flight. Before emit also
+ // prevents a synchronous native readback from being painted as pending.
+ render();
+ backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next});
  return true;
 }
 function cancelLiveTimer(){
@@ -609,11 +623,11 @@ function cancelLiveTimer(){
 function liveInput(next){
  if(pending?.timedOut){render();return false;}
  if(!valid(next))return false;
- draft={...next};render();
  const now=performance.now(),wait=LIVE_INTERVAL_MS-(now-lastLiveAt);
  if(wait<=0){
   cancelLiveTimer();lastLiveAt=now;return send(next,true);
  }
+ draft={...next};render();
  if(liveTimer===null)liveTimer=setTimeout(()=>{
   liveTimer=null;lastLiveAt=performance.now();
   if(current&&!root.hidden)send({...draft},true);
@@ -996,6 +1010,7 @@ const api={
  open(track,slot){
   cancelLiveTimer();pending=null;latest=null;readId="";readSentAt=0;dialDrag=null;
   observedAt=0;visualAt=0;visualPhase=0;lastLiveAt=0;
+  lastSpeakerPhase=lastSpeakerSpread=null;
   drag=null;rangeEdits.clear();gestureStart.clear();
   accepted=defaults();draft=defaults();xyzCapable=false;
   p83Capable=p84Capable=p85Capable=p86Capable=p87Capable=p88Capable=
