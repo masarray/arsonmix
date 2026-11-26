@@ -712,7 +712,7 @@ def exercise(browser,out,width,height):
         assert arc["duration"]=="0s",arc
         # Verify the actually computed paint, not merely custom properties.
         import re
-        stops=re.findall(r"rgb\\(121, 198, 209\\) ([0-9.]+)deg",arc["gradient"])
+        stops=re.findall(r"rgb\(121, 198, 209\) ([0-9.]+)deg",arc["gradient"])
         assert len(stops)==2 and abs(float(stops[0])-arc["start"])<.011 and abs(float(stops[1])-arc["end"])<.011,arc
     for value in (-180,-90,0,90,180):
         before=command_count()

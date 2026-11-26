@@ -40,24 +40,7 @@ jobs:
       - name: Verify all three native CTest targets before compiling
         shell: pwsh
         run: |
-          $pattern='^(NativeSonKuSessionV1V2AndAudioAppliedAck|NativeSonKuP90JuceV11AppliedAckAndLegacyRestore|NativeImmerSIBJucePresetACKStateAndBypass)
-        run: cmake --build build --config Release --parallel 2 --target ARMixSonKuNativeStateTests ARMixSonKuP90NativeTests ARMixImerSipP92NativeTests
-      - name: Require all three CTest targets and run actual native PCM regressions
-        shell: pwsh
-        run: |
           $pattern='^(NativeSonKuSessionV1V2AndAudioAppliedAck|NativeSonKuP90JuceV11AppliedAckAndLegacyRestore|NativeImmerSIBJucePresetACKStateAndBypass)$'
-          $listing=ctest --test-dir build -C Release -R $pattern --show-only=json-v1 | ConvertFrom-Json
-          if (@($listing.tests).Count -ne 3) { throw 'SONKU_NATIVE_TARGETS_MISSING' }
-          ctest --test-dir build -C Release -R $pattern --output-on-failure --no-tests=error --output-junit sonku-control-tests.xml
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
-        with:
-          name: SonKu-live-control-native-${{ github.event.pull_request.head.sha }}
-          path: build/sonku-control-tests.xml
-          if-no-files-found: warn
-          retention-days: 7
-
           $listing=ctest --test-dir build -C Release -R $pattern --show-only=json-v1 | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or @($listing.tests).Count -ne 3) { throw 'SONKU_NATIVE_TARGETS_MISSING' }
       - name: Build only the SonKu and ImmerSIB native adapter test targets
