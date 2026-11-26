@@ -85,6 +85,7 @@
 #include <juce_core/juce_core.h>
 #include <thread>
 #include <future>
+#include <utility>
 #include <juce_cryptography/juce_cryptography.h>
 
 namespace
@@ -4246,12 +4247,16 @@ private:
     using SecondaryInventory=armix::device::WasapiEndpointIdentityGuard::RenderInventory;
     std::future<SecondaryInventory> secondaryInventoryFlight_;
     std::optional<SecondaryInventory> secondaryInventoryCache_;
-    juce::String secondaryInventoryRequest_;
+    juce::String secondaryInventoryRequest_,secondaryPublishedInventory_;
+    std::map<juce::String,std::wstring> secondaryPublishedIds_;
+    std::optional<juce::var> pendingSecondaryStop_;
     std::uint64_t secondaryInventoryAt_=0;
     void emitSecondaryInventory() {
         if(secondaryInventoryRequest_.isEmpty()||!secondaryInventoryCache_)return;
         const auto request=std::exchange(secondaryInventoryRequest_,juce::String{});
         const auto& inventory=*secondaryInventoryCache_;
+        secondaryPublishedInventory_=request;
+        secondaryPublishedIds_.clear();
         juce::Array<juce::var> outputs;
         juce::String preferred;
         loadSecondaryPreference();
@@ -4265,6 +4270,7 @@ private:
             if(counts[ep.name]!=1||ep.id.empty()||label.isEmpty()||
                label.length()>240||label==directName)continue;
             outputs.add(label);
+            secondaryPublishedIds_.emplace(label,ep.id);
             if(secondaryPreference_&&label==secondaryPreference_->name&&ep.id==secondaryPreference_->id)
                 preferred=label;
         }
@@ -4429,6 +4435,7 @@ private:
         const bool resume=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
         pendingVendorStream_.reset();
         const auto streamIntent=engine_.captureSecondaryResumeIntent();
+        const auto streamGeneration=secondaryRetry_.generation();
         autoMainEpoch_=0;
         engine_.beginManualAudioSetup(true);
         bool panelError=false;
@@ -4445,7 +4452,7 @@ private:
         if(recovered){
             deviceSettingsDirty_=true;startupError_.clear();
             if(resume&&!operatorOutputMuted_)requestAutomaticMain(false);
-            if(streamIntent&&!panelError)
+            if(streamIntent&&!panelError&&streamGeneration==secondaryRetry_.generation()&&!pendingSecondaryStop_)
                 pendingVendorStream_=PendingVendorStream{*streamIntent,engine_.dryRoutingLabEpoch(),
                     engine_.outputArmRevision(),static_cast<std::uint64_t>(monotonicMilliseconds()+5000),resume};
         }
@@ -6712,6 +6719,13 @@ private:
            (action=="monitor"&&args.getProperty("value",{}).isBool()&&!bool(args.getProperty("value",{})))) {
             pendingVendorStream_.reset();
             cancelSecondaryContinuity();
+        }
+        if(deviceApply_.busy()&&action=="secondaryOutputStop") {
+            // STOP supersedes even an in-flight vendor open. Close the PCM
+            // gate now; defer native object destruction until lease release.
+            engine_.disarmSecondaryOutput();
+            pendingSecondaryStop_=args;
+            return;
         }
         if(deviceApply_.busy() && action!="audioDeviceApply"){
             // Never silently swallow an operator's correlated editor click.
@@ -9932,17 +9946,38 @@ private:
         if(action=="secondaryOutputEnable" || action=="secondaryOutputConnect" ||
            action=="secondaryOutputArm" || action=="secondaryOutputStop") {
             juce::String error;
-            if(studioBackupBusy_ || nativeShowBusy_)
-                error="Complete active Show/backup operation before editing secondary output";
+            auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
+            const auto generation=secondaryRetry_.generation();
+            if(!lease)error="Audio device is busy";
+            else if(action=="secondaryOutputStop")engine_.disconnectSecondaryOutput();
+            else if(studioBackupBusy_ || nativeShowBusy_||pendingSecondaryStop_)
+                error="Audio configuration is finishing · try again";
             else if(action=="secondaryOutputConnect" || action=="secondaryOutputEnable") {
                 if(!value.isString() || value.toString().isEmpty() || value.toString().length()>240)
                     error="Select a real named Windows playback endpoint";
-                else error=action=="secondaryOutputEnable"?engine_.enableSecondaryOutput(value.toString()):
-                    engine_.connectSecondaryOutput(value.toString());
+                else {
+                    const auto token=args.getProperty("inventoryId",{}).toString();
+                    std::wstring expected;
+                    if(token.isNotEmpty()) {
+                        const auto it=secondaryPublishedIds_.find(value.toString());
+                        if(token!=secondaryPublishedInventory_||it==secondaryPublishedIds_.end())
+                            error="Playback device list changed · refreshing";
+                        else expected=it->second;
+                    }
+                    // Legacy explicit named actions remain supported; approved
+                    // GUI always sends the inventory token, never a raw ID.
+                    if(error.isEmpty())error=action=="secondaryOutputEnable"?
+                        engine_.enableSecondaryOutput(value.toString(),expected):
+                        engine_.connectSecondaryOutput(value.toString(),expected);
+                }
             } else if(action=="secondaryOutputArm") {
                 if(!value.isBool()) error="Expected explicit Secondary output ARM true/false";
                 else error=engine_.armSecondaryOutput(bool(value));
-            } else engine_.disconnectSecondaryOutput();
+            }
+            if(action!="secondaryOutputStop"&&generation!=secondaryRetry_.generation()) {
+                engine_.disconnectSecondaryOutput();
+                error="Output request superseded";
+            }
             if(error.isEmpty()&&(action=="secondaryOutputEnable"||
                (action=="secondaryOutputArm"&&bool(value))))
                 if(auto intent=engine_.captureSecondaryResumeIntent()) {
@@ -11104,6 +11139,11 @@ private:
             }
 #endif
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
+        if(pendingSecondaryStop_) {
+            auto stop=std::move(*pendingSecondaryStop_);
+            pendingSecondaryStop_.reset();
+            onAction(stop);
+        }
         serviceSecondaryInventory();
         servicePhysicalLoopback();
         // Always disabled unless the user explicitly starts a bounded trace.

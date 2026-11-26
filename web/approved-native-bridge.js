@@ -3611,7 +3611,7 @@
   // the retired console and is deliberately NOT shipped in this bundle.
   let extraPanel=null,extraControls=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
       extraError="",extraInventoryKnown=false,extraInventoryPending="",extraPreferred="",extraHasSaved=false,
-      extraSelected="",extraInventoryRetryAt=0;
+      extraSelected="",extraInventoryRetryAt=0,extraInventoryId="";
   const extraField=name=>extraControls?.querySelector("[data-extra-"+name+"]");
   const extraInlineHost=()=>devicePanel?.querySelector("[data-audio-extra-output]");
   const extraInlineVisible=()=>!devicePanel?.hidden&&
@@ -3662,7 +3662,9 @@
     select.disabled=busy||armed||recovering||extraInventoryPending;
     extraField("refresh").disabled=busy||extraInventoryPending;
     extraField("connect").disabled=busy||!allowed||armed||recovering||!extraInventoryKnown||!options.includes(select.value);
-    extraField("stop").disabled=busy||(!ready&&!fault&&!name&&!recovering);
+    extraField("stop").disabled=extraPending?.action==="secondaryOutputStop"||
+      (!ready&&!fault&&!name&&!recovering&&extraPending?.action!=="secondaryOutputEnable");
+    extraField("repair").hidden=!live||allowed||busy||armed||recovering;
     const mode=split?"MAIN → Windows · independent monitor":"MAIN → Windows · same mix";
     if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
     const surfaceState=extraPending?"PENDING":destination.state;
@@ -3686,12 +3688,13 @@
     if(error.textContent!==extraError)error.textContent=extraError;
   }
   function requestAdditionalOutput(action,value){
-    if(extraPending||deviceBusy()||!extraSurfaceOpen())return;
+    if(!extraSurfaceOpen()||(action!=="secondaryOutputStop"&&(extraPending||deviceBusy()))||
+       extraPending?.action==="secondaryOutputStop")return;
     const requestId="extra-out-"+(++extraSerial);
     extraError="";
     extraPending={requestId,action,value,acked:false};
     paintAdditionalOutput();
-    backend.emitEvent("arMixAction",{action,value,requestId});
+    backend.emitEvent("arMixAction",{action,value,requestId,inventoryId:extraInventoryId});
     window.setTimeout(()=>{
       if(extraPending?.requestId!==requestId)return;
       extraPending=null;
@@ -3737,11 +3740,16 @@
     content.setAttribute("aria-label","Additional Output controls");
     content.innerHTML=`<div class="armix-stream-heading"><strong>Send to OBS / virtual cable</strong><span class="armix-stream-mode" data-extra-mode></span></div>
       <label>Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
-      <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button></div>
+      <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-repair hidden>Set up audio</button></div>
       <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
       <div class="armix-stream-hint">Post-FX MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
     panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
     extraField("refresh").onclick=()=>refreshAdditionalInventory(true);
+    extraField("repair").onclick=()=>{
+      if(extraPanel?.open)extraPanel.close();
+      openNativeAudioIO();
+      selectAudioSetupPage("device");
+    };
     extraField("device").onchange=()=>{extraSelected=extraField("device").value;paintAdditionalOutput();};
     extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
     extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
@@ -5442,6 +5450,7 @@
       extraHasSaved=inventory.hasSavedOutput===true;
       if(extraHasSaved&&!extraPreferred&&extraSelected===oldPreferred)extraSelected="";
       if(!extraInventory.includes(extraSelected))extraSelected="";
+      extraInventoryId=inventory.requestId;
       extraInventoryPending="";
       extraInventoryKnown=!inventory.error;
       extraInventoryRetryAt=performance.now()+5000;
@@ -5453,6 +5462,10 @@
       if(ack.ok!==true){
         extraPending=null;
         extraError=String(ack.error||"Additional output rejected");
+        if(/list changed|identity changed|endpoint missing/i.test(extraError)){
+          extraSelected="";extraInventoryKnown=false;
+          refreshAdditionalInventory(true);
+        }
       }else extraPending.acked=true;
       // Keep controls pending until a subsequent native status matches.
       paintAdditionalOutput();

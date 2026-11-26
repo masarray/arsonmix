@@ -7605,7 +7605,7 @@ test("FAST workflow directly opens active ASIO vendor panel and one native secon
  assert.match(vendor,/finishAudioSetupAndRecoverMixer\(\)/);
  assert.doesNotMatch(vendor,/AudioSetupWindow|setMonitorEnabled\(true\)/);
  const enable=e.slice(e.indexOf("juce::String enableSecondaryOutput("),e.indexOf("juce::String armSecondaryOutput("));
- assert.match(enable,/connectSecondaryOutput\(selected\)/);assert.match(enable,/armSecondaryOutput\(true\)/);
+ assert.match(enable,/connectSecondaryOutput\(selected,expectedEndpointId\)/);assert.match(enable,/armSecondaryOutput\(true\)/);
  assert.doesNotMatch(enable,/setMonitorEnabled|setOutputMuted/);
  assert.match(s,/createAudioIODeviceType_WASAPI\(juce::WASAPIDeviceMode::shared\)/);
  assert.match(s,/createDevice\(target,\{\}\)/);assert.doesNotMatch(s,/manager_\.initialise/);
@@ -7714,4 +7714,17 @@ test("U3 canonical output discovery is single-flight and selection never guesses
  assert.equal(pick(choices,{active:"Broadcast",selected:"Speakers"}),"Broadcast");
  assert.equal(pick(["CABLE Input A","CABLE Input B"]),"");
  assert.equal(pick(["Speakers"]),"");
+});
+
+
+test("U3 Stop supersedes native opens and approved output selection pins inventory identity",()=>{
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js"),e=read("src/LiveAudioEngine.h");
+ assert.match(n,/secondaryPublishedIds_\.emplace\(label,ep.id\)/);
+ assert.match(n,/token!=secondaryPublishedInventory_/);
+ assert.match(n,/engine_\.enableSecondaryOutput\(value.toString\(\),expected\)/);
+ assert.match(n,/engine_\.disarmSecondaryOutput\(\);\s*pendingSecondaryStop_=args/);
+ assert.match(n,/generation!=secondaryRetry_\.generation\(\)/);
+ assert.match(e,/secondaryOutput_\.endpointId\(\)==expectedEndpointId/);
+ assert.match(b,/inventoryId:extraInventoryId/);
+ assert.match(b,/selectAudioSetupPage\("device"\)/);
 });

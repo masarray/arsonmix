@@ -497,6 +497,7 @@ def verify_additional_output(page,out):
     panel.get_by_role("button",name="Enable output",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
     assert req["value"]=="CABLE Input" and req["requestId"]
+    assert req["inventoryId"]==inventory_req["requestId"]
     emit(page,"arMixSecondaryOutputAck",{"requestId":"wrong","action":req["action"],"ok":False})
     assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
     emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":False,"error":"Endpoint rejected"})
@@ -547,6 +548,13 @@ def verify_additional_output(page,out):
     emit(page,"arMixStatus",live)
     assert inline.get_by_role("button",name="Disconnect").is_disabled()
     assert not page.locator("[data-audio-output-matrix]").get_by_text("MAIN MIRROR",exact=False).count()
+    live["directRouteAuthorized"]=False
+    emit(page,"arMixStatus",live)
+    assert inline.get_by_role("button",name="Set up audio").is_visible()
+    inline.get_by_role("button",name="Set up audio").click()
+    assert page.locator('button[data-audio-tab="device"]').get_attribute("aria-selected")=="true"
+    live["directRouteAuthorized"]=True
+    emit(page,"arMixStatus",live)
     inventory["active"]["hasControlPanel"]=True
     emit(page,"arMixAudioDeviceInventory",inventory)
     page.locator('button[data-audio-tab="device"]').click()

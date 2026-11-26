@@ -362,12 +362,14 @@ public:
     }
     // One explicit destination selection is consent to open and send MAIN.
     // Never manipulate primary output intent or its ASIO clock.
-    juce::String enableSecondaryOutput(const juce::String& selected) {
+    juce::String enableSecondaryOutput(const juce::String& selected,
+                                             const std::wstring& expectedEndpointId={}) {
         if(dryRoutingLab_.nativeBusPatchAwaitingCallback())
             return "Wait for the mixer output mapping to finish";
-        if(secondaryOutput_.ready()&&!secondaryOutput_.faulted()&&secondaryOutput_.name()==selected)
+        if(secondaryOutput_.ready()&&!secondaryOutput_.faulted()&&secondaryOutput_.name()==selected&&
+           (expectedEndpointId.empty()||secondaryOutput_.endpointId()==expectedEndpointId))
             return secondaryOutput_.armed()?juce::String{}:armSecondaryOutput(true);
-        const auto error=connectSecondaryOutput(selected);
+        const auto error=connectSecondaryOutput(selected,expectedEndpointId);
         if(error.isNotEmpty())return error;
         const auto armed=armSecondaryOutput(true);
         if(armed.isNotEmpty())secondaryOutput_.stop();
@@ -412,6 +414,7 @@ public:
         if(armed.isNotEmpty())secondaryOutput_.stop();
         return armed;
     }
+    void disarmSecondaryOutput() noexcept {secondaryOutput_.disarm();}
     void disconnectSecondaryOutput(){secondaryOutput_.stop();}
     bool secondaryArmed() const noexcept{return secondaryOutput_.armed();}
     bool secondaryFaulted() const noexcept{return secondaryOutput_.faulted();}
