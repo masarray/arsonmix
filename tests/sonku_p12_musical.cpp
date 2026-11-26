@@ -46,6 +46,11 @@ int main(int argc,char** argv){
             // 12s of uninterrupted motion, 8s stopped, then resume.
             // Boundaries are in exported audio coordinates (1s warm-up removed).
             if(c==3&&(pos==warm+12*rate||pos==warm+20*rate)){
+                // Core treats startAzimuthDegrees as explicit positioning
+                // whenever moving changes. Supply the actual held phase,
+                // not the stale factory 0 degrees. Otherwise this fixture
+                // teleports on pause/resume and is not a valid audition.
+                s.startAzimuthDegrees=static_cast<float>(dsp->azimuthDegrees());
                 s.moving=!s.moving;
                 if(!dsp->setSettings(s))return 9;
             }
