@@ -830,7 +830,7 @@
       if(labels.output!==undefined)t.output=labels.output;
       const direct=Array.isArray(native.raw?.externalOutputs)?
         native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
-      const pair=direct && hardwareOutputPairs(true).find(p=>
+      const pair=direct && deviceVM.outputChoices(hardware,true).find(p=>
         p.left===direct.physicalLeft&&p.right===direct.physicalRight);
       t.externalOutput=direct?(direct.status==="LIVE"&&pair?pair.label:
         (direct.status==="PENDING"?"Pending · ":"Needs Remap · ")+
@@ -1193,23 +1193,26 @@
   const NEEDS_REMAP="Audio connection lost";
   // Only driver-verified even/odd physical pin pairs (not packed ordinals).
   // MAIN and MONITOR retain exclusive ownership of their actual pins.
-  const hardwareOutputPairs=(includeReserved=false)=>deviceVM.outputChoices(hardware,includeReserved);
+  const hardwareOutputPairs=()=>deviceVM.outputChoices(hardware);
   const paintExternalReadback=(next)=>{
     const assignments=Array.isArray(next?.raw?.externalOutputs)?
       next.raw.externalOutputs:[];
-    const choices=hardwareOutputPairs();
+    // Readback includes already installed logical routes; only new direct
+    // assignments use the reservation-filtered inventory.
+    const choices=deviceVM.outputChoices(next,true);
+    const availableChoices=hardwareOutputPairs();
     const named=stripNamedChoices("output").map(p=>p.label);
     for(const t of scope?.tracks||[]) {
       const id=nativeIdFor(t);
       const row=assignments.find(p=>p.channelId===id);
       // Native PCM/armed status is projected, never asserted by the DOM.
-      const projected=deviceVM.externalPresentation(next,row,deviceVM.outputChoices(next,true));
+      const projected=deviceVM.externalPresentation(next,row,choices);
       const {state,value}=projected;
       t.externalOutput=value;
       const select=document.querySelector('.strip[data-id="'+t.id+
         '"] select[data-field="external"]');
       if(!select?.dataset)continue; // headless contract mocks may omit DOM dataset
-      const labels=[...choices.map(p=>p.label),...named];
+      const labels=[...availableChoices.map(p=>p.label),...named];
       if(!labels.includes(value))labels.push(value);
       const signature=labels.join("|");
       if(select.dataset.choices!==signature){
