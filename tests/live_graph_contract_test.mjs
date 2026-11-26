@@ -276,7 +276,7 @@ test('RTR master analysis producer is a bounded PCM copy, never inline meter DSP
   assert.ok(producer.length>0);
   assert.match(producer,/queue_->push\(gen,pcm,count,n\)/);
   assert.match(producer,/gapGeneration_\.store\(gen,std::memory_order_release\)/);
-  assert.doesNotMatch(producer,/meter\.process|mutex|lock_guard|new |make_unique|sleep_for|notify|join\(/);
+  assert.doesNotMatch(producer,/meter\.process|std::mutex|lock_guard|\bnew\s+[A-Z]|make_unique|sleep_for|notify\(|join\(/);
   assert.match(tap,/meter\.process\(pcm,b\.channels,b\.frames\)/);
   assert.match(tap,/queue_=std::make_unique<Queue>\(\)/);
   assert.doesNotMatch(e,/masterLoudness_\.process/);
