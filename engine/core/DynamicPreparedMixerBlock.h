@@ -68,6 +68,7 @@ struct DynamicGraphError final {
 class DynamicPreparedMixerBlock final {
     struct Edge final {
         std::size_t destination=0;
+        std::uint64_t id=0;
         float panL=0.f,panR=0.f,initialGain=1.f;
         bool pre=false,primary=false,enabled=true;
     };
@@ -106,6 +107,11 @@ class DynamicPreparedMixerBlock final {
         armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{},inputApplied{},wireSumApplied{}; // AUDIO only
         std::atomic<float> inputGain{1.f}; // CONTROL writes, AUDIO reads
         std::atomic<float> wireSumGain{1.f};
+        // A topology retirement is NOT a persisted MUTE/fader edit.
+        std::atomic<int> retireFrames{0};
+        std::atomic<bool> retireDone{false};
+        float retireGain=1.f,retireGoal=1.f,retireStep=0.f;
+        int retireRemaining=0,retireDuration=64,retireDrain=0; // AUDIO only
     };
     // CONTROL only packs already verified callback-ordinal physical pin pairs.
     // 0xFFFF means missing right input for mono, never an active physical pin.
@@ -446,6 +452,106 @@ public:
     }
     int latencySamples() const noexcept {return latencySamples_;}
 
+    struct ContinuityPlan final {
+        std::vector<std::pair<std::size_t,std::size_t>> lanes,edges; // new, old
+    };
+    // CONTROL: only identical surviving topology and PDC are admissible.
+    // Inbound wires to a retiring channel can alter upstream schedules/solo
+    // closure; require an explicit stopped edit rather than guessing.
+    bool prepareContinuity(const DynamicPreparedMixerBlock& old,ChannelId removed,
+                           ContinuityPlan& plan) {
+        if(capacity_!=old.capacity_||physicalInputs_!=old.physicalInputs_||
+           mainMonoAfterFx_!=old.mainMonoAfterFx_||
+           monitorLatencyPolicy_!=old.monitorLatencyPolicy_||
+           latencySamples_!=old.latencySamples_||
+           lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size())return false;
+        if(removed.value){
+            const auto found=old.controlIndex_.find(removed.value);
+            if(found==old.controlIndex_.end()||controlIndex_.contains(removed.value))return false;
+            for(std::size_t i=0;i<old.lanes_.size();++i){
+                if(Word::decode(old.channelTargets_[i].state.load(std::memory_order_acquire)).solo)
+                    return false;
+                for(std::size_t e=old.lanes_[i].first;e<old.lanes_[i].last;++e)
+                    if(old.edges_[e].destination==found->second)return false;
+            }
+        }
+        const auto delayEqual=[](const auto& a,std::size_t i,const auto& b,std::size_t j){
+            return i<a.size()&&j<b.size()&&a[i].samples()==b[j].samples();
+        };
+        for(std::size_t i=0;i<lanes_.size();++i){
+            const auto& n=lanes_[i];const auto found=old.controlIndex_.find(n.id.value);
+            if(found==old.controlIndex_.end())return false;
+            const auto j=found->second;const auto& o=old.lanes_[j];
+            if(n.role!=o.role||n.format!=o.format||n.monoPan!=o.monoPan||
+               n.inputStereo!=o.inputStereo||n.playerDeckId!=o.playerDeckId||
+               (n.inputL>=0)!=(o.inputL>=0)||
+               channelScheduled(n.id)!=old.channelScheduled(n.id)||
+               !delayEqual(physicalDelays_,i,old.physicalDelays_,j)||
+               !delayEqual(sinkDelays_,i,old.sinkDelays_,j)||
+               !delayEqual(externalDelays_,i,old.externalDelays_,j))return false;
+            if(n.inputL>=0 && sourceTargets_[i].load()!=old.sourceTargets_[j].load())return false;
+            if(channelTargets_[i].state.load()!=old.channelTargets_[j].state.load()||
+               channelTargets_[i].inputGain.load()!=old.channelTargets_[j].inputGain.load()||
+               channelTargets_[i].wireSumGain.load()!=old.channelTargets_[j].wireSumGain.load())return false;
+            if(n.last-n.first!=o.last-o.first)return false;
+            plan.lanes.emplace_back(i,j);
+            externalTargets_[i].store(old.externalTargets_[j].load(std::memory_order_acquire));
+            for(std::size_t e=n.first;e<n.last;++e){
+                const auto& edge=edges_[e];
+                const auto prior=std::find_if(old.edges_.begin()+o.first,old.edges_.begin()+o.last,
+                    [&](const Edge& x){return x.id==edge.id&&
+                        old.lanes_[x.destination].id==lanes_[edge.destination].id;});
+                if(prior==old.edges_.begin()+o.last)return false;
+                const auto k=static_cast<std::size_t>(prior-old.edges_.begin());
+                if(edge.pre!=prior->pre||edge.primary!=prior->primary||
+                   edge.panL!=prior->panL||edge.panR!=prior->panR||
+                   sendTargets_[e].gain.load()!=old.sendTargets_[k].gain.load()||
+                   sendTargets_[e].enabled.load()!=old.sendTargets_[k].enabled.load()||
+                   !delayEqual(edgeDelays_,e,old.edgeDelays_,k))return false;
+                plan.edges.emplace_back(e,k);
+            }
+        }
+        return true;
+    }
+    // AUDIO only, once, under the existing render permit. Transfer ring
+    // ownership by swap (no sample copies, allocations or destruction).
+    void adoptContinuity(DynamicPreparedMixerBlock& old,const ContinuityPlan& plan) noexcept {
+        for(const auto& [i,j]:plan.lanes){
+            auto& n=channelTargets_[i];auto& o=old.channelTargets_[j];
+            n.appliedL=o.appliedL;n.appliedR=o.appliedR;n.gate=o.gate;
+            n.inputApplied=o.inputApplied;n.wireSumApplied=o.wireSumApplied;
+            n.retireGain=o.retireGain;n.retireGoal=o.retireGoal;n.retireStep=o.retireStep;
+            n.retireRemaining=o.retireRemaining;n.retireDuration=o.retireDuration;
+            sourceFades_[i]=old.sourceFades_[j];externalFades_[i]=old.externalFades_[j];
+            externalAppliedTargets_[i].store(old.externalAppliedTargets_[j].load(std::memory_order_acquire),
+                                             std::memory_order_release);
+            physicalDelays_[i].swapHistory(old.physicalDelays_[j]);
+            sinkDelays_[i].swapHistory(old.sinkDelays_[j]);
+            externalDelays_[i].swapHistory(old.externalDelays_[j]);
+        }
+        for(const auto& [i,j]:plan.edges){
+            sendTargets_[i].applied=old.sendTargets_[j].applied;
+            edgeDelays_[i].swapHistory(old.edgeDelays_[j]);
+        }
+    }
+    bool beginRetirement(ChannelId id,int frames) noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end()||frames<1||frames>4096)return false;
+        auto& t=channelTargets_[it->second];
+        t.retireDone.store(false,std::memory_order_relaxed);
+        t.retireFrames.store(frames,std::memory_order_release);return true;
+    }
+    bool retirementComplete(ChannelId id) const noexcept {
+        const auto it=controlIndex_.find(id.value);
+        return it!=controlIndex_.end()&&
+            channelTargets_[it->second].retireDone.load(std::memory_order_acquire);
+    }
+    void cancelRetirement(ChannelId id) noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it!=controlIndex_.end())channelTargets_[it->second].retireFrames.store(0,std::memory_order_release);
+    }
+
+
     // Control thread only. Rejection leaves the previous prepared object
     // byte-for-byte usable; caller must publish with epoch/revision MUTE/ACK.
     static bool compile(const DynamicChannelRoster& roster,
@@ -580,7 +686,7 @@ public:
                 if(send.primaryOutput&&!send.enabled){
                     error={DynamicGraphFault::invalidSendDestination,rows[i].id};return false;
                 }
-                outgoing[i].push_back({to,gl,gr,send.gain,send.preFader,
+                outgoing[i].push_back({to,send.edgeId,gl,gr,send.gain,send.preFader,
                                        send.primaryOutput,send.enabled});
                 parents[to].push_back(i);
                 ++indegree[to];
@@ -884,6 +990,29 @@ public:
             // keep the original processor alive. Ramp spans 64 real samples.
             auto& gate=channelTargets_[i].gate;
             gate.applyStereo(l,r,frames);
+            // Fade after FX and before every PRE/POST/physical tap.
+            auto& retirement=channelTargets_[i];
+            const int retire=retirement.retireFrames.load(std::memory_order_acquire);
+            const float retireGoal=retire>0?0.f:1.f;
+            if(retireGoal!=retirement.retireGoal){
+                retirement.retireGoal=retireGoal;
+                if(retire>0)retirement.retireDuration=retire;
+                retirement.retireRemaining=retirement.retireDuration;
+                retirement.retireStep=(retireGoal-retirement.retireGain)/
+                    static_cast<float>(retirement.retireRemaining);
+                retirement.retireDrain=latencySamples_;
+            }
+            const bool alreadySilent=retirement.retireRemaining==0&&retirement.retireGain==0.f;
+            if(retirement.retireRemaining||retirement.retireGain!=1.f){
+                for(int f=0;f<frames;++f){
+                    if(retirement.retireRemaining>0){
+                        if(--retirement.retireRemaining==0)retirement.retireGain=retireGoal;
+                        else retirement.retireGain+=retirement.retireStep;
+                    }
+                    l[f]*=retirement.retireGain;r[f]*=retirement.retireGain;
+                }
+            }
+            if(retire>0&&alreadySilent)retirement.retireDrain=std::max(0,retirement.retireDrain-frames);
             for(std::size_t e=lane.first;e<lane.last;++e) {
                 const auto& edge=edges_[e];
                 if(!edge.pre)continue;
@@ -1086,6 +1215,15 @@ public:
                     fade.remaining==0?fade.current:noExternal,
                     std::memory_order_release);
             }
+        }
+        // A completion receipt follows successful delivery, including PDC
+        // drain and physical taps. A cancelled request never authorizes removal.
+        for(const auto i:renderOrder_){
+            auto& t=channelTargets_[i];
+            if(t.retireFrames.load(std::memory_order_acquire)>0&&t.retireGain==0.f&&
+               t.retireRemaining==0&&t.retireDrain==0&&
+               (hardwareOutputs||externalTargets_[i].load(std::memory_order_acquire)==noExternal))
+                t.retireDone.store(true,std::memory_order_release);
         }
         return true;
     }

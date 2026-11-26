@@ -1369,9 +1369,11 @@ public:
             fx.graphRevision=expectedPcmRevision+1;
             const auto published=nativePublisher_.commit(
                 next,nativeAccepted_.graph.request,expectedPcmRevision,
-                expectedEpoch,epoch(),false,std::move(fx),false,true);
+                expectedEpoch,epoch(),false,std::move(fx),false,true,nullptr,nullptr,
+                catalogId=="armix.builtin.channel-compressor.v1");
             if(!published.ok()) {
-                out.error="NATIVE_VST3_PCM_COMMIT_REJECTED";return out;
+                out.error=published.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable?
+                    "COMPRESSOR_INSERT_REQUIRES_STABLE_LIVE_GRAPH":"NATIVE_VST3_PCM_COMMIT_REJECTED";return out;
             }
             nativeAccepted_.graph.roster=std::move(next);
             nativeAccepted_.fxOwners=std::move(owner);
@@ -2142,12 +2144,13 @@ public:
     NativeBusResult removeNativeInputChannel(std::uint64_t expectedEpoch,
             std::uint64_t expectedPcmRevision,std::uint64_t expectedRosterRevision,
             armix::mixer::ChannelId id,bool outputsDisarmed=false,
-            const std::function<void()>& beforePublish={}) {
+            const std::function<void()>& beforePublish={},int liveFadeFrames=0,
+            const std::function<bool()>& stillValid={}) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
         reply.rosterRevision=nativeAccepted_.graph.roster.revision();
-        if(!outputsDisarmed){reply.error="OUTPUT_MUST_BE_DISARMED";return reply;}
+        if(!outputsDisarmed&&liveFadeFrames<=0){reply.error="OUTPUT_MUST_BE_DISARMED";return reply;}
         if(!channelIdPhysicalPcmActive()||!ready()||
            expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
            !nativeAccepted_.fxOwners||
@@ -2193,9 +2196,13 @@ public:
             if(beforePublish)beforePublish();
             const auto published=nativePublisher_.commit(
                 roster,request,expectedPcmRevision,
-                expectedEpoch,epoch(),true,std::move(fx));
+                expectedEpoch,epoch(),outputsDisarmed,std::move(fx),false,false,nullptr,nullptr,
+                false,outputsDisarmed?ChannelId{}:id,liveFadeFrames,stillValid);
             if(!published.ok()){
-                reply.error="NATIVE_TRACK_PCM_COMMIT_REJECTED";return reply;
+                reply.error=published.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable?
+                    "DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING":
+                    published.fault==DynamicNativeSessionPublisher::Fault::retirementTimeout?
+                    "DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED":"NATIVE_TRACK_PCM_COMMIT_REJECTED";return reply;
             }
             nativeAccepted_.graph.roster=std::move(roster);
             nativeAccepted_.graph.request=std::move(request);

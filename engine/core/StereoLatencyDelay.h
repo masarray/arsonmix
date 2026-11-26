@@ -16,6 +16,11 @@ public:
         return true;
     }
     [[nodiscard]] bool active() const noexcept {return !data_.empty();}
+    [[nodiscard]] std::size_t samples() const noexcept {return data_.size()/2;}
+    // AUDIO only, at a single-render graph handoff. Both rings are preallocated.
+    void swapHistory(StereoLatencyDelay& previous) noexcept {
+        data_.swap(previous.data_);std::swap(cursor_,previous.cursor_);
+    }
     // Disconnected tap: retain the exact chronological delay history,
     // without reading discarded samples or running per-sample route logic.
     // If a block replaces the whole ring, only its last delay-length

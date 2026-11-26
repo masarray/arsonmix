@@ -19,6 +19,9 @@
 #include <span>
 #include <type_traits>
 #include <utility>
+#include <chrono>
+#include <thread>
+#include <functional>
 
 // M3B: one callback-ready ChannelId session publisher, NOT another audio
 // device/callback. Control thread prepares immutable graph + publisher lease;
@@ -53,7 +56,10 @@ public:
     };
 private:
     struct Prepared final {
-        DynamicPreparedMixerBlock graph;
+        std::shared_ptr<DynamicPreparedMixerBlock> graph=std::make_shared<DynamicPreparedMixerBlock>();
+        std::shared_ptr<DynamicPreparedMixerBlock> predecessor; // CONTROL-owned lifetime; never released on AUDIO
+        DynamicPreparedMixerBlock::ContinuityPlan continuity;
+        std::atomic<bool> adopted{true};
         DynamicConsoleRoutingView routing;
         FxPlan fx; // SAME lifetime and revision as native PCM graph
         // IO-2B: optional immutable qualified physical source map in THIS
@@ -66,7 +72,7 @@ private:
 public:
     enum class Fault : std::uint8_t {
         none, staleDevice, staleRevision, outputArmed, invalidGraph,
-        retirementFull, invalidCandidate
+        retirementFull, invalidCandidate, continuityUnavailable, retirementTimeout
     };
     struct CommitResult final {
         Fault fault=Fault::none;
@@ -91,7 +97,9 @@ public:
                         FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr},bool verifiedInternalWireOnly=false,
                         bool verifiedInternalFxOnly=false,
                         const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr,
-                        const InitialExternalPlan* initialExternal=nullptr) {
+                        const InitialExternalPlan* initialExternal=nullptr,
+                        bool continuousFx=false,ChannelId retiring={},int fadeFrames=0,
+                        const std::function<bool()>& stillValid={}) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -120,7 +128,7 @@ public:
         if(!allOutputsDisarmed &&
            (independentMonitorPublished_ ||
             request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned ||
-            (!verifiedInternalWireOnly && !verifiedInternalFxOnly))) {
+            (!verifiedInternalWireOnly && !verifiedInternalFxOnly && !retiring.value))) {
             report.fault=Fault::outputArmed;return report;
         }
         // CONTROL: validate every physical source against ONE actual
@@ -159,10 +167,10 @@ public:
         next->graphRevision=expectedRevision+1;
         auto prepared=std::make_unique<Prepared>();
         if(!DynamicPreparedMixerBlock::compile(
-              roster,request,prepared->graph,report.graphError)) {
+              roster,request,*prepared->graph,report.graphError)) {
             report.fault=Fault::invalidGraph;return report;
         }
-        if(!prepared->graph.prepareLatency([&](ChannelId id) noexcept {
+        if(!prepared->graph->prepareLatency([&](ChannelId id) noexcept {
                return fx.latency?fx.latency(fx.context,id):0;
            },request.maxScratchBytes,report.graphError)) {
             report.fault=Fault::invalidGraph;return report;
@@ -203,8 +211,8 @@ public:
                 pairByPin[l]=pairByPin[r]=pair; // exact ordered sharing only
                 // An intentionally unpatched lane has no render scratch.
                 // Its durable intent stays pending in the CONTROL owner.
-                if(prepared->graph.channelScheduled(target.channel)&&
-                   !prepared->graph.setExternalOutput(target.channel,l,r,initialExternal->outputCount)){
+                if(prepared->graph->channelScheduled(target.channel)&&
+                   !prepared->graph->setExternalOutput(target.channel,l,r,initialExternal->outputCount)){
                     report.fault=Fault::invalidCandidate;return report;
                 }
             }
@@ -223,9 +231,43 @@ public:
           roster.channels().end(),[](const ChannelStripDefinition& row) {
               return row.role==ChannelRole::monitor;
           });
+        const bool continuous=continuousFx||retiring.value!=0;
+        const auto* previous=continuous?publisher_.controlPrepared(proposedDeviceEpoch,expectedRevision):nullptr;
+        if(continuous){
+            if(!previous||!previous->adopted.load(std::memory_order_acquire)||
+               previous->inputMap||qualifiedInputMap||initialExternal||
+               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity)){
+                report.fault=Fault::continuityUnavailable;return report;
+            }
+            prepared->predecessor=previous->graph;
+            prepared->adopted.store(false,std::memory_order_relaxed);
+        }
+        // Prepare everything BEFORE starting the channel-local ramp. CONTROL
+        // waits only for a bounded callback receipt; AUDIO never waits.
+        auto* fading=retiring.value&&previous&&previous->graph->channelScheduled(retiring)?
+            previous->graph.get():nullptr;
+        if(fading){
+            if(!fading->beginRetirement(retiring,fadeFrames)){
+                report.fault=Fault::continuityUnavailable;return report;
+            }
+            const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(250);
+            while(!fading->retirementComplete(retiring)&&
+                  (!stillValid||stillValid())&&std::chrono::steady_clock::now()<deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if(!fading->retirementComplete(retiring)|| (stillValid&&!stillValid())){
+                fading->cancelRetirement(retiring);
+                report.fault=Fault::retirementTimeout;return report;
+            }
+        }
+        if(stillValid&&!stillValid()){
+            if(fading)fading->cancelRetirement(retiring);
+            report.fault=Fault::staleDevice;return report;
+        }
         next->prepared=std::move(prepared);
-        const auto status=publisher_.publish(std::move(next),
-                                             expectedRevision,activeDeviceEpoch);
+        const auto status=continuous?
+            publisher_.publishContinuous(std::move(next),expectedRevision,activeDeviceEpoch):
+            publisher_.publish(std::move(next),expectedRevision,activeDeviceEpoch);
+        if(status!=Publisher::Result::applied&&fading)fading->cancelRetirement(retiring);
         switch(status) {
             case Publisher::Result::applied: {
                 independentMonitorPublished_=request.monitorLatencyPolicy==MonitorLatencyPolicy::independent;
@@ -240,7 +282,7 @@ public:
                         (channel->role==ChannelRole::input||
                          channel->role==ChannelRole::group||
                          channel->role==ChannelRole::fxReturn)&&
-                        published->graph.channelScheduled(source);
+                        published->graph->channelScheduled(source);
                     musicTempo_.onGraphCommitted(proposedDeviceEpoch,
                         expectedRevision,expectedRevision+1,retained);
                 }
@@ -309,6 +351,10 @@ public:
             clearOutputs();
             return false;
         }
+        // Acquire the single render permit BEFORE taking a snapshot lease:
+        // no older callback can enter after a new callback adopts its history.
+        armix::rt::RealtimeRenderPermit exclusive{rendering_};
+        if(!exclusive){clearOutputs();return false;}
         auto lease=publisher_.acquire();
         const auto* snap=lease.get(deviceEpoch);
         // The source-map lifetime and its PCM DSP graph are protected by
@@ -323,7 +369,7 @@ public:
                                                    virtualFrame)) {
                 // The installed external destinations cannot retain an
                 // APPLIED readback from a previous, now invalid input map.
-                snap->prepared->graph.invalidateAppliedExternalOutputs();
+                snap->prepared->graph->invalidateAppliedExternalOutputs();
                 clearOutputs();return false;
             }
             physical=virtualFrame.pointers.data();
@@ -334,19 +380,17 @@ public:
         if(!snap || !snap->prepared ||
            physicalCount!=snap->prepared->physicalInputs ||
            (snap->prepared->monitor && !monitorL) ||
-           frames>snap->prepared->graph.capacity()) {
+           frames>snap->prepared->graph->capacity()) {
             // A real, current-epoch callback with a changed input count or
             // unsafe quantum must not retain last block's EXTERNAL LIVE
             // readback after every hardware buffer was silenced.
             if(snap && snap->prepared)
-                snap->prepared->graph.invalidateAppliedExternalOutputs();
+                snap->prepared->graph->invalidateAppliedExternalOutputs();
             clearOutputs();return false;
         }
-        // A single callback producer owns the prepared scratch. In case a
-        // broken backend calls simultaneously, fail closed rather than race.
-        armix::rt::RealtimeRenderPermit exclusive{rendering_};
-        if(!exclusive) {
-            clearOutputs();return false;
+        if(!snap->prepared->adopted.load(std::memory_order_acquire)){
+            snap->prepared->graph->adoptContinuity(*snap->prepared->predecessor,snap->prepared->continuity);
+            snap->prepared->adopted.store(true,std::memory_order_release);
         }
         // One sample domain for all ChannelIds and their FX racks. This
         // fixed-time callback-local scope also fences bypassed/stale inserts;
@@ -372,10 +416,10 @@ public:
         };
         // Only the opted-in host requests the actual prepared roster prefix.
         if(renderedMeterCount&&channelPeaksL.size()==channelPeaksR.size()){
-            const auto count=std::min(channelPeaksL.size(),snap->prepared->graph.channelCount());
+            const auto count=std::min(channelPeaksL.size(),snap->prepared->graph->channelCount());
             channelPeaksL=channelPeaksL.first(count);channelPeaksR=channelPeaksR.first(count);
         }
-        const bool ok=snap->prepared->graph.process(
+        const bool ok=snap->prepared->graph->process(
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
               hardwareOutputs,hardwareOutputCount);
@@ -385,7 +429,7 @@ public:
             // amplifier buffers) emits silence, not a stale LIVE snapshot.
             // The approved GUI will report PENDING until a later successful
             // PCM callback re-publishes APPLIED on the same ChannelId graph.
-            snap->prepared->graph.invalidateAppliedExternalOutputs();
+            snap->prepared->graph->invalidateAppliedExternalOutputs();
             clearOutputs();
         }
         if(ok&&renderedRevision)*renderedRevision=snap->graphRevision;
@@ -404,7 +448,7 @@ public:
             if(!ch || (ch->role!=ChannelRole::input &&
                        ch->role!=ChannelRole::group &&
                        ch->role!=ChannelRole::fxReturn) ||
-               !p->graph.channelScheduled(source))return false;
+               !p->graph->channelScheduled(source))return false;
         }
         return musicTempo_.select(source,epoch,revision,sampleRate);
     }
@@ -427,19 +471,19 @@ public:
                            ChannelId id,int left,int right,int outputCount) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
-                return active.graph.setExternalOutput(id,left,right,outputCount);
+                return active.graph->setExternalOutput(id,left,right,outputCount);
             });
     }
     std::pair<int,int> externalOutput(std::uint64_t epoch,
                 std::uint64_t revision,ChannelId id) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);
-        return p?p->graph.externalOutput(id):std::pair<int,int>{-1,-1};
+        return p?p->graph->externalOutput(id):std::pair<int,int>{-1,-1};
     }
 
     std::pair<int,int> appliedExternalOutput(std::uint64_t epoch,
                 std::uint64_t revision,ChannelId id) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);
-        return p?p->graph.appliedExternalOutput(id):std::pair<int,int>{-1,-1};
+        return p?p->graph->appliedExternalOutput(id):std::pair<int,int>{-1,-1};
     }
 
     // M3C realtime parameters on the accepted ChannelId graph ONLY.
@@ -454,35 +498,35 @@ public:
                 // and physical pin attestation. Recompile/publish the full
                 // detached map+graph on CONTROL instead.
                 if(active.inputMap)return false;
-                return active.graph.setPhysicalSource(id,inputL,inputR,stereo);
+                return active.graph->setPhysicalSource(id,inputL,inputR,stereo);
             });
     }
     bool setChannelMix(std::uint64_t epoch,std::uint64_t revision,
                        ChannelId id,float gain,float pan) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
-                return active.graph.setChannelMix(id,gain,pan);
+                return active.graph->setChannelMix(id,gain,pan);
             });
     }
     bool setChannelInputGain(std::uint64_t epoch,std::uint64_t revision,
                              ChannelId id,float gain) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
-                return active.graph.setChannelInputGain(id,gain);
+                return active.graph->setChannelInputGain(id,gain);
             });
     }
     bool setChannelWireSumGain(std::uint64_t epoch,std::uint64_t revision,
                              ChannelId id,float gain) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
-                return active.graph.setChannelWireSumGain(id,gain);
+                return active.graph->setChannelWireSumGain(id,gain);
             });
     }
     bool setChannelMuteSolo(std::uint64_t epoch,std::uint64_t revision,
                             ChannelId id,bool mute,bool solo) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
-                return active.graph.setChannelMuteSolo(id,mute,solo);
+                return active.graph->setChannelMuteSolo(id,mute,solo);
             });
     }
     bool setParallelSendGain(std::uint64_t epoch,std::uint64_t revision,
@@ -495,7 +539,7 @@ public:
                     [&](const auto& edge){return edge.from==source&&edge.to==destination&&
                         edge.preFader==preFader&&!edge.primaryOutput;});
                 if(!admitted)return false;
-                if(active.graph.channelScheduled(source)&&!active.graph.setParallelSendGain(
+                if(active.graph->channelScheduled(source)&&!active.graph->setParallelSendGain(
                     source,destination,preFader,gain))return false;
                 // A dormant send has no scratch/atomic DSP edge yet. Its
                 // accepted gain is still editable and seeds the next source
@@ -524,8 +568,8 @@ public:
                           edge.preFader==preFader&&!edge.primaryOutput;
                     });
                 if(!admitted)return false;
-                if(active.graph.channelScheduled(source)&&
-                   !active.graph.setParallelSendEnabled(source,destination,preFader,enabled))
+                if(active.graph->channelScheduled(source)&&
+                   !active.graph->setParallelSendEnabled(source,destination,preFader,enabled))
                     return false;
                 for(auto& edge:active.routing.edges)
                     if(edge.from==source&&edge.to==destination&&
@@ -560,12 +604,12 @@ public:
     // CONTROL ONLY; never destroy the last live graph in a callback.
     int latencySamples(std::uint64_t epoch,std::uint64_t revision) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);
-        return p?p->graph.latencySamples():0;
+        return p?p->graph->latencySamples():0;
     }
     DynamicPreparedMixerBlock::LatencyPlanSummary latencyPlanSummary(
             std::uint64_t epoch,std::uint64_t revision) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);
-        return p?p->graph.latencyPlanSummary():DynamicPreparedMixerBlock::LatencyPlanSummary{};
+        return p?p->graph->latencyPlanSummary():DynamicPreparedMixerBlock::LatencyPlanSummary{};
     }
     NativeFxCueBus& cueControl() noexcept {return cueBus_;} // CONTROL only
     void unpublish() noexcept {

@@ -96,6 +96,27 @@ public:
         return Result::applied;
     }
 
+    // CONTROL only, same-device continuous publication. Reader reservation
+    // precedes active pointer load (SC); old active is retained until all
+    // reserved readers leave. No writer gate is required for this immutable
+    // pointer replacement. Rebind/unpublish still use the original gate.
+    Result publishContinuous(std::unique_ptr<Snapshot> next,
+                             std::uint64_t expectedRevision,
+                             std::uint64_t deviceEpochNow) noexcept {
+        if(!next||!next->prepared||!owned_||next->graphRevision<=expectedRevision)
+            return Result::invalidCandidate;
+        if(next->deviceEpoch!=deviceEpochNow||owned_->deviceEpoch!=deviceEpochNow)
+            return Result::staleDevice;
+        if(expectedRevision!=revision_)return Result::staleRevision;
+        pollRetirement();
+        if(retiredCount_>=RetiredCapacity)return Result::retirementFull;
+        retired_[retiredCount_++]=std::move(owned_);
+        owned_=std::move(next);
+        active_.store(owned_.get(),std::memory_order_seq_cst);
+        revision_=owned_->graphRevision;
+        return Result::applied;
+    }
+
     // CONTROL only, after proving identical hardware layout and format.
     // Keep the prepared compatibility plan and its revision. Run the paired
     // publication while no reader can observe or acquire this snapshot.

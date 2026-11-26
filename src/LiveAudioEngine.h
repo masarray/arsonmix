@@ -2621,11 +2621,28 @@ public:
     LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
-        return editNativeInputTopology(epoch,"NATIVE_TRACK_DEVICE_UNAVAILABLE",
-            "NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
-                return dryRoutingLab_.removeNativeInputChannel(
-                    epoch,pcmRevision,rosterRevision,id,true,beforePublish);
-            });
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="NATIVE_TRACK_DEVICE_UNAVAILABLE";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        const auto valid=[&]{
+            return device&&deviceManager_.getCurrentAudioDevice()==device&&
+                epoch==dryRoutingLab_.epoch()&&attached_&&directFence_.permitted()&&
+                !independent_.active()&&!secondaryOutput_.armed()&&
+                !routeReconfiguring_.load(std::memory_order_acquire)&&
+                diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal&&
+                !handoff_.busy()&&fxMovePhase_.load(std::memory_order_acquire)==0;
+        };
+        if(!valid())return fail;
+        try{
+            const auto rate=device->getCurrentSampleRate();
+            if(!std::isfinite(rate)||rate<8000.||rate>384000.)return fail;
+            const bool stopped=allOutputsDisarmed();
+            const int fade=static_cast<int>(std::ceil(rate*.008));
+            return dryRoutingLab_.removeNativeInputChannel(
+                epoch,pcmRevision,rosterRevision,id,stopped,{},fade,valid);
+        }catch(...){
+            fail.error="NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION";return fail;
+        }
     }
     LiveDryRoutingLab::NativeBusResult patchNativeInputSource(
             std::uint64_t epoch,std::uint64_t pcmRevision,
