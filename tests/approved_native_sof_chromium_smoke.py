@@ -263,6 +263,61 @@ def exercise_dmx(browser, out, width, height):
     page.close()
 
 
+def exercise_dmx_conversion(browser, out):
+    page=browser.new_page(viewport={"width":1366,"height":900})
+    errors=[];page.on("pageerror",lambda error:errors.append(str(error)))
+    page.add_init_script(NATIVE_EVENTS+"""window.__nativeIntents=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){
+          if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
+        },...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled",timeout=15000)
+    state=admitted_session()
+    graph=state["graph"]
+    graph["capabilities"]["supportedOps"].append("CONVERT_REVERB_RETURN")
+    graph["channels"][0]["inserts"]=[{"id":"g5c-96021","catalogId":"armix.builtin.vocal-reverb.v1",
+                                      "name":"Reverb-Sis","bypassed":False}]
+    state["mixerSession"]["channels"]=copy.deepcopy(graph["channels"])
+    emit(page,"arMixConsoleSnapshot",state)
+    source=page.locator('#tracks .strip[data-native-role="INPUT"]')
+    row=source.locator('.fxslot-row[data-slot="0"]')
+    row.wait_for(state="visible",timeout=15000)
+    row.click(button="right")
+    menu=page.get_by_role("menuitem",name="Move to FX Return…")
+    menu.click()
+    request=wait_for_intents(page,"CONVERT_REVERB_RETURN",1)
+    assert request["targetChannelId"]==SOURCE
+    assert request["payload"]=={"slot":0,"instanceId":"g5c-96021"}
+    # Actual native transport is emulated; native CTest independently proves
+    # the candidate. A positive ACK without installed readback must not move FX.
+    graph.update(revision="3",rosterRevision="4")
+    state["mixerSession"].update(routeRevision="3",rosterRevision="4")
+    ack(page,state,request)
+    assert "Reverb-Sis" in row.inner_text()
+    wet=copy.deepcopy(graph["channels"][1])
+    wet.update(id="9007199254740999",role="FX_RETURN",name="Reverb-Sis Return")
+    wet["inserts"]=[{"id":"g5c-96022","catalogId":"armix.builtin.vocal-reverb-return.v1",
+                     "name":"Reverb-Sis Return","bypassed":False}]
+    graph["channels"][0]["inserts"]=[]
+    graph["channels"].append(wet)
+    graph["edges"].extend([
+       dict(graph["edges"][1],edgeId="9223372036854775990",
+            **{"from":SOURCE,"to":wet["id"],"gainLinear":1,"tap":"POST_FADER","primaryOutput":False}),
+       dict(graph["edges"][0],edgeId="9223372036854775991",
+            **{"from":wet["id"],"to":MAIN,"gainLinear":1,"tap":"POST_FADER","primaryOutput":True})])
+    graph["destinations"]=[{k:c[k] for k in ("id","role","name")} for c in graph["channels"]]
+    state["mixerSession"]["channels"]=copy.deepcopy(graph["channels"])
+    emit(page,"arMixConsoleSnapshot",state)
+    page.locator('#tracks .strip[data-native-role="FX_RETURN"]').wait_for(state="attached",timeout=15000)
+    assert "Reverb-Sis Return" in page.locator('#tracks .strip[data-native-role="FX_RETURN"]').inner_text()
+    assert "Reverb-Sis" not in source.locator(".fx-section").inner_text()
+    page.screenshot(path="arsonmix-native-dmx-conversion-1366.png")
+    assert not errors,errors
+    page.close()
+
+
 def main():
     spec=importlib.util.spec_from_file_location(
         "native_bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -277,6 +332,7 @@ def main():
                 for width,height in ((1366,900),(1024,768)):
                     exercise(browser,out,width,height)
                     exercise_dmx(browser,out,width,height)
+                exercise_dmx_conversion(browser,out)
             finally:
                 browser.close()
     print("PASS native SOF actual Chromium: exact EdgeId ON/OFF, PRE tap, gain, ACK/readback, no ghost patch or MAIN fader write; two viewports")

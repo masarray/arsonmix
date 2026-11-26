@@ -233,8 +233,15 @@ public:
             if(!v.isInt() || !row || static_cast<int>(v)<0 ||
                static_cast<std::size_t>(static_cast<int>(v))>=row->insertCatalogIds.size())
                 return bad("INVALID_LOGICAL_FX_SLOT");
+            constexpr auto wetId="armix.builtin.vocal-reverb-return.v1";
+            const auto index=static_cast<std::size_t>(static_cast<int>(v));
+            if(row->insertCatalogIds[index]==wetId&&
+               std::count(row->insertCatalogIds.begin(),row->insertCatalogIds.end(),wetId)==1)
+                for(const auto& from:editor_.roster().channels())
+                    for(const auto& send:from.sends)
+                        if(send.destination==id)return bad("DISCONNECT_WET_RETURN_INPUTS_FIRST");
             edit.kind=ChannelEdit::Kind::removeInsertReference;
-            edit.position=static_cast<std::size_t>(static_cast<int>(v));
+            edit.position=index;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FX_SLOT_BYPASS") {
             const auto* row=editor_.roster().find(id);
@@ -259,6 +266,10 @@ public:
             if(catalog.isEmpty() || catalog.getNumBytesAsUTF8()>256 ||
                catalog.containsChar('\n') || catalog.containsChar('\r'))
                 return bad("INVALID_OFFLINE_FX_CATALOG");
+            const auto* row=editor_.roster().find(id);
+            if(catalog=="armix.builtin.vocal-reverb-return.v1"&&
+               (!row||row->role!=ChannelRole::fxReturn))
+                return bad("WET_RETURN_REQUIRES_FX_RETURN_CHANNEL");
             edit.kind=ChannelEdit::Kind::addInsertReference;
             edit.text=catalog.toStdString();
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});

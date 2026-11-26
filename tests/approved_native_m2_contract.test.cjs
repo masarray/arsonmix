@@ -7270,3 +7270,39 @@ test("DMX SOF selects exact independent FX return to monitor edge",()=>{
  assert.equal(wireVM.sofTargetRole("MONITOR"),true);
  assert.equal(wireVM.sofTargetRole("MAIN"),false);
 });
+
+test("DMX conversion ACK needs a new actual wet return and preserved source identity",()=>{
+ const setup=()=>{
+  const base=acceptedFixture(),source=base.graph.channels.find(c=>c.role==="INPUT");
+  const main=base.graph.channels.find(c=>c.role==="MAIN");
+  base.graph.mainChannelId=main.id;source.primaryOutId=main.id;
+  source.inserts=[{id:"fx-existing",catalogId:"test.eq",name:"EQ"},
+    {id:"fx-reverb",catalogId:"armix.builtin.vocal-reverb.v1",name:"Reverb-Sis"}];
+  base.graph.capabilities.supportedOps.push("CONVERT_REVERB_RETURN");
+  const c=protocol.createController({emit(){}});
+  assert.ok(c.onSnapshot(base));return {base,source,main,c};
+ };
+ const run=(corrupt)=>{
+  const {base,source,main,c}=setup();
+  assert.equal(c.intent("CONVERT_REVERB_RETURN",source.id,{slot:0,instanceId:"fx-existing"}).ok,false);
+  assert.equal(c.intent("CONVERT_REVERB_RETURN",source.id,{slot:1,instanceId:"stale"}).ok,false);
+  const r=c.intent("CONVERT_REVERB_RETURN",source.id,{slot:1,instanceId:"fx-reverb"});
+  assert.ok(r.ok);
+  c.onAck({requestId:r.requestId,status:"ACCEPTED",errorCode:"NONE",
+    deviceEpoch:base.device.epoch,graphRevision:"6",rosterRevision:"8"});
+  assert.equal(c.state().current.graph.channels.find(x=>x.id===source.id).inserts.length,2);
+  const next=clone(base);
+  next.graph.revision="6";next.graph.rosterRevision="8";
+  next.graph.channels.find(x=>x.id===source.id).inserts.pop();
+  const wet=clone(source);wet.id="9007199254740999";wet.role="FX_RETURN";
+  wet.name="Reverb-Sis Return";wet.inserts=[{id:"fx-wet",catalogId:"armix.builtin.vocal-reverb-return.v1",name:"Reverb-Sis Return"}];
+  next.graph.channels.push(wet);
+  next.graph.edges.push({edgeId:"9223372036854775991",from:source.id,to:wet.id,
+    signalKind:"AUDIO",enabled:true,primaryOutput:false,gainLinear:1,tap:"POST_FADER"});
+  if(corrupt)corrupt(next,wet);
+  return {ok:c.onSnapshot(next),c,wet};
+ };
+ assert.ok(run(null).ok);
+ assert.equal(run((n,w)=>{w.inserts[0].catalogId="armix.builtin.vocal-reverb.v1";}).ok,false);
+ assert.equal(run(n=>{n.graph.edges.pop();}).ok,false);
+});

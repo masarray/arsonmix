@@ -8,6 +8,10 @@ on:
       - 'engine/builtin_fx/VocalReverbEditor.h'
       - 'src/NativeBuiltInFx.h'
       - 'tests/native_vocal_reverb_test.cpp'
+      - 'tests/native_mixer_session_store_test.cpp'
+      - 'engine/core/NativeFxRackTransaction.h'
+      - 'src/NativeMixerSessionDocument.h'
+      - 'src/NativeLogicalMixerWorkspace.h'
       - '.github/workflows/dmx-native-wet-return.yml'
 permissions:
   contents: read
@@ -48,9 +52,9 @@ jobs:
           if ((& git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'DMX_SOURCE_MISMATCH' }
           cmake -S . -B dmx-build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build dmx-build --parallel 2 --target ARMixNativeVocalReverbTests ARMixNativeFxExtensionTests
+          cmake --build dmx-build --parallel 2 --target ARMixNativeVocalReverbTests ARMixNativeFxExtensionTests ARMixDurableMixerSessionTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(NativeVocalReverbSourcePCMParameterAckAndState|M4NativeFxCatalogExtensionAndStatePreparation)$'
+          ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(NativeVocalReverbSourcePCMParameterAckAndState|M4NativeFxCatalogExtensionAndStatePreparation|P0DynamicMixerSessionDocumentAndCrashSafeRecovery)$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build dmx-build --parallel 2 --target CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

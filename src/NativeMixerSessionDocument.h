@@ -1257,6 +1257,10 @@ public:
         // duplicated slot manifest is rejected; its vendor states must never
         // attach to a different processor or channel.
         for(const auto& ch:doc.roster.channels()) {
+            if(ch.role!=ChannelRole::fxReturn&&
+               std::find(ch.insertCatalogIds.begin(),ch.insertCatalogIds.end(),
+                         "armix.builtin.vocal-reverb-return.v1")!=ch.insertCatalogIds.end())
+                return false;
             std::size_t slot=0;
             const bool legacyMarker=ch.insertCatalogIds.size()==1 &&
                 ch.insertCatalogIds[0]=="legacy:aux-rack";

@@ -2146,7 +2146,53 @@ static void verifyIoDefaults(){
     assert(file.loadFileAsString().endsWith("damaged"));
     assert(dir.deleteRecursively());
 }
+// Exact durable AVRB state and independent PRE EdgeId survive .smix.
+static void verifyDmxWetReturnSession(){
+    using Reverb=armix::builtin_fx::VocalReverbProcessor;
+    auto d=makeSession();
+    auto rows=d.roster.channels();
+    auto* wet=&*std::find_if(rows.begin(),rows.end(),[](const auto& row){return row.id.value==11;});
+    wet->insertCatalogIds.push_back(Reverb::wetReturnIdentity);
+    // Existing legacy source -> AUX PRE edge stays exact. Return -> MAIN
+    // and preserved physical binding use the original .smix schema.
+    assert(d.roster.restoreExact(d.acceptedRevision,rows));
+    auto processor=armix::builtin_fx::prepareNativeVocalReverbReturn(48000.,256,nullptr,0);
+    assert(processor);
+    BinaryState state;processor->getStateInformation(state.bytes);
+    assert(!state.bytes.isEmpty());
+    state.sha256=juce::SHA256(state.bytes).toHexString();
+    d.inserts.push_back({{11},0,Reverb::wetReturnIdentity,{},state.sha256,
+                         "Reverb-Sis Return",0,true,"g5c-96011"});
+    MixerSessionDocument reopened;
+    const auto json=Codec::encode(d);
+    assert(Codec::decode(json,reopened)&&Codec::encode(reopened)==json);
+    assert(reopened.roster.find({1})->sends[1].edgeId==101);
+    assert(reopened.roster.find({11})->insertCatalogIds[0]==Reverb::wetReturnIdentity);
+    assert(reopened.inserts.front().instanceId=="g5c-96011"&&reopened.inserts.front().bypass);
+    juce::AudioPluginFormatManager formats;
+    std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(reopened,{state},formats,48000.,256,7,1,bank).isEmpty());
+    const auto* lease=bank->ownerForControl({11},0);
+    assert(lease&&*lease&&(*lease)->silenceBypass&&(*lease)->bypassRequested.load());
+    std::array<float,256> l{},r{};
+    for(int b=0;b<8;++b){
+        l.fill(.2f);r.fill(-.1f);(*bank)({11},l.data(),r.data(),256);
+    }
+    assert(std::all_of(l.begin(),l.end(),[](float v){return v==0.f;}));
+    auto bad=reopened;auto invalidRows=bad.roster.channels();
+    auto first=std::find_if(invalidRows.begin(),invalidRows.end(),[](const auto& row){return row.id.value==1;});
+    auto aux=std::find_if(invalidRows.begin(),invalidRows.end(),[](const auto& row){return row.id.value==11;});
+    first->insertCatalogIds=aux->insertCatalogIds;aux->insertCatalogIds.clear();
+    bad.inserts.front().channel={1};
+    assert(bad.roster.restoreExact(bad.acceptedRevision,invalidRows));
+    MixerSessionDocument rejected;
+    assert(!Codec::decode(Codec::encode(bad),rejected));
+    assert(!NativeMixerSessionFxRestore::prepare(bad,{state},formats,48000.,256,7,2,bank).isEmpty());
+    assert(bank->ownerForControl({11},0));
+    std::cout<<"DMX_RETURN_SMIX_ROUNDTRIP_PASS\n";
+}
 int main(){
+    verifyDmxWetReturnSession();
     verifyIoDefaults();
     checkLogicalOutputSession();
     verifyLogicalOutputNativePcm();
