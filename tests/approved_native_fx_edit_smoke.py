@@ -68,7 +68,8 @@ def main():
                 assert page.evaluate('()=>window.__nativeIntents.length')==0,action
             # A short click on the name still opens the real native editor.
             row(1,0).locator('.fx-pick').click()
-            assert page.evaluate("()=>window.__actions.at(-1)?.action")=="routingFxEditor"
+            first_editor=page.evaluate("()=>window.__actions.at(-1)")
+            assert first_editor['action']=="routingFxEditor" and first_editor['requestId']
             assert page.evaluate('()=>window.__nativeIntents.length')==0
             # Drag lower within the same rack: exact plugin follows pointer.
             request=move(1,0,1,1,True)
@@ -76,6 +77,11 @@ def main():
             assert row(1,0).get_attribute('data-insert-id')=='actual-a','optimistic reorder'
             state['graph']['channels'][0]['inserts'].reverse();accept(request)
             assert row(1,0).get_attribute('data-insert-id')=='actual-b'
+            # Deliberate MOVE retires the pending slot lease; even a late
+            # rejected ACK cannot show a toast for the already-closed editor.
+            emit(page,'arMixRoutingFxEditorAck',{'ok':False,'requestId':first_editor['requestId'],
+                'instanceId':first_editor['instanceId'],'error':'obsolete editor request'})
+            assert page.locator('#armixNativeToast:visible').count()==0
             # Cross-channel MOVE, not a new plugin load or name-only copy.
             request=move(1,1,2,0)
             assert request['operation']=='MOVE_INSERT' and request['payload']['toChannelId']==RECEIVER
@@ -85,6 +91,7 @@ def main():
             row(2,0).locator('[data-action="openPlugin"]').click()
             editor=page.evaluate('()=>window.__actions.at(-1)')
             assert editor['action']=='routingFxEditor' and editor['channelId']==RECEIVER and editor['instanceId']=='actual-a'
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'requestId':editor['requestId'],'instanceId':'actual-a'})
             row(1,0).locator('[data-action="removeFx"]').click()
             request=page.evaluate('()=>window.__nativeIntents.at(-1)')
             assert request['operation']=='REMOVE_INSERT' and request['payload']['instanceId']=='actual-b'
@@ -111,17 +118,26 @@ def main():
             assert opened['instanceId']=='concert-accepted',opened
             assert str(opened['deviceEpoch'])==str(state['device']['epoch']),opened
             assert str(opened['revision'])==str(state['graph']['revision']),opened
-            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'instanceId':'concert-accepted'})
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'requestId':opened['requestId'],'instanceId':'concert-accepted'})
             row(2,1).locator('[data-action="openPlugin"]').click()
             vst=page.evaluate('()=>window.__actions.at(-1)')
             assert vst['action']=='routingFxEditor' and vst['instanceId']=='dearvr-accepted',vst
-            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'instanceId':'dearvr-accepted'})
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'requestId':vst['requestId'],'instanceId':'dearvr-accepted'})
             row(2,0).locator('[data-action="openPlugin"]').click()
             reopened=page.evaluate('()=>window.__actions.at(-1)')
             assert reopened['action']=='routingFxEditor' and reopened['instanceId']=='concert-accepted',reopened
             assert reopened['channelId']==RECEIVER,reopened
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'requestId':reopened['requestId'],'instanceId':'concert-accepted'})
             assert page.locator('#armixNativeToast:visible').count()==0,(
                 'Successful native editor open must not raise an FX settings toast')
+            # A genuine correlated failure is still visible. Do not silence
+            # all editor errors merely to make the success case pass.
+            row(2,1).locator('[data-action="openPlugin"]').click()
+            failed=page.evaluate('()=>window.__actions.at(-1)')
+            emit(page,'arMixRoutingFxEditorAck',{'ok':False,'requestId':failed['requestId'],
+                'instanceId':failed['instanceId'],'error':'fixture native host rejected'})
+            assert page.locator('#armixNativeToast:visible').count()==1
+            assert 'FX editor unavailable' in page.locator('#armixNativeToast').inner_text()
             assert not errors,errors
             page.screenshot(path=f'native-fx-edit-{width}.png');page.close()
         browser.close()

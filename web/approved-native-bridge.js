@@ -1728,6 +1728,16 @@
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
   let pendingFxEditorAck=null,fxEditorSerial=0; // HWND feedback, never PCM owner
+  // Intentional rack edits retire affected slot-relative HWND requests.
+  // Late ACKs/timeouts for the deliberately closed editor are obsolete, not
+  // a new editor failure. Other racks retain their exact ACK/retry contract.
+  function retirePendingRackEditor(channelIds=null){
+    const pending=pendingFxEditorAck;
+    if(!pending)return;
+    if(channelIds===null||(pending.authority==="CHANNEL_ID"&&
+       channelIds.some(id=>String(id)===String(pending.lease?.channelId))))
+      pendingFxEditorAck=null;
+  }
   // One pending M4 insert is owned by the bridge until ACK AND independent
   // accepted Console-v6 snapshot. A stale/superseded ACK can never open HWND.
   function reconcileM4FxInsertReadback(snapshot){
@@ -1926,6 +1936,7 @@
     }
     // Close affected slot-bound panels before MOVE/REMOVE invalidates their
     // leases. The source and destination racks can both shift slot indices.
+    retirePendingRackEditor(target?[id,nativeIdFor(target)]:[id]);
     inlineFxClip?.closeRackEditors(target?[id,nativeIdFor(target)]:[id]);
     const result=controller.intent(decision.operation,decision.channelId,
                                    decision.payload);
@@ -4640,6 +4651,7 @@
             nativeToast("Finish current operations before New Project");return;
           }
           if(!window.confirm("Start a new mixer? The current project is archived first. Output will remain muted."))return;
+          retirePendingRackEditor();
           inlineFxClip?.closeRackEditors();
           backend.emitEvent("arMixAction",{action:"nativeMixerNewLive",confirmed:true,
             deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
@@ -5524,7 +5536,10 @@
       nativeToast("FX changed · reopen rack menu");return false;
     }
     // Rack topology may replace or shift slot-relative inline editor leases.
-    if(operation!=="SAVE")inlineFxClip?.closeRackEditors([identity.channelId]);
+    if(operation!=="SAVE"){
+      retirePendingRackEditor([identity.channelId]);
+      inlineFxClip?.closeRackEditors([identity.channelId]);
+    }
     backend.emitEvent("arMixAction",{action:"fxRackFile",operation,...identity,
       slot:operation==="DEACTIVATE"?slot:-1,instanceId:operation==="DEACTIVATE"?token:""});
     return true;

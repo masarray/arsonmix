@@ -7454,3 +7454,17 @@ test("RTR integration preserves monitor timing, Additional Output, performance a
   const live=m.slice(m.indexOf("bool canCreateLiveSession("),m.indexOf("bool liveNewSessionLeaseMatches("));
   assert.match(live,/!fxRackFileChooser_/);
 });
+
+
+test("intentional rack edits retire only affected pending native HWND feedback",()=>{
+ const b=read("web/approved-native-bridge.js");
+ const f=b.slice(b.indexOf("function retirePendingRackEditor("),b.indexOf("function reconcileM4FxInsertReadback("));
+ assert.match(f,/pending.authority==="CHANNEL_ID"/);
+ assert.match(f,/channelIds.some\(id=>String\(id\)===String\(pending.lease\?\.channelId\)\)/);
+ assert.match(f,/pendingFxEditorAck=null/);
+ const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
+ assert.ok(edit.indexOf("retirePendingRackEditor(")>edit.indexOf('decision.kind!=="READY"'));
+ assert.ok(edit.indexOf("retirePendingRackEditor(")<edit.indexOf("controller.intent("));
+ assert.match(b,/retirePendingRackEditor\(\[identity.channelId\]\)/);
+ assert.match(b,/retirePendingRackEditor\(\);\s*inlineFxClip\?\.closeRackEditors\(\)/);
+});
