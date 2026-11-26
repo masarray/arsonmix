@@ -310,6 +310,17 @@
     return {available:true,split,reason:split?"OBS receives MAIN. Add MONITOR sends in the mixer to hear your headphone mix.":"Separate mix starts silent until MONITOR sends are added.",
       value:{enabled:!split,smart:true,deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision}};
   }
+  function secondaryMonitorStarter(snapshot,live) {
+    const output=secondaryOutputView(snapshot,live),d=snapshot?.device,g=snapshot?.graph;
+    if(!snapshot?.admitted||snapshot.retained||!output.split||!output.armed||
+       snapshot.raw?.physicalBusOutputObserved!==true||!g||!d||
+       [d.epoch,g.revision,g.rosterRevision].some(v=>decimal(v)===null))return null;
+    const monitor=g.channels?.find(ch=>ch.role==="MONITOR");
+    if(!monitor||!g.mainChannelId||!Array.isArray(g.edges)||
+       g.edges.some(e=>e.to===monitor.id||e.from===monitor.id))return null;
+    if(!g.edges.some(e=>e.to===g.mainChannelId&&e.primaryOutput===true&&e.enabled===true))return null;
+    return {deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision};
+  }
   function secondaryOutputSelection(options,{active="",selected="",preferred="",hasSaved=false}={}) {
     if(options.includes(active))return active;
     if(options.includes(selected))return selected;
@@ -1140,5 +1151,5 @@
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,monitorTimingView});
+    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,monitorTimingView});
 });

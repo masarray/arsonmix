@@ -7773,3 +7773,17 @@ test("U4 preserves authored monitor WIREs and reuses healthy prepared render aft
  assert.match(f,/current.selection.id!=intent.endpointId/);
  assert.ok(f.indexOf("return armSecondaryOutput(true);")<f.indexOf("connectSecondaryOutput(intent.name,intent.endpointId)"));
 });
+
+
+test("U4 starter mix is an atomic native WIRE transaction, no overwrite of authored sends",()=>{
+ const s={admitted:true,device:{epoch:"17"},graph:{revision:"19",rosterRevision:"23",mainChannelId:"5",channels:[{id:"8",role:"MONITOR"}],edges:[{from:"3",to:"5",primaryOutput:true,enabled:true}]},raw:{secondaryMainOnly:true,physicalBusOutputObserved:true}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.deepEqual(protocol.secondaryMonitorStarter(s,live),{deviceEpoch:"17",graphRevision:"19",rosterRevision:"23"});
+ assert.equal(protocol.secondaryMonitorStarter({...s,graph:{...s.graph,edges:[...s.graph.edges,{from:"3",to:"8"}]}},live),null);
+ assert.equal(protocol.secondaryMonitorStarter(s,{...live,secondaryOutputArmed:false}),null);
+ const l=read("src/LiveDryRoutingLab.h");const f=l.slice(l.indexOf("NativeBusResult seedIndependentMonitor("),l.indexOf("NativeBusResult applyNativeWireTransaction("));
+ assert.match(f,/send.destination==graph.ids.monitor/);
+ assert.match(f,/send.destination==graph.ids.main&&send.primaryOutput&&send.enabled/);
+ assert.match(f,/std::min\(0.25f,1.f\/static_cast<float>\(changes.size\(\)\)\)/);
+ assert.match(f,/return applyNativeWireTransaction\(ep,rev,rosterRev,changes\)/);
+});

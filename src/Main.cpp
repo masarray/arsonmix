@@ -6770,7 +6770,7 @@ private:
                 emitNotice("Audio device is busy · try again",true);
             else if(action=="secondaryOutputEnable"||action=="secondaryOutputConnect"||
                     action=="secondaryOutputArm"||action=="secondaryOutputStop"||
-                    action=="secondaryOutputSplit"){
+                    action=="secondaryOutputSplit"||action=="secondaryMonitorStarter"){
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("requestId",args.getProperty("requestId",{}));
                 ack->setProperty("action",action);ack->setProperty("ok",false);
@@ -9955,6 +9955,26 @@ private:
         // OUTPUT1: generic selected auxiliary playback destination.
         // Device selection, ASRC preparation and callback attach are CONTROL
         // thread operations. Only the existing native mixer produces PCM.
+        if(action=="secondaryMonitorStarter") {
+            std::uint64_t ep=0,rev=0,roster=0;
+            LiveDryRoutingLab::NativeBusResult result;
+            result.error="Wait for audio to finish applying";
+            if(!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !pendingRetainedFxCapture_&&!retainedOfflineFxActive_&&
+               armix::console::approvedNativeId(value.getProperty("deviceEpoch",{}),ep)&&
+               armix::console::approvedNativeId(value.getProperty("graphRevision",{}),rev)&&
+               armix::console::approvedNativeId(value.getProperty("rosterRevision",{}),roster))
+                result=engine_.seedIndependentMonitor(ep,rev,roster);
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",args.getProperty("requestId",{}));
+            ack->setProperty("action",action);
+            ack->setProperty("ok",result.accepted);
+            ack->setProperty("error",result.accepted?juce::String{}:juce::String(result.error));
+            ack->setProperty("graphRevision",juce::String(std::to_string(result.pcmRevision)));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputAck",juce::var(ack.release()));
+            if(result.accepted)emitApprovedNativeSnapshot();
+            return emitNotice(result.accepted?"Headphone starter mix created · adjust MONITOR sends to taste":result.error,!result.accepted);
+        }
         if(action=="secondaryOutputSplit"){
             juce::String error;
             std::uint64_t ep=0,rev=0,roster=0;

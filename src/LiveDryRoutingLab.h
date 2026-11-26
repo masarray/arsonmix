@@ -2606,6 +2606,43 @@ public:
     // the accepted roster's SAME send inventory, lease the SAME native VST3
     // processors and publish once to the JUCE callback's existing publisher.
     // M4 cannot represent arbitrary WIRE afterwards; never downgrade it.
+    // Novice-first starter: derive sources from the accepted MAIN primary
+    // routes, not browser strip indexes. Do not duplicate upstream group
+    // paths or overwrite any authored headphone sends.
+    NativeBusResult seedIndependentMonitor(std::uint64_t ep,std::uint64_t rev,
+                                          std::uint64_t rosterRev) {
+        using namespace armix::mixer;
+        NativeBusResult rejected;
+        rejected.error="Headphone mix is not ready or already configured";
+        const auto& graph=nativeAccepted_.graph;
+        if(!ready()||!channelIdPhysicalPcmActive()||!nativeAccepted_.hardware.secondaryMain()||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev)||!nativeBusOutputObserved()||
+           graph.roster.revision()!=rosterRev||!graph.ids.monitor.value||!graph.ids.main.value)
+            return rejected;
+        const auto* monitor=graph.roster.find(graph.ids.monitor);
+        if(!monitor||monitor->role!=ChannelRole::monitor)return rejected;
+        std::vector<WireChange> changes;
+        for(const auto& row:graph.roster.channels()) {
+            if(row.role==ChannelRole::main||row.role==ChannelRole::monitor)continue;
+            if(std::any_of(row.sends.begin(),row.sends.end(),[&](const auto& send){
+                return send.destination==graph.ids.monitor;
+            }))return rejected;
+            const bool directMain=std::any_of(row.sends.begin(),row.sends.end(),[&](const auto& send){
+                return send.destination==graph.ids.main&&send.primaryOutput&&send.enabled;
+            });
+            if(directMain)changes.push_back({WireChange::Kind::connect,row.id,graph.ids.monitor});
+        }
+        if(changes.empty()||changes.size()>256) {
+            rejected.error="No eligible MAIN sources for a headphone mix";
+            return rejected;
+        }
+        // Conservative POST starter, adjustable in existing SOF/WIRE.
+        // No new FX instance, physical rebind or extra callback.
+        const float gain=std::min(0.25f,1.f/static_cast<float>(changes.size()));
+        for(auto& change:changes)change.gain=gain;
+        return applyNativeWireTransaction(ep,rev,rosterRev,changes);
+    }
+
     NativeBusResult applyNativeWireTransaction(
             std::uint64_t ep,std::uint64_t expectedPcmRev,
             std::uint64_t expectedRosterRev,

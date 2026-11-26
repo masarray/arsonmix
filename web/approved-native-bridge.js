@@ -3639,6 +3639,9 @@
       p.action==="secondaryOutputArm"?live.secondaryOutputArmed===p.value:
       p.action==="secondaryOutputSplit"?live.dryRoutingLab?.secondaryMainOnly===p.value.enabled&&
         live.dryRoutingLab?.busOutputObserved===true&&live.secondaryOutputArmed===true:
+      p.action==="secondaryMonitorStarter"?hardware?.graph?.revision===p.ackRevision&&
+        live.dryRoutingLab?.busOutputObserved===true&&live.secondaryOutputArmed===true&&
+        !protocol.secondaryMonitorStarter(hardware,live):
       live.secondaryOutputReady===false&&live.secondaryOutputArmed===false&&!live.secondaryOutputName&&!live.secondaryOutputFault;
     if(matches)extraPending=null;
     else if(live.secondaryOutputFault===true&&p.action!=="secondaryOutputSplit"){extraPending=null;extraError="Output fault · disconnect and reconnect the endpoint.";}
@@ -3675,9 +3678,14 @@
     modeButton.disabled=busy||!allowed||!mix.available;
     const modeLabel=split?"Use same mix":"Separate headphone mix";
     if(modeButton.textContent!==modeLabel)modeButton.textContent=modeLabel;
+    const starter=protocol.secondaryMonitorStarter(hardware,live);
+    const starterButton=extraField("starter");
+    starterButton.hidden=!starter;
+    starterButton.disabled=busy||!allowed||!starter;
     const mixHint=extraField("mix-hint");
-    mixHint.hidden=modeButton.hidden;
-    if(mixHint.textContent!==mix.reason)mixHint.textContent=mix.reason;
+    mixHint.hidden=modeButton.hidden&&starterButton.hidden;
+    const hint=starter?"Create a quiet starting mix from MAIN sources, then adjust MONITOR sends.":mix.reason;
+    if(mixHint.textContent!==hint)mixHint.textContent=hint;
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
     const message=extraPending?(extraPending.action==="secondaryOutputSplit"?
@@ -3758,7 +3766,7 @@
       <label>Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
       <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-repair hidden>Set up audio</button></div>
       <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
-      <div class="armix-stream-actions"><button type="button" data-extra-mix hidden>Separate headphone mix</button><span class="armix-stream-hint" data-extra-mix-hint hidden></span></div>
+      <div class="armix-stream-actions"><button type="button" data-extra-mix hidden>Separate headphone mix</button><button type="button" data-extra-starter hidden>Create headphone mix</button><span class="armix-stream-hint" data-extra-mix-hint hidden></span></div>
       <div class="armix-stream-hint">Post-FX MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
     panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
     extraField("refresh").onclick=()=>refreshAdditionalInventory(true);
@@ -3773,6 +3781,10 @@
     extraField("mix").onclick=()=>{
       const mode=protocol.secondaryMixMode(hardware,extraLive);
       if(mode.available)requestAdditionalOutput("secondaryOutputSplit",mode.value);
+    };
+    extraField("starter").onclick=()=>{
+      const value=protocol.secondaryMonitorStarter(hardware,extraLive);
+      if(value)requestAdditionalOutput("secondaryMonitorStarter",value);
     };
   }
   function mountInlineAdditionalOutput(){
@@ -5487,7 +5499,10 @@
           extraSelected="";extraInventoryKnown=false;
           refreshAdditionalInventory(true);
         }
-      }else extraPending.acked=true;
+      }else {
+        extraPending.acked=true;
+        if(extraPending.action==="secondaryMonitorStarter")extraPending.ackRevision=String(ack.graphRevision||"");
+      }
       // Keep controls pending until a subsequent native status matches.
       paintAdditionalOutput();
     });

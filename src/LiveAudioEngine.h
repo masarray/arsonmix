@@ -2834,6 +2834,14 @@ public:
     // JUCE control-thread gateway to the already installed ChannelId renderer.
     // No callback detach or alternate route ownership. Preserve device,
     // original vendor VST3 leases and physical output-arm safety gates.
+    LiveDryRoutingLab::NativeBusResult seedIndependentMonitor(
+            std::uint64_t ep,std::uint64_t pcmRev,std::uint64_t rosterRev) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="Wait for verified headphone and stream routing";
+        if(!secondaryOutput_.armed()||!secondaryResumeReady()||!attached_||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||hasRuntimeFxFault())return fail;
+        return dryRoutingLab_.seedIndependentMonitor(ep,pcmRev,rosterRev);
+    }
     LiveDryRoutingLab::NativeBusResult applyNativeWireTransaction(
             std::uint64_t ep,std::uint64_t pcmRev,std::uint64_t rosterRev,
             std::span<const armix::mixer::WireChange> changes) {

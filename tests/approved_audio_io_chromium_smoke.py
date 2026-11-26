@@ -614,15 +614,32 @@ def verify_independent_output(page,out):
     assert panel.get_by_role("button",name="Disconnect").is_enabled()
     state.update(secondaryMainOnly=True,physicalMainOutputs=[],physicalMonitorOutputs=[0,1])
     state["graph"].update(revision="3",rosterRevision="3")
+    monitor_id="987654321"
+    monitor={"id":monitor_id,"name":"MONITOR","role":"MONITOR","processingFormat":"STEREO",
+             "controls":{"faderDb":0,"pan":0,"mute":False,"solo":False},"inserts":[],"sends":[]}
+    state["graph"]["channels"].append(monitor)
+    state["graph"]["destinations"].append({k:monitor[k] for k in ("id","role","name")})
     emit(page,"arMixConsoleSnapshot",state)
     live["dryRoutingLab"]["busOutputObserved"]=True
     live.update(secondaryOutputArmed=True,secondaryOutputRecovering=False)
     emit(page,"arMixStatus",live)
     assert panel.get_by_role("button",name="Use same mix").is_enabled()
     assert panel.locator("[data-extra-status]").inner_text().startswith("Enabled")
-    panel.get_by_role("button",name="Use same mix").click()
+    starter=panel.get_by_role("button",name="Create headphone mix")
+    assert starter.is_enabled()
+    starter.click()
     req=page.evaluate("()=>window.__actions.at(-1)")
-    assert req["value"]["enabled"] is False
+    assert req["action"]=="secondaryMonitorStarter" and req["value"]["graphRevision"]=="3"
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True,"graphRevision":"4"})
+    assert starter.is_disabled()
+    state["graph"].update(revision="4",rosterRevision="4")
+    state["graph"]["edges"].append({"edgeId":"9223372036854775900","from":SOURCE,"to":monitor_id,
+        "primaryOutput":False,"gainLinear":.25,"tap":"POST_FADER","enabled":True,"signalKind":"AUDIO"})
+    emit(page,"arMixConsoleSnapshot",state)
+    emit(page,"arMixStatus",live)
+    assert not starter.is_visible()
+    assert panel.get_by_role("button",name="Use same mix").is_disabled()
+    assert "preserved" in panel.locator("[data-extra-mix-hint]").inner_text()
     assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
     assert not errors,errors
 
