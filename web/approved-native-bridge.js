@@ -857,7 +857,7 @@
       if(labels.output!==undefined)t.output=labels.output;
       const direct=Array.isArray(native.raw?.externalOutputs)?
         native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
-      const pair=direct && hardwareOutputPairs().find(p=>
+      const pair=direct && deviceVM.outputChoices(hardware,true).find(p=>
         p.left===direct.physicalLeft&&p.right===direct.physicalRight);
       t.externalOutput=direct?(direct.status==="LIVE"&&pair?pair.label:
         (direct.status==="PENDING"?"Pending · ":"Needs Remap · ")+
@@ -1226,7 +1226,10 @@
   const paintExternalReadback=(next)=>{
     const assignments=Array.isArray(next?.raw?.externalOutputs)?
       next.raw.externalOutputs:[];
-    const choices=hardwareOutputPairs();
+    // Readback includes already installed logical routes; only new direct
+    // assignments use the reservation-filtered inventory.
+    const choices=deviceVM.outputChoices(next,true);
+    const availableChoices=hardwareOutputPairs();
     const named=stripNamedChoices("output").map(p=>p.label);
     for(const t of scope?.tracks||[]) {
       const id=nativeIdFor(t);
@@ -1238,7 +1241,7 @@
       const select=document.querySelector('.strip[data-id="'+t.id+
         '"] select[data-field="external"]');
       if(!select?.dataset)continue; // headless contract mocks may omit DOM dataset
-      const labels=[...choices.map(p=>p.label),...named];
+      const labels=[...availableChoices.map(p=>p.label),...named];
       if(!labels.includes(value))labels.push(value);
       const signature=labels.join("|");
       if(select.dataset.choices!==signature){
@@ -2533,7 +2536,7 @@
         });
         if(plan.kind==="UNAVAILABLE"){
           if(el)el.value=previous;
-          nativeToast("EXTERNAL OUT unavailable · check ASIO, graph and pins");
+          nativeToast("EXTERNAL OUT: unavailable · check verified ASIO pins, pending mapping or logical output assignment");
           return true;
         }
         if(plan.kind==="NO_CHANGE"){if(el)el.value=previous;return true;}
@@ -3230,6 +3233,8 @@
       const select=document.createElement("select");
       select.setAttribute("aria-label",row.name+" assignment");
       const candidates=row.bus?row.choices:model.choices;
+      // An installed logical pair may be excluded from new assignments.
+      // Read-only rows must retain their installed crosspoints, not a draft.
       const customValue="__custom_stereo__";
       const custom=document.createElement("div");
       custom.className="armix-custom-stereo";custom.hidden=true;
@@ -3242,6 +3247,9 @@
       const customLeft=customSelect("L"),customRight=customSelect("R");
       if(model.pins.length>1)customRight.selectedIndex=1;
       if(row.selected===null){const op=new Option(row.state||"Current source", "");op.disabled=true;select.append(op);}
+      else if(row.selected&&!candidates.some(c=>c.label===row.selected)){
+        const op=new Option(row.selected,row.selected);op.disabled=true;select.append(op);
+      }
       for(const choice of candidates)select.append(new Option(choice.label,choice.label));
       if(row.editable&&!row.bus)for(const p of aliases)
         select.append(new Option(p.name+" · "+p.choice.label,"preset:"+p.id));
@@ -3302,21 +3310,27 @@
     host.append(table);
   }
   function paintPhysicalOutputs(next) {
+    paintFirstSound(next);
     if(devicePanel&&!devicePanel.hidden){
       paintMonitorTiming(next);
       const page=devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab;
       if(page==="inputs")paintRouteMatrix(next,"input");
       if(page==="routing")paintRouteMatrix(next,"output");
     }
+    paintOutputOverview(next);
+  }
+  function paintOutputOverview(next) {
     const view=devicePanel?.querySelector?.("[data-audio-output-matrix]");
     if(!view || devicePanel.hidden||
        devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab!=="routing")return;
-    const patches=protocol.physicalOutputOverview(next);
+    const patches=protocol.physicalOutputOverview(next).filter(row=>row.pair!=="STREAM");
+    const stream=protocol.secondaryOutputRow(next,extraLive);
+    if(stream)patches.push(stream);
     const signature=JSON.stringify([patches,String(next?.device?.backend||"")]);
     if(devicePanel.dataset.outputSignature===signature)return;
     devicePanel.dataset.outputSignature=signature;
     const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
-    if(summary)summary.textContent="OUTPUTS · "+patches.length+" physical patches";
+    if(summary)summary.textContent="Destinations · "+patches.length;
     view.replaceChildren();
     if(!patches.length){
       const backendName=String(next?.device?.backend||"");
@@ -3428,6 +3442,7 @@
       !d.enabledInputs?.length?(next.admitted?"NO ACTIVE CAPTURE PINS · AUDIO I/O":
         "CHECK AUDIO I/O SETTINGS"):
       next?.raw?.operatorOutputMuted===true?"EMERGENCY STOP · MORE → RESUME":
+      protocol.firstSoundPlan(next)?"CONNECT MICROPHONE · CHOOSE INPUT":
       legacy()?.routeAccepted||next?.admitted?"OUTPUT RECOVERING · CHECK AUDIO I/O":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
@@ -3628,6 +3643,246 @@
   },true);
   let loopbackSerial=0,loopbackId="",loopbackPending=false;
   const loopbackField=name=>devicePanel?.querySelector("[data-audio-loopback-"+name+"]");
+  // U1: approved native bundle owns this workflow. monitor.js belongs to
+  // the retired console and is deliberately NOT shipped in this bundle.
+  let extraPanel=null,extraControls=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
+      extraError="",extraInventoryKnown=false,extraInventoryPending="",extraPreferred="",extraHasSaved=false,
+      extraSelected="",extraInventoryRetryAt=0,extraInventoryId="",extraStatusSerial=0;
+  const extraField=name=>extraControls?.querySelector("[data-extra-"+name+"]");
+  const extraInlineHost=()=>devicePanel?.querySelector("[data-audio-extra-output]");
+  const extraInlineVisible=()=>!devicePanel?.hidden&&
+    devicePanel?.querySelector(".armix-audio-dialog")?.dataset.audioTab==="routing";
+  const extraSurfaceOpen=()=>Boolean(extraPanel?.open||extraInlineVisible());
+  function refreshAdditionalInventory(force=false){
+    if(extraInventoryPending)return;
+    const requestId="extra-inventory-"+(++extraSerial);
+    extraInventoryPending=requestId;extraInventoryKnown=false;extraError="";
+    paintAdditionalOutput();
+    backend.emitEvent("arMixAction",{action:"secondaryOutputInventory",requestId,force:force===true});
+    window.setTimeout(()=>{
+      if(extraInventoryPending!==requestId)return;
+      extraInventoryPending="";extraInventoryKnown=false;
+      extraInventoryRetryAt=performance.now()+5000;
+      extraError="Windows playback devices unavailable. Retrying automatically…";
+      paintAdditionalOutput();
+    },8000);
+  }
+  function settleAdditionalOutput(live){
+    const p=extraPending;
+    const result=protocol.secondaryOutputSettlement(p,hardware,live,extraStatusSerial);
+    if(result==="SETTLED"){extraPending=null;extraError="";}
+    else if(result==="STALE"){
+      extraPending=null;extraError="Audio configuration changed · review the current output before retrying.";
+    }else if(p?.acked&&extraStatusSerial>p.statusSerial&&
+       live?.secondaryOutputFault===true&&live.secondaryOutputRecovering!==true&&
+       protocol.secondaryOutputView(hardware,live).fault&&
+       p.action!=="secondaryOutputSplit"&&p.action!=="secondaryOutputStop"){
+      extraPending=null;extraError="Output fault · disconnect and reconnect the endpoint.";
+    }
+  }
+  // Destination selection is UI navigation only (TotalMix submix / Yamaha SOF).
+  // Use the installed MONITOR ChannelId and the existing SOF selector, never
+  // synthesize a send, choose a similarly named BUS, or modify MAIN faders.
+  function headphoneMixTarget(){
+    const current=controller?.state()?.current;
+    if(!flags.acceptedGraphConnected||!deviceReady()||
+       !protocol.secondaryOutputView(hardware,extraLive).split||
+       !wireVM.sofAvailable(current,!!scope?.toggleSof))return null;
+    const monitors=current.graph.channels.filter(ch=>ch.role==="MONITOR");
+    if(monitors.length!==1)return null;
+    const tracks=scope?.tracks?.filter(t=>t.nativeRole==="MONITOR"&&nativeIdFor(t)===monitors[0].id)||[];
+    const target=document.getElementById("sofTarget"),toggle=document.getElementById("sofToggle");
+    if(tracks.length!==1||!target||!toggle||toggle.disabled||
+       !Array.from(target.options).some(o=>o.value===String(tracks[0].id)))return null;
+    return {id:tracks[0].id,target,toggle};
+  }
+  function openHeadphoneMix(){
+    if(extraPending||deviceBusy())return;
+    const mix=headphoneMixTarget();
+    if(!mix){nativeToast("Headphone mix unavailable · verify the current MONITOR route");return;}
+    if(extraPanel?.open)extraPanel.close();
+    else if(extraInlineVisible())closeNativeAudioIO();
+    if(scope.sofTargetId!==mix.id){
+      mix.target.value=String(mix.id);
+      mix.target.dispatchEvent(new Event("change",{bubbles:true}));
+    }
+    if(scope.sofTargetId===mix.id&&!scope.sofEnabled)scope.toggleSof(true);
+    mix.toggle.focus();
+  }
+  function paintAdditionalOutput(){
+    if(!extraControls||!extraSurfaceOpen())return;
+    const live=extraLive, busy=Boolean(extraPending)||deviceBusy(),
+      destination=protocol.secondaryOutputView(hardware,live),
+      {ready,armed,fault,name,split,recovering}=destination;
+    const select=extraField("device");
+    const options=extraInventory;
+    const sig=JSON.stringify(options);
+    if(select.dataset.signature!==sig){
+      select.replaceChildren(new Option("Select Windows playback device…",""),
+        ...options.map(name=>new Option(name,name)));
+      select.dataset.signature=sig;
+    }
+    const chosen=protocol.secondaryOutputSelection(options,{active:armed||recovering?name:"",
+      selected:extraSelected,preferred:extraPreferred,hasSaved:extraHasSaved});
+    if(select.value!==chosen)select.value=chosen;
+    const allowed=live?.directRouteAuthorized===true&&live?.adaptiveClockActive!==true&&
+      live?.dryRoutingLab?.hasAcceptedRoute===true&&live?.diagnosticRoute==="NORMAL";
+    select.disabled=busy||armed||recovering||extraInventoryPending;
+    extraField("refresh").disabled=busy||extraInventoryPending;
+    extraField("connect").disabled=busy||!allowed||armed||recovering||!extraInventoryKnown||!options.includes(select.value);
+    extraField("stop").disabled=extraPending?.action==="secondaryOutputStop"||
+      (!ready&&!fault&&!name&&!recovering&&extraPending?.action!=="secondaryOutputEnable");
+    extraField("repair").hidden=!live||allowed||busy||armed||recovering;
+    const mode=split?"Separate headphone mix":"Same mix";
+    if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
+    const mix=protocol.secondaryMixMode(hardware,live);
+    const modeButton=extraField("mix");
+    modeButton.hidden=!mix.available&&!split;
+    modeButton.disabled=busy||!allowed||!mix.available;
+    const modeLabel=split?"Use same mix":"Separate headphone mix";
+    if(modeButton.textContent!==modeLabel)modeButton.textContent=modeLabel;
+    const starter=protocol.secondaryMonitorStarter(hardware,live);
+    const starterButton=extraField("starter");
+    starterButton.hidden=!starter;
+    starterButton.disabled=busy||!allowed||!starter;
+    const editButton=extraField("edit-mix");
+    const edit=split&&!starter&&headphoneMixTarget();
+    editButton.hidden=!edit;
+    editButton.disabled=busy||!edit;
+    const mixHint=extraField("mix-hint");
+    mixHint.hidden=modeButton.hidden&&starterButton.hidden&&editButton.hidden&&!armed;
+    const hint=starter?"Headphones have no sends. Create a quiet PRE-fader mix, or edit existing routing in the mixer.":
+      split?mix.reason+(edit?" · Edit headphone mix to adjust sends. PRE sends ignore the source channel fader.":""):
+      mix.available?"Headphones and OBS receive the same mix. "+mix.reason:mix.reason;
+    if(mixHint.textContent!==hint)mixHint.textContent=hint;
+    const surfaceState=extraPending?"PENDING":destination.state;
+    if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
+    const message=extraPending?(extraPending.action==="secondaryOutputSplit"?
+      (extraPending.acked?"Restoring audio in the selected mix…":"Changing headphone mix…"):
+      (extraPending.acked?"Verifying output…":"Applying output…")):
+      busy?"Audio device is applying…":!live?"Reading audio engine status…":
+      recovering?"Reconnecting to "+name+" automatically · Disconnect to stop":
+      fault?"Output disconnected unexpectedly. Enable the selected device again or disconnect.":
+      armed?"Enabled · "+name+" · check audio in receiving app":
+      ready?"Connected · "+name+" · Enable to send MAIN":
+      !allowed?"Audio device or mixer routing is not ready. Check Audio I/O.":
+      extraInventoryPending?"Reading Windows playback devices…":
+      !extraInventoryKnown?"Waiting for Windows playback devices…":
+      !options.length?"No Windows playback endpoint found. Connect or enable a virtual cable.":
+      extraHasSaved&&!extraPreferred&&!select.value?"Saved output unavailable · choose a destination.":
+      "Choose a destination, then Enable output.";
+    const status=extraField("status");
+    if(status.textContent!==message)status.textContent=message;
+    const error=extraField("error");
+    error.hidden=!extraError;
+    if(error.textContent!==extraError)error.textContent=extraError;
+  }
+  function requestAdditionalOutput(action,value){
+    if(!extraSurfaceOpen()||(action!=="secondaryOutputStop"&&(extraPending||deviceBusy()))||
+       extraPending?.action==="secondaryOutputStop")return;
+    const requestId="extra-out-"+(++extraSerial);
+    extraError="";
+    const before=protocol.secondaryOutputView(hardware,extraLive);
+    extraPending={requestId,action,value,acked:false,statusSerial:extraStatusSerial,
+      epoch:hardware?.device?.epoch,config:hardware?.hardwareConfiguration,endpoint:before.name,
+      workspaceGeneration:hardware?.raw?.workspaceGeneration,
+      pair:(before.split?hardware?.raw?.physicalMonitorOutputs:hardware?.raw?.physicalMainOutputs)?.slice()};
+    paintAdditionalOutput();
+    backend.emitEvent("arMixAction",{action,value,requestId,inventoryId:extraInventoryId});
+    window.setTimeout(()=>{
+      if(extraPending?.requestId!==requestId)return;
+      settleAdditionalOutput(extraLive);
+      if(extraPending?.requestId!==requestId){paintAdditionalOutput();return;}
+      extraPending=null;
+      extraError="Output response timed out · inspect current device state before retrying.";
+      paintAdditionalOutput();
+    },action==="secondaryOutputSplit"?30000:15000);
+  }
+  function ensureAdditionalControls(){
+    if(extraControls)return;
+    const style=document.createElement("style");
+    style.textContent=`
+      .armix-stream-dialog{width:min(520px,92vw);max-height:90vh;overflow:auto;box-sizing:border-box;background:#1a252d;color:#e3eff4;border:1px solid #506778;border-radius:8px;padding:0;font:12px system-ui,sans-serif;box-shadow:0 16px 56px #0009}
+      .armix-stream-dialog::backdrop{background:#020b1290}
+      .armix-stream-dialog [data-extra-close]{float:right;margin:10px 12px 0 0}
+      .armix-stream-controls{padding:12px 14px;border:1px solid #3c5765;border-radius:5px;background:#10232e;display:grid;gap:7px;font:12px system-ui,sans-serif;color:#dcebf2}
+      .armix-stream-dialog .armix-stream-controls{border:0;padding:14px}
+      .armix-stream-heading{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+      .armix-stream-heading strong{font-size:12px;font-weight:550}
+      .armix-stream-mode{font-size:11px;color:#9cb9c8}
+      .armix-stream-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+      .armix-stream-controls label{display:grid;gap:4px;color:#a9c5d2}
+      .armix-stream-controls button,.armix-stream-controls select,.armix-stream-dialog [data-extra-close]{background:#102631;color:#e1eff6;border:1px solid #527889;border-radius:4px;min-height:30px;padding:4px 9px;font:inherit}
+      .armix-stream-controls select{width:100%;min-width:0}
+      .armix-stream-controls button[data-extra-connect]{background:#2c5268}
+      .armix-stream-controls button:disabled,.armix-stream-controls select:disabled{opacity:.5}
+      .armix-stream-controls [hidden]{display:none!important}
+      .armix-stream-controls [data-extra-mix]{border-color:#638994}
+      .armix-output-status[data-state="RECOVERING"]{color:#e5c17d}
+      .armix-stream-controls [data-extra-status]{color:#b6c9d1;overflow-wrap:anywhere}
+      .armix-stream-controls[data-state="ENABLED"] [data-extra-status]{color:#9bd3b8}
+      .armix-stream-controls[data-state="FAULT"] [data-extra-status],.armix-stream-controls [data-extra-error]{color:#ffb7a5}
+      .armix-stream-controls[data-state="PENDING"] [data-extra-status],.armix-stream-controls[data-state="RECOVERING"] [data-extra-status]{color:#e5c17d}
+      .armix-stream-hint{font-size:11px;color:#9fb9c8;line-height:1.4}
+      .armix-stream-inline{margin-bottom:12px}
+      .armix-audio-dialog details[data-audio-hardware-routing]{margin:10px 0;padding:9px 0}
+      .armix-output-status[data-state="FAULT"]{color:#ffb7a5}
+      .armix-output-status[data-state="RESERVED"]{color:#e5c17d}
+    `;
+    document.head.appendChild(style);
+    const panel=document.createElement("dialog");
+    panel.className="armix-stream-dialog";panel.setAttribute("aria-label","Additional Output");
+    const close=document.createElement("button");close.type="button";close.setAttribute("data-extra-close","");
+    close.setAttribute("aria-label","Close Additional Output");close.textContent="×";close.onclick=()=>panel.close();
+    panel.append(close);
+    const content=document.createElement("section");content.className="armix-stream-controls";
+    content.setAttribute("aria-label","Additional Output controls");
+    content.innerHTML=`<div class="armix-stream-heading"><strong>Send to OBS / virtual cable</strong><span class="armix-stream-mode" data-extra-mode></span></div>
+      <label>Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
+      <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-repair hidden>Set up audio</button></div>
+      <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
+      <div class="armix-stream-actions"><button type="button" data-extra-mix hidden>Separate headphone mix</button><button type="button" data-extra-starter hidden>Create headphone mix</button><button type="button" data-extra-edit-mix hidden>Edit headphone mix</button><span class="armix-stream-hint" data-extra-mix-hint hidden></span></div>
+      <div class="armix-stream-hint">OBS receives MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
+    panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
+    extraField("refresh").onclick=()=>refreshAdditionalInventory(true);
+    extraField("repair").onclick=()=>{
+      if(extraPanel?.open)extraPanel.close();
+      openNativeAudioIO();
+      selectAudioSetupPage("device");
+    };
+    extraField("device").onchange=()=>{extraSelected=extraField("device").value;paintAdditionalOutput();};
+    extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
+    extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
+    extraField("mix").onclick=()=>{
+      const mode=protocol.secondaryMixMode(hardware,extraLive);
+      if(mode.available)requestAdditionalOutput("secondaryOutputSplit",mode.value);
+    };
+    extraField("edit-mix").onclick=openHeadphoneMix;
+    extraField("starter").onclick=()=>{
+      const value=protocol.secondaryMonitorStarter(hardware,extraLive);
+      if(value)requestAdditionalOutput("secondaryMonitorStarter",value);
+    };
+  }
+  function mountInlineAdditionalOutput(){
+    const host=extraInlineHost();
+    if(!host)return;
+    ensureAdditionalControls();
+    if(extraPanel.open)extraPanel.close();
+    host.append(extraControls);
+    paintAdditionalOutput();
+    refreshAdditionalInventory();
+  }
+  function openAdditionalOutput(){
+    if(deviceBusy()){nativeToast("Finish applying the audio device first.");return;}
+    if(extraInlineVisible()){
+      mountInlineAdditionalOutput();extraField("device").focus();return;
+    }
+    ensureAdditionalControls();
+    extraPanel.append(extraControls);
+    if(!extraPanel.open)extraPanel.showModal();
+    paintAdditionalOutput();
+    refreshAdditionalInventory();
+  }
   function closeNativeAudioIO(){
     if(deviceBusy())return;
     if(loopbackPending)backend.emitEvent("arMixAction",{action:"audioLoopbackCancel"});
@@ -3686,6 +3941,7 @@
       item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
     const apply=devicePanel.querySelector("[data-audio-apply]");
     apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics"||page==="performance";
+    if(page==="routing")mountInlineAdditionalOutput();
     if(page==="inputs"||page==="routing")paintPhysicalOutputs(hardware);
     if(page==="performance")paintSmartPerformance(true);
     if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
@@ -3949,18 +4205,20 @@
           <div class="armix-device-note">Choose Mono or Stereo, then Apply on the row. Blue = installed; amber = draft.</div>
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
-          <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
-          <div class="armix-device-note">Assign mixer channels and buses to verified hardware pins below. To duplicate MAIN to OBS, a virtual cable or another Windows device, use Additional Output.</div>
-          <button type="button" data-audio-extra-output>Additional Output · OBS / Virtual Cable</button>
-          <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
+          <div class="armix-stream-inline" data-audio-extra-output></div>
+          <div class="armix-output-heading">Destinations</div>
+          <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
+          <details data-audio-hardware-routing>
+            <summary>Advanced hardware routing</summary>
+            <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
+            <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair. Blue = installed; amber = draft.</div>
+          </details>
           <div data-monitor-timing hidden class="armix-device-note">
             <strong>MONITOR timing</strong> · <span data-monitor-timing-value></span>
             <button type="button" data-monitor-timing-toggle disabled>Use singer low latency</button>
             <div>Graph latency only · separate singer monitor, do not combine with MAIN · session only</div>
           </div>
-          <div class="armix-output-heading">OUTPUTS · physical routing</div>
-          <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
-          <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
+          <div class="armix-device-note">Status from the audio engine · listening in the receiving app is not verified</div>
         </section>
         <section class="armix-driver-inventory" aria-label="Driver channel inventory">
           <div class="armix-output-heading">DRIVER CHANNELS · available / enabled</div>
@@ -3977,14 +4235,13 @@
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
       devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
-      // Reuse the serialized JUCE recovery selector (including the vendor's
-      // native ASIO control-panel button), not a second driver instance.
+      // Vendor settings are distinct from choosing a different audio device.
       devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
         if(deviceBusy()||!deviceInventory||!deviceChoice||
            !deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
-        deviceChoice=null;
-        closeNativeAudioIO();
-        backend.emitEvent("arMixAction",{action:"audioSetup"});
+        const active=deviceInventory.active;
+        backend.emitEvent("arMixAction",{action:"audioDriverPanel",driver:active.playbackDevice,
+          deviceGeneration:active.deviceGeneration});
       };
       const readHealth=devicePanel.querySelector("[data-audio-read-health]");
       readHealth.title="Read current driver and cumulative timing counters; discard unapplied edits. No driver rescan.";
@@ -4049,12 +4306,7 @@
         if(!deviceBusy() && deviceState.remapGeneration!==null)
           sendDeviceApply(true);
       };
-      devicePanel.querySelector("[data-audio-extra-output]").onclick=()=>{
-        if(deviceBusy()||typeof window.__arMixOpenAdditionalOutput!=="function")return;
-        closeNativeAudioIO();
-        window.__arMixOpenAdditionalOutput();
-      };
-      document.body.appendChild(devicePanel);
+       document.body.appendChild(devicePanel);
     }
     devicePanel.hidden=false;
     const dialog=devicePanel.querySelector(".armix-audio-dialog");
@@ -4396,7 +4648,8 @@
   }
   if(connected){
     backend.addEventListener("arMixAudioDeviceInventory",inventory=>{
-      if(!inventory||!Array.isArray(inventory.types)||deviceBusy())return;
+      if(!inventory||!Array.isArray(inventory.types))return;
+      if(deviceBusy())return;
       // Inventory is a native observation, not accepted Apply proof.
       deviceInventory=inventory;
       deviceChoice=null;
@@ -4442,6 +4695,75 @@
         backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
       }
     });
+  }
+
+  let firstSoundButton=null,firstSoundDialog=null,firstSoundLease=null;
+  const firstSoundBusy=()=>matrixBusy()||Boolean(controller?.state()?.pending||pendingBusCreate||pendingTrackDelete);
+  function paintFirstSound(next){
+    if(!firstSoundButton)return;
+    const plan=protocol.firstSoundPlan(next);
+    const busy=firstSoundBusy();
+    // The shared premium .tool style uses display:inline-flex!important.
+    // Keep semantic hidden AND remove the actual hitbox from the toolbar.
+    if(firstSoundButton.hidden!==!plan){
+      firstSoundButton.hidden=!plan;
+      if(plan)firstSoundButton.style.removeProperty("display");
+      else firstSoundButton.style.setProperty("display","none","important");
+    }
+    const disabled=busy||!deviceReady();
+    if(firstSoundButton.disabled!==disabled)firstSoundButton.disabled=disabled;
+    const label=plan?.pins.length===1?"Connect input":"Connect microphone";
+    if(firstSoundButton.textContent!==label)firstSoundButton.textContent=label;
+    if(firstSoundDialog?.open){
+      const stale=!plan||plan.epoch!==firstSoundLease?.epoch||plan.revision!==firstSoundLease?.revision||
+        plan.config!==firstSoundLease?.config;
+      if(stale)firstSoundDialog.close();
+      else firstSoundDialog.querySelector("[data-first-connect]").disabled=disabled||
+        firstSoundDialog.querySelector("select").value==="";
+    }
+  }
+  function connectFirstSound(plan,port){
+    const current=protocol.firstSoundPlan(hardware);
+    if(!current||current.channelId!==plan.channelId||current.epoch!==plan.epoch||
+       current.revision!==plan.revision||current.config!==plan.config||
+       !current.pins.some(p=>p.port===port)||firstSoundBusy()||!deviceReady())return;
+    const choices=sourceChoicesFor(),choice=choices.find(p=>p.mode==="MONO"&&p.left===port);
+    const decision=stripVM.sourceQueueSelection({choice,choices,epoch:current.epoch,
+      acceptedLabel:"None",hardwareConfiguration:current.config});
+    if(decision.kind!=="QUEUE"){
+      nativeToast("Input selection changed · choose an available input again");
+      paintFirstSound(hardware);return;
+    }
+    firstSoundDialog?.close();
+    pendingNativeSources.set(current.channelId,decision.entry);
+    dispatchNativeSource(); // the SAME native ChannelId queue and ACK owner
+    paintFirstSound(hardware);
+  }
+  function openFirstSound(){
+    const plan=protocol.firstSoundPlan(hardware);
+    if(!plan||firstSoundBusy()||!deviceReady())return;
+    if(plan.pins.length===1)return connectFirstSound(plan,plan.pins[0].port);
+    if(!firstSoundDialog){
+      const dialog=document.createElement("dialog");
+      dialog.className="armix-stream-dialog";dialog.setAttribute("aria-label","Connect microphone");
+      dialog.style.cssText="width:min(380px,92vw);padding:0;border:1px solid #506778;border-radius:8px;background:#192b35;color:#e3eff4;font:12px system-ui,sans-serif";
+      dialog.innerHTML='<div style="display:grid;gap:10px;padding:14px"><div style="display:flex;justify-content:space-between;align-items:center"><strong style="font-weight:550">Connect microphone</strong><button type="button" data-first-cancel aria-label="Close microphone setup">×</button></div><label style="display:grid;gap:5px">Audio input<select aria-label="Microphone input" style="min-height:30px;background:#102631;color:#e1eff6;border:1px solid #527889;border-radius:4px"></select></label><span data-first-note style="color:#a9c5d2"></span><button type="button" data-first-connect style="min-height:30px;background:#2c5268;color:#e1eff6;border:1px solid #527889;border-radius:4px">Connect</button></div>';
+      document.body.append(dialog);firstSoundDialog=dialog;
+      dialog.querySelector("[data-first-cancel]").onclick=()=>dialog.close();
+      dialog.querySelector("select").onchange=()=>paintFirstSound(hardware);
+      dialog.querySelector("[data-first-connect]").onclick=()=>{
+        const selected=dialog.querySelector("select").value;
+        if(firstSoundLease&&selected!=="")connectFirstSound(firstSoundLease,Number(selected));
+      };
+    }
+    firstSoundLease=plan;
+    const select=firstSoundDialog.querySelector("select");
+    select.replaceChildren(new Option("Choose your input…",""),
+      ...plan.pins.map(p=>new Option(p.label+" · IN "+(p.port+1),String(p.port))));
+    firstSoundDialog.querySelector("[data-first-note]").textContent=
+      "Connect to "+plan.channelName+". Start with low headphone volume; output is verified automatically.";
+    if(!firstSoundDialog.open)firstSoundDialog.showModal();
+    paintFirstSound(hardware);
   }
 
   function installFirstSoundMenu() {
@@ -4785,13 +5107,20 @@
       extraOutput.type="button";
       extraOutput.title="Send MAIN to OBS, virtual cable or another Windows playback device";
       extraOutput.dataset.nativeExtraOutput="true";
-      extraOutput.addEventListener("click",()=>window.__arMixOpenAdditionalOutput?.());
+      extraOutput.addEventListener("click",openAdditionalOutput);
       toolbar.insertBefore(extraOutput,document.getElementById("moreTools"));
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
+      firstSoundButton=item("button","tool","Connect microphone");
+      firstSoundButton.dataset.nativeFirstSound="true";
+      firstSoundButton.hidden=true;
+      firstSoundButton.style.cssText="border-color:#638994;color:#b9e2ed;display:none!important";
+      firstSoundButton.title="Connect a microphone to an unused native mixer";
+      firstSoundButton.addEventListener("click",openFirstSound);
+      toolbar.insertBefore(firstSoundButton,io);
       const addTrack=document.getElementById("addTrack");
       if(addTrack){
         addTrack.textContent="+ Audio Track";
@@ -4918,6 +5247,10 @@
         scope?.cancelNativeSessionGestures?.();
         inlineFxClip?.closeRackEditors();
         discardTransientNativeUi();pendingLogical=null;logicalRenameId=null;
+        // A same-device workspace restore also retires old I/O UI leases.
+        // Never send compensating commands; native readback owns the actual output.
+        extraPending=null;extraError="";
+        if(firstSoundDialog?.open)firstSoundDialog.close();
         pendingRetainedEditor=null;
         lastPaintedSignature="";lastNativeTopologySignature="";lastM4Controls="";
         lastM4UiSignature="";lastM4PortSignature="";
@@ -5174,6 +5507,8 @@
       // expired/rejected edit with unchanged graph values must not strand its
       // LCD at a speculative value; error status settles that separately.
       finishNativeTrack(next);finishNativeTrackDelete(next);
+      paintFirstSound(next);
+      if(extraPending){settleAdditionalOutput(extraLive);paintAdditionalOutput();}
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
       if(startupWire)window.queueMicrotask(flushStartupWire);
@@ -5181,6 +5516,7 @@
     }
     if (!projectNativeGraphWithoutFocusLoss(next)) {
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
+      paintFirstSound(next);paintAdditionalOutput();
       stopDemo();status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
@@ -5193,6 +5529,10 @@
     // projection, without requiring a second telemetry callback/click.
     syncAddTrack(next);
     syncEmergencyOutputControl(next.device);
+    // Refresh source/output shortcuts only after authoritative projection.
+    paintFirstSound(next);
+    settleAdditionalOutput(extraLive);
+    paintAdditionalOutput();
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
     if(confirmed?.operation==="APPLY_WIRE_TRANSACTION")
       playAcceptedWireImpact(confirmed.payload.changes);
@@ -5311,7 +5651,55 @@
     // each second contains the native health sequence/CPU/RAM sample.
     // Rendering changes ONLY two existing footer spans; no new DOM,
     // browser polling, requestAnimationFrame or audio callback work.
+    backend.addEventListener("arMixSecondaryOutputInventory",inventory=>{
+      if(!extraInventoryPending||inventory?.requestId!==extraInventoryPending||!Array.isArray(inventory.outputs))return;
+      extraInventory=[...new Set(inventory.outputs.filter(x=>typeof x==="string"&&x.length>0&&x.length<=240))];
+      const oldPreferred=extraPreferred;
+      extraPreferred=typeof inventory.preferredOutput==="string"?inventory.preferredOutput:"";
+      extraHasSaved=inventory.hasSavedOutput===true;
+      if(extraHasSaved&&!extraPreferred&&extraSelected===oldPreferred)extraSelected="";
+      if(!extraInventory.includes(extraSelected))extraSelected="";
+      extraInventoryId=inventory.requestId;
+      extraInventoryPending="";
+      extraInventoryKnown=!inventory.error;
+      extraInventoryRetryAt=performance.now()+5000;
+      if(inventory.error)extraError=String(inventory.error);
+      paintAdditionalOutput();
+    });
+    backend.addEventListener("arMixSecondaryOutputAck",ack=>{
+      if(!extraPending||ack?.requestId!==extraPending.requestId||ack.action!==extraPending.action)return;
+      if(ack.ok!==true){
+        extraPending=null;
+        extraError=String(ack.error||"Additional output rejected");
+        if(/list changed|identity changed|endpoint missing/i.test(extraError)){
+          extraSelected="";extraInventoryKnown=false;
+          refreshAdditionalInventory(true);
+        }
+      }else {
+        extraPending.acked=true;
+        if(extraPending.action==="secondaryMonitorStarter"||extraPending.action==="secondaryOutputSplit")
+          extraPending.ackRevision=String(ack.graphRevision||"");
+        // A fresh status and accepted graph may already have arrived while
+        // the native action was in flight; never wait for an extra packet.
+        settleAdditionalOutput(extraLive);
+      }
+      paintAdditionalOutput();
+    });
     backend.addEventListener("arMixStatus", live=>{
+      const previous=protocol.secondaryOutputView(hardware,extraLive);
+      extraLive=live;++extraStatusSerial;
+      settleAdditionalOutput(live);
+      paintAdditionalOutput();
+      const current=protocol.secondaryOutputView(hardware,live);
+      // Reuse existing status cadence, no interval or hidden-window scan.
+      if(extraSurfaceOpen()&&!extraInventoryPending&&!extraPending&&!current.armed&&!current.recovering&&
+         (!extraInventoryKnown||!extraInventory.length||(extraHasSaved&&!extraPreferred))&&
+         performance.now()>=extraInventoryRetryAt){
+        extraInventoryRetryAt=performance.now()+5000;
+        refreshAdditionalInventory();
+      }
+      if(previous.name!==current.name||previous.state!==current.state||previous.split!==current.split)
+        paintOutputOverview(hardware);
       const health=protocol.footerHealthFromLive(live);
       if(!health || health.sequence===lastFooterHealth?.sequence)return;
       lastFooterHealth=health;

@@ -318,7 +318,7 @@ public:
                 std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
                     qualifiedCaptureBlocks={},std::uint64_t cueRoute=0,
                     std::uint64_t* renderedRevision=nullptr,
-                    std::size_t* renderedMeterCount=nullptr) noexcept {
+                    std::size_t* renderedMeterCount=nullptr,bool allowUnmappedMonitor=false) noexcept {
         if(renderedRevision)*renderedRevision=0;
         if(renderedMeterCount)*renderedMeterCount=0;
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
@@ -380,7 +380,7 @@ public:
         }
         if(!snap || !snap->prepared ||
            physicalCount!=snap->prepared->physicalInputs ||
-           (snap->prepared->monitor && !monitorL) ||
+           (snap->prepared->monitor && !monitorL && !allowUnmappedMonitor) ||
            frames>snap->prepared->graph->capacity()) {
             // A real, current-epoch callback with a changed input count or
             // unsafe quantum must not retain last block's EXTERNAL LIVE
@@ -423,7 +423,7 @@ public:
         const bool ok=snap->prepared->graph->process(
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
-              hardwareOutputs,hardwareOutputCount);
+              hardwareOutputs,hardwareOutputCount,allowUnmappedMonitor);
         cueBus_.finish(ok,monitorL,monitorR,frames);
         if(!ok) {
             // A rejected physical callback (including aliased independent

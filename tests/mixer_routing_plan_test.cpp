@@ -1238,9 +1238,10 @@ static void verifyContinuousLiveEditPcm() {
         const float* inputs[]{a.data(),b.data(),c.data(),d.data()};
         float* outputs[]{l.data(),r.data(),ml.data(),mr.data(),xl.data(),xr.data(),yl.data(),yr.data()};
         const auto noFx=[](ChannelId,float*,float*,int) noexcept {};
-        const auto render=[&](int frames,std::uint64_t* revision=nullptr){
+        const auto render=[&](int frames,std::uint64_t* revision=nullptr,bool monitorMapped=true,bool allowUnmapped=false){
             return host.render(41,inputs,4,l.data(),r.data(),frames,false,noFx,
-                ml.data(),mr.data(),{},{},{},outputs,8,{},0,revision);
+                monitorMapped?ml.data():nullptr,monitorMapped?mr.data():nullptr,
+                {},{},{},outputs,8,{},0,revision,nullptr,allowUnmapped);
         };
         assert(render(512));assert(render(512));
         assert(close(l[511],.6f)&&close(ml[511],.3f)&&close(xl[511],.4f)&&close(yl[511],.2f));
@@ -1253,7 +1254,9 @@ static void verifyContinuousLiveEditPcm() {
         ChannelEdit insert;insert.kind=Kind::addInsertReference;insert.id=gone;insert.text="test.zero.latency";
         assert(roster.edit(roster.revision(),std::span<const ChannelEdit>(&insert,1)).ok());
         assert(host.commit(roster,req,1,41,41,false,fxPlan(2),false,true,nullptr,nullptr,true).ok());
-        assert(render(17));
+        // The new graph must adopt its predecessor even with a deliberately
+        // unbound MONITOR. MAIN and independent direct outputs stay continuous.
+        assert(render(17,nullptr,false,true));
         const float expectedStep=-.2f*.5f/64.f;
         assert(close(l[0],previous+expectedStep,2.e-5f));
         assert(close(xl[0],.4f)&&close(yl[0],l[0]-.4f));
@@ -1316,6 +1319,11 @@ static void verifyContinuousLiveEditPcm() {
             false,false,nullptr,nullptr,false,keep,fade);
         assert(finalRejected.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable);
         assert(host.acceptedRevision()==3&&render(64)&&close(l[63],.1f));
+        // Missing pins remain fail-closed unless the installed lease opts in.
+        assert(!render(64,nullptr,false,false));
+        assert(close(l[63],0.f)&&close(r[63],0.f));
+        assert(render(64,nullptr,false,true)&&close(l[63],.1f));
+        assert(render(64)&&close(l[63],.1f)&&close(ml[63],.1f));
     }
     // Direct cancellation test: no user mute or fader mutation; a partially
     // applied retirement ramps back to its original audible level.

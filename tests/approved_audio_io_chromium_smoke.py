@@ -254,6 +254,7 @@ def verify_bus_remap(page,out):
         physicalBusSecondaryArmed=False,operatorOutputMuted=False)
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
+    page.locator("[data-audio-hardware-routing] > summary").click()
     rows=page.locator("[data-audio-output-grid] tbody tr")
     main=rows.nth(0);monitor=rows.nth(1)
     assert main.get_by_label("MAIN assignment",exact=True).count()==0
@@ -316,6 +317,7 @@ def verify_logical_outputs(page,out):
         logicalOutputRegistry={"revision":"1","ports":[],"references":[]})
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
+    page.locator("[data-audio-hardware-routing] > summary").click()
     title="Session logical outputs"
     page.get_by_text(title,exact=True).click()
     name=page.get_by_label("Logical output name",exact=True)
@@ -408,6 +410,7 @@ def verify_io_defaults(page,out):
         ioDefaults={"revision":"0","readOnly":False,"canLoad":False,"inputs":0,"outputs":0})
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
+    page.locator("[data-audio-hardware-routing] > summary").click()
     save=page.get_by_role("button",name="Make Default",exact=True)
     load=page.get_by_role("button",name="Load Default",exact=True)
     clear=page.get_by_role("button",name="Clear Default",exact=True)
@@ -445,6 +448,306 @@ def verify_io_defaults(page,out):
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingLogicalOutputEdit')")
     assert not errors,errors
 
+def verify_additional_output(page,out):
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    errors=[]
+    page.on("pageerror",lambda error:errors.append(str(error)))
+    page.goto((out / "index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",outputArmed=True,
+        enabledOutputs=list(range(8)),
+        outputEndpoints=[{"id":"out:"+str(i),"port":i,"callback":i,
+                          "label":"Maono "+str(i+1),"active":True} for i in range(8)])
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],
+                 externalRevision="2",externalOutputs=[])
+    emit(page,"arMixConsoleSnapshot",state)
+    live={"monitor":True,"directRouteAuthorized":True,"adaptiveClockActive":False,
+          "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True},
+          "secondaryOutputReady":False,"secondaryOutputArmed":False}
+    emit(page,"arMixStatus",live)
+    page.locator("[data-native-extra-output]").click()
+    panel=page.get_by_role("dialog",name="Additional Output")
+    assert panel.is_visible()
+    assert page.evaluate("()=>typeof window.__arMixOpenAdditionalOutput")== "undefined"
+    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    assert inventory_req["action"]=="secondaryOutputInventory"
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":"foreign","outputs":["Speakers"]})
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],"outputs":["CABLE Input","Speakers"]})
+    assert panel.get_by_label("Windows playback device").input_value()=="CABLE Input"
+    # Same list, different verified preference must update selection.
+    panel.get_by_role("button",name="Refresh").click()
+    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    assert inventory_req["force"] is True
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],
+         "outputs":["CABLE Input","Speakers"],"preferredOutput":"Speakers","hasSavedOutput":True})
+    assert panel.get_by_label("Windows playback device").input_value()=="Speakers"
+    panel.get_by_role("button",name="Refresh").click()
+    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],
+         "outputs":["CABLE Input","Speakers"],"preferredOutput":"","hasSavedOutput":True})
+    assert panel.get_by_label("Windows playback device").input_value()==""
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
+    panel.get_by_label("Windows playback device").select_option("CABLE Input")
+    panel.get_by_role("button",name="Enable output",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
+    assert req["value"]=="CABLE Input" and req["requestId"]
+    assert req["inventoryId"]==inventory_req["requestId"]
+    emit(page,"arMixSecondaryOutputAck",{"requestId":"wrong","action":req["action"],"ok":False})
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":False,"error":"Endpoint rejected"})
+    assert panel.get_by_role("alert").inner_text()=="Endpoint rejected"
+    panel.get_by_role("button",name="Enable output",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
+    live.update(secondaryOutputReady=True,secondaryOutputName="CABLE Input")
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
+    live["secondaryOutputArmed"]=True
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Disconnect").is_enabled()
+    assert not panel.get_by_role("button",name="Separate headphone mix").is_visible()
+    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
+    panel.get_by_role("button",name="Close Additional Output").click()
+    # Audio I/O uses the same control instance inline, without another dialog.
+    inventory=open_verified_audio_io(page,state,"routing")
+    inline=page.locator("[data-audio-extra-output]")
+    assert inline.get_by_label("Windows playback device").is_visible()
+    assert not page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
+    assert inline.get_by_role("button",name="Disconnect").is_enabled()
+    assert not panel.is_visible()
+    assert page.locator("[data-extra-device]").count()==1
+    assert page.locator("[data-audio-output-matrix]").get_by_text("MAIN MIRROR",exact=False).is_visible()
+    # Fault recovery is native-owned; a lost sink must not look enabled.
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,
+                secondaryOutputFault=True,secondaryOutputRecovering=True,
+                secondaryOutputRecoveryName="CABLE Input")
+    emit(page,"arMixStatus",live)
+    assert inline.locator("[data-extra-status]").inner_text().startswith("Reconnecting")
+    assert inline.get_by_role("button",name="Enable output",exact=True).is_disabled()
+    assert inline.get_by_role("button",name="Disconnect").is_enabled()
+    assert page.locator("[data-audio-output-matrix]").get_by_text("RECOVERING",exact=True).is_visible()
+    live.update(secondaryOutputReady=True,secondaryOutputArmed=True,
+                secondaryOutputFault=False,secondaryOutputRecovering=False)
+    emit(page,"arMixStatus",live)
+    assert inline.locator("[data-extra-status]").inner_text().startswith("Enabled")
+    # Disconnect is also available during a later recovery.
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,
+                secondaryOutputFault=True,secondaryOutputRecovering=True)
+    emit(page,"arMixStatus",live)
+    inline.get_by_role("button",name="Disconnect").click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputStop').at(-1)")
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,secondaryOutputName="",
+                secondaryOutputFault=False,secondaryOutputRecovering=False,secondaryOutputRecoveryName="")
+    emit(page,"arMixStatus",live)
+    assert inline.get_by_role("button",name="Disconnect").is_disabled()
+    assert not page.locator("[data-audio-output-matrix]").get_by_text("MAIN MIRROR",exact=False).count()
+    live["directRouteAuthorized"]=False
+    emit(page,"arMixStatus",live)
+    assert inline.get_by_role("button",name="Set up audio").is_visible()
+    inline.get_by_role("button",name="Set up audio").click()
+    assert page.locator('button[data-audio-tab="device"]').get_attribute("aria-selected")=="true"
+    live["directRouteAuthorized"]=True
+    emit(page,"arMixStatus",live)
+    inventory["active"]["hasControlPanel"]=True
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    page.locator('button[data-audio-tab="device"]').click()
+    page.locator("[data-audio-driver-panel]").click()
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='audioDriverPanel').at(-1)")
+    assert req["driver"]==inventory["active"]["playbackDevice"]
+    assert req["deviceGeneration"]==inventory["active"]["deviceGeneration"]
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='audioSetup').length")==0
+    assert not errors,errors
+
+
+def verify_independent_output(page,out,legacy_empty=False):
+    """Two-pin native fixture: one mode action, no manual mute/arm ritual."""
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    errors=[]
+    page.on("pageerror",lambda error:errors.append(str(error)))
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        outputArmed=True,enabledOutputs=[0,1],
+        outputEndpoints=[{"id":"out:"+str(i),"port":i,"callback":i,
+            "label":"ASIO "+str(i+1),"active":True} for i in range(2)])
+    state["graph"]["capabilities"]["supportedOps"].append("SET_SEND_ENABLED")
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],externalOutputs=[],
+                 physicalBusPatchSupported=True,physicalBusOutputObserved=True,physicalBusSecondaryArmed=True,
+                 secondaryMainOnly=False,externalRevision="2")
+    emit(page,"arMixConsoleSnapshot",state)
+    live={"monitor":True,"directRouteAuthorized":True,"adaptiveClockActive":False,
+          "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True,"busOutputObserved":True,
+          "secondaryMainOnly":False,"epoch":state["device"]["epoch"],"nativeBus":{"graphRevision":"2"}},
+          "secondaryOutputReady":True,"secondaryOutputArmed":True,"secondaryOutputName":"CABLE Input"}
+    emit(page,"arMixStatus",live)
+    page.locator("[data-native-extra-output]").click()
+    panel=page.get_by_role("dialog",name="Additional Output")
+    req=page.evaluate("()=>window.__actions.at(-1)")
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":req["requestId"],"outputs":["CABLE Input"]})
+    button=panel.get_by_role("button",name="Separate headphone mix")
+    assert button.is_enabled()
+    button.click()
+    req=page.evaluate("()=>window.__actions.at(-1)")
+    assert req["action"]=="secondaryOutputSplit"
+    assert req["value"]=={"enabled":True,"smart":True,"deviceEpoch":state["device"]["epoch"],
+        "graphRevision":"2","rosterRevision":"2"}
+    emit(page,"arMixSecondaryOutputAck",{"requestId":"foreign","action":req["action"],"ok":False})
+    assert button.is_disabled()
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True,"graphRevision":"3"})
+    assert button.is_disabled()
+    live["dryRoutingLab"].update(secondaryMainOnly=True,busOutputObserved=False)
+    live.update(secondaryOutputArmed=False,secondaryOutputRecovering=True,secondaryOutputRecoveryName="CABLE Input")
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Use same mix").is_disabled()
+    assert panel.get_by_role("button",name="Disconnect").is_enabled()
+    # Even observed live status with new graph revision cannot complete
+    # until the accepted console snapshot and physical pair arrive.
+    live["dryRoutingLab"].update(busOutputObserved=True,nativeBus={"graphRevision":"3"})
+    live.update(secondaryOutputArmed=True,secondaryOutputRecovering=False)
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Use same mix").is_disabled()
+    state.update(secondaryMainOnly=True,physicalMainOutputs=[],physicalMonitorOutputs=[0,1])
+    state["graph"].update(revision="3",rosterRevision="3")
+    monitor_id="987654321"
+    monitor={"id":monitor_id,"name":"MONITOR","role":"MONITOR","processingFormat":"STEREO",
+             "controls":{"faderDb":0,"pan":0,"mute":False,"solo":False},"inserts":[],"sends":[]}
+    state["graph"]["channels"].append(monitor)
+    state["graph"]["destinations"].append({k:monitor[k] for k in ("id","role","name")})
+    monitor_edge={"edgeId":"9223372036854775900","from":SOURCE,"to":monitor_id,
+        "primaryOutput":False,"gainLinear":.25,"tap":"PRE_FADER","enabled":True,"sendEnabled":True,"signalKind":"AUDIO"}
+    if not legacy_empty:
+        state["graph"]["rosterRevision"]="4" # creation + starter in one graph publication
+        state["graph"]["edges"].append(monitor_edge)
+    state["mixerSession"].update(routeRevision="3",rosterRevision=state["graph"]["rosterRevision"],
+        channels=copy.deepcopy(state["graph"]["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    # The preceding status is fresh; accepted snapshot settles without
+    # waiting for another event, including graph projection.
+    assert panel.get_by_role("button",name="Use same mix").is_enabled()
+    assert panel.locator("[data-extra-status]").inner_text().startswith("Enabled")
+    starter=panel.get_by_role("button",name="Create headphone mix")
+    if legacy_empty:
+        assert starter.is_enabled()
+        assert "PRE-fader" in panel.locator("[data-extra-mix-hint]").inner_text()
+        starter.click()
+        req=page.evaluate("()=>window.__actions.at(-1)")
+        assert req["action"]=="secondaryMonitorStarter" and req["value"]["graphRevision"]=="3"
+        emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True,"graphRevision":"4"})
+        assert starter.is_disabled()
+        state["graph"].update(revision="4",rosterRevision="4")
+        state["graph"]["edges"].append(monitor_edge)
+        state["mixerSession"].update(routeRevision="4",rosterRevision="4")
+        emit(page,"arMixConsoleSnapshot",state)
+        live["dryRoutingLab"]["nativeBus"]["graphRevision"]="4"
+        emit(page,"arMixStatus",live)
+    else:
+        assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryMonitorStarter').length")==0
+    assert not starter.is_visible()
+    assert panel.get_by_role("button",name="Use same mix").is_enabled()
+    assert "preserved" in panel.locator("[data-extra-mix-hint]").inner_text()
+    # Destination navigation is the existing SOF, not a second mixer or native write.
+    edit=panel.get_by_role("button",name="Edit headphone mix")
+    assert edit.is_enabled()
+    before=page.evaluate("()=>window.__actions.length")
+    edit.click()
+    assert not panel.is_visible()
+    assert page.locator("#mixContext").inner_text()=="MONITOR MIX"
+    assert page.evaluate("()=>window.__actions.length")==before
+    page.locator("#sofToggle").click()
+    assert page.locator("#mixContext").inner_text()=="MAIN MIX"
+    page.locator("[data-native-extra-output]").click()
+    panel.get_by_role("button",name="Use same mix").click()
+    same=page.evaluate("()=>window.__actions.at(-1)")
+    assert same["action"]=="secondaryOutputSplit" and same["value"]["enabled"] is False
+    next_rev=str(int(state["graph"]["revision"])+1)
+    emit(page,"arMixSecondaryOutputAck",{"requestId":same["requestId"],"action":same["action"],"ok":True,"graphRevision":next_rev})
+    state.update(secondaryMainOnly=False,physicalMainOutputs=[0,1],physicalMonitorOutputs=[])
+    state["graph"]["revision"]=next_rev
+    state["mixerSession"]["routeRevision"]=next_rev
+    emit(page,"arMixConsoleSnapshot",state)
+    live["dryRoutingLab"].update(secondaryMainOnly=False,nativeBus={"graphRevision":next_rev})
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Separate headphone mix").is_enabled()
+    assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
+    # Re-enter Separate: no starter transaction and no change to the authored send.
+    panel.get_by_role("button",name="Separate headphone mix").click()
+    again=page.evaluate("()=>window.__actions.at(-1)")
+    assert again["action"]=="secondaryOutputSplit" and again["value"]["enabled"] is True
+    next_rev=str(int(next_rev)+1)
+    state.update(secondaryMainOnly=True,physicalMainOutputs=[],physicalMonitorOutputs=[0,1])
+    state["graph"]["revision"]=next_rev
+    state["mixerSession"]["routeRevision"]=next_rev
+    emit(page,"arMixConsoleSnapshot",state)
+    live["dryRoutingLab"].update(secondaryMainOnly=True,nativeBus={"graphRevision":next_rev})
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Use same mix").is_disabled()
+    # ACK may be last; no extra status cycle is necessary.
+    emit(page,"arMixSecondaryOutputAck",{"requestId":again["requestId"],"action":again["action"],"ok":True,"graphRevision":next_rev})
+    assert panel.get_by_role("button",name="Use same mix").is_enabled()
+    assert not panel.get_by_role("button",name="Create headphone mix").is_visible()
+    assert panel.get_by_role("button",name="Edit headphone mix").is_enabled()
+    assert any(e==monitor_edge for e in state["graph"]["edges"])
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryMonitorStarter').length")==int(legacy_empty)
+    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
+    assert not errors,errors
+
+
+def verify_first_sound(page,out,single=False):
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    pins=[2] if single else [0,2]
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        outputArmed=False,enabledInputs=pins,inputEndpoints=[
+            {"id":"in:"+str(i),"port":i,"callback":j,"label":"Mic "+str(i+1),"active":True}
+            for j,i in enumerate(pins)])
+    emit(page,"arMixConsoleSnapshot",state)
+    button=page.locator("[data-native-first-sound]")
+    assert button.is_visible()
+    assert button.is_enabled(), "First accepted projection must enable input without a second snapshot"
+    # Opening the mixer must not automatically patch a microphone.
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').length")==0
+    button.click()
+    dialog=page.get_by_role("dialog",name="Connect microphone")
+    if single:
+        assert not dialog.is_visible(), "Unambiguous input is one explicit click, no extra wizard"
+    else:
+        connect=dialog.get_by_role("button",name="Connect",exact=True)
+        assert connect.is_disabled()
+        dialog.get_by_label("Microphone input").select_option("2")
+        connect.click()
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').length")==1
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').at(-1)")
+    assert req["channelId"]==SOURCE and req["left"]==2 and req["mode"]=="MONO"
+    assert button.is_disabled()
+    emit(page,"arMixNativeSourceAck",{"requestId":req["requestId"],"channelId":SOURCE,"ok":True,"graphRevision":"3"})
+    state["graph"].update(revision="3")
+    state["graph"]["channels"][0]["source"]={"sourceFormat":"MONO","portId":"in:2"}
+    state["mixerSession"].update(routeRevision="3",channels=copy.deepcopy(state["graph"]["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    assert button.get_attribute("hidden") is not None, "Native source readback must retire first-sound plan"
+    assert not button.is_visible(), "Hidden action must not occupy a premium toolbar hitbox"
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='monitor').length")==0
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -456,6 +759,21 @@ def main():
             page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_external_output(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_additional_output(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_independent_output(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_independent_output(page,out,legacy_empty=True)
+        page.close()
+        page=browser.new_page(viewport={"width":1024,"height":576})
+        verify_first_sound(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        verify_first_sound(page,out,single=True)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_bus_remap(page,out)

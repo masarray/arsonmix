@@ -397,10 +397,12 @@ public:
                 float* monitorL=nullptr,float* monitorR=nullptr,
                 std::span<float> channelPeaksL={},
                 std::span<float> channelPeaksR={},
-                std::span<const DynamicPlayerPcmBlock> playerPcm={}) noexcept {
+                std::span<const DynamicPlayerPcmBlock> playerPcm={},
+                bool allowUnmappedMonitor=false) noexcept {
         return publisher_.render(epoch,inputs,inputCount,mainL,mainR,frames,
                                  muted,std::forward<Fx>(fx),monitorL,monitorR,
-                                 channelPeaksL,channelPeaksR,playerPcm);
+                                 channelPeaksL,channelPeaksR,playerPcm,nullptr,0,{},0,nullptr,nullptr,
+                                 allowUnmappedMonitor);
     }
     void unpublish() noexcept {publisher_.unpublish();hasHostedFx_=false;}
     void pollRetirement() noexcept {publisher_.pollRetirement();}

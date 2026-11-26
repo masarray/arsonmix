@@ -843,7 +843,7 @@ public:
                  std::span<float> channelPeaksR={},
                  std::span<const DynamicPlayerPcmBlock> playerPcm={},
                  float* const* hardwareOutputs=nullptr,
-                 int hardwareOutputCount=0) noexcept {
+                 int hardwareOutputCount=0,bool allowUnmappedMonitor=false) noexcept {
         if(frames<=0 || !outputL || !outputR)return false;
         // The physical 10CH/4AUX callback requests only the stable
         // legacy prefix of an expanded ChannelId roster. Dynamic extra
@@ -860,7 +860,7 @@ public:
            hardwareOutputCount>256 ||
            (hardwareOutputCount!=0 && !hardwareOutputs) ||
            (monitorL==nullptr)!=(monitorR==nullptr) ||
-           (monitor_!=notScheduled && !monitorL) ||
+           (monitor_!=notScheduled && !monitorL && !allowUnmappedMonitor) ||
            (monitorL && (monitorL==monitorR || monitorL==outputL ||
                          monitorL==outputR || monitorR==outputL ||
                          monitorR==outputR)))return false;

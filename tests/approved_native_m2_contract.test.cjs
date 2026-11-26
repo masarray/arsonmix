@@ -2065,8 +2065,10 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
  assert.match(menu,/Confirm Delete AUX/);
  assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
- assert.match(bridge,/extraOutput\.addEventListener\("click",\(\)=>window\.__arMixOpenAdditionalOutput\?\.\(\)\)/);
- assert.match(read("web/monitor.js"),/window\.__arMixOpenAdditionalOutput=\(\)=>\{\s*openRoutingLab\(\);\s*selectPatchTab\("output"\);/);
+ assert.match(bridge,/extraOutput\.addEventListener\("click",openAdditionalOutput\)/);
+ assert.match(bridge,/if\(page==="routing"\)mountInlineAdditionalOutput\(\)/);
+ assert.match(bridge,/host\.append\(extraControls\)/);
+ assert.doesNotMatch(bridge,/__arMixOpenAdditionalOutput/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
@@ -7550,16 +7552,334 @@ test("DMX sole ASIO pair belongs to MONITOR; MAIN readback names only the second
   assert.equal(read().some(x=>x.pair==="STREAM"),false);
 });
 
-test("DMX split topology transaction uses native ChannelId edits, not legacy strip edits",()=>{
+test("DMX split topology creates native ChannelId and preserves authored MONITOR on return",()=>{
   const source=read("src/LiveDryRoutingLab.h");
   const start=source.indexOf("juce::String patchDmxSplitOutput(");
   const end=source.indexOf("// CONTROL only, explicit operator MUTE",start);
   assert.ok(start>=0&&end>start);
   const body=source.slice(start,end);
   assert.match(body,/armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::add;/);
-  assert.match(body,/armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::remove;/);
-  assert.equal((body.match(/std::span<const armix::mixer::ChannelEdit>/g)||[]).length,2);
+  assert.doesNotMatch(body,/ChannelEdit::Kind::remove/);
+  assert.equal((body.match(/std::span<const armix::mixer::ChannelEdit>/g)||[]).length,1);
   assert.doesNotMatch(body,/(?<!::)\bChannelEdit\b/);
+  assert.match(body,/next=\{2,old.monitorL,old.monitorR,-1,-1,false\}/);
+  assert.match(body,/nativeAccepted_\.graph\.ids\.monitor=monitor/);
+  assert.match(body,/DynamicChannelFxLeaseBank::reuseRevision/);
+  assert.match(body,/nativePublisher_\.commit\(roster,request/);
+  const publisher=read("engine/core/DynamicNativeSessionPublisher.h");
+  const graph=read("engine/core/DynamicPreparedMixerBlock.h");
+  assert.match(publisher,/bool allowUnmappedMonitor=false/);
+  assert.match(publisher,/snap->prepared->monitor && !monitorL && !allowUnmappedMonitor/);
+  assert.match(graph,/monitor_!=notScheduled && !monitorL && !allowUnmappedMonitor/);
+});
+
+
+test("U1 output rejects preserve actionable native reasons without weakening generic QA filtering",()=>{
+ const reasons=["EXTERNAL OUT: stale ASIO device, epoch or PCM revision",
+  "EXTERNAL OUT: native graph rejected; previous sound retained",
+  "EXTERNAL OUT: physical pair reserved by logical output",
+  "EXTERNAL OUT: wait for native bus mapping callback readback",
+  "BUS OUTPUT: explicitly MUTE MAIN and STREAM first"];
+ for(const reason of reasons)assert.equal(protocol.operatorMessage(reason),reason);
+ assert.equal(protocol.operatorMessage("INVALID_NATIVE_SNAPSHOT"),"Change not applied · Previous mixer settings kept");
+ const b=read("web/approved-native-bridge.js"),host=read("src/Main.cpp");
+ assert.match(b,/ack\?\.requestId!==extraPending\.requestId\|\|ack\.action!==extraPending\.action/);
+ assert.match(host,/EXTERNAL_OUTPUT_REJECTED/);
+});
+
+
+test("U1 reserved logical pairs are not offered as direct outputs but installed readback stays visible",()=>{
+ const id="123",device={epoch:"31",backend:"ASIO",playbackDevice:"Maono",outputArmed:true,
+  enabledOutputs:[0,1,2,3,4,5,6,7],
+  outputEndpoints:Array.from({length:8},(_,port)=>({port,active:true,label:"Maono "+port}))};
+ const raw={externalRevision:"9",physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
+  logicalOutputRegistry:{ports:[{bound:true,playback:"Maono",left:4,right:5}],references:[]}};
+ const hardware={device,raw};
+ assert.deepEqual(deviceVM.outputChoices(hardware).map(p=>p.left),[-1,2,6]);
+ const installed=deviceVM.externalPresentation(hardware,{physicalLeft:4,physicalRight:5,status:"LIVE"});
+ assert.equal(installed.state,"LIVE");
+ const choice=deviceVM.outputChoices(hardware,true).find(p=>p.left===4);
+ const native={admitted:true,device:{epoch:"31"},graph:{revision:"9",channels:[{id,role:"INPUT"}]}};
+ const input={native,hardware,channelId:id,choices:[choice],selectedLabel:choice.label,currentLabel:"None"};
+ assert.equal(stripVM.externalOutputPlan(input).kind,"UNAVAILABLE");
+ assert.equal(stripVM.externalOutputPlan({...input,hardware:{device,raw:{...raw,logicalOutputRegistry:{ports:[],references:[]}}}}).kind,"READY");
+ assert.equal(stripVM.externalOutputPlan({...input,hardware:{device,raw:{...raw,logicalOutputRegistry:{ports:[],references:[]}}},native:{...native,graph:{...native.graph,revision:"10"}}}).kind,"UNAVAILABLE");
+});
+
+
+test("FAST workflow directly opens active ASIO vendor panel and one native secondary enable",()=>{
+ const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp"),
+  e=read("src/LiveAudioEngine.h"),s=read("engine/device/LiveSecondaryOutputDevice.h");
+ const panel=b.slice(b.indexOf('querySelector("[data-audio-driver-panel]").onclick'),b.indexOf('const readHealth=devicePanel'));
+ assert.match(panel,/action:"audioDriverPanel"/);
+ assert.doesNotMatch(panel,/action:"audioSetup"/);
+ const vendor=n.slice(n.indexOf("void showAsioControlPanel("),n.indexOf("void chooseStudioBackup()",n.indexOf("void showAsioControlPanel(")));
+ assert.match(vendor,/deviceApply_\.tryBegin/);assert.match(vendor,/device->showControlPanel\(\)/);
+ assert.match(vendor,/finishAudioSetupAndRecoverMixer\(\)/);
+ assert.doesNotMatch(vendor,/AudioSetupWindow|setMonitorEnabled\(true\)/);
+ const enable=e.slice(e.indexOf("juce::String enableSecondaryOutput("),e.indexOf("juce::String armSecondaryOutput("));
+ assert.match(enable,/connectSecondaryOutput\(selected,expectedEndpointId\)/);assert.match(enable,/armSecondaryOutput\(true\)/);
+ assert.doesNotMatch(enable,/setMonitorEnabled|setOutputMuted/);
+ assert.match(s,/createAudioIODeviceType_WASAPI\(juce::WASAPIDeviceMode::shared\)/);
+ assert.match(s,/createDevice\(target,\{\}\)/);assert.doesNotMatch(s,/manager_\.initialise/);
+});
+
+
+test("FAST-U1 vendor restart restores only captured full endpoint identity once",()=>{
+ const n=read("src/Main.cpp"),e=read("src/LiveAudioEngine.h"),s=read("engine/device/LiveSecondaryOutputDevice.h");
+ assert.match(n,/captureSecondaryResumeIntent\(\)/);
+ assert.match(n,/serviceAutomaticMain\(\);\s*serviceVendorStreamRecovery\(\)/);
+ const r=n.slice(n.indexOf("void serviceVendorStreamRecovery()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(r,/dryRoutingLabEpoch\(\)!=p.epoch/);
+ assert.match(r,/outputArmRevision\(\)!=p.revision/);
+ assert.match(r,/p.waitForMain&&!engine_.isMonitorEnabled\(\)/);
+ assert.match(r,/pendingVendorStream_\.reset\(\);\s*const auto error=engine_.restoreSecondaryOutput/);
+ assert.match(e,/connectSecondaryOutput\(intent.name,intent.endpointId\)/);
+ assert.match(s,/selected.selection.id!=expectedEndpointId/);
+ assert.match(s,/endpointId_=selected.selection.id/);
+ assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
+});
+
+
+test("U2 physical bus candidates and overview respect existing logical reservations",()=>{
+ const device={backend:"ASIO",playbackDevice:"Maono",epoch:"31",outputArmed:false,
+  enabledOutputs:[0,1,2,3,4,5,6,7],outputEndpoints:Array.from({length:8},(_,port)=>({port,active:true,label:"Maono "+port}))};
+ const raw={physicalBusPatchSupported:true,physicalBusOutputObserved:true,operatorOutputMuted:true,
+  physicalBusSecondaryArmed:false,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
+  externalOutputs:[],logicalOutputRegistry:{ports:[{id:"8",name:"Broadcast",bound:true,backend:"ASIO",playback:"Maono",left:4,right:5}],references:[]},
+  mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"31"}};
+ const snapshot={device,raw,admitted:true,hardwareConfiguration:"verified",graph:{revision:"9",channels:[{id:"23",name:"Vocal",role:"INPUT"}]}};
+ assert.deepEqual(deviceVM.busOutputChoices(snapshot,"physicalMainOutputs").map(x=>x.left),[0,2,6]);
+ assert.deepEqual(deviceVM.outputChoices(snapshot).map(x=>x.left),[-1,2,6]);
+ assert.equal(protocol.physicalOutputOverview(snapshot).find(x=>x.pair==="OUT 5/6").status,"RESERVED");
+ const monitor=deviceVM.patchMatrix(snapshot,"output").rows.find(r=>r.name==="MONITOR");
+ assert.equal(monitor.editable,false);assert.deepEqual(monitor.pair,[]);
+ const installed={...snapshot,raw:{...raw,externalOutputs:[{channelId:"23",physicalLeft:4,physicalRight:5,status:"LIVE"}],
+  logicalOutputRegistry:{...raw.logicalOutputRegistry,references:[{channelId:"23",portId:"8",role:"EXTERNAL",state:"RESOLVED"}]}}};
+ const row=deviceVM.patchMatrix(installed,"output").rows.find(r=>r.id==="23");
+ assert.equal(row.editable,false);assert.deepEqual(row.cells,["","","","","L","R","",""]);
+ assert.match(row.state,/Broadcast/);
+ assert.equal(protocol.physicalOutputOverview(installed).find(x=>x.pair==="OUT 5/6").status,"MUTED");
+ const unrelated={...snapshot,raw:{...raw,logicalOutputRegistry:{ports:[{...raw.logicalOutputRegistry.ports[0],playback:"Other driver"}],references:[]}}};
+ assert.deepEqual(deviceVM.busOutputChoices(unrelated,"physicalMainOutputs").map(x=>x.left),[0,2,4,6]);
+});
+
+
+test("U2-B one secondary readback represents mirror, split, fault and disconnected without inventing PCM",()=>{
+ const snapshot={raw:{secondaryMainOnly:false,secondaryMainReady:false,physicalBusSecondaryArmed:false}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.equal(protocol.secondaryOutputView(snapshot,live).state,"ENABLED");
+ assert.deepEqual(protocol.secondaryOutputRow(snapshot,live),{pair:"STREAM",pins:"CABLE Input",role:"MAIN MIRROR",owners:"MAIN",status:"ENABLED",shared:0});
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...live,secondaryOutputArmed:false}).status,"MUTED");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...live,secondaryOutputFault:true}).status,"FAULT");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{secondaryOutputReady:false,secondaryOutputArmed:false}),null);
+ const split={...live,dryRoutingLab:{secondaryMainOnly:true}};
+ assert.equal(protocol.secondaryOutputRow(snapshot,split).role,"MAIN");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...split,secondaryOutputReady:false,secondaryOutputName:""}).status,"NEEDS_REMAP");
+ assert.equal(protocol.secondaryOutputView(snapshot,{secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:""}).armed,false);
+ assert.equal(protocol.secondaryOutputView({...snapshot,device:{epoch:"19"}},{...live,dryRoutingLab:{epoch:18}}).state,"DISCONNECTED");
+ assert.equal(protocol.secondaryOutputView({raw:{secondaryOutputFault:true,secondaryOutputName:"CABLE Input"}},null).state,"FAULT");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/host\.append\(extraControls\)/);
+ assert.match(bridge,/extraPanel\.append\(extraControls\)/);
+ assert.match(bridge,/protocol\.secondaryOutputView\(hardware,live\)/);
+});
+
+
+test("U2-C/U3 secondary continuity is identity-pinned and preference is not ARM permission",()=>{
+ const n=read("src/Main.cpp"), bridge=read("web/approved-native-bridge.js");
+ const r=n.slice(n.indexOf("void serviceSecondaryContinuity()"),n.indexOf("void serviceVendorStreamRecovery()"));
+ assert.match(r,/secondaryContinuity_->epoch!=epoch/);
+ assert.match(r,/secondaryContinuity_->revision!=revision/);
+ assert.match(r,/current.selection.id!=intent.endpointId/);
+ assert.match(r,/secondaryRetry_\.failed\(now\)/);
+ assert.doesNotMatch(r,/SECONDARY_HOTPLUG_PAUSED/);
+ assert.match(r,/generation!=secondaryRetry_\.generation\(\)/);
+ assert.match(r,/engine_\.disconnectSecondaryOutput\(\)/);
+ assert.match(r,/deviceApply_\.tryBegin/);
+ assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
+ assert.match(n,/secondary-output\.json/);
+ assert.match(n,/ep.id==secondaryPreference_->id/);
+ assert.match(bridge,/protocol.secondaryOutputSelection\(options/);
+ const live={secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputFault:true,
+   secondaryOutputRecovering:true,secondaryOutputRecoveryName:"CABLE Input"};
+ const v=protocol.secondaryOutputView({},live);
+ assert.equal(v.state,"RECOVERING");assert.equal(v.name,"CABLE Input");assert.equal(v.armed,false);
+ assert.equal(protocol.secondaryOutputRow({},live).status,"RECOVERING");
+ assert.equal(protocol.secondaryOutputView({},{...live,secondaryOutputRecovering:false}).state,"FAULT");
+});
+
+
+test("U3 canonical output discovery is single-flight and selection never guesses after saved identity loss",()=>{
+ const n=read("src/Main.cpp"),g=read("engine/device/WasapiEndpointIdentityGuard.h");
+ const worker=n.slice(n.indexOf("void requestSecondaryInventory("),n.indexOf("void serviceSecondaryInventory("));
+ assert.match(worker,/secondaryInventoryFlight_\.valid\(\)/);
+ assert.match(worker,/std::async\(std::launch::async,\[\]/);
+ assert.match(worker,/renderInventory\(\)/);
+ assert.doesNotMatch(worker,/createDevice|scanForDevices|engine_/);
+ assert.match(n,/wait_for\(std::chrono::seconds\(0\)\)/);
+ assert.match(g,/static RenderInventory renderInventory\(\)/);
+ const pick=protocol.secondaryOutputSelection, choices=["CABLE Input","Speakers","Broadcast"];
+ assert.equal(pick(choices),"CABLE Input");
+ assert.equal(pick(choices,{preferred:"Broadcast",hasSaved:true}),"Broadcast");
+ assert.equal(pick(choices,{hasSaved:true}),"");
+ assert.equal(pick(choices,{hasSaved:true,selected:"Speakers"}),"Speakers");
+ assert.equal(pick(choices,{active:"Broadcast",selected:"Speakers"}),"Broadcast");
+ assert.equal(pick(["CABLE Input A","CABLE Input B"]),"");
+ assert.equal(pick(["Speakers"]),"");
+});
+
+
+test("U3 Stop supersedes native opens and approved output selection pins inventory identity",()=>{
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js"),e=read("src/LiveAudioEngine.h");
+ assert.match(n,/secondaryPublishedIds_\.emplace\(label,ep.id\)/);
+ assert.match(n,/token!=secondaryPublishedInventory_/);
+ assert.match(n,/engine_\.enableSecondaryOutput\(value.toString\(\),expected\)/);
+ assert.match(n,/engine_\.disarmSecondaryOutput\(\);\s*pendingSecondaryStop_=args/);
+ assert.match(n,/generation!=secondaryRetry_\.generation\(\)/);
+ assert.match(e,/secondaryOutput_\.endpointId\(\)==expectedEndpointId/);
+ assert.match(b,/inventoryId:extraInventoryId/);
+ assert.match(b,/selectAudioSetupPage\("device"\)/);
+});
+
+
+test("U3 same-device Apply suspends and restores the verified stream without manual Stop",()=>{
+ const n=read("src/Main.cpp");
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
+ assert.doesNotMatch(a,/Stop STREAM and finish/);
+ assert.match(a,/captureSecondaryResumeIntent\(\)/);
+ assert.match(a,/requested.playback==prepared.before.outputDeviceName/);
+ assert.match(a,/resumeStream\(false\)/);
+ assert.match(a,/if\(restored\)resumeStream\(true\)/);
+ assert.match(a,/streamGeneration!=secondaryRetry_\.generation\(\)/);
+ assert.match(a,/engine_\.beginManualAudioSetup\(\)/);
+ assert.match(a,/pendingVendorStream_=PendingVendorStream/);
+});
+
+
+test("U4 independent headphone mix uses admitted two-pin native scope and correlated mode readback",()=>{
+ const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[0,1]},graph:{revision:"19",rosterRevision:"23"},raw:{physicalBusOutputObserved:true,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],externalOutputs:[]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ const mode=protocol.secondaryMixMode(s,live);
+ assert.equal(mode.available,true);assert.deepEqual(mode.value,{enabled:true,smart:true,deviceEpoch:"17",graphRevision:"19",rosterRevision:"23"});
+ assert.equal(protocol.secondaryMixMode({...s,device:{...s.device,enabledOutputs:[0,1,2,3]}},live).available,false);
+ assert.equal(protocol.secondaryMixMode({...s,raw:{...s.raw,externalOutputs:[{}]}},live).available,false);
+ assert.equal(protocol.secondaryMixMode(s,{...live,secondaryOutputArmed:false}).available,false);
+ const split={...s,raw:{...s.raw,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1]}};
+ assert.equal(protocol.secondaryMixMode(split,live).value.enabled,false);
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js");
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
+ assert.doesNotMatch(a,/getCurrentAudioDevice\(/);
+ assert.match(n,/engine_.disarmSecondaryOutput\(\);\s*error=engine_.patchDmxSplitOutput/);
+ assert.match(b,/protocol.secondaryOutputSettlement\(p,hardware,live,extraStatusSerial\)/);
+ assert.match(n,/ack->setProperty\("graphRevision",route.getProperty\("nativeBus"/);
+});
+
+
+test("U4 preserves authored monitor WIREs and reuses healthy prepared render after graph-only mode change",()=>{
+ const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[0,1]},graph:{revision:"19",rosterRevision:"23",channels:[{id:"8",role:"MONITOR",inserts:[]}],edges:[{from:"3",to:"8"}]},raw:{physicalBusOutputObserved:true,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1],externalOutputs:[]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.equal(protocol.secondaryMixMode(s,live).available,true);
+ assert.equal(protocol.secondaryMixMode(s,live).value.enabled,false);
+ assert.match(protocol.secondaryMixMode(s,live).reason,/preserved/);
+ assert.equal(protocol.secondaryMixMode({...s,graph:{...s.graph,edges:[]}},live).available,true);
+ const e=read("src/LiveAudioEngine.h");const f=e.slice(e.indexOf("juce::String restoreSecondaryOutput("),e.indexOf("void disarmSecondaryOutput()"));
+ assert.match(f,/secondaryOutput_\.ready\(\)&&!secondaryOutput_\.faulted\(\)/);
+ assert.match(f,/current.selection.id!=intent.endpointId/);
+ assert.ok(f.indexOf("return armSecondaryOutput(true);")<f.indexOf("connectSecondaryOutput(intent.name,intent.endpointId)"));
+});
+
+
+test("U4 starter mix is an atomic native WIRE transaction, no overwrite of authored sends",()=>{
+ const s={admitted:true,device:{epoch:"17"},graph:{revision:"19",rosterRevision:"23",mainChannelId:"5",channels:[{id:"8",role:"MONITOR"}],edges:[{from:"3",to:"5",primaryOutput:true,enabled:true}]},raw:{secondaryMainOnly:true,physicalBusOutputObserved:true}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.deepEqual(protocol.secondaryMonitorStarter(s,live),{deviceEpoch:"17",graphRevision:"19",rosterRevision:"23"});
+ assert.equal(protocol.secondaryMonitorStarter({...s,graph:{...s.graph,edges:[...s.graph.edges,{from:"3",to:"8"}]}},live),null);
+ assert.equal(protocol.secondaryMonitorStarter(s,{...live,secondaryOutputArmed:false}),null);
+ const l=read("src/LiveDryRoutingLab.h");const f=l.slice(l.indexOf("NativeBusResult seedIndependentMonitor("),l.indexOf("NativeBusResult applyNativeWireTransaction("));
+ const core=read("engine/core/DynamicChannelRoster.h");
+ const planner=core.slice(core.indexOf("inline std::vector<WireChange> planHeadphoneStarter("));
+ assert.match(planner,/send.destination==monitor/);
+ assert.match(planner,/send.destination==main&&send.primaryOutput&&send.enabled/);
+ assert.match(planner,/std::min\(0.25f,1.f\/static_cast<float>\(changes.size\(\)\)\)/);
+ assert.match(planner,/change.preFader=true/);
+ assert.match(f,/planHeadphoneStarter\(graph.roster,graph.ids.main,graph.ids.monitor\)/);
+ assert.match(f,/return applyNativeWireTransaction\(ep,rev,rosterRev,changes\)/);
+ const split=l.slice(l.indexOf("juce::String patchDmxSplitOutput("),l.indexOf("juce::String patchNativeBusOutput("));
+ assert.match(split,/roster.wireTransaction\(roster.revision\(\),changes\)/);
+ assert.doesNotMatch(split,/ChannelEdit::Kind::remove/);
+ assert.match(l,/nativeDormantMonitorBit/);
+});
+
+
+test("U5 first sound is a contextual shortcut to a verified empty ChannelId input",()=>{
+ const s={admitted:true,hardwareConfiguration:"lease",device:{epoch:"17",enabledInputs:[2],inputEndpoints:[{port:2,label:"Mic",active:true}]},graph:{revision:"19",mainChannelId:"5",channels:[{id:"3",role:"INPUT",name:"Vocal",controls:{mute:false}}],edges:[{from:"3",to:"5",primaryOutput:true,enabled:true}]},raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"17"}}};
+ assert.deepEqual(protocol.firstSoundPlan(s),{channelId:"3",channelName:"Vocal",epoch:"17",revision:"19",config:"lease",pins:[{port:2,label:"Mic"}]});
+ assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,operatorOutputMuted:true}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,logicalInputRegistry:{references:[{}]}}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,graph:{...s.graph,channels:[{...s.graph.channels[0],source:{sourceFormat:"PLAYER"}}]}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,device:{...s.device,enabledInputs:[]}}),null);
+ const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp");
+ const f=b.slice(b.indexOf("function connectFirstSound("),b.indexOf("function openFirstSound("));
+ assert.match(f,/pendingNativeSources.set/);assert.match(f,/dispatchNativeSource/);assert.doesNotMatch(f,/emitEvent/);
+ const h=n.slice(n.indexOf('if(action=="routingNativeSourcePatch"){',n.indexOf('if(action=="routingNativeSourcePatch"){')+1),n.indexOf('if(action=="routingNativeBusCreate"'));
+ assert.match(h,/withNativeTopologyContinuity/);assert.match(h,/engine_.patchNativeInputSource/);
+ const gate=n.slice(n.indexOf("NativeBusResult withNativeTopologyContinuity("),n.indexOf("void serviceSecondaryContinuity()"));
+ assert.match(gate,/engine_.disarmSecondaryOutput/);
+ assert.match(gate,/pendingVendorStream_=PendingVendorStream/);assert.match(gate,/requestAutomaticMain/);
+});
+
+
+test("U5 ordinary topology edits share one secondary continuity owner, no duplicated gate",()=>{
+ const n=read("src/Main.cpp");const h=n.slice(n.indexOf("NativeBusResult withNativeTopologyContinuity("),n.indexOf("void serviceSecondaryContinuity()"));
+ assert.match(h,/deviceApply_\.tryBegin/);
+ assert.match(h,/!engine_\.nativeTopologyMatches\(ep,rev\)/);
+ assert.match(h,/beforeControlRevision=engine_\.outputArmRevision\(\)/);
+ assert.match(h,/generation==secondaryRetry_\.generation\(\)/);
+ assert.match(h,/acceptedRevision==beforeControlRevision&&engine_\.nativeTopologyMatches\(ep,rev\)/);
+ assert.match(h,/engine_\.secondarySourceMatches/);
+ assert.match(h,/pendingSecondaryStop_/);
+ assert.equal((n.match(/result=withNativeTopologyContinuity\(ep,rev,/g)||[]).length,5);
+ for(const action of ["routingNativeBusCreate","routingNativeTrackDelete","routingNativeBusDelete"]){
+   const start=n.lastIndexOf('if(action=="'+action+'"');
+   assert.ok(start>=0);assert.match(n.slice(start,start+8500),/withNativeTopologyContinuity/);
+ }
+});
+
+
+test("U5 pristine ChannelId topology uses native graph identity instead of M4 control revision",()=>{
+ const e=read("src/LiveAudioEngine.h"),l=read("src/LiveDryRoutingLab.h"),n=read("src/Main.cpp");
+ assert.match(e,/return dryRoutingLab_\.nativeTopologyMatches\(ep,rev\)/);
+ assert.match(l,/bool nativeTopologyMatches[\s\S]*?nativeAccepted_\.matches\(nativePublisher_,ep,rev\)/);
+ const r=n.slice(n.indexOf("void serviceVendorStreamRecovery()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(r,/monotonicMilliseconds\(\)>=p.deadline[\s\S]*?secondaryRetry_\.fault/);
+});
+
+
+test("U6 output completion needs fresh exact installed graph, physical pair, endpoint and status in either order",()=>{
+ const pending={action:"secondaryOutputSplit",acked:true,statusSerial:8,epoch:"17",config:"hw",endpoint:"CABLE Input",pair:[4,5],
+   value:{enabled:true,graphRevision:"19"},ackRevision:"20"};
+ const s={admitted:true,device:{epoch:"17"},hardwareConfiguration:"hw",graph:{revision:"20"},raw:{secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[4,5]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input",
+   dryRoutingLab:{dmxDeviceEpoch:"17",nativeBus:{graphRevision:"20"},secondaryMainOnly:true,busOutputObserved:true}};
+ const settle=(p=pending,h=s,l=live,serial=9)=>protocol.secondaryOutputSettlement(p,h,l,serial);
+ assert.equal(settle(),"SETTLED");
+ assert.equal(settle({...pending,acked:false}),"WAIT");
+ assert.equal(settle(pending,s,live,8),"WAIT");
+ assert.equal(settle(pending,{...s,graph:{revision:"19"}}),"WAIT");
+ assert.equal(settle(pending,s,{...live,dryRoutingLab:{...live.dryRoutingLab,nativeBus:{graphRevision:"19"}}}),"WAIT");
+ assert.equal(settle(pending,s,{...live,secondaryOutputName:"Other output"}),"WAIT");
+ assert.equal(settle(pending,s,{...live,secondaryOutputRecovering:true}),"WAIT");
+ assert.equal(settle(pending,{...s,raw:{...s.raw,physicalMonitorOutputs:[5,4]}}),"WAIT");
+ assert.equal(settle(pending,{...s,device:{epoch:"18"}}),"STALE");
+ assert.equal(settle(pending,{...s,graph:{revision:"21"}}),"STALE");
+ assert.equal(settle({...pending,ackRevision:"19"}),"STALE");
+ assert.equal(settle({...pending,action:"secondaryOutputStop"},s,{secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputRecovering:true}),"WAIT");
+ const n=read("src/Main.cpp");
+ const retry=n.slice(n.indexOf("void serviceSecondaryContinuity()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(retry,/secondaryContinuity_->waitForMain&&!engine_\.isMonitorEnabled\(\)/);
+ assert.match(retry,/SecondaryContinuity\{p.intent,p.epoch,p.revision,p.waitForMain\}/);
+ assert.match(retry,/SecondaryContinuity\{intent,epoch,revision,waitForMain\}/);
 });
 
 
@@ -7605,4 +7925,19 @@ test("P0-B unsafe live topology requests explain the explicit safe fallback",()=
    "Delete not applied · Mute outputs before changing this routing");
  assert.match(protocol.operatorMessage("DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED"),/outputs muted/);
  assert.match(protocol.operatorMessage("COMPRESSOR_INSERT_REQUIRES_STABLE_LIVE_GRAPH"),/not added/);
+});
+
+
+test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction even on same hardware",()=>{
+ const p={action:"secondaryOutputEnable",value:"CABLE Input",epoch:"41",workspaceGeneration:"1",statusSerial:3,acked:false};
+ const same={device:{epoch:"41"},raw:{workspaceGeneration:"1"}};
+ const restored={device:{epoch:"41"},raw:{workspaceGeneration:"2"}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.equal(protocol.secondaryOutputSettlement(p,same,live,4),"WAIT");
+ assert.equal(protocol.secondaryOutputSettlement({...p,acked:true},same,live,4),"SETTLED");
+ assert.equal(protocol.secondaryOutputSettlement(p,restored,live,4),"STALE");
+ assert.equal(protocol.secondaryOutputSettlement({...p,acked:true},restored,live,4),"STALE");
+ const b=read("web/approved-native-bridge.js");
+ assert.match(b,/workspaceGeneration:hardware\?\.raw\?\.workspaceGeneration/);
+ assert.match(b,/scope\?\.cancelNativeSessionGestures\?\.\(\);[\s\S]*?extraPending=null;extraError="";/);
 });

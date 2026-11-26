@@ -6,6 +6,7 @@
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/core/NativeOutputTransition.h"
+#include "../engine/device/LogicalOutputRegistry.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -375,7 +376,27 @@ static void verifyAtomicInitialExternalPlan() {
     assert(h.publisher.appliedExternalOutput(h.epoch,2,h.busA)==std::make_pair(6,7));
     assert(h.publisher.appliedExternalOutput(h.epoch,2,h.busB)==std::make_pair(6,7));
 }
+static void verifyLogicalPairReservations() {
+    using Registry=armix::device::LogicalOutputRegistry;
+    Registry registry;
+    const Registry::Device device{"ASIO","Maono"};
+    assert(registry.add(1,"Broadcast"));
+    assert(registry.add(2,"Other output"));
+    const Registry::Binding binding{device,4,5,"VC L","VC R"};
+    assert(registry.restoreIntent(1,binding));
+    assert(registry.reservesPair(device,4,5)); // even unused aliases reserve pins
+    assert(registry.reservesPair(device,5,6)); // overlaps rejected
+    assert(!registry.reservesPair(device,6,7));
+    assert(!registry.reservesPair({"ASIO","Other driver"},4,5));
+    assert(!registry.reservesPair(device,4,5,1));
+    assert(!registry.restoreIntent(2,binding));
+    assert(registry.restoreIntent(1,binding)); // idempotent own binding
+    assert(registry.unbind(1));
+    assert(!registry.reservesPair(device,4,5));
+    assert(registry.restoreIntent(2,binding));
+}
 int main() {
+    verifyLogicalPairReservations();
     verifyAtomicInitialExternalPlan();
     verifyIndependentBusPcmAndOncePerFx();
     verifyDisconnectedZeroDelayTapThenWake();

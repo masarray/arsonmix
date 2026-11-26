@@ -37,6 +37,8 @@ int main() {
     assert(retry.due(12450));
     retry.failed(12450);
     assert(retry.due(42450)); // bounded cadence but never permanently exhausted
+    for(unsigned i=0;i<100;++i)retry.failed(42450);
+    assert(retry.attempts()==4 && !retry.due(72449) && retry.due(72450));
     retry.endpointReturned(42500);
     assert(!retry.due(42849) && retry.due(42850));
     retry.recovered();

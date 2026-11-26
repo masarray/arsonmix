@@ -169,6 +169,10 @@
     const channel=graph.channels.find(ch=>ch?.id===channelId);
     if(!channel||!["INPUT","GROUP","FX_RETURN"].includes(channel.role))
       return unavailable;
+    if((typeof graph.revision==="string"&&graph.revision!==revision)||
+       hardware.raw.physicalBusOutputObserved===false||
+       hardware.raw.logicalOutputRegistry?.references?.some(r=>r.channelId===channelId))
+      return unavailable;
     const matches=Array.isArray(choices)?
       choices.filter(p=>p?.label===selectedLabel):[];
     if(matches.length!==1)return unavailable;
@@ -184,6 +188,9 @@
         return unavailable;
       const main=hardware?.raw?.physicalMainOutputs||[];
       const monitor=hardware?.raw?.physicalMonitorOutputs||[];
+      const ports=hardware.raw.logicalOutputRegistry?.ports;
+      if(Array.isArray(ports)&&ports.some(p=>p.bound===true&&p.playback===d.playbackDevice&&
+        [p.left,p.right].some(pin=>pin===left||pin===right)))return unavailable;
       if((Array.isArray(main)&&[left,right].some(p=>main.includes(p)))||
          (Array.isArray(monitor)&&[left,right].some(p=>monitor.includes(p))))
         return unavailable;

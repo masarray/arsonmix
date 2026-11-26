@@ -335,17 +335,45 @@ public:
 
     // Route MAIN to a user-selected secondary playback device
     // (hardware or software). No second MIX/FX engine.
-    juce::String connectSecondaryOutput(const juce::String& selected) {
-        if(!isOutputMuted() || independent_.active() ||
-           !directFence_.permitted() || !dryRoutingLab_.hasExplicitRoute() ||
+    juce::String connectSecondaryOutput(const juce::String& selected,
+                                             const std::wstring& expectedEndpointId={}) {
+        if(independent_.active() || routeReconfiguring_.load(std::memory_order_acquire) ||
+           handoff_.busy() || !directFence_.permitted() || !dryRoutingLab_.hasExplicitRoute() ||
            diagnosticRoute_.load(std::memory_order_acquire)
                 !=armix::diagnostics::Route::normal)
-            return "MUTE hardware OUTPUT, APPLY real input routing and use verified DIRECT before secondary device setup";
+            return "Additional output needs a ready audio device and accepted mixer routing";
         auto* device=deviceManager_.getCurrentAudioDevice();
-        if(!device)return "Direct capture/output hardware is not available";
-        return secondaryOutput_.open(selected,device->getName(),
-                                  device->getCurrentSampleRate(),
-                                  device->getCurrentBufferSizeSamples());
+        if(!device||!device->isOpen())return "Direct capture/output hardware is not available";
+        const auto setup=deviceManager_.getAudioDeviceSetup();
+        if(knownVirtualCableFeedbackPair(setup.inputDeviceName,selected))
+            return "Additional output would feed the same virtual cable back into the mixer";
+        const auto epoch=dryRoutingLab_.epoch();
+        const auto rate=device->getCurrentSampleRate();
+        const auto period=device->getCurrentBufferSizeSamples();
+        const auto error=secondaryOutput_.open(selected,device->getName(),rate,period,expectedEndpointId);
+        if(error.isNotEmpty())return error;
+        auto* current=deviceManager_.getCurrentAudioDevice();
+        if(!current || current!=device || dryRoutingLab_.epoch()!=epoch ||
+           !directFence_.permitted() || current->getCurrentSampleRate()!=rate ||
+           current->getCurrentBufferSizeSamples()!=period){
+            secondaryOutput_.stop();return "Primary audio changed during connection; choose the output again";
+        }
+        return {};
+    }
+    // One explicit destination selection is consent to open and send MAIN.
+    // Never manipulate primary output intent or its ASIO clock.
+    juce::String enableSecondaryOutput(const juce::String& selected,
+                                             const std::wstring& expectedEndpointId={}) {
+        if(dryRoutingLab_.nativeBusPatchAwaitingCallback())
+            return "Wait for the mixer output mapping to finish";
+        if(secondaryOutput_.ready()&&!secondaryOutput_.faulted()&&secondaryOutput_.name()==selected&&
+           (expectedEndpointId.empty()||secondaryOutput_.endpointId()==expectedEndpointId))
+            return secondaryOutput_.armed()?juce::String{}:armSecondaryOutput(true);
+        const auto error=connectSecondaryOutput(selected,expectedEndpointId);
+        if(error.isNotEmpty())return error;
+        const auto armed=armSecondaryOutput(true);
+        if(armed.isNotEmpty())secondaryOutput_.stop();
+        return armed;
     }
     juce::String armSecondaryOutput(bool wanted) {
         if(wanted&&dryRoutingLab_.nativeBusPatchAwaitingCallback())
@@ -359,8 +387,55 @@ public:
         return secondaryOutput_.arm(wanted) ? juce::String() :
             juce::String("Secondary playback endpoint is unavailable or has a device fault; reconnect explicitly");
     }
+    // Resume only a previously armed sink with the full endpoint ID.
+    struct SecondaryResumeIntent {
+        juce::String name,driver;
+        std::wstring endpointId;
+    };
+    std::optional<SecondaryResumeIntent> captureSecondaryResumeIntent() {
+        auto* d=deviceManager_.getCurrentAudioDevice();
+        if(!secondaryOutput_.armed()||!d||secondaryOutput_.endpointId().empty())return {};
+        return SecondaryResumeIntent{secondaryOutput_.name(),d->getName(),secondaryOutput_.endpointId()};
+    }
+    bool secondaryResumeReady() const noexcept {
+        return directFence_.permitted()&&dryRoutingLab_.hasExplicitRoute()&&dryRoutingLab_.ready()&&
+            !dryRoutingLab_.nativeBusPatchAwaitingCallback()&&!handoff_.busy()&&
+            !routeReconfiguring_.load(std::memory_order_acquire)&&!independent_.active()&&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal;
+    }
+    bool secondarySourceMatches(const SecondaryResumeIntent& intent) {
+        auto* d=deviceManager_.getCurrentAudioDevice();
+        return d&&d->isOpen()&&d->getName()==intent.driver&&
+            deviceManager_.getCurrentAudioDeviceType()=="ASIO"&&!intent.endpointId.empty();
+    }
+    juce::String restoreSecondaryOutput(const SecondaryResumeIntent& intent) {
+        if(!secondaryResumeReady()||!secondarySourceMatches(intent))
+            return "Additional output could not verify the previous audio route";
+        // A graph-only mode change has not invalidated the prepared clock.
+        // Reuse the exact healthy render device, without closing/reopening it.
+        // Source stop/start invalidates ready(), so driver/rate changes still
+        // go through full preparation and two-phase identity verification.
+        if(secondaryOutput_.ready()&&!secondaryOutput_.faulted()&&
+           secondaryOutput_.name()==intent.name&&secondaryOutput_.endpointId()==intent.endpointId) {
+            const auto setup=deviceManager_.getAudioDeviceSetup();
+            if(knownVirtualCableFeedbackPair(setup.inputDeviceName,intent.name))
+                return "Additional output would feed the same virtual cable back into the mixer";
+            const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(intent.name);
+            if(!current.ok())return current.error;
+            if(current.selection.id!=intent.endpointId)
+                return "Additional output device identity changed; choose the device again";
+            return armSecondaryOutput(true);
+        }
+        const auto error=connectSecondaryOutput(intent.name,intent.endpointId);
+        if(error.isNotEmpty())return error;
+        const auto armed=armSecondaryOutput(true);
+        if(armed.isNotEmpty())secondaryOutput_.stop();
+        return armed;
+    }
+    void disarmSecondaryOutput() noexcept {secondaryOutput_.disarm();}
     void disconnectSecondaryOutput(){secondaryOutput_.stop();}
     bool secondaryArmed() const noexcept{return secondaryOutput_.armed();}
+    bool secondaryFaulted() const noexcept{return secondaryOutput_.faulted();}
 
     // FAST1: control-thread output arm preflight; physical MUTE always works.
     // No auto-arm on device reopen, no RT allocation or driver reconfiguration.
@@ -1551,7 +1626,7 @@ public:
     // single ASIO/ChannelId PCM callback. Hardware pin masks and labels
     // are read atomically with the current device lifecycle generation.
     juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
-            std::uint64_t rosterRev,bool enable) {
+            std::uint64_t rosterRev,bool enable,bool seedStarter=false) {
         if(!allOutputsDisarmed()||wantsMainContinuation()||independent_.active()||
            !attached_||!directFence_.permitted()||handoff_.busy()||
            savedDirectSetup_||savedLiveSetup_||
@@ -1573,7 +1648,7 @@ public:
            acceptedMixerBinding_->outputNames!=live.outputNames||
            deviceManager_.getCurrentAudioDevice()!=device)
             return "DMX: verified playback identity changed";
-        return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins,allOutputsDisarmed());
+        return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins,allOutputsDisarmed(),seedStarter);
     }
 
     juce::String patchPhysicalBusOutput(std::uint64_t ep,std::uint64_t rev,
@@ -2227,6 +2302,9 @@ public:
     std::uint64_t dryRoutingLabEpoch() const noexcept {return dryRoutingLab_.epoch();}
     std::uint64_t dryRoutingLabRevision() const noexcept {return dryRoutingLab_.revision();}
     std::uint64_t outputArmRevision() const noexcept {return dryRoutingLab_.controlRevision();}
+    bool nativeTopologyMatches(std::uint64_t ep,std::uint64_t rev) const noexcept {
+        return dryRoutingLab_.nativeTopologyMatches(ep,rev);
+    }
     // One native ChannelId bus transaction on the installed DIRECT device.
     // The GUI only obtains accepted state after successful native publisher
     // commit; no speculative UI role or second audio engine.
@@ -2777,6 +2855,14 @@ public:
     // JUCE control-thread gateway to the already installed ChannelId renderer.
     // No callback detach or alternate route ownership. Preserve device,
     // original vendor VST3 leases and physical output-arm safety gates.
+    LiveDryRoutingLab::NativeBusResult seedIndependentMonitor(
+            std::uint64_t ep,std::uint64_t pcmRev,std::uint64_t rosterRev) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="Wait for verified headphone and stream routing";
+        if(!secondaryOutput_.armed()||!secondaryResumeReady()||!attached_||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||hasRuntimeFxFault())return fail;
+        return dryRoutingLab_.seedIndependentMonitor(ep,pcmRev,rosterRev);
+    }
     LiveDryRoutingLab::NativeBusResult applyNativeWireTransaction(
             std::uint64_t ep,std::uint64_t pcmRev,std::uint64_t rosterRev,
             std::span<const armix::mixer::WireChange> changes) {

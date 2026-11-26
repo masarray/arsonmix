@@ -58,6 +58,9 @@
       if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
       return "Mixer ready";
     }
+    // U1: native output validation already emits operator-actionable reasons.
+    // Do not normalize those into a generic success/failure toast.
+    if(/^EXTERNAL OUT:|^BUS OUTPUT:|^DMX:|^Secondary output requires|^MUTE hardware OUTPUT/i.test(raw))return raw;
     const failure=/\b(reject(?:ed|ion)?|fail(?:ed|ure)?|error|timed out|not applied|unavailable|invalid)\b|(?:^|[^A-Z0-9])(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING|UNSUPPORTED|UNKNOWN|MISMATCH|CONFLICTING)(?:\b|_)/i.test(raw);
     // Editor navigation cannot be reported as a successful FX edit.
     if(/\b(?:FX|VST3|plugin|effect|built-in)\b.*\beditor\b|\beditor\b.*\b(?:FX|VST3|plugin|effect|built-in)\b/i.test(raw)){
@@ -288,6 +291,120 @@
         raw.physicalBusSecondaryArmed===false&&d.outputArmed===false,
       epoch:d.epoch,revision:snapshot.graph.revision,rosterRevision:snapshot.graph.rosterRevision};
   }
+  // One secondary destination projection for the quick output controller and
+  // unified workspace. No ACK, friendly name or browser draft proves PCM.
+  function secondaryMixMode(snapshot,live) {
+    const raw=snapshot?.raw,d=snapshot?.device,g=snapshot?.graph;
+    const output=secondaryOutputView(snapshot,live);
+    const split=output.split;
+    if(!snapshot?.admitted||snapshot.retained||d?.backend!=="ASIO"||
+       d.enabledOutputs?.length!==2||raw?.physicalBusOutputObserved!==true||
+       [d.epoch,g?.revision,g?.rosterRevision].some(v=>decimal(v)===null)||
+       !Array.isArray(raw.physicalMainOutputs)||!Array.isArray(raw.physicalMonitorOutputs))
+      return {available:false,split,reason:"Independent mix requires a verified two-output ASIO route."};
+    if(split!==(raw.secondaryMainOnly===true))
+      return {available:false,split,reason:"Waiting for the installed output mode."};
+    if(split&&(raw.physicalMainOutputs.length!==0||raw.physicalMonitorOutputs.length!==2))
+      return {available:false,split,reason:"Waiting for the verified headphone pair."};
+    if(raw.externalOutputs?.length||raw.logicalOutputRegistry?.references?.length||
+       raw.logicalOutputRegistry?.ports?.some(p=>p.bound===true))
+      return {available:false,split,reason:"Existing output assignments are preserved."};
+    if(!split&&(raw.physicalMainOutputs.length!==2||raw.physicalMonitorOutputs.length!==0))
+      return {available:false,split,reason:"Existing monitor mapping is preserved."};
+    // Returning to Same mix unbinds the physical MONITOR sink but preserves
+    // the authored native graph/FX. It is not a destructive channel edit.
+    if(!output.armed||output.recovering)
+      return {available:false,split,reason:"Enable the additional output first."};
+    return {available:true,split,reason:split?"OBS receives MAIN. Your headphone routing and effects are preserved when you select Same mix.":"Separate mix creates a quiet PRE-fader starter on first use; existing headphone settings are preserved.",
+      value:{enabled:!split,smart:true,deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision}};
+  }
+  function secondaryMonitorStarter(snapshot,live) {
+    const output=secondaryOutputView(snapshot,live),d=snapshot?.device,g=snapshot?.graph;
+    if(!snapshot?.admitted||snapshot.retained||!output.split||!output.armed||
+       snapshot.raw?.physicalBusOutputObserved!==true||!g||!d||
+       [d.epoch,g.revision,g.rosterRevision].some(v=>decimal(v)===null))return null;
+    const monitor=g.channels?.find(ch=>ch.role==="MONITOR");
+    if(!monitor||!g.mainChannelId||!Array.isArray(g.edges)||
+       g.edges.some(e=>e.to===monitor.id||e.from===monitor.id))return null;
+    if(!g.edges.some(e=>e.to===g.mainChannelId&&e.primaryOutput===true&&e.enabled===true))return null;
+    return {deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision};
+  }
+  // One settlement rule for the output workspace. Neither ACK nor an
+  // old status alone proves the requested native graph or an armed sink.
+  // Status serial is local observation order, not a native graph identity.
+  function secondaryOutputSettlement(p,snapshot,live,statusSerial) {
+    if(p?.workspaceGeneration!==undefined&&snapshot?.raw?.workspaceGeneration!==p.workspaceGeneration)
+      return "STALE";
+    if(!p?.acked||!live||statusSerial<=p.statusSerial)return "WAIT";
+    const route=live.dryRoutingLab,epoch=snapshot?.device?.epoch;
+    const reportedEpoch=route?.dmxDeviceEpoch??(route?.epoch==null?null:String(route.epoch));
+    if(p.action!=="secondaryOutputStop"&&p.epoch&&epoch!==p.epoch)return "STALE";
+    if(reportedEpoch!=null&&epoch!=null&&reportedEpoch!==epoch)return "WAIT";
+    const ready=live.secondaryOutputReady===true&&live.secondaryOutputFault!==true;
+    const armed=ready&&live.secondaryOutputArmed===true&&!!live.secondaryOutputName&&
+      live.secondaryOutputRecovering!==true;
+    if(p.action==="secondaryOutputSplit"||p.action==="secondaryMonitorStarter"){
+      if(!snapshot?.admitted||snapshot.retained||!p.value||
+         snapshot.hardwareConfiguration!==p.config)return "STALE";
+      if(decimal(p.ackRevision)===null||decimal(p.value.graphRevision)===null||
+         cmp(p.ackRevision,p.value.graphRevision)<=0)return "STALE";
+      if(cmp(snapshot.graph.revision,p.ackRevision)>0)return "STALE";
+      if(reportedEpoch!==p.epoch||snapshot.graph.revision!==p.ackRevision||
+         route?.nativeBus?.graphRevision!==p.ackRevision||
+         route?.busOutputObserved!==true||!armed||live.secondaryOutputName!==p.endpoint)
+        return "WAIT";
+      if(p.action==="secondaryMonitorStarter"){
+        const monitor=snapshot.graph.channels.find(c=>c.role==="MONITOR");
+        return snapshot.raw?.secondaryMainOnly===true&&route.secondaryMainOnly===true&&monitor&&
+          snapshot.graph.edges.some(e=>e.to===monitor.id&&!e.primaryOutput)?"SETTLED":"WAIT";
+      }
+      const split=p.value.enabled===true,raw=snapshot.raw;
+      const active=split?raw?.physicalMonitorOutputs:raw?.physicalMainOutputs;
+      const other=split?raw?.physicalMainOutputs:raw?.physicalMonitorOutputs;
+      return raw?.secondaryMainOnly===split&&route.secondaryMainOnly===split&&
+        Array.isArray(active)&&Array.isArray(other)&&other.length===0&&
+        Array.isArray(p.pair)&&active.length===2&&active.every((port,i)=>port===p.pair[i])?
+        "SETTLED":"WAIT";
+    }
+    if(p.action==="secondaryOutputEnable")return armed&&live.secondaryOutputName===p.value?"SETTLED":"WAIT";
+    if(p.action==="secondaryOutputArm")return ready&&live.secondaryOutputArmed===p.value?"SETTLED":"WAIT";
+    if(p.action==="secondaryOutputStop")return live.secondaryOutputReady===false&&
+      live.secondaryOutputArmed===false&&!live.secondaryOutputName&&!live.secondaryOutputFault&&
+      !live.secondaryOutputRecovering?"SETTLED":"WAIT";
+    return "WAIT";
+  }
+  function secondaryOutputSelection(options,{active="",selected="",preferred="",hasSaved=false}={}) {
+    if(options.includes(active))return active;
+    if(options.includes(selected))return selected;
+    if(options.includes(preferred))return preferred;
+    if(hasSaved)return ""; // never replace a lost verified destination with a guess
+    const cables=options.filter(n=>/^CABLE Input(?:\s|\(|$)/i.test(n));
+    return cables.length===1?cables[0]:"";
+  }
+  function secondaryOutputView(snapshot,live) {
+    const raw=snapshot?.raw;
+    const liveEpoch=live?.dryRoutingLab?.epoch, snapshotEpoch=snapshot?.device?.epoch;
+    const current=live&&typeof live.secondaryOutputReady==="boolean"&&
+      typeof live.secondaryOutputArmed==="boolean"&&
+      (liveEpoch==null||snapshotEpoch==null||String(liveEpoch)===String(snapshotEpoch));
+    const split=current&&typeof live?.dryRoutingLab?.secondaryMainOnly==="boolean"?
+      live.dryRoutingLab.secondaryMainOnly:raw?.secondaryMainOnly===true;
+    const fault=current?live.secondaryOutputFault===true:raw?.secondaryOutputFault===true;
+    const name=current?String(live.secondaryOutputName||""):String(raw?.secondaryOutputName||raw?.secondaryMainEndpoint||"");
+    const ready=current?live.secondaryOutputReady===true:raw?.secondaryMainReady===true;
+    const armed=current?live.secondaryOutputArmed===true:raw?.physicalBusSecondaryArmed===true;
+    const recovering= current?live.secondaryOutputRecovering===true:raw?.secondaryOutputRecovering===true;
+    const recoveryName=String((current?live.secondaryOutputRecoveryName:raw?.secondaryOutputRecoveryName)||"");
+    const state=recovering&&!armed?"RECOVERING":fault?"FAULT":!ready||!name?(split?"NEEDS_REMAP":"DISCONNECTED"):
+      armed?"ENABLED":"MUTED";
+    return {split,name:name||recoveryName,ready:ready&&!fault,armed:ready&&!fault&&!!name&&armed,fault:!!fault,recovering:recovering&&!armed,state};
+  }
+  function secondaryOutputRow(snapshot,live) {
+    const v=secondaryOutputView(snapshot,live);
+    if(!v.split&&v.state==="DISCONNECTED")return null;
+    return {pair:"STREAM",pins:v.name||"Windows playback endpoint disconnected",
+      role:v.split?"MAIN":"MAIN MIRROR",owners:"MAIN",status:v.state,shared:0};
+  }
   function physicalOutputOverview(snapshot) {
     const d=snapshot?.device,raw=snapshot?.raw;
     if(d?.backend!=="ASIO" || !Array.isArray(d.enabledOutputs) ||
@@ -327,6 +444,9 @@
       rows.push({pair:"STREAM",pins:ready?raw.secondaryMainEndpoint:"WASAPI endpoint disconnected",role:"MAIN",
         owners:"MAIN",status:!ready?"NEEDS_REMAP":raw.physicalBusSecondaryArmed===true?"ENABLED":"MUTED",shared:0});
     }
+    const logicalPorts=(Array.isArray(raw.logicalOutputRegistry?.ports)?
+      raw.logicalOutputRegistry.ports:[]).filter(p=>p.bound===true&&
+      p.playback===d.playbackDevice&&(!p.backend||p.backend===d.backend));
     const activeExternal=new Set();
     for(const left of [...ports.keys()].sort((a,b)=>a-b)){
       const right=left+1;
@@ -336,12 +456,13 @@
       const items=assigned.filter(p=>p.physicalLeft===left&&p.physicalRight===right);
       activeExternal.add(left+":"+right);
       const applied=items.filter(p=>snapshot.admitted===true&&p.status==="LIVE");
+      const logical=logicalPorts.find(p=>[p.left,p.right].some(pin=>pin===left||pin===right));
       const state=applied.length?(d.outputArmed?"LIVE":"MUTED"):
         items.some(p=>p.status==="PENDING")?"PENDING":
-        items.length?"NEEDS_REMAP":"FREE";
+        items.length?"NEEDS_REMAP":logical?"RESERVED":"FREE";
       rows.push({pair:pair(left,right),pins:pins(left,right),
-        role:items.length?"EXTERNAL":"AVAILABLE",
-        owners:items.length?owners(items):"Unassigned",status:state,
+        role:items.length?"EXTERNAL":logical?"LOGICAL":"AVAILABLE",
+        owners:items.length?owners(items):logical?logical.name:"Unassigned",status:state,
         shared:applied.length});
     }
     for(const port of [...ports.keys()].sort((a,b)=>a-b)){
@@ -529,6 +650,27 @@
   }
   // Read-only operator diagnosis from verified Windows callback evidence.
   // UI-only: this routine cannot patch, ARM, create PCM or certify speakers.
+  // A novice shortcut is offered only for an empty physical input graph.
+  // Do not take over a saved logical input, PLAYER, or authored source.
+  function firstSoundPlan(snapshot) {
+    const d=snapshot?.device,g=snapshot?.graph,raw=snapshot?.raw;
+    if(!snapshot?.admitted||snapshot.retained||raw?.mixerSession?.authority!=="CHANNEL_ID"||
+       raw.mixerSession.deviceEpoch!==d?.epoch||!snapshot.hardwareConfiguration||
+       raw.operatorOutputMuted===true||raw.secondaryMainOnly===true||
+       raw.waitingAsioInputs>0||raw.logicalInputRegistry?.references?.length||
+       !Array.isArray(g?.channels)||!Array.isArray(g.edges))return null;
+    const inputs=g.channels.filter(ch=>ch.role==="INPUT");
+    if(inputs.some(ch=>ch.source!=null))return null;
+    const directMain=new Set(g.edges.filter(e=>e.to===g.mainChannelId&&
+      e.primaryOutput===true&&e.enabled===true).map(e=>e.from));
+    const target=inputs.find(ch=>ch.controls?.mute===false&&directMain.has(ch.id));
+    const pins=(d.inputEndpoints||[]).filter(p=>p.active===true&&d.enabledInputs?.includes(p.port)&&
+      Number.isInteger(p.port)&&typeof p.label==="string"&&p.label.length>0);
+    if(!target||!pins.length)return null;
+    return {channelId:target.id,channelName:target.name,epoch:d.epoch,revision:g.revision,
+      config:snapshot.hardwareConfiguration,pins:pins.map(p=>({port:p.port,label:p.label}))};
+  }
+
   function diagnoseFirstSound(snapshot, selectedPhysicalPort=null) {
     const d=snapshot?.device, t=snapshot?.telemetry, m4=snapshot?.raw?.legacyM4;
     const opened=Boolean(d && d.sampleRate>0 && Array.isArray(d.enabledOutputs) &&
@@ -1086,7 +1228,7 @@
 
   return Object.freeze({smartPerformanceView,footerHealthFromLive,decimal,cmp,normalizeSnapshot,
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
-    logicalReadbackProves,diagnoseFirstSound,createController,
+    logicalReadbackProves,firstSoundPlan,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview,monitorTimingView});
+    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,secondaryOutputSettlement,monitorTimingView});
 });
