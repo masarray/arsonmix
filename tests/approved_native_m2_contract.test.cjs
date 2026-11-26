@@ -7361,7 +7361,7 @@ test("M4 refuses green while disarmed, discards invalid FX fields and uses a sin
   const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({5:100}),{
     nativeFxWorkloadReviews:[{name:"<img src=x onerror=alert(1)>",recommendation:"BAD"}]
   }),m4Accepted(false),first.cursor);
-  assert.equal(next.state,"COLLECTING");
+  assert.equal(next.state,"MUTED");
   assert.equal(next.reviews.length,0);
   assert.equal(next.recommendations[0].startsWith("Outputs disarmed"),true);
   const bridge=read("web/approved-native-bridge.js");
