@@ -22,7 +22,7 @@ public:
         const double reduced=rate/stride_;
         window_=std::max(1,int(std::lround(.2*reduced)));
         drift_.prepare(stride_,std::max(1,int(std::lround(.4*reduced))));
-        fadeStep_=1./(.1*rate);
+        fadeStep_=1./(.1*rate);handoverSamples_=std::max(1,int(std::lround(.1*rate)));
         for(int i=0;i<bank;++i)
             coef_[i]=2.*std::cos(2.*std::numbers::pi*hz(i)/reduced);
         for(int i=0;i<count;++i){
@@ -39,7 +39,7 @@ public:
     }
     void resetSignal() noexcept {
         for(auto& line:lines_){line.index=line.anchor;line.state={};line.livePower={};line.mix=0.;}
-        drift_.reset();previous_={};fade_=1.;
+        drift_.reset();previous_={};fade_=1.;handoverRemaining_=0;oldCount_=0;
     }
     void observe(float l,float r) noexcept {
         partial_[0]+=l;if(channels_==2)partial_[1]+=r;
@@ -85,7 +85,8 @@ public:
     }
     // Accepted broadband Learn is the sole commit fence. Cancel/reject keeps
     // both trusted frequency and level. No coefficient design on audio thread.
-    void commit() noexcept {
+    void commit(bool smooth=false) noexcept {
+        const auto old=lines_;const auto prior=previous_;const auto countBefore=lineCount_;const auto fadeBefore=fade_;
         lineCount_=0;lines_={};double best=0.;int primary=-1;
         if(windows_>=8)for(int i=0;i<count;++i)
             if(votes_[i]*10>=windows_*8&&primaryScore_[i]>best){primary=i;best=primaryScore_[i];}
@@ -108,7 +109,13 @@ public:
             }
         }
         resetSignal();
+        if(smooth&&(countBefore||lineCount_)){
+            oldLines_=old;oldPrevious_=prior;oldFade_=fadeBefore;oldCount_=countBefore;
+            handoverRemaining_=handoverSamples_;
+        }
     }
+    void replaceWithNone(bool smooth) noexcept {begin(true);commit(smooth);}
+    bool renderActive() const noexcept {return lineCount_||handoverRemaining_;}
     int selected() const noexcept {return lineCount_?lines_[0].index:-1;}
     int lineCount() const noexcept {return lineCount_;}
     float frequency(int line=0) const noexcept {
@@ -128,19 +135,39 @@ public:
     // channel evidence for linked release; never reinterpret it as a pitch
     // classifier or adapt the trusted learned level during playback.
     void apply(float& l,float& r,float amount) noexcept {
-        if(!lineCount_)return;
+        if(!handoverRemaining_){render(l,r,amount,lines_,lineCount_,previous_,fade_);return;}
+        float oldL=l,oldR=r;
+        render(oldL,oldR,amount,oldLines_,oldCount_,oldPrevious_,oldFade_);
+        render(l,r,amount,lines_,lineCount_,previous_,fade_);
+        const float u=1.f-float(handoverRemaining_)/float(handoverSamples_);
+        const float a=u*u*(3.f-2.f*u);
+        l=oldL+a*(l-oldL);if(channels_==2)r=oldR+a*(r-oldR);
+        if(!--handoverRemaining_)oldCount_=0;
+    }
+
+private:
+    struct Coeff {double b=0.,a1=0.,a2=0.;};
+    struct State {double x1=0.,x2=0.,y1=0.,y2=0.;};
+    struct Line {
+        int index=-1,anchor=-1;
+        double mix=0.;
+        std::array<double,2> inverse{},livePower{};
+        std::array<State,2> state{};
+    };
+    void render(float& l,float& r,float amount,std::array<Line,maxLines>& lines,int lineCount,Line& previous,double& fade) noexcept {
+        if(!lineCount)return;
         // Parallel filters see identical original PCM; one guard release
         // must not reduce suppression of another independent learned line.
         const double scale=.292893218*std::clamp(double(amount),0.,1.);
         double cutL=0.,cutR=0.;
-        for(int i=0;i<lineCount_;++i){
-            auto& line=lines_[i];
+        for(int i=0;i<lineCount;++i){
+            auto& line=lines[i];
             double y0=bandpass(l,line,0);
             double y1=channels_==2?bandpass(r,line,1):0.;
-            if(i==0&&fade_<1.){
-                const double oldL=bandpass(l,previous_,0),oldR=channels_==2?bandpass(r,previous_,1):0.;
-                y0=oldL+(y0-oldL)*fade_;y1=oldR+(y1-oldR)*fade_;
-                fade_=std::min(1.,fade_+fadeStep_);
+            if(i==0&&fade<1.){
+                const double oldL=bandpass(l,previous,0),oldR=channels_==2?bandpass(r,previous,1):0.;
+                y0=oldL+(y0-oldL)*fade;y1=oldR+(y1-oldR)*fade;
+                fade=std::min(1.,fade+fadeStep_);
             }
             const std::array<double,2> y{y0,y1};
             double excess=0.;
@@ -157,15 +184,6 @@ public:
         l=float(double(l)-cutL);
         if(channels_==2)r=float(double(r)-cutR);
     }
-private:
-    struct Coeff {double b=0.,a1=0.,a2=0.;};
-    struct State {double x1=0.,x2=0.,y1=0.,y2=0.;};
-    struct Line {
-        int index=-1,anchor=-1;
-        double mix=0.;
-        std::array<double,2> inverse{},livePower{};
-        std::array<State,2> state{};
-    };
     static bool related(float a,float b) noexcept {
         const float lo=std::min(a,b),hi=std::max(a,b);
         for(int m=2;m<=4;++m)if(std::abs(hi-float(m)*lo)<=2.5f)return true;
@@ -190,7 +208,10 @@ private:
     std::array<double,bank> coef_{};
     std::array<Coeff,count> filter_{};
     std::array<Line,maxLines> lines_{};
-    Line previous_{};
+    Line previous_{},oldPrevious_{};
+    std::array<Line,maxLines> oldLines_{};
+    int oldCount_=0,handoverSamples_=1,handoverRemaining_=0;
+    double oldFade_=1.;
     TonalDrift drift_{};
     double fade_=1.,fadeStep_=0.;
     std::array<std::array<std::array<double,2>,bank>,2> go_{};

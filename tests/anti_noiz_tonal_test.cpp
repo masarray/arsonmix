@@ -17,6 +17,22 @@ int main(){try{
         }
         const double cut=10*std::log10(before/after),off=10*std::log10(otherBefore/otherAfter);
         offline::require(cut>2.8&&cut<3.2&&std::abs(off)<.05,"bounded narrow line attenuation");
+        // Re-Learn capture must not reset the running filter, and accepted
+        // removal must crossfade from its exact prior sample state.
+        auto live=t;auto reference=t;live.begin(true);
+        for(unsigned i=0;i<rate/4;++i){
+            float l=tone(i,60),r=l,a=l,b=r;
+            live.observe(l,r);live.apply(l,r,1.f);reference.apply(a,b,1.f);
+            offline::require(l==a&&r==b,"tonal capture preserves live filter PCM");
+        }
+        live.replaceWithNone(true);offline::require(live.selected()<0&&live.renderActive(),"old filter retained for handover");
+        for(unsigned i=0;i<rate/5;++i){
+            const float x=tone(i+rate/4,60);float l=x,r=x,a=x,b=x;
+            live.apply(l,r,1.f);reference.apply(a,b,1.f);
+            if(i==0)offline::require(l==a&&r==b,"tonal handover starts at old output");
+            if(i>=rate/10+1)offline::require(l==x&&r==x&&!live.renderActive(),"tonal handover reaches dry endpoint");
+            offline::require(std::isfinite(l)&&std::isfinite(r),"finite tonal handover");
+        }
         // Strong same-line foreground on only one channel must release both.
         t.resetSignal();double a0=0.,a1=0.,b0=0.,b1=0.;
         for(unsigned i=0;i<2*rate;++i){

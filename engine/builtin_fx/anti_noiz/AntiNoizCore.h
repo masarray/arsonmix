@@ -137,6 +137,7 @@ public:
         cancelAudition();
         const auto s=p.settings_;
         const auto next=resolveMode(s.mode,sourceRole_);
+        if(profile_.learning()&&(s.manual.hpHz!=settings_.manual.hpHz||s.manual.lpHz!=settings_.manual.lpHz))cancelNativeLearn();
         if(!s.enabled||next==Mode::Music){profile_.cancel();manual_.cancelReference();}
         // Extended Voice-only PSD authority must not leak into musical modes
         // or survive an explicit disable. Keep the learned anchor and modest
@@ -211,7 +212,7 @@ public:
                 tonal_.observe(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
                 manual_.observeReference(in_[0][pos_],channels_==2?in_[1][pos_]:0.f);
             }
-            if(settings_.enabled&&!settings_.spectralManual&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&tonal_.selected()>=0){
+            if(settings_.enabled&&!settings_.spectralManual&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f&&tonal_.renderActive()){
                 tonal_.track(in_[0][pos_],channels_==2?in_[1][pos_]:0.f,tonalIdle_);
                 // Apply to the already latency-aligned WOLA output.
                 float unused=0.f;
@@ -314,7 +315,8 @@ private:
         if(result!=NoiseProfile<maxBins>::LearnResult::waiting)
             manual_.finishReference(result==NoiseProfile<maxBins>::LearnResult::accepted);
         if(result==NoiseProfile<maxBins>::LearnResult::accepted){
-            if(profile_.tonalCaptureSafe())tonal_.commit();else tonal_.clear();
+            const bool smooth=hadProfile&&!settings_.spectralManual&&effectiveMode_==Mode::Voice&&cleanFloor_<1.f;
+            if(profile_.tonalCaptureSafe())tonal_.commit(smooth);else tonal_.replaceWithNone(smooth);
         }
         if(!hadProfile&&result!=NoiseProfile<maxBins>::LearnResult::waiting){context_.reset();voiceGain_.reset();}
         const bool protect=!profile_.valid()||!settings_.enabled||effectiveMode_==Mode::Music;

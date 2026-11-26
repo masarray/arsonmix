@@ -74,6 +74,9 @@ int main(){
   const int frames=int(std::ceil(.1*rate/hop));float previous=profile.processingAnchor()[0][1];
   for(int i=0;i<frames;++i){profile.advanceHandover();const float value=profile.processingAnchor()[0][1];check(value>=previous&&value<=4.000001f&&value-previous<.2f,"bounded monotonic handover");previous=value;}
   check(profile.processingAnchor()[0][1]==profile.anchor()[0][1],"handover endpoint");
+  Core filters=c;check(filters.beginLearn(),"filter edit Learn");
+  auto changed=s;changed.manual.hpHz=200;
+  check(filters.setSettings(changed)&&!filters.learning()&&filters.hasProfile()&&filters.spectrum().noise==anchor,"filter edit cancels mismatched capture, retains spectral anchor");
   check(c.clearProfile()&&!c.hasProfile()&&!c.audition()&&!c.spectrum().noiseValid,"clear");
   check(!c.setSettings([](Core::Settings q){q.artifactControl=NAN;return q;}(s)),"invalid reject");
   s.spectralEnabled=false;check(c.setSettings(s),"bypass");
