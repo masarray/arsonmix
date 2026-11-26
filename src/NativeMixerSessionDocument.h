@@ -6,6 +6,7 @@
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/device/NamedDevicePins.h"
 #include "NativeShowStore.h"
+#include "BoundedDataInput.h"
 #include "NativeHotkeyRegistry.h"
 #include <charconv>
 #include <cmath>
@@ -587,7 +588,8 @@ public:
         return juce::JSON::toString(root,false);
     }
     static bool decode(const juce::String& json,MixerSessionDocument& output) {
-        if(json.getNumBytesAsUTF8()>4U*1024U*1024U)return false;
+        if(json.getNumBytesAsUTF8()>4U*1024U*1024U||
+           !armix::storage::BoundedDataInput::jsonStructure(json))return false;
         auto root=juce::JSON::parse(json);
         if(!root.isObject()||get(root,"schema").toString()!="arsonmix.mixer-session.v1")
             return false;

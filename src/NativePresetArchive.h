@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include "PortableWorkspace.h"
+#include "BoundedDataInput.h"
 #include <array>
 #include <cmath>
 #include <vector>
@@ -37,7 +38,7 @@ public:
     explicit NativePresetArchive (juce::File directory, juce::File workspaceRoot = {})
         : folder_ (std::move (directory)), workspaceRoot_ (std::move (workspaceRoot))
     {
-        folder_.createDirectory();
+        if(BoundedDataInput::managedPath(folder_,folder_))folder_.createDirectory();
     }
 
     static juce::String cleanName (juce::String input)
@@ -69,6 +70,7 @@ public:
         if (state.effects.size() > maxEffects) return "Too many effects in snapshot";
         const auto safe = cleanName (state.name);
         if (safe.isEmpty()) return "Use a preset name containing letters or numbers";
+        if (!BoundedDataInput::managedPath(folder_,fileFor(safe)))return "Unsafe preset file path";
         if (!folder_.isDirectory() && folder_.createDirectory().failed())
             return "Preset directory cannot be created";
 
@@ -143,11 +145,17 @@ public:
         const auto safe = cleanName (requestedName);
         if (safe.isEmpty() || safe != requestedName) return "Invalid preset name";
         const auto file = fileFor (safe);
-        if (! file.existsAsFile() || file.getSize() > maxArchiveBytes)
+        if (!BoundedDataInput::managedPath(folder_,file)||! file.existsAsFile() || file.getSize() > maxArchiveBytes)
             return "Preset file missing or above safety limit";
         juce::ZipFile zip (file);
         if (zip.getNumEntries() < 1 || zip.getNumEntries() > maxEffects + 1)
             return "Invalid preset archive entry count";
+        juce::StringArray names;
+        for(int i=0;i<zip.getNumEntries();++i) {
+            const auto* item=zip.getEntry(i);
+            if(!item||names.contains(item->filename,true))return "Duplicate or invalid ZIP member";
+            names.add(item->filename);
+        }
         const int manifestIndex = zip.getIndexOfFileName ("manifest.json");
         if (manifestIndex < 0 || !zip.getEntry (manifestIndex) ||
             zip.getEntry (manifestIndex)->uncompressedSize > 256 * 1024)
@@ -155,11 +163,16 @@ public:
         const auto manifestStream = std::unique_ptr<juce::InputStream> (
             zip.createStreamForEntry (manifestIndex));
         if (!manifestStream) return "Cannot open preset manifest";
-        const auto data = manifestStream->readEntireStreamAsString();
-        if (data.getNumBytesAsUTF8() > 256 * 1024) return "Manifest exceeds limit";
+        juce::MemoryBlock manifestBytes;
+        const auto declared=zip.getEntry(manifestIndex)->uncompressedSize;
+        if(declared<1||manifestStream->readIntoMemoryBlock(manifestBytes,256*1024+1)!=declared||
+           manifestBytes.getSize()>256*1024)return "Manifest exceeds limit or length mismatch";
+        const auto data=manifestBytes.toString();
+        if(!BoundedDataInput::jsonStructure(data))return "Invalid preset manifest structure";
         const auto manifest = juce::JSON::parse (data);
         if (!manifest.isObject() ||
             manifest.getProperty ("format", {}).toString() != "arsonmix.native.fx-snapshot" ||
+            !manifest.getProperty ("schemaVersion", {}).isInt() ||
             static_cast<int> (manifest.getProperty ("schemaVersion", 0)) != 1 ||
             !manifest.getProperty ("pluginInstances", {}).isArray())
             return "Unsupported native preset format";
@@ -192,7 +205,8 @@ public:
         for (int i = 0; i < list->size(); ++i)
         {
             const auto& entry = list->getReference (i);
-            if (!entry.isObject()) return "Invalid preset plugin record";
+            if (!entry.isObject()||!entry.getProperty("path",{}).isString()||
+                !entry.getProperty("name",{}).isString()) return "Invalid preset plugin record";
             auto fx = FxState {};
             fx.name = entry.getProperty ("name", {}).toString();
             const auto storedPath = entry.getProperty ("path", {}).toString();
@@ -220,6 +234,7 @@ public:
             const auto* zipEntry = zipIndex >= 0 ? zip.getEntry (zipIndex) : nullptr;
             if (!zipEntry || zipEntry->uncompressedSize < 0 ||
                 zipEntry->uncompressedSize > static_cast<juce::int64> (maxStateBytes) ||
+                !entry.getProperty("stateBytes",{}).isInt() ||
                 static_cast<int> (entry.getProperty ("stateBytes", -1)) != zipEntry->uncompressedSize)
                 return "VST3 state is missing or exceeds safety limit";
             auto input = std::unique_ptr<juce::InputStream> (zip.createStreamForEntry (zipIndex));

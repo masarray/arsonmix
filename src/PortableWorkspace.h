@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_core/juce_core.h>
+#include "BoundedDataInput.h"
 
 // Portability is a DATA LOCATION, not an edition/entitlement. Native host, VST
 // hosting and UI are identical with or without portable_mode.txt. All methods
@@ -91,12 +92,13 @@ struct PortableWorkspace final
     static juce::File decode (const juce::File& workspace, const juce::String& stored)
     {
         if (!stored.startsWith (scheme))
-            return juce::File (stored); // v1 absolute-path compatibility
+            return juce::File::isAbsolutePath(stored)?juce::File(stored):juce::File(); // v1 absolute-path compatibility
         const auto relative = stored.substring (juce::String (scheme).length());
         if (workspace == juce::File() || !safeRelativePath (relative))
             return {}; // invalid workspace reference, not silently treated as CWD
         const auto resolved = workspace.getChildFile (relative);
-        return resolved.isAChildOf (workspace) ? resolved : juce::File();
+        return resolved.isAChildOf (workspace) && BoundedDataInput::managedPath(workspace,resolved)
+            ? resolved : juce::File();
     }
 };
 } // namespace armix::storage
