@@ -2039,6 +2039,112 @@ static void verifyZeroLatencyFxFastPath() {
         assert(heapCalls.load()==before);
     }
 }
+// Actual native Compressor, actual FxInstance/lease bank and actual publisher.
+// The reference is a separate processor only in this test, never a second
+// product renderer. The reference delay ring is warm from the prior graph.
+static void verifyContinuousNativeCompressorPublication() {
+    using Comp=armix::builtin_fx::ChannelCompressorProcessor;
+    using Bank=DynamicChannelFxLeaseBank;
+    using Pub=DynamicNativeSessionPublisher;
+    constexpr std::uint64_t epoch=915;
+    for(double rate:{44100.,48000.,96000.}){
+        DynamicChannelRoster roster;
+        std::array<ChannelEdit,3> rows{};
+        for(int i=0;i<3;++i){
+            rows[i].kind=ChannelEdit::Kind::add;rows[i].position=i;
+            rows[i].role=i<2?ChannelRole::input:ChannelRole::main;
+            rows[i].format=ProcessingFormat::stereo;
+        }
+        const auto created=roster.edit(0,rows);assert(created.ok());
+        const auto voice=created.createdIds[0],backing=created.createdIds[1],main=created.createdIds[2];
+        std::array<ChannelEdit,3> edits{};
+        for(int i=0;i<2;++i){
+            edits[i].kind=ChannelEdit::Kind::setPrimaryOutput;
+            edits[i].id=created.createdIds[i];edits[i].target=main;
+        }
+        edits[2].kind=ChannelEdit::Kind::addInsertReference;
+        edits[2].id=backing;edits[2].text="retained-delay";
+        assert(roster.edit(roster.revision(),edits).ok());
+        auto delayed=std::make_unique<GainFx>(1.f,37);delayed->prepareToPlay(rate,512);
+        const auto retained=std::make_shared<LiveChannelFxGraph::FxInstance>(
+            std::move(delayed),"retained-delay","retained delay",512);
+        Bank::Assignment binding;binding.id=backing;binding.inserts={retained};
+        Bank initial;assert(Bank::prepare(epoch,1,std::span(&binding,1),initial)==Bank::Fault::none);
+        auto oldBank=std::make_shared<Bank>(std::move(initial));
+        const auto plan=[&](const std::shared_ptr<Bank>& bank,std::uint64_t rev){
+            Pub::FxPlan fx;fx.owner=bank;fx.context=bank.get();fx.deviceEpoch=epoch;fx.graphRevision=rev;
+            fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept{(*static_cast<Bank*>(p))(id,l,r,n);};
+            fx.latency=+[](void* p,ChannelId id) noexcept{return static_cast<Bank*>(p)->latencySamples(id);};
+            return fx;
+        };
+        DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=512;
+        req.sources={{voice,0,1,true},{backing,2,3,true}};
+        Pub pub;assert(pub.commit(roster,req,0,epoch,epoch,true,plan(oldBank,1)).ok());
+        assert(pub.setExternalOutput(epoch,1,backing,2,3,4));
+        std::array<float,512> a{},b{},c{},d{},l{},r{},extL{},extR{},referenceL{},referenceR{};
+        c.fill(.2f);d.fill(-.1f);
+        const float* pins[]{a.data(),b.data(),c.data(),d.data()};
+        float* outs[]{l.data(),r.data(),extL.data(),extR.data()};
+        const auto noop=[](ChannelId,float*,float*,int) noexcept {};
+        armix::dsp::StereoLatencyDelay referenceDelay;assert(referenceDelay.prepare(37));
+        int position=0;
+        const auto fill=[&](int n){
+            for(int i=0;i<n;++i,++position){
+                a[i]=.45f+.12f*std::sin(position*.031f);
+                b[i]=-.31f+.10f*std::cos(position*.027f);
+                referenceL[i]=a[i];referenceR[i]=b[i];
+            }
+        };
+        const auto render=[&](int n){
+            const auto before=heapCalls.load();
+            assert(pub.render(epoch,pins,4,l.data(),r.data(),n,false,noop,
+                nullptr,nullptr,{},{},{},outs,4));
+            assert(heapCalls.load()==before);
+        };
+        for(int n:{512,193}){
+            fill(n);render(n);
+            for(int i=0;i<n;++i)referenceDelay.process(referenceL[i],referenceR[i]);
+        }
+        const auto makeComp=[&](){
+            auto p=std::make_unique<Comp>();
+            p->setRateAndBufferSizeDetails(rate,512);p->prepareToPlay(rate,512);
+            return p;
+        };
+        auto processor=makeComp();auto* actual=processor.get();
+        auto comp=std::make_shared<LiveChannelFxGraph::FxInstance>(
+            std::move(processor),Comp::catalogIdentity,"Compressor",512);
+        LiveChannelFxGraph::FxInstance reference(makeComp(),Comp::catalogIdentity,"reference",512);
+        comp->primeZeroLatencyLiveInsertFade();reference.primeZeroLatencyLiveInsertFade();
+        ChannelEdit insert;insert.kind=ChannelEdit::Kind::addInsertReference;
+        insert.id=voice;insert.text=Comp::catalogIdentity;
+        assert(roster.edit(roster.revision(),std::span(&insert,1)).ok());
+        Bank expanded;
+        assert(Bank::appendOwned(epoch,2,*oldBank,voice,ProcessingFormat::stereo,comp,expanded)==Bank::Fault::none);
+        auto nextBank=std::make_shared<Bank>(std::move(expanded));
+        assert(nextBank->retainsEditor(retained));
+        assert(pub.commit(roster,req,1,epoch,epoch,false,plan(nextBank,2),false,true,nullptr,nullptr,true).ok());
+        float maxError=0.f,maxWetDifference=0.f;
+        const int blocks[]{16,127,31,512,64,193};
+        for(int block=0;block<48;++block){
+            const int n=blocks[block%6];fill(n);
+            const auto serial=actual->observedBlockSerial();
+            render(n);
+            assert(actual->observedBlockSerial()==serial+1); // exactly one DSP pass
+            reference.render(referenceL.data(),referenceR.data(),n);
+            for(int i=0;i<n;++i){
+                maxWetDifference=std::max(maxWetDifference,std::abs(referenceL[i]-a[i]));
+                referenceDelay.process(referenceL[i],referenceR[i]);
+                maxError=std::max({maxError,std::abs(l[i]-(referenceL[i]+.2f)),
+                    std::abs(r[i]-(referenceR[i]-.1f)),std::abs(extL[i]-.2f),std::abs(extR[i]+.1f)});
+            }
+        }
+        assert(maxError<1.e-4f&&maxWetDifference>.01f);
+        std::cout<<"P0_B_COMPRESSOR rate="<<rate<<" max_reference_error="<<maxError
+                 <<" wet_difference="<<maxWetDifference<<" RT heap=0\\n";
+        pub.pollRetirement();
+    }
+}
+
 static void verifyLiveInsertFade() {
     for(double rate:{44100.,48000.,96000.}){
         auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(rate,64);
@@ -2788,6 +2894,7 @@ int main(int argc,char** argv) {
     verifyNativeExactIdle();
     verifyZeroLatencyFxFastPath();
     verifyLiveInsertFade();
+    verifyContinuousNativeCompressorPublication();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();
     verifyNativeBuiltinEqOrderedPcmAndBypassAck();
