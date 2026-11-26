@@ -3024,6 +3024,8 @@ private:
             obj->setProperty("externalRevision",
                 live.getProperty("dryRoutingLab",{}).getProperty("nativeBus",{})
                     .getProperty("graphRevision",{}));
+            obj->setProperty("secondaryMainOnly",live.getProperty("dryRoutingLab",{})
+                .getProperty("secondaryMainOnly",false));
             obj->setProperty("physicalMainOutputs",
                 live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
             obj->setProperty("physicalMonitorOutputs",
@@ -9269,6 +9271,27 @@ private:
         // OUTPUT1: generic selected auxiliary playback destination.
         // Device selection, ASRC preparation and callback attach are CONTROL
         // thread operations. Only the existing native mixer produces PCM.
+        if(action=="secondaryOutputSplit"){
+            juce::String error;
+            std::uint64_t ep=0,rev=0,roster=0;
+            const auto enable=value.getProperty("enabled",{});
+            if(studioBackupBusy_||nativeShowBusy_||!enable.isBool()||
+               !armix::console::approvedNativeId(value.getProperty("deviceEpoch",{}),ep)||
+               !armix::console::approvedNativeId(value.getProperty("graphRevision",{}),rev)||
+               !armix::console::approvedNativeId(value.getProperty("rosterRevision",{}),roster))
+                error="DMX: stale request or mixer operation in progress";
+            else error=engine_.patchDmxSplitOutput(ep,rev,roster,bool(enable));
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            ack->setProperty("secondaryMainOnly",engine_.status().getProperty("dryRoutingLab",{})
+                .getProperty("secondaryMainOnly",false));
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+                "arMixSecondaryOutputAck",juce::var(ack.release()));
+            return emitNotice(error.isNotEmpty()?error:
+                (bool(enable)?"DMX: MAIN to STREAM, ASIO to MONITOR. Patch MONITOR sends, then arm each output explicitly.":
+                "DMX: physical MAIN restored. Outputs remain muted."),error.isNotEmpty());
+        }
         if(action=="secondaryOutputConnect" ||
            action=="secondaryOutputArm" || action=="secondaryOutputStop") {
             juce::String error;

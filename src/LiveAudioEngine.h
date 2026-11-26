@@ -1519,6 +1519,32 @@ public:
     // O1 physical External OUT: solely CONTROL, on the already-approved
     // single ASIO/ChannelId PCM callback. Hardware pin masks and labels
     // are read atomically with the current device lifecycle generation.
+    juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t rosterRev,bool enable) {
+        if(!allOutputsDisarmed()||wantsMainContinuation()||independent_.active()||
+           !attached_||!directFence_.permitted()||handoff_.busy()||
+           savedDirectSetup_||savedLiveSetup_||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute()!=armix::diagnostics::Route::normal||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO")
+            return "DMX: explicitly MUTE hardware and DISARM STREAM first";
+        if(enable&&(!secondaryOutput_.ready()||secondaryOutput_.faulted()))
+            return "DMX: connect a verified Windows playback endpoint first";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!device||!device->isOpen()||!acceptedMixerBinding_||
+           !armix::device::JuceActivePortSnapshot::capture(device,ep,pins,fault))
+            return "DMX: verified device pin inventory unavailable";
+        const auto live=readMixerBinding(*device);
+        if(!armix::session::MixerDeviceBindingPolicy::sameBinding(*acceptedMixerBinding_,live)||
+           acceptedMixerBinding_->outputNames!=live.outputNames||
+           deviceManager_.getCurrentAudioDevice()!=device)
+            return "DMX: verified playback identity changed";
+        return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins);
+    }
+
     juce::String patchPhysicalBusOutput(std::uint64_t ep,std::uint64_t rev,
             bool monitor,std::array<int,2> previous,std::array<int,2> wanted,
             const juce::String& leftName,const juce::String& rightName) {

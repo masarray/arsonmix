@@ -3018,6 +3018,87 @@ public:
         }
     }
 
+    // Explicit two-pin ASIO sink transaction. Never repurpose a live pair.
+    // The new monitor is intentionally unpatched (silence) until WIRE/SOF.
+    juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t rosterRev,bool enable,
+            const armix::device::JuceActivePortSnapshot& pins) {
+        using namespace armix::mixer;
+        if(!ready()||!channelIdPhysicalPcmActive()||pins.epoch!=ep||
+           pins.typeName!="ASIO"||pins.outputCount!=2||!matchesSessionDevice(pins)||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev)||
+           !nativeBusOutputObserved()||nativeAccepted_.graph.roster.revision()!=rosterRev)
+            return "DMX: stale or unobserved two-output ASIO mapping";
+        const auto old=nativeAccepted_.hardware;
+        if(!old.valid()||old.activeOutputChannels!=2||old.secondaryMain()==enable)
+            return "DMX: requested output mode is unchanged or unavailable";
+        // Do not steal a saved amplifier or logical output binding. The
+        // operator must explicitly clear those intentions first.
+        if(!externalOutputAssignments_.empty()||!logicalOutputs_.empty())
+            return "DMX: clear existing external/logical output bindings first";
+        for(int i=0;i<2;++i){
+            const int pin=pins.outputPhysicalPort(i);
+            if(pin<0||pin>=pins.outputNames.size()||
+               armix::device::uniqueNamedPin(pins.outputNames,pins.outputNames[pin])!=pin)
+                return "DMX: both ASIO pin names must be verified";
+        }
+        try {
+            auto roster=nativeAccepted_.graph.roster;
+            auto monitor=nativeAccepted_.graph.ids.monitor;
+            VerifiedNativeOutputs next{};
+            if(enable){
+                if(old.monitorEnabled)return "DMX: existing physical MONITOR is reserved";
+                if(!monitor.value){
+                    ChannelEdit edit;edit.kind=ChannelEdit::Kind::add;
+                    edit.position=roster.channels().size();edit.role=ChannelRole::monitor;
+                    edit.format=ProcessingFormat::stereo;edit.text="MONITOR";
+                    const auto changed=roster.edit(rosterRev,std::span<const ChannelEdit>(&edit,1));
+                    if(!changed.ok()||changed.createdIds.size()!=1)return "DMX: MONITOR creation rejected";
+                    monitor=changed.createdIds.front();
+                }
+                const auto* row=roster.find(monitor);
+                if(!row||row->role!=ChannelRole::monitor)return "DMX: invalid MONITOR identity";
+                next={2,-1,-1,old.mainL,old.mainR,true};
+            }else{
+                if(!monitor.value||nativeAccepted_.fxOwners->insertCount(monitor)!=0)
+                    return "DMX: MONITOR is not removable";
+                // Refuse destructive mode changes: preserve all send IDs
+                // and monitor mix until the operator disconnects WIREs.
+                ChannelEdit edit;edit.kind=ChannelEdit::Kind::remove;edit.id=monitor;
+                if(!roster.edit(rosterRev,std::span<const ChannelEdit>(&edit,1)).ok())
+                    return "DMX: disconnect MONITOR WIREs before restoring physical MAIN";
+                monitor={};
+                next={2,old.monitorL,old.monitorR,-1,-1,false};
+            }
+            if(!next.valid()||!matchesSessionDevice(pins))return "DMX: device changed";
+            DynamicChannelFxLeaseBank bank;
+            if(DynamicChannelFxLeaseBank::reuseRevision(ep,rev+1,*nativeAccepted_.fxOwners,bank)
+                !=DynamicChannelFxLeaseBank::Fault::none)return "DMX: FX lease rejected";
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(bank));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
+            DynamicNativeSessionPublisher::FxPlan fx;
+            fx.owner=owner;fx.context=owner.get();fx.deviceEpoch=ep;fx.graphRevision=rev+1;
+            fx.render=+[](void* ctx,ChannelId id,float* l,float* rr,int n) noexcept{
+                (*static_cast<DynamicChannelFxLeaseBank*>(ctx))(id,l,rr,n);
+            };
+            fx.latency=+[](void* ctx,ChannelId id) noexcept {
+                return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            const auto committed=nativePublisher_.commit(roster,nativeAccepted_.graph.request,
+                rev,ep,epoch(),true,std::move(fx));
+            if(!committed.ok())return "DMX: PCM graph rejected";
+            nativeAccepted_.graph.roster=std::move(roster);
+            nativeAccepted_.graph.ids.monitor=monitor;
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=committed.revision;
+            nativeAccepted_.hardware=next;
+            nativeStructureLive_=true;nativeControlDirty_=true;
+            busPatchEpoch_=ep;
+            installNativeHardware(ep,next,nativeAccepted_.graph.request.maxFrames);
+            return {};
+        }catch(...){return "DMX: output transaction failed";}
+    }
+
     // CONTROL only, explicit operator MUTE checked by LiveAudioEngine.
     // Only the hardware destination changes. Logical MAIN/MONITOR and FX
     // owners, pin masks, callback quantum and graph revision are unchanged.
@@ -3041,6 +3122,7 @@ public:
         if(logicalOutputPairReserved(pins.deviceName,wanted[0],wanted[1]))
             return "BUS OUTPUT: pair reserved by logical output";
         const auto& hw=nativeAccepted_.hardware;
+        if(hw.secondaryMain())return "BUS OUTPUT: use explicit DMX mode change before repatching";
         if(!hw.valid()||hw.activeOutputChannels!=pins.outputCount)
             return "BUS OUTPUT: installed hardware unavailable";
         std::vector<int> reserved;
@@ -4129,6 +4211,7 @@ public:
             nativeAccepted_.fxOwners->externalChannel()==
                 nativeAccepted_.graph.ids.inputs[0]);
         out->setProperty("epoch",static_cast<juce::int64>(epoch()));
+        out->setProperty("dmxDeviceEpoch",juce::String(std::to_string(epoch())));
         out->setProperty("revision",static_cast<juce::int64>(controlRevision()));
         out->setProperty("peakL",peakL_.load(std::memory_order_relaxed));
         out->setProperty("peakR",peakR_.load(std::memory_order_relaxed));
