@@ -7303,8 +7303,8 @@ test("M4 computes per-second histogram delta and conservative bucket-ceiling hea
 });
 test("M4 labels current over-budget host renders as pressure, not confirmed crackle",()=>{
   const first=protocol.smartPerformanceView(m4Live(5,m4Buckets()),m4Accepted());
-  const next=protocol.smartPerformanceView(m4Live(6,m4Buckets({8:90,12:10}),{
-    ...m4Accepted(),device:{...m4Accepted().device}},first.cursor);
+  const next=protocol.smartPerformanceView(
+    m4Live(6,m4Buckets({8:90,12:10})),m4Accepted(),first.cursor);
   assert.equal(next.state,"PRESSURE");
   assert.equal(next.headroom.p99,">100%");
   assert.equal(next.over,10);
