@@ -251,6 +251,7 @@ def exercise_dmx(browser, out, width, height):
     emit(page,"arMixConsoleSnapshot",state)
     page.wait_for_function("""()=>document.querySelector(
       '#tracks .strip[data-native-role="FX_RETURN"] .fader-readout')?.textContent.includes('-12.0')""")
+    assert "-12.0" in wet.locator(".sof-info small").inner_text(), "stale accepted send level"
     page.screenshot(path=f"arsonmix-native-dmx-monitor-{width}.png")
     toggle.click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"

@@ -1014,7 +1014,15 @@
       }
       if(scope?.sofEnabled && local.destId===scope?.sofTargetId){
         const t=scope?.tracks?.find(x=>x.id===tId);
-        const slider=document.querySelector('.strip[data-id="'+tId+'"] input.fader');
+        const root=document.querySelector('.strip[data-id="'+tId+'"]');
+        const slider=root?.querySelector('input.fader');
+        // Update accepted SEND readback without replacing the captured fader.
+        const readout=root?.querySelector('.sof-info small');
+        if(readout&&Number.isFinite(local.levelDb)){
+          const db=local.levelDb<=-60?'-∞':(local.levelDb>0?'+':'')+local.levelDb.toFixed(1);
+          const label=(local.sendEnabled===false?'OFF · saved ':'LEVEL ')+db+' dB';
+          if(readout.textContent!==label)readout.textContent=label;
+        }
         if(t&&slider&&document.activeElement!==slider){
           slider.value=String(local.levelDb);
           scope.syncFaderVisual?.(t);

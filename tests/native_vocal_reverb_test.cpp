@@ -5,6 +5,7 @@
 #include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../src/NativeBuiltInFx.h"
 #include "../engine/core/LiveChannelFxGraph.h"
+#include "../engine/core/DynamicAcceptedSession.h"
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -53,7 +54,64 @@ int main() {
         lease.bypassRequested.store(false);
         render(false);
         assert(std::all_of(l.begin(),l.end(),[](float v){return std::isfinite(v);}));
-        std::puts("DMX_NATIVE_REVERB_RETURN_LEASE_PASS");
+        // Native accepted PCM graph with the REAL prepared lease, not a gain
+        // stand-in. Feed one stereo source to dry MAIN and PRE MONITOR, and
+        // one wet return to both. First sample and settled bypass must equal
+        // the undelayed stereo source, with nonzero wet energy in between.
+        using namespace armix::mixer;
+        DynamicAcceptedSession session;
+        constexpr std::uint64_t ep=7123;
+        DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=128;
+        const auto add=[](std::size_t i,ChannelRole role,const char* name){
+            ChannelEdit e;e.kind=ChannelEdit::Kind::add;e.position=i;
+            e.role=role;e.format=ProcessingFormat::stereo;e.text=name;return e;
+        };
+        const std::array<ChannelEdit,4> create{add(0,ChannelRole::input,"VOICE"),
+            add(1,ChannelRole::fxReturn,"REVERB"),add(2,ChannelRole::main,"MAIN"),
+            add(3,ChannelRole::monitor,"MONITOR")};
+        auto a=session.edit(0,0,create,req,ep,ep,true);assert(a.ok());
+        const auto voice=a.edit.createdIds[0],wet=a.edit.createdIds[1],
+            main=a.edit.createdIds[2],monitor=a.edit.createdIds[3];
+        const auto out=[](ChannelId from,ChannelId to){
+            ChannelEdit e;e.kind=ChannelEdit::Kind::setPrimaryOutput;
+            e.id=from;e.target=to;return e;
+        };
+        const auto send=[](ChannelId from,ChannelId to,float gain){
+            ChannelEdit e;e.kind=ChannelEdit::Kind::addSendReference;
+            e.id=from;e.target=to;e.value=gain;e.preFader=true;return e;
+        };
+        const std::array<ChannelEdit,5> links{out(voice,main),out(wet,main),
+            send(voice,monitor,1.f),send(voice,wet,1.f),send(wet,monitor,.25f)};
+        req.sources={{voice,0,1,true}};
+        a=session.edit(1,1,links,req,ep,ep,true);assert(a.ok());
+        armix::mixer::LiveChannelFxGraph::FxInstance real(
+            std::move(restored),ret->id,ret->name,128);
+        std::array<float,128> inputL{},inputR{},ml{},mr{},cl{},cr{};
+        const float* pins[]{inputL.data(),inputR.data()};
+        int calls=0;double wetEnergy=0.;
+        const auto fx=[&](ChannelId id,float* aL,float* aR,int n) noexcept {
+            if(id==wet){++calls;real.render(aL,aR,n);}
+        };
+        for(int block=0;block<120;++block){
+            for(int i=0;i<128;++i){
+                inputL[i]=.16f*std::cos(float(block*128+i)*.03f);
+                inputR[i]=-.12f*std::cos(float(block*128+i)*.05f);
+            }
+            if(block==100)real.bypassRequested.store(true);
+            assert(session.render(ep,pins,2,ml.data(),mr.data(),128,false,fx,cl.data(),cr.data()));
+            assert(calls==block+1);
+            for(int i=0;i<128;++i){
+                const float wl=ml[i]-inputL[i],wr=mr[i]-inputR[i];
+                assert(std::abs((cl[i]-inputL[i])-.25f*wl)<2e-6f);
+                assert(std::abs((cr[i]-inputR[i])-.25f*wr)<2e-6f);
+                if((block==0&&i==0)||block>=110)
+                    assert(std::abs(wl)<1e-7f&&std::abs(wr)<1e-7f);
+                if(block<100)wetEnergy+=double(wl)*wl+double(wr)*wr;
+            }
+        }
+        assert(wetEnergy>1e-7);
+        session.unpublish();session.pollRetirement();
+        std::puts("DMX_NATIVE_REVERB_RETURN_LEASE_PASS real DSP once, independent sinks, silence bypass");
     }
     for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
     static_assert(reverbSisPresetCount==19 && reverbSisCustomItem==20);
