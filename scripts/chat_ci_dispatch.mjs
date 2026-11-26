@@ -357,7 +357,7 @@ const fastJobs=[
 // Fail closed if *any* required fast lane is missing, failed, cancelled or
 // stale. Checking only the target Windows quick lane can miss UI/release reds
 // on a mixed PR and burn 30+ minutes of CI unnecessarily.
-export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5000)}) {
+export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5000),waitForRegistration=false}) {
   const proof=[];
   for(const [key,workflow,jobName] of fastJobs) {
     if(!scope[key])continue;
@@ -371,16 +371,17 @@ export async function verifySmartFast({target,scope,api,waitForQuick=()=>sleep(5
         (r.path===undefined ||
           r.path.split('@',1)[0]==='.github/workflows/'+workflow))
         .sort((a,b)=>b.id-a.id)[0];
-      if(!exact)throw Error('CI_SMART_FAST_MISSING: '+key+' '+target.sha);
-      const jobs=(await api('/actions/runs/'+exact.id+'/jobs?per_page=100'))?.jobs;
+      if(!exact&&(!waitForRegistration||attempt===12))throw Error('CI_SMART_FAST_MISSING: '+key+' '+target.sha);
+      const jobs=exact?(await api('/actions/runs/'+exact.id+'/jobs?per_page=100'))?.jobs:[];
       if(!Array.isArray(jobs))throw Error('CI_SMART_FAST_JOBS_INVALID: '+key);
       const job=jobs.filter(j=>j.name===jobName);
-      if(job.length!==1)throw Error('CI_SMART_FAST_JOB_MISSING: '+key);
-      if(job[0].conclusion==='success'){
+      if(job.length>1||(!job.length&&(!waitForRegistration||attempt===12||exact?.status==='completed')))
+        throw Error('CI_SMART_FAST_JOB_MISSING: '+key);
+      if(job[0]?.conclusion==='success'){
         proof.push({lane:key,run:exact.id,job:jobName});
         break;
       }
-      if(job[0].conclusion)
+      if(job[0]?.conclusion)
         throw Error('CI_SMART_FAST_FAILED: '+key+' '+job[0].conclusion);
       if(attempt===12)throw Error('CI_SMART_FAST_PENDING: '+key);
       await waitForQuick();
@@ -408,13 +409,14 @@ export async function performSmartMilestone({event,repo,api,
     if(comments.length<100)break;
     if(page===20)throw Error('CI_COMMENTS_PAGINATION_LIMIT');
   }
-  // Serialized owner-only RESUME is deliberately repeatable: actual run
+  // Serialized owner-only RESUME/QUALIFY are repeatable: actual run
   // identities, rather than an earlier comment, decide whether work exists.
-  if(target.lane!=='resume'&&hadEarlierIdenticalRequest(earlier,event,repo))
+  const recoverable=['resume','qualify'].includes(target.lane);
+  if(!recoverable&&hadEarlierIdenticalRequest(earlier,event,repo))
     return {kind:'skipped',reason:'duplicate',target};
   const files=await readChangedFiles(api,target.number);
   const {scope,targets}=planSmartMilestone(files,target.lane);
-  const proof=await verifySmartFast({target,scope,api,waitForQuick});
+  const proof=await verifySmartFast({target,scope,api,waitForQuick,waitForRegistration:recoverable});
   // One last current HEAD check immediately before any dispatch.
   validateMilestone(event,repo,await api('/pulls/'+target.number));
   if(targets.length===0)
@@ -425,12 +427,12 @@ export async function performSmartMilestone({event,repo,api,
       body:'/arsonmix-ci '+lane+' '+target.sha}};
     try {
       const outcome=await performMilestone({event:request,repo,api,waitForQuick,
-        resumeMissing:target.lane==='resume'});
+        resumeMissing:recoverable});
       results.push({lane,kind:outcome.kind,reason:outcome.reason||null});
     } catch(error) {
       // One known red lane must not prevent recovery of another missing lane.
       // Never convert unexpected API/auth/stale errors to success.
-      if(target.lane!=='resume'||!/^CI_(?:NATIVE|FAT)_FAILED_FIX_SOURCE_BEFORE_REDISPATCH$/.test(error.message))throw error;
+      if(!recoverable||!/^CI_(?:NATIVE|FAT)_FAILED_FIX_SOURCE_BEFORE_REDISPATCH$/.test(error.message))throw error;
       results.push({lane,kind:'skipped',reason:error.message});
     }
   }

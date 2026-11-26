@@ -606,3 +606,35 @@ test('RESUME fills missing lane despite prior comment, never duplicates active o
     assert.equal(calls.filter(c=>c.method==='POST').length,uiState==='missing'?1:0);
   }
 });
+
+
+test('QUALIFY is repeatable after timeout, waits for job registration and never duplicates an existing FAT',async()=>{
+  for(const state of ['missing','active','green','red']){
+    let waited=0;
+    const calls=[];
+    const req=event('/arsonmix-ci qualify '+sha);
+    const api=async(path,method,data)=>{
+      calls.push({path,method,data});
+      if(path.startsWith('/pulls/418/files'))return [{filename:'engine/core/Example.h'}];
+      if(path.startsWith('/pulls/418'))return pr();
+      if(path.startsWith('/issues/418/comments'))return [
+        {id:47,body:req.comment.body,author_association:'OWNER',user:{login:'masarray'}},
+        {id:46,body:'/arsonmix-ci fat '+sha,author_association:'OWNER',user:{login:'masarray'}}
+      ];
+      if(path.includes('/runs?event=pull_request'))return {workflow_runs:waited===0?[]:[{id:101,head_sha:sha,event:'pull_request',status:'in_progress'}]};
+      if(path.startsWith('/actions/runs/101/jobs'))return {jobs:waited===1?[]:[{name:'Fast native contracts (no Windows / JUCE checkout)',conclusion:'success'}]};
+      if(path.includes('event=workflow_dispatch'))return {workflow_runs:state==='missing'?[]:[{
+        id:103,event:'workflow_dispatch',head_sha:'b'.repeat(40),display_title:'ArSonMix FAT PR418 '+sha,
+        status:state==='active'?'in_progress':'completed',conclusion:state==='green'?'success':state==='red'?'failure':null
+      }]};
+      if(path.endsWith('/dispatches'))return null;
+      throw Error('UNEXPECTED_API '+path);
+    };
+    const out=await performSmartMilestone({event:req,repo,api,waitForQuick:async()=>{waited++;}});
+    assert.equal(waited,2);
+    assert.equal(out.results[0].kind,state==='missing'?'dispatched':'skipped');
+    const writes=calls.filter(c=>c.method==='POST');
+    assert.equal(writes.length,state==='missing'?1:0);
+    if(writes.length)assert.equal(writes[0].data.inputs.package_fat,true);
+  }
+});
