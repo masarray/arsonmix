@@ -214,7 +214,23 @@ jobs:
           mkdir -p "$RUNNER_TEMP/pro-rt"
           { git rev-parse HEAD; g++ --version; lscpu; } > "$RUNNER_TEMP/pro-rt/environment.txt"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -DANTI_NOIZ_ALLOC_PROBE=1 tests/anti_noiz_pro_rt_test.cpp -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign -o "$RUNNER_TEMP/pro-rt-test"
+      - name: Checkout exact unpacked stereo reference
+        uses: actions/checkout@v4
+        with:
+          ref: bf4bd81a244d5ea80210c23d31c18a05597b097f
+          path: .anti-noiz-unpacked
+          persist-credentials: false
+      - name: Matched strict FP legacy and bounded manual stereo parity
+        run: |
+          flags=(-std=c++20 -O3 -ffp-contract=off -DNDEBUG -Wall -Wextra -Werror)
+          g++ "${flags[@]}" -I .anti-noiz-unpacked/engine/builtin_fx/anti_noiz tests/anti_noiz_stereo_packed_probe.cpp -o "$RUNNER_TEMP/stereo-old"
+          g++ "${flags[@]}" -I engine/builtin_fx/anti_noiz tests/anti_noiz_stereo_packed_probe.cpp -o "$RUNNER_TEMP/stereo-new"
+          "$RUNNER_TEMP/stereo-old" "$RUNNER_TEMP/old.f32"
+          "$RUNNER_TEMP/stereo-new" "$RUNNER_TEMP/new.f32"
+          python3 tools/anti-noiz/compare_stereo_packed.py "$RUNNER_TEMP/old.f32" "$RUNNER_TEMP/new.f32" "$RUNNER_TEMP/pro-rt/stereo-parity.json"
+          rm -f "$RUNNER_TEMP/old.f32" "$RUNNER_TEMP/new.f32"
       - name: Enforce 50 percent P99 thread CPU headroom (wall misses reported separately)
+        if: ${{ !cancelled() }}
         run: |
           set -o pipefail
           "$RUNNER_TEMP/pro-rt-test" --enforce-headroom | tee "$RUNNER_TEMP/pro-rt/native-session.csv"

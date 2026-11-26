@@ -278,7 +278,19 @@ private:
             powerValid_=false;context_.reset();wind_.reset();coherence_.reset();broadband_.reset();tonalIdle_=false;profile_.track(power_,false);renderUnity(); return;
         }
         const int bins=hop_+1;
-        for(int c=0;c<channels_;++c) {
+        const bool packedStereo=settings_.spectralManual&&channels_==2;
+        if(packedStereo){
+            // Two real transforms packed into one complex transform. Manual
+            // spectral uses a shared real mask; no phase-dependent guards.
+            for(int i=0;i<n_;++i){const int j=(pos_+i)&ringMask_;
+                work_[0][i]={in_[0][j]*win_[i],in_[1][j]*win_[i]};}
+            fft_.transform(work_[0],false);
+            for(int k=0;k<bins;++k){
+                const auto z=work_[0][k],mirror=std::conj(work_[0][(n_-k)&ringMask_]);
+                const auto sum=(z+mirror)*.5f,difference=(z-mirror)*.5f;
+                power_[0][k]=std::norm(sum);power_[1][k]=std::norm(difference);
+            }
+        }else for(int c=0;c<channels_;++c) {
             for(int i=0;i<n_;++i)work_[c][i]={in_[c][(pos_+i)&ringMask_]*win_[i],0};
             fft_.transform(work_[c],false);
             for(int k=0;k<bins;++k) {
@@ -399,7 +411,11 @@ private:
         // idle or independently confirmed broadband noise shape.
         const float close=(idle||broadIdle)&&effectiveMode_==Mode::Voice?voiceExpandClose_:expandClose_;
         expansion_=expTarget>=expansion_?expTarget:expansion_+close*(expTarget-expansion_);
-        for(int c=0;c<channels_;++c) {
+        if(packedStereo){
+            for(int k=0;k<bins;++k){const float g=mask_[k]*expansion_;work_[0][k]*=g;if(k>0&&k<hop_)work_[0][n_-k]*=g;}
+            fft_.transform(work_[0],true);
+            for(int i=0;i<n_;++i){const int j=(pos_+i)&ringMask_;out_[0][j]+=work_[0][i].real()*win_[i];out_[1][j]+=work_[0][i].imag()*win_[i];}
+        }else for(int c=0;c<channels_;++c) {
             for(int k=0;k<bins;++k) {
                 const float g=mask_[k]*expansion_;
                 work_[c][k]*=g;
