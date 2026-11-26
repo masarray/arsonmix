@@ -200,7 +200,11 @@ int main() {
             REQUIRE(!BuiltInFxUserPresetStore::validateSettings("armix.builtin.anti-noiz.v1",bad));
         }
         auto invalid=Codec::settings(s);invalid.getDynamicObject()->setProperty("smartMarginDb",19);
-        REQUIRE(!Codec::parseSettings(invalid,s));
+        REQUIRE(!Codec::parseSettings(invalid,s)&&s.manual.smartVoice&&s.cleanDb==40);
+        for(const char* key:{"mode","thresholdDb","artifactControl","smartVoice"}){
+            auto missing=Codec::settings(s);missing.getDynamicObject()->removeProperty(key);
+            REQUIRE(!Codec::parseSettings(missing,s));
+        }
         REQUIRE(BuiltInFxUserPresetStore::validateSettings("armix.builtin.anti-noiz.v1",full));
     }
     auto album=reverb();album.settings.getDynamicObject()->setProperty("voicing",1);

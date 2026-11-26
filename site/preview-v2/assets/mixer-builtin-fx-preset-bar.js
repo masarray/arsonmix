@@ -190,6 +190,19 @@ function create(adapter){
   else select.value=adapter.factoryValue(readAccepted());
   return true;
  }
+ // Optional single-flight factory recall for adapters sharing this library.
+ // Restore the current selector immediately; only an accepted ACK changes it.
+ function restoreSelection(){
+  if(selectedId&&!dirty&&originals.has(selectedId))select.value="user:"+selectedId;
+  else select.value=adapter.factoryValue(readAccepted());
+ }
+ function selectFactory(settings){
+  if(!canWrite()||!validate(settings)){restoreSelection();return false;}
+  if(sameSettings(settings,readAccepted())){selectedId="";saved=null;dirty=false;restoreSelection();paint();return true;}
+  const id=apply(settings);
+  if(!id){restoreSelection();return false;}
+  factoryIntent(id);restoreSelection();paint();return true;
+ }
  function factoryIntent(requestId){
   if(typeof requestId==="string"&&requestId)
    recall={factory:true,requestId,started:Date.now()};
@@ -287,7 +300,7 @@ function create(adapter){
   else if(!adapter.subscribeResult&&subscription!==undefined&&subscription!==null)
    backend()?.removeEventListener?.(subscription);
  }
- return Object.freeze({reset,paint,refresh,selectUser,factoryIntent,
+ return Object.freeze({reset,paint,refresh,selectUser,selectFactory,restoreSelection,factoryIntent,
                        onAccepted,rejectRecall,tick,close:closeAll,dispose});
 }
 window.ArSonMixBuiltinFxPresetBar=Object.freeze({create});

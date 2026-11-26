@@ -42,6 +42,7 @@ import {nativeTransport} from './native_transport.mjs';
    enableSlot(){if(target()?.power==='SLOT'&&current)window.__ARMIX_NATIVE_M2__?.consumeAction?.(current.track,'slotPower',{dataset:{slot:String(current.slot)}});},
    onState(state){
    latest=state;
+   if(!state.accepted)presets?.reset();
    if(state.accepted&&!state.pending){if(state.error)presets?.rejectRecall(transport.lastRequestId(),state.error);presets?.onAccepted(state.accepted,state.appliedId);presets?.refresh();const select=root.querySelector('[data-preset]');if(!select.value.startsWith('user:'))select.value=factoryValue(state.accepted);}
    presets?.paint();
   }});
@@ -58,8 +59,8 @@ import {nativeTransport} from './native_transport.mjs';
    select.onchange=()=>{
     if(presets.selectUser(select.value))return;
     const factory=factoryPresets.find(p=>p.id===select.value);
-    if(factory&&latest?.accepted&&!latest.pending&&view.model.submit('settings',{...factory.settings,enabled:latest.accepted.enabled}))presets.factoryIntent(transport.lastRequestId());
-    select.value=factoryValue(latest?.accepted);
+    if(factory&&latest?.accepted)presets.selectFactory({...factory.settings,enabled:latest.accepted.enabled});
+    else presets.restoreSelection();
    };
    if(latest?.accepted)presets.onAccepted(latest.accepted);
   }

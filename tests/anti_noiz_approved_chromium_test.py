@@ -508,6 +508,7 @@ def main():
         select.select_option('VOCAL_LIVE')
         edit=last_action(page,'nativeAntiNoizSet')
         assert edit['settings']['manualExpander'] and edit['settings']['spectralManual'] and edit['settings']['cleanDb']==12
+        expect(select).to_have_value('CUSTOM')
         respond(page,edit,'arMixBuiltinAntiNoizAck',status='APPLIED',settings=edit['settings'])
         accepted=edit['settings']
         expect(select).to_have_value('VOCAL_LIVE')
@@ -518,6 +519,30 @@ def main():
         root.locator(".mx-fxp-confirm").click()
         save=last_action(page,"nativeBuiltinFxUserPreset")
         assert save["operation"]=="saveAs" and save["name"]=="Vocal noise" and save["instanceId"]==INSTANCE
+        # Disk reply fixtures exercise only UI ownership, not actual storage.
+        user_id="c73fa8e2-0673-40d0-a87b-534285766120"
+        legacy_id="c73fa8e2-0673-40d0-a87b-534285766121"
+        saved=dict(accepted)
+        respond(page,save,preset_event,status="OK",operation="saveAs",catalogId=ID,presetId=user_id)
+        listing=last_action(page,"nativeBuiltinFxUserPreset")
+        assert listing["operation"]=="list"
+        respond(page,listing,preset_event,status="OK",operation="list",catalogId=ID,items=[
+            {"id":user_id,"name":"Vocal noise"},{"id":legacy_id,"name":"Old preset"}])
+        expect(select).to_have_value("user:"+user_id)
+        select.select_option("DEFAULT")
+        edit=last_action(page,"nativeAntiNoizSet")
+        expect(select).to_have_value("user:"+user_id)
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="REJECTED",settings=saved,errorCode="BUSY")
+        expect(select).to_have_value("user:"+user_id)
+        select.select_option("user:"+legacy_id)
+        recall=last_action(page,"nativeBuiltinFxUserPreset")
+        assert recall["operation"]=="read" and recall["presetId"]==legacy_id
+        respond(page,recall,preset_event,status="OK",operation="read",catalogId=ID,presetId=legacy_id,settings=DEFAULTS)
+        edit=last_action(page,"nativeAntiNoizSet")
+        assert len(edit["settings"])==24 and edit["settings"]["manualExpander"] is False
+        respond(page,edit,"arMixBuiltinAntiNoizAck",status="APPLIED",settings=edit["settings"])
+        accepted=edit["settings"]
+        expect(select).to_have_value("user:"+legacy_id)
         # Three real close/reopen gestures must leave one DOM and one set
         # of callbacks. No new browser engine/window/PCM graph.
         for _ in range(3):
