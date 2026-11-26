@@ -1,0 +1,21 @@
+name: SonKu P10.4 isolated hotpath PCM and performance
+on:
+  pull_request:
+    paths:
+      - 'research/sonku/p104/direct-fir-candidate.patch'
+      - 'scripts/verify_sonku_p10_hotpath.py'
+      - 'tests/sonku_p10_hotpath_parity.cpp'
+      - '.github/workflows/sonku-p104-hotpath.yml'
+permissions:
+  contents: read
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Compile pinned reference and isolated candidate, compare PCM and timing
+        run: python3 scripts/verify_sonku_p10_hotpath.py

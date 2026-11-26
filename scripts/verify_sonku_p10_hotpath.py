@@ -6,11 +6,20 @@ from pathlib import Path
 import subprocess
 import tempfile
 import zipfile
+import shutil
+import statistics
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "9ad8fda4b481285056245aadcb2db1b91095f0e7"
 SUB = "engine/builtin_fx/sonku"
 DRIVER = ROOT / "tests/sonku_p10_hotpath_parity.cpp"
+PATCH = ROOT / "research/sonku/p104/direct-fir-candidate.patch"
+APPROVED_BLOB = "f9a02f3eb7c04b1d84bdbc14d3d270d94f5fec69"
+CANDIDATE_BLOB = "14296ed656ba4898374d2e365669e553436e467c"
+CORE = Path(SUB) / "SonKuSpatialCore.h"
+def blob(path):
+    data=path.read_bytes().replace(b"\r\n",b"\n")
+    return hashlib.sha1(f"blob {len(data)}\0".encode("ascii")+data).hexdigest()
 FLAGS = [
     "SONKU_P7_MEASURED_ELEVATION_RESEARCH",
     "SONKU_P71_DIRECT_XYZ_RESEARCH",
@@ -48,8 +57,17 @@ def main():
         archive=run("git","archive","--format=zip",BASE,SUB,"engine/builtin_fx/ImerSipP92Scene.h",stdout=subprocess.PIPE).stdout
         with zipfile.ZipFile(io.BytesIO(archive)) as z:
             z.extractall(tmp/"reference")
+        # Source protection is untouched. Test the exact candidate in an
+        # isolated directory and fail if either byte identity is unexpected.
+        assert blob(ROOT/CORE)==APPROVED_BLOB, "production core changed"
+        assert blob(tmp/"reference"/CORE)==APPROVED_BLOB, "baseline drift"
+        shutil.copytree(tmp/"reference",tmp/"candidate")
+        subprocess.run(["git","apply","--check",str(PATCH)],cwd=tmp/"candidate",check=True)
+        subprocess.run(["git","apply",str(PATCH)],cwd=tmp/"candidate",check=True)
+        assert blob(tmp/"candidate"/CORE)==CANDIDATE_BLOB, "candidate patch drift"
+        rows=[]
         for profile,flags in (("legacy",[]),("P99",FLAGS)):
-            for name,include in (("reference",tmp/"reference"/SUB),("candidate",ROOT/SUB)):
+            for name,include in (("reference",tmp/"reference"/SUB),("candidate",tmp/"candidate"/SUB)):
                 exe=tmp/(profile+"-"+name)
                 run("g++","-std=c++20","-O2","-ffp-contract=off",
                     "-I",str(include),"-I",str(include.parent),*["-D"+f+"=1" for f in flags],
@@ -60,6 +78,12 @@ def main():
                     pcm=tmp/(profile+"-"+name+".pcm")
                     log=run(str(tmp/(profile+"-"+name)),str(pcm),stdout=subprocess.PIPE,text=True).stdout
                     print(profile,iteration,name,log,flush=True)
+                    for line in log.splitlines():
+                        if not line.startswith("P10,"):continue
+                        _,brand,rate,stage,count,p50,p95,p99=line.split(",")
+                        rows.append({"profile":profile,"iteration":iteration,"variant":name,
+                                     "brand":int(brand),"rate":int(rate),"stage":int(stage),
+                                     "p50":float(p50),"p95":float(p95),"p99":float(p99)})
                     result[name]=pcm.read_bytes()
                 expected=2*2*12*8192*2*4 + 2*(44100+48000)*2*4
                 assert len(result["reference"])==expected==len(result["candidate"])
@@ -68,5 +92,18 @@ def main():
                     raise AssertionError(f"{profile} PCM changed at float index {at//4}")
                 print("P10_BIT_EXACT",profile,expected//4,"floats",
                       hashlib.sha256(result["candidate"]).hexdigest(),flush=True)
+        # Same-runner, two run orders; separate steady state from edits.
+        for profile in ("legacy","P99"):
+            for brand in (0,1):
+                for scope in ("all","warmed_static","moving_resume"):
+                    group=[r for r in rows if r["profile"]==profile and r["brand"]==brand and
+                        (scope=="all" or r["stage"]==(9 if scope=="warmed_static" else 10))]
+                    delta=[]
+                    for metric in ("p50","p95","p99"):
+                        a=statistics.mean(r[metric] for r in group if r["variant"]=="reference")
+                        b=statistics.mean(r[metric] for r in group if r["variant"]=="candidate")
+                        delta.append(round(100*(b/a-1),3))
+                    print("P10_TIMING_DELTA_PERCENT",profile,brand,scope,*delta,flush=True)
+        assert blob(ROOT/CORE)==APPROVED_BLOB
 if __name__=="__main__":
     main()

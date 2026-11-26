@@ -317,9 +317,6 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -pedantic tools/sonku_rt_benchmark.cpp -o /tmp/sonku-rt-bench
           /tmp/sonku-rt-bench
           python tests/sonku_offline_demo_contract.py sonku-listening
-      - name: SonKu P10 full PCM parity and same-runner hotpath evidence
-        if: ${{ startsWith(github.head_ref, 'fix/sonku-p10-dsp-') }}
-        run: python scripts/verify_sonku_p10_hotpath.py
       - name: Publish 8D-SonKu reproducible listening WAVs and blind answer key
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

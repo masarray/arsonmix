@@ -8,3 +8,6 @@ Preserve same tap order and arithmetic. For static targets only, prove every dir
 
 ## Integration
 Reconcile the candidate with exact GUI HEAD 532453ff1e0cec2a1cf97f75a91ff18e80502dbe using a merge commit, preserve all nine GUI changes, avoid overwriting its documentation. No merge to main until protected qualification and explicit provenance admission. Research-only acoustic experiment is independent from bit-exact performance work.
+
+## Isolation correction
+The candidate is now an exact Git patch at research/sonku/p104/direct-fir-candidate.patch. Restore production core f9a02f3eb7c04b1d84bdbc14d3d270d94f5fec69 and the GUI's UI workflow exactly. Candidate 14296ed656ba4898374d2e365669e553436e467c remains preserved in branch history and scratch build; script checks both Git blob identities and compares expanded PCM. Dedicated focused workflow removes dependence on unrelated UI build and avoids repeated intentional source-lock failures. No source approval change, no optimized production claim. A future admission PR must apply the exact qualified patch and follow the existing provisional provenance process. Benchmark summary separates warmed static and moving resume from whole-scenario means. This is not a Windows/ASIO qualification.
