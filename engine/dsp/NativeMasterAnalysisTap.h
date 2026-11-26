@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <memory>
 #include <thread>
 
 namespace armix::dsp {
@@ -72,7 +73,7 @@ public:
         unsigned pendingBlocks=0;
     };
     NativeMasterAnalysisTap() {
-        try {worker_=std::thread([this]{run();});available_=true;}
+        try {queue_=std::make_unique<Queue>();worker_=std::thread([this]{run();});available_=true;}
         catch(...) {available_=false;} // audio remains available without analysis
     }
     ~NativeMasterAnalysisTap() {
@@ -93,7 +94,7 @@ public:
         auto gen=generation_.load(std::memory_order_acquire);
         if(!available_ || !(gen&1) || channels<1 || frames<=0)return;
         if(gapGeneration_.load(std::memory_order_relaxed)==gen){
-            if(queue_.pending()!=0){
+            if(queue_->pending()!=0){
                 dropped_.store(dropped_.load(std::memory_order_relaxed)+
                     static_cast<std::uint64_t>(frames),std::memory_order_relaxed);
                 return;
@@ -110,7 +111,7 @@ public:
             const int n=std::min(256,frames-offset);
             const float* pcm[2]{output&&output[0]?output[0]+offset:nullptr,
                 count>1&&output&&output[1]?output[1]+offset:nullptr};
-            if(!queue_.push(gen,pcm,count,n)) {
+            if(!queue_->push(gen,pcm,count,n)) {
                 dropped_.store(dropped_.load(std::memory_order_relaxed)+
                     static_cast<std::uint64_t>(frames-offset),std::memory_order_relaxed);
                 gapGeneration_.store(gen,std::memory_order_release);
@@ -125,7 +126,7 @@ public:
         const auto gen=generation_.load(std::memory_order_acquire);
         Reading out;
         out.generation=gen>>1;
-        out.pendingBlocks=queue_.pending();
+        out.pendingBlocks=queue_?queue_->pending():0;
         out.droppedFramesLifetime=dropped_.load(std::memory_order_relaxed);
         out.segmentRestartsLifetime=restarts_.load(std::memory_order_relaxed);
         out.supported=(gen&1)!=0;
@@ -172,7 +173,7 @@ private:
             activate(gen);
             bool drained=false;
             for(unsigned i=0;i<64;++i){
-                if(!queue_.consume([&](const Queue::Block& b) noexcept {
+                if(!queue_->consume([&](const Queue::Block& b) noexcept {
                     // Read the live generation at consumption, not only at
                     // the start of the batch: a new epoch can publish its
                     // first PCM while this worker is draining an old one.
@@ -199,7 +200,7 @@ private:
             if(drained)std::this_thread::sleep_for(std::chrono::milliseconds((gen&1)?2:20));
         }
     }
-    Queue queue_;
+    std::unique_ptr<Queue> queue_; // CONTROL preallocation; avoid a 1 MiB engine stack member
     std::atomic<std::uint64_t> generation_{0},gapGeneration_{0},dropped_{0},restarts_{0};
     std::atomic<bool> stop_{false};
     mutable std::mutex snapshotMutex_;

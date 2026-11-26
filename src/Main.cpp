@@ -1339,7 +1339,7 @@ private:
                  "worstPluginUs", "slowPluginCount",
                  "nativeFxWorstUs", "nativeFxWorstName", "nativeFxTimingLeases",
                  "callbackModulo4Observed", "callbackModulo4OverBudget",
-                 "masterAnalysisState", "masterAnalysisDroppedFramesLifetime",
+                 "masterAnalysisState", "masterAnalysisDroppedFramesLifetime", "masterAnalysisSegmentRestartsLifetime",
                  "backendXrunCount", "backendXrunMeaning",
                  "renderUnderrunSource", "secondaryOutputUnderflow",
                  "secondaryOutputOverflow", "secondaryOutputFrames"})
@@ -9478,7 +9478,7 @@ private:
             for(const char* key:{"callbackCount","overBudgetCount","deviceGeneration",
                 "callbackModulo4Observed","callbackModulo4OverBudget","callbackModulo4Provenance",
                 "nativeFxWorstUs","nativeFxWorstName","nativeFxWorstInstance","nativeFxTimingLeases",
-                "masterAnalysisState","masterAnalysisDroppedFramesLifetime"})
+                "masterAnalysisState","masterAnalysisDroppedFramesLifetime","masterAnalysisSegmentRestartsLifetime"})
                 if(const auto value=status.getProperty(key,{});!value.isVoid())
                     rtr->setProperty(key,value);
             diagnostics_.record("AUDIO_GLITCH_RTR",juce::JSON::toString(juce::var(rtr.release()),true));

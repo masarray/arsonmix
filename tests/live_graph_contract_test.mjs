@@ -97,7 +97,9 @@ test('R0B CH1 MOVE inside routed 10CH graph uses the same callback-boundary de-c
   assert.match(routed,/fxMovePhase_\.store\(2,std::memory_order_release\)/);
   assert.match(routed,/fxMovePhase_\.store\(0,std::memory_order_release\)/);
   assert.match(routed,/cycle\.graph->orderPacked\.store/);
-  assert.ok(routed.indexOf('NativeOutputTransition::apply')<routed.indexOf('masterLoudness_.process'));
+  const analysis=routed.indexOf('masterLoudness_.publish(measured,2,samples)');
+  const transition=routed.indexOf('NativeOutputTransition::apply');
+  assert.ok(transition>=0&&analysis>transition);
   assert.match(routed,/audibleLeft=\(routedFxMove!=0\|\|cycle\.fadeOut\|\|cycle\.fadeIn\)\?movedPeakL:left/);
   assert.doesNotMatch(routed,/detach\(|attach\(|prepareToPlay|releaseResources/);
 });
@@ -122,7 +124,9 @@ test('R0B major milestone: ADD and REMOVE are prepared control-thread transactio
   assert.match(callback,/handoff_\.endCycle\(cycle\)/);
   assert.match(callback,/cycle\.fadeOut/);
   assert.match(callback,/cycle\.fadeIn/);
-  assert.ok(callback.indexOf('handoff_.endCycle(cycle)')<callback.indexOf('masterLoudness_.process'));
+  const analysis=callback.indexOf('masterLoudness_.publish(measured,2,samples)');
+  const handoff=callback.indexOf('handoff_.endCycle(cycle)');
+  assert.ok(handoff>=0&&analysis>handoff);
   assert.doesNotMatch(callback,/prepareToPlay|releaseResources|make_shared|make_unique|detach\(/);
   const timer=m.slice(m.indexOf('if (engine_.finalizeGraphSwitch())'),
                      m.indexOf('if (timerTicks_ % 12',m.indexOf('if (engine_.finalizeGraphSwitch())')));
@@ -258,9 +262,22 @@ test('OUTPUT1 secondary MAIN stays meter-visible before physically muted MAIN/MO
   const source=readFileSync(new URL('../src/LiveAudioEngine.h',import.meta.url),'utf8');
   const controller=readFileSync(new URL('../web/monitor.js',import.meta.url),'utf8');
   const a=source.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)');
-  const b=source.indexOf('masterLoudness_.process(measured,2,samples)',a);
+  const b=source.indexOf('masterLoudness_.publish(measured,2,samples)',a);
   const c=source.indexOf('if(!outputGate.hardware)',b);
   assert.ok(a>=0&&b>a&&c>b,'secondary PCM publish → MAIN meter → physical output clear');
   assert.match(source,/nativeMonitorPair/);
   assert.match(controller,/if\(state\.secondaryOutputArmed\)[\s\S]{0,130}DISARM ADDITIONAL OUTPUT before APPLY routing/);
+});
+
+
+test('RTR master analysis producer is a bounded PCM copy, never inline meter DSP',()=>{
+  const tap=readFileSync('engine/dsp/NativeMasterAnalysisTap.h','utf8');
+  const producer=tap.slice(tap.indexOf('void publish('),tap.indexOf('Reading read() const'));
+  assert.ok(producer.length>0);
+  assert.match(producer,/queue_->push\(gen,pcm,count,n\)/);
+  assert.match(producer,/gapGeneration_\.store\(gen,std::memory_order_release\)/);
+  assert.doesNotMatch(producer,/meter\.process|mutex|lock_guard|new |make_unique|sleep_for|notify|join\(/);
+  assert.match(tap,/meter\.process\(pcm,b\.channels,b\.frames\)/);
+  assert.match(tap,/queue_=std::make_unique<Queue>\(\)/);
+  assert.doesNotMatch(e,/masterLoudness_\.process/);
 });
