@@ -758,10 +758,7 @@ public:
             // Scale their sum before adding any local physical/player input.
             auto& sum=channelTargets_[i];
             sum.wireSumApplied.retarget(sum.wireSumGain.load(std::memory_order_acquire));
-            if(sum.wireSumApplied.remaining!=0 || sum.wireSumApplied.current!=1.f)
-                for(int f=0;f<frames;++f) {
-                    const float g=sum.wireSumApplied.next(); l[f]*=g; r[f]*=g;
-                }
+            sum.wireSumApplied.applyStereo(l,r,frames);
             if(lane.inputL>=0 && physical) {
                 auto& fade=sourceFades_[i];
                 const auto desired=sourceTargets_[i].load(std::memory_order_acquire);
@@ -825,17 +822,13 @@ public:
             if(lane.role==ChannelRole::input){
                 auto& trim=channelTargets_[i];
                 trim.inputApplied.retarget(trim.inputGain.load(std::memory_order_acquire));
-                for(int f=0;f<frames;++f){
-                    const float g=trim.inputApplied.next();l[f]*=g;r[f]*=g;
-                }
+                trim.inputApplied.applyStereo(l,r,frames);
             }
             processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
             auto& gate=channelTargets_[i].gate;
-            for(int f=0;f<frames;++f){
-                const float g=gate.next();l[f]*=g;r[f]*=g;
-            }
+            gate.applyStereo(l,r,frames);
             for(std::size_t e=lane.first;e<lane.last;++e) {
                 const auto& edge=edges_[e];
                 if(!edge.pre)continue;
@@ -863,7 +856,21 @@ public:
             controls.appliedL.retarget(goalL);
             controls.appliedR.retarget(goalR);
             float observedL=0.f,observedR=0.f;
-            for(int f=0;f<frames;++f){
+            if(controls.appliedL.remaining==0 && controls.appliedR.remaining==0){
+                const float gainL=controls.appliedL.current,gainR=controls.appliedR.current;
+                if(gainL==1.f && gainR==1.f){
+                    for(int f=0;f<frames;++f){
+                        observedL=std::max(observedL,std::abs(l[f]));
+                        observedR=std::max(observedR,std::abs(r[f]));
+                    }
+                }else{
+                    for(int f=0;f<frames;++f){
+                        l[f]*=gainL;r[f]*=gainR;
+                        observedL=std::max(observedL,std::abs(l[f]));
+                        observedR=std::max(observedR,std::abs(r[f]));
+                    }
+                }
+            }else for(int f=0;f<frames;++f){
                 l[f]*=controls.appliedL.next();
                 r[f]*=controls.appliedR.next();
                 observedL=std::max(observedL,std::abs(l[f]));

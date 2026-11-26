@@ -14,3 +14,6 @@ Unknown third-party FX (including dearVR) remain conservative until exact vendor
 
 ## Acceptance
 Exact reference meter equality on contiguous PCM; no queue overwrite; data loss invalidates measurement, never audio; epoch separation and no stale output; no changes to actual PCM source or clock. Current canonical release candidate unchanged while qualification proceeds.
+
+## Follow-up hot path pass
+Settled unity input trim, wire-sum gain, MUTE/SOLO gate and stereo fader no longer multiply every sample. Settled non-unity uses constant coefficients; active 64-sample ramps retain exact sample order. No FX/tail/PDC skips. Regression compares scalar helper bitwise to original reference across odd/variable blocks, quiet PCM and signed zero. Worker publication throttled to 40 Hz; gap-discarded analysis frames counted until new generation. Independent-clock path skips unsupported analyzer tap.

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/RealtimeControl.h"
+#include "../engine/core/RealtimeSlew64.h"
+#include <array>
+#include <cstring>
 #include "../engine/core/PreparedMixerBlock.h"
 #include "../engine/core/RealtimeRenderPermit.h"
 #include "../engine/core/RealtimeRoutePublisher.h"
@@ -17,6 +20,25 @@
 #include <thread>
 using namespace armix::rt;
 int main(){
+    // RTR: compare optimized scalar application with the original exact
+    // sample loop, including signed zero, tiny nonzero input, reversed
+    // gestures and variable callback partitions. No audio threshold gate.
+    armix::dsp::RealtimeSlew64 fast,reference;
+    for(float goal:{1.f,.25f,0.f,1.f,2.f,1.f}){
+        fast.retarget(goal);reference.retarget(goal);
+        for(int frames:{1,16,3,64,32}){
+            std::array<float,64> l{},r{},expectedL{},expectedR{};
+            for(int i=0;i<frames;++i){
+                l[i]=expectedL[i]=i%3==0?-0.f:i%3==1?1.e-20f:.37f;
+                r[i]=expectedR[i]=-.28f;
+                const float g=reference.next();expectedL[i]*=g;expectedR[i]*=g;
+            }
+            fast.applyStereo(l.data(),r.data(),frames);
+            assert(std::memcmp(l.data(),expectedL.data(),frames*sizeof(float))==0);
+            assert(std::memcmp(r.data(),expectedR.data(),frames*sizeof(float))==0);
+            assert(fast.current==reference.current&&fast.remaining==reference.remaining);
+        }
+    }
     // Production cannot fall through to a second stereo/VST mixer. The
     // only old stereo path is explicitly test/diagnostic and disconnected
     // from an accepted native M4 route.

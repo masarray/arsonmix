@@ -91,7 +91,11 @@ public:
     void publish(const float* const* output,int channels,int frames) noexcept {
         const auto gen=generation_.load(std::memory_order_acquire);
         if(!available_ || !(gen&1) || channels<1 || frames<=0)return;
-        if(gapGeneration_.load(std::memory_order_relaxed)==gen)return;
+        if(gapGeneration_.load(std::memory_order_relaxed)==gen){
+            dropped_.store(dropped_.load(std::memory_order_relaxed)+
+                static_cast<std::uint64_t>(frames),std::memory_order_relaxed);
+            return;
+        }
         const int count=std::min(channels,2);
         for(int offset=0;offset<frames;) {
             const int n=std::min(256,frames-offset);
@@ -144,11 +148,12 @@ private:
     void run() noexcept {
         NativeMasterLoudness meter;
         std::uint64_t current=0,frames=0;
-        auto lastPublish=Clock::now();
+        auto lastPublish=Clock::now(),lastProcessed=lastPublish;
+        bool dirty=false;
         while(!stop_.load(std::memory_order_acquire)){
             const auto gen=generation_.load(std::memory_order_acquire);
             if(gen!=current){
-                current=gen;frames=0;
+                current=gen;frames=0;dirty=false;
                 meter.prepare(gen&1?48000.0:0.0);
                 std::lock_guard<std::mutex> lock(snapshotMutex_);
                 snapshotGeneration_=gen;snapshotFrames_=0;snapshot_={};
@@ -164,13 +169,15 @@ private:
                 })){drained=true;break;}
             }
             const auto now=Clock::now();
-            // At most about 40 publications/s during continuous input;
-            // publish the final drained batch even if less than 25ms elapsed.
-            if(processed && (drained || now-lastPublish>=std::chrono::milliseconds(25))){
+            if(processed){dirty=true;lastProcessed=now;}
+            // Publish at most 40 times/s, including a final partial batch
+            // after producer stops. Avoid scanning the histogram on every
+            // small ASIO block, even on the normal-priority worker.
+            if(dirty && now-lastPublish>=std::chrono::milliseconds(25)){
                 const auto value=meter.read();
                 std::lock_guard<std::mutex> lock(snapshotMutex_);
-                snapshot_=value;snapshotFrames_=frames;snapshotGeneration_=current;snapshotAt_=now;
-                lastPublish=now;
+                snapshot_=value;snapshotFrames_=frames;snapshotGeneration_=current;snapshotAt_=lastProcessed;
+                lastPublish=now;dirty=false;
             }
             if(drained)std::this_thread::sleep_for(std::chrono::milliseconds((gen&1)?2:20));
         }

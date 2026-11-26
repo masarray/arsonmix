@@ -3886,7 +3886,7 @@ private:
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};
-            masterLoudness_.publish(measured,2,samples);
+            if(!independent_.active())masterLoudness_.publish(measured,2,samples);
             // Only actually routed audio can produce a live output meter.
             const float left=routed?dryRoutingLab_.peakLeft():0.f;
             const float right=routed?dryRoutingLab_.peakRight():0.f;
