@@ -142,7 +142,12 @@ int main(){
         CHECK(live.musicFollowing());
         auto* division=dynamic_cast<juce::ComboBox*>(editor->findChildWithID("vd.division"));CHECK(division);
         division->setSelectedId(2,juce::sendNotificationSync);CHECK(!live.musicFollowing());
-        division->setSelectedId(4,juce::sendNotificationSync);
+        CHECK(live.singerDisplay().bpmQuarter==480&&live.singerDisplay().timeMs==250);
+        // Stage recall re-arms the policy after a deliberate manual override.
+        auto* stage=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.stage.0"));CHECK(stage);
+        stage->onClick();CHECK(live.musicFollowing()&&live.singerDisplay().timeMs==300);
+        live.serviceSingerControl();pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();
+        CHECK(live.stateSnapshotQuiescent()&&live.acceptedSnapshot().accepted.timeMs==300);
         CHECK(live.setMusicFollow(true));MusicObservation o{7,1,2,100,120,.8f,true};
         live.publishMusicObservation(o,9,0);o.frame=200;live.publishMusicObservation(o,9,500);
         CHECK(live.singerPending());pcm.clear();live.processBlock(pcm,midi);live.serviceSingerControl();
