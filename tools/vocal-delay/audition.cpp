@@ -69,6 +69,19 @@ static Audio fixture(){
     }
     return a;
 }
+static Audio concertFixture(){
+    Audio a;const auto n=std::size_t(a.rate)*6;a.l.resize(n);a.r.resize(n);
+    for(std::size_t i=0;i<n;++i){
+        const double t=double(i)/a.rate;float amp=0;
+        if(t<1.2&&std::fmod(t,.24)<.18)amp=.07f;
+        if(t>=1.65&&t<2.10)amp=.075f;
+        if(t>=2.10&&t<2.55)amp=.34f;
+        if(t>=4.2&&t<4.8)amp=.06f;
+        a.l[i]=a.r[i]=amp*float(std::sin(6.283185307179586*190*t));
+    }
+    a.l[std::size_t(a.rate*1.4)]=a.r[std::size_t(a.rate*1.4)]=.8f;
+    return a;
+}
 static void put(std::ofstream& out,std::uint32_t v,unsigned bytes){
     for(unsigned i=0;i<bytes;++i)out.put(char((v>>(8*i))&255u));
 }
@@ -110,7 +123,8 @@ int main(int argc,char** argv){
     try{
         if(argc!=2&&argc!=3)throw std::runtime_error("usage: vd-audition OUTPUT_DIR [dry-voice-pcm16.wav]");
         const fs::path dir=argv[1];fs::create_directories(dir);
-        Audio dry=argc==3?readWave(argv[2]):fixture();
+        const bool concert=argc==3&&std::string(argv[2])=="--concert";
+        Audio dry=concert?concertFixture():argc==3?readWave(argv[2]):fixture();
         dry.l.resize(dry.l.size()+std::size_t(dry.rate)*3,0.f);dry.r.resize(dry.l.size(),0.f);
         writeWave(dir/"00 Dry reference.wav",dry);
         std::ofstream csv(dir/"metrics.csv");csv<<std::fixed<<std::setprecision(7)<<"preset,output_peak,wet_rms,wet_side_rms,over_full_scale_frames,fixture_quiet_wet_rms,fixture_tail_wet_rms\n";
@@ -119,11 +133,13 @@ int main(int argc,char** argv){
             const auto prefix=std::to_string(i+2);
             render(dir,dry,(prefix.size()==1?"0":"")+prefix+" "+singerPresets[i].name,presetSettings(i),csv,argc==2);
         }
+        for(std::size_t i=0;i<concertPresetCount;++i)
+            render(dir,dry,std::to_string(i+14)+" "+singerPresets[concertPresetStart+i].name,presetSettings(concertPresetStart+i),csv,argc==2);
         if(!csv)throw std::runtime_error("cannot write metrics");
         std::ofstream notes(dir/"README.txt");
-        notes<<(argc==3?"User supplied PCM16 dry voice.":"Synthetic harmonic excitation, NOT a human singer.")
+        notes<<(concert?"Synthetic concert climax fixture, NOT a human singer.":argc==3?"User supplied PCM16 dry voice.":"Synthetic harmonic excitation, NOT a human singer.")
              <<"\nSame input, sample rate and dry gain; no output normalization. Stereo PCM16 export, three seconds of tail. Metrics measured in float before PCM16 quantization; over-full-scale samples may clip at export. Fixture-only quiet/tail columns measure 1.7–2.3 s and 4.95–5.65 s; blank for supplied audio. No auto tempo: free-time fallback. Compare at safe monitoring volume.\n";
         if(!notes)throw std::runtime_error("cannot write notes");
-        std::cout<<"VD9_AUDITION PASS: dry + classic + "<<stagePresetCount<<" stage renders, rate="<<dry.rate<<"\n";
+        std::cout<<"VD9_AUDITION PASS: dry + classic + "<<stagePresetCount<<" stage + "<<concertPresetCount<<" concert renders, rate="<<dry.rate<<"\n";
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

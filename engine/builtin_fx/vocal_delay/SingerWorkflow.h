@@ -5,11 +5,12 @@
 #include <algorithm>
 #include <limits>
 namespace armix::builtin_fx::vocal_delay {
-struct SingerPreset {const char* name;float time,feedback,echo,duck,hp,lp;StereoMode mode;const char* description;EchoStyle style=EchoStyle::classic;float attack=10.f,release=180.f;};
+struct SingerPreset {const char* name;float time,feedback,echo,duck,hp,lp;StereoMode mode;const char* description;EchoStyle style=EchoStyle::classic;float attack=10.f,release=180.f;ThrowMode throwMode=ThrowMode::off;};
 // Stage candidates: full voicing, not just a delay-time shortcut.
 // Existing factory settings are retained below; saved parameter payloads are unchanged.
 inline constexpr std::size_t stagePresetCount=12;
-inline constexpr std::array<SingerPreset,25> singerPresets{{
+inline constexpr std::size_t concertPresetStart=25,concertPresetCount=8;
+inline constexpr std::array<SingerPreset,33> singerPresets{{
  {"Smart Live",300,.24f,.23f,.92f,180,4800,StereoMode::stereo,"All-round clear vocal with warm stereo echoes",EchoStyle::dual,5,160},
  {"Sweet Pop",260,.24f,.22f,.83f,160,5800,StereoMode::stereo,"Modern clear wide pop",EchoStyle::dual,5,130},
  {"Romantic Ballad",480,.36f,.27f,.96f,190,4400,StereoMode::stereo,"Soft emotional phrase tails",EchoStyle::dual,5,210},
@@ -34,26 +35,34 @@ inline constexpr std::array<SingerPreset,25> singerPresets{{
  {"Warm Vocal",360,.34f,.23f,.28f,180,4000,StereoMode::stereo,"Mellow, rounded repeats",EchoStyle::voiced},
  {"Vintage Tape",420,.42f,.22f,.30f,170,4300,StereoMode::stereo,"Soft saturated repeats",EchoStyle::tape},
  {"Wide Duet",480,.35f,.24f,.28f,150,6200,StereoMode::stereo,"Offset left and right echoes",EchoStyle::dual},
- {"Rhythm Trio",480,.32f,.26f,.32f,180,6500,StereoMode::stereo,"Three rhythmic echo taps",EchoStyle::multitap}
+ {"Rhythm Trio",480,.32f,.26f,.32f,180,6500,StereoMode::stereo,"Three rhythmic echo taps",EchoStyle::multitap},
+ {"Idol Concert",420,.42f,.46f,.98f,170,5300,StereoMode::pingPong,"Selective climax echo, ordinary lyrics stay dry",EchoStyle::voiced,4,100,ThrowMode::concert},
+ {"Grand Ballad",560,.43f,.43f,.96f,180,4700,StereoMode::stereo,"Long emotional note endings",EchoStyle::dual,5,120,ThrowMode::ballad},
+ {"Modern Pop",300,.31f,.36f,.96f,190,5700,StereoMode::pingPong,"Short selected accents",EchoStyle::voiced,4,85,ThrowMode::pop},
+ {"Dangdut Throw",260,.27f,.32f,.98f,220,5100,StereoMode::stereo,"Conservative accents between fast lyrics",EchoStyle::dual,4,80,ThrowMode::dangdut},
+ {"Power Rock",350,.36f,.44f,.98f,220,4300,StereoMode::pingPong,"Strong ending accents",EchoStyle::voiced,3,95,ThrowMode::rock},
+ {"Ambient Throw",700,.52f,.46f,.96f,220,3900,StereoMode::stereo,"Wide long selected tails",EchoStyle::dual,6,140,ThrowMode::ambient},
+ {"Intimate Throw",240,.20f,.25f,.94f,160,6100,StereoMode::stereo,"Rare subtle soft accents",EchoStyle::dual,5,90,ThrowMode::intimate},
+ {"Manual Throw",420,.40f,.44f,.98f,170,5300,StereoMode::pingPong,"HIT captures the latest vocal moment once",EchoStyle::voiced,4,100,ThrowMode::manual}
 }};
 inline Parameters presetSettings(std::size_t index,bool enabled=true) noexcept{
     Parameters p{};p.enabled=enabled;if(index>=singerPresets.size())return p;
     const auto& v=singerPresets[index];p.timeMs=v.time;p.feedback=v.feedback;
-    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.duckAttackMs=v.attack;p.duckReleaseMs=v.release;p.adaptiveFocus=true;p.spillover=true;p.smartStage=index<stagePresetCount;return p;
+    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.duckAttackMs=v.attack;p.duckReleaseMs=v.release;p.adaptiveFocus=true;p.spillover=true;p.throwMode=v.throwMode;p.smartStage=index<stagePresetCount||p.throwMode!=ThrowMode::off;return p;
 }
 inline bool sameParameters(const Parameters& a,const Parameters& b) noexcept{
     return a.timeMs==b.timeMs&&a.feedback==b.feedback&&a.echo==b.echo&&
        a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&
        a.mode==b.mode&&a.enabled==b.enabled&&a.style==b.style&&a.adaptiveFocus==b.adaptiveFocus&&a.spillover==b.spillover&&
-       a.smartStage==b.smartStage&&a.hit==b.hit&&a.bpmQuarter==b.bpmQuarter&&a.division==b.division;
+       a.smartStage==b.smartStage&&a.throwMode==b.throwMode&&a.hit==b.hit&&a.bpmQuarter==b.bpmQuarter&&a.division==b.division;
 }
 // A style describes voicing, not the user's three performance knobs.
 // Exact expert edits make the style Custom; editing Time/Repeats/Level
 // keeps the selected style identifiable even after state restore.
 inline bool sameVoicing(const Parameters& a,const Parameters& b) noexcept{
     return a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
-        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style&&a.smartStage==b.smartStage&&
+        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style&&a.smartStage==b.smartStage&&a.throwMode==b.throwMode&&
         (!a.smartStage||(a.adaptiveFocus==b.adaptiveFocus&&a.spillover==b.spillover));
 }
 inline int styleIndex(const Parameters& p) noexcept{

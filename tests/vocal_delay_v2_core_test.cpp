@@ -211,6 +211,6 @@ int main(){
     }
     impulse(8000,StereoMode::stereo,.5f,4000);
     stageBank();stageHeadroomAndTransitions();fractionalAndWrap();blocksAndEdits();bypassAndReset();invalidAndDucking();
-    ContinuousDelayCore c;CHECK(c.prepare(192000));CHECK(c.ringBytes()==(768000+2)*2*sizeof(float));
+    ContinuousDelayCore c;CHECK(c.prepare(192000));CHECK(c.ringBytes()==(768000+2+1920*64+2)*2*sizeof(float));
     std::puts("PASS Vocal Delay V2 continuous PCM, legacy contrast, timing, stereo, no-heap, bypass, block invariance");
 }

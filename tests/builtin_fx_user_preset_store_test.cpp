@@ -115,6 +115,13 @@ int main() {
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(modern.catalogId,modern.settings));
         REQUIRE(vd::PortablePreset::decode(modern.settings,p)&&p.smartStage);
         REQUIRE(vd::PortablePreset::decode(vd::PortablePreset::encode(p),p)&&p.smartStage);
+        auto concert=delay();concert.settings.getDynamicObject()->setProperty("smartStage",true);
+        concert.settings.getDynamicObject()->setProperty("throwMode",1);
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(concert.catalogId,concert.settings));
+        REQUIRE(vd::PortablePreset::decode(concert.settings,p)&&p.throwMode==vd::ThrowMode::concert);
+        REQUIRE(vd::PortablePreset::decode(vd::PortablePreset::encode(p),p)&&p.throwMode==vd::ThrowMode::concert);
+        concert.settings.getDynamicObject()->setProperty("throwMode",9);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(concert.catalogId,concert.settings));
         modern.settings.getDynamicObject()->setProperty("smartStage",false);
         REQUIRE(!BuiltInFxUserPresetStore::validateSettings(modern.catalogId,modern.settings));
         for(const char* key:{"enabled","hit","sourceChannelId","rackBypassed"}){

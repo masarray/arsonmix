@@ -108,6 +108,28 @@ int main(){
         stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);
         ballad->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(2))&&!hosted.singerPending());
         liveButton->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(0)));
+        auto* concert=dynamic_cast<juce::TextButton*>(editor->findChildWithID("vd.concertView"));CHECK(concert&&concert->isVisible());
+        auto* stageFocus=editor->findChildWithID("vd.focus");CHECK(stageFocus&&stageFocus->isVisible());
+        CHECK(editor->getLocalBounds().contains(concert->getBounds()));
+        for(int i=0;i<editor->getNumChildComponents();++i){
+            auto* child=editor->getChildComponent(i);
+            if(child!=concert&&child->isVisible())CHECK(!concert->getBounds().intersects(child->getBounds()));
+        }
+        concert->onClick();CHECK(liveButton->getButtonText()=="Idol Concert"&&liveButton->isVisible());
+        CHECK(!editor->findChildWithID("vd.stage.8")->isVisible());
+        stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);
+        liveButton->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(concertPresetStart)));
+        {
+            const auto im=editor->createComponentSnapshot(editor->getLocalBounds(),true,2.f);
+            CHECK(im.isValid()&&im.getWidth()==1240&&im.getHeight()==600);
+            auto file=juce::File::getCurrentWorkingDirectory().getChildFile("vocal-delay-concert.png");
+            if(file.existsAsFile())CHECK(file.deleteFile());
+            auto stream=file.createOutputStream();CHECK(stream&&juce::PNGImageFormat().writeImageToStream(im,*stream));
+        }
+        juce::MemoryBlock concertState;hosted.getStateInformation(concertState);State decoded{};
+        CHECK(StateCodec::decode(concertState.getData(),concertState.getSize(),decoded)&&decoded.continuous.throwMode==ThrowMode::concert);
+        concert->onClick();CHECK(liveButton->getButtonText()=="Smart Live");liveButton->onClick();
+        CHECK(sameParameters(hosted.singerDisplay(),presetSettings(0)));
         stageToggle->onClick();CHECK(echo->isVisible()&&!liveButton->isVisible());
         echo->setValue(27,juce::sendNotificationSync);
         CHECK(!hosted.singerPending()&&std::abs(hosted.acceptedSnapshot().accepted.echo-.27f)<1.e-6f);
