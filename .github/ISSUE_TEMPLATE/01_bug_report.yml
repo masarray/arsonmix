@@ -7,6 +7,7 @@ body:
     attributes:
       value: |
         Thanks for helping improve ArSonMix. You do not need to know audio engineering or programming to report a problem.
+        For suspected security vulnerabilities, follow https://github.com/masarray/arsonmix/security/policy instead of this public form.
         Please do not share passwords, license keys, private file paths or unredacted personal information.
         If this involves loud or unexpected output, lower your monitoring level before trying again.
   - type: input

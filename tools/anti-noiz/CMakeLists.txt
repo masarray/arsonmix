@@ -176,3 +176,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT ANTI_NOIZ_SANITIZERS)
 endif()
 add_test(NAME AntiNoizProfessionalRT COMMAND anti_noiz_pro_rt_test)
 set_tests_properties(AntiNoizProfessionalRT PROPERTIES TIMEOUT 120)
+
+anti_noiz_target(anti_noiz_preamp_hiss_test tests/anti_noiz_preamp_hiss_test.cpp)
+add_test(NAME AntiNoizPreampHiss COMMAND anti_noiz_preamp_hiss_test)
+set_tests_properties(AntiNoizPreampHiss PROPERTIES TIMEOUT 90)

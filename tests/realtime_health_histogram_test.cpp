@@ -32,6 +32,13 @@ int main()
     check(snap.counts[12]==100); // exceeded deadline
     check(snap.p95Ceiling==0.02);
     check(snap.p99Ceiling==0.40);
+    armix::rt::RealtimeHealthHistogram periodic;
+    for(int i=0;i<256;++i)periodic.observe(i%4==2?400:100,333);
+    const auto phase=periodic.snapshot();
+    for(unsigned p=0;p<4;++p){
+        check(phase.phaseObserved[p]==64);
+        check(phase.phaseOverBudget[p]==(p==2?64u:0u));
+    }
     armix::rt::RealtimeHealthHistogram overloaded;
     for(int i=0;i<100;++i)overloaded.observe(25000,10000);
     auto over=overloaded.snapshot();

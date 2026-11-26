@@ -15,6 +15,7 @@ struct Parameters final {
     bool enabled=true;
     EchoStyle style=EchoStyle::classic; // V2 exact PCM until explicit new style
     bool adaptiveFocus=false; // V2/V3 retain their original detector
+    bool smartStage=false; // opt-in VD7 policy, never inferred from legacy settings
     bool spillover=false,hit=false; // HIT is transient, never armed by saved state
     std::uint16_t bpmQuarter=0; // 0=free time, otherwise BPM x4 (40..240)
     std::uint8_t division=3; // quarter note default

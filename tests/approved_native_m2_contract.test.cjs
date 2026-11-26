@@ -2059,7 +2059,12 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/e\.preventDefault\(\)/);
  assert.match(menu,/\.strip-identity-top/);
  assert.match(menu,/\.fxslot-row:not\(\.is-empty\)/);
- assert.match(menu,/Confirm Delete Track/);
+ assert.doesNotMatch(menu,/Confirm Delete Track/);
+ assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
+ assert.match(menu,/Confirm Delete AUX/);
+ assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
+ assert.match(bridge,/extraOutput\.addEventListener\("click",\(\)=>window\.__arMixOpenAdditionalOutput\?\.\(\)\)/);
+ assert.match(read("web/monitor.js"),/window\.__arMixOpenAdditionalOutput=\(\)=>\{\s*openRoutingLab\(\);\s*selectPatchTab\("output"\);/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
@@ -2075,6 +2080,10 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(host,/engine_\.leaseNativeVst3Editor\(/);
  assert.match(host,/nativeOrbitLease_/);
  assert.match(host,/arMixNativeOrbitState/);
+ assert.match(host,/if\(!replay&&translated\.ok\(\)\)[\s\S]*?closeEditorsForNativeRackEdit\(command\);\s*applied=armix::console::executeApprovedNativeControl/);
+ assert.match(host,/op!="NATIVE_MOVE_INSERT" && op!="NATIVE_REMOVE_INSERT"/);
+ assert.match(host,/item->channelId==from/);
+ assert.match(host,/routedEditorOwner_->instanceId==token/);
  assert.match(lab,/removeNativeInputChannel/);
  assert.match(lab,/request\.sources/);
  assert.match(roster,/removeInputAndDisconnect/);
@@ -6820,7 +6829,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
 
 test("UX-1 footer live metrics: exact driver hints, CPU App, last RT and process RAM",()=>{
   const input={
-    footerHealthSequence:17,deviceGeneration:4,
+    footerHealthSequence:17,deviceGeneration:4,dryRoutingLab:{epoch:7},
     connected:true,directRouteAuthorized:true,adaptiveClockActive:false,
     rate:48000,periodUs:5000,driverReportedInputLatencyFrames:240,
     driverReportedOutputLatencyFrames:480,latencySamples:240,
@@ -6832,6 +6841,8 @@ test("UX-1 footer live metrics: exact driver hints, CPU App, last RT and process
     "do not add the separate 240-frame buffer twice");
   assert.equal(projected.performance,"CPU App 4.2% · RT last 8% · RAM 318 MiB");
   assert.equal(projected.deviceGeneration,"4");
+  assert.equal(projected.routingEpoch,"7");
+  assert.equal(protocol.footerHealthFromLive({...input,dryRoutingLab:null}).routingEpoch,null);
   assert.equal(projected.sequence,17);
   assert.match(projected.provenance,/NOT_LOOPBACK/);
   assert.equal(protocol.footerHealthFromLive({...input,footerHealthSequence:undefined}),null);
@@ -6861,7 +6872,7 @@ test("UX-1 health strip uses only already-available 1 Hz host samples and existi
   assert.match(bridge,/backend\.addEventListener\("arMixStatus", live=>/);
   assert.match(bridge,/protocol\.footerHealthFromLive\(live\)/);
   assert.match(bridge,/paintAudioHealthFooter\(hardware\)/);
-  assert.match(bridge,/lastFooterHealth\.deviceGeneration===String\(d\?\.epoch\)/);
+  assert.match(bridge,/lastFooterHealth\.routingEpoch===String\(d\?\.epoch\)/);
   assert.match(bridge,/warningText==="OUTPUT ENABLED"/);
   assert.doesNotMatch(bridge,/setInterval\([^)]*footer|setTimeout\([^)]*footer/i);
   assert.match(page,/html\.armix-native-desktop \.status-bar \.warning\[data-telemetry="true"\]/);
@@ -7247,4 +7258,213 @@ test("P0 native busy guard and all physical presentations produce explicit recei
  assert.match(w,/win32::ensureOwnedPopupVisible/);
  assert.equal(protocol.operatorMessage("This VST3 has no native editor"),
   "FX editor unavailable · Reopen from FX Rack");
+});
+
+
+test("RTR closes affected inline FX editors before rack mutation",()=>{
+ const b=read("web/approved-native-bridge.js");
+ const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
+ assert.ok(edit.indexOf('decision.kind!=="READY"')<edit.indexOf("inlineFxClip?.closeRackEditors("));
+ assert.ok(edit.indexOf("inlineFxClip?.closeRackEditors(")<edit.indexOf("controller.intent("));
+ assert.match(b,/editorOwners\.set\(root,\{key,lease\}\)/);
+ assert.match(b,/affected\.has\(String\(owner\.lease\.channelId\)\)/);
+ assert.match(b,/bypassOwners\.delete\(root\)/);
+});
+
+
+test("RTR live New Project requires verified archive before native replacement",()=>{
+ const m=read("src/Main.cpp"),w=read("src/NativeMixerSessionSaveWorker.h"),b=read("web/approved-native-bridge.js");
+ const reset=m.slice(m.indexOf("void createLiveSession("),m.indexOf("void createOfflineSession("));
+ assert.match(reset,/liveNewSessionLeaseMatches\(args\)/);
+ assert.ok(reset.indexOf("mixerSessionWorker_.save(")<reset.indexOf("restoreNativeMixerSession("));
+ assert.match(reset,/Codec::encode\(current\)!=expected/);
+ assert.match(reset,/setMonitorEnabled\(false\)/);
+ assert.doesNotMatch(reset,/setMonitorEnabled\(true\)/);
+ assert.match(w,/verifyExportArchive_/);
+ assert.match(w,/Session archive readback mismatch/);
+ assert.match(b,/action:"nativeMixerNewLive",confirmed:true/);
+});
+
+
+test("M3 MONITOR timing requires admitted physical pairs, disarm and observed revision",()=>{
+  const raw=gmv20AcceptedGraph();
+  raw.device.backend="ASIO";raw.device.outputArmed=false;
+  raw.device.enabledOutputs=[0,1,4,5];
+  raw.device.outputEndpoints=[0,1,4,5].map((port,callback)=>({port,callback,id:"out:"+port,label:"Out "+port,active:true}));
+  raw.physicalMainOutputs=[0,1];raw.physicalMonitorOutputs=[4,5];
+  raw.physicalBusOutputObserved=true;raw.operatorOutputMuted=true;raw.physicalBusSecondaryArmed=false;
+  raw.monitorTiming={policy:"GLOBAL_ALIGNED",mainSamples:1456,monitorSamples:1456,potentialSaving:1152};
+  const read=()=>protocol.monitorTimingView(protocol.normalizeSnapshot(raw));
+  assert.equal(read()?.editable,true);
+  raw.physicalBusSecondaryArmed=true;assert.equal(read()?.editable,false);
+  raw.physicalBusSecondaryArmed=false;raw.physicalBusOutputObserved=false;assert.equal(read()?.editable,false);
+  raw.physicalBusOutputObserved=true;
+  raw.monitorTiming.policy="INDEPENDENT_MONITOR";raw.monitorTiming.monitorSamples=304;
+  assert.equal(read()?.monitorSamples,304);
+  raw.monitorTiming.monitorSamples=305;assert.equal(read(),null);
+  raw.monitorTiming.monitorSamples=304;raw.physicalMonitorOutputs=[1,5];assert.equal(read(),null);
+});
+
+
+// RTR M4 read-only Smart Performance Assistant: exact device/epoch, 1 Hz
+// cumulative bucket deltas, provenance, and no automated DSP/device changes.
+const m4Accepted=(armed=true)=>({
+  admitted:true,retained:false,
+  device:{epoch:"42",sampleRate:48000,bufferFrames:128,outputArmed:armed},
+  graph:{revision:"9"}
+});
+const m4Live=(sequence,buckets,extra={})=>({
+  connected:true,directRouteAuthorized:true,deviceGeneration:42,adaptiveClockActive:false,
+  performanceRenderToken:"11",performanceRenderEpoch:"42",performanceRenderRevision:"9",
+  dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"9"}},
+  rate:48000,buffer:128,periodUs:2666.667,nativeFxGraphRevision:"9",
+  footerHealthSequence:sequence,callbackBudgetBuckets:buckets,...extra
+});
+const m4Buckets=(values={})=>Array.from({length:13},(_,i)=>values[i]||0);
+test("M4 first 1 Hz sample cannot manufacture green status or inferred xrun",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({9:100})),m4Accepted());
+  assert.equal(first.state,"COLLECTING");
+  assert.equal(first.headroom,null);
+  assert.equal(first.callbacks,null);
+  assert.equal(first.over,null);
+  assert.equal(first.cursor.epoch,"42");
+  assert.equal(first.recommendations.some(x=>/at least 64/.test(x)),true);
+});
+test("M4 computes per-second histogram delta and conservative bucket-ceiling headroom",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({9:500})),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({9:500,10:100})),m4Accepted(),first.cursor);
+  assert.equal(next.state,"TIGHT"); // index 10 is <=85% budget
+  assert.equal(next.headroom.p99,"85%");
+  assert.equal(next.headroom.margin,"15%");
+  assert.equal(next.over,0);
+  assert.equal(next.callbacks,100);
+  assert.equal(next.recommendations[0].includes("Limited"),true);
+});
+test("M4 labels current over-budget host renders as pressure, not confirmed crackle",()=>{
+  const first=protocol.smartPerformanceView(m4Live(5,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(
+    m4Live(6,m4Buckets({8:90,12:10})),m4Accepted(),first.cursor);
+  assert.equal(next.state,"PRESSURE");
+  assert.equal(next.headroom.p99,">100%");
+  assert.equal(next.over,10);
+  assert.equal(next.callbacks,100);
+  assert.match(next.recommendations[0],/Render deadline exceeded/);
+  assert.equal(next.headroom.confidence.includes("NOT_XRUN"),true);
+});
+test("M4 rejects stale device, retained graph, broken interval and counter reset",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({6:64})),m4Accepted());
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),device:{...m4Accepted().device,epoch:"43"}},first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),retained:true},first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:63})),
+    m4Accepted(),first.cursor).state,"COLLECTING");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,[1,2]),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128}),
+    {dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"10"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),graph:{revision:"10"}},first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(1,m4Buckets({6:128})),
+    m4Accepted(),first.cursor).state,"COLLECTING");
+});
+test("M4 distinguishes scheduling suspicion and a historic sampled FX peak",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:80}),{
+    renderPressureWindowValid:true,renderPressureWithinThenOnTime:52,
+    renderPressureWithinThenLate:12,renderPressureOverThenOnTime:0,
+    renderPressureOverThenLate:0,nativeFxWorkloadWorstPermille:913,
+    nativeFxWorkloadWorstName:"dearVR",nativeFxWorkloadWorstSampledOnly:true,
+    nativeFxWorkloadReviews:[{name:"dearVR",channel:"CH1_EXTERNAL",
+      recommendation:"REVIEW_BLOCK_BUDGET",sampledOnly:true,
+      windowValid:true,windowMeanPermille:290}]
+  }),m4Accepted(),first.cursor);
+  assert.equal(next.state,"OBSERVED_MARGIN");
+  assert.equal(next.fxPeak.percent,"91.3%");
+  assert.equal(next.fxPeak.sampled,true);
+  assert.equal(next.reviews[0].window,"29.0%");
+  assert.match(next.recommendations.join(" "),/driver \/ OS scheduling/);
+  assert.match(next.recommendations.join(" "),/historical and sampled/);
+});
+test("M4 reports signed-off graph PDC with no implied zero device latency",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:64}),{
+    nativeLatencyPlanValid:true,nativeLatencyPlanAlignedSamples:1456,
+    nativeLatencyPlanHasMonitor:true,nativeLatencyPlanMonitorOutputSamples:0,
+    nativeLatencyPlanMonitorPolicy:"INDEPENDENT_MONITOR",
+    nativeMaxInsertLatencySamples:1152,nativeMaxInsertLatencyName:"Harmonice",
+    nativeLatentBypassRequestedCount:1
+  }),m4Accepted(),first.cursor);
+  assert.equal(next.latency.main,"30.33 ms");
+  assert.equal(next.latency.monitor,"0.00 ms");
+  assert.equal(next.latency.policy,"Independent singer monitor");
+  assert.match(next.recommendations.join(" "),/save then deactivate explicitly/);
+});
+test("M4 refuses green while disarmed, discards invalid FX fields and uses a single native status transport",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted(false));
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({5:100}),{
+    nativeFxWorkloadReviews:[{name:"<img src=x onerror=alert(1)>",recommendation:"BAD"}]
+  }),m4Accepted(false),first.cursor);
+  assert.equal(next.state,"MUTED");
+  assert.equal(next.reviews.length,0);
+  assert.equal(next.recommendations[0].startsWith("Outputs disarmed"),true);
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/protocol.smartPerformanceView\(live,hardware,lastM4Performance\?\.cursor\)/);
+  assert.match(bridge,/row.textContent=value; \/\/ Plugin names are data/);
+  assert.match(bridge,/data-audio-tab="performance"/);
+  assert.doesNotMatch(bridge,/action:"autoBypassForM4"|action:"autoBufferIncreaseForM4"/);
+});
+
+test("M6 continuous live evidence excludes skipped samples, mute cycles, diagnostic callbacks and wrong scope",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=(seq,extra={},accepted=m4Accepted(),prior=first.cursor)=>
+    protocol.smartPerformanceView(m4Live(seq,m4Buckets({7:100}),extra),accepted,prior);
+  assert.equal(next(2).state,"OBSERVED_MARGIN");
+  for(const extra of [{performanceRenderToken:"12"},{performanceRenderToken:null},
+    {performanceRenderEpoch:"43"},{performanceRenderRevision:"10"}])
+    assert.equal(next(2,extra).headroom,null);
+  assert.equal(next(3).headroom,null);
+  assert.equal(next(2,{adaptiveClockActive:true}).state,"UNAVAILABLE");
+  const muted=next(2,{},m4Accepted(false));
+  assert.equal(muted.state,"MUTED");assert.equal(muted.headroom,null);
+  assert.equal(next(3,{},m4Accepted(),muted.cursor).headroom,null);
+  assert.equal(next(2,{renderPressureWindowValid:true,renderPressureWithinThenLate:65,
+    renderPressureWithinThenOnTime:0,renderPressureOverThenLate:0,renderPressureOverThenOnTime:0}).correlation,null);
+});
+
+test("M6 uses actual routing epoch and installed native graph, not device-start or legacy revision counters",()=>{
+  const extra={deviceGeneration:21,nativeFxGraphRevision:"81"};
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets(),extra),m4Accepted());
+  const second=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),extra),m4Accepted(),first.cursor);
+  assert.equal(second.state,"OBSERVED_MARGIN");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),{
+    dryRoutingLab:{epoch:21,nativeBus:{graphRevision:"9"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),{
+    dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"81"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+});
+
+
+test("RTR integration preserves monitor timing, Additional Output, performance and rack editor lifetime",()=>{
+  const b=read("web/approved-native-bridge.js"),m=read("src/Main.cpp");
+  assert.match(b,/data-monitor-timing-toggle/);
+  assert.match(b,/data-audio-extra-output/);
+  assert.match(b,/data-audio-tab="performance"/);
+  const rack=b.slice(b.indexOf("function requestRackFile("),b.indexOf("const nativeHooks="));
+  assert.ok(rack.indexOf('inlineFxClip?.closeRackEditors([identity.channelId])')>=0);
+  assert.ok(rack.indexOf('inlineFxClip?.closeRackEditors([identity.channelId])')<rack.indexOf('action:"fxRackFile"'));
+  const live=m.slice(m.indexOf("bool canCreateLiveSession("),m.indexOf("bool liveNewSessionLeaseMatches("));
+  assert.match(live,/!fxRackFileChooser_/);
+});
+
+
+test("intentional rack edits retire only affected pending native HWND feedback",()=>{
+ const b=read("web/approved-native-bridge.js");
+ const f=b.slice(b.indexOf("function retirePendingRackEditor("),b.indexOf("function reconcileM4FxInsertReadback("));
+ assert.match(f,/pending.authority==="CHANNEL_ID"/);
+ assert.match(f,/channelIds.some\(id=>String\(id\)===String\(pending.lease\?\.channelId\)\)/);
+ assert.match(f,/pendingFxEditorAck=null/);
+ const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
+ assert.ok(edit.indexOf("retirePendingRackEditor(")>edit.indexOf('decision.kind!=="READY"'));
+ assert.ok(edit.indexOf("retirePendingRackEditor(")<edit.indexOf("controller.intent("));
+ assert.match(b,/retirePendingRackEditor\(\[identity.channelId\]\)/);
+ assert.match(b,/retirePendingRackEditor\(\);\s*inlineFxClip\?\.closeRackEditors\(\)/);
 });

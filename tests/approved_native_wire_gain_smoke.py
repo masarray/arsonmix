@@ -18,6 +18,9 @@ SEND = "9223372036854775810"
 
 def snapshot():
     s = json.loads((ROOT / "integration/console-v6/fixtures.json").read_text())["g0"]
+    # Match the physical native snapshot envelope emitted by Main.cpp.
+    # Missing global bypass is intentionally fail-closed in FX editors.
+    s["globalFxBypassed"] = False
     g = s["graph"]
     g.update(revision="2", rosterRevision="2", mainChannelId=MAIN)
     g["capabilities"].update(callbackOwnsChannelIds=True,

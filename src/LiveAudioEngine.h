@@ -10,7 +10,7 @@
 #include "LiveDryRoutingLab.h"
 #include "NativeMixerSessionFxRestore.h"
 #include "NativeTopologyEditSafety.h"
-#include "../engine/dsp/NativeMasterLoudness.h"
+#include "../engine/dsp/NativeMasterAnalysisTap.h"
 #include "../engine/player/NativePlayerShowDeck.h"
 #include "../engine/player/PlayerOutputTrim.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
@@ -33,8 +33,12 @@
 #include "../engine/core/FxMoveRamp.h"
 #include "../engine/core/RealtimeHealthHistogram.h"
 #include "../engine/core/CallbackCadenceEvidence.h"
+#include "../engine/core/RenderPressureEvidence.h"
 #include "../engine/core/CaptureBoundaryEvidence.h"
 #include "../engine/core/FxBypassEnvelope.h"
+#include "../engine/core/FxWorkloadEvidence.h"
+#include "../engine/core/FxLifecyclePolicy.h"
+#include "../engine/core/FxTimingSampler.h"
 #include "../engine/core/NativeOutputPairTap.h"
 #include <array>
 #include <atomic>
@@ -109,6 +113,16 @@ public:
         // Owned and advanced exclusively by the realtime render callback.
         // Physical-slot identity survives an atomic logical reorder (PR #102).
         std::array<armix::dsp::FxBypassEnvelope, maxFx> bypassEnvelope {};
+        // Physical-slot observations survive MOVE, never attach stale
+        // measurements to a replacement graph or changed device format.
+        inline static std::atomic<std::uint64_t> nextWorkloadGraph{1};
+        const std::uint64_t workloadGraphId=nextWorkloadGraph.fetch_add(1,std::memory_order_relaxed);
+        std::array<armix::rt::FxWorkloadEvidence,maxFx> workload{};
+        std::array<armix::rt::FxTimingSampler,maxFx> workloadSampler{};
+        void prepareWorkload(int i,double rate) noexcept {
+            workload[i].prepare(rate);
+            workloadSampler[i].seed(static_cast<std::uint32_t>(workloadGraphId*17u+i+1u));
+        }
         int count = 0;
         int latency = 0;
         bool hasRecallState = false;
@@ -582,6 +596,7 @@ public:
         armix::session::MixerSessionDocument document;
         if(!dryRoutingLab_.describeRetainedAsioSession(document))return false;
         document.binding=*acceptedMixerBinding_;
+        const bool resetIndependent=document.request.monitorLatencyPolicy==armix::mixer::MonitorLatencyPolicy::independent;
         MixerBindingInspection inspected;
         constexpr auto mode=Policy::Mode::verifiedAsioRestart;
         if(inspectNativeMixerSessionBinding(document,inspected,mode).isNotEmpty() ||
@@ -590,6 +605,7 @@ public:
            !dryRoutingLab_.rebindRetainedAsioSession(std::move(document),inspected.pins,
                                                     inspected.live.frames))return false;
         acceptedMixerBinding_=std::move(inspected.live);
+        if(resetIndependent)setMonitorEnabled(false); // explicit re-arm after changed timing domain
         return true;
     }
     // A SOURCE NONE starter is not an authored Show: it has no FX/WIRE to
@@ -1029,6 +1045,7 @@ public:
             auto& slot=next.slots[i];
             next.bypassFlags[i].store(slot.bypass,std::memory_order_relaxed);
             next.bypassEnvelope[i].prepare(slot.bypass,rate,slot.latency);
+            next.prepareWorkload(i,rate);
             if(!slot.bypass)next.latency+=slot.latency;
         }
     }
@@ -1255,6 +1272,7 @@ public:
             staged->slots[i].latency = staged->slots[i].processor->getLatencySamples();
             staged->bypassEnvelope[i].prepare (staged->slots[i].bypass, rate,
                                                 staged->slots[i].latency);
+            staged->prepareWorkload(i,rate);
             if (!staged->slots[i].bypass) staged->latency += staged->slots[i].latency;
         }
         // Show recall can replace original CH1 owner and all its binary
@@ -1542,6 +1560,30 @@ public:
            deviceManager_.getCurrentAudioDevice()!=device)
             return "BUS OUTPUT: verified playback identity changed";
         return dryRoutingLab_.patchNativeBusOutput(ep,rev,monitor,previous,wanted,leftName,rightName,pins);
+    }
+
+    juce::String setMonitorTimingPolicy(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::MonitorLatencyPolicy wanted,std::array<int,2> main,std::array<int,2> monitor) {
+        if(!allOutputsDisarmed()||wantsMainContinuation()||independent_.active()||
+           !attached_||!directFence_.permitted()||handoff_.busy()||savedDirectSetup_||savedLiveSetup_||
+           routeReconfiguring_.load(std::memory_order_acquire)||
+           fxMovePhase_.load(std::memory_order_acquire)!=0||
+           diagnosticRoute()!=armix::diagnostics::Route::normal||
+           deviceManager_.getCurrentAudioDeviceType()!="ASIO")
+            return "MONITOR timing: explicitly disarm MAIN and STREAM first";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        armix::device::JuceActivePortSnapshot pins;
+        armix::device::JuceActivePortSnapshot::Fault fault{};
+        if(!device||!device->isOpen()||!acceptedMixerBinding_||
+           !armix::device::JuceActivePortSnapshot::capture(device,ep,pins,fault))
+            return "MONITOR timing: device inventory unavailable";
+        const auto live=readMixerBinding(*device);
+        if(!armix::session::MixerDeviceBindingPolicy::sameBinding(*acceptedMixerBinding_,live)||
+           acceptedMixerBinding_->outputNames!=live.outputNames||
+           deviceManager_.getCurrentAudioDevice()!=device)
+            return "MONITOR timing: playback identity changed";
+        return dryRoutingLab_.setMonitorTimingPolicy(ep,rev,roster,wanted,main,monitor,pins,
+            allOutputsDisarmed()&&!wantsMainContinuation());
     }
 
     juce::String setPhysicalExternalOutput(armix::mixer::ChannelId channel,
@@ -2348,6 +2390,57 @@ public:
             fail.error="NATIVE_VST3_VENDOR_PREPARE_FAILED";return fail;
         }
     }
+    bool rackFileAllowed(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId target) {
+        return allOutputsDisarmed()&&!independent_.active()&&attached_&&directFence_.permitted()&&
+            !wantsMainContinuation()&&!handoff_.busy()&&
+            fxMovePhase_.load(std::memory_order_acquire)==0&&
+            !routeReconfiguring_.load(std::memory_order_acquire)&&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal&&
+            dryRoutingLab_.rackFileTargetCurrent(ep,rev,roster,target);
+    }
+    juce::String captureRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId target,int slot,const juce::String& token,
+            armix::storage::FxRackFile& rack) {
+        if(!rackFileAllowed(ep,rev,roster,target))return "Disarm MAIN and STREAM; refresh FX rack";
+        return dryRoutingLab_.captureRackFile(ep,rev,roster,target,slot,token,rack);
+    }
+    juce::String applyRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId target,const armix::storage::FxRackFile& rack,
+            bool append,int removeSlot=-1,const juce::String& token={}) {
+        if(!rackFileAllowed(ep,rev,roster,target))return "Disarm MAIN and STREAM; refresh FX rack";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||!device->isOpen())return "Audio device unavailable";
+        const double rate=device->getCurrentSampleRate();
+        const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+        try{
+            std::vector<armix::mixer::LiveChannelFxGraph::InstanceLease> leases;
+            if(removeSlot<0){
+                if(rack.single!=append||rack.effects.size()>8||
+                   (append&&rack.effects.size()!=1))return "Choose matching rack or single FX file";
+                for(const auto& fx:rack.effects){
+                    armix::session::StoredInsert insert;
+                    insert.catalogId=fx.catalogId;insert.path=fx.path;insert.uid=fx.uid;insert.name=fx.name;
+                    armix::shows::BinaryState state;
+                    state.bytes=fx.binary;state.sha256=juce::SHA256(state.bytes).toHexString();
+                    std::unique_ptr<juce::AudioProcessor> processor;
+                    if(auto error=armix::session::NativeMixerSessionFxRestore::prepareProcessor(
+                           insert,&state,formats_,rate,frames,processor);error.isNotEmpty())return error;
+                    if(!processor)return "FX preparation failed";
+                    auto lease=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
+                        std::move(processor),fx.catalogId,fx.name,LiveDryRoutingLab::Block::hardFrameLimit);
+                    lease->bypassRequested.store(fx.bypass,std::memory_order_release);
+                    leases.push_back(std::move(lease)); // fresh identity, never import tokens
+                }
+            }
+            if(deviceManager_.getCurrentAudioDevice()!=device||device->getCurrentSampleRate()!=rate||
+               juce::jmax(32,device->getCurrentBufferSizeSamples())!=frames||
+               !rackFileAllowed(ep,rev,roster,target))return "Device or rack changed during prepare";
+            auto result=dryRoutingLab_.replaceRackFile(ep,rev,roster,target,std::move(leases),
+                append,rack.rackBypassed,removeSlot,token,allOutputsDisarmed());
+            return result.accepted?juce::String{}:juce::String(result.error);
+        }catch(...){return "FX rack preparation failed; current rack retained";}
+    }
     LiveDryRoutingLab::NativeBusResult editNativeFxRack(std::uint64_t ep,
             std::uint64_t revision,std::uint64_t roster,armix::mixer::ChannelId source,
             std::size_t slot,const juce::String& token,armix::mixer::ChannelId target,std::size_t position) {
@@ -2799,14 +2892,119 @@ public:
         // generated CONTROL readback. No extra render/FX scan on RT.
         const bool globalFxBypassed = dryRoutingLab_.globalFxBypassed();
         int installedNativeFx = 0, processingNativeFx = 0, sleepingNativeFx = 0;
+        double nativeWorst=-1.;
+        juce::String nativeWorstName,nativeWorstInstance;
+        int nativeTimingLeases=0;
+        int workloadMeasured=0,workloadOverBudget=0,workloadLegacyMeasured=0;
+        int workloadReviewCount=0,workloadWindowLeases=0,workloadWindowOverBudgetLeases=0;
+        juce::Array<juce::var> workloadReviews;
+        std::array<std::uint64_t,32> reviewPriorities{};
+        const auto recordReview=[&](const juce::String& name,const juce::String& identity,
+                const juce::String& channel,bool sampledOnly,bool valid,
+                std::uint64_t calls,std::uint64_t over,std::uint64_t worst,
+                std::uint64_t observed,std::uint64_t silent,int latency,bool bypass,bool fault,
+                armix::rt::FxWorkloadEvidence::Window window){
+            if(window.valid){
+                ++workloadWindowLeases;
+                if(window.overBudget)++workloadWindowOverBudgetLeases;
+            }
+            const auto action=armix::rt::reviewFx(valid,calls,over,worst,observed,silent,latency,bypass,fault);
+            if(action==armix::rt::FxReview::noEvidence||action==armix::rt::FxReview::keep)return;
+            ++workloadReviewCount;
+            // Keep the 32 highest-priority reviews, not merely the first
+            // 32 channels in roster order. Stable ties preserve traversal.
+            const auto priority=armix::rt::fxReviewPriority(action,window.valid?window.overBudget:0,
+                window.valid?window.meanPermille:0,worst);
+            int position=0;
+            while(position<workloadReviews.size()&&reviewPriorities[static_cast<std::size_t>(position)]>=priority)++position;
+            if(position>=32)return;
+            if(workloadReviews.size()==32)workloadReviews.remove(31);
+            for(int i=workloadReviews.size();i>position;--i)
+                reviewPriorities[static_cast<std::size_t>(i)]=reviewPriorities[static_cast<std::size_t>(i-1)];
+            reviewPriorities[static_cast<std::size_t>(position)]=priority;
+            auto item=std::make_unique<juce::DynamicObject>();
+            item->setProperty("name",name);item->setProperty("instance",identity);
+            item->setProperty("channel",channel);
+            item->setProperty("recommendation",armix::rt::fxReviewName(action));
+            item->setProperty("sampledOnly",sampledOnly);
+            item->setProperty("worstPermille",valid?juce::var(static_cast<double>(worst)):juce::var());
+            item->setProperty("latencySamples",latency);
+            item->setProperty("silentObservations",static_cast<double>(silent));
+            item->setProperty("observations",static_cast<double>(observed));
+            item->setProperty("windowValid",window.valid);
+            item->setProperty("windowMeanPermille",window.valid?juce::var(static_cast<int>(window.meanPermille)):juce::var());
+            item->setProperty("windowPeakPermille",window.valid?juce::var(static_cast<int>(window.peakPermille)):juce::var());
+            item->setProperty("windowOverBudget",window.valid?juce::var(static_cast<int>(window.overBudget)):juce::var());
+            workloadReviews.insert(position,juce::var(item.release()));
+        };
+        double workloadWorst=-1.;
+        bool workloadWorstSampledOnly=false;
+        juce::String workloadWorstName,workloadWorstInstance;
+        int exactIdleCount=0, nativeLatentCount=0, nativeLatentBypassedCount=0, nativeMaxInsertLatency=0;
+        juce::String nativeMaxLatencyName,nativeMaxLatencyInstance;
+        bool nativeMaxLatencyBypassRequested=false;
         const auto accountInserts = [&] (const juce::var& inserts,
-                                         bool rackBypassed)
+                                         bool rackBypassed,const juce::String& channel)
         {
             if (const auto* list = inserts.getArray())
                 for (const auto& insert : *list)
                     if (insert.isObject())
                     {
                         ++installedNativeFx;
+                        const bool measured=bool(insert.getProperty("workloadBudgetValid",false));
+                        if(bool(insert.getProperty("dspTelemetryLive",false))){
+                            const auto count=[&](const char* key){return static_cast<std::uint64_t>(
+                                static_cast<double>(insert.getProperty(key,0.)));};
+                            recordReview(insert.getProperty("name","").toString(),
+                                insert.getProperty("instanceId","").toString(),channel,false,measured,
+                                count("workloadObservedCalls"),count("workloadOverBudgetCalls"),
+                                count("workloadWorstPermille"),count("workloadSilenceObserved"),
+                                count("workloadSilentInOut"),static_cast<int>(insert.getProperty("latencySamples",0)),
+                                globalFxBypassed||rackBypassed||bool(insert.getProperty("bypassed",false)),
+                                bool(insert.getProperty("latencyChanged",false)),
+                                {bool(insert.getProperty("workloadWindowValid",false)),
+                                 static_cast<unsigned>(count("workloadWindowMeanPermille")),
+                                 static_cast<unsigned>(count("workloadWindowPeakPermille")),
+                                 static_cast<unsigned>(count("workloadWindowOverBudget"))});
+                        }
+                        if(measured){
+                            ++workloadMeasured;
+                            if(static_cast<double>(insert.getProperty("workloadOverBudgetCalls",0.))>0.)
+                                ++workloadOverBudget;
+                            const double ratio=static_cast<double>(insert.getProperty("workloadWorstPermille",0.));
+                            if(ratio>workloadWorst){
+                                workloadWorst=ratio;
+                                workloadWorstSampledOnly=false;
+                                workloadWorstName=insert.getProperty("name","").toString();
+                                workloadWorstInstance=insert.getProperty("instanceId","").toString();
+                            }
+                        }
+                        if(bool(insert.getProperty("dspTelemetryLive",false))){
+                            const int samples=static_cast<int>(insert.getProperty("latencySamples",0));
+                            const bool bypassRequested=globalFxBypassed||rackBypassed||
+                                bool(insert.getProperty("bypassed",false));
+                            if(samples>0){
+                                ++nativeLatentCount;
+                                if(bypassRequested)++nativeLatentBypassedCount;
+                                if(samples>nativeMaxInsertLatency){
+                                    nativeMaxInsertLatency=samples;
+                                    nativeMaxLatencyName=insert.getProperty("name","").toString();
+                                    nativeMaxLatencyInstance=insert.getProperty("instanceId","").toString();
+                                    nativeMaxLatencyBypassRequested=bypassRequested;
+                                }
+                            }
+                            if(!bypassRequested && bool(insert.getProperty("dspSleeping",false)) &&
+                               insert.getProperty("dspIdlePolicy","").toString()=="NATIVE_EXACT_STATE")
+                                ++exactIdleCount;
+                        }
+                        if(bool(insert.getProperty("dspTelemetryLive",false)) &&
+                           static_cast<double>(insert.getProperty("dspProcessedBlocks",0.))>0.) {
+                            ++nativeTimingLeases;
+                            const auto worst=static_cast<double>(insert.getProperty("dspWorstUs",0.));
+                            if(worst>nativeWorst){nativeWorst=worst;
+                                nativeWorstName=insert.getProperty("name","").toString();
+                                nativeWorstInstance=insert.getProperty("instanceId","").toString();}
+                        }
                         if (!globalFxBypassed && !rackBypassed &&
                             !bool (insert.getProperty ("bypassed", false))) {
                             ++processingNativeFx; // historical effective-enabled count
@@ -2823,7 +3021,8 @@ public:
                 for (const auto& channel : *channels)
                     accountInserts (
                         channel.getProperty ("inserts", {}),
-                        bool (channel.getProperty ("fxRackBypassed", false)));
+                        bool (channel.getProperty ("fxRackBypassed", false)),
+                        channel.getProperty("id","").toString());
         }
         else
         {
@@ -2836,7 +3035,7 @@ public:
                 for (int lane = 0; lane < racks->size(); ++lane)
                     accountInserts ((*racks)[lane],
                         flags != nullptr && lane < flags->size()
-                        && bool ((*flags)[lane]));
+                        && bool ((*flags)[lane]),juce::String(lane+1));
         }
         // Original Channel 1 vendor/Orbit inserts are one SHARED Graph
         // leased by the admitted ChannelId renderer, not ordinary entries
@@ -2865,6 +3064,26 @@ public:
                 if (!acceptedGraph->slots[physical].processor)
                     continue;
                 ++externalCh1Installed;
+                const auto evidence=acceptedGraph->workload[physical].snapshot();
+                const bool measured=evidence.validRate&&evidence.calls>0;
+                const auto identity="ch1-"+juce::String(static_cast<juce::int64>(
+                    acceptedGraph->workloadGraphId))+"-"+juce::String(physical);
+                const auto& slot=acceptedGraph->slots[physical];
+                recordReview(slot.name,identity,"CH1_EXTERNAL",true,measured,
+                    evidence.calls,evidence.overBudget,evidence.worstPermille,
+                    evidence.silenceObserved,evidence.silentInOut,slot.latency,
+                    globalFxBypassed||externalRackBypassed||
+                        acceptedGraph->bypassFlags[physical].load(std::memory_order_acquire),false,
+                    evidence.lastWindow);
+                if(measured){
+                    ++workloadMeasured;++workloadLegacyMeasured;
+                    if(evidence.overBudget)++workloadOverBudget;
+                    if(static_cast<double>(evidence.worstPermille)>workloadWorst){
+                        workloadWorst=static_cast<double>(evidence.worstPermille);
+                        workloadWorstSampledOnly=true;
+                        workloadWorstName=slot.name;workloadWorstInstance=identity;
+                    }
+                }
                 if (!globalFxBypassed && !externalRackBypassed &&
                     !acceptedGraph->bypassFlags[physical].load (
                         std::memory_order_acquire))
@@ -2873,6 +3092,38 @@ public:
             installedNativeFx += externalCh1Installed;
             processingNativeFx += externalCh1Processing;
         }
+        o->setProperty("nativeFxWorstUs",nativeWorst>=0.?juce::var(nativeWorst):juce::var());
+        o->setProperty("nativeFxWorstName",nativeWorstName);
+        o->setProperty("nativeFxWorstInstance",nativeWorstInstance);
+        o->setProperty("nativeFxTimingLeases",nativeTimingLeases);
+        o->setProperty("nativeFxWorkloadMeasuredLeases",workloadMeasured);
+        o->setProperty("nativeFxWorkloadOverBudgetLeases",workloadOverBudget);
+        o->setProperty("nativeFxWorkloadWorstPermille",workloadWorst>=0.?juce::var(workloadWorst):juce::var());
+        o->setProperty("nativeFxWorkloadWorstName",workloadWorstName);
+        o->setProperty("nativeFxWorkloadWorstInstance",workloadWorstInstance);
+        o->setProperty("nativeFxWorkloadWorstSampledOnly",workloadWorstSampledOnly);
+        o->setProperty("nativeFxWorkloadLegacySampledLeases",workloadLegacyMeasured);
+        o->setProperty("nativeFxWorkloadReviewCount",workloadReviewCount);
+        o->setProperty("nativeFxWorkloadWindowLeases",workloadWindowLeases);
+        o->setProperty("nativeFxWorkloadWindowOverBudgetLeases",workloadWindowOverBudgetLeases);
+        o->setProperty("nativeFxWorkloadWindowProvenance",
+            "LAST_COMPLETE_32_OBSERVATIONS_FRAME_WEIGHTED_NOT_TIME_WINDOW_OR_CURRENT_LOAD");
+        o->setProperty("nativeFxWorkloadReviews",juce::var(workloadReviews));
+        o->setProperty("nativeFxWorkloadProvenance",
+            "NATIVE_ALL_CALLS_EXTERNAL_CH1_SPARSE_SAMPLES_WALL_TIME_VS_FRAMES_RATE_NOT_XRUN");
+        o->setProperty("nativeExactIdleCount",exactIdleCount);
+        // These are individual live native lease declarations, NOT the
+        // end-to-end critical path or physical round trip. Bypass requests
+        // preserve the accepted aligned PDC; no silent delay removal.
+        o->setProperty("nativeLatentInsertCount",nativeLatentCount);
+        o->setProperty("nativeLatentBypassRequestedCount",nativeLatentBypassedCount);
+        o->setProperty("nativeMaxInsertLatencySamples",nativeLatentCount?juce::var(nativeMaxInsertLatency):juce::var());
+        o->setProperty("nativeMaxInsertLatencyName",nativeMaxLatencyName);
+        o->setProperty("nativeMaxInsertLatencyInstance",nativeMaxLatencyInstance);
+        o->setProperty("nativeMaxInsertLatencyBypassRequested",nativeMaxLatencyBypassRequested);
+        o->setProperty("nativeInsertLatencyProvenance","LIVE_NATIVE_DECLARED_INSERT_LATENCY_EXCLUDES_EXTERNAL_CH1_NOT_ROUND_TRIP");
+        o->setProperty("nativeFxTimingProvenance","LIVE_NATIVE_INSERT_LIFETIME_WALL_US_EXCLUDES_EXTERNAL_CH1");
+        o->setProperty("legacyFxTimingProvenance","LEGACY_GRAPH_SLOT_TIMING_NOT_NATIVE_INSERT_TIMING");
         o->setProperty ("nativeFxActivityComplete", externalFxActivityComplete);
         o->setProperty ("nativeExternalCh1Leased", externalCh1Leased);
         o->setProperty ("nativeExternalCh1InstalledCount", externalCh1Installed);
@@ -2977,6 +3228,17 @@ public:
         o->setProperty ("callbackCadenceLastExpectedUs",
             static_cast<double> (cadenceLastExpectedUs_.load (std::memory_order_relaxed)));
         o->setProperty ("callbackCadenceGapThresholds", "SUGGESTIVE_1_5X_AND_2_3X_PREVIOUS_BLOCK_PERIOD");
+        const auto renderScopeBefore=renderPressure_.scope();
+        const auto pressure=renderPressure_.snapshot();
+        o->setProperty("renderPressureWindowValid",pressure.valid);
+        if(pressure.valid){
+            o->setProperty("renderPressureWithinThenOnTime",static_cast<int>(pressure.withinThenOnTime));
+            o->setProperty("renderPressureWithinThenLate",static_cast<int>(pressure.withinThenLate));
+            o->setProperty("renderPressureOverThenOnTime",static_cast<int>(pressure.overThenOnTime));
+            o->setProperty("renderPressureOverThenLate",static_cast<int>(pressure.overThenLate));
+        }
+        o->setProperty("renderPressureProvenance",
+            "LAST_COMPLETE_64_ADJACENT_ARMED_NATIVE_RENDER_PAIRS_PREVIOUS_QUANTUM_NOT_CAUSAL_OR_XRUN");
         o->setProperty ("testOutputFrames", static_cast<double> (testOutputFrames_.load()));
         o->setProperty ("testCaptureFrames", static_cast<double> (testCaptureFrames_.load()));
         o->setProperty ("renderUnderrunSource", "UNAVAILABLE_THROUGH_CURRENT_JUCE_AUDIODEVICE");
@@ -3030,6 +3292,14 @@ public:
             ? 1000000.0 * d->getCurrentBufferSizeSamples() / d->getCurrentSampleRate() : 0.0);
         o->setProperty ("performanceNote", "Over-budget and callback-gap counts are timing indicators, not driver-confirmed xruns.");
         auto histogram = realtimeHistogram_.snapshot();
+        const auto renderScopeAfter=renderPressure_.scope();
+        // Cumulative counters include diagnostic/muted work. Only difference
+        // snapshots inside one uninterrupted armed native render segment.
+        if(renderScopeBefore.token && renderScopeBefore==renderScopeAfter){
+            o->setProperty("performanceRenderToken",juce::String(static_cast<juce::int64>(renderScopeAfter.token)));
+            o->setProperty("performanceRenderEpoch",juce::String(static_cast<juce::int64>(renderScopeAfter.epoch)));
+            o->setProperty("performanceRenderRevision",juce::String(static_cast<juce::int64>(renderScopeAfter.revision)));
+        }
         o->setProperty ("callbackP95BudgetUpperPct", histogram.p95Ceiling < 0
             ? juce::var() : juce::var (histogram.p95Ceiling * 100.0));
         o->setProperty ("callbackP99BudgetUpperPct", histogram.p99Ceiling < 0
@@ -3046,6 +3316,14 @@ public:
         for (const auto count : histogram.counts)
             budgetBuckets.add (static_cast<double> (count));
         o->setProperty ("callbackBudgetBuckets", juce::var (budgetBuckets));
+        juce::Array<juce::var> phaseObserved,phaseOver;
+        for(unsigned i=0;i<4;++i){
+            phaseObserved.add(static_cast<double>(histogram.phaseObserved[i]));
+            phaseOver.add(static_cast<double>(histogram.phaseOverBudget[i]));
+        }
+        o->setProperty("callbackModulo4Observed",juce::var(phaseObserved));
+        o->setProperty("callbackModulo4OverBudget",juce::var(phaseOver));
+        o->setProperty("callbackModulo4Provenance","MEASURED_RENDER_SEQUENCE_CUMULATIVE_BATCH64_NOT_DRIVER_XRUN");
         o->setProperty ("callbackBudgetBucketProvenance",
             "HOST_CALLBACK_BUDGET_CUMULATIVE_13_BUCKETS_NOT_DRIVER_RENDER_XRUN");
         o->setProperty ("inputPeak", inputPeak_.load());
@@ -3081,15 +3359,50 @@ public:
         o->setProperty ("driverBufferProvenance","JUCE_CALLBACK_OUTPUT_POST_GATE");
         o->setProperty ("mainTestLastPeak",mainTestPeak_.load(std::memory_order_relaxed));
         const auto loudness = masterLoudness_.read();
-        const bool measuredDirect = !dual && loudness.supported;
+        const bool measuredDirect = !dual && loudness.state==armix::dsp::NativeMasterAnalysisTap::State::measured;
         o->setProperty ("masterAnalysisProvenance",
             measuredDirect ? "MEASURED_48K_BS1770_K_4X_FIR" : "UNSUPPORTED");
+        o->setProperty("masterAnalysisState",dual?"UNSUPPORTED":
+            armix::dsp::NativeMasterAnalysisTap::stateName(loudness.state));
+        o->setProperty("masterAnalysisExecution","NON_REALTIME_SPSC_ANALYSIS_ONLY");
+        o->setProperty("masterAnalysisGeneration",static_cast<double>(loudness.generation));
+        o->setProperty("masterAnalysisProcessedFrames",static_cast<double>(loudness.processedFrames));
+        o->setProperty("masterAnalysisPendingBlocks",static_cast<int>(loudness.pendingBlocks));
+        o->setProperty("masterAnalysisDroppedFramesLifetime",static_cast<double>(loudness.droppedFramesLifetime));
+        o->setProperty("masterAnalysisSegmentRestartsLifetime",static_cast<double>(loudness.segmentRestartsLifetime));
         if (measuredDirect && loudness.integratedValid)
             o->setProperty ("masterLufs", loudness.integratedLufs);
         if (measuredDirect && loudness.truePeakValid)
             o->setProperty ("masterDbtp", loudness.dbtp);
         o->setProperty ("latencySamples", dryRoutingLab_.channelIdPhysicalPcmActive()?
             dryRoutingLab_.nativePcmLatencySamples():totalLatency_.load());
+        // Read-only planner: explain the accepted global alignment, not a
+        // proposed reroute or measured hardware round trip. Never change PDC.
+        const auto latencyPlan=dryRoutingLab_.nativePcmLatencyPlan();
+        o->setProperty("nativeLatencyPlanValid",latencyPlan.valid);
+        if(latencyPlan.valid) {
+            o->setProperty("nativeLatencyPlanProvenance","ACCEPTED_GRAPH_DECLARED_PDC_NOT_PHYSICAL_RTL");
+            o->setProperty("nativeLatencyPlanAlignedSamples",latencyPlan.alignedSamples);
+            o->setProperty("nativeLatencyPlanMainBeforeAlignment",latencyPlan.mainBeforeAlignment);
+            o->setProperty("nativeLatencyPlanMainAlignmentPad",latencyPlan.alignedSamples-latencyPlan.mainBeforeAlignment);
+            o->setProperty("nativeLatencyPlanHasMonitor",latencyPlan.hasMonitor);
+            o->setProperty("nativeLatencyPlanMonitorPolicy",
+                latencyPlan.monitorPolicy==armix::mixer::MonitorLatencyPolicy::independent?
+                    "INDEPENDENT_MONITOR":"GLOBAL_ALIGNED");
+            if(latencyPlan.hasMonitor) {
+                o->setProperty("nativeLatencyPlanMonitorBeforeAlignment",latencyPlan.monitorBeforeAlignment);
+                o->setProperty("nativeLatencyPlanMonitorAlignmentPad",latencyPlan.monitorAlignmentPad());
+                o->setProperty("nativeLatencyPlanMonitorOutputSamples",latencyPlan.monitorOutputSamples);
+                o->setProperty("nativeLatencyPlanMonitorIndependentSaving",latencyPlan.monitorIndependentSaving());
+            }
+            o->setProperty("nativeLatencyPlanPotentialDirectMax",latencyPlan.potentialDirectMaxSamples);
+            if(latencyPlan.potentialDirectMaxTies) {
+                o->setProperty("nativeLatencyPlanPotentialDirectChannel",
+                    juce::String(static_cast<juce::int64>(latencyPlan.potentialDirectMaxChannel.value)));
+                o->setProperty("nativeLatencyPlanPotentialDirectTies",static_cast<int>(latencyPlan.potentialDirectMaxTies));
+            }
+            o->setProperty("nativeLatencyPlanPotentialDirectRaisesTarget",latencyPlan.directTapRaisesTarget());
+        }
         o->setProperty ("chainCount", graphOwned_->count);
         o->setProperty ("graphSwitchPending", handoff_.busy());
         o->setProperty ("completedGraphSwaps", static_cast<double> (completedSwaps_.load()));
@@ -3335,7 +3648,7 @@ private:
     double playerPendingCueIn_=0.,playerPendingCueOut_=0.;
     std::uint64_t playerBoundEpoch_=0; // never borrow old device approval
     std::array<std::array<float,maxFrames>,2> playerScratch_{}; // preallocated RT block
-    armix::dsp::NativeMasterLoudness masterLoudness_;
+    armix::dsp::NativeMasterAnalysisTap masterLoudness_;
     armix::diagnostics::DiagnosticTone diagnosticTone_;
     LiveDryRoutingLab dryRoutingLab_;
     std::atomic<armix::diagnostics::Route> diagnosticRoute_ {armix::diagnostics::Route::normal};
@@ -3378,6 +3691,7 @@ private:
     std::array<std::atomic<std::uint64_t>, maxFx> lastPluginUsBySlot_ {};
     std::array<std::atomic<std::uint64_t>, maxFx> worstPluginUsBySlot_ {};
     armix::rt::CallbackCadenceEvidence cadence_; // one render producer; lifecycle reset
+    armix::rt::RenderPressureEvidence renderPressure_;
     double sampleRateHz_ = 48000.0;
 
     static std::uint64_t clockMicros() noexcept
@@ -3469,13 +3783,14 @@ private:
         sampleRateHz_ = juce::jmax (1.0, d->getCurrentSampleRate());
         playerDeck_.deviceRate(sampleRateHz_); // worker resampler rebind, no ASIO disk I/O
         diagnosticTone_.prepare (sampleRateHz_); // device stopped; no RT allocation
-        masterLoudness_.prepare (sampleRateHz_); // fixed buffers, 48k DIRECT only
+        masterLoudness_.prepare (sampleRateHz_); // epoch only; worker owns 48k analyzer
         for (int i = 0; i < maxFx; ++i)
         {
             lastPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
             worstPluginUsBySlot_[i].store (0, std::memory_order_relaxed);
         }
         cadence_.prepare (sampleRateHz_);
+        renderPressure_.breakSequence();
         cadenceLastExpectedUs_.store (0, std::memory_order_relaxed);
         int latency = 0;
         for (int i = 0; i < graphOwned_->count; ++i)
@@ -3489,6 +3804,7 @@ private:
                 slot.latency = slot.processor->getLatencySamples();
                 const bool bypass=graphOwned_->bypassFlags[i].load (std::memory_order_relaxed);
                 graphOwned_->bypassEnvelope[i].prepare(bypass,sampleRateHz_,slot.latency);
+                graphOwned_->prepareWorkload(i,sampleRateHz_);
                 if (!bypass) latency += slot.latency;
             }
         }
@@ -3510,6 +3826,7 @@ private:
         monitor_.store(false,std::memory_order_release);
         loopback_.interrupted();
         secondaryOutput_.invalidateSource(); // explicit reconnect required after device stop
+        renderPressure_.breakSequence();cadence_.breakSequence();
         masterLoudness_.prepare (0.0); // clear validity across device epoch
         dryRoutingLab_.deviceStopped();
         playerDeck_.deviceRate(0.0); // invalidates old PCM generation
@@ -3554,7 +3871,23 @@ private:
             }
             if(bypass.shouldProcessWet())
             {
-                try {slot.processor->processBlock(buffer,midi);}
+                // Sparse, jittered observations: no added clock calls on
+                // the other 24–40 invocations. Not all-call peak evidence.
+                const bool sampled=graph.workloadSampler[physical].shouldSample();
+                const bool silentInput=sampled&&armix::rt::exactSilentStereo(left,right,frames);
+                const auto start=sampled?std::chrono::steady_clock::now():
+                    std::chrono::steady_clock::time_point{};
+                try {
+                    slot.processor->processBlock(buffer,midi);
+                    if(sampled){
+                        const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now()-start).count();
+                        graph.workload[physical].observe(static_cast<std::uint64_t>(
+                            std::max<std::int64_t>(0,elapsed)),frames);
+                        graph.workload[physical].observeSilence(silentInput&&
+                            armix::rt::exactSilentStereo(left,right,frames));
+                    }
+                }
                 catch(...)
                 {
                     juce::FloatVectorOperations::clear(left,frames);
@@ -3623,7 +3956,8 @@ private:
         const float* const* inputs, int inputChannels, float* const* outputs,
         int outputChannels, int samples, const juce::AudioIODeviceCallbackContext&) override
     {
-        if (samples <= 0) return;
+        if (samples <= 0) {renderPressure_.breakSequence();cadence_.breakSequence();return;}
+        const std::uint64_t beginUs = clockMicros(); // actual host callback entry
         // Fail closed if JUCE silently rerouted ASIO/WASAPI after hotplug or
         // while the user is changing devices. Atomic gate only: no name hash,
         // allocations, OS calls or device restart on the realtime callback.
@@ -3636,6 +3970,7 @@ private:
                 for (int c=0; c<outputChannels; ++c)
                     if (outputs && outputs[c])
                         juce::FloatVectorOperations::clear(outputs[c],samples);
+                renderPressure_.breakSequence();cadence_.breakSequence();
                 return;
             }
             if (independent_.active() || !directFence_.permitted() ||
@@ -3656,6 +3991,7 @@ private:
             publishDriverBufferPeaks(0.f,0.f);
             directSuppressedFrames_.fetch_add (static_cast<std::uint64_t> (samples),
                                                std::memory_order_relaxed);
+            renderPressure_.breakSequence();cadence_.breakSequence();
             return;
         }
         // ONE explicit owner for the whole device callback. The GUI cannot
@@ -3700,10 +4036,10 @@ private:
             outputPeakR_.store(0.f, std::memory_order_relaxed);
             publishDriverBufferPeaks(0.f,0.f);
             handoff_.endCycle(cycle); // ACK prepared FX graph even in silence
+            renderPressure_.breakSequence();cadence_.breakSequence();
             return;
         }
 
-        const std::uint64_t beginUs = clockMicros();
         const double periodUs = 1000000.0 * static_cast<double> (samples) / sampleRateHz_;
         // Scheduling gaps are NOT driver-confirmed xruns. Critically the
         // expected START-to-START period comes from the PREVIOUS callback's
@@ -3843,6 +4179,7 @@ private:
                     !topologyPublicationMute_.load(std::memory_order_acquire),nativeMainPair))
             {
                 publishDriverBufferPeaks(0.f,0.f);
+                renderPressure_.breakSequence();cadence_.breakSequence();
                 return; // exclude calibration blocks from production timing evidence
             }
             // OUTPUT1: publish the SAME post-FX, post-fader, de-clicked MAIN
@@ -3854,7 +4191,7 @@ private:
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};
-            masterLoudness_.process(measured,2,samples);
+            if(!independent_.active())masterLoudness_.publish(measured,2,samples);
             // Only actually routed audio can produce a live output meter.
             const float left=routed?dryRoutingLab_.peakLeft():0.f;
             const float right=routed?dryRoutingLab_.peakRight():0.f;
@@ -3876,7 +4213,9 @@ private:
             // Reuse the exact post-DSP/fade peaks rather than re-scanning PCM.
             const bool wroteMain=outputGate.hardware&&routed&&nativeMain[0]&&nativeMain[1];
             publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
-            recordRenderTiming(beginUs,periodUs);
+            const auto pressureRevision=nativePcm&&wroteMain&&!cycle.fadeIn&&!cycle.fadeOut&&
+                routedFxMove==0&&!probePermit?dryRoutingLab_.renderedNativeRevision():0;
+            recordRenderTiming(beginUs,periodUs,outputLease.epoch,pressureRevision);
             return;
         }
         // The only remaining stereo renderer is DIAGNOSTIC. It may emit
@@ -4002,7 +4341,7 @@ private:
                 outputs && outputChannels>0 ? outputs[0] : nullptr,
                 outputs && outputChannels>1 ? outputs[1] : nullptr
             };
-            masterLoudness_.process(measured,juce::jmin(outputChannels,2),samples);
+            masterLoudness_.publish(measured,juce::jmin(outputChannels,2),samples);
         }
         inputPeak_.store (juce::jmin (1.f, inPeak), std::memory_order_relaxed);
         postFxPeak_.store (juce::jmin (1.f, postFxPeak), std::memory_order_relaxed);
@@ -4046,8 +4385,12 @@ private:
 
     // Same two timestamps and atomic updates, but account for the final
     // physical clearing and meter publication in every measured render.
-    void recordRenderTiming(std::uint64_t beginUs,double periodUs) noexcept {
-        const auto elapsedUs = clockMicros() - beginUs;
+    void recordRenderTiming(std::uint64_t beginUs,double periodUs,
+            std::uint64_t epoch=0,std::uint64_t revision=0) noexcept {
+        const auto endUs=clockMicros();
+        if(endUs<beginUs){renderPressure_.breakSequence();cadence_.breakSequence();return;}
+        const auto elapsedUs = endUs - beginUs;
+        renderPressure_.finish(epoch,revision,beginUs,elapsedUs,periodUs);
         lastCallbackUs_.store (elapsedUs, std::memory_order_relaxed);
         publishMax (worstCallbackUs_, elapsedUs);
         realtimeHistogram_.observe (elapsedUs, periodUs);

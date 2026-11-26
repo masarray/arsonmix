@@ -42,18 +42,23 @@ struct DynamicPlayerPcmBlock final {
     const float* left=nullptr;
     const float* right=nullptr;
 };
+// Default keeps all physical buses time-aligned. Independent monitoring
+// removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
+// This is an explicit prepared-graph policy, not a realtime control.
+enum class MonitorLatencyPolicy : std::uint8_t { aligned, independent };
 struct DynamicGraphRequest final {
     std::vector<DynamicSourcePatch> sources;
     int physicalInputs=0;
     int maxFrames=512;
     std::size_t maxScratchBytes=64U*1024U*1024U; // admission, not channel-count cap
     bool mainMonoAfterFx=false; // legacy MAIN mono occurs after MAIN VST+balance
+    MonitorLatencyPolicy monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
 };
 enum class DynamicGraphFault : std::uint8_t {
     none, noMaster, multipleMasters, invalidFrameCapacity,
     invalidPhysicalCount, missingSource, invalidSource,
     invalidSendDestination, duplicateSend, mainFeedback, cycle, invalidChannel,
-    scratchBudget, overflow, multipleMonitors, monitorFeedback
+    scratchBudget, overflow, multipleMonitors, monitorFeedback, invalidMonitorLatencyPolicy
 };
 struct DynamicGraphError final {
     DynamicGraphFault fault=DynamicGraphFault::none;
@@ -335,6 +340,24 @@ public:
             externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
     }
 
+    // Immutable, CONTROL-only evidence from the exact accepted PDC plan.
+    // A potential direct tap is not proof that a hardware patch is armed.
+    struct LatencyPlanSummary final {
+        bool valid=false,hasMonitor=false;
+        MonitorLatencyPolicy monitorPolicy=MonitorLatencyPolicy::aligned;
+        int alignedSamples=0,mainBeforeAlignment=0,monitorBeforeAlignment=0;
+        int potentialDirectMaxSamples=0,monitorOutputSamples=0;
+        int monitorAlignmentPad() const noexcept {return monitorOutputSamples-monitorBeforeAlignment;}
+        int monitorIndependentSaving() const noexcept {return hasMonitor?alignedSamples-monitorBeforeAlignment:0;}
+        ChannelId potentialDirectMaxChannel{};
+        unsigned potentialDirectMaxTies=0;
+        bool directTapRaisesTarget() const noexcept {
+            return valid && potentialDirectMaxSamples >
+                std::max(mainBeforeAlignment,hasMonitor?monitorBeforeAlignment:0);
+        }
+    };
+    LatencyPlanSummary latencyPlanSummary() const noexcept {return latencyPlan_;}
+
     // CONTROL-only DAG PDC. Every fan-in receives sample-aligned PCM,
     // including a destination's own hardware capture and PRE-fader sends.
     // A failure discards the unpublished candidate; the old graph stays live.
@@ -366,16 +389,34 @@ public:
                 arrival[edges_[e].destination]=std::max(arrival[edges_[e].destination],output[i]);
         }
         int terminal=0,externalTerminal=0;
+        LatencyPlanSummary summary;
+        summary.hasMonitor=monitor_!=notScheduled;
+        summary.monitorPolicy=monitorLatencyPolicy_;
+        summary.mainBeforeAlignment=output[main_];
+        if(summary.hasMonitor)summary.monitorBeforeAlignment=output[monitor_];
         for(const auto i:renderOrder_){
             if(i==main_||i==monitor_)terminal=std::max(terminal,output[i]);
             if(lanes_[i].role==ChannelRole::input ||
                lanes_[i].role==ChannelRole::group ||
-               lanes_[i].role==ChannelRole::fxReturn)
-                externalTerminal=std::max(externalTerminal,output[i]);
+               lanes_[i].role==ChannelRole::fxReturn) {
+                if(output[i]>externalTerminal || summary.potentialDirectMaxTies==0) {
+                    externalTerminal=output[i];
+                    summary.potentialDirectMaxChannel=lanes_[i].id;
+                    summary.potentialDirectMaxTies=1;
+                } else if(output[i]==externalTerminal) {
+                    ++summary.potentialDirectMaxTies;
+                }
+            }
         }
         // Across independent physical buses, PDC shares a single target.
+        summary.potentialDirectMaxSamples=externalTerminal;
         terminal=std::max(terminal,externalTerminal);
         externalTerminal=terminal;
+        // MAIN and every potential direct output remain on the existing
+        // global reference, even when MONITOR is explicitly independent.
+        summary.monitorOutputSamples=!summary.hasMonitor?0:
+            monitorLatencyPolicy_==MonitorLatencyPolicy::independent?
+                summary.monitorBeforeAlignment:terminal;
         for(const auto i:renderOrder_) {
             const auto& lane=lanes_[i];
             if((lane.inputL>=0 || lane.playerDeckId!=0) &&
@@ -386,7 +427,8 @@ public:
                 if(!allocate(edgeDelays_[e],arrival[edges_[e].destination]-output[i])) {
                     error={DynamicGraphFault::scratchBudget,lane.id};return false;
                 }
-            if((i==main_||i==monitor_)&&!allocate(sinkDelays_[i],terminal-output[i])) {
+            if((i==main_||i==monitor_)&&!allocate(sinkDelays_[i],
+                   (i==monitor_?summary.monitorOutputSamples:terminal)-output[i])) {
                 error={DynamicGraphFault::scratchBudget,lane.id};return false;
             }
             // All potential direct taps are prepared on CONTROL so changing
@@ -398,7 +440,9 @@ public:
                 error={DynamicGraphFault::scratchBudget,lane.id};return false;
             }
         }
-        latencySamples_=terminal;return true;
+        latencySamples_=terminal;
+        summary.alignedSamples=terminal;summary.valid=true;
+        latencyPlan_=summary;return true;
     }
     int latencySamples() const noexcept {return latencySamples_;}
 
@@ -415,7 +459,12 @@ public:
         if(req.physicalInputs<0 || req.physicalInputs>256) {
             error.fault=DynamicGraphFault::invalidPhysicalCount;return false;
         }
+        if(req.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned &&
+           req.monitorLatencyPolicy!=MonitorLatencyPolicy::independent){
+            error.fault=DynamicGraphFault::invalidMonitorLatencyPolicy;return false;
+        }
         DynamicPreparedMixerBlock next;
+        next.monitorLatencyPolicy_=req.monitorLatencyPolicy;
         next.capacity_=req.maxFrames;
         next.physicalInputs_=req.physicalInputs;
         const auto& rows=roster.channels();
@@ -462,6 +511,9 @@ public:
         if(main==notScheduled){error.fault=DynamicGraphFault::noMaster;return false;}
         next.main_=main;
         next.monitor_=monitor;
+        if(monitor==notScheduled && req.monitorLatencyPolicy==MonitorLatencyPolicy::independent){
+            error.fault=DynamicGraphFault::invalidMonitorLatencyPolicy;return false;
+        }
         next.mainMonoAfterFx_=req.mainMonoAfterFx;
         for(const auto& patch:req.sources) {
             const auto it=byId.find(patch.id.value);
@@ -758,10 +810,7 @@ public:
             // Scale their sum before adding any local physical/player input.
             auto& sum=channelTargets_[i];
             sum.wireSumApplied.retarget(sum.wireSumGain.load(std::memory_order_acquire));
-            if(sum.wireSumApplied.remaining!=0 || sum.wireSumApplied.current!=1.f)
-                for(int f=0;f<frames;++f) {
-                    const float g=sum.wireSumApplied.next(); l[f]*=g; r[f]*=g;
-                }
+            sum.wireSumApplied.applyStereo(l,r,frames);
             if(lane.inputL>=0 && physical) {
                 auto& fade=sourceFades_[i];
                 const auto desired=sourceTargets_[i].load(std::memory_order_acquire);
@@ -784,6 +833,8 @@ public:
                 const float* oldR=resolve(fade.current,1);
                 const float* newL=fade.remaining?resolve(fade.next,0):oldL;
                 const float* newR=fade.remaining?resolve(fade.next,1):oldR;
+                auto* const physicalDelay=!physicalDelays_.empty() && physicalDelays_[i].active()?
+                    &physicalDelays_[i]:nullptr;
                 for(int f=0;f<frames;++f) {
                     float vl=oldL?oldL[f]:0.f,vr=oldR?oldR[f]:0.f;
                     if(fade.remaining>0) {
@@ -793,7 +844,7 @@ public:
                         vr+=((newR?newR[f]:0.f)-vr)*alpha;
                         if(--fade.remaining==0){fade.current=fade.next;oldL=newL;oldR=newR;}
                     }
-                    if(!physicalDelays_.empty())physicalDelays_[i].process(vl,vr);
+                    if(physicalDelay)physicalDelay->process(vl,vr);
                     l[f]+=vl;r[f]+=vr;
                 }
             }
@@ -807,11 +858,12 @@ public:
                 // Even when the worker runs dry, advance the prepared PDC
                 // delay with silence: otherwise returning music would release
                 // stale buffered frames at the wrong callback time.
+                auto* const physicalDelay=!physicalDelays_.empty() && physicalDelays_[i].active()?
+                    &physicalDelays_[i]:nullptr;
                 for(int f=0;f<frames;++f) {
                     float vl=(found&&found->left)?found->left[f]:0.f;
                     float vr=(found&&found->right)?found->right[f]:0.f;
-                    if(!physicalDelays_.empty())
-                        physicalDelays_[i].process(vl,vr);
+                    if(physicalDelay)physicalDelay->process(vl,vr);
                     l[f]+=vl;r[f]+=vr;
                 }
             }
@@ -825,17 +877,13 @@ public:
             if(lane.role==ChannelRole::input){
                 auto& trim=channelTargets_[i];
                 trim.inputApplied.retarget(trim.inputGain.load(std::memory_order_acquire));
-                for(int f=0;f<frames;++f){
-                    const float g=trim.inputApplied.next();l[f]*=g;r[f]*=g;
-                }
+                trim.inputApplied.applyStereo(l,r,frames);
             }
             processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
             auto& gate=channelTargets_[i].gate;
-            for(int f=0;f<frames;++f){
-                const float g=gate.next();l[f]*=g;r[f]*=g;
-            }
+            gate.applyStereo(l,r,frames);
             for(std::size_t e=lane.first;e<lane.last;++e) {
                 const auto& edge=edges_[e];
                 if(!edge.pre)continue;
@@ -848,10 +896,14 @@ public:
                 // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
                 // ASIO callback advances only 4/64 of the requested change.
                 target.applied.retarget(goal);
-                for(int f=0;f<frames;++f){
+                auto* const edgeDelay=!edgeDelays_.empty() && edgeDelays_[e].active()?
+                    &edgeDelays_[e]:nullptr;
+                if(!edgeDelay)
+                    target.applied.accumulateStereo(l,r,dl,dr,frames,edge.panL,edge.panR);
+                else for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
                     float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
-                    if(!edgeDelays_.empty())edgeDelays_[e].process(vl,vr);
+                    edgeDelay->process(vl,vr);
                     dl[f]+=vl;dr[f]+=vr;
                 }
             }
@@ -863,7 +915,21 @@ public:
             controls.appliedL.retarget(goalL);
             controls.appliedR.retarget(goalR);
             float observedL=0.f,observedR=0.f;
-            for(int f=0;f<frames;++f){
+            if(controls.appliedL.remaining==0 && controls.appliedR.remaining==0){
+                const float gainL=controls.appliedL.current,gainR=controls.appliedR.current;
+                if(gainL==1.f && gainR==1.f){
+                    for(int f=0;f<frames;++f){
+                        observedL=std::max(observedL,std::abs(l[f]));
+                        observedR=std::max(observedR,std::abs(r[f]));
+                    }
+                }else{
+                    for(int f=0;f<frames;++f){
+                        l[f]*=gainL;r[f]*=gainR;
+                        observedL=std::max(observedL,std::abs(l[f]));
+                        observedR=std::max(observedR,std::abs(r[f]));
+                    }
+                }
+            }else for(int f=0;f<frames;++f){
                 l[f]*=controls.appliedL.next();
                 r[f]*=controls.appliedR.next();
                 observedL=std::max(observedL,std::abs(l[f]));
@@ -885,10 +951,14 @@ public:
                 // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
                 // ASIO callback advances only 4/64 of the requested change.
                 target.applied.retarget(goal);
-                for(int f=0;f<frames;++f){
+                auto* const edgeDelay=!edgeDelays_.empty() && edgeDelays_[e].active()?
+                    &edgeDelays_[e]:nullptr;
+                if(!edgeDelay)
+                    target.applied.accumulateStereo(l,r,dl,dr,frames,edge.panL,edge.panR);
+                else for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
                     float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
-                    if(!edgeDelays_.empty())edgeDelays_[e].process(vl,vr);
+                    edgeDelay->process(vl,vr);
                     dl[f]+=vl;dr[f]+=vr;
                 }
             }
@@ -898,22 +968,19 @@ public:
         // in-place/aliased hardware buffers an earlier clear would erase the
         // input before the source strips consumed it. This adds no allocation,
         // copy, lock, callback, DSP pass or latency.
-        std::fill_n(outputL,frames,0.f);
-        std::fill_n(outputR,frames,0.f);
-        if(monitorL){
-            std::fill_n(monitorL,frames,0.f);
-            std::fill_n(monitorR,frames,0.f);
-        }
-        // Output roles are terminal sinks; copy each independently from
-        // the SAME preallocated render graph. No second FX traversal.
+        // Each terminal sink is written once, after all aliased input
+        // reads: prepared PCM copy OR silence, not redundant clear+copy.
         const auto copySink=[&](std::size_t sink,float* l,float* r) noexcept {
-            if(sink==notScheduled || !lanes_[sink].enabled)return;
+            if(sink==notScheduled || !lanes_[sink].enabled ||
+               lanes_[sink].slot>=renderOrder_.size()){
+                std::fill_n(l,frames,0.f);std::fill_n(r,frames,0.f);return;
+            }
             const auto slot=lanes_[sink].slot;
-            if(slot>=renderOrder_.size())return;
             const float* const source=scratch_.data()+slot*2*block;
             std::copy_n(source,frames,l);
             std::copy_n(source+block,frames,r);
-            if(!sinkDelays_.empty())for(int f=0;f<frames;++f)sinkDelays_[sink].process(l[f],r[f]);
+            if(!sinkDelays_.empty() && sinkDelays_[sink].active())
+                for(int f=0;f<frames;++f)sinkDelays_[sink].process(l[f],r[f]);
         };
         copySink(main_,outputL,outputR);
         if(mainMonoAfterFx_) {
@@ -983,12 +1050,21 @@ public:
                     fade.next=wanted;
                     fade.remaining=armix::dsp::RealtimeSlew64::samples;
                 }
+                auto* const externalDelay=!externalDelays_.empty() && externalDelays_[i].active()?
+                    &externalDelays_[i]:nullptr;
                 const auto slot=lane.slot;
                 const float* src=scratch_.data()+slot*2*block;
                 const float* srcR=src+block;
+                // Disconnected taps still retain exact latency history for
+                // immediate reconnect, but never read discarded delayed PCM.
+                if(fade.remaining==0 && fade.current==noExternal){
+                    if(externalDelay)externalDelay->advanceHistory(src,srcR,frames);
+                    externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
+                    continue;
+                }
                 for(int f=0;f<frames;++f) {
                     float l=src[f],r=srcR[f];
-                    if(!externalDelays_.empty())externalDelays_[i].process(l,r);
+                    if(externalDelay)externalDelay->process(l,r);
                     float nextWeight=1.f,oldWeight=0.f;
                     if(fade.remaining>0) {
                         nextWeight=1.f-static_cast<float>(fade.remaining-1)/
@@ -1024,6 +1100,8 @@ private:
     std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
     std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;
+    LatencyPlanSummary latencyPlan_{};
+    MonitorLatencyPolicy monitorLatencyPolicy_=MonitorLatencyPolicy::aligned;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
     std::unique_ptr<SourceFade[]> sourceFades_;

@@ -279,7 +279,9 @@ test('P0 FIRST SOUND raw capture has per-pin native callback truth BEFORE route 
   const css=read('web/mixer-io.css');
   const start=native.indexOf('// P0: SILENT output must not mean blind capture diagnostics.');
   assert.ok(start>0,'unpatched native callback must retain actual PCM observation');
-  const end=native.indexOf('const std::uint64_t beginUs',start);
+  // Callback entry timing now includes preflight; budget calculation still
+  // begins AFTER the fail-silent unpatched branch and is the correct boundary.
+  const end=native.indexOf('const double periodUs =',start);
   assert.ok(end>start,'early mute-only callback path must precede full DSP renderer');
   const early=native.slice(start,end);
   assert.match(early,/captureBoundary_\.observe\(inputs/);

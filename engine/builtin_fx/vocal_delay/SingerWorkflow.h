@@ -5,8 +5,23 @@
 #include <algorithm>
 #include <limits>
 namespace armix::builtin_fx::vocal_delay {
-struct SingerPreset {const char* name;float time,feedback,echo,duck,hp,lp;StereoMode mode;const char* description;EchoStyle style=EchoStyle::classic;};
-inline constexpr std::array<SingerPreset,13> singerPresets{{
+struct SingerPreset {const char* name;float time,feedback,echo,duck,hp,lp;StereoMode mode;const char* description;EchoStyle style=EchoStyle::classic;float attack=10.f,release=180.f;};
+// Stage candidates: full voicing, not just a delay-time shortcut.
+// Existing factory settings are retained below; saved parameter payloads are unchanged.
+inline constexpr std::size_t stagePresetCount=12;
+inline constexpr std::array<SingerPreset,25> singerPresets{{
+ {"Smart Live",300,.24f,.23f,.92f,180,4800,StereoMode::stereo,"All-round clear vocal with warm stereo echoes",EchoStyle::dual,5,160},
+ {"Sweet Pop",260,.24f,.22f,.83f,160,5800,StereoMode::stereo,"Modern clear wide pop",EchoStyle::dual,5,130},
+ {"Romantic Ballad",480,.36f,.27f,.96f,190,4400,StereoMode::stereo,"Soft emotional phrase tails",EchoStyle::dual,5,210},
+ {"Golden Dangdut",230,.23f,.22f,.90f,210,5100,StereoMode::stereo,"Warm rhythmic clarity for fast lyrics",EchoStyle::dual,4,125},
+ {"Acoustic Soul",105,.08f,.16f,.48f,130,6500,StereoMode::stereo,"Intimate subtle stereo thickness",EchoStyle::dual,7,115},
+ {"Rock Stage",190,.18f,.20f,.84f,220,4100,StereoMode::stereo,"Focused powerful vocal",EchoStyle::dual,4,125},
+ {"Dance Bounce",280,.30f,.25f,.94f,230,5200,StereoMode::pingPong,"Rhythmic stereo movement",EchoStyle::voiced,4,140},
+ {"Silky Ping Pong",380,.33f,.25f,1.f,190,5000,StereoMode::pingPong,"Soft alternating echoes",EchoStyle::voiced,5,175},
+ {"Grand Concert",550,.38f,.27f,.98f,200,4200,StereoMode::stereo,"Large warm stage tails",EchoStyle::dual,5,220},
+ {"Dreamy Space",750,.42f,.28f,.97f,250,3600,StereoMode::stereo,"Soft atmospheric depth",EchoStyle::dual,6,240},
+ {"Vintage Slap",95,.04f,.18f,.30f,150,4300,StereoMode::mono,"Rounded short analog-style slap",EchoStyle::tape,8,110},
+ {"Clear Speech",75,0.f,.045f,.95f,260,3500,StereoMode::mono,"Minimal ambience for spoken words",EchoStyle::voiced,3,90},
  {"Live Vocal",320,.30f,.22f,.20f,150,5500,StereoMode::stereo,"An easy everyday echo"},
  {"Classic Slap",100,0,.20f,.10f,120,6500,StereoMode::mono,"Short and thick"},
  {"Pop Echo",280,.35f,.22f,.25f,150,6000,StereoMode::stereo,"Bright rhythmic repeats"},
@@ -24,21 +39,22 @@ inline constexpr std::array<SingerPreset,13> singerPresets{{
 inline Parameters presetSettings(std::size_t index,bool enabled=true) noexcept{
     Parameters p{};p.enabled=enabled;if(index>=singerPresets.size())return p;
     const auto& v=singerPresets[index];p.timeMs=v.time;p.feedback=v.feedback;
-    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.adaptiveFocus=true;p.spillover=true;return p;
+    p.echo=v.echo;p.duck=v.duck;p.highPassHz=v.hp;p.lowPassHz=v.lp;p.mode=v.mode;p.style=v.style;p.duckAttackMs=v.attack;p.duckReleaseMs=v.release;p.adaptiveFocus=true;p.spillover=true;p.smartStage=index<stagePresetCount;return p;
 }
 inline bool sameParameters(const Parameters& a,const Parameters& b) noexcept{
     return a.timeMs==b.timeMs&&a.feedback==b.feedback&&a.echo==b.echo&&
        a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&
        a.mode==b.mode&&a.enabled==b.enabled&&a.style==b.style&&a.adaptiveFocus==b.adaptiveFocus&&a.spillover==b.spillover&&
-       a.hit==b.hit&&a.bpmQuarter==b.bpmQuarter&&a.division==b.division;
+       a.smartStage==b.smartStage&&a.hit==b.hit&&a.bpmQuarter==b.bpmQuarter&&a.division==b.division;
 }
 // A style describes voicing, not the user's three performance knobs.
 // Exact expert edits make the style Custom; editing Time/Repeats/Level
 // keeps the selected style identifiable even after state restore.
 inline bool sameVoicing(const Parameters& a,const Parameters& b) noexcept{
     return a.highPassHz==b.highPassHz&&a.lowPassHz==b.lowPassHz&&a.duck==b.duck&&
-        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style;
+        a.duckAttackMs==b.duckAttackMs&&a.duckReleaseMs==b.duckReleaseMs&&a.mode==b.mode&&a.style==b.style&&a.smartStage==b.smartStage&&
+        (!a.smartStage||(a.adaptiveFocus==b.adaptiveFocus&&a.spillover==b.spillover));
 }
 inline int styleIndex(const Parameters& p) noexcept{
     for(std::size_t i=0;i<singerPresets.size();++i)
@@ -57,7 +73,7 @@ inline Parameters smartVoicing(const Parameters& p) noexcept{
         .20f*std::min(p.timeMs/1200.f,1.f),0.f,1.f);
     q.highPassHz=std::round(100.f+140.f*load);
     q.lowPassHz=std::round(8500.f-4500.f*load);
-    q.duck=.12f+.55f*load;
+    q.duck=std::max(p.duck,.60f+.39f*load);
     q.duckAttackMs=8.f+7.f*load;
     q.duckReleaseMs=100.f+180.f*load;
     q.adaptiveFocus=true;

@@ -3,6 +3,7 @@
 #undef NDEBUG
 #endif
 #include "../engine/builtin_fx/VocalReverbProcessor.h"
+#include "../engine/core/LiveChannelFxGraph.h"
 #include "../src/NativeBuiltInFx.h"
 #include <algorithm>
 #include <cassert>
@@ -15,6 +16,15 @@ int main() {
     juce::ScopedJuceInitialiser_GUI gui;
     using namespace armix::builtin_fx;
     static_assert(VocalReverbProcessor::stateBytes==68);
+    // Direct native factory must publish the actual device format even
+    // for processors whose prepareToPlay only initializes their own core.
+    for(const char* id:{ChannelEqProcessor::catalogIdentity,ChannelCompressorProcessor::catalogIdentity}){
+        const auto* factory=findNativeBuiltInFx(id);assert(factory);
+        for(double rate:{44100.,96000.}){
+            auto processor=factory->prepare(rate,64,nullptr,0);
+            assert(processor&&processor->getSampleRate()==rate&&processor->getBlockSize()==64);
+        }
+    }
     for(int i=0;i<reverbSisPresetCount;++i)assert(validVocalReverbSettings(vocalReverbFactoryPreset(i)));
     static_assert(reverbSisPresetCount==19 && reverbSisCustomItem==20);
     for(int i=0;i<reverbSisPresetCount;++i)assert(vocalReverbFactoryPreset(i).voicing==(i>=8&&i<=12?4:5));
@@ -941,12 +951,13 @@ int main() {
     // with zero DSP work. No ring-buffer reset spike in the PCM callback.
     const auto beforeDrain=typed->processedBlocks();
     typed->onRealtimeBypass(true,true);
+    assert(!typed->canSkipParkedBypass());
     for(int i=0;i<4000;++i) {
         buffer.clear();
         created->processBlock(buffer,midi);
     }
     const auto parked=typed->processedBlocks();
-    assert(parked>beforeDrain);
+    assert(parked>beforeDrain&&typed->canSkipParkedBypass());
     for(int i=0;i<20;++i) {
         buffer.clear();
         created->processBlock(buffer,midi);
@@ -971,6 +982,7 @@ int main() {
     assert(typed->appliedRequestId()==idB);
     assert(typed->stateSnapshotQuiescent());
     typed->onRealtimeBypass(false,false);
+    assert(!typed->canSkipParkedBypass());
     float worstGhost=0.f;
     for(int i=0;i<40;++i) {
         buffer.clear();
@@ -1021,6 +1033,40 @@ int main() {
     coldBypass->processBlock(dryPcm,midi);
     assert(coldTyped->processedBlocks()==0);
     coldTyped->onRealtimeBypass(false,false);
+
+    // Actual shared host lease: once the existing tail drain completes,
+    // the parked path must stop host processBlock and preserve dry PCM.
+    {
+        auto prepared=entry->prepare(48000.,128,nullptr,0);
+        auto* reverb=dynamic_cast<VocalReverbProcessor*>(prepared.get());
+        assert(reverb);
+        armix::mixer::LiveChannelFxGraph::FxInstance host(
+            std::move(prepared),VocalReverbProcessor::catalogIdentity,"Reverb-Sis",128);
+        std::array<float,128> left{},right{};
+        for(int block=0;block<16;++block){
+            left.fill(.125f);right.fill(-.25f);host.render(left.data(),right.data(),128);
+        }
+        host.bypassRequested.store(true);
+        for(int block=0;block<6000&&!host.dspParkedBypassBlocks.load();++block){
+            left.fill(.125f);right.fill(-.25f);host.render(left.data(),right.data(),128);
+        }
+        assert(host.dspParkedBypassBlocks.load()>0&&reverb->canSkipParkedBypass());
+        const auto processed=host.dspProcessedBlocks.load();
+        const auto parkedCount=host.dspParkedBypassBlocks.load();
+        const auto ack=reverb->queueSettings(vocalReverbFactoryPreset(2));
+        assert(ack>0);
+        for(int block=0;block<32;++block){
+            left.fill(.125f);right.fill(-.25f);host.render(left.data(),right.data(),128);
+            for(int i=0;i<128;++i)assert(left[i]==.125f&&right[i]==-.25f);
+        }
+        assert(host.dspProcessedBlocks.load()==processed);
+        assert(host.dspParkedBypassBlocks.load()==parkedCount+32);
+        assert(reverb->appliedRequestId()==ack);
+        host.bypassRequested.store(false);
+        left.fill(.125f);right.fill(-.25f);host.render(left.data(),right.data(),128);
+        assert(host.dspProcessedBlocks.load()==processed+1);
+        assert(!reverb->canSkipParkedBypass());
+    }
 
     // Prepare/automation smoke across common monitoring sample rates;
     // the native FX cannot secretly add a plugin delay or create a second

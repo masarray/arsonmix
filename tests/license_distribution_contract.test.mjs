@@ -103,3 +103,19 @@ test('Linux/macOS scan the real native binary without loose AGPL texts', () => {
   }
   assert.match(read('site/index.html'), /AGPL-3\.0 license<\/a>/);
 });
+
+test('ZBSH-02 keeps official identity and third-party SDK notices in the existing offline resource', () => {
+  assert.match(notice, /Steinberg VST3 SDK — upstream license text/);
+  assert.match(notice, /MIT License/);
+  assert.match(notice, /Permission is hereby granted/);
+  assert.match(notice, /Steinberg ASIO SDK — upstream notice/);
+  assert.match(notice, /General Public License \(GPL\) Version 3/);
+  assert.match(notice, /GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007/);
+  assert.match(notice, /END OF TERMS AND CONDITIONS/);
+  for (const path of ['COPYRIGHT.md','TRADEMARK.md','SECURITY.md','docs/security/ZBSH-02_THIRD_PARTY_INVENTORY.md']) {
+    assert.ok(read(path).length > 500, path);
+    assert.ok(read('README.md').includes(path), path+' must be discoverable');
+  }
+  assert.match(read('SECURITY.md'), /Do not disclose the vulnerability/);
+  assert.match(read('TRADEMARK.md'), /not an added condition on rights granted by AGPL/);
+});

@@ -843,6 +843,7 @@ private:
     armix::io::NamedPatchStore namedPatches_{machineSettingsDirectory()};
     armix::session::NativeIoDefaults ioDefaults_{machineSettingsDirectory()};
     std::unique_ptr<juce::FileChooser> namedIoFileChooser_;
+    std::unique_ptr<juce::FileChooser> fxRackFileChooser_;
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
@@ -1336,7 +1337,27 @@ private:
                  "slowCallbackCount", "overBudgetCount", "callbackGapCount",
                  "lateCallbackIntervals", "callbackCadenceClockRegressions",
                  "callbackCadenceComparedIntervals", "worstCallbackUs",
+                 "renderPressureWindowValid", "renderPressureWithinThenOnTime", "renderPressureWithinThenLate",
+                 "renderPressureOverThenOnTime", "renderPressureOverThenLate", "renderPressureProvenance",
                  "worstPluginUs", "slowPluginCount",
+                 "nativeFxWorstUs", "nativeFxWorstName", "nativeFxTimingLeases",
+                 "nativeFxWorkloadMeasuredLeases", "nativeFxWorkloadOverBudgetLeases",
+                 "nativeFxWorkloadWorstPermille", "nativeFxWorkloadWorstName", "nativeFxWorkloadWorstInstance",
+                 "nativeFxWorkloadLegacySampledLeases", "nativeFxWorkloadReviewCount",
+                 "nativeFxWorkloadWorstSampledOnly",
+                 "nativeFxWorkloadWindowLeases", "nativeFxWorkloadWindowOverBudgetLeases",
+                 "nativeExactIdleCount", "nativeLatentInsertCount", "nativeLatentBypassRequestedCount",
+                 "nativeMaxInsertLatencySamples", "nativeMaxInsertLatencyName",
+                 "nativeLatencyPlanValid", "nativeLatencyPlanProvenance",
+                 "nativeLatencyPlanAlignedSamples", "nativeLatencyPlanMainBeforeAlignment",
+                 "nativeLatencyPlanMainAlignmentPad", "nativeLatencyPlanHasMonitor",
+                 "nativeLatencyPlanMonitorBeforeAlignment", "nativeLatencyPlanMonitorAlignmentPad",
+                 "nativeLatencyPlanMonitorPolicy", "nativeLatencyPlanMonitorOutputSamples",
+                 "nativeLatencyPlanMonitorIndependentSaving",
+                 "nativeLatencyPlanPotentialDirectMax", "nativeLatencyPlanPotentialDirectChannel",
+                 "nativeLatencyPlanPotentialDirectTies", "nativeLatencyPlanPotentialDirectRaisesTarget",
+                 "callbackModulo4Observed", "callbackModulo4OverBudget",
+                 "masterAnalysisState", "masterAnalysisDroppedFramesLifetime", "masterAnalysisSegmentRestartsLifetime",
                  "backendXrunCount", "backendXrunMeaning",
                  "renderUnderrunSource", "secondaryOutputUnderflow",
                  "secondaryOutputOverflow", "secondaryOutputFrames"})
@@ -1550,6 +1571,32 @@ private:
         // Each additional window's own destructor releases JUCE UI before
         // its vendor lease, all on the native message thread.
         additionalFxEditors_.clear();
+    }
+
+    // Close affected floating editors BEFORE a validated rack topology edit.
+    // Slot-relative WebView leases become stale even for shifted neighbours.
+    // Vendor editors are matched by their immutable instance token, not slot.
+    void closeEditorsForNativeRackEdit(const juce::var& command) {
+        const auto op=command.getProperty("operation",{}).toString();
+        if(op!="NATIVE_MOVE_INSERT" && op!="NATIVE_REMOVE_INSERT")return;
+        const auto payload=command.getProperty("payload",{});
+        const auto token=payload.getProperty("instanceId",{}).toString();
+        const auto from=command.getProperty("targetChannelId",{}).toString();
+        const auto to=payload.getProperty("toChannelId",{}).toString();
+        if(token.isEmpty()||from.isEmpty())return;
+        std::erase_if(floatingBuiltinFx_,[&](const auto& item){
+            return item && (item->channelId==from ||
+                (to.isNotEmpty()&&item->channelId==to));
+        });
+        if(routedEditorOwner_ && routedEditorOwner_->instanceId==token)
+            closePluginEditor();
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        if(immersibEditorOwner_ && immersibEditorOwner_->instanceId==token)
+            closeImmerSIBEditor();
+#endif
+        std::erase_if(additionalFxEditors_,[&](const auto& item){
+            return item && item->owner && item->owner->instanceId==token;
+        });
     }
 
     // FUX-1: only exact native published ChannelId/slot/instance can create
@@ -2917,6 +2964,117 @@ private:
             !studioBackupBusy_ && !catalog_.busy() && !mixerFileDialogOpen_ && !namedIoFileChooser_;
     }
 
+    // New Project with the currently admitted device still open. The exact
+    // current mixer is archived and read back before replacing any graph.
+    // No audio device is reopened and no output is automatically armed.
+    bool canCreateLiveSession() {
+        auto* audio=engine_.devices().getCurrentAudioDevice();
+        return audio && audio->isOpen() && engine_.directRouteAuthorized() &&
+            engine_.hasBoundMixerRoute() && !engine_.hasRetainedUnboundMixer() &&
+            !engine_.isGraphSwitchPending() && !engine_.independentClockActive() &&
+            !engine_.hasTemporaryDiagnosticDevice() && !engine_.hasPendingDirectRestore() &&
+            !sessionLifecycleShuttingDown_ && !mixerSessionRecoveryPending_ &&
+            !(audioSetupWindow_ && audioSetupWindow_->isVisible()) &&
+            !pendingRetainedFxCapture_ && !retainedOfflineFxActive_ &&
+            !logicalVendorEditor_ && !logicalMixer_.readOnly() &&
+            !mixerSessionWorker_.busy() && !deviceApply_.busy() && !nativeShowBusy_ &&
+            !studioBackupBusy_ && !catalog_.busy() && !mixerFileDialogOpen_ && !namedIoFileChooser_ && !fxRackFileChooser_;
+    }
+    bool liveNewSessionLeaseMatches(const juce::var& args) {
+        const auto snapshot=approvedNativeSnapshot();
+        const auto device=snapshot.getProperty("device",{});
+        const auto graph=snapshot.getProperty("graph",{});
+        return graph.getProperty("capabilities",{}).getProperty("callbackOwnsChannelIds",false)==juce::var(true) &&
+            args.getProperty("deviceEpoch","").toString().isNotEmpty() &&
+            args.getProperty("deviceEpoch","").toString()==device.getProperty("epoch","").toString() &&
+            args.getProperty("graphRevision","").toString()==graph.getProperty("revision","").toString() &&
+            args.getProperty("rosterRevision","").toString()==graph.getProperty("rosterRevision","").toString();
+    }
+    void createLiveSession(const juce::var& args) {
+        bool confirmed=false;
+        if(!armix::session::strictBool(args.getProperty("confirmed",{}),confirmed)||!confirmed||
+           !canCreateLiveSession()||!liveNewSessionLeaseMatches(args))
+            return emitMixerSessionAck("NEW_LIVE","Finish current operations and refresh the admitted mixer");
+        // Explicit New Project is an operator-authorized stop, not a temporary
+        // capture mute. Never resume the old output intent on failure.
+        autoMainEpoch_=0;operatorOutputMuted_=true;
+        engine_.setMonitorEnabled(false);
+        engine_.cancelAsioResetMonitorIntent();
+        engine_.disconnectSecondaryOutput();
+        closeAllPluginEditors();stopOrbit();
+        engine_.playerStop();
+        playerCurrent_=-1;playerPendingIndex_=-1;playerOutputPendingIndex_=-1;
+        playerPendingQueueFile_={};playerLoopCurrent_=false;playerAutoAdvanceGate_.rearm();
+        emitPlayerState();
+        armix::session::MixerSessionDocument previous;
+        std::vector<armix::shows::BinaryState> states;
+        auto error=engine_.captureNativeMixerSession(previous,states);
+        if(error.isNotEmpty())return emitMixerSessionAck("NEW_LIVE",error+" · mixer retained, output muted");
+        previous.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:juce::Uuid().toDashedString().toLowerCase();
+        previous.resumeMain.reset();
+        if(hotkeys_.activeSession()==previous.id)previous.hotkeys=hotkeys_.sessionEntries();
+        error=resolveMixerSessionCatalog(previous,true);
+        if(error.isNotEmpty())return emitMixerSessionAck("NEW_LIVE",error);
+        previous.savedMs=1;
+        const auto expected=armix::session::Codec::encode(previous);
+        const auto archive=armix::session::NativeMixerSessionStore(settingsDirectory()).archiveDirectory()
+            .getChildFile(previous.id+"-"+juce::Uuid().toDashedString()+".smix");
+        const auto oldId=previous.id;
+        auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+        nativeShowBusy_=true;
+        if(!mixerSessionWorker_.save(settingsDirectory(),std::move(previous),std::move(states),
+            [safe,args,expected,oldId](juce::String failure){
+                if(safe==nullptr||safe->sessionLifecycleShuttingDown_)return;
+                auto& self=*safe;
+                auto reject=[&](const juce::String& reason){
+                    self.nativeShowBusy_=false;
+                    self.emitApprovedNativeSnapshot();
+                    self.emitMixerSessionAck("NEW_LIVE",reason);
+                };
+                if(failure.isNotEmpty())return reject(failure+" · previous mixer retained");
+                if(!self.liveNewSessionLeaseMatches(args)||!self.engine_.allOutputsDisarmed()||
+                   self.engine_.isGraphSwitchPending()||self.deviceApply_.busy())
+                    return reject("Mixer changed during archive; retry New Project");
+                // Even scalar edits that leave the graph revision unchanged
+                // must not be discarded. Re-capture and compare exact state.
+                armix::session::MixerSessionDocument current;
+                std::vector<armix::shows::BinaryState> currentStates;
+                auto error=self.engine_.captureNativeMixerSession(current,currentStates);
+                if(error.isNotEmpty())return reject(error);
+                current.id=oldId;current.savedMs=1;current.resumeMain.reset();
+                if(self.hotkeys_.activeSession()==oldId)current.hotkeys=self.hotkeys_.sessionEntries();
+                error=self.resolveMixerSessionCatalog(current,true);
+                if(error.isNotEmpty())return reject(error);
+                if(armix::session::Codec::encode(current)!=expected)
+                    return reject("Mixer or plugin state changed during archive; retry New Project");
+                armix::session::NativeLogicalMixerWorkspace fresh;
+                auto doc=fresh.document();
+                doc.resumeMain=false;
+                const auto newId=doc.id;
+                error=self.engine_.restoreNativeMixerSession(std::move(doc),{},true);
+                if(error.isNotEmpty())return reject(error+" · previous project archived");
+                self.mixerSessionId_=newId;
+                self.lastMixerFile_=juce::File{};
+                self.lastMixerSessionFingerprint_.clear();
+                self.mixerSessionRecoveryPending_=false;
+                const auto keyError=self.hotkeys_.activateSession(newId);
+                if(keyError.isNotEmpty())self.emitNotice("Hotkey activation: "+keyError,true);
+                self.mixerSessionStatus_="NEW_LIVE_SESSION_MUTED";
+                self.mixerSessionError_.clear();
+                self.nativeShowBusy_=false;
+                self.emitApprovedNativeSnapshot();
+                // Reuse existing checkpoint worker/admission. The prior exact
+                // project remains in SessionArchive even if autosave fails.
+                error=self.saveMixerSession(false);
+                self.emitMixerSessionAck("NEW_LIVE",error.isEmpty()?juce::String{}:
+                    "New mixer active and muted; checkpoint could not start: "+error);
+            },archive,armix::session::NativeMixerSessionStore::ArchiveMode::none,true)){
+            nativeShowBusy_=false;
+            emitMixerSessionAck("NEW_LIVE","Session archive worker unavailable; previous mixer retained");
+        }
+        emitApprovedNativeSnapshot();
+    }
+
     void createOfflineSession(const juce::var& args) {
         ensureLogicalWorkspace();
         bool confirmed=false;
@@ -3037,12 +3195,24 @@ private:
             obj->setProperty("ioDefaults",ioDefaults_.snapshot(canInstallIoDefaults()));
             const bool offlineSessionAvailable=canCreateOfflineSession();
             obj->setProperty("offlineNewSessionAvailable",offlineSessionAvailable);
+            obj->setProperty("liveNewSessionAvailable",canCreateLiveSession());
             obj->setProperty("offlineResetIoAvailable",offlineSessionAvailable&&logicalMixer_.canResetIo()&&
                 !ioDefaults_.readOnly()&&!ioDefaults_.layout().empty());
             obj->setProperty("physicalBusPatchSupported",true);
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
             obj->setProperty("physicalBusSecondaryArmed",engine_.secondaryArmed());
+            // Accepted plan, not requested browser state. Graph revision
+            // callback readback is a separate condition for UI completion.
+            if(bool(live.getProperty("nativeLatencyPlanValid",false))&&
+               bool(live.getProperty("nativeLatencyPlanHasMonitor",false))){
+                auto plan=std::make_unique<juce::DynamicObject>();
+                plan->setProperty("policy",live.getProperty("nativeLatencyPlanMonitorPolicy",{}));
+                plan->setProperty("mainSamples",live.getProperty("nativeLatencyPlanAlignedSamples",{}));
+                plan->setProperty("monitorSamples",live.getProperty("nativeLatencyPlanMonitorOutputSamples",{}));
+                plan->setProperty("potentialSaving",live.getProperty("nativeLatencyPlanMonitorIndependentSaving",{}));
+                obj->setProperty("monitorTiming",juce::var(plan.release()));
+            }
         }
         return accepted;
     }
@@ -3155,6 +3325,7 @@ private:
                     if(!applied)nativeError=result.error;
                 }
             } else {
+                closeEditorsForNativeRackEdit(command);
                 applied=armix::console::executeApprovedNativeControl(engine_,command,&nativeError);
             }
         }
@@ -4229,6 +4400,14 @@ private:
                   "and OS preemption; excludes skipped bypass, dry PDC and music guide observation. "
                   "Max is sampled only, mean is not normalized to callback size, -1 means no sample. "
                   "Contention/exception counts are lifetime host events, not confirmed hardware underruns.\n";
+        result << "workload*: vendor-independent lifetime invocation wall time versus frames/rate; "
+                  "1000 permille means the whole invocation quantum, not a hardware xrun. "
+                  "Published counts may lag up to 31 timed calls; external CH1 uses sparse observations "
+                  "and a graph/physical-slot identity, not all-call peaks. Sampled silent PCM is not "
+                  "proof of drained state. Reviews are advisory; no automatic bypass or suspend.\n";
+        result << "workloadWindow*: last complete 32 processor observations, frame-weighted mean "
+                  "and observed peak; original CH1 is sparse. Not a time window or current load; "
+                  "may be stale after idle/bypass. Lifetime peak remains separate.\n";
         result << "\n=== STATUS SNAPSHOT (measured / source-labeled) ===\n";
         result << juce::JSON::toString (status, true) << "\n";
         result << "\n=== RECENT EVENTS (latest 48, capture on control thread) ===\n";
@@ -5447,6 +5626,92 @@ private:
         }))emitMixerSessionAck(archived?"ARCHIVE":"OPEN","Mixer file operation already in progress");
     }
 
+    // File paths never authorize loading executable code. Match the exact
+    // registered native catalog before passing anything to the FX factory.
+    juce::String resolveRackFileCatalog(armix::storage::FxRackFile& rack,bool capture) {
+        for(auto& fx:rack.effects){
+            if(armix::builtin_fx::findNativeBuiltInFx(fx.catalogId)){
+                if(fx.path.isNotEmpty()||fx.uid!=0)return "Invalid built-in FX identity";
+                continue;
+            }
+            const auto* registered=catalog_.find(fx.catalogId);
+            if(!registered||registered->key()!=fx.catalogId||
+               (!capture&&(registered->path!=fx.path||registered->uid!=fx.uid)))
+                return "Registered VST3 unavailable: "+fx.catalogId;
+            fx.path=registered->path;fx.uid=registered->uid;fx.name=registered->name;
+        }
+        return {};
+    }
+    void chooseFxRackFile(const juce::var& args) {
+        const auto op=args.getProperty("operation",{}).toString();
+        const bool deactivate=op=="DEACTIVATE",save=op=="SAVE"||deactivate,append=op=="INSERT";
+        const auto token=args.getProperty("instanceId",{}).toString();
+        const auto slotValue=args.getProperty("slot",{});
+        const int slot=deactivate&&slotValue.isInt()?static_cast<int>(slotValue):-1;
+        std::uint64_t ep=0,rev=0,roster=0,id=0;
+        if((!save&&!append&&op!="OPEN")||(deactivate&&(slot<0||slot>=8||token.isEmpty()))||
+           !armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)||
+           !armix::console::approvedNativeId(args.getProperty("graphRevision",{}),rev)||
+           !armix::console::approvedNativeId(args.getProperty("rosterRevision",{}),roster)||
+           !armix::console::approvedNativeId(args.getProperty("channelId",{}),id))
+            return emitNotice("FX rack request invalid; refresh rack",true);
+        const armix::mixer::ChannelId channel{id};
+        if(fxRackFileChooser_||namedIoFileChooser_||mixerFileDialogOpen_||
+           deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
+           catalog_.busy()||logicalVendorEditor_||!engine_.rackFileAllowed(ep,rev,roster,channel))
+            return emitNotice("FX rack file: disarm MAIN and STREAM; use a current native rack",true);
+        auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+        if(save)start=start.getChildFile(deactivate?"Saved-FX.arfx":"Vocal-Rack.arfx");
+        fxRackFileChooser_=std::make_unique<juce::FileChooser>(
+            deactivate?"Deactivate and save FX":save?"Save FX Rack":append?
+                "Insert saved FX":"Open FX Rack (replace)",start,"*.arfx",true);
+        using Flags=juce::FileBrowserComponent;
+        fxRackFileChooser_->launchAsync(Flags::canSelectFiles|
+            (save?(Flags::saveMode|Flags::warnAboutOverwriting):Flags::openMode),
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this),ep,rev,roster,channel,
+             token,slot,save,deactivate,append](const juce::FileChooser& picker){
+                if(!safe)return;
+                const auto file=picker.getResult();
+                juce::String error;
+                bool archived=false;
+                if(file!=juce::File{}){
+                    try{
+                        if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
+                           safe->mixerSessionWorker_.busy()||safe->catalog_.busy()||safe->logicalVendorEditor_||
+                           !safe->engine_.rackFileAllowed(ep,rev,roster,channel))
+                            error="Device or rack changed; retry";
+                        else{
+                            armix::storage::FxRackFile rack;
+                            if(save){
+                                error=safe->engine_.captureRackFile(ep,rev,roster,channel,slot,token,rack);
+                                if(error.isEmpty())error=safe->resolveRackFileCatalog(rack,true);
+                                if(error.isEmpty())error=armix::storage::NativeFxRackArchive::save(file,rack);
+                                archived=error.isEmpty();
+                                if(archived&&deactivate)
+                                    error=safe->engine_.applyRackFile(ep,rev,roster,channel,rack,false,slot,token);
+                            }else{
+                                error=armix::storage::NativeFxRackArchive::load(file,rack);
+                                if(error.isEmpty())error=safe->resolveRackFileCatalog(rack,false);
+                                if(error.isEmpty())error=safe->engine_.applyRackFile(ep,rev,roster,channel,rack,append);
+                            }
+                        }
+                    }catch(...){error="FX rack file operation failed";}
+                    if(error.isEmpty()){
+                        if(!save||deactivate){
+                            safe->stopOrbit();
+                            safe->closeAllPluginEditors();
+                            safe->emitApprovedNativeSnapshot();
+                        }
+                        safe->emitNotice(deactivate?"FX saved and deactivated; latency plan rebuilt. MAIN/STREAM remain disarmed.":
+                            save?"FX Rack saved":append?"Saved FX inserted; output remains disarmed":
+                            "FX Rack opened; output remains disarmed");
+                    }else safe->emitNotice((archived?juce::String("FX saved; deactivation rejected: "):
+                        juce::String("FX rack unchanged: "))+error,true);
+                }
+                juce::MessageManager::callAsync([safe]{if(safe)safe->fxRackFileChooser_.reset();});
+            });
+    }
+
     void chooseNamedIoProfile(const juce::var& args) {
         const auto request=args.getProperty("requestId",{}).toString();
         const auto op=args.getProperty("operation",{}).toString();
@@ -6113,6 +6378,7 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        if(action=="fxRackFile")return chooseFxRackFile(args);
         if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
         if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
             if (!deviceApply_.busy())
@@ -7421,6 +7687,46 @@ private:
         }
         // O1: native CONTROL intent, exact verified ASIO physical pair.
         // Never reinterpret an external destination as internal WIRE/M4 OUT.
+        if(action=="routingMonitorTiming") {
+            const auto id=args.getProperty("requestId",{}).toString();
+            const auto policy=args.getProperty("policy",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{}),rv=args.getProperty("revision",{}),
+                       rr=args.getProperty("rosterRevision",{});
+            const auto confirmed=args.getProperty("confirmed",{});
+            const auto main=args.getProperty("main",{}),monitor=args.getProperty("monitor",{});
+            const auto pair=[](const juce::var& v){
+                return v.isArray()&&v.size()==2&&v[0].isInt()&&v[1].isInt();
+            };
+            const auto status=engine_.status().getProperty("dryRoutingLab",{});
+            const auto native=status.getProperty("nativeBus",{});
+            juce::String error="MONITOR timing: invalid/stale request or output not explicitly muted";
+            if(id.startsWith("monitor-timing-")&&id.length()<=64&&operatorOutputMuted_&&
+               !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !fxRackFileChooser_&&!mixerFileDialogOpen_&&!namedIoFileChooser_&&
+               confirmed.isBool()&&bool(confirmed)&&pair(main)&&pair(monitor)&&
+               (policy=="GLOBAL_ALIGNED"||policy=="INDEPENDENT_MONITOR")&&
+               armix::console::nativeSessionTokenMatches(ep,status.getProperty("epoch",{}))&&
+               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{}))&&
+               armix::console::nativeSessionTokenMatches(rr,native.getProperty("rosterRevision",{})))
+                error=engine_.setMonitorTimingPolicy(
+                    armix::console::nativeSessionTokenValue(ep),armix::console::nativeSessionTokenValue(rv),
+                    armix::console::nativeSessionTokenValue(rr),
+                    policy=="GLOBAL_ALIGNED"?armix::mixer::MonitorLatencyPolicy::aligned:
+                        armix::mixer::MonitorLatencyPolicy::independent,
+                    {static_cast<int>(main[0]),static_cast<int>(main[1])},
+                    {static_cast<int>(monitor[0]),static_cast<int>(monitor[1])});
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",id);ack->setProperty("ok",error.isEmpty());
+            ack->setProperty("error",error);
+            if(error.isEmpty()){
+                const auto snapshot=approvedNativeSnapshot();
+                ack->setProperty("revision",snapshot.getProperty("graph",{}).getProperty("revision",{}));
+                autoMainEpoch_=0;engine_.cancelAsioResetMonitorIntent();
+            }
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixMonitorTimingAck",juce::var(ack.release()));
+            if(error.isEmpty())emitApprovedNativeSnapshot();else emitNotice(error,true);
+            return;
+        }
         if(action=="routingPhysicalBusOutput") {
             const auto id=args.getProperty("requestId",{}).toString();
             const auto bus=args.getProperty("bus",{}).toString();
@@ -8905,6 +9211,10 @@ private:
             chooseMixerFile(false,true);
             return;
         }
+        if(action=="nativeMixerNewLive") {
+            createLiveSession(args);
+            return;
+        }
         if(action=="nativeMixerNewOffline") {
             createOfflineSession(args);
             return;
@@ -9470,6 +9780,16 @@ private:
                 compactMemoryWindowReport(window));
             diagnostics_.record ("AUDIO_GLITCH_WINDOW",
                 crackleWindowReport(window));
+            // Separate bounded attribution record: preserve parseable native
+            // evidence even if the full device/FX status is truncated.
+            auto rtr=std::make_unique<juce::DynamicObject>();
+            for(const char* key:{"callbackCount","overBudgetCount","deviceGeneration",
+                "callbackModulo4Observed","callbackModulo4OverBudget","callbackModulo4Provenance",
+                "nativeFxWorstUs","nativeFxWorstName","nativeFxWorstInstance","nativeFxTimingLeases",
+                "masterAnalysisState","masterAnalysisDroppedFramesLifetime","masterAnalysisSegmentRestartsLifetime"})
+                if(const auto value=status.getProperty(key,{});!value.isVoid())
+                    rtr->setProperty(key,value);
+            diagnostics_.record("AUDIO_GLITCH_RTR",juce::JSON::toString(juce::var(rtr.release()),true));
             emitNotice ("Crackle marker saved with source-labeled pre-mark evidence (up to 5 s).");
         }
         else if (action == "backupStudio")

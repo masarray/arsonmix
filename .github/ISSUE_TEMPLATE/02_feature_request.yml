@@ -6,6 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
+        For suspected security vulnerabilities, follow https://github.com/masarray/arsonmix/security/policy instead of this public form.
         Describe the user outcome, not a new parallel mixer or DSP engine. Preserve approved SonKu/ImmerSIB listening checkpoints, one native PCM authority, GUI ownership and existing session compatibility. Do not claim physical FAT from unit tests.
   - type: input
     id: outcome

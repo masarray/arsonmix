@@ -105,6 +105,27 @@ public:
                (presetWriteSeq_.load(std::memory_order_acquire)&1u)==0u &&
             queuedGeq_.empty() && completionGeq_.empty();
     }
+    bool supportsExactIdle() const noexcept override {return true;}
+    bool tryExactIdle(const float* left,const float* right,int frames) noexcept override {
+        // Cheap rejection first: non-flat EQ, an active output ramp or
+        // pending ACK always uses the ordinary DSP path, including tails.
+        if(!ready_||frames<=0||!core_.flatSettled()||levelGain_.isSmoothing()||
+           levelGain_.getCurrentValue()!=1.f||levelGain_.getTargetValue()!=1.f||
+           lastLevelDb_!=0.f||!queuedGeq_.empty()||!completionGeq_.empty())return false;
+        const auto before=presetWriteSeq_.load(std::memory_order_acquire);
+        if(before&1u)return false;
+        for(auto* value:bandValues_)
+            if(value->load(std::memory_order_relaxed)!=0.f)return false;
+        if(levelValue_->load(std::memory_order_relaxed)!=0.f||
+           presetWriteSeq_.load(std::memory_order_acquire)!=before||
+           !queuedGeq_.empty())return false;
+        float peak=0.f;
+        if(!core_.tryUnityPeak(left,right,static_cast<std::size_t>(frames),peak))return false;
+        // Equivalent to settled unity multiplication, with the same meter.
+        // No edit ACK is consumed here; first changed block uses processBlock.
+        peak_.store(peak,std::memory_order_relaxed);
+        return true;
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;

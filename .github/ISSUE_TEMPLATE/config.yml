@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Security vulnerability — report privately"
+    url: https://github.com/masarray/arsonmix/security/policy
+    about: "Follow the security policy. Do not publish vulnerabilities, credentials, exploit details or malicious attachments in issues."

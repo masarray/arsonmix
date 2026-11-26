@@ -72,7 +72,8 @@
     style.textContent+="\n"+"html.armix-native-desktop #mxNativeVocalThrow #vtEncodersLeft,html.armix-native-desktop #mxNativeVocalThrow #vtEncodersRight{order:initial!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-throw-button{width:212px!important;height:212px!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-performance{grid-template-columns:88px minmax(0,1fr) 302px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-rotary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;min-height:190px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-center{border-top:0!important;padding:8px 12px!important}";
     const offsets=new WeakMap();
     const identities=new WeakMap(); // exact FX owner, not its slot
-    const bypassOwners=new Map(); // max five mounted roots, navigation lease only
+    const bypassOwners=new Map(); // navigation lease only
+    const editorOwners=new Map(); // includes GEQ, whose bypass UI is internal
     let drag=null,layer=16000;
     const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
     const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
@@ -166,6 +167,21 @@
         if(shade.style.pointerEvents!==pointer)shade.style.pointerEvents=pointer;
       }
     }
+    function closeRackEditors(channelIds=null){
+      const affected=channelIds===null?null:new Set(channelIds.map(String));
+      for(const [root,owner] of editorOwners){
+        if(affected&&!affected.has(String(owner.lease.channelId)))continue;
+        editorOwners.delete(root);
+        bypassOwners.delete(root);
+        if(drag?.root===root){
+          try{drag.capture.releasePointerCapture?.(drag.pointerId);}catch(_){}
+          drag=null;
+        }
+        if(root.isConnected&&!root.hidden){
+          try{window[owner.key]?.close?.();}finally{root.hidden=true;}
+        }
+      }
+    }
     function openExact(host,key,track,slot,instanceId,lease=null) {
       const selector=selectors[key],root=document.querySelector(selector||"#__none__");
       if(!root||typeof host?.open!=="function"||!instanceId)return false;
@@ -181,7 +197,10 @@
       }
       if(host.open(track,slot)===false)return false;
       if(root.hidden)return false; // a no-op open is not a successful editor
-      if(lease&&key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
+      if(lease){
+        editorOwners.set(root,{key,lease});
+        if(key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
+      }
       root.style.zIndex=String(++layer);
       if(!offsets.has(root))center(root);
       else keepReachable(root);
@@ -251,7 +270,7 @@
       for(const root of document.querySelectorAll(roots))
         if(!root.hidden)requestAnimationFrame(()=>keepReachable(root));
     });
-    return Object.freeze({openExact,center,move,syncBypass});
+    return Object.freeze({openExact,center,move,syncBypass,closeRackEditors});
   })():null;
   if(inlineFxClip)window.__ARMIX_NATIVE_INLINE_FX_CLIP__=inlineFxClip;
 
@@ -1135,6 +1154,7 @@
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
   let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
+  let lastM4Performance=null,m4PaintKey="";
   let externalSerial=0;
   const pendingExternal=new Map(); // each ChannelId independent; no mixer-wide lock
   let hardwareNote=null, pendingSourceId=0, sourceSerial=100;
@@ -1708,6 +1728,16 @@
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
   let pendingFxEditorAck=null,fxEditorSerial=0; // HWND feedback, never PCM owner
+  // Intentional rack edits retire affected slot-relative HWND requests.
+  // Late ACKs/timeouts for the deliberately closed editor are obsolete, not
+  // a new editor failure. Other racks retain their exact ACK/retry contract.
+  function retirePendingRackEditor(channelIds=null){
+    const pending=pendingFxEditorAck;
+    if(!pending)return;
+    if(channelIds===null||(pending.authority==="CHANNEL_ID"&&
+       channelIds.some(id=>String(id)===String(pending.lease?.channelId))))
+      pendingFxEditorAck=null;
+  }
   // One pending M4 insert is owned by the bridge until ACK AND independent
   // accepted Console-v6 snapshot. A stale/superseded ACK can never open HWND.
   function reconcileM4FxInsertReadback(snapshot){
@@ -1904,6 +1934,10 @@
         status("FX edit unavailable · refresh accepted native instance");
       return false;
     }
+    // Close affected slot-bound panels before MOVE/REMOVE invalidates their
+    // leases. The source and destination racks can both shift slot indices.
+    retirePendingRackEditor(target?[id,nativeIdFor(target)]:[id]);
+    inlineFxClip?.closeRackEditors(target?[id,nativeIdFor(target)]:[id]);
     const result=controller.intent(decision.operation,decision.channelId,
                                    decision.payload);
     if(!result.ok){status("FX edit rejected · "+result.error);return false;}
@@ -2462,11 +2496,69 @@
   // Matrix edits use the same queue/lease and native dispatcher as strips.
   // No synthetic PCM, no independent routing graph or optimistic crosspoint.
   let busOutputPending=null,busOutputSerial=0;
+  let monitorTimingPending=null,monitorTimingSerial=0;
+  function paintMonitorTiming(next){
+    const row=devicePanel?.querySelector("[data-monitor-timing]");
+    if(!row)return;
+    const p=protocol.monitorTimingView(next),busy=Boolean(monitorTimingPending);
+    row.hidden=!p;
+    if(!p)return;
+    const value=row.querySelector("[data-monitor-timing-value]");
+    const toggle=row.querySelector("[data-monitor-timing-toggle]");
+    const ms=n=>(n*1000/next.device.sampleRate).toFixed(2)+" ms";
+    const summary=(p.policy==="INDEPENDENT_MONITOR"?"Singer low latency":"Aligned")+" · MAIN "+
+      ms(p.mainSamples)+" · MONITOR "+ms(p.monitorSamples)+(p.observed?"":" · awaiting callback");
+    if(value.textContent!==summary)value.textContent=summary;
+    toggle.textContent=busy?"Applying…":p.policy==="INDEPENDENT_MONITOR"?"Use aligned":"Use singer low latency";
+    toggle.disabled=busy||!p.editable||matrixBusy()||!matrixReady(next);
+    toggle.onclick=()=>{
+      const live=protocol.monitorTimingView(hardware);
+      if(!live?.editable||live.revision!==p.revision||live.epoch!==p.epoch||matrixBusy()||!matrixReady(hardware))return;
+      const policy=live.policy==="GLOBAL_ALIGNED"?"INDEPENDENT_MONITOR":"GLOBAL_ALIGNED";
+      const warning=policy==="INDEPENDENT_MONITOR"?
+        "Use a separate singer monitor only. MAIN and MONITOR may have different timing; do not sum them acoustically or electrically. Removes up to "+ms(live.potentialSaving)+" of graph alignment, not hardware or insert latency.":
+        "Restore global MAIN/MONITOR alignment?";
+      if(!window.confirm(warning+" Outputs remain disarmed. Session only."))return;
+      const requestId="monitor-timing-"+(++monitorTimingSerial);
+      monitorTimingPending={requestId,epoch:live.epoch,roster:live.rosterRevision,
+        base:live.revision,policy,config:hardware.hardwareConfiguration,main:live.main,monitor:live.monitor,ack:null};
+      backend.emitEvent("arMixAction",{action:"routingMonitorTiming",requestId,confirmed:true,
+        policy,deviceEpoch:live.epoch,revision:live.revision,rosterRevision:live.rosterRevision,
+        main:live.main,monitor:live.monitor});
+      paintMonitorTiming(hardware);
+      window.setTimeout(()=>{
+        if(monitorTimingPending?.requestId!==requestId)return;
+        monitorTimingPending=null;nativeToast("MONITOR timing confirmation timed out · keep outputs muted");
+        paintMonitorTiming(hardware);
+      },5000);
+    };
+  }
+  function settleMonitorTiming(next){
+    const q=monitorTimingPending;
+    if(!q)return;
+    const p=protocol.monitorTimingView(next);
+    if(!p||p.epoch!==q.epoch||p.rosterRevision!==q.roster||next.hardwareConfiguration!==q.config||
+       JSON.stringify(p.main)!==JSON.stringify(q.main)||JSON.stringify(p.monitor)!==JSON.stringify(q.monitor)||
+       (q.ack&&protocol.cmp(p.revision,q.ack)>0)){
+      monitorTimingPending=null;nativeToast("MONITOR timing lease changed · verify before START AUDIO");return;
+    }
+    if(q.ack&&p.revision===q.ack&&p.policy===q.policy&&p.observed){
+      monitorTimingPending=null;nativeToast("MONITOR timing verified · outputs remain disarmed");
+    }
+  }
+  if(connected)backend.addEventListener("arMixMonitorTimingAck",ack=>{
+    const q=monitorTimingPending;
+    if(!q||q.requestId!==ack?.requestId)return;
+    if(ack.ok!==true||protocol.decimal(ack.revision)===null||protocol.cmp(ack.revision,q.base)<=0){
+      monitorTimingPending=null;nativeToast(ack.error||"MONITOR timing rejected");paintMonitorTiming(hardware);return;
+    }
+    q.ack=ack.revision;settleMonitorTiming(hardware);controller?.subscribe();paintMonitorTiming(hardware);
+  });
   let logicalIoPending=null,logicalIoSerial=0,logicalIoEditorOpen=false;
   let logicalIoPort="",logicalIoChannel="";
   let logicalOutPort="",logicalOutChannel="",logicalOutEditorOpen=false;
   let ioDefaultsPending=null,ioDefaultsSerial=0;
-  const matrixBusy=()=>Boolean(ioDefaultsPending||logicalIoPending||busOutputPending||deviceBusy()||activeNativeSource||pendingNativeSources.size||
+  const matrixBusy=()=>Boolean(ioDefaultsPending||logicalIoPending||busOutputPending||monitorTimingPending||deviceBusy()||activeNativeSource||pendingNativeSources.size||
     nativeUiSourcePending||pendingSourceQueue.size||pendingExternal.size);
   function matrixReady(snapshot){
     return deviceVM.setupRoutingReady(deviceInventory,deviceChoice,deviceState)&&
@@ -3146,6 +3238,7 @@
   }
   function paintPhysicalOutputs(next) {
     if(devicePanel&&!devicePanel.hidden){
+      paintMonitorTiming(next);
       const page=devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab;
       if(page==="inputs")paintRouteMatrix(next,"input");
       if(page==="routing")paintRouteMatrix(next,"output");
@@ -3240,7 +3333,7 @@
       (d.outputArmed?"Output enabled":"Output muted")+" · "+playback+
       (virtualOut?" · Virtual output · No speakers":"");
     const healthSameEpoch=lastFooterHealth &&
-      lastFooterHealth.deviceGeneration===String(d?.epoch);
+      lastFooterHealth.routingEpoch===String(d?.epoch);
     // The status strip is LIVE only on the exact current hardware epoch.
     // Do not display stale latency after device disconnect or remap.
     const activeOutput=!next?.retained && deviceOpen &&
@@ -3292,8 +3385,78 @@
     if(warning?.dataset && warning.dataset.telemetry!==healthMode)
       warning.dataset.telemetry=healthMode;
   }
+  // M4: presentation-only. Only the native 1 Hz status event calculates new
+  // evidence; accepted graph snapshot changes merely invalidate stale display.
+  function paintSmartPerformance(force=false) {
+    const panel=devicePanel?.querySelector("[data-m4-performance]");
+    if(!panel||devicePanel.hidden ||
+       devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab!=="performance")return;
+    const p=lastM4Performance;
+    const epoch=hardware?.device?.epoch||"";
+    const valid=p?.cursor?.epoch===epoch&&
+      p?.cursor?.graphRevision===hardware?.graph?.revision&&
+      p?.cursor?.armed===(hardware?.device?.outputArmed===true)&&
+      hardware?.admitted===true&&!hardware.retained;
+    const key=(valid?p.cursor.epoch+":"+p.cursor.seq:"unavailable:"+epoch+":"+String(hardware?.device?.outputArmed));
+    if(!force&&key===m4PaintKey)return;
+    m4PaintKey=key;
+    const put=(field,value)=>{
+      const el=panel.querySelector("[data-m4-"+field+"]");
+      if(el&&el.textContent!==value)el.textContent=value;
+    };
+    const status=valid?p.state:"UNAVAILABLE";
+    const stateLabel={UNAVAILABLE:"No verified live evidence",
+      COLLECTING:"Collecting 1-second evidence",PRESSURE:"Render budget pressure",
+      TIGHT:"Limited render headroom",OBSERVED_MARGIN:"Measured headroom",
+      MUTED:"Outputs disarmed"}[status]||"Evidence pending";
+    const state=panel.querySelector("[data-m4-state]");
+    if(state)state.dataset.state=status;
+    put("state",stateLabel);
+    put("budget",valid&&p.headroom?
+      "P99 "+p.headroom.p99+" of deadline · margin "+p.headroom.margin:
+      "P99 — · one-second evidence unavailable");
+    put("over",valid&&p.callbacks!==null?
+      p.over+" / "+p.callbacks+" host render blocks over budget":
+      "Deadline events —");
+    put("fx",valid&&p.fxPeak?p.fxPeak.name+" · historical max "+
+      p.fxPeak.percent+" of period"+(p.fxPeak.sampled?" · sampled":""):
+      "No attributable FX peak");
+    put("latency",valid&&p.latency?
+      "MAIN "+(p.latency.main||"—")+" · MONITOR "+(p.latency.monitor||"—")+
+      " · "+p.latency.policy:"Graph latency —");
+    put("correlation",valid&&p.correlation?
+      "Last 64 pairs: "+p.correlation.withinLate+" late after in-budget · "+
+        p.correlation.overLate+" late after over-budget":
+      "Callback pairing not available");
+    const rows=panel.querySelector("[data-m4-reviews]");
+    const advice=panel.querySelector("[data-m4-advice]");
+    const addRows=(host,items)=>{
+      if(!host)return;
+      // Stable text rows need no DOM allocation or layout invalidation.
+      if(host.children.length===items.length&&items.every((v,i)=>host.children[i].textContent===v))return;
+      host.replaceChildren(...items.map(value=>{
+        const row=document.createElement("div");
+        row.className="armix-m4-line";
+        row.textContent=value; // Plugin names are data, never markup.
+        return row;
+      }));
+    };
+    addRows(rows,valid&&p.reviews.length?p.reviews.map(x=>
+      x.name+" · "+(x.channel||"FX")+" · "+x.action+
+      (x.window!=="—"?" · last 32 mean "+x.window:"")+
+      (x.sampled?" · sampled":"")):["No FX requires review from available evidence"]);
+    addRows(advice,valid?p.recommendations:
+      ["Open a verified native audio device; no risk rating is inferred from demo or stale data."]);
+  }
+
   function updateHardwarePanel(next) {
+    const prev=hardware;
     hardware=next || null;
+    if(prev?.device?.epoch!==hardware?.device?.epoch||
+       prev?.device?.outputArmed!==hardware?.device?.outputArmed||
+       prev?.graph?.revision!==hardware?.graph?.revision||
+       prev?.admitted!==hardware?.admitted||prev?.retained!==hardware?.retained)
+      lastM4Performance=null;
     refreshRealM4Inputs(next);
     const d=next?.device;
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
@@ -3309,6 +3472,7 @@
       if(!next?.admitted && !next?.retained)scope.render?.();
     }
     paintAudioHealthFooter(next);
+    paintSmartPerformance();
     if(!inputSelect)return;
     const pins=deviceOpen?d.inputEndpoints.filter(p=>
       p.active===true && d.enabledInputs.includes(p.port)):[];
@@ -3351,6 +3515,8 @@
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceChoice=null,deviceRequest=0,
       deviceState=deviceVM.setupInitial(),deviceApplyTimer=0;
+  // Snapshot the actual initiating action; never infer it from a later tab.
+  let closeAfterVerifiedPinApply=false;
   const deviceBusy=()=>Boolean(deviceState.pending);
   let toastTimer=0;
   function nativeToast(message){
@@ -3452,8 +3618,9 @@
     for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
       item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
     const apply=devicePanel.querySelector("[data-audio-apply]");
-    apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics";
+    apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics"||page==="performance";
     if(page==="inputs"||page==="routing")paintPhysicalOutputs(hardware);
+    if(page==="performance")paintSmartPerformance(true);
     if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
   }
   function openNativeAudioIO(){
@@ -3557,10 +3724,31 @@
         .armix-audio-dialog:not([data-audio-tab="routing"]) .armix-output-overview,
         .armix-audio-dialog:not([data-audio-tab="device"]) .armix-endpoint-fields,
         .armix-audio-dialog:not([data-audio-tab="diagnostics"]) .armix-audio-diagnostics,
+        .armix-audio-dialog:not([data-audio-tab="performance"]) .armix-m4-performance,
         .armix-audio-dialog:not([data-audio-tab="pins"]) .armix-driver-inventory,
         .armix-audio-dialog:not([data-audio-tab="device"]) [data-audio-remap],
         .armix-audio-dialog [hidden]{display:none!important}
         .armix-audio-diagnostics{padding:12px 20px}
+        .armix-m4-performance{padding:14px 20px 18px;font-size:11px;line-height:1.5}
+        .armix-m4-head{display:flex;gap:12px;align-items:center;justify-content:space-between;
+          border-bottom:1px solid #354c59;padding-bottom:10px;margin-bottom:10px}
+        .armix-m4-head strong{font-size:13px;font-weight:550;color:#def2f8}
+        .armix-m4-meta{font-size:10px;color:#9db6c3}
+        .armix-m4-status{font-size:11px;color:#b7cad4}
+        .armix-m4-status[data-state="PRESSURE"]{color:#f3b78d}
+        .armix-m4-status[data-state="TIGHT"]{color:#ebd09b}
+        .armix-m4-status[data-state="OBSERVED_MARGIN"]{color:#a9dcc7}
+        .armix-m4-metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+        .armix-m4-metric{padding:7px 10px;border:1px solid #34505e;border-radius:4px;
+          min-width:0;background:#122630}
+        .armix-m4-metric small{display:block;color:#9fb9c5;font-size:10px}
+        .armix-m4-metric span{display:block;color:#e0eef3;font-variant-numeric:tabular-nums}
+        .armix-m4-section{border-top:1px solid #344b59;margin-top:10px;padding-top:8px}
+        .armix-m4-section strong{font-size:11px;font-weight:550;color:#c6e5ed}
+        .armix-m4-line{margin-top:4px;padding-left:9px;border-left:2px solid #486978;
+          color:#c6d8e0;overflow-wrap:anywhere}
+        .armix-m4-note{color:#9fb6c1;font-size:10px;margin-top:10px}
+        @media(max-width:620px){.armix-m4-metrics{grid-template-columns:1fr}}
         .armix-audio-dialog .armix-endpoint-fields .armix-device-note{border:0;background:transparent;padding:3px 0}
         .armix-audio-dialog [data-audio-latency]{padding:8px 0!important;border-top:1px solid #354b59!important}
         .armix-audio-dialog .armix-audio-pins{max-height:min(44vh,340px);gap:16px}
@@ -3599,6 +3787,8 @@
             role="tab" aria-selected="false" disabled>Inputs</button>
           <button type="button" class="armix-audio-tab" data-audio-tab="routing"
             role="tab" aria-selected="false" disabled>Outputs</button>
+          <button type="button" class="armix-audio-tab" data-audio-tab="performance"
+            role="tab" aria-selected="false">Performance</button>
           <button type="button" class="armix-audio-tab" data-audio-tab="diagnostics"
             role="tab" aria-selected="false">Diagnostics</button>
         </nav>
@@ -3622,6 +3812,31 @@
           </div>
           <div class="armix-device-note">Apply device to discover its hardware pins.</div>
         </div>
+        <section class="armix-m4-performance" data-m4-performance role="region" aria-label="Smart Performance Assistant">
+          <div class="armix-m4-head">
+            <div><strong>Smart Performance Assistant</strong>
+              <div class="armix-m4-meta">Native DSP evidence · advisory only · 1 Hz</div></div>
+            <span class="armix-m4-status" data-m4-state>Waiting for native audio</span>
+          </div>
+          <div class="armix-m4-metrics">
+            <div class="armix-m4-metric"><small>RENDER HEADROOM</small><span data-m4-budget>—</span></div>
+            <div class="armix-m4-metric"><small>DEADLINE PRESSURE</small><span data-m4-over>—</span></div>
+            <div class="armix-m4-metric"><small>HIGHEST OBSERVED FX PEAK</small><span data-m4-fx>—</span></div>
+            <div class="armix-m4-metric"><small>DECLARED GRAPH PDC</small><span data-m4-latency>—</span></div>
+          </div>
+          <div class="armix-m4-section"><strong>Callback timing context</strong>
+            <div class="armix-m4-line" data-m4-correlation>—</div>
+          </div>
+          <div class="armix-m4-section"><strong>FX to review</strong>
+            <div data-m4-reviews></div>
+          </div>
+          <div class="armix-m4-section"><strong>Recommended next steps</strong>
+            <div data-m4-advice></div>
+          </div>
+          <div class="armix-m4-note">P99 is a bucket ceiling from the latest 1-second host render interval.
+            FX peaks are historical; callback lateness is not proven driver XRUN.
+            No setting, plugin or audio buffer is changed automatically.</div>
+        </section>
         <section class="armix-audio-diagnostics">
           <div class="armix-device-note" data-audio-period></div>
           <div class="armix-device-note" data-audio-health role="status"></div>
@@ -3668,7 +3883,14 @@
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
           <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
-          <div class="armix-device-note">External stereo outputs are editable. Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
+          <div class="armix-device-note">Assign mixer channels and buses to verified hardware pins below. To duplicate MAIN to OBS, a virtual cable or another Windows device, use Additional Output.</div>
+          <button type="button" data-audio-extra-output>Additional Output · OBS / Virtual Cable</button>
+          <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
+          <div data-monitor-timing hidden class="armix-device-note">
+            <strong>MONITOR timing</strong> · <span data-monitor-timing-value></span>
+            <button type="button" data-monitor-timing-toggle disabled>Use singer low latency</button>
+            <div>Graph latency only · separate singer monitor, do not combine with MAIN · session only</div>
+          </div>
           <div class="armix-output-heading">OUTPUTS · physical routing</div>
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-device-note">Native callback/readback only · speaker listening not verified</div>
@@ -3759,6 +3981,11 @@
       devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
         if(!deviceBusy() && deviceState.remapGeneration!==null)
           sendDeviceApply(true);
+      };
+      devicePanel.querySelector("[data-audio-extra-output]").onclick=()=>{
+        if(deviceBusy()||typeof window.__arMixOpenAdditionalOutput!=="function")return;
+        closeNativeAudioIO();
+        window.__arMixOpenAdditionalOutput();
       };
       document.body.appendChild(devicePanel);
     }
@@ -3958,6 +4185,9 @@
       confirmRetainedPinMapping,assignMain});
     if(!begun)return;
     deviceState=begun.state;
+    closeAfterVerifiedPinApply=!confirmRetainedPinMapping &&
+      devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab==="pins" &&
+      begun.state.pending.expected.requestedPins!==null;
     showDeviceApplyProgress(true);
     renderDevicePanel();
     // Reuse the ONLY native arMixAction dispatcher. UI state cannot touch PCM.
@@ -4059,11 +4289,19 @@
     deviceApplyTimer=0;
     if(!devicePanel)return;
     showDeviceApplyProgress(false);
+    const closePins=closeAfterVerifiedPinApply && deviceState.phase==="ACCEPTED" &&
+      !!verifiedSnapshot?.device && deviceState.inspectNewAsio!==true;
+    closeAfterVerifiedPinApply=false;
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
-      {
-        // All successful device/pin transactions stay in setup. Never show
-        // a candidate or pre-Apply inventory as the newly installed device.
+      if(closePins){
+        // Close only after independent installed readback, never on ACK alone.
+        delete devicePanel.dataset.openPinsAfterInventory;
+        deviceInventory=null;
+        closeNativeAudioIO();
+      }else{
+        // Device discovery stays in setup to expose the new hardware pins.
+        // Never show a candidate or pre-Apply inventory as installed hardware.
         deviceInventory=null;
         devicePanel.dataset.openPinsAfterInventory="true";
         selectAudioSetupPage("device");
@@ -4393,20 +4631,34 @@
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
-      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="RESET_IO"&&ack?.operation!=="ARCHIVE")return;
+      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="NEW_LIVE"&&ack?.operation!=="RESET_IO"&&ack?.operation!=="ARCHIVE")return;
       if(ack.ok!==true){
         const error=String(ack.error||"Mixer file operation failed");
         status(error);nativeToast(error);
         return;
       }
-      const message=save?"Mixer saved as .smix":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":ack.operation==="ARCHIVE"?"Archived mixer opened · output remains muted":"Mixer opened";
+      const message=save?"Mixer saved as .smix":ack.operation==="NEW_LIVE"?"New mixer active · previous project archived · output muted":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":ack.operation==="ARCHIVE"?"Archived mixer opened · output remains muted":"Mixer opened";
       status(message);nativeToast(message);
       if(!save)controller?.subscribe();
     });
-    const newSessionButtons=[["New empty session","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
+    const newSessionButtons=[["New Project · empty mixer","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
-      button.title="Offline only · previous checkpoint archived in Studio/SessionArchive";
+      button.title=mode==="EMPTY"?"Start fresh · previous mixer archived, output muted":"Offline only · previous checkpoint archived in Studio/SessionArchive";
       button.addEventListener("click",()=>{
+        const current=controller?.state()?.current;
+        if(mode==="EMPTY"&&!logicalView&&current?.admitted){
+          if(current.raw?.liveNewSessionAvailable!==true){
+            nativeToast("Finish current operations before New Project");return;
+          }
+          if(!window.confirm("Start a new mixer? The current project is archived first. Output will remain muted."))return;
+          retirePendingRackEditor();
+          inlineFxClip?.closeRackEditors();
+          backend.emitEvent("arMixAction",{action:"nativeMixerNewLive",confirmed:true,
+            deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
+            rosterRevision:current.graph.rosterRevision});
+          status("Archiving current mixer · preparing New Project");
+          return;
+        }
         if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
           nativeToast("Disconnect audio and finish mixer operations before New Session");return;
         }
@@ -4454,6 +4706,20 @@
         button.addEventListener("click",()=>backend.emitEvent("arMixAction",{action}));
         toolbar.insertBefore(button,firstTool);
       }
+      // Prominent New Project entry invokes the existing durable offline transaction.
+      // Never implement reset by wiping UI state or removing a saved checkpoint.
+      const newProject=item("button","tool","New Project");
+      newProject.type="button";
+      newProject.title="Create a fresh offline mixer; archive the previous session";
+      newProject.dataset.nativeNewProject="true";
+      newProject.addEventListener("click",()=>newSessionButtons[0].click());
+      toolbar.insertBefore(newProject,firstTool);
+      const extraOutput=item("button","tool","Output");
+      extraOutput.type="button";
+      extraOutput.title="Send MAIN to OBS, virtual cable or another Windows playback device";
+      extraOutput.dataset.nativeExtraOutput="true";
+      extraOutput.addEventListener("click",()=>window.__arMixOpenAdditionalOutput?.());
+      toolbar.insertBefore(extraOutput,document.getElementById("moreTools"));
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
@@ -4600,6 +4866,7 @@
     settleSourceReadback("CHANNEL_ID",next);
     settleSourceReadback("M4",next);
     settleBusOutput(next);
+    settleMonitorTiming(next);
     settleLogicalIo(next);
     settleIoDefaults(next);
     // Reconcile pending leases before the final matrix paint. The graph
@@ -4968,7 +5235,8 @@
       const health=protocol.footerHealthFromLive(live);
       if(!health || health.sequence===lastFooterHealth?.sequence)return;
       lastFooterHealth=health;
-      if(hardware)paintAudioHealthFooter(hardware);
+      lastM4Performance=protocol.smartPerformanceView(live,hardware,lastM4Performance?.cursor);
+      if(hardware){paintAudioHealthFooter(hardware);paintSmartPerformance();}
     });
     backend.addEventListener("arMixConsoleSnapshot", snapshot=>{
       // Only the sole v6 controller may admit a PCM snapshot. Its
@@ -5250,7 +5518,34 @@
     status("Native "+operation+" unavailable · verify mixer authority/readback");
     return false;
   }
+  function rackFileTarget(track){
+    const state=controller?.state()?.current,channelId=nativeIdFor(track);
+    const channel=state?.graph?.channels?.find(ch=>ch.id===channelId);
+    if(!state?.admitted||state?.retained||logicalView||mixerSession()?.authority!=="CHANNEL_ID"||
+       !channel||!["INPUT","GROUP","FX_RETURN","MAIN"].includes(channel.role))return null;
+    return {channelId,channel,deviceEpoch:state.device?.epoch,
+      graphRevision:state.graph?.revision,rosterRevision:state.graph?.rosterRevision};
+  }
+  function requestRackFile(track,operation,slot,token){
+    const target=rackFileTarget(track);
+    if(!target||!["SAVE","OPEN","INSERT","DEACTIVATE"].includes(operation)){
+      nativeToast("FX rack file unavailable · verify current native rack");return false;
+    }
+    const {channel,...identity}=target;
+    if(operation==="DEACTIVATE"&&(!Number.isInteger(slot)||channel.inserts?.[slot]?.id!==token)){
+      nativeToast("FX changed · reopen rack menu");return false;
+    }
+    // Rack topology may replace or shift slot-relative inline editor leases.
+    if(operation!=="SAVE"){
+      retirePendingRackEditor([identity.channelId]);
+      inlineFxClip?.closeRackEditors([identity.channelId]);
+    }
+    backend.emitEvent("arMixAction",{action:"fxRackFile",operation,...identity,
+      slot:operation==="DEACTIVATE"?slot:-1,instanceId:operation==="DEACTIVATE"?token:""});
+    return true;
+  }
   const nativeHooks=Object.freeze({
+    rackFileTarget,rackFile:requestRackFile,
     enabled:connected,
     requestDeleteTrack:requestNativeTrackDelete,
     requestDeleteStrip:requestNativeStripDelete,

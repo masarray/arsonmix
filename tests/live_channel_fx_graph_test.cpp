@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
+#include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "../engine/core/NativeFxRackTransaction.h"
+#include "../src/NativeFxRackArchive.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "../engine/core/NativeOutputPairTap.h"
@@ -1925,6 +1927,38 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+static void verifyNativeExactIdle() {
+    using Eq=armix::builtin_fx::ChannelEqProcessor;
+    using Comp=armix::builtin_fx::ChannelCompressorProcessor;
+    auto eq=std::make_unique<Eq>();eq->prepareToPlay(48000,64);
+    auto* live=eq.get();
+    LiveChannelFxGraph::FxInstance lease(std::move(eq),Eq::catalogIdentity,"EQ",64);
+    std::array<float,64> l{},r{};l.fill(.125f);r.fill(-.25f);
+    const auto before=heapCalls.load();
+    lease.render(l.data(),r.data(),64);
+    assert(lease.dspSleeping.load()&&lease.dspSleepBlocks.load()==1);
+    assert(l[0]==.125f&&r[63]==-.25f&&heapCalls.load()==before);
+    auto band=live->acceptedBands()[0];band.enabled=true;band.frequencyHz=1000.f;
+    assert(live->queueBand(0,band,71));
+    lease.render(l.data(),r.data(),64);
+    Eq::Completion ack{};
+    assert(!lease.dspSleeping.load()&&live->pollCompletion(ack)&&ack.applied&&ack.requestId==71);
+    assert(lease.dspProcessedBlocks.load()==1&&heapCalls.load()==before);
+    auto c=std::make_unique<Comp>();c->prepareToPlay(48000,64);
+    auto* compressor=c.get();
+    LiveChannelFxGraph::FxInstance cl(std::move(c),Comp::catalogIdentity,"Comp",64);
+    l.fill(0);r.fill(0);const auto serial=compressor->observedBlockSerial();
+    cl.render(l.data(),r.data(),16);
+    assert(cl.dspSleeping.load()&&compressor->observedBlockSerial()==serial+1);
+    l[0]=1.e-20f;
+    cl.render(l.data(),r.data(),16);
+    assert(!cl.dspSleeping.load()&&l[0]!=0.f);
+    // Vendor fixture can generate output with zero input. Never sleep it.
+    auto vendor=std::make_unique<GainFx>(1.f,0,.2f);vendor->prepareToPlay(48000,64);
+    LiveChannelFxGraph::FxInstance external(std::move(vendor),"unknown","Vendor",64);
+    l.fill(0);r.fill(0);external.render(l.data(),r.data(),16);
+    assert(!external.dspSleeping.load()&&l[0]==.2f&&r[0]==.2f);
+}
 static void verifyFxTimingSampled() {
     auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(48000,64);
     LiveChannelFxGraph::FxInstance fx(std::move(p),"sampled","timed gain",64);
@@ -2045,11 +2079,11 @@ static void verifyNativeFxRackTransactions() {
     DynamicNativeSessionPublisher publisher;DynamicGraphRequest request;
     request.physicalInputs=4;request.maxFrames=64;request.sources={{source,0,1,true},{dest,2,3,true}};
     std::uint64_t revision=0;
-    const auto publish=[&](){
+    const auto publish=[&](bool disarmed=false){
         DynamicNativeSessionPublisher::FxPlan fx;fx.owner=bank;fx.context=bank.get();fx.deviceEpoch=11;fx.graphRevision=revision+1;
         fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept{(*static_cast<DynamicChannelFxLeaseBank*>(p))(id,l,r,n);};
         fx.latency=+[](void* p,ChannelId id) noexcept{return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);};
-        assert(publisher.commit(roster,request,revision,11,11,false,fx,false,true).ok());++revision;
+        assert(publisher.commit(roster,request,revision,11,11,disarmed,fx,false,!disarmed).ok());++revision;
     };
     const auto samples=[&](float expected){
         std::array<float,64> input{},other{},l{},r{};input.fill(.25f);other.fill(.1f);
@@ -2087,6 +2121,34 @@ static void verifyNativeFxRackTransactions() {
     assert(!bank->findEditorLocation(b,b->instanceId));
     edit(dest,0,a->instanceId,{},0);samples(.35f);assert(!bank->retainsEditor(a));
     assert(!bank->findEditorLocation(a,a->instanceId));
+    // Replacement uses a new rack gate and fresh lease; unrelated graph
+    // owners and routing remain untouched. No armed PDC-changing commit.
+    auto latent=std::make_unique<GainFx>(1.f,19);latent->prepareToPlay(48000,64);
+    auto saved=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(latent),"latent","latent",64);
+    DynamicChannelRoster candidate;DynamicChannelFxLeaseBank candidateBank;
+    assert(prepareNativeFxRackReplacement(11,revision,roster.revision(),roster,*bank,
+        source,{saved},true,candidate,candidateBank));
+    assert(candidateBank.latencySamples(source)==19&&candidateBank.rackBypassed(source));
+    assert(!bank->rackBypassed(source)&&bank->insertCount(source)==0);
+    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish(true);
+    assert(publisher.latencySamples(11,revision)==19);
+    assert(prepareNativeFxRackReplacement(11,revision,roster.revision(),roster,*bank,
+        source,{},false,candidate,candidateBank));
+    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish(true);
+    assert(publisher.latencySamples(11,revision)==0&&!bank->retainsEditor(saved));
+    // Portable rack file round trip; opaque states and ordering, not IDs.
+    armix::storage::FxRackFile rack;rack.rackBypassed=true;
+    armix::storage::FxState entry;entry.catalogId="gain";entry.name="Gain";entry.bypass=true;
+    const float settings=2.f;entry.binary.append(&settings,sizeof(settings));
+    rack.effects.push_back(entry);entry.catalogId="offset";entry.bypass=false;rack.effects.push_back(entry);
+    juce::MemoryBlock bytes;using Archive=armix::storage::NativeFxRackArchive;
+    assert(Archive::encode(rack,bytes).isEmpty());
+    armix::storage::FxRackFile decoded;
+    assert(Archive::decode(bytes,decoded).isEmpty()&&decoded.rackBypassed&&decoded.effects.size()==2);
+    assert(decoded.effects[0].catalogId=="gain"&&decoded.effects[0].bypass&&
+        decoded.effects[1].catalogId=="offset"&&decoded.effects[0].binary==rack.effects[0].binary);
+    static_cast<char*>(bytes.getData())[10]^=1;
+    assert(Archive::decode(bytes,decoded).isNotEmpty()&&decoded.effects.size()==2);
 }
 
 // Native eight-band Parametric EQ must be the exact ordered rack lease in PCM,
@@ -2696,6 +2758,7 @@ int main(int argc,char** argv) {
     verifyNativePuzzleV8FixtureAndWire();
     verifyChannelIdGroupPreservesHostedFx();
     verifyFxTimingSampled();
+    verifyNativeExactIdle();
     verifyZeroLatencyFxFastPath();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();

@@ -110,6 +110,9 @@ test("G-MV21 only verified device readback refreshes Audio I/O inventory",()=>{
  assert.match(finish,/verifiedSnapshot\?\.device/);
  assert.match(finish,/active\?\.sampleRate/);
  assert.doesNotMatch(finish,/deviceInventory\?\.active/);
+ assert.match(finish,/closeAfterVerifiedPinApply && deviceState\.phase==="ACCEPTED" &&\s*!!verifiedSnapshot\?\.device/);
+ assert.match(finish,/if\(closePins\)\{[\s\S]*?closeNativeAudioIO\(\);/);
+ assert.match(bridge,/closeAfterVerifiedPinApply=!confirmRetainedPinMapping &&[\s\S]*?dataset\.audioTab==="pins" &&[\s\S]*?requestedPins!==null/);
 });
 test("G-MV21 NEEDS_REMAP native inventory refresh restores reuse-pins recovery",()=>{
  const f=fixture(),begin=f.begin("needs-remap");

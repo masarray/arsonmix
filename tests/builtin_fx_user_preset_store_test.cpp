@@ -110,7 +110,13 @@ int main() {
         namespace vd=armix::builtin_fx::vocal_delay;
         const auto good=delay();
         vd::Parameters p{};p.enabled=false;p.hit=true;
-        REQUIRE(vd::PortablePreset::decode(good.settings,p)&&!p.enabled&&!p.hit&&p.bpmQuarter==480&&p.timeMs==375.f);
+        REQUIRE(vd::PortablePreset::decode(good.settings,p)&&!p.enabled&&!p.hit&&p.bpmQuarter==480&&p.timeMs==375.f&&!p.smartStage);
+        auto modern=delay();modern.settings.getDynamicObject()->setProperty("smartStage",true);
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(modern.catalogId,modern.settings));
+        REQUIRE(vd::PortablePreset::decode(modern.settings,p)&&p.smartStage);
+        REQUIRE(vd::PortablePreset::decode(vd::PortablePreset::encode(p),p)&&p.smartStage);
+        modern.settings.getDynamicObject()->setProperty("smartStage",false);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(modern.catalogId,modern.settings));
         for(const char* key:{"enabled","hit","sourceChannelId","rackBypassed"}){
             auto bad=delay();bad.settings.getDynamicObject()->setProperty(key,true);
             REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));

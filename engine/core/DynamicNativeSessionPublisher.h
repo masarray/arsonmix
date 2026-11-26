@@ -113,8 +113,14 @@ public:
         if(verifiedInternalFxOnly && !fx.owner) {
             report.fault=Fault::invalidCandidate;return report;
         }
-        if(!allOutputsDisarmed && !verifiedInternalWireOnly &&
-           !verifiedInternalFxOnly) {
+        // A monitor timing-domain change cannot be hidden in the existing
+        // live WIRE/FX exceptions. While independent monitoring is active,
+        // even rebuilding the same policy requires an explicit disarm:
+        // fan-in changes can otherwise change the singer's delay mid-note.
+        if(!allOutputsDisarmed &&
+           (independentMonitorPublished_ ||
+            request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned ||
+            (!verifiedInternalWireOnly && !verifiedInternalFxOnly))) {
             report.fault=Fault::outputArmed;return report;
         }
         // CONTROL: validate every physical source against ONE actual
@@ -222,6 +228,7 @@ public:
                                              expectedRevision,activeDeviceEpoch);
         switch(status) {
             case Publisher::Result::applied: {
+                independentMonitorPublished_=request.monitorLatencyPolicy==MonitorLatencyPolicy::independent;
                 cueBus_.cancel(false); // new graph revision requires a new explicit listen request
                 const auto source=musicTempo_.selectedSource();
                 if(source.value) {
@@ -266,7 +273,11 @@ public:
                 float* const* hardwareOutputs=nullptr,
                 int hardwareOutputCount=0,
                 std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
-                    qualifiedCaptureBlocks={},std::uint64_t cueRoute=0) noexcept {
+                    qualifiedCaptureBlocks={},std::uint64_t cueRoute=0,
+                    std::uint64_t* renderedRevision=nullptr,
+                    std::size_t* renderedMeterCount=nullptr) noexcept {
+        if(renderedRevision)*renderedRevision=0;
+        if(renderedMeterCount)*renderedMeterCount=0;
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
@@ -359,6 +370,11 @@ public:
                 acceptedFx.render(acceptedFx.context,id,l,r,n);
             else effect(id,l,r,n);
         };
+        // Only the opted-in host requests the actual prepared roster prefix.
+        if(renderedMeterCount&&channelPeaksL.size()==channelPeaksR.size()){
+            const auto count=std::min(channelPeaksL.size(),snap->prepared->graph.channelCount());
+            channelPeaksL=channelPeaksL.first(count);channelPeaksR=channelPeaksR.first(count);
+        }
         const bool ok=snap->prepared->graph.process(
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
@@ -372,6 +388,8 @@ public:
             snap->prepared->graph.invalidateAppliedExternalOutputs();
             clearOutputs();
         }
+        if(ok&&renderedRevision)*renderedRevision=snap->graphRevision;
+        if(ok&&renderedMeterCount)*renderedMeterCount=channelPeaksL.size();
         return ok;
     }
 
@@ -544,8 +562,15 @@ public:
         const auto* p=publisher_.controlPrepared(epoch,revision);
         return p?p->graph.latencySamples():0;
     }
+    DynamicPreparedMixerBlock::LatencyPlanSummary latencyPlanSummary(
+            std::uint64_t epoch,std::uint64_t revision) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p?p->graph.latencyPlanSummary():DynamicPreparedMixerBlock::LatencyPlanSummary{};
+    }
     NativeFxCueBus& cueControl() noexcept {return cueBus_;} // CONTROL only
-    void unpublish() noexcept {cueBus_.cancel(false);publisher_.unpublish();}
+    void unpublish() noexcept {
+        cueBus_.cancel(false);publisher_.unpublish();independentMonitorPublished_=false;
+    }
     void pollRetirement() noexcept {publisher_.pollRetirement();}
     std::uint64_t acceptedRevision() const noexcept {
         return publisher_.lastRevision(); // CONTROL only
@@ -555,6 +580,7 @@ public:
     }
 private:
     Publisher publisher_;
+    bool independentMonitorPublished_=false; // CONTROL-only accepted-policy fence
     NativeMusicTempoMonitor musicTempo_{};
     NativeFxCueBus cueBus_{};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT;
