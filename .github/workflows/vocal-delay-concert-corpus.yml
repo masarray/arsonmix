@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
@@ -26,7 +26,7 @@ jobs:
           mkdir -p vd16-corpus
           git rev-parse HEAD > vd16-corpus/source-sha.txt
           python3 tools/vocal-delay/controlled_corpus.py /tmp/vd-audition vd16-corpus
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: vocal-delay-vd16-controlled-corpus

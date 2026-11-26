@@ -37,13 +37,13 @@ jobs:
             sanitizers: 'ON'
             benchmark: 'OFF'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Preserve exact standalone source for offline reproducibility
         if: matrix.benchmark == 'ON'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: anti-noiz-pro-product-source
           path: |
@@ -72,7 +72,7 @@ jobs:
         run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_rt_profile"'
       - name: Checkout exact pre-drift reference (opt-in)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: 49e49c47c9e6b291feb74c5593806ffb296ba843
           path: .anti-noiz-drift-reference
@@ -87,7 +87,7 @@ jobs:
           "$RUNNER_TEMP/anti-noiz/anti_noiz_drift_pcm_test" --report-only
       - name: Checkout exact pre-spectral reference (opt-in)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: 75bcb9e4daf9a91cd57dcbc83a8fda43b0b37d3c
           path: .anti-noiz-spectral-reference
@@ -102,14 +102,14 @@ jobs:
           "$RUNNER_TEMP/anti-noiz/anti_noiz_spectral_pcm_test" --report-only
       - name: Checkout exact pre-RT-optimization reference (opt-in)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: 5e70bb38662370e4e6644d075ac61b1bea95289d
           path: .anti-noiz-rt-reference
           persist-credentials: false
       - name: Checkout immediate pre-control reference (opt-in)
         if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: 8adec89d7e9270f46ff25fba54f5431167b55668
           path: .anti-noiz-control-reference
@@ -137,7 +137,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
@@ -147,7 +147,7 @@ jobs:
           { git rev-parse HEAD; g++ --version; lscpu; } > "$RUNNER_TEMP/pro-rt/environment.txt"
           g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -DANTI_NOIZ_ALLOC_PROBE=1 tests/anti_noiz_pro_rt_test.cpp -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign -o "$RUNNER_TEMP/pro-rt-test"
       - name: Checkout exact unpacked stereo reference
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: bf4bd81a244d5ea80210c23d31c18a05597b097f
           path: .anti-noiz-unpacked
@@ -162,7 +162,7 @@ jobs:
           python3 tools/anti-noiz/compare_stereo_packed.py "$RUNNER_TEMP/old.f32" "$RUNNER_TEMP/new.f32" "$RUNNER_TEMP/pro-rt/stereo-parity.json" --manual-only
           rm -f "$RUNNER_TEMP/old.f32" "$RUNNER_TEMP/new.f32"
       - name: Checkout exact canonical automatic DSP reference
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: bf399bfdd6f8739f39bdd226965ef2274e6e2fbc
           path: .anti-noiz-canonical
@@ -185,7 +185,7 @@ jobs:
           "$RUNNER_TEMP/pro-rt-test" --enforce-headroom | tee "$RUNNER_TEMP/pro-rt/native-session.csv"
       - name: Preserve timing evidence even when headroom fails
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: anti-noiz-professional-rt
           path: ${{ runner.temp }}/pro-rt/
@@ -197,11 +197,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: 8adec89d7e9270f46ff25fba54f5431167b55668
           path: .anti-noiz-control-reference
@@ -240,14 +240,14 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: juce-framework/JUCE
-          ref: 8.0.15
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
           path: third_party/JUCE
           persist-credentials: false
       - name: Configure isolated real JUCE adapter and graph fixture
@@ -263,7 +263,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 7
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
@@ -281,7 +281,7 @@ jobs:
         run: python3 tests/anti_noiz_approved_chromium_test.py "$RUNNER_TEMP/anti-noiz-approved"
       - name: Actual editor screenshot evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: anti-noiz-operator-ui-screenshots
           path: ${{ runner.temp }}/anti-noiz-operator-*.png

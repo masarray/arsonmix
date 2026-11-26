@@ -24,14 +24,14 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 55
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: juce-framework/JUCE
-          ref: 8.0.15
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
           path: third_party/JUCE
           persist-credentials: false
       - name: Pinned WebView2 SDK
@@ -59,7 +59,7 @@ jobs:
           cmake --build dmx-build --parallel 2 --target CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host "DMX_SCOPED_NATIVE_PASS exact=$env:EXPECTED_SHA (not full FAT)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: dmx-native-ctest

@@ -99,7 +99,7 @@ jobs:
           node --input-type=module -e 'import assert from "node:assert/strict"; import {classifyVocalHarmonyChanges as c} from "./scripts/vocal_harmony_ci_scope.mjs"; for(const p of ["scripts/harmony_vocalset_qualification.py","scripts/vocal_harmony_ci_scope.mjs",".github/workflows/harmony-fast-dsp.yml"]) assert.deepEqual(c([p]),{dsp:true,ui:true}); assert.deepEqual(c(["CMakeLists.txt","src/Main.cpp"]),{dsp:false,ui:false});'
           python3 scripts/harmony_vocalset_qualification.py /tmp/arson-harmony-ab "$RUNNER_TEMP/harmony-vocalset" "$(git rev-parse HEAD)"
       - name: Publish exact-source qualification evidence (no PCM)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: harmonice-qualification-${{ github.event.pull_request.head.sha }}
           path: ${{ runner.temp }}/harmony-vocalset/evidence/
