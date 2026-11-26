@@ -42,6 +42,19 @@ constexpr FxReview reviewFx(bool valid,std::uint64_t calls,std::uint64_t over,
     if(over||worst>=250)return FxReview::reviewBudget;
     return FxReview::keep;
 }
+// Stable CONTROL ranking: faults first, then latent bypass, then
+// repeated pressure in the last complete window, then historical peak.
+// A sampled window is not a deadline prediction or suspension permission.
+constexpr std::uint64_t fxReviewPriority(FxReview action,unsigned windowOver,
+        unsigned windowMean,std::uint64_t worst) noexcept {
+    const std::uint64_t category=action==FxReview::latencyFault?4:
+        action==FxReview::reviewLatentBypass?3:
+        (action==FxReview::reviewBudget||action==FxReview::reviewSilentCost)?2:0;
+    const auto over=windowOver>32?32:windowOver;
+    const auto mean=windowMean>0xfffffu?0xfffffu:windowMean;
+    return (category<<58)|(static_cast<std::uint64_t>(over)<<52)|
+        (static_cast<std::uint64_t>(mean)<<32)|(worst>0xffffffffu?0xffffffffu:worst);
+}
 inline const char* fxReviewName(FxReview v) noexcept {
     switch(v){
         case FxReview::latencyFault:return "REBUILD_LATENCY_WHILE_DISARMED";

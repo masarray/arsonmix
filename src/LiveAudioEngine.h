@@ -2869,18 +2869,32 @@ public:
         juce::String nativeWorstName,nativeWorstInstance;
         int nativeTimingLeases=0;
         int workloadMeasured=0,workloadOverBudget=0,workloadLegacyMeasured=0;
-        int workloadReviewCount=0;
+        int workloadReviewCount=0,workloadWindowLeases=0,workloadWindowOverBudgetLeases=0;
         juce::Array<juce::var> workloadReviews;
+        std::array<std::uint64_t,32> reviewPriorities{};
         const auto recordReview=[&](const juce::String& name,const juce::String& identity,
                 const juce::String& channel,bool sampledOnly,bool valid,
                 std::uint64_t calls,std::uint64_t over,std::uint64_t worst,
-                std::uint64_t observed,std::uint64_t silent,int latency,bool bypass,bool fault){
+                std::uint64_t observed,std::uint64_t silent,int latency,bool bypass,bool fault,
+                armix::rt::FxWorkloadEvidence::Window window){
+            if(window.valid){
+                ++workloadWindowLeases;
+                if(window.overBudget)++workloadWindowOverBudgetLeases;
+            }
             const auto action=armix::rt::reviewFx(valid,calls,over,worst,observed,silent,latency,bypass,fault);
             if(action==armix::rt::FxReview::noEvidence||action==armix::rt::FxReview::keep)return;
             ++workloadReviewCount;
-            // Bounded control-side list. All candidates counted; no callback
-            // allocation, no automatic action and no new render authority.
-            if(workloadReviews.size()>=32)return;
+            // Keep the 32 highest-priority reviews, not merely the first
+            // 32 channels in roster order. Stable ties preserve traversal.
+            const auto priority=armix::rt::fxReviewPriority(action,window.valid?window.overBudget:0,
+                window.valid?window.meanPermille:0,worst);
+            int position=0;
+            while(position<workloadReviews.size()&&reviewPriorities[static_cast<std::size_t>(position)]>=priority)++position;
+            if(position>=32)return;
+            if(workloadReviews.size()==32)workloadReviews.remove(31);
+            for(int i=workloadReviews.size();i>position;--i)
+                reviewPriorities[static_cast<std::size_t>(i)]=reviewPriorities[static_cast<std::size_t>(i-1)];
+            reviewPriorities[static_cast<std::size_t>(position)]=priority;
             auto item=std::make_unique<juce::DynamicObject>();
             item->setProperty("name",name);item->setProperty("instance",identity);
             item->setProperty("channel",channel);
@@ -2890,7 +2904,11 @@ public:
             item->setProperty("latencySamples",latency);
             item->setProperty("silentObservations",static_cast<double>(silent));
             item->setProperty("observations",static_cast<double>(observed));
-            workloadReviews.add(juce::var(item.release()));
+            item->setProperty("windowValid",window.valid);
+            item->setProperty("windowMeanPermille",window.valid?juce::var(static_cast<int>(window.meanPermille)):juce::var());
+            item->setProperty("windowPeakPermille",window.valid?juce::var(static_cast<int>(window.peakPermille)):juce::var());
+            item->setProperty("windowOverBudget",window.valid?juce::var(static_cast<int>(window.overBudget)):juce::var());
+            workloadReviews.insert(position,juce::var(item.release()));
         };
         double workloadWorst=-1.;
         bool workloadWorstSampledOnly=false;
@@ -2916,7 +2934,11 @@ public:
                                 count("workloadWorstPermille"),count("workloadSilenceObserved"),
                                 count("workloadSilentInOut"),static_cast<int>(insert.getProperty("latencySamples",0)),
                                 globalFxBypassed||rackBypassed||bool(insert.getProperty("bypassed",false)),
-                                bool(insert.getProperty("latencyChanged",false)));
+                                bool(insert.getProperty("latencyChanged",false)),
+                                {bool(insert.getProperty("workloadWindowValid",false)),
+                                 static_cast<unsigned>(count("workloadWindowMeanPermille")),
+                                 static_cast<unsigned>(count("workloadWindowPeakPermille")),
+                                 static_cast<unsigned>(count("workloadWindowOverBudget"))});
                         }
                         if(measured){
                             ++workloadMeasured;
@@ -3024,7 +3046,8 @@ public:
                     evidence.calls,evidence.overBudget,evidence.worstPermille,
                     evidence.silenceObserved,evidence.silentInOut,slot.latency,
                     globalFxBypassed||externalRackBypassed||
-                        acceptedGraph->bypassFlags[physical].load(std::memory_order_acquire),false);
+                        acceptedGraph->bypassFlags[physical].load(std::memory_order_acquire),false,
+                    evidence.lastWindow);
                 if(measured){
                     ++workloadMeasured;++workloadLegacyMeasured;
                     if(evidence.overBudget)++workloadOverBudget;
@@ -3054,6 +3077,10 @@ public:
         o->setProperty("nativeFxWorkloadWorstSampledOnly",workloadWorstSampledOnly);
         o->setProperty("nativeFxWorkloadLegacySampledLeases",workloadLegacyMeasured);
         o->setProperty("nativeFxWorkloadReviewCount",workloadReviewCount);
+        o->setProperty("nativeFxWorkloadWindowLeases",workloadWindowLeases);
+        o->setProperty("nativeFxWorkloadWindowOverBudgetLeases",workloadWindowOverBudgetLeases);
+        o->setProperty("nativeFxWorkloadWindowProvenance",
+            "LAST_COMPLETE_32_OBSERVATIONS_FRAME_WEIGHTED_NOT_TIME_WINDOW_OR_CURRENT_LOAD");
         o->setProperty("nativeFxWorkloadReviews",juce::var(workloadReviews));
         o->setProperty("nativeFxWorkloadProvenance",
             "NATIVE_ALL_CALLS_EXTERNAL_CH1_SPARSE_SAMPLES_WALL_TIME_VS_FRAMES_RATE_NOT_XRUN");

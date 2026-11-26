@@ -1343,6 +1343,7 @@ private:
                  "nativeFxWorkloadWorstPermille", "nativeFxWorkloadWorstName", "nativeFxWorkloadWorstInstance",
                  "nativeFxWorkloadLegacySampledLeases", "nativeFxWorkloadReviewCount",
                  "nativeFxWorkloadWorstSampledOnly",
+                 "nativeFxWorkloadWindowLeases", "nativeFxWorkloadWindowOverBudgetLeases",
                  "nativeExactIdleCount", "nativeLatentInsertCount", "nativeLatentBypassRequestedCount",
                  "nativeMaxInsertLatencySamples", "nativeMaxInsertLatencyName",
                  "nativeLatencyPlanValid", "nativeLatencyPlanProvenance",

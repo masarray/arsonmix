@@ -32,6 +32,36 @@ static void workload(){
     f.observe(1,0);assert(f.snapshot().calls==0);
     f.observe(1000000,16);assert(f.snapshot().overBudget==1&&f.snapshot().worstPermille>=3000);
 }
+static void windows(){
+    using namespace armix::rt;
+    FxWorkloadEvidence e;e.prepare(48000.);
+    for(unsigned i=0;i<31;++i)e.observe(1000000,48);
+    assert(!e.snapshot().lastWindow.valid);
+    e.observe(1000000,48);
+    auto a=e.snapshot().lastWindow;
+    assert(a.valid&&a.meanPermille==1000&&a.peakPermille==1000&&a.overBudget==0);
+    // Equal number of short and long observations: frame-weighted mean
+    // (16*2 + 512*.25)/(16+512) ~= .303, not 1.125.
+    for(unsigned i=0;i<32;++i){
+        const int frames=i%2?512:16;
+        e.observe(static_cast<std::uint64_t>(1.e9/48000.*frames*(i%2?.25:2.)),frames);
+    }
+    a=e.snapshot().lastWindow;
+    assert(a.valid&&a.meanPermille>=303&&a.meanPermille<=304&&
+        a.peakPermille==2000&&a.overBudget==16);
+    for(unsigned i=0;i<32;++i)e.observe(1000,48);
+    a=e.snapshot().lastWindow;
+    assert(a.valid&&a.meanPermille==1&&a.peakPermille==1&&a.overBudget==0);
+    assert(e.snapshot().worstPermille==2000); // old peak remains historical
+    assert(fxReviewPriority(FxReview::reviewBudget,16,300,2000)>
+           fxReviewPriority(FxReview::reviewBudget,0,1,9000));
+    assert(fxReviewPriority(FxReview::latencyFault,0,0,0)>
+           fxReviewPriority(FxReview::reviewLatentBypass,32,0xfffff,0xffffffff));
+    e.prepare(96000.);assert(!e.snapshot().lastWindow.valid);
+    for(unsigned i=0;i<32;++i)e.observe(std::numeric_limits<std::uint64_t>::max(),1);
+    a=e.snapshot().lastWindow;
+    assert(a.valid&&a.meanPermille==0xfffff&&a.peakPermille==0xfffff&&a.overBudget==32);
+}
 static void history(){
     std::uint32_t rng=1234567;
     auto next=[&](){rng^=rng<<13;rng^=rng>>17;rng^=rng<<5;return rng;};
@@ -117,6 +147,6 @@ static void lifecycle(){
     e.prepare(96000.);s=e.snapshot();
     assert(s.validRate&&s.calls==0&&s.overBudget==0&&s.worstPermille==0&&s.silenceObserved==0);
 }
-int main(){workload();history();lifecycle();
-    std::puts("PASS: 42000 latent blocks, 128 lifecycle combinations, silence/overload/reset and advisory fences");
+int main(){workload();windows();history();lifecycle();
+    std::puts("PASS: 42000 latent blocks, 128 lifecycle combinations, silence/overload/reset, frame-weighted windows and advisory ranking");
 }

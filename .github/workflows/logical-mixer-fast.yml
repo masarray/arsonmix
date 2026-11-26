@@ -20,6 +20,10 @@ on:
       - 'engine/core/FxRackCatalogReplacement.h'
       - 'engine/core/LiveChannelFxGraph.h'
       - 'tests/fx_global_workload_test.cpp'
+      - 'engine/builtin_fx/GraphicEq31Core.h'
+      - 'engine/builtin_fx/GraphicEq31Processor.h'
+      - 'tests/geq_sparse_exact_test.cpp'
+      - 'tests/fixtures/GraphicEq31Reference20261126.h'
       - 'engine/core/DynamicAcceptedSession.h'
       - 'engine/core/DynamicNativeSessionPublisher.h'
       - 'tests/dynamic_accepted_session_test.cpp'
@@ -63,3 +67,9 @@ jobs:
           c++ -std=c++20 -O2 -Wall -Wextra -Werror -I. \
             tests/fx_global_workload_test.cpp -o /tmp/arsonmix-fx-global-test
           /tmp/arsonmix-fx-global-test
+
+      - name: Compare sparse GEQ31 against exact previous core (no JUCE)
+        run: |
+          c++ -std=c++20 -O2 -Wall -Wextra -Werror -I. \
+            tests/geq_sparse_exact_test.cpp -o /tmp/arsonmix-geq-exact-test
+          /tmp/arsonmix-geq-exact-test
