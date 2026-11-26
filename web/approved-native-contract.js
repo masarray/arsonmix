@@ -899,7 +899,135 @@
       provenance:"DRIVER_HINT_NOT_LOOPBACK__PROCESS_CPU_ALL_CORES__LAST_CALLBACK_BUDGET__PROCESS_WORKING_SET"
     });
   }
-  return Object.freeze({footerHealthFromLive,decimal,cmp,normalizeSnapshot,
+
+  // M4 Smart Performance Assistant. CONTROL/JS presentation only. The 13
+  // histogram buckets are cumulative, so calculate an *epoch-fenced* 1 Hz
+  // difference, never describe a lifetime peak as current DSP usage.
+  // This is host-render evidence, NEVER an ASIO/driver xrun measurement.
+  function smartPerformanceView(live,accepted,prior=null) {
+    const integer=n=>Number.isSafeInteger(n)&&n>=0?n:null;
+    const finite=n=>typeof n==="number"&&Number.isFinite(n)?n:null;
+    const unavailable=reason=>Object.freeze({
+      state:"UNAVAILABLE",reason,headroom:null,callbacks:null,over:null,
+      latency:null,fxPeak:null,reviews:[],recommendations:[],cursor:null,
+      correlation:null
+    });
+    if(!accepted?.admitted||accepted.retained||!accepted.device ||
+       !live||live.connected!==true||live.directRouteAuthorized!==true||
+       accepted.device.epoch!==String(live.deviceGeneration)||
+       accepted.device.sampleRate!==live.rate ||
+       accepted.device.bufferFrames!==live.buffer ||
+       !(finite(live.periodUs)>0))
+      return unavailable("No matching verified native render / device epoch");
+    const seq=integer(live.footerHealthSequence);
+    const counts=live.callbackBudgetBuckets;
+    if(!seq||!Array.isArray(counts)||counts.length!==13||
+       !counts.every(n=>integer(n)!==null))
+      return unavailable("Waiting for the native 1 Hz callback histogram");
+    const epoch=accepted.device.epoch;
+    const cursor=Object.freeze({epoch,seq,buckets:Object.freeze([...counts])});
+    const same=prior?.epoch===epoch&&integer(prior.seq)!==null&&prior.seq<seq&&
+      Array.isArray(prior.buckets)&&prior.buckets.length===13&&
+      prior.buckets.every(n=>integer(n)!==null);
+    const delta=same?counts.map((n,i)=>n-prior.buckets[i]):null;
+    const valid=delta!==null&&delta.every(n=>integer(n)!==null);
+    const callbacks=valid?delta.reduce((sum,n)=>sum+n,0):null;
+    const enough=callbacks!==null&&callbacks>=64;
+    const buckets=Object.freeze([1,2,4,8,12,20,30,40,55,70,85,100,null]);
+    const pct=(percentage)=>percentage===null?">100%":percentage+"%";
+    const p99=()=>{
+      if(!enough)return null;
+      const target=Math.ceil(callbacks*.99);
+      let scanned=0;
+      for(let i=0;i<delta.length;i++){
+        scanned+=delta[i];
+        if(scanned>=target)return buckets[i];
+      }
+      return null;
+    };
+    const ceiling=p99();
+    const over=valid?delta[12]:null;
+    const headroom=enough?Object.freeze({
+      p99:pct(ceiling),margin:ceiling===null?"none verified":(100-ceiling)+"%",
+      confidence:"HOST_RENDER_1HZ_DELTA_P99_BUCKET_CEILING_NOT_XRUN"
+    }):null;
+    const correlation=live.renderPressureWindowValid===true &&
+      ["renderPressureWithinThenLate","renderPressureOverThenLate",
+       "renderPressureWithinThenOnTime","renderPressureOverThenOnTime"]
+        .every(k=>integer(live[k])!==null)?
+      Object.freeze({withinLate:live.renderPressureWithinThenLate,
+        overLate:live.renderPressureOverThenLate,
+        provenance:"LAST_COMPLETE_64_PAIRS_MAY_BE_OLD_NOT_CAUSAL"}):null;
+    const peakRatio=finite(live.nativeFxWorkloadWorstPermille);
+    const fxName=typeof live.nativeFxWorkloadWorstName==="string"?
+      live.nativeFxWorkloadWorstName.trim().slice(0,90):"";
+    const fxPeak=peakRatio!==null&&peakRatio>=0&&fxName?Object.freeze({
+      name:fxName,percent:(peakRatio/10).toFixed(1)+"%",
+      sampled:live.nativeFxWorkloadWorstSampledOnly===true,
+      provenance:"MAX_OBSERVED_INVOCATION_RATIO_LIFETIME_NOT_CURRENT_LOAD"
+    }):null;
+    const actionText=Object.freeze({
+      REBUILD_LATENCY_WHILE_DISARMED:"Latency changed; inspect with outputs disarmed",
+      REVIEW_LATENT_BYPASS:"Bypassed insert still retains alignment latency",
+      REVIEW_SAMPLED_SILENT_COST:"Review cost during measured silence",
+      REVIEW_BLOCK_BUDGET:"Review processor workload and preset"
+    });
+    const reviews=Array.isArray(live.nativeFxWorkloadReviews)?
+      live.nativeFxWorkloadReviews.filter(r=>r&&
+        typeof r.name==="string"&&typeof r.recommendation==="string"&&
+        Object.hasOwn(actionText,r.recommendation)).slice(0,3).map(r=>Object.freeze({
+          name:r.name.slice(0,90),channel:String(r.channel??"").slice(0,30),
+          action:actionText[r.recommendation],
+          window:r.windowValid===true&&finite(r.windowMeanPermille)!==null?
+            (r.windowMeanPermille/10).toFixed(1)+"%":"—",
+          sampled:r.sampledOnly===true
+        })):[];
+
+    const rate=finite(live.rate);
+    const ms=samples=>integer(samples)!==null&&rate>0?
+      (1000*samples/rate).toFixed(2)+" ms":null;
+    const latency=live.nativeLatencyPlanValid===true?Object.freeze({
+      main:ms(live.nativeLatencyPlanAlignedSamples),
+      monitor:live.nativeLatencyPlanHasMonitor===true?
+        ms(live.nativeLatencyPlanMonitorOutputSamples):null,
+      policy:live.nativeLatencyPlanMonitorPolicy==="INDEPENDENT_MONITOR"?
+        "Independent singer monitor":"Globally aligned",
+      largest:ms(live.nativeMaxInsertLatencySamples),
+      largestName:typeof live.nativeMaxInsertLatencyName==="string"?
+        live.nativeMaxInsertLatencyName.slice(0,90):"",
+      provenance:"DECLARED_FX_GRAPH_SAMPLES_NOT_DRIVER_OR_ACOUSTIC_ROUNDTRIP"
+    }):null;
+    const armed=accepted.device.outputArmed===true;
+    const recommendations=[];
+    let state="COLLECTING";
+    if(!armed)recommendations.push("Outputs disarmed. Inspect routing before enabling monitoring.");
+    else if(!enough)recommendations.push("Collect at least 64 render callbacks within one valid 1-second interval.");
+    else if(over>0)recommendations.push("Render deadline exceeded in "+over+
+      "/"+callbacks+" measured blocks. Review FX workload before any operator-approved change.");
+    else if(ceiling===null||ceiling>=85)
+      recommendations.push("Limited measured render headroom. Review FX workload and device scheduling.");
+    else recommendations.push("No over-budget render in this observed interval; continue monitoring.");
+
+    if(enough&&correlation?.withinLate>0)
+      recommendations.push("Late callback starts also followed in-budget processing; investigate driver / OS scheduling (not a confirmed cause).");
+    else if(enough&&correlation?.overLate>0)
+      recommendations.push("Some late starts followed an over-budget render; investigate DSP pressure (not a confirmed xrun).");
+    if(integer(live.nativeLatentBypassRequestedCount)>0)
+      recommendations.push("Bypassing latent FX retains PDC. To remove latency, save then deactivate explicitly while outputs are disarmed.");
+    else if(latency?.largest&&latency.largestName)
+      recommendations.push("Largest declared insert latency: "+latency.largestName+
+        " ("+latency.largest+"); only a disarmed graph edit can remove its PDC.");
+    if(fxPeak&&enough&&peakRatio>=700)
+      recommendations.push("Inspect "+fxPeak.name+"; peak workload is historical"+
+        (fxPeak.sampled?" and sampled":"")+", not proof of present crackle.");
+    if(armed&&enough)state=over>0||ceiling===null?"PRESSURE":
+      ceiling>=85?"TIGHT":"OBSERVED_MARGIN";
+    return Object.freeze({state,reason:armed?"Native render evidence":"Outputs disarmed",
+      headroom,callbacks,over,latency,fxPeak,reviews,correlation,
+      recommendations:recommendations.slice(0,5),cursor});
+  }
+
+  return Object.freeze({smartPerformanceView,footerHealthFromLive,decimal,cmp,normalizeSnapshot,
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
