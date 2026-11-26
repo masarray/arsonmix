@@ -3213,6 +3213,8 @@ private:
             obj->setProperty("physicalBusSecondaryArmed",engine_.secondaryArmed());
             const bool streamReady=bool(live.getProperty("secondaryOutputReady",false))&&
                 !bool(live.getProperty("secondaryOutputFault",false));
+            obj->setProperty("secondaryOutputFault",live.getProperty("secondaryOutputFault",false));
+            obj->setProperty("secondaryOutputName",live.getProperty("secondaryOutputName",""));
             obj->setProperty("secondaryMainReady",streamReady);
             obj->setProperty("secondaryMainEndpoint",streamReady?
                 live.getProperty("secondaryOutputName",{}):juce::var(""));
@@ -9863,6 +9865,7 @@ private:
                 }else error="Windows playback discovery unavailable";
             } catch(...) {error="Cannot refresh Windows playback devices";}
             auto result=std::make_unique<juce::DynamicObject>();
+            result->setProperty("requestId",args.getProperty("requestId",{}));
             result->setProperty("outputs",juce::var(outputs));
             result->setProperty("error",error);
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputInventory",juce::var(result.release()));

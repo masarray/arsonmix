@@ -3610,7 +3610,7 @@
   // U1: approved native bundle owns this workflow. monitor.js belongs to
   // the retired console and is deliberately NOT shipped in this bundle.
   let extraPanel=null,extraControls=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
-      extraError="",extraInventoryKnown=false,extraInventoryPending=false;
+      extraError="",extraInventoryKnown=false,extraInventoryPending="";
   const extraField=name=>extraControls?.querySelector("[data-extra-"+name+"]");
   const extraInlineHost=()=>devicePanel?.querySelector("[data-audio-extra-output]");
   const extraInlineVisible=()=>!devicePanel?.hidden&&
@@ -3618,12 +3618,13 @@
   const extraSurfaceOpen=()=>Boolean(extraPanel?.open||extraInlineVisible());
   function refreshAdditionalInventory(){
     if(extraInventoryPending)return;
-    extraInventoryPending=true;extraInventoryKnown=false;extraError="";
+    const requestId="extra-inventory-"+(++extraSerial);
+    extraInventoryPending=requestId;extraInventoryKnown=false;extraError="";
     paintAdditionalOutput();
-    backend.emitEvent("arMixAction",{action:"secondaryOutputInventory"});
+    backend.emitEvent("arMixAction",{action:"secondaryOutputInventory",requestId});
     window.setTimeout(()=>{
-      if(!extraInventoryPending)return;
-      extraInventoryPending=false;extraInventoryKnown=false;
+      if(extraInventoryPending!==requestId)return;
+      extraInventoryPending="";extraInventoryKnown=false;
       extraError="Could not read Windows playback devices. Select Refresh to retry.";
       paintAdditionalOutput();
     },8000);
@@ -3665,8 +3666,10 @@
     extraField("refresh").disabled=busy||extraInventoryPending;
     extraField("connect").disabled=busy||!allowed||armed||!extraInventoryKnown||!options.includes(select.value);
     extraField("stop").disabled=busy||(!ready&&!fault&&!name);
-    extraField("mode").textContent=split?"MAIN → Windows · independent monitor":"MAIN → Windows · same mix";
-    extraControls.dataset.state=extraPending?"PENDING":destination.state;
+    const mode=split?"MAIN → Windows · independent monitor":"MAIN → Windows · same mix";
+    if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
+    const surfaceState=extraPending?"PENDING":destination.state;
+    if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
     const message=extraPending?(extraPending.acked?"Verifying output…":"Applying output…"):
       busy?"Audio device is applying…":!live?"Reading audio engine status…":
       fault?"Output disconnected unexpectedly. Enable the selected device again or disconnect.":
@@ -3721,6 +3724,9 @@
       .armix-stream-controls[data-state="PENDING"] [data-extra-status]{color:#e5c17d}
       .armix-stream-hint{font-size:11px;color:#9fb9c8;line-height:1.4}
       .armix-stream-inline{margin-bottom:12px}
+      .armix-audio-dialog details[data-audio-hardware-routing]{margin:10px 0;padding:9px 0}
+      .armix-output-status[data-state="FAULT"]{color:#ffb7a5}
+      .armix-output-status[data-state="RESERVED"]{color:#e5c17d}
     `;
     document.head.appendChild(style);
     const panel=document.createElement("dialog");
@@ -5430,9 +5436,9 @@
     // Rendering changes ONLY two existing footer spans; no new DOM,
     // browser polling, requestAnimationFrame or audio callback work.
     backend.addEventListener("arMixSecondaryOutputInventory",inventory=>{
-      if(!inventory||!Array.isArray(inventory.outputs))return;
+      if(!extraInventoryPending||inventory?.requestId!==extraInventoryPending||!Array.isArray(inventory.outputs))return;
       extraInventory=[...new Set(inventory.outputs.filter(x=>typeof x==="string"&&x.length>0&&x.length<=240))];
-      extraInventoryPending=false;
+      extraInventoryPending="";
       extraInventoryKnown=!inventory.error;
       if(inventory.error)extraError=String(inventory.error);
       paintAdditionalOutput();

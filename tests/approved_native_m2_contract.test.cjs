@@ -7664,6 +7664,8 @@ test("U2-B one secondary readback represents mirror, split, fault and disconnect
  assert.equal(protocol.secondaryOutputRow(snapshot,split).role,"MAIN");
  assert.equal(protocol.secondaryOutputRow(snapshot,{...split,secondaryOutputReady:false,secondaryOutputName:""}).status,"NEEDS_REMAP");
  assert.equal(protocol.secondaryOutputView(snapshot,{secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:""}).armed,false);
+ assert.equal(protocol.secondaryOutputView({...snapshot,device:{epoch:"19"}},{...live,dryRoutingLab:{epoch:18}}).state,"DISCONNECTED");
+ assert.equal(protocol.secondaryOutputView({raw:{secondaryOutputFault:true,secondaryOutputName:"CABLE Input"}},null).state,"FAULT");
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/host\.append\(extraControls\)/);
  assert.match(bridge,/extraPanel\.append\(extraControls\)/);

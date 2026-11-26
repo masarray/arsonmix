@@ -254,6 +254,7 @@ def verify_bus_remap(page,out):
         physicalBusSecondaryArmed=False,operatorOutputMuted=False)
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
+    page.locator("[data-audio-hardware-routing] > summary").click()
     rows=page.locator("[data-audio-output-grid] tbody tr")
     main=rows.nth(0);monitor=rows.nth(1)
     assert main.get_by_label("MAIN assignment",exact=True).count()==0
@@ -316,6 +317,7 @@ def verify_logical_outputs(page,out):
         logicalOutputRegistry={"revision":"1","ports":[],"references":[]})
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
+    page.locator("[data-audio-hardware-routing] > summary").click()
     title="Session logical outputs"
     page.get_by_text(title,exact=True).click()
     name=page.get_by_label("Logical output name",exact=True)
@@ -408,6 +410,7 @@ def verify_io_defaults(page,out):
         ioDefaults={"revision":"0","readOnly":False,"canLoad":False,"inputs":0,"outputs":0})
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
+    page.locator("[data-audio-hardware-routing] > summary").click()
     save=page.get_by_role("button",name="Make Default",exact=True)
     load=page.get_by_role("button",name="Load Default",exact=True)
     clear=page.get_by_role("button",name="Clear Default",exact=True)
@@ -471,8 +474,12 @@ def verify_additional_output(page,out):
     panel=page.get_by_role("dialog",name="Additional Output")
     assert panel.is_visible()
     assert page.evaluate("()=>typeof window.__arMixOpenAdditionalOutput")== "undefined"
-    assert page.evaluate("()=>window.__actions.at(-1).action")=="secondaryOutputInventory"
-    emit(page,"arMixSecondaryOutputInventory",{"outputs":["CABLE Input","Speakers"]})
+    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    assert inventory_req["action"]=="secondaryOutputInventory"
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":"foreign","outputs":["Speakers"]})
+    assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],"outputs":["CABLE Input","Speakers"]})
+    assert panel.get_by_label("Windows playback device").input_value()=="CABLE Input"
     panel.get_by_label("Windows playback device").select_option("CABLE Input")
     panel.get_by_role("button",name="Enable output",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
@@ -497,6 +504,7 @@ def verify_additional_output(page,out):
     inventory=open_verified_audio_io(page,state,"routing")
     inline=page.locator("[data-audio-extra-output]")
     assert inline.get_by_label("Windows playback device").is_visible()
+    assert not page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
     assert inline.get_by_role("button",name="Disconnect").is_enabled()
     assert not panel.is_visible()
     assert page.locator("[data-extra-device]").count()==1

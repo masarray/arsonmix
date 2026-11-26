@@ -288,12 +288,14 @@
   // unified workspace. No ACK, friendly name or browser draft proves PCM.
   function secondaryOutputView(snapshot,live) {
     const raw=snapshot?.raw;
+    const liveEpoch=live?.dryRoutingLab?.epoch, snapshotEpoch=snapshot?.device?.epoch;
     const current=live&&typeof live.secondaryOutputReady==="boolean"&&
-      typeof live.secondaryOutputArmed==="boolean";
-    const split=typeof live?.dryRoutingLab?.secondaryMainOnly==="boolean"?
+      typeof live.secondaryOutputArmed==="boolean"&&
+      (liveEpoch==null||snapshotEpoch==null||String(liveEpoch)===String(snapshotEpoch));
+    const split=current&&typeof live?.dryRoutingLab?.secondaryMainOnly==="boolean"?
       live.dryRoutingLab.secondaryMainOnly:raw?.secondaryMainOnly===true;
-    const fault=current&&live.secondaryOutputFault===true;
-    const name=current?String(live.secondaryOutputName||""):String(raw?.secondaryMainEndpoint||"");
+    const fault=current?live.secondaryOutputFault===true:raw?.secondaryOutputFault===true;
+    const name=current?String(live.secondaryOutputName||""):String(raw?.secondaryOutputName||raw?.secondaryMainEndpoint||"");
     const ready=current?live.secondaryOutputReady===true:raw?.secondaryMainReady===true;
     const armed=current?live.secondaryOutputArmed===true:raw?.physicalBusSecondaryArmed===true;
     const state=fault?"FAULT":!ready||!name?(split?"NEEDS_REMAP":"DISCONNECTED"):
