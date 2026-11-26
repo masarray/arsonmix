@@ -6,6 +6,8 @@ on:
       - 'scripts/verify_sonku_p10_hotpath.py'
       - 'tests/sonku_p10_hotpath_parity.cpp'
       - '.github/workflows/sonku-p104-hotpath.yml'
+      - 'scripts/verify_sonku_p105_fixed_callback.py'
+      - 'tests/sonku_p105_fixed_callback.cpp'
 permissions:
   contents: read
 jobs:
@@ -19,3 +21,36 @@ jobs:
           fetch-depth: 0
       - name: Compile pinned reference and isolated candidate, compare PCM and timing
         run: python3 scripts/verify_sonku_p10_hotpath.py
+  fixed-callback:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: GNU fixed callback native PCM and timing
+        if: runner.os == 'Linux'
+        run: python3 scripts/verify_sonku_p105_fixed_callback.py
+      - name: MSVC fixed callback native PCM and timing
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdline = 'call "' + $vcvars + '" >nul && python scripts/verify_sonku_p105_fixed_callback.py --msvc'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'SONKU_P105_FIXED_CALLBACK_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P105-fixed-callback-${{ matrix.os }}
+          path: sonku-p105-rt/report.json
+          if-no-files-found: error
+          retention-days: 14
