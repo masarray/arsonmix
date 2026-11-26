@@ -6,7 +6,7 @@ import {parseMilestoneCommand,isTrustedOwnerComment,validateMilestone,
   hadEarlierIdenticalRequest,hasPriorDispatch,quickResult,performMilestone,
   focusedImmerSIBFileScope,parseImmerSIBFocusedRun,
   parseWindowsMilestoneRun,guardWindowsMilestone,
-  planSmartMilestone,verifySmartFast,performSmartMilestone}
+  planSmartMilestone,verifySmartFast,performSmartMilestone,recentScopedMilestones}
   from '../scripts/chat_ci_dispatch.mjs';
 
 const sha='a'.repeat(40),repo='masarray/arsonmix';
@@ -16,7 +16,7 @@ const event=(body='/arsonmix-ci fat '+sha)=>({
   comment:{id:48,body,author_association:'OWNER',user:{login:'masarray'}}
 });
 const pr=(head=sha)=>({
-  number:418,state:'open',base:{ref:'main',repo:{full_name:repo}},
+  number:418,state:'open',created_at:'2026-01-01T00:00:00Z',base:{ref:'main',repo:{full_name:repo}},
   head:{ref:'integration/daw-direct-hardware-input-20261105',sha:head,repo:{full_name:repo}}
 });
 
@@ -637,4 +637,32 @@ test('QUALIFY is repeatable after timeout, waits for job registration and never 
     assert.equal(writes.length,state==='missing'?1:0);
     if(writes.length)assert.equal(writes[0].data.inputs.package_fat,true);
   }
+});
+
+
+test('dispatch history is bounded to the PR lifetime, not 500 global historical runs',async()=>{
+  const calls=[];
+  const a=await recentScopedMilestones(async path=>{
+    calls.push(path);
+    return {total_count:1,workflow_runs:[windowsRun(901,'fat',418,sha,'completed','success')]};
+  },'p1-windows.yml','2026-11-26T11:36:11Z',Date.parse('2026-11-26T12:00:00Z'));
+  assert.equal(a[0].id,901);
+  assert.match(decodeURIComponent(calls[0]),/created=2026-11-26T11:36:11Z\.\.2026-11-26T12:00:00Z/);
+  assert.equal(calls.length,1);
+});
+test('busy dispatch history partitions time, preserves old active runs and newest-first order',async()=>{
+  const ranges=[];
+  const a=await recentScopedMilestones(async path=>{
+    const range=new URLSearchParams(path.split('?')[1]).get('created');
+    ranges.push(range);
+    if(ranges.length===1)return {total_count:1500,workflow_runs:[]};
+    return {total_count:1,workflow_runs:[windowsRun(ranges.length===2?50:90,'fat',418,sha)]};
+  },'p1-windows.yml','2026-11-26T11:00:00Z',Date.parse('2026-11-26T11:00:03Z'));
+  assert.deepEqual(a.map(x=>x.id),[90,50]);
+  assert.deepEqual(ranges.slice(1),['2026-11-26T11:00:00Z..2026-11-26T11:00:01Z','2026-11-26T11:00:02Z..2026-11-26T11:00:03Z']);
+});
+test('dispatch history invalid timestamp or impossible density fails closed',async()=>{
+  await assert.rejects(recentScopedMilestones(async()=>({total_count:1001,workflow_runs:[]}),
+    'p1-windows.yml','2026-11-26T11:00:00Z',Date.parse('2026-11-26T11:00:00Z')),/CI_DISPATCH_HISTORY_DENSITY/);
+  await assert.rejects(recentScopedMilestones(async()=>{throw Error('unexpected request');},'p1-windows.yml','invalid'),/CI_PR_CREATED_AT_INVALID/);
 });

@@ -29,7 +29,8 @@ export function validateMilestone(event,repo,pr) {
      pr?.base?.ref!=='main' || !/^[a-zA-Z0-9_.\/-]+$/.test(pr?.head?.ref||''))
     throw Error('CI_PR_INVALID');
   if(pr.head.sha!==cmd.sha)throw Error('CI_STALE_SHA');
-  return {...cmd,number:pr.number,branch:pr.head.ref,
+  if(typeof pr.created_at!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(pr.created_at)||!Number.isFinite(Date.parse(pr.created_at))||Date.parse(pr.created_at)>Date.now())throw Error('CI_PR_CREATED_AT_INVALID');
+  return {...cmd,number:pr.number,branch:pr.head.ref,createdAt:pr.created_at,
     workflow:cmd.lane==='ui'?'ui-smoke.yml':
       cmd.lane==='immersib'?'immersib-focused-native.yml':'p1-windows.yml'};
 }
@@ -72,17 +73,43 @@ export function parseImmerSIBFocusedRun(run) {
     .exec(run.display_title||'');
   return m?{number:Number(m[1]),sha:m[2]}:null;
 }
-async function recentImmerSIBFocusedRuns(api) {
-  const all=[];
-  for(let page=1;page<=5;page++){
-    const response=await api('/actions/workflows/immersib-focused-native.yml/runs?'+
-      'event=workflow_dispatch&per_page=100&page='+page);
-    if(!Array.isArray(response?.workflow_runs))
-      throw Error('CI_IMMERSIB_RUNS_INVALID');
-    all.push(...response.workflow_runs);
-    if(response.workflow_runs.length<100)return all;
+// No valid owner milestone can predate its PR. Search only that PR's
+// lifetime, and split busy intervals before GitHub's 1,000-result search
+// cap. Exhaustion fails closed; never silently ignore an active or red run.
+export async function recentScopedMilestones(api,workflow,createdAt,now=Date.now()) {
+  const from=Math.floor(Date.parse(createdAt)/1000),until=Math.floor(now/1000);
+  if(!Number.isSafeInteger(from)||!Number.isSafeInteger(until)||from>until)throw Error('CI_PR_CREATED_AT_INVALID');
+  const iso=n=>new Date(n*1000).toISOString().replace('.000Z','Z');
+  const found=new Map();let requests=0;
+  async function scan(lo,hi) {
+    const query='/actions/workflows/'+workflow+'/runs?event=workflow_dispatch&created='+encodeURIComponent(iso(lo)+'..'+iso(hi))+'&per_page=100&page=';
+    async function read(page) {
+      if(++requests>100)throw Error('CI_DISPATCH_HISTORY_BUDGET');
+      const response=await api(query+page);
+      if(!Array.isArray(response?.workflow_runs))throw Error('CI_DISPATCH_RUNS_INVALID');
+      return response;
+    }
+    const first=await read(1);
+    if(Number.isSafeInteger(first.total_count)&&first.total_count>400) {
+      if(lo===hi)throw Error('CI_DISPATCH_HISTORY_DENSITY');
+      const mid=Math.floor((lo+hi)/2);
+      await scan(lo,mid);await scan(mid+1,hi);return;
+    }
+    for(let page=1;page<=10;page++) {
+      const response=page===1?first:await read(page);
+      for(const run of response.workflow_runs) {
+        if(!Number.isSafeInteger(run.id))throw Error('CI_DISPATCH_RUN_ID_INVALID');
+        found.set(run.id,run);
+      }
+      if(response.workflow_runs.length<100)return;
+    }
+    throw Error('CI_DISPATCH_RUNS_PAGINATION_LIMIT');
   }
-  throw Error('CI_IMMERSIB_RUNS_PAGINATION_LIMIT');
+  await scan(from,until);
+  return [...found.values()].sort((a,b)=>b.id-a.id);
+}
+async function recentImmerSIBFocusedRuns(api,target) {
+  return recentScopedMilestones(api,'immersib-focused-native.yml',target.createdAt);
 }
 
 async function readChangedFiles(api,number) {
@@ -113,21 +140,11 @@ export function parseWindowsMilestoneRun(run) {
 export function isActiveWindowsRun(run) {
   return ['queued','in_progress','waiting','pending','requested'].includes(run?.status);
 }
-async function recentWindowsMilestones(api) {
-  // Explicitly paginate: when several engineers work concurrently, one
-  // page can hide an existing FAT and accidentally request another.
-  const result=[];
-  for(let page=1;page<=5;page++){
-    const response=await api('/actions/workflows/p1-windows.yml/runs?event=workflow_dispatch&per_page=100&page='+page);
-    if(!Array.isArray(response?.workflow_runs))
-      throw Error('CI_DISPATCH_RUNS_INVALID');
-    result.push(...response.workflow_runs);
-    if(response.workflow_runs.length<100)return result;
-  }
-  throw Error('CI_DISPATCH_RUNS_PAGINATION_LIMIT');
+async function recentWindowsMilestones(api,target) {
+  return recentScopedMilestones(api,'p1-windows.yml',target.createdAt);
 }
 export async function guardWindowsMilestone({target,api}) {
-  const runs=(await recentWindowsMilestones(api)).map(run=>({
+  const runs=(await recentWindowsMilestones(api,target)).map(run=>({
     run,identity:parseWindowsMilestoneRun(run)
   })).filter(x=>x.identity?.number===target.number);
   const same=runs.filter(x=>x.identity.sha===target.sha);
@@ -203,12 +220,12 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
   // STOP is an owner-authorized safety action. It NEVER dispatches a job
   // and cancels ONLY this exact PR and immutable HEAD; never another PR.
   if(target.lane==='stop') {
-    const ordinary=(await recentWindowsMilestones(api)).filter(x=>{
+    const ordinary=(await recentWindowsMilestones(api,target)).filter(x=>{
       const id=parseWindowsMilestoneRun(x);
       return id?.number===target.number&&id.sha===target.sha&&
         isActiveWindowsRun(x);
     });
-    const focused=(await recentImmerSIBFocusedRuns(api)).filter(x=>{
+    const focused=(await recentImmerSIBFocusedRuns(api,target)).filter(x=>{
       const id=parseImmerSIBFocusedRun(x);
       return id?.number===target.number&&id.sha===target.sha&&
         isActiveWindowsRun(x);
@@ -256,14 +273,14 @@ export async function performMilestone({event,repo,api,waitForQuick=()=>sleep(50
       api,waitForQuick});
     validateMilestone(event,repo,await api('/pulls/'+target.number));
     // Do not overlap a full generic FAT with the focused editor runner.
-    const broad=(await recentWindowsMilestones(api)).filter(x=>{
+    const broad=(await recentWindowsMilestones(api,target)).filter(x=>{
       const id=parseWindowsMilestoneRun(x);
       return id?.number===target.number&&id.lane==='fat'&&
         isActiveWindowsRun(x);
     });
     if(broad.length)return {kind:'skipped',reason:'full-fat-already-running',
       target,proof};
-    const candidates=(await recentImmerSIBFocusedRuns(api)).map(x=>({
+    const candidates=(await recentImmerSIBFocusedRuns(api,target)).map(x=>({
       run:x,identity:parseImmerSIBFocusedRun(x)
     })).filter(x=>x.identity?.number===target.number);
     if(candidates.some(x=>isActiveWindowsRun(x.run)))
