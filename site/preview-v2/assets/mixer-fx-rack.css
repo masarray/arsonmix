@@ -1161,7 +1161,7 @@
 /* 8D-SonKu editor: inherits the existing approved FX Rack CSS owner. */
 .mx-sonku[hidden]{display:none!important}
 .mx-sonku{position:fixed;z-index:1300;left:50%;transform:translateX(-50%);max-height:calc(100vh - 16px);overflow:auto;
- color:#dcecf3;border-radius:12px;font:400 12px/1.45 inherit}
+ color:#dcecf3;border-radius:9px;font:400 12px/1.45 Inter,"Segoe UI",Arial,sans-serif;box-sizing:border-box}
 .mx-sonku button,.mx-sonku input{font:inherit}
 .mx-sonku button{cursor:pointer;color:inherit}
 .mx-sonku .sk-head{display:flex;align-items:center;gap:9px;cursor:move;user-select:none;touch-action:none}
@@ -1224,32 +1224,32 @@
 /* 8D-SonKu P1 studio hardware skin; component scoped, 18 CSS owners intact.
    One continuous rail sits behind PNG; its masked reuse overlays the back.
    Source monitor separation is render-only; never changes native HRIR angles. */
-.mx-sonku{width:min(790px,calc(100vw - 24px));top:clamp(8px,6vh,64px);background:#0f1d29;
- border:1px solid #435b68;border-top-color:#708997;border-bottom-color:#253a45;
- box-shadow:0 23px 54px rgba(0,0,0,.74),inset 0 1px rgba(233,251,255,.11);
+.mx-sonku{width:min(790px,calc(100vw - 24px));top:clamp(8px,6vh,64px);background:#111c25;
+ --sk-accent:#76c5d3;
+ border:1px solid #40515d;border-top-color:#667783;border-bottom-color:#263540;
+ box-shadow:0 18px 44px rgba(0,0,0,.62),inset 0 1px rgba(233,251,255,.11);
  font-family:Inter,"Segoe UI",Arial,sans-serif;font-size:11px;letter-spacing:.04px}
-.mx-sonku .sk-head{background:linear-gradient(180deg,#2c4150,#152833);
+.mx-sonku .sk-head{background:linear-gradient(180deg,#2b3944,#1a2731);
  border-bottom:1px solid #071721;box-shadow:inset 0 1px rgba(231,248,255,.15);
  min-height:37px;padding:6px 11px}
-.mx-sonku .sk-brand{font-weight:650;letter-spacing:.1px;font-size:15px;
+.mx-sonku .sk-brand{font-weight:600;letter-spacing:.15px;font-size:15px;white-space:nowrap;
  text-shadow:0 1px 1px #000}
-.mx-sonku .sk-headnote{letter-spacing:.9px;color:#93b6c6;font-size:8px}
+.mx-sonku .sk-headnote{letter-spacing:.8px;color:#9eb3c0;font-size:9px}
 .mx-sonku .sk-content{grid-template-columns:minmax(0,1.42fr) minmax(270px,1fr);
  gap:0;padding:0;align-items:stretch}
 .mx-sonku .sk-stage{display:flex;flex-direction:column;gap:5px;padding:8px 10px 10px;
- background:linear-gradient(155deg,#162936,#0c1b28);
- border-right:1px solid #395565}
-.mx-sonku .sk-stage svg{border:1px solid #3f5f70;border-top-color:#233f4f;
- border-radius:7px;box-shadow:inset 0 2px 8px #010c15;aspect-ratio:400/330}
+ background:linear-gradient(155deg,#182630,#111b24);
+ border-right:1px solid #344650}
+.mx-sonku .sk-stage svg{border:1px solid #344955;border-top-color:#263641;
+ border-radius:6px;box-shadow:inset 0 1px 5px #09121b;aspect-ratio:400/330;box-sizing:border-box}
 .mx-sonku .sk-stage text{paint-order:stroke fill}
 .mx-sonku .sk-orbit-rail{pointer-events:none}
-.mx-sonku .sk-listener-art{pointer-events:none;opacity:.97;
- filter:drop-shadow(0 5px 9px rgba(37,183,230,.17))}
+.mx-sonku .sk-listener-art{pointer-events:none;opacity:1;image-rendering:auto}
 .mx-sonku .sk-stage .sk-direction{font-size:9px;letter-spacing:1.25px;fill:#98bcc9;
  font-weight:550}
 .mx-sonku .sk-stage .sk-front{fill:#81e6ee;font-size:10px}
 .mx-sonku .sk-src{cursor:grab;touch-action:none;outline:none;
- filter:drop-shadow(0 2px 4px rgba(0,0,0,.62))}
+ filter:drop-shadow(0 2px 3px rgba(0,0,0,.48))}
 .mx-sonku .sk-src:active{cursor:grabbing}
 .mx-sonku .sk-speaker-shell{fill:#203745;stroke:#7cbdcc;stroke-width:1.4}
 .mx-sonku .sk-speaker-inner{fill:#0c202c;stroke:#325665;stroke-width:.8}
@@ -1267,62 +1267,62 @@
 .mx-sonku .sk-right .sk-speaker-label{fill:#ffe7f8}
 .mx-sonku .sk-src:focus-visible .sk-speaker-shell{stroke-width:2.8}
 .mx-sonku .sk-tether{pointer-events:none}
-.mx-sonku .sk-stage-caption{font-size:8px;letter-spacing:.55px;line-height:1.3;margin:0;color:#86aebc}
+.mx-sonku .sk-stage-caption{font-size:9px;letter-spacing:.25px;line-height:1.4;margin:0;color:#a0b7c4}
 .mx-sonku .sk-controls{padding:11px 12px 8px;gap:10px;
- background:linear-gradient(135deg,#233542 0,#182b38 22%,#142430 85%,#10212d 100%);
+ background:linear-gradient(135deg,#23313c,#17242e 40%,#14202a);
  box-shadow:inset 1px 0 rgba(255,255,255,.07)}
 .mx-sonku .sk-control-title{display:flex;align-items:center;justify-content:space-between;
- font-size:10px;letter-spacing:1.4px;font-weight:600;color:#bedbe5;padding:2px 0}
+ font-size:10px;letter-spacing:1px;font-weight:600;color:#d2e0e7;padding:2px 0}
 .mx-sonku .sk-engine-led{display:inline-flex;align-items:center;gap:5px;
- font-size:8px;letter-spacing:.65px;color:#83acb7;font-weight:500}
+ font-size:9px;letter-spacing:.25px;color:#a5bec6;font-weight:500}
 .mx-sonku .sk-engine-led::before{content:"";width:5px;height:5px;border-radius:50%;
- background:#72d6ce;box-shadow:0 0 6px #65ceb8}
+ background:#77858d;box-shadow:none}
+.mx-sonku[data-fx-state="on"] .sk-engine-led::before{background:#76d5b8;box-shadow:0 0 4px #76d5b855}
 .mx-sonku .sk-buttons{gap:7px}
-.mx-sonku .sk-buttons button{min-height:29px;padding:6px 4px;font-weight:600;
- letter-spacing:.75px;font-size:9px;color:#b6d1dd;
+.mx-sonku .sk-buttons button{min-height:29px;padding:6px 4px;font-weight:550;
+ letter-spacing:.4px;font-size:10px;color:#c1d1d9;
  border:1px solid #425e6f;border-top-color:#6d8b98;border-bottom-color:#223c4b;
- background:linear-gradient(#304a59,#1d3342);
+ background:linear-gradient(#34434e,#25343e);
  box-shadow:inset 0 1px rgba(255,255,255,.11),0 2px 3px rgba(0,0,0,.35)}
 .mx-sonku .sk-buttons button[aria-pressed="true"]{
- background:linear-gradient(#2c6a7b,#19485b);border-color:#73baca;
- color:#e5fbff;box-shadow:inset 0 1px rgba(255,255,255,.2),0 0 6px rgba(75,193,219,.17)}
+ background:linear-gradient(#35535f,#263f4b);border-color:#6799a6;
+ color:#e7f6f8;box-shadow:inset 0 1px rgba(255,255,255,.11)}
 .mx-sonku .sk-rotary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
- row-gap:4px;column-gap:8px;align-items:center;justify-items:center;
+ row-gap:9px;column-gap:8px;align-items:center;justify-items:center;
  flex:0 0 auto;min-height:190px}
 .mx-sonku .sk-rotary{display:flex!important;flex-direction:column;align-items:center;
  justify-content:center;gap:2px;min-width:0;width:100%;
  padding:3px 1px!important;border:0;letter-spacing:.7px}
-.mx-sonku .sk-param-name{font-size:8px;color:#b9d3df;
- letter-spacing:.8px;font-weight:600;white-space:nowrap;text-align:center}
+.mx-sonku .sk-param-name{font-size:9px;color:#b7cbd5;
+ letter-spacing:.4px;font-weight:550;white-space:nowrap;text-align:center}
 .mx-sonku .sk-dial{--sk-sweep:135deg;--sk-needle:0deg;
  display:block;position:relative;width:57px;height:57px;flex:none;
  cursor:ns-resize;touch-action:none;user-select:none;outline:none}
 .mx-sonku .sk-dial-track{position:absolute;inset:0;border-radius:50%;
- background:conic-gradient(from 225deg,#65cadd 0deg,#65cadd var(--sk-sweep),
- #344d5d var(--sk-sweep),#344d5d 270deg,transparent 270deg 360deg);
- mask:radial-gradient(circle,transparent 0 53%,black 55% 62%,transparent 64%);
- filter:drop-shadow(0 0 2px rgba(95,199,221,.27))}
+ background:conic-gradient(from 225deg,var(--sk-accent) 0deg,var(--sk-accent) var(--sk-sweep),
+ #3c4e59 var(--sk-sweep),#3c4e59 270deg,transparent 270deg 360deg);
+ mask:radial-gradient(circle,transparent 0 55%,black 56% 60%,transparent 62%)}
 .mx-sonku .sk-dial-cap{position:absolute;inset:9px;border-radius:50%;
  border:1px solid #758a94;border-bottom-color:#142530;border-right-color:#263f4b;
- background:radial-gradient(circle at 38% 28%,#5e7481 0%,#3c5462 24%,#233d4b 55%,#142b39 84%);
- box-shadow:0 3px 6px #081521,inset 0 1px 2px rgba(240,251,255,.4),
- inset 0 -3px 7px rgba(0,0,0,.35);pointer-events:none}
+ background:radial-gradient(circle at 38% 28%,#657681 0%,#495b66 28%,#303f4a 64%,#202d37 100%);
+ box-shadow:0 2px 4px #0a131c,inset 0 1px 2px rgba(240,251,255,.24),
+ inset 0 -2px 4px rgba(0,0,0,.27);pointer-events:none}
 .mx-sonku .sk-dial-needle{position:absolute;inset:0;transform:rotate(var(--sk-needle));
  transition:transform 60ms linear;pointer-events:none}
 .mx-sonku .sk-dial-needle::before{content:"";display:block;position:absolute;
- width:3px;height:10px;left:calc(50% - 1.5px);top:3px;border-radius:2px;
- background:#d6faff;box-shadow:0 0 3px rgba(155,241,255,.56)}
+ width:2px;height:9px;left:calc(50% - 1px);top:3px;border-radius:1px;
+ background:#d9f0f3}
 .mx-sonku .sk-controls .sk-rotary .sk-dial input{
  position:absolute;inset:0;width:100%;height:100%;margin:0!important;grid-column:auto;
  opacity:0;cursor:ns-resize;pointer-events:none;accent-color:transparent}
 .mx-sonku .sk-rotary:focus-within .sk-dial-cap{outline:1px solid #87d5e6;outline-offset:2px}
-.mx-sonku .sk-rotary output{font-size:11px;font-weight:600;letter-spacing:.2px;
+.mx-sonku .sk-rotary output{font-size:12px;font-weight:550;letter-spacing:.15px;
  font-variant-numeric:tabular-nums;color:#dcf3f7}
-.mx-sonku .sk-guide{font-size:9px;line-height:1.42;color:#91b2c2;
+.mx-sonku .sk-guide{font-size:10px;line-height:1.4;color:#a5bbc7;
  border-top:1px solid rgba(113,157,173,.24);padding-top:7px;letter-spacing:.1px}
-.mx-sonku .sk-status{background:linear-gradient(#142836,#0c1a27);
- border-top:1px solid #415d6d;padding:7px 13px;letter-spacing:.55px;
- color:#99bac8}
+.mx-sonku .sk-status{background:#16232d;
+ border-top:1px solid #344650;padding:7px 11px;letter-spacing:.2px;
+ color:#a7becb;align-items:center;flex-wrap:wrap}
 @media(max-width:550px){
  .mx-sonku{top:8px;max-height:calc(100vh - 16px)}
  .mx-sonku .sk-content{grid-template-columns:1fr}
@@ -1379,34 +1379,34 @@
 /* SonKu v4 research controls share the existing lightweight FX skin.
    Hidden unless the real native processor reports P8.3 capability. */
 .mx-sonku .sk-render-row[hidden]{display:none!important}
-.mx-sonku .sk-render-row{display:grid;gap:5px;margin:0 0 8px;padding:6px 7px;
- background:linear-gradient(180deg,#213948,#162b39);border:1px solid #345766;
+.mx-sonku .sk-render-row{display:grid;gap:6px;margin:0 0 4px;padding:8px;
+ background:#172630;border:1px solid #374c58;
  border-radius:6px}
 .mx-sonku .sk-render-label{font-size:9px;letter-spacing:.7px;color:#9ebbc8}
-.mx-sonku #skRenderMode{width:100%;background:#132732;color:#e0eff5;
+.mx-sonku #skRenderMode{width:100%;min-width:0;box-sizing:border-box;background:#111e27;color:#e0eff5;
  border:1px solid #577888;border-radius:4px;padding:4px 6px;font:inherit;font-size:10px}
 .mx-sonku .sk-yaw{margin-top:2px}
 
 /* P9.3: new selectors only; existing SonKu selectors were edited in-place. */
 .mx-sonku .sk-head :is(button,select){cursor:pointer;touch-action:auto}
-.mx-sonku .sk-preset{flex:0 1 163px;min-width:105px;max-width:163px;height:25px;padding:2px 4px;background:#162d3b;border:1px solid #537182;border-radius:4px;color:#d9f0f6;font:500 9px/1.2 Inter,"Segoe UI",Arial,sans-serif}
+.mx-sonku .sk-preset{flex:0 1 163px;min-width:105px;max-width:163px;height:25px;padding:2px 6px;background:#172630;border:1px solid #4b606d;border-radius:4px;color:#dce9f0;font:500 10px/1.2 Inter,"Segoe UI",Arial,sans-serif}
 .mx-sonku .sk-preset:disabled{opacity:.52;cursor:not-allowed}
 .mx-sonku .sk-preset:focus-visible{outline:2px solid #9bdae8}
 .mx-sonku #skPower{margin-inline-start:0!important}
 /* SPACE is below the graphic, retaining single native parameter controls. */
-.mx-sonku .sk-stage .sk-space-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 11px;padding:8px 10px 7px;border:1px solid #355361;border-radius:5px;background:#0c202d6e}
+.mx-sonku .sk-stage .sk-space-panel{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 11px;padding:9px 10px 8px;border:1px solid #354955;border-radius:5px;background:#111e27}
 .mx-sonku .sk-stage :is(.sk-space-head,.sk-space-options,.sk-space-hint){grid-column:1/-1}
 .mx-sonku .sk-stage .sk-space-head{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:#bdd7e1}
-.mx-sonku .sk-stage .sk-space-head output{font-size:9px;color:#87dce8}
+.mx-sonku .sk-stage .sk-space-head output{font-size:10px;color:#a2dbe3}
 .mx-sonku .sk-stage .sk-space-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
-.mx-sonku .sk-stage .sk-space-options button{min-height:24px;padding:3px;border:1px solid #496577;border-radius:4px;background:#223b49;font-size:9px;color:#c6dce4}
-.mx-sonku .sk-stage .sk-space-options button[aria-pressed="true"]{background:#21576b;border-color:#75d0db;color:#effdff}
-.mx-sonku .sk-stage .sk-space-slider{display:grid;grid-template-columns:1fr auto;gap:1px 3px;min-width:0;margin:0;color:#aac7d3;font-size:8px;align-items:center}
+.mx-sonku .sk-stage .sk-space-options button{min-height:25px;padding:3px;border:1px solid #40545f;border-radius:4px;background:linear-gradient(#293b46,#22313c);font-size:10px;font-weight:500;color:#c7d7df}
+.mx-sonku .sk-stage .sk-space-options button[aria-pressed="true"]{background:#31505c;border-color:#699da9;color:#eef8fa}
+.mx-sonku .sk-stage .sk-space-slider{display:grid;grid-template-columns:1fr auto;gap:2px 4px;min-width:0;margin:0;color:#b8cbd5;font-size:9px;align-items:center}
 .mx-sonku .sk-stage .sk-space-slider[hidden]{display:none!important}
-.mx-sonku .sk-stage .sk-space-slider output{color:#e2f5f8;font-size:9px;font-variant-numeric:tabular-nums}
-.mx-sonku .sk-stage .sk-space-slider input{grid-column:1/-1;width:100%;margin:0!important;height:12px;accent-color:#66c5d8}
+.mx-sonku .sk-stage .sk-space-slider output{color:#e2edf2;font-size:10px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mx-sonku .sk-stage .sk-space-slider input{grid-column:1/-1;width:100%;margin:0!important;height:15px;accent-color:var(--sk-accent)}
 .mx-sonku .sk-stage .sk-space-slider input:disabled{opacity:.4}
-.mx-sonku .sk-stage .sk-space-hint{font-size:8px;color:#87afbd;line-height:1.3}
+.mx-sonku .sk-stage .sk-space-hint{font-size:9px;color:#a3b8c4;line-height:1.35}
 .mx-sonku[data-fx-state="off"] .sk-engine-led,.mx-sonku[data-fx-state="rack-off"] .sk-engine-led{color:#a5a4a1}
 .mx-sonku[data-fx-state="off"] .sk-engine-led::before,.mx-sonku[data-fx-state="rack-off"] .sk-engine-led::before{background:#b98578;box-shadow:none}
 @media(max-width:680px){
@@ -1415,12 +1415,22 @@
  .mx-sonku .sk-stage .sk-space-panel{gap:5px 9px}
 }
 @media(max-width:415px){
- .mx-sonku .sk-preset{max-width:115px;flex-basis:115px;font-size:8px}
+ .mx-sonku .sk-preset{max-width:115px;flex-basis:115px;font-size:9px}
  .mx-sonku .sk-channel{display:none}
  .mx-sonku .sk-stage .sk-space-panel{grid-template-columns:1fr}
  .mx-sonku .sk-stage :is(.sk-space-head,.sk-space-options,.sk-space-hint){grid-column:1}
 }
 
+
+/* P10 compact studio finish: interaction affordances stay native. */
+.mx-sonku :is(.sk-buttons button,.sk-space-options button,.sk-close):not(:disabled):hover{border-color:#87aeb9;color:#f0f8fb}
+.mx-sonku :is(button,select,input[type="range"]):focus-visible{outline:1px solid #a0d7e1;outline-offset:2px}
+.mx-sonku .sk-yaw input{accent-color:var(--sk-accent)}
+.mx-sonku input[type="range"]:disabled{cursor:not-allowed}
+.mx-sonku .sk-headnote,.mx-sonku .sk-channel{overflow:hidden;text-overflow:ellipsis}
+.mx-sonku #skMode{min-width:0;overflow-wrap:anywhere}
+.mx-sonku #skHint{margin-left:auto;max-width:100%;overflow-wrap:anywhere}
+@media(prefers-reduced-motion:reduce){.mx-sonku .sk-dial-needle{transition:none}}
 
 /* GEQ31 / ONE approved browser and WebView2 editor. This is the SINGLE
  * presentation owner; JUCE hosts audio only. All 31 faders share one

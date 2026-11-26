@@ -347,8 +347,11 @@ def exercise(browser,out,width,height):
     svg=editor.locator("#skMap").bounding_box()
     assert svg
     def screen(x,y):
-        return (svg["x"]+x*svg["width"]/400,
-                svg["y"]+y*svg["height"]/330)
+        return tuple(editor.locator("#skMap").evaluate("""(map,xy)=>{
+            const p=map.createSVGPoint();p.x=xy[0];p.y=xy[1];
+            const screen=p.matrixTransform(map.getScreenCTM());
+            return [screen.x,screen.y];
+        }""",[x,y]))
 
     # SVG speaker movement must affect the JUCE PCM route BEFORE mouseup.
     # FRONT is now visual TOP and acoustic 0°, not bottom.
@@ -619,6 +622,27 @@ def exercise(browser,out,width,height):
     # All listener and rendering JS exceptions remain fatal.
     assert not failures,(width,height,failures)
     page.screenshot(path=f"arsonmix-sonku-editor-{width}.png")
+    # Responsive visual evidence from the same mounted production editor.
+    for viewport in ({"width":680,"height":740},{"width":390,"height":740}):
+        page.set_viewport_size(viewport)
+        page.wait_for_timeout(100)
+        layout=editor.evaluate("""n=>{
+          const box=n.getBoundingClientRect(),head=n.querySelector('.sk-head');
+          const close=n.querySelector('#skClose').getBoundingClientRect();
+          const map=n.querySelector('#skMap'),m=map.getScreenCTM(),p=map.createSVGPoint();
+          p.x=348;p.y=174;
+          const back=p.matrixTransform(m).matrixTransform(m.inverse());
+          return {left:box.left,right:box.right,scroll:n.scrollWidth,client:n.clientWidth,
+            headScroll:head.scrollWidth,headClient:head.clientWidth,closeRight:close.right,
+            roundTrip:Math.hypot(back.x-348,back.y-174)};
+        }""")
+        assert layout["left"]>=-1 and layout["right"]<=viewport["width"]+1,layout
+        assert layout["scroll"]<=layout["client"]+1,layout
+        assert layout["headScroll"]<=layout["headClient"]+1,layout
+        assert layout["closeRight"]<=layout["right"]+1,layout
+        assert layout["roundTrip"]<.001,layout
+        page.screenshot(path=f"arsonmix-sonku-editor-responsive-{viewport['width']}.png")
+    assert not failures,failures
     page.close()
 
 def main():

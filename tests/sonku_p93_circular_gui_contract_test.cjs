@@ -30,6 +30,8 @@ assert.match(source,/<ellipse id="skOrbitRail"[^>]*cx="200" cy="174" rx="148" ry
 assert.equal((source.match(/id="skOrbitRail"/g)||[]).length,1);
 assert.match(source,/<use id="skOrbitForeground" href="#skOrbitRail" mask="url\(#skListenerCoverage\)"/);
 assert.doesNotMatch(source,/skFarArc|skNearArc|sk-secondary-rail/);
+assert.match(source,/map\.getScreenCTM\(\)/);
+assert.match(source,/p\.matrixTransform\(matrix\.inverse\(\)\)/);
 assert.doesNotMatch(css,/#sk(?:Far|Near)Sources\s+\.sk-src\s*\{[^}]*filter/);
 // Exhaustive projected near-plane clearance from the existing cranial
 // silhouette envelope (body/shoulder may naturally be behind foreground).

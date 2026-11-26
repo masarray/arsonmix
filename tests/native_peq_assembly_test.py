@@ -94,12 +94,12 @@ class NativeParametricEqIntegration(unittest.TestCase):
         self.assertIn('const depthLayers=',sonku)
         self.assertNotIn('id="skCrown"',sonku)
         self.assertNotIn('id="skBackSuit"',sonku)
-        # Pin the restored true-color rear-view raster, not a palette conversion
+        # Pin the owner-approved independently rendered rear-view raster, not a palette conversion
         # back to the low-color asset or a substitute vector silhouette.
         import hashlib
         header=f"blob {len(png)}\0".encode("ascii")
         self.assertEqual(hashlib.sha1(header+png).hexdigest(),
-            "52f138c6b74b18a4c94cebb54d36df4f99cdc077")
+            "31de77d1126d318d81ff43297d97adb2187bccfa")
         self.assertEqual(png[16:24],bytes([0,0,2,0,0,0,2,0]))
         self.assertEqual(png[24:26],bytes([8,6])) # 8-bit true-color RGBA
         self.assertEqual(png[12:16],b"IHDR")

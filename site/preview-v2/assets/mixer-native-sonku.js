@@ -152,7 +152,7 @@ root.innerHTML=[
  '<button type="button" id="skClose" class="sk-close armix-builtin-fx-close armix-floating-close" aria-label="Close 8D-SonKu">×</button></header>',
  '<div class="sk-content"><div class="sk-stage">',
  '<svg id="skMap" viewBox="0 0 400 330" role="group" aria-label="Top-rear listener with two depth-aware draggable binaural speakers">',
- '<defs><radialGradient id="skBg" cx="50%" cy="48%" r="73%"><stop offset="0" stop-color="#263b49"/><stop offset=".65" stop-color="#152533"/><stop offset="1" stop-color="#0a1622"/></radialGradient>',
+ '<defs><radialGradient id="skBg" cx="50%" cy="48%" r="73%"><stop offset="0" stop-color="#263c4a"/><stop offset=".58" stop-color="#192b37"/><stop offset="1" stop-color="#101b25"/></radialGradient>',
  '<radialGradient id="skFloor" cx="50%" cy="55%" r="65%"><stop offset="0" stop-color="#7fdae7" stop-opacity=".14"/><stop offset="1" stop-color="#46758b" stop-opacity="0"/></radialGradient>',
  // One continuous rail: front/back share geometry, stroke and depth gradient.
  '<linearGradient id="skRail" gradientUnits="userSpaceOnUse" x1="200" x2="200" y1="91" y2="257"><stop stop-color="#729baa" stop-opacity=".38"/><stop offset=".50" stop-color="#69a8b8" stop-opacity=".62"/><stop offset="1" stop-color="#8edce6" stop-opacity=".94"/></linearGradient>',
@@ -969,10 +969,14 @@ for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim
 }
 const map=$("skMap");
 function toAzimuth(e) {
- const rect=map.getBoundingClientRect();
- const x=(e.clientX-rect.left)*400/rect.width;
- const y=(e.clientY-rect.top)*330/rect.height;
- return stageAzimuth(x,y);
+ // SVG user-space is authoritative despite CSS borders/DPI/letterboxing.
+ const matrix=map.getScreenCTM();
+ if(!matrix)return null;
+ const p=map.createSVGPoint();
+ p.x=e.clientX;p.y=e.clientY;
+ const local=p.matrixTransform(matrix.inverse());
+ return Number.isFinite(local.x)&&Number.isFinite(local.y)?
+  stageAzimuth(local.x,local.y):null;
 }
 map.addEventListener("pointerdown",e=>{
  const g=e.target.closest(".sk-src");if(!g)return;
@@ -982,7 +986,9 @@ map.addEventListener("pointerdown",e=>{
 });
 map.addEventListener("pointermove",e=>{
  if(!drag||drag.pointer!==e.pointerId)return;
- const value=toAzimuth(e)-(drag.source?1:-1)*draft.stereoSpreadDegrees/2;
+ const azimuth=toAzimuth(e);
+ if(azimuth===null)return;
+ const value=azimuth-(drag.source?1:-1)*draft.stereoSpreadDegrees/2;
  liveInput({...draft,startAzimuthDegrees:Math.max(-360,Math.min(360,value)),
   moving:false});
 });
