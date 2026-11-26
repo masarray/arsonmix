@@ -5,12 +5,14 @@ on:
       - 'scripts/verify_sonku_p104_externalization.py'
       - 'tests/sonku_p104_externalization.cpp'
       - '.github/workflows/sonku-p104-externalization.yml'
+      - 'scripts/verify_sonku_p105_program_material.py'
+      - 'tests/sonku_p105_program_material.cpp'
 permissions:
   contents: read
 jobs:
   research:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -22,5 +24,25 @@ jobs:
         with:
           name: SonKu-P104-coherent-externalization-research
           path: sonku-p104-listening/
+          if-no-files-found: error
+          retention-days: 14
+  program-material:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify approved native PCM source identity
+        run: python3 scripts/verify_immersib_approved_pcm_sources.py
+      - name: LUFS-matched program material and all seven protected ImmerSIB scenes
+        run: |
+          ffmpeg -version
+          python3 scripts/verify_sonku_p105_program_material.py
+      - name: Publish original instrumental blind listening pairs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P105-LUFS-program-listening
+          path: sonku-p105-program/
           if-no-files-found: error
           retention-days: 14
