@@ -113,7 +113,13 @@ int main(){
         CHECK(!editor->findChildWithID("vd.stage.8")->isVisible());
         stagePower->onClick();CHECK(!hosted.singerDisplay().enabled);
         liveButton->onClick();CHECK(sameParameters(hosted.singerDisplay(),presetSettings(concertPresetStart)));
-        capture("vocal-delay-concert.png");
+        {
+            const auto im=editor->createComponentSnapshot(editor->getLocalBounds(),true,2.f);
+            CHECK(im.isValid()&&im.getWidth()==1240&&im.getHeight()==600);
+            auto file=juce::File::getCurrentWorkingDirectory().getChildFile("vocal-delay-concert.png");
+            if(file.existsAsFile())CHECK(file.deleteFile());
+            auto stream=file.createOutputStream();CHECK(stream&&juce::PNGImageFormat().writeImageToStream(im,*stream));
+        }
         juce::MemoryBlock concertState;hosted.getStateInformation(concertState);State decoded{};
         CHECK(StateCodec::decode(concertState.getData(),concertState.getSize(),decoded)&&decoded.continuous.throwMode==ThrowMode::concert);
         concert->onClick();CHECK(liveButton->getButtonText()=="Smart Live");liveButton->onClick();

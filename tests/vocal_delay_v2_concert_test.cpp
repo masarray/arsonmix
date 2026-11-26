@@ -47,7 +47,28 @@ static void manualAndReset(){
     double sum=0;for(float v:l)sum+=std::abs(v);CHECK(sum>1.);
     c.invalidate();l.assign(l.size(),0);r=l;run(c,l.data(),r.data(),l.size());for(float v:l)CHECK(v==0.f);
 }
+static void rejectNoiseAndSwitch(){
+    constexpr double rate=48000;auto p=presetSettings(concertPresetStart);
+    ContinuousDelayCore c;CHECK(c.prepare(rate,p));
+    const auto n=std::size_t(rate*5);std::vector<float> dry(n),l(n),r(n);
+    std::uint32_t random=12345;
+    for(std::size_t i=0;i<n;++i){
+        const double time=double(i)/rate;
+        if(time<1.0)dry[i]=.07f*float(std::sin(i*.025));
+        if(time>=1.3&&time<1.35)dry[i]=.8f*float(std::sin(i*.025)); // short shout
+        if(time>=1.7&&time<2.3){random=random*1664525u+1013904223u;dry[i]=.4f*(float(random>>8)/8388608.f-1.f);}
+        if(time>=2.6&&time<3.7)dry[i]=.075f*float(std::sin(i*.025));
+    }
+    l=r=dry;run(c,l.data(),r.data(),n);CHECK(l==dry&&r==dry);
+    auto prior=presetSettings(0);ContinuousDelayCore::Prepared q;
+    CHECK(ContinuousDelayCore::prepareEdit(prior,rate,q)&&c.applyPrepared(q));
+    l.assign(n,.2f);r=l;run(c,l.data(),r.data(),n);
+    CHECK(ContinuousDelayCore::prepareEdit(p,rate,q)&&c.applyPrepared(q));
+    l.assign(n,0);r=l;run(c,l.data(),r.data(),n);
+    for(std::size_t i=std::size_t(rate*.025);i<n;++i)CHECK(l[i]==0.f&&r[i]==0.f);
+}
 int main(){
+    rejectNoiseAndSwitch();
     for(double rate:{8000.,44100.,48000.,96000.,192000.})for(std::size_t i=0;i<concertPresetCount;++i)scenario(rate,i);
     manualAndReset();std::puts("PASS 40 concert cases, dry identity, selected tail, stereo, manual/reset, block invariance, no heap");
 }

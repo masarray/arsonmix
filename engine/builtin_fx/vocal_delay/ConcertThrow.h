@@ -25,7 +25,8 @@ public:
     }
     Status status()const noexcept{return status_;}
     Capture tick(float l,float r,ThrowMode mode,bool manual) noexcept{
-        const auto policy=config(mode);
+        if(mode!=policyMode_){policy_=config(mode);policyMode_=mode;}
+        const auto& policy=policy_;
         // Read before write; constant age replays the selected past segment
         // in real time, so work is O(1) even on the trigger sample.
         Capture out{};
@@ -97,6 +98,7 @@ private:
         if(n<edge_*2||n+gap>=left_.capacity())return;
         length_=remaining_=n;age_=n+gap;cooldown_=p.cooldown*frame_;
     }
+    Policy policy_=config(ThrowMode::off);ThrowMode policyMode_=ThrowMode::off;
     DelayLine left_,right_;
     std::uint32_t frame_=1,edge_=1,count_=0,phrase_=0,gap_=0,high_=0,lastHigh_=0,learned_=0,
         cooldown_=0,remaining_=0,length_=0,age_=0,recent_=0,sinceVoice_=0;

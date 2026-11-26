@@ -78,6 +78,7 @@ public:
                 const auto entry=userPresets_[std::size_t(id-1000)];
                 if(const auto p=recallUserPreset_(entry.id);p&&processor_.offerSinger(*p)){
                     processor_.setMusicFollow(false);
+                    if(p->throwMode!=ThrowMode::off){stageView_=true;concertBank_=true;resized();}
                     selectedUserId_=entry.id;selectedUserSound_=*p;taps_.reset();tempoNotice_.clear();
                 }
                 refresh();
