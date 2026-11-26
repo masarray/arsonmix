@@ -2,6 +2,10 @@
 What user-visible behavior or problem does this change address?
 
 ## Reconciliation (brief, informational — NOT an owner/permission gate)
+- Read [current INT-1 policy / canonical RC](https://github.com/masarray/arsonmix/issues/837) and live AGENTS.md; canonical RC exact HEAD and own base/HEAD at reconciliation:
+- Active exact-SHA qualification checked; no duplicate FAT or unrelated candidate churn; if superseding, observed blocker and reason:
+- Preserved/deferred work and shared-path regression evidence (no stale whole-file overwrite):
+
 - Current `main` / related implementation inspected (SHA or link, if relevant):
 - Existing accepted GUI/audio/session behavior to preserve:
 - Overlap with other PRs, if any, and how resulting Git changes were reconciled:
