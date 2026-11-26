@@ -7671,3 +7671,24 @@ test("U2-B one secondary readback represents mirror, split, fault and disconnect
  assert.match(bridge,/extraPanel\.append\(extraControls\)/);
  assert.match(bridge,/protocol\.secondaryOutputView\(hardware,live\)/);
 });
+
+
+test("U2-C/U3 secondary continuity is identity-pinned and preference is not ARM permission",()=>{
+ const n=read("src/Main.cpp"), bridge=read("web/approved-native-bridge.js");
+ const r=n.slice(n.indexOf("void serviceSecondaryContinuity()"),n.indexOf("void serviceVendorStreamRecovery()"));
+ assert.match(r,/secondaryContinuity_->epoch!=epoch/);
+ assert.match(r,/secondaryContinuity_->revision!=revision/);
+ assert.match(r,/current.selection.id!=intent.endpointId/);
+ assert.match(r,/secondaryRetry_\.attempts\(\)>=5/);
+ assert.match(r,/deviceApply_\.tryBegin/);
+ assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
+ assert.match(n,/secondary-output\.json/);
+ assert.match(n,/current.selection.id==secondaryPreference_->id/);
+ assert.match(bridge,/options.includes\(extraPreferred\)/);
+ const live={secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputFault:true,
+   secondaryOutputRecovering:true,secondaryOutputRecoveryName:"CABLE Input"};
+ const v=protocol.secondaryOutputView({},live);
+ assert.equal(v.state,"RECOVERING");assert.equal(v.name,"CABLE Input");assert.equal(v.armed,false);
+ assert.equal(protocol.secondaryOutputRow({},live).status,"RECOVERING");
+ assert.equal(protocol.secondaryOutputView({},{...live,secondaryOutputRecovering:false}).state,"FAULT");
+});

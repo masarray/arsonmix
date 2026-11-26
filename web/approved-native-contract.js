@@ -298,9 +298,11 @@
     const name=current?String(live.secondaryOutputName||""):String(raw?.secondaryOutputName||raw?.secondaryMainEndpoint||"");
     const ready=current?live.secondaryOutputReady===true:raw?.secondaryMainReady===true;
     const armed=current?live.secondaryOutputArmed===true:raw?.physicalBusSecondaryArmed===true;
-    const state=fault?"FAULT":!ready||!name?(split?"NEEDS_REMAP":"DISCONNECTED"):
+    const recovering= current?live.secondaryOutputRecovering===true:raw?.secondaryOutputRecovering===true;
+    const recoveryName=String((current?live.secondaryOutputRecoveryName:raw?.secondaryOutputRecoveryName)||"");
+    const state=recovering&&!armed?"RECOVERING":fault?"FAULT":!ready||!name?(split?"NEEDS_REMAP":"DISCONNECTED"):
       armed?"ENABLED":"MUTED";
-    return {split,name,ready:ready&&!fault,armed:ready&&!fault&&!!name&&armed,fault:!!fault,state};
+    return {split,name:name||recoveryName,ready:ready&&!fault,armed:ready&&!fault&&!!name&&armed,fault:!!fault,recovering:recovering&&!armed,state};
   }
   function secondaryOutputRow(snapshot,live) {
     const v=secondaryOutputView(snapshot,live);

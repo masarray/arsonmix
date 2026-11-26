@@ -3610,7 +3610,7 @@
   // U1: approved native bundle owns this workflow. monitor.js belongs to
   // the retired console and is deliberately NOT shipped in this bundle.
   let extraPanel=null,extraControls=null,extraLive=null,extraInventory=[],extraPending=null,extraSerial=0,
-      extraError="",extraInventoryKnown=false,extraInventoryPending="";
+      extraError="",extraInventoryKnown=false,extraInventoryPending="",extraPreferred="";
   const extraField=name=>extraControls?.querySelector("[data-extra-"+name+"]");
   const extraInlineHost=()=>devicePanel?.querySelector("[data-audio-extra-output]");
   const extraInlineVisible=()=>!devicePanel?.hidden&&
@@ -3643,7 +3643,7 @@
     if(!extraControls||!extraSurfaceOpen())return;
     const live=extraLive, busy=Boolean(extraPending)||deviceBusy(),
       destination=protocol.secondaryOutputView(hardware,live),
-      {ready,armed,fault,name,split}=destination;
+      {ready,armed,fault,name,split,recovering}=destination;
     const select=extraField("device"), prior=name||select.value||"";
     const options=extraInventory;
     const sig=JSON.stringify(options);
@@ -3652,6 +3652,7 @@
         ...options.map(name=>new Option(name,name)));
       select.dataset.signature=sig;
       if(options.includes(prior))select.value=prior;
+      else if(!prior&&options.includes(extraPreferred))select.value=extraPreferred;
       else if(!prior){
         // Suggest a unique known virtual cable, never a default loudspeaker.
         // Explicit Enable remains required.
@@ -3662,16 +3663,17 @@
     if(armed&&options.includes(name)&&select.value!==name)select.value=name;
     const allowed=live?.directRouteAuthorized===true&&live?.adaptiveClockActive!==true&&
       live?.dryRoutingLab?.hasAcceptedRoute===true&&live?.diagnosticRoute==="NORMAL";
-    select.disabled=busy||armed||extraInventoryPending;
+    select.disabled=busy||armed||recovering||extraInventoryPending;
     extraField("refresh").disabled=busy||extraInventoryPending;
-    extraField("connect").disabled=busy||!allowed||armed||!extraInventoryKnown||!options.includes(select.value);
-    extraField("stop").disabled=busy||(!ready&&!fault&&!name);
+    extraField("connect").disabled=busy||!allowed||armed||recovering||!extraInventoryKnown||!options.includes(select.value);
+    extraField("stop").disabled=busy||(!ready&&!fault&&!name&&!recovering);
     const mode=split?"MAIN → Windows · independent monitor":"MAIN → Windows · same mix";
     if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
     const message=extraPending?(extraPending.acked?"Verifying output…":"Applying output…"):
       busy?"Audio device is applying…":!live?"Reading audio engine status…":
+      recovering?"Reconnecting to "+name+" automatically · Disconnect to stop":
       fault?"Output disconnected unexpectedly. Enable the selected device again or disconnect.":
       armed?"Enabled · "+name+" · check audio in receiving app":
       ready?"Connected · "+name+" · Enable to send MAIN":
@@ -3721,7 +3723,7 @@
       .armix-stream-controls [data-extra-status]{color:#b6c9d1;overflow-wrap:anywhere}
       .armix-stream-controls[data-state="ENABLED"] [data-extra-status]{color:#9bd3b8}
       .armix-stream-controls[data-state="FAULT"] [data-extra-status],.armix-stream-controls [data-extra-error]{color:#ffb7a5}
-      .armix-stream-controls[data-state="PENDING"] [data-extra-status]{color:#e5c17d}
+      .armix-stream-controls[data-state="PENDING"] [data-extra-status],.armix-stream-controls[data-state="RECOVERING"] [data-extra-status]{color:#e5c17d}
       .armix-stream-hint{font-size:11px;color:#9fb9c8;line-height:1.4}
       .armix-stream-inline{margin-bottom:12px}
       .armix-audio-dialog details[data-audio-hardware-routing]{margin:10px 0;padding:9px 0}
@@ -5438,6 +5440,7 @@
     backend.addEventListener("arMixSecondaryOutputInventory",inventory=>{
       if(!extraInventoryPending||inventory?.requestId!==extraInventoryPending||!Array.isArray(inventory.outputs))return;
       extraInventory=[...new Set(inventory.outputs.filter(x=>typeof x==="string"&&x.length>0&&x.length<=240))];
+      extraPreferred=typeof inventory.preferredOutput==="string"?inventory.preferredOutput:"";
       extraInventoryPending="";
       extraInventoryKnown=!inventory.error;
       if(inventory.error)extraError=String(inventory.error);

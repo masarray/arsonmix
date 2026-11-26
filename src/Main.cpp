@@ -3215,6 +3215,8 @@ private:
                 !bool(live.getProperty("secondaryOutputFault",false));
             obj->setProperty("secondaryOutputFault",live.getProperty("secondaryOutputFault",false));
             obj->setProperty("secondaryOutputName",live.getProperty("secondaryOutputName",""));
+            obj->setProperty("secondaryOutputRecovering",secondaryRecoveryPending());
+            obj->setProperty("secondaryOutputRecoveryName",secondaryRecoveryName());
             obj->setProperty("secondaryMainReady",streamReady);
             obj->setProperty("secondaryMainEndpoint",streamReady?
                 live.getProperty("secondaryOutputName",{}):juce::var(""));
@@ -4203,6 +4205,114 @@ private:
         bool waitForMain;
     };
     std::optional<PendingVendorStream> pendingVendorStream_;
+    // Machine-local preference is NOT ARM authority. Endpoint ID never leaves
+    // native control. A portable show cannot silently select a different PC's sink.
+    struct SecondaryPreference { juce::String name; std::wstring id; };
+    std::optional<SecondaryPreference> secondaryPreference_;
+    bool secondaryPreferenceLoaded_=false;
+    juce::File secondaryPreferenceFile() const {
+        return machineSettingsDirectory().getChildFile("secondary-output.json");
+    }
+    void loadSecondaryPreference() {
+        if(secondaryPreferenceLoaded_)return;
+        secondaryPreferenceLoaded_=true;
+        const auto file=secondaryPreferenceFile();
+        if(!file.existsAsFile()||file.getSize()<=0||file.getSize()>16384)return;
+        const auto data=juce::JSON::parse(file.loadFileAsString());
+        const auto name=data.getProperty("name",{}),id=data.getProperty("endpointId",{});
+        if(data.getProperty("version",{})!=juce::var(1)||!name.isString()||!id.isString())return;
+        const auto label=name.toString(),identity=id.toString();
+        if(label.isEmpty()||label.length()>240||identity.isEmpty()||identity.length()>2048)return;
+        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer())};
+    }
+    void rememberSecondaryPreference(const LiveAudioEngine::SecondaryResumeIntent& intent) {
+        loadSecondaryPreference();
+        if(secondaryPreference_&&secondaryPreference_->name==intent.name&&
+           secondaryPreference_->id==intent.endpointId)return;
+        auto data=std::make_unique<juce::DynamicObject>();
+        data->setProperty("version",1);
+        data->setProperty("name",intent.name);
+        data->setProperty("endpointId",juce::String(intent.endpointId.c_str()));
+        if(machineSettingsDirectory().createDirectory().wasOk()&&
+           secondaryPreferenceFile().replaceWithText(juce::JSON::toString(juce::var(data.release()),true)))
+            secondaryPreference_=SecondaryPreference{intent.name,intent.endpointId};
+        else diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Output active; machine-local preference not saved");
+    }
+    juce::String verifiedSecondaryPreference() {
+        loadSecondaryPreference();
+        if(!secondaryPreference_)return {};
+        const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(secondaryPreference_->name);
+        return current.ok()&&current.selection.id==secondaryPreference_->id?secondaryPreference_->name:juce::String{};
+    }
+    // Same-session, same-graph recovery only. Never carries ARM permission
+    // across process restart, explicit disconnect, driver or route change.
+    struct SecondaryContinuity {
+        LiveAudioEngine::SecondaryResumeIntent intent;
+        std::uint64_t epoch,revision;
+    };
+    std::optional<SecondaryContinuity> secondaryContinuity_;
+    armix::device::AudioContinuityRetry secondaryRetry_;
+    void cancelSecondaryContinuity() {
+        secondaryContinuity_.reset();
+        secondaryRetry_.cancel();
+    }
+    bool secondaryRecoveryPending() const noexcept {
+        return pendingVendorStream_.has_value()||secondaryRetry_.pending();
+    }
+    juce::String secondaryRecoveryName() const {
+        if(pendingVendorStream_)return pendingVendorStream_->intent.name;
+        return secondaryRetry_.pending()&&secondaryContinuity_?secondaryContinuity_->intent.name:juce::String{};
+    }
+    void serviceSecondaryContinuity() {
+        if(pendingVendorStream_)return; // existing vendor transaction owns this recovery
+        const auto epoch=engine_.dryRoutingLabEpoch(),revision=engine_.outputArmRevision();
+        if(engine_.secondaryArmed()) {
+            if(!secondaryContinuity_||secondaryContinuity_->epoch!=epoch||
+               secondaryContinuity_->revision!=revision) {
+                cancelSecondaryContinuity();
+                if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
+                    if(auto intent=engine_.captureSecondaryResumeIntent())
+                        secondaryContinuity_=SecondaryContinuity{std::move(*intent),epoch,revision};
+            }
+            if(secondaryRetry_.pending())secondaryRetry_.recovered();
+            return;
+        }
+        if(!secondaryContinuity_)return;
+        if(secondaryContinuity_->epoch!=epoch||secondaryContinuity_->revision!=revision||
+           nativeShowBusy_||studioBackupBusy_||retainedOfflineFxActive_||
+           pendingRetainedFxCapture_||engine_.hasRuntimeFxFault()||
+           (!engine_.secondaryFaulted()&&!secondaryRetry_.pending())) {
+            cancelSecondaryContinuity();
+            return;
+        }
+        const auto now=static_cast<std::uint64_t>(monotonicMilliseconds());
+        secondaryRetry_.fault(now);
+        if(!secondaryRetry_.due(now)||deviceApply_.busy()||mixerSessionWorker_.busy()||
+           !engine_.secondaryResumeReady())return;
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
+        if(!lease)return;
+        const auto intent=secondaryContinuity_->intent;
+        // Identity preflight avoids opening a default or a replacement device.
+        const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(intent.name);
+        if(current.ok()&&current.selection.id!=intent.endpointId) {
+            cancelSecondaryContinuity();
+            emitNotice("Additional output identity changed · choose your destination again",true);
+            return;
+        }
+        const auto error=current.ok()?engine_.restoreSecondaryOutput(intent):current.error;
+        if(error.isEmpty()) {
+            secondaryRetry_.recovered();
+            diagnostics_.record("SECONDARY_HOTPLUG_RESTORED",intent.name);
+            emitNotice("Additional output restored",false);
+        } else {
+            secondaryRetry_.failed(now);
+            if(secondaryRetry_.attempts()>=5) {
+                cancelSecondaryContinuity();
+                diagnostics_.record("SECONDARY_HOTPLUG_PAUSED",error);
+                emitNotice("Additional output unavailable · Enable to retry",true);
+            }
+        }
+    }
     void serviceVendorStreamRecovery() {
         if(!pendingVendorStream_)return;
         const auto& p=*pendingVendorStream_;
@@ -6515,6 +6625,16 @@ private:
             action=="logicalVendorFxEditor"||action=="retainedFxOfflineOpen"||action=="fxEditor";
         if (!editorNavigation && action!="audioDeviceInventory" && action!="secondaryOutputInventory" && action!="copyDiagnosticReport")
             cancelPhysicalLoopback();
+        // An explicit destination command cancels stale recovery even when a
+        // device transaction is busy. Ordinary mixer controls do not.
+        if(action=="secondaryOutputEnable"||action=="secondaryOutputConnect"||
+           action=="secondaryOutputArm"||action=="secondaryOutputStop"||
+           action=="secondaryOutputSplit"||action=="audioDeviceApply"||
+           action=="audioSetup"||action=="audioDriverPanel"||
+           (action=="monitor"&&args.getProperty("value",{}).isBool()&&!bool(args.getProperty("value",{})))) {
+            pendingVendorStream_.reset();
+            cancelSecondaryContinuity();
+        }
         if(deviceApply_.busy() && action!="audioDeviceApply"){
             // Never silently swallow an operator's correlated editor click.
             // Admission remains closed while hardware Apply owns the graph.
@@ -6534,10 +6654,12 @@ private:
             }
             return;
         }
-        // New operator intent supersedes deferred recovery, including Stop.
-        if(pendingVendorStream_ && action!="audioDeviceInventory" &&
-           action!="secondaryOutputInventory" && action!="copyDiagnosticReport" &&
-           !editorNavigation)
+        // Graph/epoch checks also reject stale deferred recovery. Do not
+        // discard it merely because the operator moved an unrelated fader.
+        if(pendingVendorStream_ && (action.startsWith("nativeMixer")||
+           action=="routingDryStop"||action=="routingDryApply"||
+           action=="routingDryShowRecall"||action=="routingDryShowRecover"||
+           action=="playerChooseOutput"))
             pendingVendorStream_.reset();
         const auto value = args.getProperty ("value", {});
         const int slot = static_cast<int> (args.getProperty ("slot", -1));
@@ -9743,6 +9865,10 @@ private:
                 if(!value.isBool()) error="Expected explicit Secondary output ARM true/false";
                 else error=engine_.armSecondaryOutput(bool(value));
             } else engine_.disconnectSecondaryOutput();
+            if(error.isEmpty()&&(action=="secondaryOutputEnable"||
+               (action=="secondaryOutputArm"&&bool(value))))
+                if(auto intent=engine_.captureSecondaryResumeIntent())
+                    rememberSecondaryPreference(*intent);
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
@@ -9867,6 +9993,7 @@ private:
             auto result=std::make_unique<juce::DynamicObject>();
             result->setProperty("requestId",args.getProperty("requestId",{}));
             result->setProperty("outputs",juce::var(outputs));
+            result->setProperty("preferredOutput",verifiedSecondaryPreference());
             result->setProperty("error",error);
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputInventory",juce::var(result.release()));
         }
@@ -11108,6 +11235,7 @@ private:
         serviceDirectRestore();
         serviceAutomaticMain();
         serviceVendorStreamRecovery();
+        serviceSecondaryContinuity();
         // Autosave only while ALL outputs are muted. Vendor-state reads
         // happen on CONTROL; disk commits run on ONE serialized IO worker.
         // A performance with armed speakers/stream is never interrupted for
@@ -11357,6 +11485,10 @@ private:
         if(!browser_.loaded)return;
         const double statusStart = timing ? juce::Time::getMillisecondCounterHiRes() : 0.0;
         auto state = engine_.status();
+        if(auto* streamState=state.getDynamicObject()) {
+            streamState->setProperty("secondaryOutputRecovering",secondaryRecoveryPending());
+            streamState->setProperty("secondaryOutputRecoveryName",secondaryRecoveryName());
+        }
         if (timing)
         {
             const double elapsed = juce::Time::getMillisecondCounterHiRes() - statusStart;

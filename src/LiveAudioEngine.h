@@ -414,6 +414,7 @@ public:
     }
     void disconnectSecondaryOutput(){secondaryOutput_.stop();}
     bool secondaryArmed() const noexcept{return secondaryOutput_.armed();}
+    bool secondaryFaulted() const noexcept{return secondaryOutput_.faulted();}
 
     // FAST1: control-thread output arm preflight; physical MUTE always works.
     // No auto-arm on device reopen, no RT allocation or driver reconfiguration.
