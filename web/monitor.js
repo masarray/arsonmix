@@ -257,7 +257,8 @@
     '<section class="arPatchBody arPatchHidden" id="arPatchInternalPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>LIVE BUS ROUTING · AUX SENDS & RETURNS</strong><small>Real native CH → AUX1–4 PRE/POST → stereo RETURN → MAIN. MONITOR is a separate physical output mix.</small></div></div><section id="arBusCapability" class="arBusCapability" aria-label="Real native bus capability map"><div class="arBusSignalPath"><strong>CH01–10</strong><span>→ PRE / POST SEND →</span><strong>AUX 1–4 · FX RETURN</strong><span>→ MAIN</span></div><div class="arBusSignalPath"><strong>CH01–10 / AUX 1–4</strong><span>→ POST MONITOR MIX →</span><strong>MONITOR · VERIFIED HW L/R</strong></div><div class="arBusCapabilities"><span data-bus-cap="live">NATIVE CAPABILITY: 4 AUX FX RETURNS · MAIN · MONITOR WHEN HW PINS VERIFIED</span><span data-bus-cap="missing">NOT IMPLEMENTED: AUDIO GROUP · DCA · MATRIX · CUE</span></div><div class="arBusActions"><button class="btn-180" type="button" id="arBusJumpSends">EDIT CH → AUX SENDS</button><button class="btn-180" type="button" id="arBusJumpReturns">EDIT AUX FX RETURNS</button><button class="btn-180" type="button" id="arBusJumpOutputs">CONFIGURE MAIN / MONITOR OUTPUT</button></div></section><details class="arRouteChannelAdvanced"><summary>ADVANCED CHANNEL SOURCE / FORMAT / INSERT SETTINGS</summary><div id="arRouteRows"></div></details><section id="arAuxReturns"><h3>4 DEDICATED AUX / FX RETURNS</h3><p>Independent stereo return with VST3, level and MAIN route.</p><div id="arAuxRows"></div></section><section id="arRouteSends"><h3>CH → AUX SEND MATRIX · PRE / POST</h3><p class="arAuxMatrixNote">10 channels × 4 AUX returns. Select a cell to edit PRE/POST sends; output changes only after MUTE + APPLY.</p><div id="arAuxSendGrid" class="arAuxMatrix" role="grid" aria-label="Channel to AUX send matrix"></div><div id="arAuxSendInspector" class="arAuxInspector" role="group" aria-label="Selected AUX send inspector">Select a CH / AUX cell to inspect sends.</div><h3>ADVANCED · CH → CH SENDS</h3><p class="arAuxMatrixNote">Directed channel sends remain available; feedback loops are rejected before native APPLY.</p><div id="arSendRows"></div><button class="btn-180" id="arAddSend">＋ ADD CH → CH SEND</button></section></section>' +
     '<section class="arPatchBody arPatchHidden" id="arPatchOutputPanel" role="tabpanel"><div class="arPatchHeading"><div><strong>OUTPUT PATCH · HARDWARE + SOFTWARE</strong><small>Map MAIN output on the selected ASIO/WASAPI device; optionally duplicate MAIN to another output device.</small></div></div><div id="arPatchOutputMap"></div><div class="arPatchNote">Independent bus-to-device routes beyond MAIN require the native output bus matrix milestone.</div>' +
     '<section id="arStreamStrip" aria-label="Secondary playback output">' +
-      '<strong>ADDITIONAL OUTPUT · MAIN TO DEVICE</strong>' +
+      '<strong>ADDITIONAL OUTPUT · MAIN → OBS / STREAM / OTHER DEVICE</strong>' +
+      '<div class="arPatchNote">1. Select the actual playback endpoint (e.g. CABLE Input). 2. Mute MAIN temporarily, then Connect. 3. Arm Output and resume MAIN. In OBS choose the paired recording endpoint (e.g. CABLE Output). The primary ASIO monitor keeps its own clock.</div>' +
       '<div id="arStreamControls"><select id="arStreamDevice" aria-label="Additional device playback endpoint"><option value="">Select actual Windows playback endpoint...</option></select>' +
       '<button id="arStreamRefresh" type="button" title="Refresh real Windows playback devices">REFRESH</button>' +
       '<button id="arStreamConnect" type="button">CONNECT</button>' +
@@ -1173,6 +1174,13 @@
         " staged; only LIVE after native route ACK."};
   };
   window.__arMixOpenRoutingLab=openRoutingLab;
+  // One discoverable output workflow using the existing native endpoint owner.
+  window.__arMixOpenAdditionalOutput=()=>{
+    openRoutingLab();
+    selectPatchTab("output");
+    requestStreamInventory();
+    el("arStreamDevice")?.focus();
+  };
   document.getElementById("arPatchHardwareSetup")?.addEventListener("click",()=>{
     window.__arMixOpenAudioIO?.("inputs");
   });

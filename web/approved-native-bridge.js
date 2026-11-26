@@ -72,7 +72,8 @@
     style.textContent+="\n"+"html.armix-native-desktop #mxNativeVocalThrow #vtEncodersLeft,html.armix-native-desktop #mxNativeVocalThrow #vtEncodersRight{order:initial!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-throw-button{width:212px!important;height:212px!important}\nhtml.armix-native-desktop #mxNativeVocalThrow .vt-performance{grid-template-columns:88px minmax(0,1fr) 302px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-rotary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;min-height:190px!important}\nhtml.armix-native-desktop #mxNativeSonKu .sk-dial{width:62px!important;height:62px!important}\nhtml.armix-native-desktop #mxNativeHarmony .mx-harm-center{border-top:0!important;padding:8px 12px!important}";
     const offsets=new WeakMap();
     const identities=new WeakMap(); // exact FX owner, not its slot
-    const bypassOwners=new Map(); // max five mounted roots, navigation lease only
+    const bypassOwners=new Map(); // navigation lease only
+    const editorOwners=new Map(); // includes GEQ, whose bypass UI is internal
     let drag=null,layer=16000;
     const limit=(value,low,high)=>Math.max(low,Math.min(high,value));
     const grip=()=>Math.min(130,Math.max(56,Math.floor(innerWidth*.22)));
@@ -166,6 +167,21 @@
         if(shade.style.pointerEvents!==pointer)shade.style.pointerEvents=pointer;
       }
     }
+    function closeRackEditors(channelIds=null){
+      const affected=channelIds===null?null:new Set(channelIds.map(String));
+      for(const [root,owner] of editorOwners){
+        if(affected&&!affected.has(String(owner.lease.channelId)))continue;
+        editorOwners.delete(root);
+        bypassOwners.delete(root);
+        if(drag?.root===root){
+          try{drag.capture.releasePointerCapture?.(drag.pointerId);}catch(_){}
+          drag=null;
+        }
+        if(root.isConnected&&!root.hidden){
+          try{window[owner.key]?.close?.();}finally{root.hidden=true;}
+        }
+      }
+    }
     function openExact(host,key,track,slot,instanceId,lease=null) {
       const selector=selectors[key],root=document.querySelector(selector||"#__none__");
       if(!root||typeof host?.open!=="function"||!instanceId)return false;
@@ -181,7 +197,10 @@
       }
       if(host.open(track,slot)===false)return false;
       if(root.hidden)return false; // a no-op open is not a successful editor
-      if(lease&&key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
+      if(lease){
+        editorOwners.set(root,{key,lease});
+        if(key!=="ArSonMixGraphicEq31")bypassOwners.set(root,lease);
+      }
       root.style.zIndex=String(++layer);
       if(!offsets.has(root))center(root);
       else keepReachable(root);
@@ -251,7 +270,7 @@
       for(const root of document.querySelectorAll(roots))
         if(!root.hidden)requestAnimationFrame(()=>keepReachable(root));
     });
-    return Object.freeze({openExact,center,move,syncBypass});
+    return Object.freeze({openExact,center,move,syncBypass,closeRackEditors});
   })():null;
   if(inlineFxClip)window.__ARMIX_NATIVE_INLINE_FX_CLIP__=inlineFxClip;
 
@@ -1905,6 +1924,9 @@
         status("FX edit unavailable · refresh accepted native instance");
       return false;
     }
+    // Close affected slot-bound panels before MOVE/REMOVE invalidates their
+    // leases. The source and destination racks can both shift slot indices.
+    inlineFxClip?.closeRackEditors(target?[id,nativeIdFor(target)]:[id]);
     const result=controller.intent(decision.operation,decision.channelId,
                                    decision.payload);
     if(!result.ok){status("FX edit rejected · "+result.error);return false;}
@@ -3482,6 +3504,8 @@
   // replaces the 740x590 default JUCE dialog for normal operator setup.
   let devicePanel=null,deviceInventory=null,deviceChoice=null,deviceRequest=0,
       deviceState=deviceVM.setupInitial(),deviceApplyTimer=0;
+  // Snapshot the actual initiating action; never infer it from a later tab.
+  let closeAfterVerifiedPinApply=false;
   const deviceBusy=()=>Boolean(deviceState.pending);
   let toastTimer=0;
   function nativeToast(message){
@@ -3848,7 +3872,9 @@
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
           <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
-          <div class="armix-device-note">External stereo outputs are editable. Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
+          <div class="armix-device-note">Assign mixer channels and buses to verified hardware pins below. To duplicate MAIN to OBS, a virtual cable or another Windows device, use Additional Output.</div>
+          <button type="button" data-audio-extra-output>Additional Output · OBS / Virtual Cable</button>
+          <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair.</div>
           <div data-monitor-timing hidden class="armix-device-note">
             <strong>MONITOR timing</strong> · <span data-monitor-timing-value></span>
             <button type="button" data-monitor-timing-toggle disabled>Use singer low latency</button>
@@ -3944,6 +3970,11 @@
       devicePanel.querySelector("[data-audio-remap]").onclick=()=>{
         if(!deviceBusy() && deviceState.remapGeneration!==null)
           sendDeviceApply(true);
+      };
+      devicePanel.querySelector("[data-audio-extra-output]").onclick=()=>{
+        if(deviceBusy()||typeof window.__arMixOpenAdditionalOutput!=="function")return;
+        closeNativeAudioIO();
+        window.__arMixOpenAdditionalOutput();
       };
       document.body.appendChild(devicePanel);
     }
@@ -4143,6 +4174,9 @@
       confirmRetainedPinMapping,assignMain});
     if(!begun)return;
     deviceState=begun.state;
+    closeAfterVerifiedPinApply=!confirmRetainedPinMapping &&
+      devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab==="pins" &&
+      begun.state.pending.expected.requestedPins!==null;
     showDeviceApplyProgress(true);
     renderDevicePanel();
     // Reuse the ONLY native arMixAction dispatcher. UI state cannot touch PCM.
@@ -4244,11 +4278,19 @@
     deviceApplyTimer=0;
     if(!devicePanel)return;
     showDeviceApplyProgress(false);
+    const closePins=closeAfterVerifiedPinApply && deviceState.phase==="ACCEPTED" &&
+      !!verifiedSnapshot?.device && deviceState.inspectNewAsio!==true;
+    closeAfterVerifiedPinApply=false;
     if(deviceState.phase==="ACCEPTED"){
       deviceChoice=null;
-      {
-        // All successful device/pin transactions stay in setup. Never show
-        // a candidate or pre-Apply inventory as the newly installed device.
+      if(closePins){
+        // Close only after independent installed readback, never on ACK alone.
+        delete devicePanel.dataset.openPinsAfterInventory;
+        deviceInventory=null;
+        closeNativeAudioIO();
+      }else{
+        // Device discovery stays in setup to expose the new hardware pins.
+        // Never show a candidate or pre-Apply inventory as installed hardware.
         deviceInventory=null;
         devicePanel.dataset.openPinsAfterInventory="true";
         selectAudioSetupPage("device");
@@ -4578,20 +4620,33 @@
     });
     backend.addEventListener("arMixNativeSessionAck",ack=>{
       const save=ack?.operation==="SAVE";
-      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="RESET_IO"&&ack?.operation!=="ARCHIVE")return;
+      if(!save&&ack?.operation!=="OPEN"&&ack?.operation!=="NEW"&&ack?.operation!=="NEW_LIVE"&&ack?.operation!=="RESET_IO"&&ack?.operation!=="ARCHIVE")return;
       if(ack.ok!==true){
         const error=String(ack.error||"Mixer file operation failed");
         status(error);nativeToast(error);
         return;
       }
-      const message=save?"Mixer saved as .smix":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":ack.operation==="ARCHIVE"?"Archived mixer opened · output remains muted":"Mixer opened";
+      const message=save?"Mixer saved as .smix":ack.operation==="NEW_LIVE"?"New mixer active · previous project archived · output muted":ack.operation==="NEW"?"New offline mixer saved · output remains muted":ack.operation==="RESET_IO"?"I/O defaults restored · mixer and FX retained":ack.operation==="ARCHIVE"?"Archived mixer opened · output remains muted":"Mixer opened";
       status(message);nativeToast(message);
       if(!save)controller?.subscribe();
     });
-    const newSessionButtons=[["New empty session","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
+    const newSessionButtons=[["New Project · empty mixer","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
-      button.title="Offline only · previous checkpoint archived in Studio/SessionArchive";
+      button.title=mode==="EMPTY"?"Start fresh · previous mixer archived, output muted":"Offline only · previous checkpoint archived in Studio/SessionArchive";
       button.addEventListener("click",()=>{
+        const current=controller?.state()?.current;
+        if(mode==="EMPTY"&&!logicalView&&current?.admitted){
+          if(current.raw?.liveNewSessionAvailable!==true){
+            nativeToast("Finish current operations before New Project");return;
+          }
+          if(!window.confirm("Start a new mixer? The current project is archived first. Output will remain muted."))return;
+          inlineFxClip?.closeRackEditors();
+          backend.emitEvent("arMixAction",{action:"nativeMixerNewLive",confirmed:true,
+            deviceEpoch:current.device.epoch,graphRevision:current.graph.revision,
+            rosterRevision:current.graph.rosterRevision});
+          status("Archiving current mixer · preparing New Project");
+          return;
+        }
         if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
           nativeToast("Disconnect audio and finish mixer operations before New Session");return;
         }
@@ -4639,6 +4694,20 @@
         button.addEventListener("click",()=>backend.emitEvent("arMixAction",{action}));
         toolbar.insertBefore(button,firstTool);
       }
+      // Prominent New Project entry invokes the existing durable offline transaction.
+      // Never implement reset by wiping UI state or removing a saved checkpoint.
+      const newProject=item("button","tool","New Project");
+      newProject.type="button";
+      newProject.title="Create a fresh offline mixer; archive the previous session";
+      newProject.dataset.nativeNewProject="true";
+      newProject.addEventListener("click",()=>newSessionButtons[0].click());
+      toolbar.insertBefore(newProject,firstTool);
+      const extraOutput=item("button","tool","Output");
+      extraOutput.type="button";
+      extraOutput.title="Send MAIN to OBS, virtual cable or another Windows playback device";
+      extraOutput.dataset.nativeExtraOutput="true";
+      extraOutput.addEventListener("click",()=>window.__arMixOpenAdditionalOutput?.());
+      toolbar.insertBefore(extraOutput,document.getElementById("moreTools"));
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
@@ -5454,6 +5523,8 @@
     if(operation==="DEACTIVATE"&&(!Number.isInteger(slot)||channel.inserts?.[slot]?.id!==token)){
       nativeToast("FX changed · reopen rack menu");return false;
     }
+    // Rack topology may replace or shift slot-relative inline editor leases.
+    if(operation!=="SAVE")inlineFxClip?.closeRackEditors([identity.channelId]);
     backend.emitEvent("arMixAction",{action:"fxRackFile",operation,...identity,
       slot:operation==="DEACTIVATE"?slot:-1,instanceId:operation==="DEACTIVATE"?token:""});
     return true;

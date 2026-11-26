@@ -2059,7 +2059,12 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/e\.preventDefault\(\)/);
  assert.match(menu,/\.strip-identity-top/);
  assert.match(menu,/\.fxslot-row:not\(\.is-empty\)/);
- assert.match(menu,/Confirm Delete Track/);
+ assert.doesNotMatch(menu,/Confirm Delete Track/);
+ assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
+ assert.match(menu,/Confirm Delete AUX/);
+ assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
+ assert.match(bridge,/extraOutput\.addEventListener\("click",\(\)=>window\.__arMixOpenAdditionalOutput\?\.\(\)\)/);
+ assert.match(read("web/monitor.js"),/window\.__arMixOpenAdditionalOutput=\(\)=>\{\s*openRoutingLab\(\);\s*selectPatchTab\("output"\);/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
@@ -2075,6 +2080,10 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(host,/engine_\.leaseNativeVst3Editor\(/);
  assert.match(host,/nativeOrbitLease_/);
  assert.match(host,/arMixNativeOrbitState/);
+ assert.match(host,/if\(!replay&&translated\.ok\(\)\)[\s\S]*?closeEditorsForNativeRackEdit\(command\);\s*applied=armix::console::executeApprovedNativeControl/);
+ assert.match(host,/op!="NATIVE_MOVE_INSERT" && op!="NATIVE_REMOVE_INSERT"/);
+ assert.match(host,/item->channelId==from/);
+ assert.match(host,/routedEditorOwner_->instanceId==token/);
  assert.match(lab,/removeNativeInputChannel/);
  assert.match(lab,/request\.sources/);
  assert.match(roster,/removeInputAndDisconnect/);
@@ -7252,6 +7261,31 @@ test("P0 native busy guard and all physical presentations produce explicit recei
 });
 
 
+test("RTR closes affected inline FX editors before rack mutation",()=>{
+ const b=read("web/approved-native-bridge.js");
+ const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
+ assert.ok(edit.indexOf('decision.kind!=="READY"')<edit.indexOf("inlineFxClip?.closeRackEditors("));
+ assert.ok(edit.indexOf("inlineFxClip?.closeRackEditors(")<edit.indexOf("controller.intent("));
+ assert.match(b,/editorOwners\.set\(root,\{key,lease\}\)/);
+ assert.match(b,/affected\.has\(String\(owner\.lease\.channelId\)\)/);
+ assert.match(b,/bypassOwners\.delete\(root\)/);
+});
+
+
+test("RTR live New Project requires verified archive before native replacement",()=>{
+ const m=read("src/Main.cpp"),w=read("src/NativeMixerSessionSaveWorker.h"),b=read("web/approved-native-bridge.js");
+ const reset=m.slice(m.indexOf("void createLiveSession("),m.indexOf("void createOfflineSession("));
+ assert.match(reset,/liveNewSessionLeaseMatches\(args\)/);
+ assert.ok(reset.indexOf("mixerSessionWorker_.save(")<reset.indexOf("restoreNativeMixerSession("));
+ assert.match(reset,/Codec::encode\(current\)!=expected/);
+ assert.match(reset,/setMonitorEnabled\(false\)/);
+ assert.doesNotMatch(reset,/setMonitorEnabled\(true\)/);
+ assert.match(w,/verifyExportArchive_/);
+ assert.match(w,/Session archive readback mismatch/);
+ assert.match(b,/action:"nativeMixerNewLive",confirmed:true/);
+});
+
+
 test("M3 MONITOR timing requires admitted physical pairs, disarm and observed revision",()=>{
   const raw=gmv20AcceptedGraph();
   raw.device.backend="ASIO";raw.device.outputArmed=false;
@@ -7406,4 +7440,17 @@ test("M6 uses actual routing epoch and installed native graph, not device-start 
     dryRoutingLab:{epoch:21,nativeBus:{graphRevision:"9"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
   assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),{
     dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"81"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+});
+
+
+test("RTR integration preserves monitor timing, Additional Output, performance and rack editor lifetime",()=>{
+  const b=read("web/approved-native-bridge.js"),m=read("src/Main.cpp");
+  assert.match(b,/data-monitor-timing-toggle/);
+  assert.match(b,/data-audio-extra-output/);
+  assert.match(b,/data-audio-tab="performance"/);
+  const rack=b.slice(b.indexOf("function requestRackFile("),b.indexOf("const nativeHooks="));
+  assert.ok(rack.indexOf('inlineFxClip?.closeRackEditors([identity.channelId])')>=0);
+  assert.ok(rack.indexOf('inlineFxClip?.closeRackEditors([identity.channelId])')<rack.indexOf('action:"fxRackFile"'));
+  const live=m.slice(m.indexOf("bool canCreateLiveSession("),m.indexOf("bool liveNewSessionLeaseMatches("));
+  assert.match(live,/!fxRackFileChooser_/);
 });
