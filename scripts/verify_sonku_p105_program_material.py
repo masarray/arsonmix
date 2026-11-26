@@ -21,7 +21,7 @@ RATE=48000
 DRIVER=ROOT/"tests/sonku_p105_program_material.cpp"
 def run(*cmd,**kw):return subprocess.run(cmd,check=True,**kw)
 def hz(n):return 440*2**((n-69)/12)
-def original(path):
+def original(path,seconds=13):
     # Original deterministic 4-bar pop/jazz instrumental proxy, no samples.
     # Real music supplied by the operator is preferred for final listening.
     rng=random.Random(1052026)
@@ -29,7 +29,7 @@ def original(path):
     melody=(69,72,76,74,72,69,67,65,67,72,71,67,65,69,74,71)
     tau=2*math.pi;beat=.5
     pcm=array.array("f")
-    for i in range(13*RATE):
+    for i in range(seconds*RATE):
         t=i/RATE; b=int(t/beat);phase=t%beat; bar=(b//4)%4
         chord=chords[bar]; env=min(1,phase/.015)*math.exp(-phase*3.5)
         kick=.09*math.exp(-phase*30)*math.sin(tau*(49*phase+2*(1-math.exp(-phase*30))))
@@ -44,7 +44,7 @@ def original(path):
         pad=[.013*math.sin(tau*hz(n)*t)+.005*math.sin(tau*(hz(n)+.35)*t) for n in chord]
         guitar=.035*math.exp(-eighth*10)*min(1,eighth/.006)*math.sin(tau*hz(chord[(b*2+int(phase/.25))%4]+12)*eighth)
         mid=kick+bass+snare+lead
-        fade=min(1,t/.03,(13-t)/.03)
+        fade=min(1,t/.03,(seconds-t)/.03)
         pcm.extend((fade*(mid+pad[0]+pad[2]+.45*pad[1]+guitar+.7*hats),
                     fade*(mid+pad[1]+pad[3]+.45*pad[0]+.25*guitar+hats)))
     path.write_bytes(pcm.tobytes())

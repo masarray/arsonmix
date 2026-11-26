@@ -13,6 +13,7 @@ from pathlib import Path
 from verify_sonku_p104_externalization import ROOT, FX, FLAGS, candidate_copy
 from verify_sonku_p108_acoustic_callback import identities
 from verify_sonku_p11_motion import static_copy
+from verify_sonku_p12_musical import musical_copy, source_identities
 
 CASES = [(0,48000,b,s) for b in (64,128) for s in range(3)] + [
     (brand,48000,64,s) for brand in (1,2) for s in (1,2)]
@@ -104,21 +105,27 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument("--msvc",action="store_true")
     p.add_argument("--self-test",action="store_true")
-    p.add_argument("--motion",action="store_true",help="P11 stationary-only cue, exact fresh orbit protection and repeated timed retargets")
+    group=p.add_mutually_exclusive_group()
+    group.add_argument("--motion",action="store_true",help="P11 stationary-only cue, exact fresh orbit protection and repeated timed retargets")
+    group.add_argument("--musical",action="store_true",help="P12 isolated late-mid relief; preserve original direct and geometry")
     p.add_argument("--out",type=Path,default=ROOT/"sonku-p112-trace")
     a=p.parse_args()
     self_test()
     if a.self_test:return
     if a.out.exists() and any(a.out.iterdir()):p.error("output must be empty")
     a.out.mkdir(parents=True,exist_ok=True)
-    cases=MOTION_CASES if a.motion else CASES
-    baseline=identities(FX)
+    cases=MOTION_CASES if a.motion or a.musical else CASES
+    identify=source_identities if a.musical else identities
+    baseline=identify(FX)
     rows=[];hashes={}
     with tempfile.TemporaryDirectory(prefix="sonku-p112-") as d:
         tmp=Path(d)
-        (static_copy if a.motion else candidate_copy)(tmp/"candidate")
-        candidate=identities(tmp/"candidate")
-        assert all(baseline[k]!=candidate[k] for k in baseline)
+        (musical_copy if a.musical else static_copy if a.motion else candidate_copy)(tmp/"candidate")
+        candidate=identify(tmp/"candidate")
+        if a.musical:
+            assert [k for k in baseline if baseline[k]!=candidate[k]]==["sonku/SonKuP99MusicalVocalDepth.h"]
+        else:
+            assert all(baseline[k]!=candidate[k] for k in baseline)
         exes={}
         for v,folder in (("reference",FX),("candidate",tmp/"candidate")):
             exe=tmp/("bench-"+v+(".exe" if a.msvc else ""))
@@ -157,16 +164,16 @@ def main():
                         rows.append(dict(trial=trial,case=case,variant=v,sha256=h,**stats))
                     if brand or (a.motion and scenario==1):
                         assert hashes[case,"reference"]==hashes[case,"candidate"],("protected PCM",case)
-                    elif a.motion:
+                    elif a.motion or a.musical:
                         assert hashes[case,"reference"]!=hashes[case,"candidate"],("missing candidate effect",case)
                     print("P112_PAIR",trial,case,flush=True)
         assert any(hashes[c,"reference"]!=hashes[c,"candidate"] for c in CASES if c[0]==0)
-    assert identities(FX)==baseline
+    assert identify(FX)==baseline
     summary,disposition=compare(rows,cases)
-    report=dict(candidateKind="P11_STATIC_ONLY" if a.motion else "P10_FULL",baseline=baseline,candidate=candidate,workUnit="thread_cycles" if a.msvc else "thread_cpu_ns",
+    report=dict(candidateKind="P12_MUSICAL_LATE_MID" if a.musical else "P11_STATIC_ONLY" if a.motion else "P10_FULL",baseline=baseline,candidate=candidate,workUnit="thread_cycles" if a.msvc else "thread_cpu_ns",
                 rows=rows,summary=summary,timingDisposition=disposition,productionAdmission="NOT_EVALUATED",
                 physicalASIO="NOT_RUN",listening="NOT_EVALUATED",
-                transitionCallbacksTimed=a.motion,
+                transitionCallbacksTimed=a.motion or a.musical,
                 caveat="Timer overhead included. Scenario 3 times setSettings plus process at each 128th callback. Other scenarios retain prior process-only timing. Windows cycles are not elapsed CPU time or proof of scheduler causality.")
     (a.out/"report.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n",encoding="utf-8")
     print("P112_NUMERICAL_PASS",len(rows)*N,"callbacks",disposition,flush=True)
