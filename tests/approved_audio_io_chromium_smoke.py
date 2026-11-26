@@ -590,7 +590,7 @@ def verify_independent_output(page,out,legacy_empty=False):
     emit(page,"arMixConsoleSnapshot",state)
     live={"monitor":True,"directRouteAuthorized":True,"adaptiveClockActive":False,
           "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True,"busOutputObserved":True,
-          "secondaryMainOnly":False,"epoch":state["device"]["epoch"]},
+          "secondaryMainOnly":False,"epoch":state["device"]["epoch"],"nativeBus":{"graphRevision":"2"}},
           "secondaryOutputReady":True,"secondaryOutputArmed":True,"secondaryOutputName":"CABLE Input"}
     emit(page,"arMixStatus",live)
     page.locator("[data-native-extra-output]").click()
@@ -606,13 +606,19 @@ def verify_independent_output(page,out,legacy_empty=False):
         "graphRevision":"2","rosterRevision":"2"}
     emit(page,"arMixSecondaryOutputAck",{"requestId":"foreign","action":req["action"],"ok":False})
     assert button.is_disabled()
-    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True,"graphRevision":"3"})
     assert button.is_disabled()
     live["dryRoutingLab"].update(secondaryMainOnly=True,busOutputObserved=False)
     live.update(secondaryOutputArmed=False,secondaryOutputRecovering=True,secondaryOutputRecoveryName="CABLE Input")
     emit(page,"arMixStatus",live)
     assert panel.get_by_role("button",name="Use same mix").is_disabled()
     assert panel.get_by_role("button",name="Disconnect").is_enabled()
+    # Even observed live status with new graph revision cannot complete
+    # until the accepted console snapshot and physical pair arrive.
+    live["dryRoutingLab"].update(busOutputObserved=True,nativeBus={"graphRevision":"3"})
+    live.update(secondaryOutputArmed=True,secondaryOutputRecovering=False)
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Use same mix").is_disabled()
     state.update(secondaryMainOnly=True,physicalMainOutputs=[],physicalMonitorOutputs=[0,1])
     state["graph"].update(revision="3",rosterRevision="3")
     monitor_id="987654321"
@@ -628,9 +634,8 @@ def verify_independent_output(page,out,legacy_empty=False):
     state["mixerSession"].update(routeRevision="3",rosterRevision=state["graph"]["rosterRevision"],
         channels=copy.deepcopy(state["graph"]["channels"]))
     emit(page,"arMixConsoleSnapshot",state)
-    live["dryRoutingLab"]["busOutputObserved"]=True
-    live.update(secondaryOutputArmed=True,secondaryOutputRecovering=False)
-    emit(page,"arMixStatus",live)
+    # The preceding status is fresh; accepted snapshot settles without
+    # waiting for another event, including graph projection.
     assert panel.get_by_role("button",name="Use same mix").is_enabled()
     assert panel.locator("[data-extra-status]").inner_text().startswith("Enabled")
     starter=panel.get_by_role("button",name="Create headphone mix")
@@ -646,6 +651,7 @@ def verify_independent_output(page,out,legacy_empty=False):
         state["graph"]["edges"].append(monitor_edge)
         state["mixerSession"].update(routeRevision="4",rosterRevision="4")
         emit(page,"arMixConsoleSnapshot",state)
+        live["dryRoutingLab"]["nativeBus"]["graphRevision"]="4"
         emit(page,"arMixStatus",live)
     else:
         assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryMonitorStarter').length")==0
@@ -666,13 +672,13 @@ def verify_independent_output(page,out,legacy_empty=False):
     panel.get_by_role("button",name="Use same mix").click()
     same=page.evaluate("()=>window.__actions.at(-1)")
     assert same["action"]=="secondaryOutputSplit" and same["value"]["enabled"] is False
-    emit(page,"arMixSecondaryOutputAck",{"requestId":same["requestId"],"action":same["action"],"ok":True})
     next_rev=str(int(state["graph"]["revision"])+1)
+    emit(page,"arMixSecondaryOutputAck",{"requestId":same["requestId"],"action":same["action"],"ok":True,"graphRevision":next_rev})
     state.update(secondaryMainOnly=False,physicalMainOutputs=[0,1],physicalMonitorOutputs=[])
     state["graph"]["revision"]=next_rev
     state["mixerSession"]["routeRevision"]=next_rev
     emit(page,"arMixConsoleSnapshot",state)
-    live["dryRoutingLab"]["secondaryMainOnly"]=False
+    live["dryRoutingLab"].update(secondaryMainOnly=False,nativeBus={"graphRevision":next_rev})
     emit(page,"arMixStatus",live)
     assert panel.get_by_role("button",name="Separate headphone mix").is_enabled()
     assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
@@ -680,14 +686,17 @@ def verify_independent_output(page,out,legacy_empty=False):
     panel.get_by_role("button",name="Separate headphone mix").click()
     again=page.evaluate("()=>window.__actions.at(-1)")
     assert again["action"]=="secondaryOutputSplit" and again["value"]["enabled"] is True
-    emit(page,"arMixSecondaryOutputAck",{"requestId":again["requestId"],"action":again["action"],"ok":True})
     next_rev=str(int(next_rev)+1)
     state.update(secondaryMainOnly=True,physicalMainOutputs=[],physicalMonitorOutputs=[0,1])
     state["graph"]["revision"]=next_rev
     state["mixerSession"]["routeRevision"]=next_rev
     emit(page,"arMixConsoleSnapshot",state)
-    live["dryRoutingLab"]["secondaryMainOnly"]=True
+    live["dryRoutingLab"].update(secondaryMainOnly=True,nativeBus={"graphRevision":next_rev})
     emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Use same mix").is_disabled()
+    # ACK may be last; no extra status cycle is necessary.
+    emit(page,"arMixSecondaryOutputAck",{"requestId":again["requestId"],"action":again["action"],"ok":True,"graphRevision":next_rev})
+    assert panel.get_by_role("button",name="Use same mix").is_enabled()
     assert not panel.get_by_role("button",name="Create headphone mix").is_visible()
     assert panel.get_by_role("button",name="Edit headphone mix").is_enabled()
     assert any(e==monitor_edge for e in state["graph"]["edges"])

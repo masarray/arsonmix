@@ -295,6 +295,10 @@
        [d.epoch,g?.revision,g?.rosterRevision].some(v=>decimal(v)===null)||
        !Array.isArray(raw.physicalMainOutputs)||!Array.isArray(raw.physicalMonitorOutputs))
       return {available:false,split,reason:"Independent mix requires a verified two-output ASIO route."};
+    if(split!==(raw.secondaryMainOnly===true))
+      return {available:false,split,reason:"Waiting for the installed output mode."};
+    if(split&&(raw.physicalMainOutputs.length!==0||raw.physicalMonitorOutputs.length!==2))
+      return {available:false,split,reason:"Waiting for the verified headphone pair."};
     if(raw.externalOutputs?.length||raw.logicalOutputRegistry?.references?.length||
        raw.logicalOutputRegistry?.ports?.some(p=>p.bound===true))
       return {available:false,split,reason:"Existing output assignments are preserved."};
@@ -317,6 +321,48 @@
        g.edges.some(e=>e.to===monitor.id||e.from===monitor.id))return null;
     if(!g.edges.some(e=>e.to===g.mainChannelId&&e.primaryOutput===true&&e.enabled===true))return null;
     return {deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision};
+  }
+  // One settlement rule for the output workspace. Neither ACK nor an
+  // old status alone proves the requested native graph or an armed sink.
+  // Status serial is local observation order, not a native graph identity.
+  function secondaryOutputSettlement(p,snapshot,live,statusSerial) {
+    if(!p?.acked||!live||statusSerial<=p.statusSerial)return "WAIT";
+    const route=live.dryRoutingLab,epoch=snapshot?.device?.epoch;
+    const reportedEpoch=route?.dmxDeviceEpoch??(route?.epoch==null?null:String(route.epoch));
+    if(p.action!=="secondaryOutputStop"&&p.epoch&&epoch!==p.epoch)return "STALE";
+    if(reportedEpoch!=null&&epoch!=null&&reportedEpoch!==epoch)return "WAIT";
+    const ready=live.secondaryOutputReady===true&&live.secondaryOutputFault!==true;
+    const armed=ready&&live.secondaryOutputArmed===true&&!!live.secondaryOutputName&&
+      live.secondaryOutputRecovering!==true;
+    if(p.action==="secondaryOutputSplit"||p.action==="secondaryMonitorStarter"){
+      if(!snapshot?.admitted||snapshot.retained||!p.value||
+         snapshot.hardwareConfiguration!==p.config)return "STALE";
+      if(decimal(p.ackRevision)===null||decimal(p.value.graphRevision)===null||
+         cmp(p.ackRevision,p.value.graphRevision)<=0)return "STALE";
+      if(cmp(snapshot.graph.revision,p.ackRevision)>0)return "STALE";
+      if(reportedEpoch!==p.epoch||snapshot.graph.revision!==p.ackRevision||
+         route?.nativeBus?.graphRevision!==p.ackRevision||
+         route?.busOutputObserved!==true||!armed||live.secondaryOutputName!==p.endpoint)
+        return "WAIT";
+      if(p.action==="secondaryMonitorStarter"){
+        const monitor=snapshot.graph.channels.find(c=>c.role==="MONITOR");
+        return snapshot.raw?.secondaryMainOnly===true&&route.secondaryMainOnly===true&&monitor&&
+          snapshot.graph.edges.some(e=>e.to===monitor.id&&!e.primaryOutput)?"SETTLED":"WAIT";
+      }
+      const split=p.value.enabled===true,raw=snapshot.raw;
+      const active=split?raw?.physicalMonitorOutputs:raw?.physicalMainOutputs;
+      const other=split?raw?.physicalMainOutputs:raw?.physicalMonitorOutputs;
+      return raw?.secondaryMainOnly===split&&route.secondaryMainOnly===split&&
+        Array.isArray(active)&&Array.isArray(other)&&other.length===0&&
+        Array.isArray(p.pair)&&active.length===2&&active.every((port,i)=>port===p.pair[i])?
+        "SETTLED":"WAIT";
+    }
+    if(p.action==="secondaryOutputEnable")return armed&&live.secondaryOutputName===p.value?"SETTLED":"WAIT";
+    if(p.action==="secondaryOutputArm")return ready&&live.secondaryOutputArmed===p.value?"SETTLED":"WAIT";
+    if(p.action==="secondaryOutputStop")return live.secondaryOutputReady===false&&
+      live.secondaryOutputArmed===false&&!live.secondaryOutputName&&!live.secondaryOutputFault&&
+      !live.secondaryOutputRecovering?"SETTLED":"WAIT";
+    return "WAIT";
   }
   function secondaryOutputSelection(options,{active="",selected="",preferred="",hasSaved=false}={}) {
     if(options.includes(active))return active;
@@ -1169,5 +1215,5 @@
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,firstSoundPlan,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,monitorTimingView});
+    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,secondaryOutputSettlement,monitorTimingView});
 });

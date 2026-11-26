@@ -4341,6 +4341,7 @@ private:
     struct SecondaryContinuity {
         LiveAudioEngine::SecondaryResumeIntent intent;
         std::uint64_t epoch,revision;
+        bool waitForMain=false;
     };
     std::optional<SecondaryContinuity> secondaryContinuity_;
     armix::device::AudioContinuityRetry secondaryRetry_;
@@ -4423,7 +4424,8 @@ private:
         const auto now=static_cast<std::uint64_t>(monotonicMilliseconds());
         secondaryRetry_.fault(now);
         if(!secondaryRetry_.due(now)||deviceApply_.busy()||mixerSessionWorker_.busy()||
-           !engine_.secondaryResumeReady())return;
+           !engine_.secondaryResumeReady()||
+           (secondaryContinuity_->waitForMain&&!engine_.isMonitorEnabled()))return;
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
         if(!lease)return;
         const auto intent=secondaryContinuity_->intent;
@@ -4471,7 +4473,7 @@ private:
             // A slow callback or vendor readiness is not an operator Stop.
             // Retain only the same epoch/control identity; bounded recovery
             // will revalidate the native source and full endpoint before ARM.
-            secondaryContinuity_=SecondaryContinuity{p.intent,p.epoch,p.revision};
+            secondaryContinuity_=SecondaryContinuity{p.intent,p.epoch,p.revision,p.waitForMain};
             pendingVendorStream_.reset();
             secondaryRetry_.fault(static_cast<std::uint64_t>(monotonicMilliseconds()));
             return;
@@ -4481,6 +4483,7 @@ private:
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
         if(!lease)return;
         auto intent=p.intent;
+        const bool waitForMain=p.waitForMain;
         const auto epoch=p.epoch,revision=p.revision,generation=secondaryRetry_.generation();
         pendingVendorStream_.reset();
         const auto error=engine_.restoreSecondaryOutput(intent);
@@ -4493,7 +4496,7 @@ private:
         if(error.isNotEmpty()) {
             // The route is verified but the sink might still be temporarily
             // absent. Hand off to the same bounded continuity scheduler.
-            secondaryContinuity_=SecondaryContinuity{intent,epoch,revision};
+            secondaryContinuity_=SecondaryContinuity{intent,epoch,revision,waitForMain};
             secondaryRetry_.fault(static_cast<std::uint64_t>(monotonicMilliseconds()));
             diagnostics_.record("SECONDARY_AUTO_RESTORE_WAITING",error);
             return;
@@ -10103,8 +10106,11 @@ private:
             ack->setProperty("action",action);
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
-            ack->setProperty("secondaryMainOnly",engine_.status().getProperty("dryRoutingLab",{})
-                .getProperty("secondaryMainOnly",false));
+            const auto route=engine_.status().getProperty("dryRoutingLab",{});
+            ack->setProperty("secondaryMainOnly",route.getProperty("secondaryMainOnly",false));
+            // The ACK names the exact installed PCM revision, not controlRevision.
+            // The GUI separately verifies the observed physical mapping and endpoint.
+            ack->setProperty("graphRevision",route.getProperty("nativeBus",{}).getProperty("graphRevision",{}));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixSecondaryOutputAck",juce::var(ack.release()));
             return emitNotice(error.isNotEmpty()?error:

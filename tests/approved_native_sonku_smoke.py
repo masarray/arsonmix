@@ -147,46 +147,82 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skPreset").is_disabled(),(
         "Old schema v2 must NOT offer P9.1+P9.2 factory scenes")
     assert editor.locator("#skMap .sk-speaker-shell").count()==2
-    assert editor.locator("#skMap #skFarArc").count()==1
-    assert editor.locator("#skMap #skNearArc").count()==1
-    # Top-rear camera: FRONT/far (upper) is behind head, REAR/near overlays back.
+    assert editor.locator("#skMap ellipse#skOrbitRail").count()==1
+    assert editor.locator("#skMap #skFarArc, #skMap #skNearArc").count()==0
+
+    # Exactly one painted ellipse; only far silhouette subtracts alpha.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
-      const far=map.querySelector('#skFarArc');
+      const rail=map.querySelector('#skOrbitRail');
       const art=map.querySelector('#skListenerArt');
-      const near=map.querySelector('#skNearArc');
-      return Boolean((far.compareDocumentPosition(art) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     (art.compareDocumentPosition(near) & Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     far.getAttribute('d').startsWith('M348 174 A148 83') &&
-                     near.getAttribute('d').startsWith('M52 174 A148 83'));
-    }"""), "Front/back ring painter layering incorrect"
+      const near=map.querySelector('#skNearSources');
+      return Boolean((art.compareDocumentPosition(rail)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (rail.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     rail.getAttribute('rx')==='148' && rail.getAttribute('ry')==='83' &&
+                     rail.getAttribute('mask')==='url(#skRailOcclusion)' &&
+                     rail.getAttribute('stroke-width')==='1.15' &&
+                     !map.querySelector('use[href="#skOrbitRail"]') &&
+                     getComputedStyle(map.querySelector('#skGlass')).display!=='none');
+    }"""), "Single-pass rail / optical stack incorrect"
+    assert editor.locator("#skRenderMode, .sk-control-title, .sk-guide").count()==0
+    assert editor.locator(".sk-stage .sk-rotary-grid .sk-dial").count()==4
+    assert editor.locator(".sk-dial-cap").first.evaluate(
+        """n=>getComputedStyle(n).backgroundImage.includes('mixer-gain-knob-brushed-steel.png')""")
+    assert page.evaluate("""async()=>{const im=new Image();
+      im.src='assets/mixer-gain-knob-brushed-steel.png';
+      await im.decode();return im.naturalWidth>0&&im.naturalHeight>0;
+    }"""),"Shared metal PNG missing from compiled bundle"
+    assert editor.locator("#skMap .sk-glass").get_attribute("pointer-events")=="none"
+    # Both cabinets have one material and the L/R labels retain identity.
+    # Chassis texture is decoded once and visible through both transparent decks.
+    assert editor.evaluate("""async n=>{
+      const im=new Image();im.src='assets/geq31-brushed-metal.jpg';await im.decode();
+      const cs=el=>getComputedStyle(el);
+      const sources=[...n.querySelectorAll('.sk-src')];
+      const shells=sources.map(el=>cs(el.querySelector('.sk-speaker-shell')).stroke);
+      const labels=sources.map(el=>cs(el.querySelector('.sk-speaker-label')).fill);
+      return im.naturalWidth>0 && cs(n).backgroundImage.includes('geq31-brushed-metal.jpg') &&
+        ['.sk-stage','.sk-controls'].every(sel=>cs(n.querySelector(sel)).backgroundImage==='none' &&
+          cs(n.querySelector(sel)).backgroundColor==='rgba(0, 0, 0, 0)') &&
+        shells.length===2 && shells[0]===shells[1] &&
+        labels[0]===labels[1] &&
+        sources[0].querySelector('.sk-tether').getAttribute('stroke')===
+          sources[1].querySelector('.sk-tether').getAttribute('stroke');
+    }"""),"Brushed chassis or unified speaker material missing"
     # Each moving speaker is depth-sorted against the listener alpha silhouette.
     assert page.evaluate("""() => {
       const map=document.querySelector('#skMap');
       const far=map.querySelector('#skFarSources');
       const art=map.querySelector('#skListenerArt');
       const near=map.querySelector('#skNearSources');
-      return Boolean((far.compareDocumentPosition(art)&Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     (art.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING));
-    }"""),"Speaker planes must surround the alpha listener PNG"
+      const rail=map.querySelector('#skOrbitRail');
+      const glass=map.querySelector('.sk-glass');
+      return Boolean((art.compareDocumentPosition(rail)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (rail.compareDocumentPosition(far)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (far.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (near.compareDocumentPosition(glass)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     far.getAttribute('mask')==='url(#skFarSpeakerOcclusion)' &&
+                     !near.hasAttribute('mask') &&
+                     [...map.querySelectorAll('.sk-src')].every(n=>getComputedStyle(n).opacity==='1'));
+    }"""),"Opaque speaker cabinets must cover the rail and respect listener occlusion"
     # Every rotation input remains an accessible native range, wrapped in
     # a tactile rotary shell: no browser PCM, no fake processed state.
     assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
-    for knob in ("skSpeed","skSpread","skMix","skTrim"):
+    for knob in ("skSpeed","skSpread","skHeadYaw","skTrim"):
         assert editor.locator("#"+knob).get_attribute("type")=="range"
         assert editor.locator("#"+knob).evaluate("(n)=>n.closest('.sk-dial')!==null")
     art=editor.locator("#skListenerArt")
     assert art.count()==1 and art.get_attribute("data-orientation")=="front-up-rear"
     assert art.get_attribute("href")=="assets/sonku-listener-top.png"
     # The rear-view alpha PNG must actually resolve in the BUILT
-    # native /preview/ bundle, and have transparent palette metadata.
+    # native /preview/ bundle, as the true-color RGBA asset.
     assert page.evaluate("""async () => new Promise(resolve => {
        const image=document.querySelector('#skListenerArt');
        const href=image.getAttribute('href');
        // file:// origins prohibit fetch(); SVG images still resolve from
        // the compiled GUI resource. Exercise actual Image.decode instead.
        const im=new Image();
-       im.onload=()=>resolve(im.naturalWidth===256&&im.naturalHeight===256);
+       im.onload=()=>resolve(im.naturalWidth===512&&im.naturalHeight===512);
        im.onerror=()=>resolve(false);
        im.src=href;
     })"""),"Rear-view transparent PNG missing from native GUI bundle"
@@ -202,7 +238,7 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skListenerArt").get_attribute("pointer-events")=="none"
     assert editor.locator("#skMotion").inner_text()=="ORBIT"
     assert editor.locator("#skDirection").inner_text()=="CLOCKWISE"
-    assert editor.locator("#skMode").inner_text()=="NATIVE HRTF"
+    assert editor.locator("#skMode").text_content()=="NATIVE HRTF"
     # 250ms visualization timer must not overwrite an unacknowledged
     # snapshot request (real JUCE message thread can be temporarily busy).
     count=page.evaluate(
@@ -282,7 +318,8 @@ def exercise(browser,out,width,height):
           value:Number(n.getAttribute('aria-valuenow')),
           layer:n.parentElement.id,depth:n.dataset.depth,
           scale:Number(n.getAttribute('transform').match(/scale\(([^)]+)\)/)?.[1]||0),
-          opacity:Number(n.style.opacity)}))""")
+          shade:Number(n.querySelector('.sk-speaker-shade').getAttribute('opacity')),
+          opacity:Number(getComputedStyle(n).opacity)}))""")
         assert len(data)==2 and data[0]["value"]==data[1]["value"]==degrees,data
         assert abs(data[0]["ax"]-data[1]["ax"])<.01,data
         assert abs(data[0]["ay"]-data[1]["ay"])<.01,data
@@ -304,21 +341,23 @@ def exercise(browser,out,width,height):
     # ellipse, not a flattened physical/acoustic source orbit.
     for x,y in ((200,91),(348,174),(200,257),(52,174)):
         assert abs(((x-200)/148)**2+((y-174)/83)**2-1)<.001
-    assert editor.locator(".sk-stage > .sk-space-panel").count()==1,(
-        "SPACE controls must be below the motion field, not inside rotary column")
+    assert editor.locator(".sk-controls > .sk-space-panel").count()==1,(
+        "SPACE has one owner on the right; primary dials occupy the LCD deck")
     assert editor.locator("#skPreset").count()==1
     assert editor.locator("#skPower.armix-builtin-fx-power").count()==1
     assert front["depth"]=="far" and rear["depth"]=="near"
     assert front["scale"]<right["scale"]<rear["scale"],(front,right,rear)
     assert rear["scale"]-front["scale"]>=.39,(front,rear)
-    assert rear["opacity"]>front["opacity"],(front,rear)
+    assert front["shade"]>rear["shade"],(front,rear)
+    assert front["opacity"]==right["opacity"]==rear["opacity"]==1,(front,right,rear)
     # At the edge-on horizons: layer swaps while 3D scaling remains continuous.
     _,_,far_side=pose(89)
     _,_,near_side=pose(91)
     assert far_side["depth"]=="far" and near_side["depth"]=="near"
     assert far_side["layer"]=="skFarSources" and near_side["layer"]=="skNearSources"
     assert abs(far_side["scale"]-near_side["scale"])<.02,(far_side,near_side)
-    assert abs(far_side["opacity"]-near_side["opacity"])<.02,(far_side,near_side)
+    assert abs(far_side["shade"]-near_side["shade"])<.02,(far_side,near_side)
+    assert far_side["opacity"]==near_side["opacity"]==1,(far_side,near_side)
     # L and R belong to independent near/far planes when they straddle 90°.
     # Native control snapshots are request-correlated; allow a fresh read
     # instead of reusing the previous consumed requestId (rejected as stale).
@@ -345,8 +384,11 @@ def exercise(browser,out,width,height):
     svg=editor.locator("#skMap").bounding_box()
     assert svg
     def screen(x,y):
-        return (svg["x"]+x*svg["width"]/400,
-                svg["y"]+y*svg["height"]/330)
+        return tuple(editor.locator("#skMap").evaluate("""(map,xy)=>{
+            const p=map.createSVGPoint();p.x=xy[0];p.y=xy[1];
+            const screen=p.matrixTransform(map.getScreenCTM());
+            return [screen.x,screen.y];
+        }""",[x,y]))
 
     # SVG speaker movement must affect the JUCE PCM route BEFORE mouseup.
     # FRONT is now visual TOP and acoustic 0°, not bottom.
@@ -405,7 +447,34 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skReflections").is_disabled()
     assert editor.locator("#skTrimValue").inner_text().endswith("dB")
     assert editor.locator("#skTrim").get_attribute("max")=="12"
-    editor.locator('[data-sk-room="2"]').click()
+    room=editor.locator('[data-sk-room="2"]')
+    room.scroll_into_view_if_needed()
+    assert room.get_attribute("aria-pressed")=="false"
+    # Dark released cap: no white bevel or bright border, even under shared chrome.
+    def assert_dark_released(locator):
+        style=locator.evaluate("""n=>{
+          const s=getComputedStyle(n);
+          return {borders:[s.borderTopColor,s.borderRightColor,
+            s.borderBottomColor,s.borderLeftColor],shadow:s.boxShadow};
+        }""")
+        assert all(c in ("rgb(32, 43, 50)","rgb(16, 25, 31)")
+                   for c in style["borders"]),style
+        assert "255, 255, 255" not in style["shadow"],style
+    assert_dark_released(room)
+    assert_dark_released(editor.locator("#skClose"))
+    released=room.evaluate("n=>getComputedStyle(n).boxShadow")
+    bounds=room.bounding_box()
+    assert bounds
+    page.mouse.move(bounds["x"]+bounds["width"]/2,bounds["y"]+bounds["height"]/2)
+    page.mouse.down()
+    try:
+        assert room.evaluate("n=>n.matches(':active')")
+        assert room.evaluate("n=>getComputedStyle(n).boxShadow")!=released
+        assert room.evaluate("n=>getComputedStyle(n).transform")!="none"
+        assert room.get_attribute("aria-pressed")=="false"
+        editor.screenshot(path=f"arsonmix-sonku-hardware-pressed-{width}.png")
+    finally:
+        page.mouse.up()
     scene=last_action(page,"nativeSonKuSet")
     assert scene["settings"]["spacePreset"]==2,scene
     assert scene["settings"]["sourceDistanceMeters"]==1.6,scene
@@ -419,8 +488,11 @@ def exercise(browser,out,width,height):
                 "revolutionSeconds":dialAction["settings"]["revolutionSeconds"],
                 "spacePreset":2}
     accepted_snapshot(page,state,sceneState,applied=scene["requestId"])
-    assert editor.locator('[data-sk-room="2"]').get_attribute("aria-pressed")=="true"
+    assert room.get_attribute("aria-pressed")=="true"
+    assert room.evaluate("n=>getComputedStyle(n).boxShadow")!=released
+    assert room.evaluate("n=>getComputedStyle(n).transform")=="none"
     assert editor.locator("#skDistance").is_enabled()
+    editor.screenshot(path=f"arsonmix-sonku-hardware-latched-{width}.png")
     assert editor.locator("#skAmbience").is_enabled()
     assert editor.locator("#skReflections").is_enabled()
     # The 0..100% controls must reach independent native wet parameters,
@@ -544,13 +616,12 @@ def exercise(browser,out,width,height):
     assert editor.locator("#skDistance").is_disabled()
     assert editor.locator("#skAmbience").is_disabled()
     assert editor.locator("#skReflections").is_disabled()
-    # Every remaining SonKu rotary (4/4 total) is tested with INPUT ALONE,
+    # Every schema-v2 compatible rotary is tested with INPUT ALONE,
     # not a synthetic input+change pair that could hide release-only audio.
     sceneState={**sceneState,"spacePreset":0}
     for control,value,key in [
         ("skSpeed",18.0,"revolutionSeconds"),
         ("skSpread",45,"stereoSpreadDegrees"),
-        ("skMix",65,"spatialMix"),
         ("skTrim",3.0,"outputTrim"),
     ]:
         before=command_count()
@@ -577,6 +648,94 @@ def exercise(browser,out,width,height):
         "hrtfElevationTrimDegrees":0.0}
     page.wait_for_timeout(300)
     accepted_snapshot(page,state,room11,schema=11)
+    assert editor.locator("#skMix").count()==0
+    assert editor.locator("#skYawRow").count()==0
+    yaw=editor.locator("#skHeadYaw")
+    assert yaw.is_enabled()
+    assert yaw.locator("xpath=ancestor::label").get_attribute("class")=="sk-rotary"
+    before=command_count()
+    yaw.evaluate("""n=>{n.value='-47';n.dispatchEvent(new Event('input',{bubbles:true}));}""")
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Yaw must stream before release"
+    yaw_cmd=last_action(page,"nativeSonKuSet")
+    assert yaw_cmd["settings"]["headYawDegrees"]==-47
+    assert yaw_cmd["settings"]["spatialMix"]==1
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":yaw_cmd["requestId"],"status":"APPLIED"})
+    room11=yaw_cmd["settings"]
+    accepted_snapshot(page,state,room11,applied=yaw_cmd["requestId"],schema=11)
+    assert yaw.input_value()=="-47"
+    assert editor.locator("#skYawValue").inner_text()=="-47°"
+    yaw.evaluate("n=>n.dispatchEvent(new Event('change',{bubbles:true}))")
+    assert command_count()==before+1
+    # Actual mouse gesture through the existing tactile knob path.
+    dial=yaw.locator("..")
+    dial.scroll_into_view_if_needed()
+    bounds=dial.bounding_box()
+    assert bounds
+    x=bounds["x"]+bounds["width"]/2
+    y=bounds["y"]+bounds["height"]/2
+    before=command_count()
+    page.mouse.move(x,y)
+    page.mouse.down()
+    page.mouse.move(x,y-12)
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Yaw drag did not send native edit"
+    drag_cmd=last_action(page,"nativeSonKuSet")
+    assert drag_cmd["settings"]["headYawDegrees"]>-47
+    page.mouse.up()
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":drag_cmd["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,drag_cmd["settings"],applied=drag_cmd["requestId"],schema=11)
+    assert command_count()==before+1
+    assert float(yaw.input_value())==drag_cmd["settings"]["headYawDegrees"]
+    # Bipolar arc must start at 12 o'clock and terminate exactly at the
+    # pointer, including both endpoints and a completely neutral 0°.
+    def check_yaw_arc(value):
+        arc=yaw.evaluate("""n=>{
+          const d=n.closest('.sk-dial');
+          const cs=getComputedStyle(d);
+          const track=getComputedStyle(d.querySelector('.sk-dial-track'));
+          const needle=getComputedStyle(d.querySelector('.sk-dial-needle'));
+          const m=new DOMMatrixReadOnly(needle.transform);
+          return {bipolar:d.classList.contains('sk-dial-bipolar'),
+            start:parseFloat(cs.getPropertyValue('--sk-arc-start')),
+            end:parseFloat(cs.getPropertyValue('--sk-arc-end')),
+            sweep:parseFloat(cs.getPropertyValue('--sk-sweep')),
+            needle:Math.atan2(m.b,m.a)*180/Math.PI,
+            duration:needle.transitionDuration,
+            gradient:track.backgroundImage};
+        }""")
+        sweep=135+value*.75
+        assert arc["bipolar"] and abs(arc["sweep"]-sweep)<.011,arc
+        assert abs(arc["start"]-min(135,sweep))<.011,arc
+        assert abs(arc["end"]-max(135,sweep))<.011,arc
+        assert abs(arc["needle"]-(sweep-135))<.02,arc
+        assert arc["duration"]=="0s",arc
+        # Verify the actually computed paint, not merely custom properties.
+        import re
+        stops=re.findall(r"rgb\(121, 198, 209\) ([0-9.]+)deg",arc["gradient"])
+        assert len(stops)==2 and abs(float(stops[0])-arc["start"])<.011 and abs(float(stops[1])-arc["end"])<.011,arc
+    for value in (-180,-90,0,90,180):
+        before=command_count()
+        yaw.evaluate("""(n,v)=>{n.value=String(v);n.dispatchEvent(new Event('input',{bubbles:true}));}""",value)
+        page.wait_for_timeout(58)
+        assert command_count()==before+1,(value,"yaw native edit missing")
+        cmd=last_action(page,"nativeSonKuSet")
+        assert cmd["settings"]["headYawDegrees"]==value and cmd["settings"]["spatialMix"]==1
+        check_yaw_arc(value) # live draft, before ACK
+        emit(page,"arMixBuiltinSonKuAck",{"requestId":cmd["requestId"],"status":"APPLIED"})
+        accepted_snapshot(page,state,cmd["settings"],applied=cmd["requestId"],schema=11)
+        check_yaw_arc(value) # authoritative readback
+        if value in (-90,0,90):
+            dial.screenshot(path=f"arsonmix-sonku-editor-yaw-{value}-{width}.png")
+    before=command_count()
+    dial.dblclick()
+    page.wait_for_timeout(58)
+    assert command_count()==before+1,"Double-click must center yaw once"
+    cmd=last_action(page,"nativeSonKuSet")
+    assert cmd["settings"]["headYawDegrees"]==0
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":cmd["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,cmd["settings"],applied=cmd["requestId"],schema=11)
+    check_yaw_arc(0)
     factory=editor.locator("#skPreset")
     assert factory.is_enabled(),"Valid P9.1+P9.2 native capability must unlock presets"
     assert factory.input_value()=="CUSTOM","Saved non-factory scene was overwritten"
@@ -594,6 +753,61 @@ def exercise(browser,out,width,height):
         "requestId":applied["requestId"],"status":"APPLIED"})
     accepted_snapshot(page,state,proposed,applied=applied["requestId"],schema=11)
     assert factory.input_value()=="music","Native-accepted preset did not stay selected"
+    # P10.5: ACK received but accepted readback is lost. The existing
+    # heartbeat must retry a READ, not replay SET or get stuck.
+    before=command_count()
+    editor.locator("#skMotion").click()
+    lost_read=last_action(page,"nativeSonKuSet")
+    assert command_count()==before+1
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":lost_read["requestId"],"status":"APPLIED"})
+    first_read=last_action(page,"nativeSonKuSnapshot")["requestId"]
+    page.wait_for_function("""id=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').at(-1).requestId!==id""",
+                           arg=first_read,timeout=2500)
+    assert command_count()==before+1
+    accepted_snapshot(page,state,lost_read["settings"],applied=lost_read["requestId"],schema=11)
+    assert editor.locator("#skHint").inner_text()=="DSP APPLIED · ACCEPTED"
+    # Missing ACK entirely. No optimistic success; readback must match the
+    # exact applied request, not merely the same instance or settings.
+    before=command_count()
+    editor.locator("#skMotion").click()
+    lost_ack=last_action(page,"nativeSonKuSet")
+    assert command_count()==before+1
+    page.wait_for_function("""()=>document.querySelector('#mxNativeSonKu').dataset.recovering==='true'""",
+                           timeout=4500)
+    assert "TIMEOUT" in editor.locator("#skHint").inner_text()
+    assert factory.is_disabled()
+    assert editor.locator(".sk-controls").evaluate("n=>n.inert")
+    accepted_snapshot(page,state,lost_read["settings"],applied=lost_read["requestId"],schema=11)
+    assert editor.get_attribute("data-recovering")=="true"
+    editor.locator("#skMotion").evaluate("n=>n.click()")
+    assert command_count()==before+1,"Recovery must not replay or race pending native SET"
+    stale_read=last_action(page,"nativeSonKuSnapshot")["requestId"]
+    page.wait_for_function("""id=>window.__actions.filter(a=>a.action==='nativeSonKuSnapshot').at(-1).requestId!==id""",
+                           arg=stale_read,timeout=2500)
+    accepted_snapshot(page,state,lost_ack["settings"],applied=lost_ack["requestId"],schema=11)
+    assert editor.get_attribute("data-recovering")=="true","Snapshot alone cannot substitute for ACK"
+    assert factory.is_disabled()
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":lost_ack["requestId"],"status":"APPLIED"})
+    assert editor.get_attribute("data-recovering")=="true","ACK alone cannot unlock recovery"
+    assert factory.is_disabled()
+    accepted_snapshot(page,state,lost_ack["settings"],applied=lost_ack["requestId"],schema=11)
+    assert editor.get_attribute("data-recovering")=="false"
+    assert editor.locator("#skHint").inner_text()=="DSP APPLIED · ACCEPTED"
+    assert factory.is_enabled()
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":lost_ack["requestId"],"status":"APPLIED"})
+    assert editor.locator("#skHint").inner_text()=="DSP APPLIED · ACCEPTED"
+    assert command_count()==before+1
+    # New transaction after recovery remains ACK+readback gated.
+    editor.locator("#skMotion").click()
+    recovered_edit=last_action(page,"nativeSonKuSet")
+    assert recovered_edit["requestId"]!=lost_ack["requestId"]
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":recovered_edit["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,recovered_edit["settings"],applied=recovered_edit["requestId"],schema=11)
+    factory.select_option("music")
+    restored=last_action(page,"nativeSonKuSet")
+    emit(page,"arMixBuiltinSonKuAck",{"requestId":restored["requestId"],"status":"APPLIED"})
+    accepted_snapshot(page,state,restored["settings"],applied=restored["requestId"],schema=11)
+    assert factory.input_value()=="music"
     # Actual accepted mixer graph is the SINGLE authority for FX Power,
     # including individual insert bypass vs whole rack disabled.
     state["graph"]["channels"][0]["fxRackBypassed"]=False
@@ -607,6 +821,7 @@ def exercise(browser,out,width,height):
     page.wait_for_function("""()=>
       document.getElementById('skPower')?.dataset.fxState==='off'""")
     assert editor.locator("#skPower").is_enabled()
+    assert_dark_released(editor.locator("#skPower"))
     state["graph"]["channels"][0]["fxRackBypassed"]=True
     emit(page,"arMixConsoleSnapshot",state)
     page.wait_for_function("""()=>
@@ -617,6 +832,78 @@ def exercise(browser,out,width,height):
     # All listener and rendering JS exceptions remain fatal.
     assert not failures,(width,height,failures)
     page.screenshot(path=f"arsonmix-sonku-editor-{width}.png")
+    # Native FUX-1 is a fixed hardware face, clipped by the ONE mixer WebView.
+    # Assert original geometry AND recoverability rather than forcing mobile layout.
+    assert page.locator("#armix-native-inline-fx-clip").count()==1
+    def native_layout():
+        return editor.evaluate("""n=>{
+          const box=n.getBoundingClientRect(),head=n.querySelector('.sk-head');
+          const map=n.querySelector('#skMap'),m=map.getScreenCTM(),p=map.createSVGPoint();
+          p.x=348;p.y=174;
+          const back=p.matrixTransform(m).matrixTransform(m.inverse());
+          return {width:box.width,scroll:n.scrollWidth,client:n.clientWidth,
+            headScroll:head.scrollWidth,headClient:head.clientWidth,
+            mapWidth:map.getBoundingClientRect().width,mapHeight:map.getBoundingClientRect().height,
+            columns:getComputedStyle(n.querySelector('.sk-content')).gridTemplateColumns,
+            spaceColumns:getComputedStyle(n.querySelector('.sk-space-panel')).gridTemplateColumns,
+            roundTrip:Math.hypot(back.x-348,back.y-174)};
+        }""")
+    baseline=native_layout()
+    for viewport in ({"width":680,"height":740},{"width":390,"height":740}):
+        page.set_viewport_size(viewport)
+        page.wait_for_timeout(100)
+        layout=native_layout()
+        assert abs(layout["width"]-790)<2,layout
+        assert layout["scroll"]<=layout["client"]+1,layout
+        assert layout["headScroll"]<=layout["headClient"]+1,layout
+        assert layout["columns"]==baseline["columns"],layout
+        assert layout["spaceColumns"]==baseline["spaceColumns"],layout
+        assert abs(layout["mapWidth"]-baseline["mapWidth"])<1,layout
+        assert abs(layout["mapHeight"]-baseline["mapHeight"])<1,layout
+        assert layout["roundTrip"]<.001,layout
+        page.screenshot(path=f"arsonmix-sonku-editor-native-clipped-{viewport['width']}.png")
+        # Use the actual production pan owner, then verify the close target
+        # is physically reachable in the clipped viewport.
+        editor.evaluate("""n=>{
+          const close=n.querySelector('#skClose').getBoundingClientRect();
+          window.__ARMIX_NATIVE_INLINE_FX_CLIP__.move(n,innerWidth-close.right-12,0);
+        }""")
+        close=editor.locator("#skClose").bounding_box()
+        assert close and close["x"]>=0 and close["x"]+close["width"]<=viewport["width"],close
+        assert abs(editor.bounding_box()["width"]-790)<2
+        page.screenshot(path=f"arsonmix-sonku-editor-native-panned-{viewport['width']}.png")
+    editor.locator("#skClose").click()
+    assert editor.is_hidden()
+    assert not failures,failures
+    page.close()
+
+def exercise_browser_layout(browser,out):
+    # Independent non-native visual-only instance of the same compiled module.
+    page=browser.new_page(viewport={"width":680,"height":740})
+    failures=[]
+    page.on("pageerror",lambda exc:failures.append(str(exc)))
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.ArSonMixNativeSonKu")
+    assert page.locator("#armix-native-inline-fx-clip").count()==0
+    page.evaluate("""()=>window.ArSonMixNativeSonKu.open(
+        {id:22,name:'VISUAL PREVIEW',slotBypass:[false]},0)""")
+    editor=page.locator("#mxNativeSonKu")
+    editor.wait_for(state="visible")
+    for viewport in ({"width":680,"height":740},{"width":390,"height":740}):
+        page.set_viewport_size(viewport)
+        page.wait_for_timeout(100)
+        layout=editor.evaluate("""n=>{
+          const box=n.getBoundingClientRect(),head=n.querySelector('.sk-head');
+          const close=n.querySelector('#skClose').getBoundingClientRect();
+          return {left:box.left,right:box.right,scroll:n.scrollWidth,client:n.clientWidth,
+            headScroll:head.scrollWidth,headClient:head.clientWidth,closeRight:close.right};
+        }""")
+        assert layout["left"]>=-1 and layout["right"]<=viewport["width"]+1,layout
+        assert layout["scroll"]<=layout["client"]+1,layout
+        assert layout["headScroll"]<=layout["headClient"]+1,layout
+        assert layout["closeRight"]<=layout["right"]+1,layout
+        page.screenshot(path=f"arsonmix-sonku-editor-responsive-{viewport['width']}.png")
+    assert not failures,failures
     page.close()
 
 def main():
@@ -630,9 +917,10 @@ def main():
         # now tested inside the original mixer WebView with five peers.
         for width,height in [(1366,768)]:
             exercise(browser,out,width,height)
+        exercise_browser_layout(browser,out)
         browser.close()
     print("PASS 8D-SonKu actual native editor: insert intent, no premature GUI,"
-          " ACK/readback, reopen, typed settings and 2 viewport screenshots."
+          " ACK/readback, reopen, typed settings, native clipping and browser responsiveness."
           " Browser uses a transport mock; native DSP requires CTest and hardware FAT.")
 
 if __name__=="__main__":

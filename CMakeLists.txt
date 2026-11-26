@@ -743,6 +743,24 @@ if(BUILD_TESTING)
   add_test(NAME NativeSonKuSessionV1V2AndAudioAppliedAck
       COMMAND ARMixSonKuNativeStateTests)
 
+  # The approved P99 product uses target-local flags, not the global
+  # experimental cache ladder. Register the real P90 native adapter test
+  # in normal product FAT too, without enabling any research build flags.
+  if(ARMIX_SONKU_APPROVED_P99_MAIN AND NOT ARMIX_SONKU_EXPERIMENTAL_P90_NATIVE_RT)
+    juce_add_console_app(ARMixSonKuP90NativeTests
+        PRODUCT_NAME "ArSonMix SonKu P90 JUCE State Tests")
+    target_sources(ARMixSonKuP90NativeTests PRIVATE tests/sonku_p90_native_juce_v11_test.cpp)
+    target_compile_features(ARMixSonKuP90NativeTests PRIVATE cxx_std_20)
+    target_link_libraries(ARMixSonKuP90NativeTests PRIVATE
+        juce::juce_audio_processors juce::juce_recommended_config_flags)
+    get_target_property(SONKU_PRODUCT_TEST_DEFINES ARMixConsole COMPILE_DEFINITIONS)
+    list(FILTER SONKU_PRODUCT_TEST_DEFINES EXCLUDE REGEX
+        "^JUCE_(WEB_BROWSER|USE_WIN_WEBVIEW2|USE_WIN_WEBVIEW2_WITH_STATIC_LINKING)(=|$)")
+    target_compile_definitions(ARMixSonKuP90NativeTests PRIVATE ${SONKU_PRODUCT_TEST_DEFINES})
+    add_test(NAME NativeSonKuP90JuceV11AppliedAckAndLegacyRestore
+        COMMAND ARMixSonKuP90NativeTests)
+  endif()
+
   # P7.2 native real-time 3D is never required in production: its test
   # binaries, large measured elevation bank and v3 schema are built ONLY
   # when explicitly opted in. Reuse the exact existing JUCE processor.

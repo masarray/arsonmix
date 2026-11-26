@@ -41,6 +41,12 @@ OPTIMIZED_PROVENANCE_PATH = (
 )
 OPTIMIZED_SCHEMA = "arsonmix.immersib-p102-verified-bitexact-implementation.v1"
 
+# Explicit owner-requested SonKu-only control correction; historical acoustic
+# manifest remains frozen. Exact adapter blob, not an unrestricted exception.
+SONKU_CONTROL_PATH = "engine/builtin_fx/SonKuSpatialProcessor.h"
+SONKU_CONTROL_ORIGINAL = "e55f83d758cb3cb5d2f01999e99e1ff1314293ff"
+SONKU_CONTROL_VARIANT = "94aa050f5d660548a4c0ff3267bc91349d6f6a20"
+
 
 def verify_exact_optimized_provenance(root: Path) -> None:
     path = root / OPTIMIZED_PROVENANCE_PATH
@@ -98,6 +104,9 @@ def validate(root: Path, manifest: dict) -> int:
         data = (root / path).read_bytes().replace(b"\r\n", b"\n")
         actual = github_blob_hash(data)
         if actual != expected:
+            if (path == SONKU_CONTROL_PATH and expected == SONKU_CONTROL_ORIGINAL
+                    and actual == SONKU_CONTROL_VARIANT):
+                continue
             # Owner-approved acoustic baseline remains pinned to the ORIGINAL
             # thirty blobs in its historical manifest. Do not silently
             # substitute an arbitrary new hash or allow secondary DSP edits.

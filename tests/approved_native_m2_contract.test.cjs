@@ -7767,7 +7767,8 @@ test("U4 independent headphone mix uses admitted two-pin native scope and correl
  const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
  assert.doesNotMatch(a,/getCurrentAudioDevice\(/);
  assert.match(n,/engine_.disarmSecondaryOutput\(\);\s*error=engine_.patchDmxSplitOutput/);
- assert.match(b,/live.dryRoutingLab\?\.busOutputObserved===true&&live.secondaryOutputArmed===true/);
+ assert.match(b,/protocol.secondaryOutputSettlement\(p,hardware,live,extraStatusSerial\)/);
+ assert.match(n,/ack->setProperty\("graphRevision",route.getProperty\("nativeBus"/);
 });
 
 
@@ -7848,4 +7849,31 @@ test("U5 pristine ChannelId topology uses native graph identity instead of M4 co
  assert.match(l,/bool nativeTopologyMatches[\s\S]*?nativeAccepted_\.matches\(nativePublisher_,ep,rev\)/);
  const r=n.slice(n.indexOf("void serviceVendorStreamRecovery()"),n.indexOf("void showAsioControlPanel("));
  assert.match(r,/monotonicMilliseconds\(\)>=p.deadline[\s\S]*?secondaryRetry_\.fault/);
+});
+
+
+test("U6 output completion needs fresh exact installed graph, physical pair, endpoint and status in either order",()=>{
+ const pending={action:"secondaryOutputSplit",acked:true,statusSerial:8,epoch:"17",config:"hw",endpoint:"CABLE Input",pair:[4,5],
+   value:{enabled:true,graphRevision:"19"},ackRevision:"20"};
+ const s={admitted:true,device:{epoch:"17"},hardwareConfiguration:"hw",graph:{revision:"20"},raw:{secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[4,5]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input",
+   dryRoutingLab:{dmxDeviceEpoch:"17",nativeBus:{graphRevision:"20"},secondaryMainOnly:true,busOutputObserved:true}};
+ const settle=(p=pending,h=s,l=live,serial=9)=>protocol.secondaryOutputSettlement(p,h,l,serial);
+ assert.equal(settle(),"SETTLED");
+ assert.equal(settle({...pending,acked:false}),"WAIT");
+ assert.equal(settle(pending,s,live,8),"WAIT");
+ assert.equal(settle(pending,{...s,graph:{revision:"19"}}),"WAIT");
+ assert.equal(settle(pending,s,{...live,dryRoutingLab:{...live.dryRoutingLab,nativeBus:{graphRevision:"19"}}}),"WAIT");
+ assert.equal(settle(pending,s,{...live,secondaryOutputName:"Other output"}),"WAIT");
+ assert.equal(settle(pending,s,{...live,secondaryOutputRecovering:true}),"WAIT");
+ assert.equal(settle(pending,{...s,raw:{...s.raw,physicalMonitorOutputs:[5,4]}}),"WAIT");
+ assert.equal(settle(pending,{...s,device:{epoch:"18"}}),"STALE");
+ assert.equal(settle(pending,{...s,graph:{revision:"21"}}),"STALE");
+ assert.equal(settle({...pending,ackRevision:"19"}),"STALE");
+ assert.equal(settle({...pending,action:"secondaryOutputStop"},s,{secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputRecovering:true}),"WAIT");
+ const n=read("src/Main.cpp");
+ const retry=n.slice(n.indexOf("void serviceSecondaryContinuity()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(retry,/secondaryContinuity_->waitForMain&&!engine_\.isMonitorEnabled\(\)/);
+ assert.match(retry,/SecondaryContinuity\{p.intent,p.epoch,p.revision,p.waitForMain\}/);
+ assert.match(retry,/SecondaryContinuity\{intent,epoch,revision,waitForMain\}/);
 });
