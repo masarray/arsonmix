@@ -24,6 +24,86 @@ def drag(page, source, destination):
     page.mouse.up()
 
 
+def verify_workspace_restore(browser, out):
+    """Exercise the actual assembled GUI and all mounted banks, with emulated native transport."""
+    page = browser.new_page(viewport={'width':1366,'height':768})
+    errors=[]
+    page.on('pageerror', lambda e: errors.append(str(e)))
+    page.add_init_script(NATIVE_EVENTS + """window.__events=[];
+      window.__JUCE__={backend:{emitEvent(name,payload){window.__events.push({name,payload});},
+        ...window.__nativeListenerMethods}};""")
+    page.goto((out/'index.html').as_uri())
+    page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
+    state=snapshot()
+    state['workspaceGeneration']='1'
+    g=state['graph']
+    g['capabilities']['supportedOps'].append('SET_FADER')
+    base=copy.deepcopy(g['channels'][0])
+    rows=[]
+    for i in range(12):
+        row=copy.deepcopy(base)
+        row.update(id=str(9007199254741100+i),name=f'Restore {i+1:02d}')
+        row['controls']['faderDb']=-60
+        rows.append(row)
+    master=g['channels'][-1]
+    master['controls']['faderDb']=-60
+    g['channels']=rows+[master]
+    g['edges']=[dict(edgeId=str(9223372036854775900+i),tap='POST_FADER',
+        enabled=True,signalKind='AUDIO',primaryOutput=True,gainLinear=1,
+        **{'from':row['id'],'to':MAIN}) for i,row in enumerate(rows)]
+    g['destinations']=[{k:row[k] for k in ('id','role','name')} for row in g['channels']]
+    state['mixerSession'].update(channels=copy.deepcopy(g['channels']),main={'db':-60,'mute':False})
+    emit(page,'arMixConsoleSnapshot',state)
+    restored=copy.deepcopy(state)
+    restored['workspaceGeneration']='2'
+    expected={}
+    for i,row in enumerate(restored['graph']['channels']):
+        db=-42+i*3
+        row['controls']['faderDb']=db
+        row['controls']['pan']=(-.4 if i%2 else .3)
+        row['controls']['mute']=i%3==0
+        expected[row['name']]=db
+    restored['mixerSession'].update(channels=copy.deepcopy(restored['graph']['channels']),
+        main={'db':expected['MAIN'],'mute':True if 12%3==0 else False})
+    emit(page,'arMixConsoleSnapshot',restored)
+    def check_all():
+        seen=set()
+        bank=page.locator('#bankSelect')
+        for i in range(bank.locator('option').count()):
+            bank.select_option(str(i))
+            result=page.locator('#tracks .strip, #master .strip').evaluate_all("""rows=>rows.map(root=>{
+              const name=root.querySelector('.identity-name').textContent;
+              const slider=root.querySelector('input.fader'),box=root.querySelector('.fader-box');
+              const cap=root.querySelector('.cap').getBoundingClientRect();
+              const travel=root.querySelector('.fader-travel').getBoundingClientRect();
+              const v=Number(slider.value),pct=window.ArSonMixMeterCalibration.faderPercent(v,false);
+              return {name,v,readout:root.querySelector('.fader-readout').textContent,
+                y:parseFloat(box.style.getPropertyValue('--fader-y')),expectedY:100-pct,
+                actual:(cap.top+cap.height/2-travel.top)/travel.height*100};
+            })""")
+            for row in result:
+                name=row['name']
+                assert row['v']==expected[name], row
+                assert abs(row['y']-row['expectedY'])<.01, row
+                assert abs(row['actual']-row['expectedY'])<5, row
+                assert row['readout']==f"{expected[name]:.1f} dB", row
+                seen.add(name)
+        assert seen==set(expected), seen
+    check_all()
+    # Repeated Open with identical native values and an intentionally stale
+    # mounted cap/range must repair DOM without a synthetic audio command.
+    page.locator('#tracks .fader').first.evaluate("(el)=>{el.value=-60;el.closest('.fader-box').style.setProperty('--fader-y','100%');}")
+    again=copy.deepcopy(restored);again['workspaceGeneration']='3'
+    emit(page,'arMixConsoleSnapshot',again)
+    emit(page,'arMixConsoleSnapshot',state)  # delayed old project
+    check_all()
+    assert page.evaluate("""()=>window.__events.every(e=>
+      e.name!=='arMixConsoleIntent'&&e.name!=='arMixLogicalIntent'&&
+      e.payload?.action!=='routingM4Control')""")
+    assert not errors, errors
+    page.close()
+
+
 def main():
     spec = importlib.util.spec_from_file_location('bundle', ROOT/'scripts/build_approved_native_gui.py')
     bundle = importlib.util.module_from_spec(spec)
@@ -32,6 +112,7 @@ def main():
         out = Path(directory)
         bundle.stage(out)
         browser = p.chromium.launch()
+        verify_workspace_restore(browser, out)
         for width, height in [(1366,768),(1680,900),(1920,1080)]:
             page = browser.new_page(viewport={'width':width,'height':height})
             errors=[]

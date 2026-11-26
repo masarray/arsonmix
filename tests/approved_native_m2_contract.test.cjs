@@ -7574,6 +7574,10 @@ test("LIVE-OPS committed workspace supersedes an outstanding fader lease",()=>{
  assert.equal(seen.length,2);
  assert.equal(c.onSnapshot(base),false);
  assert.equal(c.state().current.raw.workspaceGeneration,"2");
+ const fresh=c.intent("SET_FADER","7",{valueDb:-17});assert.equal(fresh.ok,true);
+ assert.equal(c.onAck({requestId:old.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:base.device.epoch,graphRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision}),false);
+ assert.equal(c.state().pending.requestId,fresh.requestId);
  assert.equal(protocol.normalizeSnapshot({...restored,workspaceGeneration:"invalid"}),null);
 });
 

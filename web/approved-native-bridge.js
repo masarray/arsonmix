@@ -788,6 +788,9 @@
     const previous = new Map(scope.tracks.concat(scope.master).map(t=>[t.id,t]));
     const nextTracks = [], localByNative = new Map(), nextNativeByUi = new Map();
     let nextMaster = null, inputOrdinal=0;
+    // Reserve surviving ChannelIds before assigning any new ordinal. A new
+    // first row must never steal the DOM/model ID of a later surviving row.
+    const reserved=new Set(accepted.channels.map(ch=>uiByNativeId.get(ch.id)).filter(id=>id!==undefined));
     for (const [index,ch] of accepted.channels.entries()) {
       const kind = ch.role==="MAIN"?"master":ch.role==="GROUP"?"bus":
         ch.role==="FX_RETURN"?"fx":"audio";
@@ -795,10 +798,14 @@
       // -> native ChannelId admission -> any later G0 fallback. A new
       // temporary track ID would silently move hardware to another strip.
       const m4Id=ch.role==="INPUT"?m4TrackIds[inputOrdinal++]:undefined;
-      const savedId = uiByNativeId.get(ch.id) ?? m4Id;
-      const t = savedId !== undefined && previous.has(savedId) ?
-        previous.get(savedId) : scope.make(ch.name,kind,scope.colors[index%scope.colors.length]||"#568ead");
-      if (savedId !== undefined) t.id = savedId;
+      const heldId=uiByNativeId.get(ch.id);
+      const savedId=heldId??(m4Id!==undefined&&!reserved.has(m4Id)&&!nextNativeByUi.has(m4Id)?m4Id:undefined);
+      // Stage a detached model until the complete WIRE graph validates.
+      // Never mutate the visible prior project on a rejected candidate.
+      const t=savedId!==undefined&&previous.has(savedId)?{...previous.get(savedId)}:
+        scope.make(ch.name,kind,scope.colors[index%scope.colors.length]||"#568ead");
+      if(savedId!==undefined)t.id=savedId;
+      if(nextNativeByUi.has(t.id))return false;
       // No Number(ch.id): all native identities stay canonical uint64 strings.
       localByNative.set(ch.id,t.id);
       nextNativeByUi.set(t.id,ch.id);
@@ -871,12 +878,14 @@
     const previouslySelected = nextTracks.filter(t=>t.selected);
     if (!previouslySelected.length && nextTracks.length) nextTracks[0].selected=true;
     // One atomic accepted readback projection. Demo wire reducer NEVER runs.
-    for (const [id,ui] of localByNative) uiByNativeId.set(id,ui);
+    uiByNativeId.clear();for (const [id,ui] of localByNative) uiByNativeId.set(id,ui);
     nativeByUiId.clear();for(const [ui,id] of nextNativeByUi)nativeByUiId.set(ui,id);
     wireByUiId.clear();for(const [ui,id] of newWireByUi)wireByUiId.set(ui,id);
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
     meterElements.clear(); // installGraph() replaces strip HTML and meter nodes
-    scope.installGraph(nextTracks,nextMaster,edges);
+    // Retain object identity for surviving strips only after validation.
+    const commitTrack=t=>previous.has(t.id)?Object.assign(previous.get(t.id),t):t;
+    scope.installGraph(nextTracks.map(commitTrack),commitTrack(nextMaster),edges);
     syncNativeSofAvailability(native);
     return true;
   }
@@ -1071,6 +1080,7 @@
       t.nativeGainAvailable=gainAdmitted;
       if(gainAdmitted)paintAcceptedInputGain(t,c.inputGainDb);
       const db=c.faderDb,pan=c.pan*100;
+      const faderChanged=Number.isFinite(db)&&Math.abs(t.level-db)>.015;
       const visualDb=Number.isFinite(db)?pendingFaderVisualDb(t,db):null;
       const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
       if(Number.isFinite(db))t.level=db;
@@ -1095,8 +1105,7 @@
         meterElements.delete(t.id);
       }
       // Model equality is not DOM equality (e.g. a newly mounted fader cap).
-      if(Number.isFinite(db)&&scope.activeFaderId!==t.id)
-        scope.syncFaderVisual?.(visualDb===null?t:{...t,level:visualDb});
+      if(Number.isFinite(db))paintFaderReadback(t,visualDb,faderChanged);
       const root=document.querySelector('.strip[data-id="'+t.id+'"]');
       const knob=root?.querySelector('.center-pan');
       if(knob&&scope.activeFaderId!==t.id&&
@@ -2222,7 +2231,15 @@
   }
   function previewFaderWithoutModelMutation(t,db){
     if(!Number.isFinite(db)||!t)return;
-    scope?.syncFaderVisual?.({...t,level:db});
+    scope?.syncFaderVisual?.({...t,level:db},undefined,db);
+  }
+  function paintFaderReadback(t,visualDb,changed){
+    if(scope?.activeFaderId===t.id)return;
+    const view=visualDb===null?t:{...t,level:visualDb};
+    // Only repair a changed control or genuinely stale mounted DOM. Never
+    // rewrite unrelated strips during a held drag or meter-only update.
+    if(changed||visualDb!==null||scope?.faderVisualNeedsSync?.(view))
+      scope?.syncFaderVisual?.(view);
   }
   function paintM4FxInstances(m) {
     // Catalog refresh is metadata, never permission to replace a native
@@ -2311,6 +2328,7 @@
         const db=c?.faderDb,pan=c?.pan*100;
         if(!t||!c||!Number.isFinite(db)||!Number.isFinite(pan)||
            typeof c.mute!=="boolean"||typeof c.solo!=="boolean")return;
+        const changed=Math.abs(t.level-db)>.015;
         const visualDb=pendingFaderVisualDb(t,db);
         const switchChanged=t.mute!==c.mute||t.solo!==c.solo;
         t.level=db;t.pan=pan;t.mute=c.mute;t.solo=c.solo;
@@ -2318,18 +2336,17 @@
           scope.refreshStrip?.(t);
           m4Meters.delete(t.id);
         }
-        if(scope.activeFaderId!==t.id)
-          scope.syncFaderVisual?.(visualDb===null?t:{...t,level:visualDb});
+        paintFaderReadback(t,visualDb,changed);
         const panKnob=document.querySelector(
           '.strip[data-id="'+t.id+'"] .center-pan');
         if(panKnob && document.activeElement!==panKnob)
           panKnob.value=String(pan);
       }
       if(scope.master && Number.isFinite(session.main?.db)){
+        const changed=Math.abs(scope.master.level-session.main.db)>.015;
         const visualDb=pendingFaderVisualDb(scope.master,session.main.db);
         scope.master.level=session.main.db;
-        if(scope.activeFaderId!==scope.master.id)
-          scope.syncFaderVisual?.(visualDb===null?scope.master:{...scope.master,level:visualDb});
+        paintFaderReadback(scope.master,visualDb,changed);
       }
       if(scope.master && typeof session.main?.mute==="boolean" &&
          scope.master.mute!==session.main.mute){
@@ -4880,7 +4897,9 @@
       if(lastWorkspaceGeneration!==undefined){
         scope?.cancelNativeSessionGestures?.();
         discardTransientNativeUi();pendingLogical=null;logicalRenameId=null;
+        pendingRetainedEditor=null;
         lastPaintedSignature="";lastNativeTopologySignature="";lastM4Controls="";
+        lastM4UiSignature="";lastM4PortSignature="";
         confirmed=null;
       }
       lastWorkspaceGeneration=workspaceGeneration;

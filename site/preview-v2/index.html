@@ -917,10 +917,10 @@ function render(pageOverride){
  renderWireRouting();
 }
 function say(s){info.textContent=s;}
-function syncFaderVisual(t,element){
+function syncFaderVisual(t,element,previewDb){
  const root=element||document.querySelector('.strip[data-id="'+t.id+'"]');
  if(!root)return;
- const isSend=sofEnabled&&isSofSource(t),v=isSend?getSofLevel(t):t.level;
+ const isSend=sofEnabled&&isSofSource(t),v=Number.isFinite(previewDb)?previewDb:isSend?getSofLevel(t):t.level;
  const value=formatDb(v);
  // Programmatic value assignment is silent; never dispatch an input/change intent.
  const range=root.querySelector('input.fader');
@@ -931,6 +931,17 @@ function syncFaderVisual(t,element){
  if(box?.style?.setProperty){box.style.setProperty('--fader-fill',faderPercent(v,isSend)+'%');box.style.setProperty('--fader-lit',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-frac',String(faderPercent(v,isSend)/100));box.style.setProperty('--fader-y',(100-faderPercent(v,isSend))+'%');}
  const db=root.querySelector('.db-value');
  if(db)db.textContent=(isSend?'S ':'')+value;
+}
+function faderVisualNeedsSync(t){
+ const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+ if(!root)return false; // off-bank model is the next render's source
+ const isSend=sofEnabled&&isSofSource(t),v=isSend?getSofLevel(t):t.level;
+ if(!Number.isFinite(v))return false;
+ const range=root.querySelector('input.fader'),box=root.querySelector('.fader-box');
+ const value=formatDb(v),pct=faderPercent(v,isSend);
+ return (range&&Math.abs(Number(range.value)-v)>.049)||
+  (box&&Math.abs(parseFloat(box.style.getPropertyValue('--fader-y'))-(100-pct))>.001)||
+  root.querySelector('.fader-readout')?.textContent!==(isSend?'SEND ':'')+value+' dB';
 }
 function setDensity(mode){
  const density=['comfort','standard','compact'].includes(mode)?mode:'comfort';
