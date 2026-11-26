@@ -27,3 +27,5 @@ Security processing must stay outside the real-time audio callback. No DRM, mand
 Use the [official project repository](https://github.com/masarray/arsonmix) and [release page](https://github.com/masarray/arsonmix/releases). See [TRADEMARK.md](TRADEMARK.md) for official identity and the verification procedure. Hashes establish integrity relative to trusted metadata; they are not a Windows trusted-publisher signature. Never disable OS protections to run an unknown installer.
 
 Maintainer setup: enable [GitHub private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository) if not already enabled. The presence of this document does not prove the setting is enabled.
+
+Repository maintainer: see [ZBSH-03 administrator runbook](docs/security/ZBSH-03_REPOSITORY_HARDENING.md) for free repository protections, configuration evidence and recovery precautions. The public ruleset audit is read-only; it cannot confirm private settings or substitute for push protection.
