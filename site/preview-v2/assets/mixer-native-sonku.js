@@ -161,6 +161,7 @@ root.innerHTML=[
  '<clipPath id="skFarOcclusion" clipPathUnits="userSpaceOnUse"><rect width="400" height="174"/></clipPath>',
  '<filter id="skAlphaBlack" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>',
  '<mask id="skRailOcclusion" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="400" height="330" style="mask-type:luminance"><rect width="400" height="330" fill="white"/><g clip-path="url(#skFarOcclusion)"><image href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" filter="url(#skAlphaBlack)"/></g></mask>',
+ '<mask id="skFarSpeakerOcclusion" maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse" x="0" y="0" width="400" height="330" style="mask-type:luminance"><rect width="400" height="330" fill="white"/><image href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" filter="url(#skAlphaBlack)"/></mask>',
  '<linearGradient id="skCabinet" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#798791"/><stop offset=".23" stop-color="#37444d"/><stop offset="1" stop-color="#111a20"/></linearGradient>',
  '<linearGradient id="skBaffle" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#28323a"/><stop offset=".55" stop-color="#141e25"/><stop offset="1" stop-color="#0a1218"/></linearGradient>',
  '<radialGradient id="skCone" cx=".43" cy=".34" r=".69"><stop stop-color="#778791"/><stop offset=".25" stop-color="#4a5963"/><stop offset=".61" stop-color="#202b32"/><stop offset=".84" stop-color="#10191e"/><stop offset="1" stop-color="#4d606c"/></radialGradient>',
@@ -177,11 +178,13 @@ root.innerHTML=[
  // Rear/top-view translucent PNG: back of skull, protruding ears and shoulders.
  // Listener looks toward FRONT at top; native source azimuth is unchanged.
  '<ellipse class="sk-head-shadow" cx="200" cy="252" rx="101" ry="28" fill="url(#skShadow)"/>',
- '<g id="skFarSources" class="sk-far-sources"></g>',
  '<image id="skListenerArt" class="sk-listener-art" href="assets/sonku-listener-top.png" x="103" y="90" width="194" height="202" preserveAspectRatio="xMidYMid meet" data-orientation="front-up-rear" aria-label="Rear/top-view listener facing front at top" pointer-events="none"/>',
  // One continuous stroke above the PNG, with only far silhouette occlusion.
  '<ellipse id="skOrbitRail" class="sk-orbit-rail" cx="200" cy="174" rx="148" ry="83" fill="none" stroke="url(#skRail)" stroke-width="1.7" mask="url(#skRailOcclusion)" pointer-events="none"/>',
- // Paint independent rear/near speakers above the back; far speakers behind head.
+ // Both cabinet layers paint ABOVE the rail. The far layer subtracts the
+ // listener's full alpha silhouette, retaining actual head occlusion.
+ '<g id="skFarSources" class="sk-far-sources" mask="url(#skFarSpeakerOcclusion)"></g>',
+ // Near cabinets remain unmasked and above the listener's back.
  '<g id="skNearSources" class="sk-near-sources"></g>',
  '<rect class="sk-glass" x="0" y="0" width="400" height="330" fill="url(#skGlass)" pointer-events="none" aria-hidden="true"/>',
  // No circle markers: each emitter is a small raised studio monitor.
@@ -197,6 +200,7 @@ root.innerHTML=[
  '<circle cx="-.5" cy="5" r="6.65" fill="url(#skCone)"/>',
  '<circle cx="-.5" cy="5" r="2.55" fill="url(#skDome)" stroke="#151f26" stroke-width=".5"/>',
  '<path d="M-8 12H-4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>',
+ '<rect class="sk-speaker-shade" x="-13" y="-17" width="26" height="34" rx="3.3" fill="#03090e" opacity=".12" pointer-events="none"/>',
  '<text class="sk-speaker-label" x="0" y="-22" text-anchor="middle">L</text></g>',
  '<g class="sk-src sk-right" data-index="1" tabindex="0" role="slider" aria-label="Right virtual source position" aria-valuemin="-180" aria-valuemax="180">',
  '<path class="sk-tether" d="" fill="none" stroke="#eac2e3" stroke-width=".9" stroke-dasharray="2 2"/>',
@@ -209,6 +213,7 @@ root.innerHTML=[
  '<circle cx="-.5" cy="5" r="6.65" fill="url(#skCone)"/>',
  '<circle cx="-.5" cy="5" r="2.55" fill="url(#skDome)" stroke="#151f26" stroke-width=".5"/>',
  '<path d="M-8 12H-4" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>',
+ '<rect class="sk-speaker-shade" x="-13" y="-17" width="26" height="34" rx="3.3" fill="#03090e" opacity=".12" pointer-events="none"/>',
  '<text class="sk-speaker-label" x="0" y="-22" text-anchor="middle">R</text></g>',
  '</svg></div><span class="sk-stage-caption sk-sr">HEADPHONES · HRIR 0° ELEVATION · 44.1 / 48 kHz</span>',
 
@@ -251,6 +256,7 @@ const $=id=>root.querySelector("#"+id);
 // Cache fixed SVG node references; only their transforms change at 60fps.
 const speakerNodes=[...root.querySelectorAll("#skMap .sk-src")];
 const speakerTethers=speakerNodes.map(n=>n.querySelector(".sk-tether"));
+const speakerShades=speakerNodes.map(n=>n.querySelector(".sk-speaker-shade"));
 const depthLayers={far:$("skFarSources"),near:$("skNearSources")};
 function paintSlider(el){
  const min=Number(el.min),max=Number(el.max),value=Number(el.value);
@@ -489,7 +495,9 @@ function drawSpeakers(){
   }
   const scale=(.96-.20*depth).toFixed(3); // far .76, side .96, near 1.16
   g.setAttribute("transform","translate("+visible.x.toFixed(2)+","+visible.y.toFixed(2)+") scale("+scale+")");
-  g.style.opacity=(.83-.14*depth).toFixed(3);
+  // Real speaker cabinets are opaque. Continuous shading gives depth
+  // without leaking the orbit rail through the cabinet.
+  speakerShades[source].setAttribute("opacity",(.12+.10*depth).toFixed(3));
   g.dataset.depth=near?"near":"far";
   g.dataset.depthFactor=depth.toFixed(4);
   g.dataset.acousticX=anchor.x.toFixed(2);

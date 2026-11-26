@@ -179,9 +179,16 @@ def exercise(browser,out,width,height):
       const far=map.querySelector('#skFarSources');
       const art=map.querySelector('#skListenerArt');
       const near=map.querySelector('#skNearSources');
-      return Boolean((far.compareDocumentPosition(art)&Node.DOCUMENT_POSITION_FOLLOWING) &&
-                     (art.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING));
-    }"""),"Speaker planes must surround the alpha listener PNG"
+      const rail=map.querySelector('#skOrbitRail');
+      const glass=map.querySelector('.sk-glass');
+      return Boolean((art.compareDocumentPosition(rail)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (rail.compareDocumentPosition(far)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (far.compareDocumentPosition(near)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     (near.compareDocumentPosition(glass)&Node.DOCUMENT_POSITION_FOLLOWING) &&
+                     far.getAttribute('mask')==='url(#skFarSpeakerOcclusion)' &&
+                     !near.hasAttribute('mask') &&
+                     [...map.querySelectorAll('.sk-src')].every(n=>getComputedStyle(n).opacity==='1'));
+    }"""),"Opaque speaker cabinets must cover the rail and respect listener occlusion"
     # Every rotation input remains an accessible native range, wrapped in
     # a tactile rotary shell: no browser PCM, no fake processed state.
     assert editor.locator(".sk-rotary-grid .sk-dial").count()==4
@@ -295,7 +302,8 @@ def exercise(browser,out,width,height):
           value:Number(n.getAttribute('aria-valuenow')),
           layer:n.parentElement.id,depth:n.dataset.depth,
           scale:Number(n.getAttribute('transform').match(/scale\(([^)]+)\)/)?.[1]||0),
-          opacity:Number(n.style.opacity)}))""")
+          shade:Number(n.querySelector('.sk-speaker-shade').getAttribute('opacity')),
+          opacity:Number(getComputedStyle(n).opacity)}))""")
         assert len(data)==2 and data[0]["value"]==data[1]["value"]==degrees,data
         assert abs(data[0]["ax"]-data[1]["ax"])<.01,data
         assert abs(data[0]["ay"]-data[1]["ay"])<.01,data
@@ -324,14 +332,16 @@ def exercise(browser,out,width,height):
     assert front["depth"]=="far" and rear["depth"]=="near"
     assert front["scale"]<right["scale"]<rear["scale"],(front,right,rear)
     assert rear["scale"]-front["scale"]>=.39,(front,rear)
-    assert rear["opacity"]>front["opacity"],(front,rear)
+    assert front["shade"]>rear["shade"],(front,rear)
+    assert front["opacity"]==right["opacity"]==rear["opacity"]==1,(front,right,rear)
     # At the edge-on horizons: layer swaps while 3D scaling remains continuous.
     _,_,far_side=pose(89)
     _,_,near_side=pose(91)
     assert far_side["depth"]=="far" and near_side["depth"]=="near"
     assert far_side["layer"]=="skFarSources" and near_side["layer"]=="skNearSources"
     assert abs(far_side["scale"]-near_side["scale"])<.02,(far_side,near_side)
-    assert abs(far_side["opacity"]-near_side["opacity"])<.02,(far_side,near_side)
+    assert abs(far_side["shade"]-near_side["shade"])<.02,(far_side,near_side)
+    assert far_side["opacity"]==near_side["opacity"]==1,(far_side,near_side)
     # L and R belong to independent near/far planes when they straddle 90°.
     # Native control snapshots are request-correlated; allow a fresh read
     # instead of reusing the previous consumed requestId (rejected as stale).

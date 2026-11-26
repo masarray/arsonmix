@@ -30,6 +30,11 @@ assert.match(source,/<ellipse id="skOrbitRail"[^>]*cx="200" cy="174" rx="148" ry
 assert.equal((source.match(/id="skOrbitRail"/g)||[]).length,1);
 assert.match(source,/<ellipse id="skOrbitRail"[^>]*stroke-width="1.7" mask="url\(#skRailOcclusion\)"/);
 assert.doesNotMatch(source,/<use[^>]*href="#skOrbitRail"|skForegroundClip|skListenerCoverage/);
+assert.match(source,/<g id="skFarSources"[^>]*mask="url\(#skFarSpeakerOcclusion\)"/);
+assert(source.indexOf('<ellipse id="skOrbitRail"')<source.indexOf('<g id="skFarSources"'));
+assert(source.indexOf('<g id="skFarSources"')<source.indexOf('<g id="skNearSources"'));
+assert.doesNotMatch(source,/g\.style\.opacity=/);
+assert.match(source,/speakerShades\[source\]\.setAttribute\("opacity",\(\.12\+\.10\*depth\)/);
 assert.match(source,/<g clip-path="url\(#skFarOcclusion\)"><image[^>]*filter="url\(#skAlphaBlack\)"/);
 assert.doesNotMatch(source,/id="skRenderMode"|class="sk-control-title"|M193 68 L200 60 L207 68/);
 assert.match(source,/class="sk-glass"[^>]*pointer-events="none"/);
