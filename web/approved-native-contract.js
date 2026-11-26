@@ -323,6 +323,9 @@
       rows.push({pair:"STREAM",pins:ready?raw.secondaryMainEndpoint:"WASAPI endpoint disconnected",role:"MAIN",
         owners:"MAIN",status:!ready?"NEEDS_REMAP":raw.physicalBusSecondaryArmed===true?"ENABLED":"MUTED",shared:0});
     }
+    const logicalPorts=(Array.isArray(raw.logicalOutputRegistry?.ports)?
+      raw.logicalOutputRegistry.ports:[]).filter(p=>p.bound===true&&
+      p.playback===d.playbackDevice&&(!p.backend||p.backend===d.backend));
     const activeExternal=new Set();
     for(const left of [...ports.keys()].sort((a,b)=>a-b)){
       const right=left+1;
@@ -332,12 +335,13 @@
       const items=assigned.filter(p=>p.physicalLeft===left&&p.physicalRight===right);
       activeExternal.add(left+":"+right);
       const applied=items.filter(p=>snapshot.admitted===true&&p.status==="LIVE");
+      const logical=logicalPorts.find(p=>[p.left,p.right].some(pin=>pin===left||pin===right));
       const state=applied.length?(d.outputArmed?"LIVE":"MUTED"):
         items.some(p=>p.status==="PENDING")?"PENDING":
-        items.length?"NEEDS_REMAP":"FREE";
+        items.length?"NEEDS_REMAP":logical?"RESERVED":"FREE";
       rows.push({pair:pair(left,right),pins:pins(left,right),
-        role:items.length?"EXTERNAL":"AVAILABLE",
-        owners:items.length?owners(items):"Unassigned",status:state,
+        role:items.length?"EXTERNAL":logical?"LOGICAL":"AVAILABLE",
+        owners:items.length?owners(items):logical?logical.name:"Unassigned",status:state,
         shared:applied.length});
     }
     for(const port of [...ports.keys()].sort((a,b)=>a-b)){

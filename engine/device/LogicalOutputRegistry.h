@@ -47,6 +47,15 @@ public:
     const auto& ports() const noexcept{return ports_;}
     const auto& references() const noexcept{return refs_;}
     bool empty() const noexcept{return ports_.empty();}
+    // Same reservation authority for direct OUT and physical bus remap.
+    // A bound but unused alias still reserves the physical amplifier.
+    bool reservesPair(const Device& device,int left,int right,PortId except=0) const noexcept {
+        return std::any_of(ports_.begin(),ports_.end(),[&](const auto& p){
+            return p.id!=except&&p.binding&&p.binding->device==device&&
+                (p.binding->left==left||p.binding->left==right||
+                 p.binding->right==left||p.binding->right==right);
+        });
+    }
     PortId assignedPort(ChannelId channel) const noexcept{
         const auto it=std::find_if(refs_.begin(),refs_.end(),[&](const auto& ref){return ref.channel==channel;});
         return it==refs_.end()?0:it->port;
@@ -89,9 +98,7 @@ public:
     // Durable intent, not proof of live output identity.
     bool restoreIntent(PortId id,const Binding& b){
         auto* p=edit(id);if(!p||!validBinding(b))return false;
-        for(const auto& other:ports_)
-            if(other.id!=id&&other.binding&&other.binding->device==b.device&&
-               other.binding->left==b.left)return false; // conventional disjoint pairs
+        if(reservesPair(b.device,b.left,b.right,id))return false;
         p->binding=b;return true;
     }
     bool bind(PortId id,const Binding& b,const Inventory& live,std::uint64_t expectedEpoch,bool confirmed){

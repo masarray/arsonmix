@@ -92,7 +92,8 @@
     const own=raw[key],other=raw[key==="physicalMainOutputs"?"physicalMonitorOutputs":"physicalMainOutputs"];
     if(own.length!==2)return [];
     const pins=new Map(d.outputEndpoints.filter(p=>p.active===true&&d.enabledOutputs.includes(p.port)&&p.label).map(p=>[p.port,p.label]));
-    const reserved=new Set([...other,...raw.externalOutputs.flatMap(p=>[p.physicalLeft,p.physicalRight])]);
+    const reserved=new Set([...other,...raw.externalOutputs.flatMap(p=>[p.physicalLeft,p.physicalRight]),
+      ...logicalReservedPins(snapshot)]);
     const make=(left,right)=>({label:"OUT "+(left+1)+"/"+(right+1)+" · "+pins.get(left)+" + "+pins.get(right),left,right});
     if(!own.every(p=>pins.has(p))||own[0]===own[1])return [];
     const result=[make(own[0],own[1])];
@@ -126,6 +127,7 @@
         m4.routeAccepted===true&&session.routeRevision===m4.routingRevision&&
         Array.isArray(session.channels)&&session.channels.length===10));
     const choices=input?inputChoices(snapshot):outputChoices(snapshot);
+    const installedChoices=input?choices:outputChoices(snapshot,true);
     const rows=[];
     const map=(left,right,mono=false)=>pins.map(p=>p.port===left?(mono?"M":"L"):p.port===right?"R":"");
     if(!input)for(const [key,name] of [["physicalMainOutputs","MAIN"],["physicalMonitorOutputs","MONITOR"]]){
@@ -147,6 +149,11 @@
             busChoices.length>1?"Mute MAIN and STREAM to remap":"Fixed bus"});
       }
     }
+    if(!input&&live&&snapshot.raw.physicalBusPatchSupported===true&&
+       Array.isArray(snapshot.raw.physicalMonitorOutputs)&&snapshot.raw.physicalMonitorOutputs.length===0)
+      rows.push({id:"physicalMonitorOutputs",name:"MONITOR",bus:true,editable:false,pending:false,
+        choices:[],pair:[],cells:pins.map(()=>""),selected:"",
+        state:"Not assigned · independent monitor setup required"});
     if(!input&&live&&snapshot.raw.secondaryMainOnly===true&&
        snapshot.raw.physicalMainOutputs?.length===0&&snapshot.raw.physicalMonitorOutputs?.length===2)
       rows.push({id:"secondaryMainOnly",name:"MAIN",bus:true,editable:false,pending:false,
@@ -170,12 +177,12 @@
           cells:choice?map(choice.left,choice.right,choice.mode==="MONO"):map(-1,-1),state});
       }else{
         const src=snapshot.raw.externalOutputs?.find?.(p=>p.channelId===ch.id);
-        const choice=src?choices.find(x=>x.left===src.physicalLeft&&x.right===src.physicalRight):choices[0];
+        const choice=src?installedChoices.find(x=>x.left===src.physicalLeft&&x.right===src.physicalRight):choices[0];
         const logical=snapshot.raw?.logicalOutputRegistry;
         const ref=logical?.references?.find?.(r=>r.channelId===ch.id);
         const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
         rows.push({id:ch.id,name:ch.name,editable:d.backend==="ASIO"&&!port,
-          selected:choice?.label||null,cells:choice?map(choice.left,choice.right):map(-1,-1),
+          selected:choice?.label||null,cells:choice&&src?.status!=="NEEDS_REMAP"?map(choice.left,choice.right):map(-1,-1),
           state:port?port.name+(ref.state==="NEEDS_REMAP"?" · Needs remap":ref.state==="PENDING"?" · Pending":""):src&&!choice?"Needs remap":src?.status||""});
       }
     }
@@ -203,6 +210,15 @@
       x.left===row.left && x.right===row.right);
     return found?.label||"None";
   }
+  // The installed route and new assignment are different views of the
+  // same physical inventory; reserved ports must remain visible in readback.
+  function logicalReservedPins(snapshot) {
+    const d=snapshot?.device;
+    return (Array.isArray(snapshot?.raw?.logicalOutputRegistry?.ports)?
+      snapshot.raw.logicalOutputRegistry.ports:[]).filter(p=>p.bound===true&&
+      p.playback===d?.playbackDevice&&(!p.backend||p.backend===d.backend))
+      .flatMap(p=>[p.left,p.right]);
+  }
   function outputChoices(snapshot,includeReserved=false) {
     const d=snapshot?.device,choices=[{...NONE}];
     if(d?.backend!=="ASIO"||!Array.isArray(d.outputEndpoints)||
@@ -215,9 +231,7 @@
       snapshot.raw.physicalMainOutputs:[];
     const monitor=Array.isArray(snapshot?.raw?.physicalMonitorOutputs)?
       snapshot.raw.physicalMonitorOutputs:[];
-    const reserved=new Set((Array.isArray(snapshot?.raw?.logicalOutputRegistry?.ports)?
-      snapshot.raw.logicalOutputRegistry.ports:[]).filter(p=>p.bound===true&&p.playback===d.playbackDevice)
-      .flatMap(p=>[p.left,p.right]));
+    const reserved=new Set(logicalReservedPins(snapshot));
     for(const [left,a] of map) {
       if(left%2!==0||!map.has(left+1)||
          (!includeReserved&&(reserved.has(left)||reserved.has(left+1))))continue;

@@ -3199,6 +3199,8 @@
       const select=document.createElement("select");
       select.setAttribute("aria-label",row.name+" assignment");
       const candidates=row.bus?row.choices:model.choices;
+      // An installed logical pair may be excluded from new assignments.
+      // Read-only rows must retain their installed crosspoints, not a draft.
       const customValue="__custom_stereo__";
       const custom=document.createElement("div");
       custom.className="armix-custom-stereo";custom.hidden=true;
@@ -3211,6 +3213,9 @@
       const customLeft=customSelect("L"),customRight=customSelect("R");
       if(model.pins.length>1)customRight.selectedIndex=1;
       if(row.selected===null){const op=new Option(row.state||"Current source", "");op.disabled=true;select.append(op);}
+      else if(row.selected&&!candidates.some(c=>c.label===row.selected)){
+        const op=new Option(row.selected,row.selected);op.disabled=true;select.append(op);
+      }
       for(const choice of candidates)select.append(new Option(choice.label,choice.label));
       if(row.editable&&!row.bus)for(const p of aliases)
         select.append(new Option(p.name+" · "+p.choice.label,"preset:"+p.id));

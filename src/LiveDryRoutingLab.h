@@ -4599,11 +4599,7 @@ private:
     armix::device::LogicalInputRegistry logicalInputs_; // CONTROL only
     armix::device::LogicalOutputRegistry logicalOutputs_; // CONTROL only
     bool logicalOutputPairReserved(const juce::String& playback,int left,int right) const{
-        for(const auto& p:logicalOutputs_.ports()){
-            if(!p.binding||p.binding->device.playback!=playback.toStdString())continue;
-            if(p.binding->left==left||p.binding->left==right||p.binding->right==left||p.binding->right==right)return true;
-        }
-        return false;
+        return logicalOutputs_.reservesPair({"ASIO",playback.toStdString()},left,right);
     }
     std::uint64_t logicalInputRevision_=1,logicalOutputRevision_=1;
     std::vector<armix::session::StoredExternalOutput> externalOutputAssignments_;

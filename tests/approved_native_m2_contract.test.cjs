@@ -7625,3 +7625,27 @@ test("FAST-U1 vendor restart restores only captured full endpoint identity once"
  assert.match(s,/endpointId_=selected.selection.id/);
  assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
 });
+
+
+test("U2 physical bus candidates and overview respect existing logical reservations",()=>{
+ const device={backend:"ASIO",playbackDevice:"Maono",epoch:"31",outputArmed:false,
+  enabledOutputs:[0,1,2,3,4,5,6,7],outputEndpoints:Array.from({length:8},(_,port)=>({port,active:true,label:"Maono "+port}))};
+ const raw={physicalBusPatchSupported:true,physicalBusOutputObserved:true,operatorOutputMuted:true,
+  physicalBusSecondaryArmed:false,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
+  externalOutputs:[],logicalOutputRegistry:{ports:[{id:"8",name:"Broadcast",bound:true,backend:"ASIO",playback:"Maono",left:4,right:5}],references:[]},
+  mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"31"}};
+ const snapshot={device,raw,admitted:true,hardwareConfiguration:"verified",graph:{revision:"9",channels:[{id:"23",name:"Vocal",role:"INPUT"}]}};
+ assert.deepEqual(deviceVM.busOutputChoices(snapshot,"physicalMainOutputs").map(x=>x.left),[0,2,6]);
+ assert.deepEqual(deviceVM.outputChoices(snapshot).map(x=>x.left),[-1,2,6]);
+ assert.equal(protocol.physicalOutputOverview(snapshot).find(x=>x.pair==="OUT 5/6").status,"RESERVED");
+ const monitor=deviceVM.patchMatrix(snapshot,"output").rows.find(r=>r.name==="MONITOR");
+ assert.equal(monitor.editable,false);assert.deepEqual(monitor.pair,[]);
+ const installed={...snapshot,raw:{...raw,externalOutputs:[{channelId:"23",physicalLeft:4,physicalRight:5,status:"LIVE"}],
+  logicalOutputRegistry:{...raw.logicalOutputRegistry,references:[{channelId:"23",portId:"8",role:"EXTERNAL",state:"RESOLVED"}]}}};
+ const row=deviceVM.patchMatrix(installed,"output").rows.find(r=>r.id==="23");
+ assert.equal(row.editable,false);assert.deepEqual(row.cells,["","","","","L","R","",""]);
+ assert.match(row.state,/Broadcast/);
+ assert.equal(protocol.physicalOutputOverview(installed).find(x=>x.pair==="OUT 5/6").status,"MUTED");
+ const unrelated={...snapshot,raw:{...raw,logicalOutputRegistry:{ports:[{...raw.logicalOutputRegistry.ports[0],playback:"Other driver"}],references:[]}}};
+ assert.deepEqual(deviceVM.busOutputChoices(unrelated,"physicalMainOutputs").map(x=>x.left),[0,2,4,6]);
+});
