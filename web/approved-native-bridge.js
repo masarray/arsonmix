@@ -4667,10 +4667,11 @@
     const busy=firstSoundBusy();
     // The shared premium .tool style uses display:inline-flex!important.
     // Keep semantic hidden AND remove the actual hitbox from the toolbar.
-    if(firstSoundButton.hidden!==!plan)firstSoundButton.hidden=!plan;
-    if(!plan)firstSoundButton.style.setProperty("display","none","important");
-    else if(firstSoundButton.style.getPropertyValue("display")==="none")
-      firstSoundButton.style.removeProperty("display");
+    if(firstSoundButton.hidden!==!plan){
+      firstSoundButton.hidden=!plan;
+      if(plan)firstSoundButton.style.removeProperty("display");
+      else firstSoundButton.style.setProperty("display","none","important");
+    }
     const disabled=busy||!deviceReady();
     if(firstSoundButton.disabled!==disabled)firstSoundButton.disabled=disabled;
     const label=plan?.pins.length===1?"Connect input":"Connect microphone";

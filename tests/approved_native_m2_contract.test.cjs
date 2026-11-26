@@ -7548,16 +7548,25 @@ test("DMX sole ASIO pair belongs to MONITOR; MAIN readback names only the second
   assert.equal(read().some(x=>x.pair==="STREAM"),false);
 });
 
-test("DMX split topology transaction uses native ChannelId edits, not legacy strip edits",()=>{
+test("DMX split topology creates native ChannelId and preserves authored MONITOR on return",()=>{
   const source=read("src/LiveDryRoutingLab.h");
   const start=source.indexOf("juce::String patchDmxSplitOutput(");
   const end=source.indexOf("// CONTROL only, explicit operator MUTE",start);
   assert.ok(start>=0&&end>start);
   const body=source.slice(start,end);
   assert.match(body,/armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::add;/);
-  assert.match(body,/armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::remove;/);
-  assert.equal((body.match(/std::span<const armix::mixer::ChannelEdit>/g)||[]).length,2);
+  assert.doesNotMatch(body,/ChannelEdit::Kind::remove/);
+  assert.equal((body.match(/std::span<const armix::mixer::ChannelEdit>/g)||[]).length,1);
   assert.doesNotMatch(body,/(?<!::)\bChannelEdit\b/);
+  assert.match(body,/next=\{2,old.monitorL,old.monitorR,-1,-1,false\}/);
+  assert.match(body,/nativeAccepted_\.graph\.ids\.monitor=monitor/);
+  assert.match(body,/DynamicChannelFxLeaseBank::reuseRevision/);
+  assert.match(body,/nativePublisher_\.commit\(roster,request/);
+  const publisher=read("engine/core/DynamicNativeSessionPublisher.h");
+  const graph=read("engine/core/DynamicPreparedMixerBlock.h");
+  assert.match(publisher,/bool allowUnmappedMonitor=false/);
+  assert.match(publisher,/snap->prepared->monitor && !monitorL && !allowUnmappedMonitor/);
+  assert.match(graph,/monitor_!=notScheduled && !monitorL && !allowUnmappedMonitor/);
 });
 
 

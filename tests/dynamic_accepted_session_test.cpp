@@ -1166,6 +1166,7 @@ static void verifyHeadphoneStarterAndDormantSinkPcm() {
     assert(near(mainL[63],.1f)&&near(monL[63],.025f));
     assert(session.acceptedGraphRevision()==3);
     session.unpublish();session.pollRetirement();
+    std::puts("HEADPHONE_STARTER_DORMANT_PCM_PASS PRE branch, preserved EdgeId, explicit unbound sink, default fail-closed");
 }
 
 int main() {

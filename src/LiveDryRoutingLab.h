@@ -3160,7 +3160,7 @@ public:
     }
 
     // Explicit two-pin ASIO sink transaction. Never repurpose a live pair.
-    // The new monitor is intentionally unpatched (silence) until WIRE/SOF.
+    // Legacy explicit split may start empty; smart split seeds a new MONITOR atomically.
     juce::String patchDmxSplitOutput(std::uint64_t ep,std::uint64_t rev,
             std::uint64_t rosterRev,bool enable,
             const armix::device::JuceActivePortSnapshot& pins,bool outputsDisarmed,

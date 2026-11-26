@@ -676,7 +676,22 @@ def verify_independent_output(page,out,legacy_empty=False):
     emit(page,"arMixStatus",live)
     assert panel.get_by_role("button",name="Separate headphone mix").is_enabled()
     assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
-    assert any(e["edgeId"]==monitor_edge["edgeId"] for e in state["graph"]["edges"])
+    # Re-enter Separate: no starter transaction and no change to the authored send.
+    panel.get_by_role("button",name="Separate headphone mix").click()
+    again=page.evaluate("()=>window.__actions.at(-1)")
+    assert again["action"]=="secondaryOutputSplit" and again["value"]["enabled"] is True
+    emit(page,"arMixSecondaryOutputAck",{"requestId":again["requestId"],"action":again["action"],"ok":True})
+    next_rev=str(int(next_rev)+1)
+    state.update(secondaryMainOnly=True,physicalMainOutputs=[],physicalMonitorOutputs=[0,1])
+    state["graph"]["revision"]=next_rev
+    state["mixerSession"]["routeRevision"]=next_rev
+    emit(page,"arMixConsoleSnapshot",state)
+    live["dryRoutingLab"]["secondaryMainOnly"]=True
+    emit(page,"arMixStatus",live)
+    assert not panel.get_by_role("button",name="Create headphone mix").is_visible()
+    assert panel.get_by_role("button",name="Edit headphone mix").is_enabled()
+    assert any(e==monitor_edge for e in state["graph"]["edges"])
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryMonitorStarter').length")==int(legacy_empty)
     assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
     assert not errors,errors
 
