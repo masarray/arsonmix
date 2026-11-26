@@ -207,6 +207,7 @@ public:
                 juce::FloatVectorOperations::clear(right,samples);
                 processing.clear(std::memory_order_release);
                 return; // never mix the failed block with the dry fade
+            }
             if(fullyBypassed){
                 juce::FloatVectorOperations::copy(left,dryLeft.data(),samples);
                 juce::FloatVectorOperations::copy(right,dryRight.data(),samples);
