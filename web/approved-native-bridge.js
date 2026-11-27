@@ -3395,6 +3395,8 @@
     if(host.dataset.signature===signature)return;
     host.dataset.signature=signature;
     const toolsOpen=host.querySelector("[data-io-matrix-tools]")?.open??false;
+    const previousMatrix=host.querySelector(".armix-matrix-scroll");
+    const scrollTop=previousMatrix?.scrollTop??0,scrollLeft=previousMatrix?.scrollLeft??0;
     host.replaceChildren();
     if(!ready||!model.live||!model.pins.length){
       host.textContent=!ready?"Apply device and pin changes first.":
@@ -3468,6 +3470,7 @@
         const cell=tr.insertCell(),button=document.createElement("button");
         button.type="button";button.className="armix-patch-cell";
         button.setAttribute("aria-label",row.name+" / "+pin.label);
+        button.title=row.name+" / "+pin.label+" · select, then Apply";
         button.disabled=busy||!row.editable;
         button.onclick=()=>{
           if(select.value===customValue){
@@ -3503,6 +3506,7 @@
     matrix.tabIndex=0;matrix.setAttribute("role","region");
     matrix.setAttribute("aria-label",side==="input"?"Input patch matrix":"Output patch matrix");
     matrix.append(table);host.append(matrix);
+    matrix.scrollTop=scrollTop;matrix.scrollLeft=scrollLeft;
     const tools=document.createElement("details");tools.dataset.ioMatrixTools="";
     const summary=document.createElement("summary");summary.textContent="Port definitions, defaults & presets";
     tools.append(summary);tools.open=toolsOpen;
@@ -4534,8 +4538,8 @@
         </div>
         <section class="armix-input-overview">
           <div class="armix-output-heading">Input patch matrix</div>
-          <div class="armix-crosspoint-scroll" data-audio-input-grid></div>
-          <div class="armix-device-note">Select a pin or source, then Apply. Blue = installed · Amber = draft. Choose Mono or Stereo in Source / pair.</div>
+          <div class="armix-matrix-hint">Select a pin or source, then Apply. Blue = installed · Amber = draft. Choose Mono or Stereo in Source / pair.</div>
+           <div class="armix-crosspoint-scroll" data-audio-input-grid></div>
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
           <details data-audio-hardware-routing open>

@@ -298,6 +298,11 @@ function openChannelIdentity(t,anchor){""",
         "", plugin, count=1, flags=re.S)
     if count != 1:
         raise ValueError("Operator UX obsolete minimized CSS drift")
+    # V6: flat Plugin Manager actions, not physical mixer keys.
+    # Preserve immutable V28 source and shared 24px Close chrome.
+    chrome, removed = re.subn(r"\.plugin-footer button,\s*", "", chrome)
+    if removed != 14:
+        raise ValueError("Plugin Manager hardware key selector inventory drift")
     chrome_path.write_text(chrome.rstrip()+"\n"+OPERATOR_CSS+"\n",encoding="utf-8")
     # V9: unified modal close material is compiled from its sole CSS owner.
     plugin_path.write_text(plugin,encoding="utf-8")
