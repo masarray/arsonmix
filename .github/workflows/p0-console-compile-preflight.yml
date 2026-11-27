@@ -94,7 +94,7 @@ jobs:
           cmake --build build --parallel 2 --target $objects
           if ($LASTEXITCODE -ne 0) { throw 'P0_PRODUCTION_TRANSLATION_UNIT_FAILED' }
           Write-Host "P0_PRODUCTION_MAIN_COMPILE_PASS exact=$actual (object only, NOT full FAT)"
-      - name: Integrated product link and full native CTest (no packaging)
+      - name: Integrated product link (same executable for preview and final FAT)
         if: startsWith(github.ref_name, 'staging/io-reverb-integrated-')
         shell: pwsh
         run: |
@@ -108,6 +108,49 @@ jobs:
           cmake --build build --parallel 2 --target ARMixConsole
           if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_CONSOLE_LINK_FAILED' }
           Write-Host "INTEGRATED_CONSOLE_LINK_PASS exact=$actual"
+      # Give the operator the exact compiled application before building the
+      # much larger native test target set. This is NOT full CTest or installer FAT.
+      - name: Verify early Windows FIELD portable preview
+        if: github.ref_name == 'staging/io-reverb-integrated-global-20261125'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA){throw 'FIELD_PREVIEW_SOURCE_MISMATCH'}
+          node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
+          if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_APPROVED_GUI_FAILED'}
+          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir field-preview-dist
+          if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_PACKAGE_FAILED'}
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output field-preview-dist --best-effort
+          if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_FACTORY_FX_FAILED'}
+          $path='field-preview-dist/BUILD_PROVENANCE.json'
+          $manifest=Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+          if($manifest.sourceCommit -ne $actual){throw 'FIELD_PREVIEW_PROVENANCE_MISMATCH'}
+          $manifest.fatStatus='FIELD_PREVIEW_FULL_CTEST_NOT_RUN'
+          $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
+          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir field-preview-dist
+          if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_DISTRIBUTION_FAILED'}
+          Write-Host "EARLY_FIELD_PREVIEW_VERIFIED exact=$actual"
+      - name: Upload early portable FIELD preview (full CTest not run)
+        if: github.ref_name == 'staging/io-reverb-integrated-global-20261125'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ArSonMix-Windows-Field-Preview-${{ github.sha }}
+          path: field-preview-dist/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Integrated full native CTest (no packaging)
+        if: startsWith(github.ref_name, 'staging/io-reverb-integrated-')
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA) { throw 'INTEGRATED_SOURCE_MISMATCH' }
           cmake --build build --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_FULL_BUILD_FAILED' }
           ctest --test-dir build --output-on-failure --no-tests=error --output-junit integrated-ctest.xml

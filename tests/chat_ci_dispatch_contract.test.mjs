@@ -666,3 +666,21 @@ test('dispatch history invalid timestamp or impossible density fails closed',asy
     'p1-windows.yml','2026-11-26T11:00:00Z',Date.parse('2026-11-26T11:00:00Z')),/CI_DISPATCH_HISTORY_DENSITY/);
   await assert.rejects(recentScopedMilestones(async()=>{throw Error('unexpected request');},'p1-windows.yml','invalid'),/CI_PR_CREATED_AT_INVALID/);
 });
+
+test('canonical integrated build exposes exact portable preview before full test compilation without weakening final FAT',()=>{
+  const p0 = new URL('../.github/workflows/p0-console-compile-preflight.yml',import.meta.url);
+  const build=readFileSync(p0,'utf8');
+  const link=build.indexOf('INTEGRATED_CONSOLE_LINK_PASS');
+  const label=build.indexOf("$manifest.fatStatus='FIELD_PREVIEW_FULL_CTEST_NOT_RUN'");
+  const verify=build.indexOf('verify_native_windows_artifact.ps1 -OutputDir field-preview-dist');
+  const upload=build.indexOf('Upload early portable FIELD preview (full CTest not run)');
+  const full=build.indexOf('Integrated full native CTest (no packaging)');
+  const ctest=build.indexOf('--output-junit integrated-ctest.xml');
+  const fat=build.indexOf('P12 exact-source Windows installer qualification');
+  assert.ok(link>=0 && link<label && label<verify && verify<upload && upload<full && full<ctest && ctest<fat);
+  assert.match(build,/name: ArSonMix-Windows-Field-Preview-\$\{\{ github\.sha \}\}/);
+  assert.match(build,/path: field-preview-dist\//);
+  assert.match(build,/P12_NATIVE_TEST_EVIDENCE_INCOMPLETE/);
+  assert.match(build,/P12_INTERNAL_INSTALLER_SOFTWARE_FAT_PASS/);
+  assert.equal((build.match(/cmake --build build --parallel 2 --target ARMixConsole/g)||[]).length,1);
+});
