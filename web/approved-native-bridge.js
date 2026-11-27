@@ -1262,10 +1262,19 @@
   // Native telemetry owns the physical meter. When no measured per-channel
   // samples are published, leave the meter dark; never use Pages sine demo.
   function paintNativeMeters(next) {
-    for(const edge of next.graph.edges||[]){
-      const ui=uiByWireId.get(edge.edgeId);
-      if(ui===undefined)continue;
-      for(const input of document.querySelectorAll?.('.wire-gain[data-wire-id="'+ui+'"]')||[]){
+    // Query mounted WIRE controls once, not once per accepted graph edge.
+    // No cross-tick DOM cache: WIRE panels may be rebuilt independently.
+    const edges=next.graph.edges||[];
+    const controls=edges.length?document.querySelectorAll?.(".wire-gain[data-wire-id]")||[]:[];
+    if(controls.length){
+      const byUi=new Map();
+      for(const edge of edges){
+        const ui=uiByWireId.get(edge.edgeId);
+        if(ui!==undefined)byUi.set(String(ui),edge);
+      }
+      for(const input of controls){
+        const edge=byUi.get(input.getAttribute("data-wire-id"));
+        if(!edge)continue;
         const fixed=edge.primaryOutput===true;
         const disabled=!!next.retained||fixed;
         if(input.disabled!==disabled)input.disabled=disabled;
@@ -1277,8 +1286,10 @@
         const label=input.parentElement?.querySelector(".wire-gain-caption");
         if(label&&label.textContent!==(fixed?"UNITY":"LVL"))
           label.textContent=fixed?"UNITY":"LVL";
-        input.parentElement?.classList.toggle("is-primary-unity",fixed);
-        input.setAttribute("aria-label",title);
+        const classes=input.parentElement?.classList;
+        if(classes&&classes.contains("is-primary-unity")!==fixed)
+          classes.toggle("is-primary-unity",fixed);
+        if(input.getAttribute("aria-label")!==title)input.setAttribute("aria-label",title);
       }
     }
     if (!scope?.displayMeterDbfs)return;
