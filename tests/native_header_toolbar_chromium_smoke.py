@@ -91,9 +91,10 @@ def main():
               const bar=document.querySelector('.command-bar');
               const b=bar.getBoundingClientRect();
               const more=document.querySelector('#moreTools').getBoundingClientRect();
+              const nav=document.querySelector('.armix-ribbon-nav').getBoundingClientRect();
               const visible=[...bar.children].filter(el=>{
                  const r=el.getBoundingClientRect(),cs=getComputedStyle(el);
-                 return r.width>0 && r.height>0 && cs.display!=='none' &&
+                 return el.id!=='moreTools' && r.width>0 && r.height>0 && cs.display!=='none' && cs.visibility!=='hidden' &&
                      !el.classList.contains('armix-toolbar-divider') &&
                      !el.classList.contains('sep');
               }).map(el=>({id:el.id||el.textContent.trim().slice(0,12),
@@ -104,7 +105,7 @@ def main():
               const css=getComputedStyle(bar);
               return {bar:{height:b.height,left:b.left,right:b.right},
                 gap:parseFloat(css.columnGap),paddingRight:parseFloat(css.paddingRight),
-                tail,more:{left:more.left,right:more.right},
+                tail,more:{left:more.left,right:more.right,bottom:more.bottom},nav:{height:nav.height,bottom:nav.bottom},
                 visible,dividers:[...bar.querySelectorAll('.armix-toolbar-divider')]
                  .map(el=>({hidden:getComputedStyle(el).display==='none',
                            height:el.getBoundingClientRect().height}))};
@@ -115,8 +116,9 @@ def main():
             assert metrics["dividers"][0]["height"] in (0, 21), (
                 width, "divider layout changed", metrics)
             visible = metrics["visible"]
-            # The application menu is the actual first DOM/focus item.
-            assert visible[0]["id"]=="moreTools", (width,metrics)
+            # V6 menu belongs to the navigation row, not the command row.
+            assert metrics['nav']['height']==34 and abs(metrics['more']['bottom']-metrics['nav']['bottom'])<=3,(width,metrics)
+            assert page.locator('.armix-ribbon-tabs [role=tab]').count()==6
             right=visible[-2:]
             assert [x["id"] for x in right]==["addTrack","Audio I/O"], (width,right)
             assert abs(right[1]["left"]-right[0]["right"]-metrics["gap"])<=1.5, (width,right)
@@ -129,7 +131,7 @@ def main():
             for item in visible:
                 assert item["left"] >= -1 and item["right"] <= width+1, (
                     width, "toolbar control outside viewport", item)
-            # Real file group, not CSS visual reordering: tab order follows DOM.
+            # Real file group remains in the original menu DOM.
             menu=page.locator("#moreTools")
             assert menu.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
             assert page.locator(".command-bar > .mixer-file-tool").count()==0

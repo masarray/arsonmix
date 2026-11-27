@@ -27,9 +27,16 @@ function install(){
  bar.insertBefore(player,$('playerToggle')||bar.firstElementChild);
  const scene=document.createElement('div');scene.className='armix-ribbon-scene';scene.hidden=true;scene.innerHTML='<button type="button" id="ribbonShowSave">Save Show</button><button type="button" id="ribbonShowBrowse">Browse Shows</button>';
  bar.insertBefore(scene,player);
- const native=Boolean(window.__JUCE__?.backend?.emitEvent);
+ const native=Boolean(window.__JUCE__?.backend?.emitEvent&&window.__JUCE__?.backend?.addEventListener);
+ const playerReady=()=>source('playerPlay')?.dataset.playing!==undefined;
  const source=id=>$(id);
  const click=id=>{const el=source(id);if(el&&!el.disabled)el.click();};
+ const mainMix=document.createElement('button');mainMix.type='button';mainMix.className='tool';mainMix.id='ribbonMainMix';mainMix.textContent='Return to Main';mainMix.hidden=true;
+ bar.insertBefore(mainMix,$('mixContext')||null);
+ mainMix.addEventListener('click',()=>{if($('sofToggle')?.getAttribute('aria-pressed')==='true')click('sofToggle');});
+ function syncMix(){const sof=$('sofToggle');mainMix.hidden=sof?.getAttribute('aria-pressed')!=='true';mainMix.disabled=!sof||sof.disabled;}
+ if($('sofToggle'))new MutationObserver(syncMix).observe($('sofToggle'),{attributes:true,attributeFilter:['aria-pressed','disabled']});
+ syncMix();
  const openPlayer=()=>{if($('arsonPlayer')?.hidden)click('playerToggle');};
  const mappings={ribbonPrevious:'playerPrevious',ribbonPlay:'playerPlay',ribbonNext:'playerNext',ribbonStop:'playerStop',ribbonLoop:'playerLoopAB'};
  Object.entries(mappings).forEach(([id,target])=>$(id).addEventListener('click',()=>click(target)));
@@ -44,7 +51,7 @@ function install(){
    const event=type=>original.dispatchEvent(new Event(type,{bubbles:true}));
    const paint=()=>proxy.style.setProperty('--ribbon-fill',(Number(proxy.value)/max*100)+'%');
    function cancel(){if(armed){armed=false;event('pointercancel');}sync();}
-   function sync(){if(!armed){const v=original.value;if(proxy.value!==v)proxy.value=v;paint();}proxy.disabled=!native||original.disabled;}
+   function sync(){if(!armed){const v=original.value;if(proxy.value!==v)proxy.value=v;paint();}proxy.disabled=!native||!playerReady()||original.disabled;}
    proxy.addEventListener('pointerdown',()=>{if(proxy.disabled)return;armed=true;event('pointerdown');});
    proxy.addEventListener('input',()=>{paint();if(originalId==='playerVolume'){original.value=proxy.value;event('input');}});
    proxy.addEventListener('keydown',()=>event('keydown'));
@@ -60,9 +67,9 @@ function install(){
    if(active!=='player')return;
    const playing=source('playerPlay')?.dataset.playing==='true',p=$('ribbonPlay');
    if(p.getAttribute('aria-pressed')!==String(playing)){p.innerHTML=playing?pause:play;p.setAttribute('aria-pressed',String(playing));p.title=playing?'Pause':'Play';p.setAttribute('aria-label',p.title);}
-   for(const [id,target] of Object.entries(mappings)){const el=source(target);$(id).disabled=!native||!el||el.disabled;}
-   $('ribbonMode').disabled=!native||!source('playerAutoNext');
-   $('ribbonQueue').disabled=!source('playerQueueView');
+   for(const [id,target] of Object.entries(mappings)){const el=source(target);$(id).disabled=!native||!playerReady()||!el||el.disabled;}
+   $('ribbonMode').disabled=!native||!playerReady()||!source('playerAutoNext')||source('playerAutoNext').disabled;
+   $('ribbonQueue').disabled=!playerReady()||!source('playerQueueView')||source('playerQueueView').disabled;
    $('ribbonLoop').setAttribute('aria-pressed',source('playerLoopAB')?.getAttribute('aria-pressed')||'false');
    $('ribbonMode').setAttribute('aria-pressed',source('playerAutoNext')?.getAttribute('aria-pressed')||'false');
    const title=source('playerNow')?.textContent||'No music loaded';setText($('ribbonTrack'),title);$('ribbonTrack').title=title;
@@ -89,7 +96,7 @@ function install(){
      el.dataset.ribbonHidden=String(scope!=='all'&&!scope.split(' ').includes(active));
    }
    player.hidden=active!=='player';scene.hidden=active!=='scenes'||!native;
-   const trigger=$('playerToggle');if(trigger)trigger.textContent=active==='player'?'Open Player':'♫ Player';
+   const trigger=$('playerToggle');if(trigger){const label=active==='player'?'Open Player':'♫ Player';if(trigger.textContent!==label)trigger.textContent=label;}
    for(const [id,label] of [['ribbonShowSave','Save Show'],['ribbonShowBrowse','Browse Shows']]){const el=findShow(label);$(id).disabled=!el||el.disabled;}
  }
  function select(id,focus=false){
