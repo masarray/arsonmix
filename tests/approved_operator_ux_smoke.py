@@ -15,9 +15,10 @@ class OperatorConsoleTests(unittest.TestCase):
         source=ROOT/"site/preview-v2"
         html_before=(source/"index.html").read_text(encoding="utf-8")
         chrome_before=(source/"assets/mixer-chrome-material.css").read_bytes()
+        contextual_before=(source/"assets/mixer-contextual-buttons.css").read_bytes()
         with tempfile.TemporaryDirectory(prefix="armix-operator-") as tmp:
             assets=Path(tmp)
-            for name in ("mixer-chrome-material.css","mixer-plugin-browser.css"):
+            for name in ("mixer-chrome-material.css","mixer-plugin-browser.css","mixer-contextual-buttons.css"):
                 shutil.copy2(source/"assets"/name,assets/name)
             compiled=apply_operator_ux(html_before,assets)
             chrome=(assets/"mixer-chrome-material.css").read_text(encoding="utf-8")
@@ -60,7 +61,9 @@ class OperatorConsoleTests(unittest.TestCase):
             # No extra CSS file, one canonical assembler, source history untouched.
             self.assertEqual((source/"index.html").read_text(encoding="utf-8"),html_before)
             self.assertEqual((source/"assets/mixer-chrome-material.css").read_bytes(),chrome_before)
-            self.assertEqual(len(list(assets.iterdir())),2)
+            self.assertEqual((source/"assets/mixer-contextual-buttons.css").read_bytes(),contextual_before)
+            self.assertNotIn("#mixContext{display:none", (assets/"mixer-contextual-buttons.css").read_text(encoding="utf-8"))
+            self.assertEqual(len(list(assets.iterdir())),3)
     def test_all_floating_windows_share_close_and_readback_power_chrome(self):
         assets=ROOT/"site/preview-v2/assets"
         shared=(assets/"mixer-contextual-buttons.css").read_text(encoding="utf-8")
