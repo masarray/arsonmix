@@ -11551,10 +11551,10 @@ private:
             // against the actual native route, never against UI appearance.
             const bool arm=bool(value);
             juce::String fault;
+            if (arm && (nativeShowBusy_ || studioBackupBusy_))
+                fault="Finish Show/backup work before arming hardware OUTPUT.";
             if (arm && deviceApply_.busy())
                 fault="Audio configuration is finishing · retry Resume when ready.";
-            if (arm && fault.isEmpty() && (nativeShowBusy_ || studioBackupBusy_))
-                fault="Finish Show/backup work before arming hardware OUTPUT.";
             const auto expectedEpoch=args.getProperty("expectedEpoch",juce::var());
             const auto expectedRevision=args.getProperty("expectedRevision",juce::var());
             if(arm && retainedOfflineFxActive_ && fault.isEmpty())
