@@ -48,10 +48,13 @@ def physical(page,density,width):
     assert stereo.count()>=2,(width,density,"stereo lamps")
 
 def interactions(page):
-    # V50 operator workflow: formerly two-row M3 controls are in WIRE Setup.
-    title=page.locator(".mixer-title")
-    assert abs(title.bounding_box()["height"]-27)<=2,("V50 status title height",page.viewport_size)
+    # The approved compact ribbon replaces the redundant legacy mixer title.
+    assert page.locator(".mixer-title").count()==0
     assert page.locator("#mixerTitleToggle").count()==0
+    bar=page.locator("#armix-ribbon-commands")
+    assert abs(bar.bounding_box()["height"]-42)<=1,("approved ribbon height",page.viewport_size)
+    assert page.locator("#mixContext").is_visible()
+    assert page.locator("#ribbon-tab-mixer").get_attribute("aria-selected")=="true"
     config_button=page.locator("#wireConfigToggle")
     open_wire_config(page)
     config=page.locator("#wireConfigWindow")
@@ -67,11 +70,11 @@ def interactions(page):
     menu=page.locator("#moreTools")
     menu.locator(":scope > summary").click()
     assert menu.evaluate("e=>e.open")
-    # Popup legitimately overlays part of the title. Click an actual uncovered
-    # point outside it (not a forced click through the menu).
-    target=page.locator(".mixer-title")
+    # The current status readout is the inert, visible outside target.
+    # Verify the actual hit before clicking; never click through an overlay.
+    target=page.locator("#mixContext")
     box=target.bounding_box()
-    point={"x":box["width"]-12,"y":box["height"]/2}
+    point={"x":box["width"]/2,"y":box["height"]/2}
     assert target.evaluate("""(e,p)=>{
       const r=e.getBoundingClientRect(), hit=document.elementFromPoint(r.x+p.x,r.y+p.y);
       return e.contains(hit)&&!hit.closest('#moreTools');

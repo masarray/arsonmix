@@ -10,6 +10,14 @@ def apply_clean_ribbon(html: str, assets: Path) -> str:
         if html.count(anchor) != 1:
             raise ValueError("Clean Ribbon V6 bank glyph anchor drift: " + old)
         html = html.replace(anchor, '<path d="' + new + '"/>', 1)
+    # Navigating a category is not an unrelated mixer command. Keep the
+    # pinned OUT through the cascade until a real action or click-away;
+    # scope the exemption to actual category buttons, not the whole menu.
+    old = "#moreTools > summary,[data-wire-open],#routeChoice"
+    new = "#moreTools > summary,#moreTools [data-menu-category],[data-wire-open],#routeChoice"
+    if html.count(old) != 1:
+        raise ValueError("Clean Ribbon V6 WIRE navigation anchor drift")
+    html = html.replace(old, new, 1)
     ribbon_css = Path(__file__).with_name("clean_ribbon_v6.css").read_text(encoding="utf-8")
     chrome = assets / "mixer-chrome-material.css"
     chrome.write_text(chrome.read_text(encoding="utf-8")+"\n"+ribbon_css+"\n",encoding="utf-8")
