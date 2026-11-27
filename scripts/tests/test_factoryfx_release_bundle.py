@@ -135,6 +135,24 @@ class BundleTests(unittest.TestCase):
             with zipfile.ZipFile(self.root / "wrappers.zip") as z, self.assertRaises(ValueError):
                 bundle.zip_members(z, "ArSonEQ.vst3")
 
+    def test_known_legacy_kupik_flat_module_is_normalized_not_mixed(self):
+        name = "ArSonKuPik.vst3"
+        path = self.root / "flat.zip"
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("ArSonKuPik-v0.5.26/" + name, b"fixture")
+        with zipfile.ZipFile(path) as z:
+            self.assertEqual(bundle.zip_members(z, name)[0][1],
+                             "Contents/x86_64-win/" + name)
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr(name, b"fixture")
+            z.writestr(name + "/Contents/Resources/moduleinfo.json", b"{}")
+        with zipfile.ZipFile(path) as z, self.assertRaisesRegex(ValueError, "mixed flat"):
+            bundle.zip_members(z, name)
+        with zipfile.ZipFile(path, "w") as z:
+            z.writestr("ArSonEQ.vst3", b"fixture")
+        with zipfile.ZipFile(path) as z, self.assertRaises(ValueError):
+            bundle.zip_members(z, "ArSonEQ.vst3")
+
     def test_extra_factory_file_is_rejected(self):
         with patch.object(bundle, "download_release",
                           side_effect=lambda _p, target: shutil.copyfile(self.archive, target)):

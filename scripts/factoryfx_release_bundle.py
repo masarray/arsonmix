@@ -122,6 +122,7 @@ def zip_members(z, bundle):
     seen = set()
     total = 0
     selected_root = None
+    selected_layout = None
     for info in z.infolist():
         # Ignore zip folder markers and unrelated top-level build metadata.
         if info.is_dir():
@@ -154,8 +155,18 @@ def zip_members(z, bundle):
             fail("multiple VST3 archive roots")
         selected_root = root
         sub = parts[i + 1:]
+        # Some legacy Windows VST3 releases contain a single .vst3 PE.
+        # Normalize to the registry's standard x64 bundle path without
+        # changing the module bytes. Only the known KuPik legacy supplier
+        # is admitted; a real Windows host probe still must qualify it.
+        layout = "bundle" if sub else "legacy-flat"
+        if selected_layout is not None and layout != selected_layout:
+            fail("mixed flat and directory VST3 layouts")
+        selected_layout = layout
         if not sub:
-            fail("Windows JUCE VST3 must be a bundle directory")
+            if bundle != OWNED["arsonkupik-enhancer"][2]:
+                fail("Windows JUCE VST3 must be a bundle directory")
+            sub = ["Contents", "x86_64-win", bundle]
         rel = "/".join(sub)
         lower = rel.lower()
         if lower in seen:

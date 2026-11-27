@@ -77,6 +77,9 @@ def inspect_candidate(p, work, host=None):
     target.mkdir()
     with zipfile.ZipFile(archive) as z:
         members = bundle.zip_members(z, name)
+        legacy_flat = any(info.filename.replace("\\", "/").split("/")[-1] == name
+                          and len(info.filename.replace("\\", "/").split("/")) <= 2
+                          for info, _ in members)
         for info, relative in members:
             f = target.joinpath(*relative.split("/"))
             f.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +107,7 @@ def inspect_candidate(p, work, host=None):
                    if c.get("Category") == "Audio Module Class" and bundle.HEX(c.get("CID"), 32)]
     result = {"productId": pid, "artifactSha256": bundle.sha256(archive), "archiveStatus": "verified-x64",
               "sourceCommitClaim": p["sourceCommit"], "moduleSha256": bundle.sha256(binary),
+              "sourceLayout": "legacy-flat-normalized" if legacy_flat else "bundle",
               "moduleInfoAudioClasses": classes, "archiveEvidence": evidence,
               "archiveBuildCommitMentions": sorted(commit_mentions),
               "sourceCommitMentioned": p["sourceCommit"].lower() in {v.lower() for v in commit_mentions},
@@ -139,7 +143,7 @@ def main():
     args.output.write_text(json.dumps({"schemaVersion": 1, "candidates": results}, indent=2) + "\n", encoding="utf-8")
     for row in results:
         # Visible bounded evidence, no credentials or arbitrary remote text.
-        print(json.dumps({k: row[k] for k in ("productId", "archiveStatus", "error", "moduleInfoAudioClasses", "sourceCommitMentioned", "archiveBuildCommitMentions") if k in row}, ensure_ascii=True))
+        print(json.dumps({k: row[k] for k in ("productId", "archiveStatus", "error", "moduleInfoAudioClasses", "sourceCommitMentioned", "archiveBuildCommitMentions", "sourceLayout") if k in row}, ensure_ascii=True))
     return 1 if any(r["archiveStatus"] == "failed" for r in results) else 0
 
 if __name__ == "__main__":
