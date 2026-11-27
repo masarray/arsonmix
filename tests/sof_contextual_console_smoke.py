@@ -337,8 +337,11 @@ def run() -> None:
                     assert first.locator('button[data-hw-kind="tap"]').count() == 0
                     assert first.locator('button[data-hw-kind="mute"]').count() == 1
                     assert first.locator('button[data-hw-kind="solo"]').count() == 1
-                    assert first.locator(".fader").is_disabled(), (
-                        "A missing WIRE must not turn a fader gesture into auto-patch")
+                    assert first.locator(".fader").is_enabled(), "Unassigned SEND must remain adjustable as a draft"
+                    assert first.get_by_role("button",name="Assign PRE send").is_visible()
+                    first.locator(".fader").fill("-12")
+                    assert "DRAFT" in first.locator(".sof-info small").inner_text()
+                    assert "NO SEND" in first.locator(".sof-badge").inner_text()
                     assert page.locator("#master .strip").count() == 1
                     assert page.locator("#wireLayer").count() == 1
 
@@ -347,7 +350,7 @@ def run() -> None:
                     sprite = tap.evaluate(
                         "el => getComputedStyle(el, '::before').backgroundImage")
                     assert "harmonice-thin-flat-v9-approved-off-shadow-57x30.png" in sprite, sprite
-                    assert tap.is_disabled()
+                    assert tap.is_enabled()
 
                     # SOF target is a stable strip ID, never a BUS display name.
                     target_select = page.locator("#sofTarget")
@@ -355,8 +358,8 @@ def run() -> None:
                     assert initial_id.isdigit(), (width, initial_id)
                     expected_name = target_select.locator("option:checked").inner_text()
                     assert page.locator("#mixContext").inner_text() == "SEND MIX → " + expected_name
-                    assert first.locator(".mx-sof-on-key").get_attribute("aria-pressed") == "false", (
-                        "An absent SEND is not secretly ON")
+                    assert "NO SEND" in first.locator(".sof-badge").inner_text(), (
+                        "An absent SEND is not secretly connected")
 
                     # Returning to MAIN must keep FX/GAIN selection and actual fader mix.
                     page.locator("#sofToggle").click()

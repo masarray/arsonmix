@@ -524,7 +524,7 @@
     }
   }
   function queueLogicalSendGain(edge,db,final){
-    if(!logicalView||!edge||!Number.isFinite(db)||db< -60||db>6)return false;
+    if(!logicalView||logicalView.readOnly||!edge||!logicalView.graph.capabilities.supportedOps.includes("SET_WIRE_GAIN")||!Number.isFinite(db)||db< -60||db>6)return false;
     if(final){
       latestLogicalSendGains.set(edge.edgeId,{source:edge.from,to:edge.to,workspaceToken:logicalView.workspaceToken,
         gain:db<=-60?0:Math.pow(10,db/20),db});
@@ -1146,6 +1146,7 @@
     // Rack/slot bypass is applied in-place from independent readback below.
     const structure=JSON.stringify([
       appearanceRevision, // cosmetic readback invalidates DOM projection
+      next.logical,next.admitted,next.readOnly,next.graph.capabilities.supportedOps,
       next.graph.channels.map(ch=>[ch.id,ch.role,ch.name,
         ch.processingFormat,ch.source,ch.primaryOutId,
         ch.inserts?.map(fx=>[fx.id,fx.catalogId,fx.name])]),
@@ -6361,7 +6362,8 @@
       }
       if(field==="wireGain"){
         const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
-        if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))
+        const logicalEdge=logicalView&&edge?wireVM.parallelEdge(logicalView.graph,nativeByUiId.get(edge.sourceId),wireByUiId.get(edge.id)):null;
+        if(!edge||!(logicalView?queueLogicalSendGain(logicalEdge,Number(el.value),event.type==="change"):requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)})))
           status("WIRE gain unavailable · accepted parallel send required");
         else scope.paintWireKnob?.(el,Number(el.value));
         return true;
@@ -6744,6 +6746,8 @@
         flags.acceptedGraphConnected,id,Number(row?.controls?.wireSumGainDb)).kind==="READY";
     },
     canWireGain(uiEdgeId,uiSourceId){
+      if(logicalView)return !logicalView.readOnly&&logicalView.graph.capabilities.supportedOps.includes("SET_WIRE_GAIN")&&
+        !!wireVM.parallelEdge(logicalView.graph,nativeByUiId.get(uiSourceId),wireByUiId.get(uiEdgeId));
       return !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
     },
     canWireTap(uiEdgeId,uiSourceId){

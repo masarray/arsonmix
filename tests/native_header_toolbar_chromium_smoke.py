@@ -138,7 +138,7 @@ def main():
             assert file_group.all_text_contents() == ["New", "Save", "Open"], width
             new = menu.locator("[data-native-new-project]")
             assert new.count() == 1 and new.is_visible(), width
-            page.screenshot(path=f"arsonmix-application-menu-{width}.png")
+            page.screenshot(path=f"operator-ux-application-menu-{width}.png")
             assert new.get_by_role("img").count() == 0  # decorative icon
             image = new.locator("img")
             assert image.get_attribute("alt") == ""
