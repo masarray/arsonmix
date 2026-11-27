@@ -92,10 +92,10 @@ public:
         return commit(std::move(candidate),std::move(result));
     }
 
-    Result createBus(std::uint64_t expected,std::string name,ChannelRole role) {
+    Result createBus(std::uint64_t expected,std::string name,ChannelRole role,bool connectMain=true) {
         if(!initialized_)return {ChannelEditFault::invalidAction,revision(),{}};
         auto candidate=roster_;
-        auto result=candidate.createStandaloneBus(expected,std::move(name),role);
+        auto result=candidate.createStandaloneBus(expected,std::move(name),role,connectMain);
         return commit(std::move(candidate),std::move(result));
     }
 

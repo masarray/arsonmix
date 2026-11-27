@@ -322,6 +322,7 @@
         !pending.beforeIds?.includes(pending.createdId)&&
         matches.length===1&&
         matches[0].role===ROSTER_OPS[pending.operation].role&&
+        (pending.connectMain!==false||!matches[0].primaryOutId)&&
         (!pending.selection?.length||pending.selection.every(id=>g.channels.some(ch=>ch.id===id&&ch.primaryOutId===pending.createdId)))?
         "CONFIRMED":"WAIT";
     return (pending.operation==="DELETE_CHANNEL"||

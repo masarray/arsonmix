@@ -19,6 +19,26 @@ int main() {
     valid(logical.roster().size()==15);
     valid(logical.revision()==1);
 
+    {
+        DeviceIndependentMixerSession mixes;
+        const auto aux=mixes.createBus(mixes.revision(),"Headphones",ChannelRole::group,false);
+        valid(aux.accepted()&&aux.createdIds.size()==1);
+        const auto* auxRow=mixes.roster().find(aux.createdIds.front());
+        valid(auxRow&&auxRow->sends.empty());
+        const ChannelId selected[]={id(1),id(2)};
+        const auto group=mixes.createGroupForSelected(mixes.revision(),selected,"Vocals");
+        valid(group.accepted()&&group.createdIds.size()==1);
+        for(auto source:selected){
+            const auto* row=mixes.roster().find(source);
+            valid(row&&row->sends.size()==1&&row->sends.front().primaryOutput&&
+                  row->sends.front().destination==group.createdIds.front());
+        }
+        const auto revision=mixes.revision();
+        const ChannelId invalid[]={id(1),mixes.mainId()};
+        valid(!mixes.createGroupForSelected(revision,invalid,"Invalid").accepted());
+        valid(mixes.revision()==revision);
+    }
+
     // 1) A genuine session document needs NO ASIO, WASAPI, fake pin,
     // callback, graph publisher or monitor before a normal track edit.
     ChannelEdit create;

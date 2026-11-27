@@ -728,6 +728,7 @@
       case "CREATE_GROUP":
         return validId(p.createdId) && graph.channels.some(ch=>
           ch.id===p.createdId && ch.role===(p.operation==="CREATE_CHANNEL"?"INPUT":"GROUP")) &&
+          (v.connectMain!==false||graph.channels.some(ch=>ch.id===p.createdId&&!ch.primaryOutId)) &&
           (v.selection===undefined||(Array.isArray(v.selection)&&v.selection.length>0&&v.selection.every(id=>
             graph.channels.some(ch=>ch.id===id&&ch.primaryOutId===p.createdId))));
       case "DELETE_CHANNEL":

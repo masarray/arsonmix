@@ -8950,7 +8950,8 @@ private:
                             armix::mixer::ChannelRole::group,
                             std::span<const armix::mixer::ChannelId>{selection},
                             (args.getProperty("purpose","").toString()=="FX"?"FX Bus ":
-                             args.getProperty("purpose","").toString()=="GROUP"?"Group Bus ":"Aux Bus ")+std::to_string(count+1),1.f);
+                             args.getProperty("purpose","").toString()=="GROUP"?"Group Bus ":"Aux Bus ")+std::to_string(count+1),1.f,{},
+                            args.getProperty("purpose","").toString()!="AUX");
                     });
                 }
             }

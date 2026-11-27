@@ -1783,7 +1783,7 @@ public:
                   const std::string& name,float sendGain,
                   armix::mixer::ChannelId remove={},
                   bool outputsDisarmed=false,
-                  const std::function<void()>& beforePublish={}) {
+                  const std::function<void()>& beforePublish={},bool connectMain=true) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1817,7 +1817,7 @@ public:
                     expectedRosterRevision,remove);
             } else if(selection.empty()) {
                 changed=next.createStandaloneBus(
-                    expectedRosterRevision,name,role);
+                    expectedRosterRevision,name,role,connectMain);
             } else {
                 changed=next.createBusForSelected(
                     expectedRosterRevision,selection,name,role,sendGain);

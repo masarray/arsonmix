@@ -558,7 +558,7 @@ public:
     // stereo ChannelId, OUT -> MAIN, without borrowing an input or requiring
     // a selection. CONTROL only; native graph publication is separate.
     ChannelEditResult createStandaloneBus(std::uint64_t expectedRevision,
-                                         std::string name,ChannelRole role) {
+                                         std::string name,ChannelRole role,bool connectMain=true) {
         ChannelEditResult result;result.revision=revision_;
         if(expectedRevision!=revision_) {
             result.fault=ChannelEditFault::staleRevision;return result;
@@ -582,7 +582,7 @@ public:
         ChannelStripDefinition bus;
         bus.id={nextId_};bus.role=role;bus.format=ProcessingFormat::stereo;
         bus.name=std::move(name);
-        bus.sends.push_back({mainIt->id,1.f,false,0.f,true});
+        if(connectMain)bus.sends.push_back({mainIt->id,1.f,false,0.f,true});
         const auto position=static_cast<std::size_t>(mainIt-candidate.begin());
         candidate.insert(candidate.begin()+static_cast<std::ptrdiff_t>(position),
                          std::move(bus));

@@ -2314,7 +2314,7 @@ public:
            armix::mixer::ChannelRole role,
            std::span<const armix::mixer::ChannelId> selected,
            const std::string& name,float gain,
-           armix::mixer::ChannelId remove={}) {
+           armix::mixer::ChannelId remove={},bool connectMain=true) {
         LiveDryRoutingLab::NativeBusResult rejected;
         rejected.error="NATIVE_BUS_DEVICE_UNAVAILABLE";
         if(independent_.active() || !attached_ || secondaryOutput_.armed() ||
@@ -2335,7 +2335,7 @@ public:
                     // Add BUS. A late output gate covers only publication.
                     if(wasMonitoring)topologyPublicationMute_.store(
                         true,std::memory_order_release);
-                });
+                },connectMain);
             if(publishing) {
                 if(wasMonitoring &&
                    !armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(

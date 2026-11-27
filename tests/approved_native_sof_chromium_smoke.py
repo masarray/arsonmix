@@ -191,7 +191,7 @@ def exercise(browser, out, width, height):
     # patch, a ghost send, nor an unintended MAIN fader write.
     state["graph"].update(revision="4",rosterRevision="4")
     state["mixerSession"].update(routeRevision="4",rosterRevision="4")
-    state["graph"]["edges"].pop(1)
+    removed_send=state["graph"]["edges"].pop(1)
     emit(page,"arMixConsoleSnapshot",state)
     assert "NO SEND" in source.locator(".sof-badge").inner_text()
     assert source.get_by_role("button",name="Assign PRE send").is_enabled()
@@ -205,6 +205,14 @@ def exercise(browser, out, width, height):
     change=assignment["payload"]["changes"][0]
     assert change=={"op":"CONNECT","from":SOURCE,"to":RECEIVER,"tap":"PRE_FADER","gainLinear":0},change
     assert source.locator(".fader").is_disabled(), "No speculative graph"
+    state["graph"].update(revision="5",rosterRevision="5")
+    state["mixerSession"].update(routeRevision="5",rosterRevision="5")
+    ack(page,state,assignment)
+    assert source.locator(".fader").is_disabled(), "ACK alone is not routing evidence"
+    state["graph"]["edges"].append({**removed_send,"edgeId":"9223372036854775899","tap":"PRE_FADER","gainLinear":0})
+    emit(page,"arMixConsoleSnapshot",state)
+    assert source.locator(".fader").is_enabled()
+    assert float(source.locator(".fader").input_value())==-60
     assert intent_list(page,"SET_FADER")==[]
 
     toggle.click()

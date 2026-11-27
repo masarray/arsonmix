@@ -142,10 +142,12 @@ public:
             const auto name=text.isNotEmpty()?text.toStdString():
                 ("Bus "+std::to_string(editor_.roster().size()));
             const auto rawSelection=payload.getProperty("selection",{});
-            if(rawSelection.isVoid())result=editor_.createBus(expected,name,Role::group);
+            const auto connectMain=payload.getProperty("connectMain",juce::var(true));
+            if(!connectMain.isBool())return bad("INVALID_GROUP_OUTPUT");
+            if(rawSelection.isVoid())result=editor_.createBus(expected,name,Role::group,static_cast<bool>(connectMain));
             else {
                 const auto* ids=rawSelection.getArray();
-                if(!ids||ids->isEmpty()||static_cast<std::size_t>(ids->size())>editor_.roster().size())
+                if(!static_cast<bool>(connectMain)||!ids||ids->isEmpty()||static_cast<std::size_t>(ids->size())>editor_.roster().size())
                     return bad("INVALID_GROUP_SELECTION");
                 std::vector<ChannelId> selected;
                 for(const auto& raw:*ids){

@@ -7946,3 +7946,14 @@ test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction ev
  assert.match(b,/workspaceGeneration:hardware\?\.raw\?\.workspaceGeneration/);
  assert.match(b,/scope\?\.cancelNativeSessionGestures\?\.\(\);[\s\S]*?extraPending=null;extraError="";/);
 });
+
+ test("unified route diagnostics report accepted topology, not physical audibility",()=>{
+ const ch=(id,name,mute=false)=>({id,name,controls:{mute,faderDb:0}});
+ const snapshot={admitted:true,graph:{mainChannelId:"3",channels:[ch("1","Vocal"),ch("2","AUX"),ch("3","MAIN")],edges:[{from:"1",to:"2",enabled:true,gainLinear:1},{from:"2",to:"3",enabled:true,gainLinear:0}]}};
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+ snapshot.graph.edges[1].gainLinear=1;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/active route to MAIN/);
+ snapshot.graph.channels[1].controls.mute=true;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+ assert.match(wireVM.routeDiagnostic({...snapshot,retained:true},"1"),/Audio unavailable/);
+ });

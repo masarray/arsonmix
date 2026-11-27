@@ -1790,7 +1790,9 @@
       nativeToast(strip.name+" added · choose its IN to receive audio");
     }else{
       pendingBusCreate=null;syncAddTrack(next);
-      status("BUS added · native ChannelId PCM and WIRE readback verified");
+      const strip=scope?.tracks?.find(t=>t.id===uiByNativeId.get(p.createdId));
+      if(strip)scope?.revealTrack?.(strip);
+      status(p.connectMain===false?"AUX added · no MAIN route · choose destination":"BUS added · native ChannelId PCM and WIRE readback verified");
     }
   }
   function requestNativeBusCreate(track=false,fxBus=false){
@@ -1800,7 +1802,7 @@
     const prefix=purpose==="FX"?"FX Bus ":purpose==="GROUP"?"Group Bus ":"Aux Bus ";
     if(logicalView)
       return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,
-        track?{}:{name:prefix+(logicalView.graph.channels.length+1),...(selection.length?{selection}:{})}).ok;
+        track?{}:{name:prefix+(logicalView.graph.channels.length+1),connectMain:purpose!=="AUX",...(selection.length?{selection}:{})}).ok;
     const accepted=controller?.state()?.current,operation=
       track?"CREATE_CHANNEL":"CREATE_GROUP";
     const plan=stripVM.rosterMutationPlan(accepted,{
@@ -1810,11 +1812,11 @@
     });
     if(plan.kind!=="READY")return false;
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
-    pendingBusCreate={requestId,track,...plan.pending,selection};
+    pendingBusCreate={requestId,track,...plan.pending,selection,connectMain:track||purpose!=="AUX"};
     syncAddTrack(accepted);
     backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose,...(selection.length?{selection}:{})});
     const label=track?"Audio Track":"BUS";
-    status("Adding "+label+" → MAIN · native PCM pending");
+    status("Adding "+label+(track||purpose!=="AUX"?" → MAIN":" · choose a separate output")+" · native PCM pending");
     window.setTimeout(()=>{
       if(pendingBusCreate?.requestId!==requestId)return;
       pendingBusCreate=null;
@@ -7053,7 +7055,7 @@
     }
     for(const [id,label] of [["addBus","+ AUX"],["addGroupBus","+ Group BUS"],["addGroupSelected","Group selected…"],["addFx","+ FX Bus"]]){
       const el=document.getElementById(id);if(el){el.textContent=label;el.hidden=false;el.disabled=true;
-        el.title="Create a receiving GROUP with independent routing and insert rack";}
+        el.title=id==="addBus"?"Independent AUX · starts with no MAIN route":id==="addFx"?"Shared FX bus · configure a wet-only insert before raising sends":"Create a receiving GROUP with independent routing and insert rack";}
     }
     for(const [id,reason] of Object.entries(nativeReferenceOnly)){
       const el=document.getElementById(id);
