@@ -5094,7 +5094,7 @@
       portableReady=state.portable===true&&state.status==="PORTABLE_READY";
       review.textContent=portableReady?"Open download folder":"Review update";
       review.hidden=state.supported!==true||(!portableReady&&state.status!=="READY");
-      q(".armix-update-safety").textContent=state.portable===true?"Portable download only · extract separately. No automatic replacement of the running app or Studio.":"Automatic checks · verified updates · installation only after normal close. Live audio stays available.";
+      q(".armix-update-safety").textContent=state.managedPortable===true?"Verified portable update · activation after normal close · previous version retained. Studio stays in place.":state.portable===true?"Portable download only · extract separately. No automatic replacement of the running app or Studio.":"Automatic checks · verified updates · installation only after normal close. Live audio stays available.";
     });
     trigger.addEventListener("click",()=>{
       const more=trigger.closest("details");if(more)more.open=false;

@@ -13121,6 +13121,27 @@ public:
             return;
         }
 #if defined(_WIN32)
+        const bool supervised=juce::SystemStats::getEnvironmentVariable("ARSONMIX_PORTABLE_SUPERVISED",{})=="1";
+        if(!supervised && !isAutoUpdateHealthProbe() &&
+           armix::storage::PortableWorkspace::hasManagedPayloadShape(appFolder)){
+            setApplicationReturnValue(1);quit();return;
+        }
+        if(!supervised && !isAutoUpdateHealthProbe() &&
+           armix::storage::PortableWorkspace::launcherEnabledAt(appFolder)){
+            const auto shell=juce::File::getSpecialLocation(juce::File::windowsSystemDirectory)
+                .getChildFile("WindowsPowerShell/v1.0/powershell.exe");
+            const auto script=appFolder.getChildFile("ArSonMixAutoUpdate.ps1");
+            juce::StringArray command {shell.getFullPathName(),"-NoLogo","-NoProfile","-NonInteractive",
+                "-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",script.getFullPathName(),
+                "-LaunchPortable","-OwnerProcessId",juce::String(static_cast<int>(::GetCurrentProcessId()))};
+            if(commandLine.trim()=="--archive-mixer-session" || commandLine.trim()=="--safe-webview-profile"){
+                command.add("-PortableLaunchArgument");command.add(commandLine.trim());
+            }
+            juce::ChildProcess launcher;
+            if(!shell.existsAsFile()||!script.existsAsFile()||!launcher.start(command,0))
+                setApplicationReturnValue(1);
+            quit();return;
+        }
         // Per-user-session installer handshake. An Inno update requests the
         // ordinary JUCE quit path on the MESSAGE thread: the native mixer
         // persists accepted .smix state before the installer replaces the PE.
@@ -13369,6 +13390,8 @@ private:
         const auto local=juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{});
         const bool portable=smartUpdaterPortableEligible();
         response->setProperty("portable",portable);
+        const bool managedPortable=portable&&armix::storage::PortableWorkspace::launcherEnabledAt(armix::storage::PortableWorkspace::portableRootFor(installDir));
+        response->setProperty("managedPortable",managedPortable);
         const bool eligible=(smartUpdaterInstallEligible()||portable)&&local.isNotEmpty()&&
             installDir.getChildFile("UpdateVerifier").getChildFile("gh.exe").existsAsFile()&&
             installDir.getChildFile("UpdateVerifier").getChildFile("verifier.json").existsAsFile();
@@ -13430,7 +13453,16 @@ private:
             if(archive.existsAsFile() && archive.getSize()==static_cast<juce::int64>(state.getProperty("newAsset",{}).getProperty("size",0)))
             {
                 status="PORTABLE_READY";
-                if(operation=="OPEN_DOWNLOADS")downloads.revealToUser();
+                if(managedPortable){
+                    const auto approval=juce::JSON::parse(smallText(approvalFile,2048));
+                    const auto digest=state.getProperty("newAsset",{}).getProperty("digest",{}).toString();
+                    const bool approved=approval.getProperty("candidateTag",{}).toString()==tag &&
+                        approval.getProperty("candidateSha",{})==state.getProperty("candidateSha",{}) &&
+                        approval.getProperty("previousSha",{})==state.getProperty("previousSha",{}) &&
+                        digest.length()==71 && approval.getProperty("digest",{}).toString()==digest;
+                    status=approved?"APPROVED":"READY";
+                    if(operation=="REVIEW"&&!approved)serviceSmartUpdateAcknowledgement(true);
+                }else if(operation=="OPEN_DOWNLOADS")downloads.revealToUser();
             }
             else status="DEFERRED";
         }
@@ -13475,21 +13507,27 @@ private:
     {
         // The separately running updater has already staged and SHA-checked
         // both packages. Never claim a prompt can validate publisher identity.
-        if (!window_ || armix::storage::PortableWorkspace::isPortableAt(armix::storage::PortableWorkspace::executableDirectory()))
-            return;
+        if (!window_) return;
+        const auto installDir=armix::storage::PortableWorkspace::executableDirectory();
+        const bool portable=armix::storage::PortableWorkspace::isPortableAt(installDir);
+        const auto stable=armix::storage::PortableWorkspace::portableRootFor(installDir);
+        if(portable && (stable==juce::File() || !armix::storage::PortableWorkspace::launcherEnabledAt(stable)))return;
         const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
         if (local.isEmpty())
             return;
-        const auto folder = juce::File (local).getChildFile ("ArSonMix")
-                                               .getChildFile ("Updates");
+        const auto folder = portable?armix::storage::PortableWorkspace::updateRootFor(installDir):
+            juce::File (local).getChildFile ("ArSonMix").getChildFile ("Updates");
         const auto stateFile = folder.getChildFile ("state.json");
         if (!stateFile.existsAsFile() || stateFile.getSize() > 8192)
             return;
         const auto state = juce::JSON::parse (stateFile.loadFileAsString());
         const auto* object = state.getDynamicObject();
-        if (object == nullptr || object->getProperty ("phase").toString() != "staged"
-            || object->getProperty ("operation").toString() != "upgrade")
+        if (object == nullptr || object->getProperty ("phase").toString() != (portable?"portable-ready":"staged")
+            || (!portable && object->getProperty ("operation").toString() != "upgrade"))
             return;
+        const auto digest=portable?state.getProperty("newAsset",{}).getProperty("digest",{}).toString():juce::String{};
+        if(portable && (digest.length()!=71 || !digest.startsWith("sha256:") ||
+            !digest.substring(7).containsOnly("0123456789abcdef")))return;
         const auto tag = object->getProperty ("candidateTag").toString();
         const auto candidate = object->getProperty ("candidateSha").toString();
         const auto previous = object->getProperty ("previousSha").toString();
@@ -13506,7 +13544,8 @@ private:
             if (const auto* ack = saved.getDynamicObject())
                 if (ack->getProperty ("candidateTag").toString() == tag
                     && ack->getProperty ("candidateSha").toString() == candidate
-                    && ack->getProperty ("previousSha").toString() == previous)
+                    && ack->getProperty ("previousSha").toString() == previous
+                    && (!portable || ack->getProperty("digest").toString()==digest))
                     return; // Already acknowledged; no repeat dialog.
         }
         if (!explicitReview && lastUpdatePromptedSha_ == candidate)
@@ -13518,12 +13557,13 @@ private:
         // This branded floating notice is NON-modal:
         // a performer can still move faders or patch WIRE during a live session.
         updateNotice_ = std::make_unique<ArSonMixUpdateNotice> (tag,
-            [approvalFile, tag, candidate, previous]
+            [approvalFile, tag, candidate, previous, digest]
             {
                 auto approval = juce::DynamicObject::Ptr (new juce::DynamicObject());
                 approval->setProperty ("candidateTag", tag);
                 approval->setProperty ("candidateSha", candidate);
                 approval->setProperty ("previousSha", previous);
+                if(digest.isNotEmpty())approval->setProperty("digest",digest);
                 // A usability acknowledgement only. PowerShell verifies the
                 // published release, both installer hashes and process locks.
                 return approvalFile.replaceWithText (

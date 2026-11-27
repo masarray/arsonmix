@@ -7,9 +7,12 @@ param([ValidateRange(0,2147483647)][int]$OwnerProcessId=0,
       [switch]$ApplyStaged,
       [switch]$RecoveryMode,
       [switch]$CheckNow,
-      [switch]$PreparePortable)
+      [switch]$PreparePortable,
+      [switch]$LaunchPortable,
+      [ValidateSet('','--archive-mixer-session','--safe-webview-profile')][string]$PortableLaunchArgument='')
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+if($LaunchPortable -and ($CheckNow -or $PreparePortable -or $ApplyStaged -or $RecoveryMode -or $PolicySelfTest)){throw 'LaunchPortable is launch-only'}
 if($CheckNow -and ($ApplyStaged -or $RecoveryMode -or $PolicySelfTest)){throw 'CheckNow is check-only'}
 if($PreparePortable -and ($CheckNow -or $ApplyStaged -or $RecoveryMode -or $PolicySelfTest)){throw 'PreparePortable is preparation-only'}
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
@@ -483,10 +486,10 @@ function Test-VerifiedRepositoryIdentity([object]$results,[string]$repositoryId=
     }
     return $false
 }
-function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha,[switch]$PortableZip) {
+function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha,[switch]$PortableZip,[string]$SaveProof='',[string]$VerifierRoot=$PSScriptRoot) {
     $arguments=Get-AttestationArguments $path $tag $sha -PortableZip:$PortableZip
     if($null -eq $arguments){Fail 'Invalid attestation subject identity'}
-    $verifier=Get-AttestationVerifier
+    $verifier=Get-AttestationVerifier $VerifierRoot
     if($null -eq $verifier){Fail 'Bundled update verifier missing or damaged; repair required'}
     # Private working directory prevents use of an existing gh config or token.
     # TUF refreshes the trusted roots through the pinned verifier, not through
@@ -495,7 +498,7 @@ function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha,[sw
     [IO.Directory]::CreateDirectory($private) | Out-Null
     $lease=[IO.File]::Open($verifier,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
-        if((Get-AttestationVerifier) -cne $verifier){Fail 'Bundled verifier changed before execution'}
+        if((Get-AttestationVerifier $VerifierRoot) -cne $verifier){Fail 'Bundled verifier changed before execution'}
         $bundle=Join-Path $private 'bundle.jsonl'
         $trusted=Join-Path $private 'trusted_root.jsonl'
         $digest=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -505,6 +508,19 @@ function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha,[sw
         [IO.File]::WriteAllText($trusted,$roots,[Text.UTF8Encoding]::new($false))
         $json=Invoke-IsolatedVerifier $verifier ($arguments+' --hostname github.com --bundle "'+$bundle+'" --custom-trusted-root "'+$trusted+'" --format json') $private
         if(-not (Test-VerifiedRepositoryIdentity ($json | ConvertFrom-Json))){Fail 'Attestation repository identity mismatch'}
+        if($SaveProof){
+            # The trust root is obtained by the pinned local verifier, never
+            # from the ZIP. Only publish proof after actual signature success.
+            if(Test-Path -LiteralPath $SaveProof){throw 'Portable proof already exists'}
+            [IO.Directory]::CreateDirectory($SaveProof)|Out-Null
+            foreach($name in @('bundle.jsonl','trusted_root.jsonl')){
+                $from=Join-Path $private $name
+                $to=Join-Path $SaveProof $name
+                [IO.File]::Copy($from,$to,$false)
+                $stream=[IO.File]::Open($to,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+                try{$stream.Flush($true)}finally{$stream.Dispose()}
+            }
+        }
     } finally {
         $lease.Dispose()
         Remove-Item -LiteralPath $private -Recurse -Force -ErrorAction SilentlyContinue
@@ -609,7 +625,7 @@ function Publish-VerifiedPortableDownload([string]$stageFile,[string]$destinatio
     [IO.File]::Move($stageFile,$destination)
 }
 function Test-PortableCacheLayout {
-    foreach($folder in @($PSScriptRoot,$root,(Join-Path $root 'stage'),(Join-Path $root 'downloads'),(Join-Path $root 'payloads'))){
+    foreach($folder in @($PSScriptRoot,$root,(Join-Path $root 'stage'),(Join-Path $root 'downloads'),(Join-Path $root 'payloads'),(Join-Path $root 'proofs'),(Join-Path $root 'selectors'))){
         if(Test-Path -LiteralPath $folder){
             $info=Get-Item -LiteralPath $folder -Force
             if(-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $false}
@@ -837,6 +853,229 @@ function Write-AtomicUpdateJson([string]$path,[object]$receipt){
     }
 }
 
+
+# Stable portable supervisor: locally trusted bootstrap, immutable version
+# directories, signed archives and append-only selection commits. No pointer
+# is an authorization to execute a downloaded file.
+function Test-PortableLauncherRoot {
+    $cap=Join-Path $portableStableRoot 'portable_launcher_v2.txt'
+    $marker=Join-Path $portableStableRoot 'portable_mode.txt'
+    return ((Test-RegularUpdateFile $cap) -and (Test-RegularUpdateFile $marker) -and
+        (Get-Item -LiteralPath $cap).Length -le 128 -and (Get-Item -LiteralPath $marker).Length -le 128 -and
+        (Get-Content -LiteralPath $cap -Raw).Trim() -ceq 'ARSONMIX_PORTABLE_LAUNCHER_V2' -and
+        (Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'ARSONMIX_PORTABLE_WORKSPACE_V1')
+}
+function Test-PortableMixerAbsent {
+    foreach($name in @('ArSonMix','ArSonMix-GUI10CH-P012-Windows-x64')){
+        $processes=[Diagnostics.Process]::GetProcessesByName($name)
+        try{if($processes.Count -gt 0){return $false}}
+        finally{foreach($item in $processes){$item.Dispose()}}
+    }
+    return $true
+}
+function Get-PortableBootstrap {
+    $build=Read-Json (Join-Path $portableStableRoot 'BUILD_PROVENANCE.json')
+    if($build.sourceCommit -cnotmatch '^[a-f0-9]{40}$'){throw 'Invalid portable bootstrap source'}
+    return [pscustomobject]@{sourceCommit=[string]$build.sourceCommit;tag='';digest='';bytes=0;proofId='';bundleHash='';rootHash=''}
+}
+function Test-PortableDescriptor([object]$value,[object]$bootstrap) {
+    try{
+        if($value.sourceCommit -cnotmatch '^[a-f0-9]{40}$'){return $false}
+        if($value.digest -ceq ''){
+            return ($value.sourceCommit -ceq $bootstrap.sourceCommit -and $value.tag -ceq '' -and
+                [long]$value.bytes -eq 0 -and $value.proofId -ceq '' -and $value.bundleHash -ceq '' -and $value.rootHash -ceq '')
+        }
+        return ($value.digest -cmatch '^sha256:[a-f0-9]{64}$' -and
+            $null -ne (Version-Key ([string]$value.tag)) -and $value.tag -cmatch '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$' -and
+            [long]$value.bytes -ge 2097152 -and [long]$value.bytes -le 209715200 -and
+            $value.proofId -cmatch '^[a-f0-9]{32}$' -and $value.bundleHash -cmatch '^[a-f0-9]{64}$' -and $value.rootHash -cmatch '^[a-f0-9]{64}$')
+    }catch{return $false}
+}
+function Get-PortableSelection([object]$bootstrap) {
+    $folder=Join-Path $root 'selectors'
+    if(-not (Test-Path -LiteralPath $folder)){
+        return [pscustomobject]@{schema='arsonmix.portable-selection.v1';generation=0;active=$bootstrap;previous=$null;blockedDigest=''}
+    }
+    if(-not (Test-PortableCacheLayout)){throw 'Unsafe portable selection folder'}
+    $records=@(Get-ChildItem -LiteralPath $folder -Force -File | Where-Object {$_.Name -cmatch '^selection-[0-9]{12}\.json$'} | Sort-Object Name -Descending)
+    if($records.Count -gt 4096){throw 'Portable selector history exceeds bound'}
+    if($records.Count -eq 0){return [pscustomobject]@{schema='arsonmix.portable-selection.v1';generation=0;active=$bootstrap;previous=$null;blockedDigest=''}}
+    $record=$records[0]
+    if(-not (Test-RegularUpdateFile $record.FullName)){throw 'Unsafe portable selector record'}
+    $state=Read-Json $record.FullName
+    if($state.schema -cne 'arsonmix.portable-selection.v1' -or
+        [long]$state.generation -ne [long]$record.Name.Substring(10,12) -or
+        -not (Test-PortableDescriptor $state.active $bootstrap) -or
+        ($null -ne $state.previous -and -not (Test-PortableDescriptor $state.previous $bootstrap)) -or
+        ($state.blockedDigest -cne '' -and $state.blockedDigest -cnotmatch '^sha256:[a-f0-9]{64}$')){
+        throw 'Invalid portable selection record'
+    }
+    return $state
+}
+function Write-PortableSelection([object]$old,[object]$active,[object]$previous,[string]$blockedDigest) {
+    $folder=Join-Path $root 'selectors'
+    [IO.Directory]::CreateDirectory($folder)|Out-Null
+    if(-not (Test-PortableCacheLayout)){throw 'Unsafe portable selection directory'}
+    $generation=[long]$old.generation+1
+    if($generation -gt 4096){throw 'Portable selection history limit'}
+    $path=Join-Path $folder ('selection-{0:D12}.json' -f $generation)
+    if(Test-Path -LiteralPath $path){throw 'Portable selector generation already committed'}
+    # Atomic create, never replace the preceding commit. Abandoned temporary
+    # bytes and uncommitted proof directories cannot select a version.
+    Write-AtomicUpdateJson $path ([pscustomobject]@{schema='arsonmix.portable-selection.v1';generation=$generation;
+        active=$active;previous=$previous;blockedDigest=$blockedDigest})
+}
+function Test-PortableApproval([object]$approval,[object]$state) {
+    try{return ($null -ne $approval -and $approval.candidateTag -ceq $state.candidateTag -and
+        $approval.candidateSha -ceq $state.candidateSha -and $approval.previousSha -ceq $state.previousSha -and
+        $approval.digest -ceq $state.newAsset.digest -and $approval.digest -cmatch '^sha256:[a-f0-9]{64}$')}
+    catch{return $false}
+}
+function Assert-PortableOfflineProof([string]$zipPath,[object]$version){
+    $verifier=Get-AttestationVerifier $portableStableRoot
+    if($null -eq $verifier){throw 'Stable portable verifier missing or damaged'}
+    $dir=Join-Path (Join-Path $root 'proofs') $version.proofId
+    if(-not (Test-Path -LiteralPath $dir -PathType Container) -or
+       ((Get-Item -LiteralPath $dir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Invalid portable proof folder'}
+    $bundle=Join-Path $dir 'bundle.jsonl';$trusted=Join-Path $dir 'trusted_root.jsonl'
+    foreach($file in @($bundle,$trusted)){
+        if(-not (Test-RegularUpdateFile $file) -or (Get-Item -LiteralPath $file).Length -gt 2MB){throw 'Unsafe offline attestation evidence'}
+    }
+    $bundleLease=[IO.File]::Open($bundle,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $rootLease=$null;$verifierLease=$null;$private=$null
+    try{
+        $rootLease=[IO.File]::Open($trusted,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        $verifierLease=[IO.File]::Open($verifier,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        if((Get-AttestationVerifier $portableStableRoot) -cne $verifier -or
+           (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -cne $version.bundleHash -or
+           (Get-FileHash -LiteralPath $trusted -Algorithm SHA256).Hash.ToLowerInvariant() -cne $version.rootHash){throw 'Portable trust evidence changed'}
+        $arguments=Get-AttestationArguments $zipPath $version.tag $version.sourceCommit -PortableZip
+        if($null -eq $arguments){throw 'Invalid offline subject'}
+        $private=Join-Path $root ('verify-'+[guid]::NewGuid().ToString('N'))
+        [IO.Directory]::CreateDirectory($private)|Out-Null
+        $json=Invoke-IsolatedVerifier $verifier ($arguments+' --hostname github.com --bundle "'+$bundle+'" --custom-trusted-root "'+$trusted+'" --format json') $private
+        if(-not (Test-VerifiedRepositoryIdentity ($json|ConvertFrom-Json))){throw 'Offline portable repository identity mismatch'}
+    }finally{
+        if($null -ne $verifierLease){$verifierLease.Dispose()}
+        if($null -ne $rootLease){$rootLease.Dispose()}
+        $bundleLease.Dispose()
+        if($private){Remove-Item -LiteralPath $private -Recurse -Force -ErrorAction SilentlyContinue}
+    }
+}
+function Get-VerifiedPortableImage([object]$version,[object]$bootstrap){
+    if(-not (Test-PortableDescriptor $version $bootstrap)){throw 'Invalid portable version descriptor'}
+    if($version.digest -ceq ''){
+        # Root is the user-trusted initial extraction, not a downloaded
+        # candidate. Never execute a hash-only remote payload as bootstrap.
+        $dir=$portableStableRoot
+        $build=Read-Json (Join-Path $dir 'BUILD_PROVENANCE.json')
+        $binary=Join-Path $dir 'ArSonMix-GUI10CH-P012-Windows-x64.exe'
+        if(-not (Test-RegularUpdateFile $binary) -or $build.sourceCommit -cne $version.sourceCommit -or
+            $build.exeSha256 -cnotmatch '^[a-f0-9]{64}$' -or (Get-Item -LiteralPath $binary).Length -ne [long]$build.guiExeBytes -or
+            (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $build.exeSha256){throw 'Portable bootstrap damaged'}
+        return $binary
+    }
+    $zipPath=Join-Path (Join-Path $root 'downloads') ("ArSonMix-"+$version.tag+"-Windows-x64-Portable.zip")
+    if(-not (Test-RegularUpdateFile $zipPath)){throw 'Portable archive unavailable'}
+    $dir=Join-Path (Join-Path $root 'payloads') ($version.sourceCommit+'-'+$version.digest.Substring(7))
+    $lease=[IO.File]::Open($zipPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try{
+        if(-not (Test-StagedAsset $zipPath ([pscustomobject]@{digest=$version.digest;size=$version.bytes}))){throw 'Portable archive digest mismatch'}
+        Assert-PortableOfflineProof $zipPath $version
+        Expand-PortablePayload $lease $dir $version.sourceCommit -VerifyOnly
+        return (Join-Path $dir 'ArSonMix-GUI10CH-P012-Windows-x64.exe')
+    }finally{$lease.Dispose()}
+}
+function Start-PortableImage([string]$binary,[string]$argument='', [string]$probe=''){
+    if(-not (Test-PortableMixerAbsent)){throw 'Another mixer is active; portable launch deferred'}
+    $info=[Diagnostics.ProcessStartInfo]::new()
+    $info.FileName=$binary;$info.WorkingDirectory=[IO.Path]::GetDirectoryName($binary)
+    $info.Arguments=$argument;$info.UseShellExecute=$false
+    $info.EnvironmentVariables['ARSONMIX_PORTABLE_SUPERVISED']='1'
+    $info.EnvironmentVariables.Remove('ARSONMIX_UPDATE_PROBE')
+    if($probe){$info.EnvironmentVariables['ARSONMIX_UPDATE_PROBE']=$probe}
+    $child=[Diagnostics.Process]::Start($info)
+    if($null -eq $child){throw 'Could not start portable image'}
+    return $child
+}
+function Wait-PortableProbe([Diagnostics.Process]$child,[string]$marker,[int]$timeoutSeconds=75){
+    $deadline=[DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+    $ready=$false
+    do{
+        if((Test-RegularUpdateFile $marker) -and (Get-Item -LiteralPath $marker).Length -le 128 -and
+            (Get-Content -LiteralPath $marker -Raw).Trim() -ceq 'GUI_READY_NO_AUDIO'){$ready=$true}
+        if($child.HasExited){return ($ready -and $child.ExitCode -eq 0)}
+        Start-Sleep -Milliseconds 200
+    }while([DateTime]::UtcNow -lt $deadline)
+    # Never terminate a probe or another mixer to force a switch.
+    return $false
+}
+function Test-PortableCandidateHealth([string]$binary){
+    $token=[guid]::NewGuid().ToString('D')
+    $healthDir=Join-Path $local 'ArSonMix\Updates\health'
+    [IO.Directory]::CreateDirectory($healthDir)|Out-Null
+    $marker=Join-Path $healthDir ($token+'.ready')
+    $child=Start-PortableImage $binary '' $token
+    try{return (Wait-PortableProbe $child $marker)}
+    finally{
+        $child.Dispose()
+        if(Test-RegularUpdateFile $marker){Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue}
+    }
+}
+function Commit-PortableCandidate([object]$state,[object]$asset,[string]$zipPath,[string]$target){
+    if(-not (Test-PortableLauncherRoot) -or -not (Test-PortableMixerAbsent) -or
+       -not (Test-RegularUpdateFile $approvalPath)){return}
+    $approval=Read-Json $approvalPath
+    if(-not (Test-PortableApproval $approval $state)){return}
+    $bootstrap=Get-PortableBootstrap
+    $selected=Get-PortableSelection $bootstrap
+    if($selected.active.sourceCommit -cne $state.previousSha -or $selected.blockedDigest -ceq $asset.digest){return}
+    # Do not activate packages without the matching launcher/workspace ABI.
+    $cap=Join-Path $target 'portable_launcher_v2.txt'
+    if(-not (Test-RegularUpdateFile $cap) -or (Get-Item -LiteralPath $cap).Length -gt 128 -or
+        (Get-Content -LiteralPath $cap -Raw).Trim() -cne 'ARSONMIX_PORTABLE_LAUNCHER_V2'){return}
+    if($selected.active.tag -and (Compare-Version (Version-Key $state.candidateTag) (Version-Key $selected.active.tag)) -le 0){return}
+    # Verify rollback image before committing, while the previous version is
+    # still selected. A bad previous version cannot authorize a new switch.
+    [void](Get-VerifiedPortableImage $selected.active $bootstrap)
+    $proofId=[guid]::NewGuid().ToString('N')
+    $proofParent=Join-Path $root 'proofs'
+    [IO.Directory]::CreateDirectory($proofParent)|Out-Null
+    if(-not (Test-PortableCacheLayout)){throw 'Unsafe portable proof cache'}
+    $proof=Join-Path $proofParent $proofId
+    Assert-InstallerAttestation $zipPath $state.candidateTag $state.candidateSha -PortableZip -SaveProof $proof -VerifierRoot $portableStableRoot
+    $version=[pscustomobject]@{sourceCommit=[string]$state.candidateSha;tag=[string]$state.candidateTag;digest=[string]$asset.digest;
+        bytes=[long]$asset.size;proofId=$proofId;
+        bundleHash=(Get-FileHash -LiteralPath (Join-Path $proof 'bundle.jsonl') -Algorithm SHA256).Hash.ToLowerInvariant();
+        rootHash=(Get-FileHash -LiteralPath (Join-Path $proof 'trusted_root.jsonl') -Algorithm SHA256).Hash.ToLowerInvariant()}
+    $binary=Get-VerifiedPortableImage $version $bootstrap
+    if(-not (Test-PortableCandidateHealth $binary)){
+        Write-PortableSelection $selected $selected.active $selected.previous $version.digest
+        Log-Result ('ROLLED_BACK_PORTABLE_PROBE '+$version.tag)
+        return
+    }
+    if(-not (Test-PortableMixerAbsent)){return}
+    Write-PortableSelection $selected $version $selected.active ''
+    Log-Result ('HEALTHY_PORTABLE_ACTIVATED '+$version.tag)
+}
+function Invoke-PortableLaunch {
+    if(-not (Test-PortableLauncherRoot) -or -not (Test-PortableCacheLayout) -or
+        -not (Test-PortableMixerAbsent)){return}
+    $bootstrap=Get-PortableBootstrap
+    $selected=Get-PortableSelection $bootstrap
+    try{
+        $binary=Get-VerifiedPortableImage $selected.active $bootstrap
+        $child=Start-PortableImage $binary $PortableLaunchArgument
+    }catch{
+        if($null -eq $selected.previous -or -not (Test-PortableMixerAbsent)){throw}
+        $binary=Get-VerifiedPortableImage $selected.previous $bootstrap
+        Write-PortableSelection $selected $selected.previous $null $selected.active.digest
+        Log-Result ('ROLLED_BACK_PORTABLE_IMAGE '+$selected.active.tag)
+        $child=Start-PortableImage $binary $PortableLaunchArgument
+    }
+    $child.Dispose()
+}
+
 function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
     if($null -eq $owner -or -not $owner.WaitForExit(120000)){return}
     # A replacement portable session may have started while the owner exited.
@@ -881,6 +1120,7 @@ function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
             digest=[string]$asset.digest;bytes=[long]$asset.size;previousSha=[string]$build.sourceCommit}
         Write-AtomicUpdateJson (Join-Path $root 'prepared.json') $receipt
         Log-Result ('PORTABLE_PAYLOAD_PREPARED '+$tag)
+        Commit-PortableCandidate $state $asset $zipPath $target
     }finally{
         $lease.Dispose()
         # Scratch is a new updater-owned directory, never the active workspace.
@@ -1493,6 +1733,43 @@ if($PolicySelfTest) {
     }finally{Remove-Item -LiteralPath $fixture -Recurse -Force}
     Write-Output 'ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS'
 
+    $fixture=Join-Path ([IO.Path]::GetTempPath()) ('armix-selector-'+[guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($fixture)|Out-Null
+    $oldRoot=$root;$root=$fixture
+    try{
+        $base=[pscustomobject]@{sourceCommit=('a'*40);tag='';digest='';bytes=0;proofId='';bundleHash='';rootHash=''}
+        $next=[pscustomobject]@{sourceCommit=('b'*40);tag='v0.5.0-alpha.9';digest=('sha256:'+('c'*64));bytes=2097152;
+            proofId=('d'*32);bundleHash=('e'*64);rootHash=('f'*64)}
+        $zero=Get-PortableSelection $base
+        if($zero.generation -ne 0 -or $zero.active.sourceCommit -cne $base.sourceCommit){throw 'Portable bootstrap selector mismatch'}
+        Write-PortableSelection $zero $next $base ''
+        $one=Get-PortableSelection $base
+        if($one.generation -ne 1 -or $one.active.sourceCommit -cne $next.sourceCommit -or $one.previous.sourceCommit -cne $base.sourceCommit){throw 'Portable activation commit mismatch'}
+        [IO.File]::WriteAllText((Join-Path $root 'selectors\.receipt-crashed'),'incomplete')
+        if((Get-PortableSelection $base).generation -ne 1){throw 'Uncommitted selector accepted'}
+        Write-PortableSelection $one $base $null $next.digest
+        $two=Get-PortableSelection $base
+        if($two.generation -ne 2 -or $two.active.sourceCommit -cne $base.sourceCommit -or $two.blockedDigest -cne $next.digest){throw 'Portable rollback commit mismatch'}
+        $state=[pscustomobject]@{candidateSha=$next.sourceCommit;previousSha=$base.sourceCommit;candidateTag=$next.tag;newAsset=[pscustomobject]@{digest=$next.digest}}
+        $approval=[pscustomobject]@{candidateSha=$next.sourceCommit;previousSha=$base.sourceCommit;candidateTag=$next.tag;digest=$next.digest}
+        if(-not (Test-PortableApproval $approval $state)){throw 'Exact portable consent rejected'}
+        $approval.digest='sha256:'+('0'*64)
+        if(Test-PortableApproval $approval $state){throw 'Wrong digest consent accepted'}
+        foreach($case in @('healthy','no-marker','nonzero')){
+            $marker=Join-Path $fixture ($case+'.ready')
+            $script=Join-Path $fixture ($case+'.ps1')
+            $body=if($case -eq 'no-marker'){'exit 0'}else{'[IO.File]::WriteAllText($args[0],''GUI_READY_NO_AUDIO''); exit '+$(if($case -eq 'healthy'){0}else{1})}
+            [IO.File]::WriteAllText($script,$body)
+            $info=[Diagnostics.ProcessStartInfo]::new()
+            $info.FileName=Join-Path $PSHOME 'powershell.exe';$info.UseShellExecute=$false;$info.CreateNoWindow=$true
+            $info.Arguments='-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$script+'" "'+$marker+'"'
+            $child=[Diagnostics.Process]::Start($info)
+            try{$ok=Wait-PortableProbe $child $marker 15}finally{$child.Dispose()}
+            if($ok -ne ($case -eq 'healthy')){throw "Portable health process fixture failed: $case"}
+        }
+    }finally{$root=$oldRoot;Remove-Item -LiteralPath $fixture -Recurse -Force}
+    Write-Output 'ARSONMIX_PORTABLE_ACTIVATION_RECOVERY_PASS'
+
     Write-Output 'ARSONMIX_UPDATER_RESUME_POLICY_PASS'
     $leaseDir=Join-Path ([IO.Path]::GetTempPath()) ('armix-rollback-'+[guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($leaseDir)|Out-Null
@@ -1521,6 +1798,15 @@ if($PolicySelfTest) {
 }
 
 try {
+    if($LaunchPortable){
+        if(-not $portable -or $portableStableRoot -cne $PSScriptRoot -or -not (Test-PortableLauncherRoot)){exit 0}
+        # Native root launcher exits before any child takes JUCE's instance
+        # lock. If the original PID is already gone, no wait is necessary.
+        if($OwnerProcessId -gt 0 -and (Owns-Exe $OwnerProcessId)){
+            $launcher=[Diagnostics.Process]::GetProcessById($OwnerProcessId)
+            try{if(-not $launcher.WaitForExit(15000)){exit 0}}finally{$launcher.Dispose()}
+        }
+    }
     if($PreparePortable){
         if(-not $portable -or -not (Owns-Exe $OwnerProcessId)){exit 0}
         $portableOwner=[Diagnostics.Process]::GetProcessById($OwnerProcessId)
@@ -1534,19 +1820,20 @@ try {
     }
     if(-not (Test-Path -LiteralPath $provenance -PathType Leaf) -or
        (-not $RecoveryMode -and -not (Test-Path -LiteralPath $exe -PathType Leaf)) -or
-       (-not $PreparePortable -and -not $ApplyStaged -and -not $RecoveryMode -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
+       (-not $LaunchPortable -and -not $PreparePortable -and -not $ApplyStaged -and -not $RecoveryMode -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
     # One update worker per user, for installed and portable packages,
     # arbitrary scripts outside {app}, or second ArSonMix updater instance.
     if($portable -and ($ApplyStaged -or $RecoveryMode)){exit 0}
     $mutex=[Threading.Mutex]::new($false,'Local\ArSonMix.AutoUpdater.v1')
     try {
-        $locked=$mutex.WaitOne($(if($PreparePortable -or $ApplyStaged -or $RecoveryMode){60000}else{0}))
+        $locked=$mutex.WaitOne($(if($LaunchPortable -or $PreparePortable -or $ApplyStaged -or $RecoveryMode){120000}else{0}))
     } catch [Threading.AbandonedMutexException] {
         # Previous worker was killed. WaitOne owns the mutex despite throwing.
         $locked=$true
         Log-Result 'ABANDONED_MUTEX_RECLAIMED'
     }
     if(-not $locked){exit 0}
+    if($LaunchPortable){Invoke-PortableLaunch;exit 0}
     if($PreparePortable){Invoke-PortablePreparation $portableOwner;exit 0}
     if($portable){Invoke-PortableUpdateCheck;exit 0}
     [IO.Directory]::CreateDirectory($root) | Out-Null
@@ -1900,6 +2187,12 @@ try {
         }
     } catch { }
     if(-not $portable -or (Test-PortableCacheLayout)){Log-Result ('FAIL_CLOSED '+$_.Exception.Message)}
+    if($LaunchPortable){
+        try{
+            Add-Type -AssemblyName System.Windows.Forms
+            [Windows.Forms.MessageBox]::Show("ArSonMix could not verify or launch the portable version. Studio was not removed. Restore the official verified package; see .ArSonMixUpdates\last-result.txt.",'ArSonMix - Portable Recovery')|Out-Null
+        }catch{}
+    }
 } finally {
     if($null -ne $portableOwner){$portableOwner.Dispose()}
     if($null -ne $rollbackGuard){$rollbackGuard.Dispose()}

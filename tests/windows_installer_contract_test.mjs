@@ -702,7 +702,7 @@ test('Portable release handoff downloads an attested ZIP but cannot apply or mod
 });
 
 
-test('Portable preparation is post-exit, authenticated under a lease, isolated and non-activating',()=>{
+test('Portable preparation is post-exit, authenticated under a lease, and delegates guarded activation',()=>{
   const u=read('installer/ArSonMixAutoUpdate.ps1');
   const p=u.slice(u.indexOf('function Invoke-PortablePreparation'),u.indexOf('function Test-StagedAsset'));
   assert.match(p,/WaitForExit\(120000\)/);
@@ -734,4 +734,21 @@ test('all updater state writes use a flushed atomic replacement with a real back
   assert.match(u,/\[IO.File\]::Replace\(\$temp,\$path,\$backup\)/);
   assert.doesNotMatch(u,/\[IO.File\]::Replace\([^\r\n]*,\$null\)/);
   assert.match(u,/Updater state atomic replacement failed/);
+});
+
+
+test('portable activation requires exact consent, cryptographic proof, clean probe exit and durable selector',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1'),n=read('src/Main.cpp'),w=read('src/PortableWorkspace.h');
+  const activate=u.slice(u.indexOf('function Commit-PortableCandidate'),u.indexOf('function Invoke-PortableLaunch'));
+  assert.match(activate,/Test-PortableApproval/);
+  assert.ok(activate.indexOf('Assert-InstallerAttestation $zipPath')<activate.indexOf('Get-VerifiedPortableImage $version'));
+  assert.ok(activate.indexOf('Test-PortableCandidateHealth $binary')<activate.indexOf('Write-PortableSelection $selected $version'));
+  assert.match(u,/Assert-PortableOfflineProof \$zipPath \$version/);
+  assert.match(u,/--custom-trusted-root/);
+  assert.match(u,/Get-PortableSelection/);
+  assert.match(u,/Write-PortableSelection \$selected \$selected.previous/);
+  assert.match(u,/ARSONMIX_PORTABLE_ACTIVATION_RECOVERY_PASS/);
+  assert.match(n,/"-LaunchPortable","-OwnerProcessId"/);
+  assert.match(w,/getChildFile\("ArSonMix\/Updates\/probes"\)/);
+  assert.match(read('scripts/build_verify_windows_installer.ps1'),/ARSONMIX_PORTABLE_LAUNCHER_V2/);
 });

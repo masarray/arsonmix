@@ -31,6 +31,7 @@ jobs:
               $output -notcontains 'ARSONMIX_PORTABLE_DOWNLOAD_POLICY_PASS' -or
               $output -notcontains 'ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS' -or
               $output -notcontains 'ARSONMIX_PORTABLE_CACHE_REVALIDATION_PASS' -or
+              $output -notcontains 'ARSONMIX_PORTABLE_ACTIVATION_RECOVERY_PASS' -or
               $output -notcontains 'ARSONMIX_UPDATER_RESUME_POLICY_PASS' -or
               $output -notcontains 'ARSONMIX_UPDATER_OFFLINE_ROLLBACK_LEASE_PASS' -or
               $output -notcontains 'ARSONMIX_UPDATER_LAST_MILE_PAIR_PASS') {

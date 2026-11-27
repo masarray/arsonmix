@@ -80,14 +80,37 @@ struct PortableWorkspace final
             : installedDataRoot();
     }
 
+    static bool launcherEnabledAt(const juce::File& folder)
+    {
+        const auto cap=folder.getChildFile("portable_launcher_v2.txt");
+        juce::String value,mode;
+        return BoundedDataInput::managedPath(folder,cap) &&
+            BoundedDataInput::text(cap,128,value) && value.trim()=="ARSONMIX_PORTABLE_LAUNCHER_V2" &&
+            BoundedDataInput::text(folder.getChildFile(marker),128,mode) && mode.trim()=="ARSONMIX_PORTABLE_WORKSPACE_V1";
+    }
+
+    // Every GUI-only probe uses a fresh machine-local scratch root, including
+    // installed probes. No production Studio, device XML or WebView profile.
+    static juce::File probeDataRoot()
+    {
+#if defined(_WIN32)
+        const auto token=juce::SystemStats::getEnvironmentVariable("ARSONMIX_UPDATE_PROBE",{});
+        const auto local=juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{});
+        if(token.length()==36 && juce::Uuid(token).toDashedString()==token && local.isNotEmpty())
+            return juce::File(local).getChildFile("ArSonMix/Updates/probes").getChildFile(token);
+#endif
+        return {};
+    }
+
     static juce::File dataRoot()
     {
-        return dataRootFor (executableDirectory());
+        const auto probe=probeDataRoot();
+        return probe==juce::File()?dataRootFor (executableDirectory()):probe;
     }
 
     // Device selections remain per MACHINE so copying USB never un-mutes an
     // unintended endpoint, and legacy installed audio-devices.xml is retained.
-    static juce::File machineDataRoot() { return installedDataRoot(); }
+    static juce::File machineDataRoot() { const auto probe=probeDataRoot(); return probe==juce::File()?installedDataRoot():probe; }
 
     static juce::File browserDataRootFor (const juce::File& executableFolder)
     {
@@ -99,7 +122,7 @@ struct PortableWorkspace final
             .getChildFile ("AR-MIX-Studio-WebView2");
     }
 
-    static juce::File browserDataRoot() { return browserDataRootFor (executableDirectory()); }
+    static juce::File browserDataRoot() { const auto probe=probeDataRoot(); return probe==juce::File()?browserDataRootFor (executableDirectory()):probe.getChildFile("Cache/WebView2"); }
 
     static juce::File vaultRoot (const juce::File& workspace)
     {

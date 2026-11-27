@@ -209,6 +209,7 @@ try {
         if(Test-Path -LiteralPath $portableVerifier){throw 'Portable verifier destination already exists'}
         Copy-Item -LiteralPath (Join-Path $stage 'UpdateVerifier') -Destination $portableVerifier -Recurse
         Copy-Item -LiteralPath 'installer/ArSonMixAutoUpdate.ps1' -Destination $dist
+        'ARSONMIX_PORTABLE_LAUNCHER_V2' | Set-Content -LiteralPath (Join-Path $dist 'portable_launcher_v2.txt') -Encoding utf8
         Write-Host 'PORTABLE_RELEASE_UPDATE_DOWNLOADER_STAGED'
     }
     Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app graceful update, SHA-matched PE, uninstall, private Studio intact"
