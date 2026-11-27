@@ -83,6 +83,15 @@ const style=dom("style");style.textContent=`
 #mxNativeDucker .mx-ducker-source{grid-template-columns:minmax(0,1fr) minmax(0,168px) 49px;gap:6px;min-height:28px}
 #mxNativeDucker .mx-ducker-rail{padding:3px;border-color:#52717d;border-radius:2px;background:#081319;box-shadow:inset 0 1px 3px #000,0 1px 0 #7292a329}
 #mxNativeDucker .mx-ducker-rail[data-kind=gr]{margin-top:4px}
+#mxNativeDucker .mx-ducker-rail{container-type:inline-size;min-width:0}
+#mxNativeDucker .mx-ducker-led-bed{aspect-ratio:auto;height:calc(100cqw / var(--cells) / 2 + 1px);min-height:3px}
+#mxNativeDucker .mx-ducker-led-grid{grid-template-rows:minmax(0,1fr)}
+#mxNativeDucker .mx-ducker-led-cell{min-height:0}
+#mxNativeDucker .mx-ducker-picker{min-width:0;overflow-anchor:none}
+#mxNativeDucker .mx-ducker-options{overscroll-behavior:contain;scrollbar-gutter:stable}
+#mxNativeDucker .mx-ducker-option{height:30px;flex-shrink:0}
+#mxNativeDucker .mx-ducker-option input{flex:0 0 14px;width:14px;height:14px;margin:0;transition:none;animation:none}
+#mxNativeDucker .mx-ducker-option span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #mxNativeDucker .mx-ducker-fill{background:linear-gradient(90deg,#119c49 0%,#22cc40 25%,#8bea25 60%,#e6ee3b 75%,#ffc338 88%,#ff5144 100%);background-size:var(--full-width,140px) 100%}
 #mxNativeDucker .mx-ducker-rail[data-kind=gr] .mx-ducker-fill{background:linear-gradient(90deg,#e8b951,#ffd36e 75%,#f1ad3f);background-size:var(--full-width,140px) 100%}
 @media(max-width:600px){#mxNativeDucker .mx-ducker-content{grid-template-columns:1fr}#mxNativeDucker .mx-ducker-timing{grid-template-columns:repeat(3,minmax(0,1fr))}#mxNativeDucker .mx-ducker-source{grid-template-columns:minmax(0,1fr) minmax(0,126px) 45px}}
@@ -101,12 +110,9 @@ const content=dom("div","mx-ducker-content"),src=dom("div","mx-ducker-box lcd-gl
 const grBox=dom("div","mx-ducker-box lcd-glass"),phase=dom("span","mx-ducker-phase","Waiting"),grTitle=dom("div","mx-ducker-title");grTitle.append(dom("span","","GAIN REDUCTION"),phase);
 const meterObserver=new ResizeObserver(entries=>{
  for(const entry of entries){
-  const bed=entry.target,w=entry.contentRect.width;
+  const w=entry.contentRect.width;
   if(w<=0)continue;
-  const cells=Number(bed.parentElement.dataset.cells);
-  const height=(Math.max(1,(w/cells-2)/2)+2)+"px";
-  if(bed.style.height!==height)bed.style.height=height;
-  const f=bed.firstElementChild;
+  const f=entry.target.firstElementChild;
   if(f)f.style.setProperty("--full-width",w+"px");
  }
 });
@@ -169,10 +175,11 @@ function paintControls(){for(const [k,{num,range,pointer,progress,lo,hi}] of Obj
 preset.addEventListener("change",()=>{if(!accepted||!presets[preset.value])return;draft={...presets[preset.value]};dirty=true;error="";paintControls();send();});
 function channels(){return view()?.graph?.channels||[];}
 function forbidden(id){if(id===current?.id)return "Target itself";const stack=[current?.id],seen=new Set();const edges=view()?.graph?.edges||[];while(stack.length){const from=stack.pop();if(seen.has(from))continue;seen.add(from);for(const e of edges)if(e.from===from)stack.push(e.to);}return seen.has(id)?"Downstream cycle":"";}
-function openPicker(){if(!accepted||pending||dirty||!context())return;selection=new Set(sources);picker.hidden=false;search.value="";renderOptions();search.focus();}
+function openPicker(){if(!accepted||pending||dirty||!context())return;selection=new Set(sources);picker.hidden=false;search.value="";renderOptions();search.focus({preventScroll:true});}
 function renderOptions(){options.replaceChildren();const q=search.value.toLowerCase().trim(),rows=channels().map(c=>({id:c.id,name:c.name||c.id,role:c.role||""}));for(const id of selection)if(!rows.some(x=>x.id===id))rows.push({id,name:"Missing source "+id,role:"Missing"});
-for(const row of rows){if(!((row.name+" "+row.role).toLowerCase().includes(q)))continue;const label=dom("label","mx-ducker-option"),check=dom("input");check.type="checkbox";check.checked=selection.has(row.id);label.dataset.sourceId=row.id;check.setAttribute("aria-label",row.name);const reason=forbidden(row.id)||(!check.checked&&selection.size>=32?"32 source limit":"");check.disabled=!!reason&&!check.checked;check.title=reason||row.role;check.addEventListener("change",()=>{if(check.checked)selection.add(row.id);else selection.delete(row.id);renderOptions();});label.append(check,dom("span","",row.name),dom("small","",reason||row.role));options.append(label);}
-if(!options.children.length)options.append(dom("div","mx-ducker-note","No matching channels."));count.value=selection.size+" / 32 selected";apply.disabled=!!pending||!context()||sameSources([...selection],sources);}
+for(const row of rows){if(!((row.name+" "+row.role).toLowerCase().includes(q)))continue;const label=dom("label","mx-ducker-option"),check=dom("input");check.type="checkbox";check.checked=selection.has(row.id);label.dataset.sourceId=row.id;check.setAttribute("aria-label",row.name);const reason=forbidden(row.id)||(!check.checked&&selection.size>=32?"32 source limit":"");check.disabled=!!reason&&!check.checked;check.title=reason||row.role;check.addEventListener("change",()=>{if(check.checked)selection.add(row.id);else selection.delete(row.id);refreshOptions();});label.append(check,dom("span","",row.name),dom("small","",reason||row.role));options.append(label);}
+if(!options.children.length)options.append(dom("div","mx-ducker-note","No matching channels."));refreshOptions();}
+function refreshOptions(){for(const label of options.querySelectorAll("[data-source-id]")){const id=label.dataset.sourceId,check=label.querySelector("input"),role=channels().find(c=>c.id===id)?.role||"Missing";const reason=forbidden(id)||(!check.checked&&selection.size>=32?"32 source limit":"");check.disabled=!!reason&&!check.checked;check.title=reason||role;putText(label.querySelector("small"),reason||role);}count.value=selection.size+" / 32 selected";apply.disabled=!!pending||!context()||sameSources([...selection],sources);}
 search.addEventListener("input",renderOptions);
 function applySources(){if(!context()||pending||dirty)return;const ids=[...selection];if(ids.some(id=>forbidden(id))){error="Select upstream sources only; remove the cycle";paint();return;}submit("nativeDuckerSources",{sources:ids});}
 function submit(action,payload){const c=context();if(!c||pending)return;const id="ducker-"+String(Date.now()*1000+(++seq%1000));pending={id,c,action,payload,ack:false,at:Date.now()};error="";backend()?.emitEvent("arMixAction",{action,requestId:id,...c,...payload});paint();}

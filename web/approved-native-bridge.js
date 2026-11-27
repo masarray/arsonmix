@@ -130,17 +130,20 @@
     document.addEventListener("pointerup",finishDrag,true);
     document.addEventListener("pointercancel",finishDrag,true);
     window.addEventListener("blur",()=>{drag=null;});
-    // When the whole header is cropped into its right-side control buttons,
-    // Shift+wheel still slides the exact same FX; Alt+drag works anywhere.
+    // Local parameter gestures own their event first. Shift+wheel on
+    // background/header can pan the hardware; NEVER steal fine adjustment
+    // from a knob or scroll from an interactive picker. Alt+drag works anywhere.
     document.addEventListener("wheel",event=>{
-      if(!event.shiftKey)return;
+      if(!event.shiftKey||event.defaultPrevented||event.ctrlKey||event.metaKey)return;
       const root=visibleRoot(event.target);
-      if(!root)return;
-      event.preventDefault();event.stopImmediatePropagation();
+      if(!root||event.target.closest?.(
+        "[data-fx-wheel],input,select,textarea,button,[role=slider],[data-eq-node],.mx-ducker-picker"))return;
       const amount=Math.abs(event.deltaY)>Math.abs(event.deltaX)?
         event.deltaY:event.deltaX;
-      if(Number.isFinite(amount))move(root,-amount*.8,0);
-    },{capture:true,passive:false});
+      if(!Number.isFinite(amount)||amount===0)return;
+      event.preventDefault();event.stopPropagation();
+      move(root,-amount*.8,0);
+    },{passive:false});
     document.addEventListener("dblclick",event=>{
       const root=visibleRoot(event.target);
       if(root&&event.target.closest?.(headers) &&

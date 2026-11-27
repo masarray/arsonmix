@@ -419,6 +419,7 @@ def main():
                         page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeCompSet').slice(-3)"))) from exc
                 finally:
                     cdp.detach()
+                assert page.evaluate("()=>window.__compWheelProbe.some(e=>e.shift)"),"trusted Shift wheel never reached control"
                 new_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
                 new_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
                 assert ratio_body.evaluate("el=>getComputedStyle(el).transform")==old_body=="none",\

@@ -89,8 +89,13 @@ def main():
         main_option=editor.locator(f'.mx-ducker-option[data-source-id="{MAIN}"]')
         assert main_option.locator("input").is_disabled()
         assert "Downstream cycle" in main_option.inner_text()
-        editor.locator(f'.mx-ducker-option[data-source-id="{SOURCE}"] input').check()
+        first=editor.locator(f'.mx-ducker-option[data-source-id="{SOURCE}"] input')
+        first.evaluate("e=>window.__firstDuckerCheckbox=e")
+        first.check()
+        assert first.evaluate("e=>e===window.__firstDuckerCheckbox"),"picker replaced clicked checkbox"
+        assert first.is_checked()
         editor.locator(f'.mx-ducker-option[data-source-id="{MIC2}"] input').check()
+        assert first.is_checked()
         editor.get_by_role("button",name="Apply",exact=True).click()
         req=latest(page,"nativeDuckerSources")
         assert req and set(req["sources"])=={SOURCE,MIC2}

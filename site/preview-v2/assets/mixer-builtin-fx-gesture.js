@@ -16,6 +16,7 @@ function direction(e){
 }
 function bindRange(input,{get=()=>Number(input.value),enabled=()=>true,
                          normalSteps=3,onChange=null,target=input}={}){
+ target.setAttribute?.("data-fx-wheel","");
  target.addEventListener("wheel",e=>{
   const dir=direction(e);
   if(!dir||input.disabled||!enabled()||!target.isConnected||
