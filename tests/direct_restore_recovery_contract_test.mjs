@@ -172,3 +172,15 @@ test('retained workspace capture is bounded and independent of FX navigation',()
   assert.match(join,/engine_\.retainedCaptureAllowed\(\)/);
   assert.doesNotMatch(join,/requestAutomaticMain|setOutputMuted\(false\)/);
 });
+
+test('retained workspace authority is published only after durable HEAD commit',()=>{
+  const capture=main.slice(main.indexOf('void serviceRetainedFxCapture()'),main.indexOf('void openRetainedFxOffline('));
+  assert.match(capture,/pending.committing=true/);
+  assert.match(capture,/logicalMixer_\.open\(std::move\(doc\),std::move\(pending.capture.states\)/);
+  assert.doesNotMatch(capture,/logicalMixer_\.restoreCheckpoint/);
+  const finish=capture.slice(capture.indexOf('void finishRetainedWorkspaceCapture'));
+  assert.match(finish,/if\(error.isEmpty\(\)\)\s*\{\s*retainedOfflineFxActive_=true/);
+  assert.ok(finish.indexOf('pendingRetainedFxCapture_.reset()')<finish.indexOf('emitRetainedFxOfflineAck('));
+  assert.match(main,/pendingRetainedFxCapture_ && !pendingRetainedFxCapture_->committing/);
+  assert.match(main,/finishForShutdown\(logicalVendorEditor_\.has_value\(\) \|\|/);
+});

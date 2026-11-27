@@ -2478,7 +2478,67 @@ static void verifyCreatedWetReturnPcmAndRecovery(){
     std::cout<<"UNIFIED_CREATED_WET_PCM_SMIX_RECOVERY_PASS\n";
 }
 
+// A real native EQ command is queued immediately before device STOP,
+// with no subsequent PCM callback to consume it. The detached capture
+// must serialize the new accepted value and not fake physical admission.
+static void verifyDetachedPendingEqCapture(){
+    using Eq=armix::builtin_fx::ChannelEqProcessor;
+    FixtureDevice device(true);device.outputMask.clear();device.outputMask.setRange(0,2,true);
+    auto storage=std::make_unique<LiveDryRoutingLab>();
+    auto& mixer=*storage;mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto d=makeSession();
+    d.binding={"ASIO","Verified ASIO","Verified ASIO","3","3",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    d.request.maxFrames=480;
+    auto rows=d.roster.channels();
+    for(auto& row:rows)if(row.id.value==5)row.insertCatalogIds={Eq::catalogIdentity};
+    assert(d.roster.restoreExact(d.acceptedRevision,rows));
+    Eq initial;initial.prepareToPlay(48000.,480);
+    BinaryState binary;initial.getStateInformation(binary.bytes);
+    binary.sha256=juce::SHA256(binary.bytes).toHexString();
+    StoredInsert insert;insert.channel={5};insert.slot=0;insert.catalogId=Eq::catalogIdentity;
+    insert.name=initial.getName();insert.sha256=binary.sha256;
+    d.inserts.push_back(insert);
+    juce::AudioPluginFormatManager formats;
+    std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(d,{binary},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    auto owner=*bank->ownerForControl({5},0);
+    auto* eq=dynamic_cast<Eq*>(owner->processor.get());assert(eq);
+    assert(mixer.restoreNativeMixerSession(d,std::move(bank),pins,true).isEmpty());
+    auto band=eq->acceptedBands()[2];band.gainDb=6.f;
+    assert(eq->queueBand(2,band,77));
+    assert(!eq->stateSnapshotQuiescent());
+    mixer.deviceStopped();
+    assert(mixer.hasRetainedNativeSession()&&!mixer.channelIdPhysicalPcmActive());
+    LiveDryRoutingLab::RetainedMixerCapture detached;
+    assert(mixer.beginRetainedMixerCapture(detached).isEmpty());
+    bool done=false;
+    {
+        armix::rt::RealtimeRenderPermit held(owner->processing);
+        assert(held);
+        assert(mixer.stepRetainedMixerCapture(detached,done).isEmpty());
+        assert(!done && !eq->stateSnapshotQuiescent());
+    }
+    for(unsigned i=0;i<32&&!done;++i)
+        assert(mixer.stepRetainedMixerCapture(detached,done).isEmpty());
+    assert(done&&eq->stateSnapshotQuiescent());
+    assert(eq->acceptedBands()[2].gainDb==6.f);
+    assert(!mixer.channelIdPhysicalPcmActive());
+    assert(detached.document.inserts.size()==1&&detached.states.size()==1);
+    assert(detached.document.inserts.front().instanceId==owner->instanceId);
+    Eq reopened;reopened.prepareToPlay(48000.,480);
+    const auto& bytes=detached.states.front().bytes;
+    assert(reopened.restoreUnpublishedState(bytes.getData(),static_cast<int>(bytes.getSize())));
+    assert(reopened.acceptedBands()[2].gainDb==6.f);
+    std::cout<<"DETACHED_PENDING_EQ_CAPTURE_PASS\n";
+}
+
 int main(){
+    verifyDetachedPendingEqCapture();
     verifyCreatedWetReturnPcmAndRecovery();
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx)
         if(armix::mixer::isWetReturnCatalog(fx.id))verifyDmxWetReturnSession(fx);

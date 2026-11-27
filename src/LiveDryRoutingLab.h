@@ -10,6 +10,11 @@
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/core/NativeFxRackTransaction.h"
 #include "../engine/builtin_fx/VocalReverbProcessor.h"
+#include "../engine/builtin_fx/ChannelEqProcessor.h"
+#include "../engine/builtin_fx/GraphicEq31Processor.h"
+#include "../engine/builtin_fx/ChannelCompressorProcessor.h"
+#include "../engine/builtin_fx/AutoDuckerProcessor.h"
+#include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
@@ -3041,6 +3046,40 @@ public:
             return {};
         } catch(...) {return "Retained mixer capture initialization failed";}
     }
+    // The prior PCM epoch is no longer admitted. Its queued scalar edits
+    // may never get another callback. Only known, bounded native mailboxes
+    // can be settled here, under BOTH the graph render permit and processor
+    // gate. No processBlock, fake clock, arbitrary VST call or live ACK.
+    // Old-epoch completions are drained into the processor's accepted state;
+    // the new logical workspace readback is the only new authority.
+    template<class Processor>
+    static bool settleDetachedMailbox(FxGraph::FxInstance& fx) noexcept {
+        auto* p=dynamic_cast<Processor*>(fx.processor.get());
+        if(!p)return false;
+        typename Processor::Completion completion{};
+        (void)p->pollCompletion(completion);
+        p->consumeRealtimeEdits();
+        (void)p->pollCompletion(completion);
+        return true;
+    }
+    enum class DetachedMailbox { ready,retry,unsupported };
+    static DetachedMailbox settleDetachedNativeFx(FxGraph::FxInstance& fx) noexcept {
+        armix::rt::RealtimeRenderPermit processorPermit(fx.processing);
+        if(!processorPermit)return DetachedMailbox::retry;
+        if(fx.processFaulted())return DetachedMailbox::unsupported;
+        if(!fx.nativeControl||fx.nativeControl->stateSnapshotQuiescent())
+            return DetachedMailbox::ready;
+        using namespace armix::builtin_fx;
+        const bool supported=settleDetachedMailbox<ChannelEqProcessor>(fx) ||
+            settleDetachedMailbox<GraphicEq31Processor>(fx) ||
+            settleDetachedMailbox<ChannelCompressorProcessor>(fx) ||
+            settleDetachedMailbox<AutoDuckerProcessor>(fx) ||
+            settleDetachedMailbox<ChannelHarmonyProcessor>(fx);
+        if(!supported)return DetachedMailbox::unsupported;
+        return fx.nativeControl->stateSnapshotQuiescent()?
+            DetachedMailbox::ready:DetachedMailbox::retry;
+    }
+
     juce::String stepRetainedMixerCapture(RetainedMixerCapture& c,bool& done) {
         done=false;
         if(!retainedCaptureCurrent(c))return "Audio connection changed; retry offline FX";
@@ -3056,6 +3095,11 @@ public:
             const auto* owner=c.owners->ownerForControl(id,c.slot);
             if(!owner||!*owner||!(*owner)->processor||(*owner)->catalogId.isEmpty())
                 return "Native FX lease missing during capture";
+            if(!retainedCaptureCurrent(c))return "Audio connection changed; retry offline FX";
+            const auto settlement=settleDetachedNativeFx(**owner);
+            if(settlement==DetachedMailbox::retry)return {}; // bounded next CONTROL turn
+            if(settlement==DetachedMailbox::unsupported)
+                return "FX state not safely quiescent: "+(*owner)->catalogId;
             juce::MemoryBlock bytes;
             if(!(*owner)->tryCaptureState(bytes))
                 return "VST3 state not quiescent: "+(*owner)->catalogId;

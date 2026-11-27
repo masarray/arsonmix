@@ -857,7 +857,10 @@ public:
         // lose DSP ACK/readback. Do not unregister it until final teardown.
         browser_.onNativeEvent=nullptr;
         engine_.devices().removeChangeListener (this);
-        pendingRetainedFxCapture_.reset(); // cancel incomplete CONTROL capture before teardown
+        // An in-flight durable HEAD must finish and adopt its workspace.
+        // Only an incomplete CONTROL capture may be abandoned.
+        if(pendingRetainedFxCapture_ && !pendingRetainedFxCapture_->committing)
+            pendingRetainedFxCapture_.reset();
         // Drain any earlier file work before the final muted checkpoint.
         // Remember MAIN before the shutdown mute changes the hardware state.
         // A driver STOP may have gated hardware already. Preserve the
@@ -865,7 +868,8 @@ public:
         const bool resumeMain=engine_.wantsMainContinuation() && !operatorOutputMuted_;
         engine_.setOutputMuted(true);
         engine_.disconnectSecondaryOutput();
-        mixerSessionWorker_.finishForShutdown(logicalVendorEditor_.has_value());
+        mixerSessionWorker_.finishForShutdown(logicalVendorEditor_.has_value() ||
+            (pendingRetainedFxCapture_ && pendingRetainedFxCapture_->committing));
         saveClosedLogicalVendorEditor(true);
         mixerSessionWorker_.finishForShutdown();
         logicalVendorEditor_.reset();
@@ -961,7 +965,7 @@ private:
         LiveDryRoutingLab::RetainedMixerCapture capture;
         juce::var requestId;
         std::uint64_t epoch=0,revision=0,ownerEpoch=0,startedMs=0;
-        bool resumeMain=false;
+        bool resumeMain=false,committing=false;
     };
     std::optional<PendingRetainedFxCapture> pendingRetainedFxCapture_;
     std::uint64_t offlineCaptureObservedEpoch_=0,offlineCaptureSinceMs_=0;
@@ -2829,6 +2833,7 @@ private:
     void serviceRetainedFxCapture() {
         if(!pendingRetainedFxCapture_)return;
         auto& pending=*pendingRetainedFxCapture_;
+        if(pending.committing)return; // IO completion owns publication
         // Deadline applies even if another transaction owns the lease.
         if(monotonicMilliseconds()-pending.startedMs>=8000) {
             const auto requestId=pending.requestId;
@@ -2844,7 +2849,6 @@ private:
             error="Mixer transaction changed; retry offline FX";
         else error=engine_.stepRetainedMixerCapture(pending.capture,done);
         if(error.isEmpty()&&!done){scheduleRetainedFxCaptureStep();return;}
-        auto requestId=pending.requestId;
         const auto elapsed=monotonicMilliseconds()-pending.startedMs;
         if(error.isEmpty() && elapsed>=8000)
             error="Offline FX capture timed out; retry the rack";
@@ -2856,24 +2860,40 @@ private:
             doc.savedMs=juce::Time::currentTimeMillis();
             if(hotkeys_.activeSession()==doc.id)doc.hotkeys=hotkeys_.sessionEntries();
             error=resolveMixerSessionCatalog(doc,true);
-            if(error.isEmpty() &&
-               !logicalMixer_.restoreCheckpoint(std::move(doc),std::move(pending.capture.states)))
-                error="Retained FX document could not be validated";
             if(error.isEmpty()) {
-                retainedOfflineFxActive_=true;
-                retainedOfflineEpoch_=pending.epoch;
-                retainedOfflineRevision_=pending.revision;
-                retainedOfflineOwnerEpoch_=pending.ownerEpoch;
-                retainedOfflineLastActivityMs_=monotonicMilliseconds();
-                offlineAutoAttemptEpoch_=offlineAutoAttemptRevision_=0;
-                offlineAutoAttemptWorkspace_.clear();
-                mixerSessionRecoveryPending_=true;
-                mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
+                // Reuse the one durable .smix commit worker. Keep recovery
+                // fenced until the immutable generation and HEAD are verified.
+                pending.committing=true;
+                auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+                if(logicalMixer_.open(std::move(doc),std::move(pending.capture.states),
+                    [safe](juce::String result){
+                        if(safe!=nullptr)safe->finishRetainedWorkspaceCapture(std::move(result));
+                    }))return;
+                error="Offline mixer checkpoint worker unavailable";
             }
+        }
+        finishRetainedWorkspaceCapture(std::move(error));
+    }
+
+    void finishRetainedWorkspaceCapture(juce::String error) {
+        if(!pendingRetainedFxCapture_)return;
+        const auto& pending=*pendingRetainedFxCapture_;
+        const auto requestId=pending.requestId;
+        const auto elapsed=monotonicMilliseconds()-pending.startedMs;
+        if(error.isEmpty()) {
+            retainedOfflineFxActive_=true;
+            retainedOfflineEpoch_=pending.epoch;
+            retainedOfflineRevision_=pending.revision;
+            retainedOfflineOwnerEpoch_=pending.ownerEpoch;
+            retainedOfflineLastActivityMs_=monotonicMilliseconds();
+            offlineAutoAttemptEpoch_=offlineAutoAttemptRevision_=0;
+            offlineAutoAttemptWorkspace_.clear();
+            mixerSessionRecoveryPending_=true;
+            mixerSessionStatus_="RETAINED_OFFLINE_FX_REAPPLY_REQUIRED";
         }
         pendingRetainedFxCapture_.reset();
         diagnostics_.record("OFFLINE_FX_CAPTURE_MS",juce::String(static_cast<juce::int64>(elapsed)));
-        emitRetainedFxOfflineAck(requestId,error);
+        if(!sessionLifecycleShuttingDown_)emitRetainedFxOfflineAck(requestId,error);
     }
 
     void openRetainedFxOffline(const juce::var& request) {
@@ -2892,7 +2912,8 @@ private:
             slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane&&
             engine_.hasRetainedNativeSession()&&
             !engine_.isGraphSwitchPending()&&!deviceApply_.busy()&&
-            !nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+            !nativeShowBusy_&&!studioBackupBusy_&&
+            (!mixerSessionWorker_.busy()||(pendingRetainedFxCapture_&&pendingRetainedFxCapture_->committing))&&
             !logicalVendorEditor_&&
             graph.getProperty("bindingState","").toString()=="NEEDS_REMAP"&&
             session.getProperty("authority","").toString()=="CHANNEL_ID"&&

@@ -4,6 +4,7 @@
 #include <array>
 #include <utility>
 #include <limits>
+#include <cstdint>
 
 // CONTROL / IO only. Limits apply to actual bytes, not just file/ZIP metadata.
 // This is structural preflight; the existing typed JSON codecs remain authoritative.
@@ -40,6 +41,46 @@ struct BoundedDataInput final {
         result=std::move(value);
         return true;
     }
+    // JUCE's pinned parser accumulates the integer prefix in signed int64
+    // and the exponent in int. Bound both BEFORE calling it, even for
+    // malformed input and decimal/exponent forms. IDs remain quoted strings.
+    static bool jsonNumber(const char* bytes,std::size_t size,std::size_t& i) noexcept {
+        const auto digit=[](char ch){return ch>='0'&&ch<='9';};
+        auto p=i;
+        if(bytes[p]=='-')++p;
+        if(p==size||!digit(bytes[p]))return false;
+        const bool leadingZero=bytes[p]=='0';
+        constexpr auto max=static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+        std::uint64_t magnitude=0;
+        do {
+            const auto d=static_cast<unsigned>(bytes[p]-'0');
+            if(magnitude>(max-d)/10)return false;
+            magnitude=magnitude*10+d;
+            ++p;
+            if(leadingZero&&p<size&&digit(bytes[p]))return false;
+        }while(p<size&&digit(bytes[p]));
+        if(p<size&&bytes[p]=='.') {
+            ++p;
+            if(p==size||!digit(bytes[p]))return false;
+            while(p<size&&digit(bytes[p]))++p;
+        }
+        if(p<size&&(bytes[p]=='e'||bytes[p]=='E')) {
+            ++p;
+            if(p<size&&(bytes[p]=='+'||bytes[p]=='-'))++p;
+            if(p==size||!digit(bytes[p]))return false;
+            unsigned exponent=0;
+            do {
+                const auto d=static_cast<unsigned>(bytes[p]-'0');
+                if(exponent>(4096u-d)/10u)return false;
+                exponent=exponent*10u+d;
+                ++p;
+            }while(p<size&&digit(bytes[p]));
+        }
+        if(p<size&&bytes[p]!=','&&bytes[p]!=']'&&bytes[p]!='}'&&
+           bytes[p]!=' '&&bytes[p]!='\t'&&bytes[p]!='\r'&&bytes[p]!='\n')return false;
+        i=p-1;
+        return true;
+    }
     static bool jsonStructure(const juce::String& text) {
         const auto* bytes=text.toRawUTF8();
         const auto size=text.getNumBytesAsUTF8();
@@ -56,6 +97,10 @@ struct BoundedDataInput final {
                 continue;
             }
             if(c=='"'){quoted=true;continue;}
+            if(c=='-'||(c>='0'&&c<='9')) {
+                if(!jsonNumber(bytes,size,i))return false;
+                continue;
+            }
             if(c=='{'||c=='[') {
                 if(depth==stack.size())return false;
                 stack[depth++]=c;

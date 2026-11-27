@@ -41,6 +41,19 @@ int main() {
     assert(Input::text(file,1024,text)&&Input::jsonStructure(text));
     assert(!Input::jsonStructure("["+text+"]"));
     assert(!Input::jsonStructure("{]"));
+    // Reproduce the actual UBSan failure without invoking the unsafe parser.
+    for(const auto* invalidNumber:{"[444444444444444444444444444]",
+         "[9223372036854775808]","[-9223372036854775808]",
+         "[9223372036854775808.0]","[1e40666666666]","[1e-2147483648]",
+         "[1e+]","[- 1]","[01]","[1.]"}) {
+        assert(!Input::jsonStructure(invalidNumber));
+    }
+    for(const auto* validNumber:{"[9223372036854775807]","[-9223372036854775807]",
+         "[0,-0,0.5,-1.25e-4,1e+308,5e-324]",
+         "{\"id\":\"18446744073709551615\",\"label\":\"1e40666666666\"}"}) {
+        assert(Input::jsonStructure(validNumber));
+        assert(!juce::JSON::parse(validNumber).isVoid());
+    }
     assert(!Input::jsonStructure("{\"a\":\"unterminated}"));
     assert(Input::jsonStructure("{\"a\":\"[{}]\\\"\"}"));
     for(const auto* path:{"../escape","a/../escape","a//b","/a","a/",
