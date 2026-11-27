@@ -5957,6 +5957,9 @@
         if(ack.action==="secondaryOutputStop"&&ack.preferenceSaved===true){
           extraPreferred="";extraHasSaved=false;extraSelected="";
         }
+        // Native memory already reflects the newest choice while disk
+        // persistence retries. Refresh actual inventory, never paint old MON.
+        if(ack.preferenceSaved===false)refreshAdditionalInventory(true);
         if(extraPending.action==="secondaryMonitorStarter"||extraPending.action==="secondaryOutputSplit")
           extraPending.ackRevision=String(ack.graphRevision||"");
         // A fresh status and accepted graph may already have arrived while

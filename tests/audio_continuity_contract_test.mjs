@@ -176,3 +176,20 @@ test('recovered checkpoint is durably muted before atomic HEAD publication',()=>
  assert.match(recover,/verified.resumeMain=false/);
  assert.match(s,/if\(recovered.isEmpty\(\)\|\|recovered==pointer\)doc.resumeMain=false/);
 });
+
+test('late WASAPI cold startup binds the device before one guarded FX restore',()=>{
+ const s=main.split('void serviceWasapiDeviceContinuity()')[1].split('void protectKnownFeedbackLoop(')[0];
+ assert.match(s,/else if\(pendingStartupWasapi_\)\s*\{[\s\S]*?if\(!engine_\.finishManualAudioSetup\(\)\)/);
+ assert.match(s,/pendingStartupWasapi_=false;\s*startupError_\.clear\(\)/);
+ assert.match(main,/!pendingStartupAsioSettings_ && !pendingStartupWasapi_ && !catalog_\.busy\(\)/);
+ assert.match(main,/pendingStartupWasapi_=saved&&startupError_\.isNotEmpty\(\)/);
+});
+test('MON persistence retries newest accepted intent without reusing stale preference',()=>{
+ const p=main.split('bool persistSecondaryPreference(')[1].split('bool forgetSecondaryStartupSelection(')[0];
+ assert.match(p,/if\(!immediate&&now<secondaryPreferenceRetryAt_\)return false/);
+ assert.match(p,/secondaryPreferenceRetryAt_=now\+5000/);
+ assert.ok(p.indexOf('secondaryPreference_=std::move(next)')<p.indexOf('secondaryPreferenceDirty_=true'));
+ assert.match(p,/return persistSecondaryPreference\(true\)/);
+ assert.match(main,/if\(!updaterProbeMode_\)\(void\)persistSecondaryPreference\(true\)/);
+ assert.match(main,/serviceSecondaryInventory\(\);\s*\(void\)persistSecondaryPreference\(\)/);
+});

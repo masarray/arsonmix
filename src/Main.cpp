@@ -861,6 +861,7 @@ public:
         engine_.devices().removeChangeListener (this);
         // Flush the last verified machine profile before the driver is closed.
         if(!updaterProbeMode_)persistApprovedAudioSettings(true);
+        if(!updaterProbeMode_)(void)persistSecondaryPreference(true);
         // An in-flight durable HEAD must finish and adopt its workspace.
         // Only an incomplete CONTROL capture may be abandoned.
         if(pendingRetainedFxCapture_ && !pendingRetainedFxCapture_->committing)
@@ -957,6 +958,7 @@ private:
     armix::session::SessionCheckpointCadence sessionCheckpointCadence_;
     bool mixerSessionStartupInspected_=false;
     std::unique_ptr<juce::XmlElement> pendingStartupAsioSettings_;
+    bool pendingStartupWasapi_=false;
     armix::device::AudioContinuityRetry startupAsioRetry_;
     bool sessionLifecycleShuttingDown_=false;
     bool mixerSessionRecoveryPending_=false;
@@ -4328,6 +4330,8 @@ private:
     struct SecondaryPreference { juce::String name; std::wstring id; bool prepare=true; };
     std::optional<SecondaryPreference> secondaryPreference_;
     bool secondaryPreferenceLoaded_=false;
+    bool secondaryPreferenceDirty_=false;
+    std::uint64_t secondaryPreferenceRetryAt_=0;
     bool startupSecondaryPending_=true;
     armix::device::AudioContinuityRetry startupSecondaryRetry_;
     juce::File secondaryPreferenceFile() const {
@@ -4347,24 +4351,42 @@ private:
         if(!prepare.isBool())return;
         secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer()),bool(prepare)};
     }
+    bool persistSecondaryPreference(bool immediate=false) {
+        if(!secondaryPreferenceDirty_)return true;
+        const auto now=monotonicMilliseconds();
+        if(!immediate&&now<secondaryPreferenceRetryAt_)return false;
+        const auto& wanted=*secondaryPreference_;
+        auto data=std::make_unique<juce::DynamicObject>();
+        data->setProperty("version",1);
+        data->setProperty("name",wanted.name);
+        data->setProperty("endpointId",juce::String(wanted.id.c_str()));
+        data->setProperty("prepareOnStartup",wanted.prepare);
+        if(machineSettingsDirectory().createDirectory().wasOk()&&
+           secondaryPreferenceFile().replaceWithText(juce::JSON::toString(juce::var(data.release()),true)))
+        {
+            secondaryPreferenceDirty_=false;
+            secondaryPreferenceRetryAt_=0;
+            return true;
+        }
+        if(secondaryPreferenceRetryAt_==0||immediate)
+            diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Machine-local preference not saved; retry pending");
+        secondaryPreferenceRetryAt_=now+5000;
+        return false;
+    }
     bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true) {
         loadSecondaryPreference();
         if(name.isEmpty()||name.length()>240||endpointId.empty()||endpointId.size()>2048)return false;
         if(secondaryPreference_&&secondaryPreference_->name==name&&
-           secondaryPreference_->id==endpointId&&secondaryPreference_->prepare==prepare)return true;
-        auto data=std::make_unique<juce::DynamicObject>();
-        data->setProperty("version",1);
-        data->setProperty("name",name);
-        data->setProperty("endpointId",juce::String(endpointId.c_str()));
-        data->setProperty("prepareOnStartup",prepare);
-        if(machineSettingsDirectory().createDirectory().wasOk()&&
-           secondaryPreferenceFile().replaceWithText(juce::JSON::toString(juce::var(data.release()),true)))
-        {
-            secondaryPreference_=SecondaryPreference{name,endpointId,prepare};
-            return true;
-        }
-        diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Machine-local preference not saved");
-        return false;
+           secondaryPreference_->id==endpointId&&secondaryPreference_->prepare==prepare)
+            return persistSecondaryPreference(true);
+        // The accepted operator intent changes immediately even if disk is
+        // temporarily unavailable. Never resurrect the old selection in
+        // this process, and retain the newest value for bounded retry.
+        SecondaryPreference next{name,endpointId,prepare};
+        secondaryPreference_=std::move(next);
+        secondaryPreferenceDirty_=true;
+        secondaryPreferenceRetryAt_=0;
+        return persistSecondaryPreference(true);
     }
     bool forgetSecondaryStartupSelection() {
         loadSecondaryPreference();
@@ -7253,8 +7275,10 @@ private:
         }
         if(action=="audioDeviceApply"||action=="audioSetup"||action=="audioDriverPanel"||
            action=="nativeMixerNewLive"||action=="nativeMixerNewOffline"||
-           action=="nativeMixerFileOpen"||action=="nativeMixerOpenArchive")
+           action=="nativeMixerFileOpen"||action=="nativeMixerOpenArchive") {
             cancelStartupAsioRetry();
+            pendingStartupWasapi_=false;
+        }
         if(action=="nativeMixerNewLive"||action=="nativeMixerNewOffline"||
            action=="nativeMixerFileOpen"||action=="nativeMixerOpenArchive"||
            action=="routingDryStop"||action=="routingDryApply"||
@@ -11929,6 +11953,11 @@ private:
             matchesPinnedWasapiReadback(*verifiedWasapiSetup_,live,device);
         if(expected && !directCallbackStalled_) {
             wasapiRecovery_.recovered();
+            if(pendingStartupWasapi_&&engine_.hasBoundMixerRoute()) {
+                pendingStartupWasapi_=false;
+                startupError_.clear();
+                deviceSettingsDirty_=true;
+            }
             // A short JUCE STOP/START must not leave MAIN latched off.
             if(engine_.mainInterruptedByDevice() && engine_.wantsMainContinuation() &&
                !operatorOutputMuted_)requestAutomaticMain(false);
@@ -11959,10 +11988,22 @@ private:
                actual.outputDeviceName!=wanted.outputDeviceName ||
                !matchesPinnedWasapiReadback(wanted,actual,opened))
                 error="Previously verified WASAPI endpoints are not available";
-            else if(!finishAudioSetupAndRecoverMixer())
+            else if(pendingStartupWasapi_) {
+                // Do not call restoreSavedMixerSession from the retry loop:
+                // next CONTROL tick runs the normal VST3 startup crash guard
+                // once, after exact device verification and silent binding.
+                if(!engine_.finishManualAudioSetup())
+                    error="WASAPI reopened, but silent native mixer is not ready";
+            } else if(!finishAudioSetupAndRecoverMixer())
                 error="WASAPI reopened, but retained native mixer binding is not ready";
         }
         if(error.isEmpty()) {
+            if(pendingStartupWasapi_) {
+                pendingStartupWasapi_=false;
+                startupError_.clear();
+                deviceSettingsDirty_=true;
+                diagnostics_.record("WASAPI_STARTUP_DEVICE_READY","Saved pair verified; guarded mixer restore scheduled");
+            }
             wasapiRecovery_.recovered();
             directCallbackStalled_=false;
             callbackProgressMs_=monotonicMilliseconds();
@@ -12064,6 +12105,7 @@ private:
             onAction(stop);
         }
         serviceSecondaryInventory();
+        (void)persistSecondaryPreference();
         servicePhysicalLoopback();
         // Always disabled unless the user explicitly starts a bounded trace.
         const bool timing = guiPerf_.active;
@@ -12145,6 +12187,12 @@ private:
                 pendingStartupAsioSettings_=std::make_unique<juce::XmlElement>(*saved);
                 startupAsioRetry_.fault(monotonicMilliseconds());
             }
+            // A missing saved WASAPI endpoint must not instantiate vendor FX
+            // against an unverified route. Existing endpoint continuity
+            // opens only the pinned pair, then the normal guarded startup
+            // path owns the single checkpoint restore.
+            pendingStartupWasapi_=saved&&startupError_.isNotEmpty()&&
+                verifiedWasapiSetup_.has_value()&&!vendorSafeRecoveryActive();
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
             // Only pristine Windows first runs are candidates. Saved sessions,
@@ -12159,7 +12207,7 @@ private:
         // verification. Restore once they are visible, never reject a saved
         // factory insert simply because the startup catalog is still busy.
         serviceStartupAsioRetry();
-        if(!mixerSessionStartupInspected_ && !pendingStartupAsioSettings_ && !catalog_.busy() &&
+        if(!mixerSessionStartupInspected_ && !pendingStartupAsioSettings_ && !pendingStartupWasapi_ && !catalog_.busy() &&
            !deviceApply_.busy()&&!mixerSessionWorker_.busy()&&!logicalVendorEditor_&&
            !nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
             mixerSessionStartupInspected_=true;
