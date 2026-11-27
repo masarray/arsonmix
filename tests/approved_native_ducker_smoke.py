@@ -180,10 +180,23 @@ def main():
         assert_geometry()
         # Idle paint must not rewrite the stable power state or accessibility
         # attributes on each polling tick/readback.
-        editor.locator(".armix-builtin-fx-power").evaluate("""e=>{window.__powerWrites=[];window.__powerObserver=new MutationObserver(rs=>window.__powerWrites.push(...rs.map(r=>r.attributeName)));window.__powerObserver.observe(e,{attributes:true,attributeFilter:['data-fx-state','disabled','aria-pressed','title','aria-label']});}""")
+        editor.locator(".armix-builtin-fx-power").evaluate("""e=>{
+          window.__powerWrites=[];window.__powerCalls=[];
+          const watched=['data-fx-state','disabled','aria-pressed','title','aria-label'];
+          const original=e.setAttribute;
+          e.setAttribute=function(k,v){if(watched.includes(k))window.__powerCalls.push([k,this.getAttribute(k),v,new Error().stack]);return original.call(this,k,v);};
+          for(const k of ['disabled','title']){
+            let proto=e,desc;
+            while(proto&&!(desc=Object.getOwnPropertyDescriptor(proto,k)))proto=Object.getPrototypeOf(proto);
+            if(desc?.set)Object.defineProperty(e,k,{configurable:true,get(){return desc.get.call(this);},set(v){window.__powerCalls.push([k,desc.get.call(this),v,new Error().stack]);desc.set.call(this,v);}});
+          }
+          window.__powerObserver=new MutationObserver(rs=>window.__powerWrites.push(...rs.map(r=>[r.attributeName,r.oldValue,e.getAttribute(r.attributeName)])));
+          window.__powerObserver.observe(e,{attributes:true,attributeOldValue:true,attributeFilter:watched});
+        }""")
         settled_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5a",after=settled_read)
         settled_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5b",after=settled_read)
-        assert editor.locator(".armix-builtin-fx-power").evaluate("()=>window.__powerWrites.length")==0
+        mutations=editor.locator(".armix-builtin-fx-power").evaluate("()=>({writes:window.__powerWrites,calls:window.__powerCalls})")
+        assert not mutations["writes"],mutations
         # Source readout must fit the actual long state seen in Windows FIELD.
         readback(page,[SOURCE,MIC2],settings=final["settings"],serial="6",available=False,after=settled_read)
         assert editor.locator(".mx-ducker-read").first.inner_text()=="Unavailable"
