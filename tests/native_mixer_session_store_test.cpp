@@ -2090,8 +2090,11 @@ static void verifyDmxSplitNativePcm(){
     assert(mixer.applyNativeWireTransaction(pins.epoch,rev[0],rev[1],wire).accepted);
     render(false);render(false);
     assert(outL.back()>.01f&&outL.back()<tap[0][479]);
+    const float separateHeadphone=outL.back(),separateMain=tap[0][479];
     rev=revisions();
-    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],false,pins,true).isNotEmpty());
+    // Switching destinations is now reversible, but still requires explicit disarm.
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],false,pins,false).isNotEmpty());
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0]+1,rev[1],false,pins,true).isNotEmpty());
     render(false);assert(outL.back()>.01f);
     assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
     saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;
@@ -2103,8 +2106,44 @@ static void verifyDmxSplitNativePcm(){
     assert(MixerDeviceBindingPolicy::proposedOutputs(decoded,decoded.binding,2).secondaryMain());
     Recovery::Context context{BindingMode::exact,Recovery::Source::head,true,false,true,true,false};
     assert(!Recovery::plan(decoded,context).resumeMain);
+    const auto monitorEdge=[&](const MixerSessionDocument& doc){
+        const auto* row=doc.roster.find({1});assert(row);
+        const auto it=std::find_if(row->sends.begin(),row->sends.end(),
+            [&](const auto& edge){return edge.destination==monitor&&!edge.primaryOutput;});
+        assert(it!=row->sends.end());return *it;
+    };
+    const auto originalEdge=monitorEdge(decoded);
+    render(true);assert(!tap[0]&&!tap[1]&&outL.back()==0.f&&outR.back()==0.f);
+    rev=revisions();
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],false,pins,true).isEmpty());
+    assert(mixer.nativeBusPatchAwaitingCallback());
+    render(true);
+    assert(!mixer.nativeBusPatchAwaitingCallback()&&!tap[0]&&!tap[1]&&outL.back()==0.f&&outR.back()==0.f);
+    render(false);render(false);
+    assert(!tap[0]&&!tap[1]);
+    assert((physicalMain==std::array<int,2>{0,1}));
+    assert((physicalMonitor==std::array<int,2>{-1,-1}));
+    assert(std::abs(outL.back()-separateMain)<1.e-5f);
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;
+    MixerSessionDocument dormant;assert(Codec::decode(Codec::encode(saved),dormant));
+    assert(!dormant.outputs.secondaryMain()&&!dormant.outputs.monitorEnabled&&
+        dormant.legacyIds.monitor==monitor);
+    const auto retainedEdge=monitorEdge(dormant);
+    assert(retainedEdge.edgeId==originalEdge.edgeId&&retainedEdge.gain==originalEdge.gain&&
+        retainedEdge.preFader==originalEdge.preFader&&retainedEdge.enabled==originalEdge.enabled);
+    // Re-enter Separate without replacing the authored monitor send.
+    render(true);rev=revisions();
+    assert(mixer.patchDmxSplitOutput(pins.epoch,rev[0],rev[1],true,pins,true,true).isEmpty());
+    render(true);assert(!mixer.nativeBusPatchAwaitingCallback());
+    render(false);render(false);
+    assert(tap[0]&&tap[1]&&std::abs(tap[0][479]-separateMain)<1.e-5f);
+    assert(std::abs(outL.back()-separateHeadphone)<1.e-5f);
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    assert(monitorEdge(saved).edgeId==originalEdge.edgeId&&saved.legacyIds.monitor==monitor);
     render(true);assert(!tap[0]&&!tap[1]&&outL.back()==0.f&&outR.back()==0.f);
     std::cout<<"DMX_SPLIT_NATIVE_PCM_AND_BINDING_PASS\n";
+    std::cout<<"DMX_REVERSIBLE_MONITOR_DORMANT_PCM_ROUNDTRIP_PASS\n";
 }
 static void verifyLogicalOutputNativePcm(){
     using R=armix::device::LogicalOutputRegistry;
