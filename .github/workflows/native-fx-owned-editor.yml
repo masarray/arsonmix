@@ -26,6 +26,16 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Verify selected Node runtime before bounded WIRE contract
+        shell: pwsh
+        run: |
+          $node = (Get-Command node -CommandType Application -ErrorAction Stop).Source
+          Write-Host "WIRE fixture Node: $node"
+          & $node --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Fail closed on all three native editor lifetime paths
         shell: pwsh
         run: python -m unittest discover -s tests -p native_fx_window_lifecycle_contract_test.py -v
