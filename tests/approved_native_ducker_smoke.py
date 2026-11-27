@@ -20,12 +20,15 @@ def latest(page, action):
 def packet(action, **kw):
     return {**{k: action[k] for k in ("requestId","channelId","deviceEpoch","graphRevision","instanceId")}, **kw}
 
-def readback(page, sources, settings=DEFAULTS, serial="1", pending=False, available=True):
+def readback(page, sources, settings=DEFAULTS, serial="1", pending=False, available=True, after=None):
+    if after is not None:
+        page.wait_for_function("id=>window.__actions.filter(x=>x.action==='nativeDuckerSnapshot').at(-1)?.requestId!==id",arg=after)
     req = latest(page, "nativeDuckerSnapshot")
     assert req, "native DSP readback absent"
     emit(page,"arMixBuiltinDuckerSnapshot",packet(req,status="ACCEPTED",offline=False,
         settings=settings,sources=sources,pending=pending,meterSerial=serial,gainReductionDb=8,
         phase=2,meters=[dict(id=x,available=available,dbfs=-18) for x in sources]))
+    return req["requestId"]
 
 def main():
     spec=importlib.util.spec_from_file_location("bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -148,14 +151,12 @@ def main():
         final=latest(page,"nativeDuckerSet")
         assert final["settings"]["depthDb"]>req["settings"]["depthDb"]
         emit(page,"arMixBuiltinDuckerAck",packet(final,status="APPLIED"))
-        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5")
+        settled_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5")
         assert edit_button.is_enabled()
         assert edit_button.evaluate("()=>window.__duckerEditMutations.length")==0
         assert_geometry()
         # Source readout must fit the actual long state seen in Windows FIELD.
-        page.wait_for_function("()=>window.__actions.filter(x=>x.action==='nativeDuckerSnapshot').at(-1)!=null")
-        page.wait_for_timeout(180)
-        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="6",available=False)
+        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="6",available=False,after=settled_read)
         assert editor.locator(".mx-ducker-read").first.inner_text()=="Unavailable"
         assert_geometry()
         # A missing ACK must not permanently lock the editor or replay held edits.
@@ -165,11 +166,11 @@ def main():
         lost=latest(page,"nativeDuckerSet")
         page.mouse.wheel(0,-120)
         page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Edit delayed'",timeout=12000)
-        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="7",pending=True)
+        busy_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="7",pending=True)
         assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
-        page.wait_for_timeout(180)
-        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="8",pending=False)
-        assert editor.locator(".mx-ducker-phase").inner_text()=="Check edit"
+        assert editor.locator(".mx-ducker-phase").inner_text()=="Edit delayed"
+        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="8",pending=False,after=busy_read)
+        page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Check edit'",timeout=3000)
         assert abs(float(depth.input_value())-final["settings"]["depthDb"])<.001
         assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
         emit(page,"arMixBuiltinDuckerAck",packet(lost,status="APPLIED"))
