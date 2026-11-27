@@ -224,8 +224,15 @@ def main():
         page.once("dialog",lambda dialog:dialog.dismiss())
         new_project.click()
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
+        # The leftmost New shortcut delegates to exactly the same transaction.
+        toolbar_new=page.locator(".command-bar > [data-native-new-project]")
+        assert toolbar_new.inner_text()=="New" and toolbar_new.is_visible()
+        page.once("dialog",lambda dialog:dialog.dismiss())
+        toolbar_new.click()
+        assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
         page.once("dialog",lambda dialog:dialog.accept())
-        new_project.click()
+        toolbar_new.click()
+        assert page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='nativeMixerNewOffline').length")==1
         new_event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerNewOffline')?.payload")
         assert new_event["mode"]=="EMPTY" and new_event["confirmed"] is True, new_event
         assert new_event["workspaceToken"]=="workspace-a" and new_event["baseRevision"]=="1", new_event

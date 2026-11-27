@@ -34,11 +34,12 @@ def main():
                 }};""")
             page.goto((dst / "index.html").as_uri())
             page.wait_for_function("""()=>document.documentElement.classList.contains('armix-native-desktop') &&
-                document.querySelectorAll('.command-bar .mixer-file-tool').length===2 &&
+                document.querySelectorAll('.command-bar .mixer-file-tool').length===3 &&
                 document.querySelectorAll('.command-bar .armix-toolbar-divider').length===3 &&
                 !document.querySelector('.command-bar [data-native-monitor]') &&
                 !!document.querySelector('[data-native-emergency-output]') &&
                 !!document.getElementById('playerToggle')""")
+            assert page.locator(".command-bar [data-native-extra-output], .command-bar [data-native-first-sound]").count() == 0
             assert page.locator(".command-bar").get_by_text("Mute Output", exact=True).count() == 0
             assert page.locator(".command-bar").get_by_text("Resume Output", exact=True).count() == 0
             # UX-1 visual regression: evaluate the ACTUAL native assembled
@@ -98,8 +99,12 @@ def main():
               }).map(el=>({id:el.id||el.textContent.trim().slice(0,12),
                   left:el.getBoundingClientRect().left,
                   right:el.getBoundingClientRect().right}));
+              const tail=[...bar.children].slice(-3).map(el=>el.id||
+                (el.hasAttribute('data-native-io')?'audioIO':'unknown'));
+              const css=getComputedStyle(bar);
               return {bar:{height:b.height,left:b.left,right:b.right},
-                more:{left:more.left,right:more.right},
+                gap:parseFloat(css.columnGap),paddingRight:parseFloat(css.paddingRight),
+                tail,more:{left:more.left,right:more.right},
                 visible,dividers:[...bar.querySelectorAll('.armix-toolbar-divider')]
                  .map(el=>({hidden:getComputedStyle(el).display==='none',
                            height:el.getBoundingClientRect().height}))};
@@ -110,6 +115,15 @@ def main():
             assert metrics["dividers"][0]["height"] in (0, 21), (
                 width, "divider layout changed", metrics)
             visible = metrics["visible"]
+            # Owner reference: one contiguous group aligned to the right edge.
+            assert metrics["tail"] == ["addTrack","audioIO","moreTools"], (width, metrics)
+            right = visible[-3:]
+            assert [x["id"] for x in right] == ["addTrack","Audio I/O","moreTools"], (width, right)
+            for a, b in zip(right,right[1:]):
+                assert abs(b["left"]-a["right"]-metrics["gap"]) <= 1.5, (width, right)
+            assert abs(metrics["bar"]["right"]-metrics["more"]["right"]-metrics["paddingRight"]) <= 2, (width, metrics)
+            ids=[x["id"] for x in visible]
+            assert ids.index("playerToggle") == ids.index("pluginsButton")+1, (width, ids)
             for a, b in zip(visible, visible[1:]):
                 # More can be pushed to the far right, never overlaid on controls.
                 assert a["right"] <= b["left"] + 1, (
@@ -117,6 +131,18 @@ def main():
             for item in visible:
                 assert item["left"] >= -1 and item["right"] <= width+1, (
                     width, "toolbar control outside viewport", item)
+            # Real file group, not CSS visual reordering: tab order follows DOM.
+            file_group = page.locator(".command-bar > .mixer-file-tool")
+            assert file_group.all_text_contents() == ["New", "Save", "Open"], width
+            new = page.locator(".command-bar > [data-native-new-project]")
+            assert new.count() == 1 and new.is_visible(), width
+            assert new.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
+            assert new.get_by_role("img").count() == 0  # decorative icon
+            image = new.locator("img")
+            assert image.get_attribute("alt") == ""
+            assert image.get_attribute("src") == "assets/mixer-new.svg"
+            page.wait_for_function("()=>{const i=document.querySelector('[data-native-new-project] img');return i.complete&&i.naturalWidth>0}")
+            assert image.bounding_box()["width"] == 16 and image.bounding_box()["height"] == 16, width
             for caption in ("Save", "Open"):
                 button = page.locator('.command-bar .mixer-file-tool').filter(has_text=caption)
                 assert button.count() == 1 and button.is_visible(), (
