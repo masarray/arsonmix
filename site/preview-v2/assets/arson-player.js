@@ -26,6 +26,7 @@
      String(v%60).padStart(2,"0");
  };
  const open=visible=>{
+   if(!visible)closeSongMenu(false);
    root.hidden=!visible;
    toggle.setAttribute("aria-expanded",String(visible));
    if(visible){
@@ -34,7 +35,7 @@
      rendered="";
      renderTracks();
      renderWaveform(model.transport||{});
-     $("playerSearch").focus({preventScroll:true});
+     (collectionView==="queue"?$("playerQueueView"):$("playerSearch")).focus({preventScroll:true});
    }
  };
  toggle.addEventListener("click",()=>open(root.hidden));
@@ -61,10 +62,13 @@
    draggingSeek=false;
    const length=Number(model.transport?.durationSeconds)||0;
    const fraction=Number(seek.value)/1000;
+   paintRange(seek,fraction*100);
    if(length>0 && Number.isFinite(fraction))
      send("playerSeek",Math.max(0,Math.min(length,
        Math.round(fraction*length*100)/100)));
  });
+ const paintRange=(input,percent)=>input.style.setProperty?.("--ap-fill",Math.max(0,Math.min(100,Number(percent)||0))+"%");
+ seek.addEventListener("input",()=>paintRange(seek,Number(seek.value)/10));
  let lastWaveSignature="";
  const renderWaveform=transport=>{
    const peaks=transport.waveform, length=Number(transport.durationSeconds)||0;
@@ -113,7 +117,7 @@
  $("playerAutoNext").addEventListener("click",()=>
    send("playerAutoNext",!model.autoNext));
  const volume=$("playerVolume"),volumeDb=$("playerVolumeDb");
- const paintVolume=percent=>{volumeDb.textContent=percent===0?"−∞ dB":(20*Math.log10(percent/100)).toFixed(1)+" dB";};
+ const paintVolume=percent=>{paintRange(volume,percent);volumeDb.textContent=percent===0?"−∞ dB":(20*Math.log10(percent/100)).toFixed(1)+" dB";};
  volume.disabled=!native;
  volume.addEventListener("input",()=>{paintVolume(Number(volume.value));send("playerVolume",Number(volume.value));});
  $("playerFadeMs").addEventListener("change",event=>
@@ -128,7 +132,55 @@
    if(event.key==="Enter"){event.preventDefault();event.target.blur();}
  });
  $("playerUndoRemove").addEventListener("click",()=>send("playerUndoRemove"));
- const list=$("playerList"),search=$("playerSearch");
+ const list=$("playerList"),search=$("playerSearch"),songMenu=$("playerSongMenu");
+ let collectionView="setlist",menuOwner=null;
+ function closeSongMenu(restoreFocus=false){
+   const owner=menuOwner;menuOwner=null;songMenu.hidden=true;
+   if(owner){owner.setAttribute("aria-expanded","false");if(restoreFocus&&owner.isConnected!==false)owner.focus({preventScroll:true});}
+ }
+ function switchCollection(view){
+   closeSongMenu(false);collectionView=view;
+   const queue=view==="queue";
+   $("playerSetlistView").setAttribute("aria-pressed",String(!queue));
+   $("playerQueueView").setAttribute("aria-pressed",String(queue));
+   $("playerSetlistTools").hidden=queue;list.hidden=queue;$("playerQueuePanel").hidden=!queue;
+   if(!queue){rendered="";renderTracks();}
+ }
+ $("playerSetlistView").addEventListener("click",()=>switchCollection("setlist"));
+ $("playerQueueView").addEventListener("click",()=>switchCollection("queue"));
+ function showSongMenu(owner,song,revision,setlist){
+   if(menuOwner===owner){closeSongMenu(true);return;}
+   closeSongMenu(false);
+   if(!native||revision!==libraryRevision||setlist!==model.activeSetlist)return;
+   menuOwner=owner;owner.setAttribute("aria-expanded","true");
+   const title=document.createElement("div");title.className="ap-song-menu-title";title.textContent=song.title||"Untitled";
+   const commands=[
+     ["Play next",()=>send("playerQueueNext",song.id),false,model.pending>=0],
+     ["Add to queue",()=>send("playerQueueAppend",song.id),false,false],
+     ["Move earlier",()=>send("playerMoveSong",{from:song.id,to:song.id-1}),false,song.id===0],
+     ["Move later",()=>send("playerMoveSong",{from:song.id,to:song.id+1}),false,song.id>=model.tracks.length-1],
+     ["Remove from setlist",()=>send("playerRemoveSong",song.id),true,song.id===model.pending]
+   ];
+   songMenu.replaceChildren(title);
+   for(const [label,execute,danger,disabled] of commands){
+     const item=document.createElement("button");item.type="button";item.textContent=label;item.disabled=Boolean(disabled);item.dataset.danger=String(danger);
+     item.addEventListener("click",()=>{
+       if(menuOwner!==owner||revision!==libraryRevision||setlist!==model.activeSetlist||item.disabled)return;
+       if((label==="Play next"&&model.pending>=0)||(danger&&song.id===model.pending)){closeSongMenu(true);return;}
+       closeSongMenu(true);execute();
+     });songMenu.append(item);
+   }
+   songMenu.hidden=false;
+   const a=owner.getBoundingClientRect?.(),p=root.getBoundingClientRect?.(),m=songMenu.getBoundingClientRect?.();
+   if(a&&p&&m){
+     const left=Math.max(p.left+5,Math.min(a.right-m.width,p.right-m.width-5));
+     const below=a.bottom+4,top=below+m.height<=p.bottom-5?below:Math.max(p.top+5,a.top-m.height-4);
+     songMenu.style.left=left+"px";songMenu.style.top=top+"px";
+   }
+   songMenu.children[1]?.focus({preventScroll:true});
+ }
+ root.addEventListener("pointerdown",e=>{if(menuOwner&&!songMenu.contains?.(e.target)&&!menuOwner.contains?.(e.target))closeSongMenu(false);});
+ root.addEventListener("focusin",e=>{if(menuOwner&&!songMenu.contains?.(e.target)&&!menuOwner.contains?.(e.target))closeSongMenu(false);});
  const actionButton=(label,title,onClick)=>{
    const button=document.createElement("button");
    button.type="button";button.className="ap-row-action";
@@ -165,7 +217,8 @@
    $("playerUndoRemove").hidden=!model.canUndoRemove;
    const panel=$("playerQueuePanel"),queue=$("playerQueueList");
    const upcoming=model.queue||[];
-   panel.hidden=!upcoming.length;
+   panel.hidden=collectionView!=="queue";
+   $("playerQueueEmpty").hidden=Boolean(upcoming.length);
    $("playerQueueCount").textContent=String(upcoming.length);
    queue.replaceChildren();
    // One scrollable compact queue, bounded at native 128 entries.
@@ -179,15 +232,17 @@
      title.textContent=String(item.title||"Untitled");
      const controls=document.createElement("span");
      controls.className="ap-row-actions";
+     const epoch=model.queueRevision;
+     const guard=fn=>()=>{if(epoch===model.queueRevision)fn();};
      const up=actionButton("↑","Move "+item.title+" earlier",
-       ()=>queueGesture("playerQueueMove",item.id,item.id-1));
+       guard(()=>queueGesture("playerQueueMove",item.id,item.id-1)));
      const down=actionButton("↓","Move "+item.title+" later",
-       ()=>queueGesture("playerQueueMove",item.id,item.id+1));
+       guard(()=>queueGesture("playerQueueMove",item.id,item.id+1)));
      up.disabled=item.id===0 || model.pending>=0;
      down.disabled=item.id===upcoming.length-1 || model.pending>=0;
      const remove=actionButton("×",
        "Remove "+item.title+" from queue",
-       ()=>queueGesture("playerQueueRemove",item.id));
+       guard(()=>queueGesture("playerQueueRemove",item.id)));
      remove.disabled=model.pending>=0;
      controls.append(up,down,remove);
      row.addEventListener("dragstart",event=>{
@@ -264,6 +319,7 @@
    }
    rendered=signature;
    const songs=filtered.slice(start,end);
+   closeSongMenu(false);
    list.replaceChildren();
    if(!filtered.length){
      const message=document.createElement("div");
@@ -310,39 +366,24 @@
          send("playerPlayNow",song.id);
        }
      });
-     // One keyboard-accessible contextual selector per song. No overlay
-     // escapes the virtual scroller, and every command retains native ownership.
-     const actions=document.createElement("select");actions.className="ap-row-menu";
-     actions.setAttribute("aria-label","Actions for "+song.title);
+     const actions=document.createElement("button");actions.type="button";actions.className="ap-row-menu";
+     actions.setAttribute("aria-label","Actions for "+song.title);actions.setAttribute("aria-expanded","false");actions.setAttribute("aria-controls","playerSongMenu");
      actions.title="Actions for "+song.title;actions.disabled=!native;
+     actions.innerHTML='<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
      const revision=libraryRevision,setlist=model.activeSetlist;
-     const options=[["","⋯"],["up","Move earlier"],["down","Move later"],["next","Play next"],["append","Add to queue"],["remove","Remove from setlist"]];
-     for(const [value,label] of options){
-       const option=document.createElement("option");option.value=value;option.textContent=label;
-       option.disabled=(value==="up"&&song.id===0)||(value==="down"&&song.id===model.tracks.length-1);
-       actions.append(option);
-     }
-     actions.value="";
-     actions.addEventListener("change",()=>{
-       const choice=actions.value;actions.value="";
-       if(!native||revision!==libraryRevision||setlist!==model.activeSetlist)return;
-       if(choice==="up"&&song.id>0)send("playerMoveSong",{from:song.id,to:song.id-1});
-       else if(choice==="down"&&song.id<model.tracks.length-1)send("playerMoveSong",{from:song.id,to:song.id+1});
-       else if(choice==="next")send("playerQueueNext",song.id);
-       else if(choice==="append")send("playerQueueAppend",song.id);
-       else if(choice==="remove")send("playerRemoveSong",song.id);
-     });
-
+     actions.addEventListener("click",()=>showSongMenu(actions,song,revision,setlist));
      row.addEventListener("dragstart",event=>{
-       queueDrag=null; // catalogue and queue are distinct drag domains
+       closeSongMenu(false);queueDrag=null; // catalogue and queue are distinct drag domains
        event.dataTransfer?.setData("text/plain",String(song.id));
        if(event.dataTransfer)event.dataTransfer.effectAllowed="move";
      });
      row.addEventListener("dragover",event=>event.preventDefault());
      row.addEventListener("drop",event=>{
        event.preventDefault();
-       const source=Number(event.dataTransfer?.getData("text/plain"));
-       if(Number.isInteger(source)&&source>=0 && source!==song.id)
+       const data=event.dataTransfer?.getData("text/plain");
+       if(!data||revision!==libraryRevision||setlist!==model.activeSetlist)return;
+       const source=Number(data);
+       if(Number.isInteger(source)&&source>=0&&source<model.tracks.length&&source!==song.id)
          send("playerMoveSong",{from:source,to:song.id});
      });
      row.append(choose,actions);list.append(row);
@@ -362,13 +403,22 @@
    $("playerDuration").textContent=duration(t.durationSeconds);
    $("playerRemaining").textContent="−"+duration(Math.max(0,(Number(t.durationSeconds)||0)-(Number(t.currentSeconds)||0)));
    $("playerState").textContent=({EMPTY:"NO TRACK",PLAYING:"NOW PLAYING",PAUSED:"PAUSED",PREPARING:"PREPARING",ENDED:"FINISHED",ERROR:"PLAYBACK ERROR"})[state]||"CURRENT · "+state;
-   const nextTitle=model.queue?.[0]?.title||(model.selected!==model.current?model.tracks?.[model.selected]?.title:"");
-   $("playerUpNext").textContent=nextTitle||"No next song selected";
+   // Mirror native precedence for presentation only; a queue entry title is
+   // projected without file identity, so label it queued rather than guaranteed.
+   const selected=model.selected>=0&&model.selected<model.tracks.length?model.selected:-1;
+   const sequential=model.current<0?0:model.current+1;
+   const nextIndex=selected>=0&&selected!==model.current?selected:sequential;
+   const pendingSong=model.pending>=0?model.tracks[model.pending]:null;
+   const queueTitle=model.queue?.[0]?.title;
+   const nextTitle=pendingSong?.title||queueTitle||model.tracks[nextIndex]?.title;
+   $("playerNextLabel").textContent=pendingSong?"PREPARING":queueTitle?"QUEUED NEXT":"UP NEXT";
+   $("playerUpNext").textContent=nextTitle||"End of setlist";
    if(!draggingSeek && document.activeElement!==seek){
      seek.value=String(+t.durationSeconds>0?
        Math.round(1000*Math.min(1,Math.max(0,
          +t.currentSeconds/(+t.durationSeconds)))):0);
    }
+   paintRange(seek,Number(seek.value)/10);
    seek.disabled=!(+t.durationSeconds>0) || !native;
    renderWaveform(t);
    const currentSong=model.tracks?.[model.current];
@@ -419,7 +469,7 @@
    $("playerKeyPlus").disabled=key>=6;
    $("playerTempoMinus").disabled=tempo<=80;
    $("playerTempoPlus").disabled=tempo>=120;
-   $("playerAutoNext").textContent=model.autoNext?"Auto next · On":"Stop after song";
+   $("playerAutoText").textContent=model.autoNext?"Auto next on":"Auto next off";
    $("playerAutoNext").setAttribute("aria-pressed",String(model.autoNext));
    $("playerFadeMs").value=String(model.crossfadeMs??180);
    const acceptedVolume=Number(t.volumePercent??50);
@@ -445,20 +495,22 @@
        state!=="EMPTY" && state!=="ERROR")
        ?"Preparing music KEY/TEMPO in decoder…":detail;
    showFeedback(indicator,Boolean(model.error||t.error));
+   $("playerRouteLight").dataset.state=(model.error||t.error||(state==="PLAYING"&&!t.routeAudible))?"warning":state==="PLAYING"&&t.routeAudible?"audible":"idle";
    $("playerChooseOutput").hidden=!native || !Boolean(model.chooseOutput);
    const missing=model.tracks.find(x=>x.id===model.selected)?.missing;
    $("playerRelink").hidden=!native || !missing;
    $("playerAddFolder").disabled=Boolean(model.libraryBusy);
    $("playerAdd").disabled=Boolean(model.libraryBusy);
-   $("playerCount").textContent=model.tracks.length+" songs";
+   $("playerCount").textContent=String(model.tracks.length);
    renderSetlists();
    renderTracks();
  }
  search.addEventListener("input",renderTracks);
- list.addEventListener("scroll",renderTracks,{passive:true});
- window.addEventListener?.("resize",()=>{rendered="";renderTracks();renderWaveform(model.transport||{});});
+ list.addEventListener("scroll",()=>{closeSongMenu(false);renderTracks();},{passive:true});
+ root.addEventListener("scroll",()=>closeSongMenu(false),{passive:true});
+ window.addEventListener?.("resize",()=>{closeSongMenu(false);rendered="";renderTracks();renderWaveform(model.transport||{});});
  root.addEventListener("keydown",event=>{
-   if(event.key==="Escape"){event.stopPropagation();open(false);toggle.focus();}
+   if(event.key==="Escape"){event.stopPropagation();if(menuOwner){event.preventDefault();closeSongMenu(true);return;}open(false);toggle.focus();return;}
    const target=event.target;
    const interactive=target?.isContentEditable||["INPUT","TEXTAREA","SELECT","BUTTON","SUMMARY","A"].includes(target?.tagName)||target?.closest?.("button,input,select,textarea,summary,a,[contenteditable=true]");
    if(event.key===" "&&!event.repeat&&!interactive&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey){
@@ -469,7 +521,7 @@
    backend.addEventListener("arMixPlayerState",payload=>{
      if(!payload || payload.schema!=="arsonmix.player.v1")return;
      if(Array.isArray(payload.tracks)){
-       model.tracks=payload.tracks;
+       closeSongMenu(false);model.tracks=payload.tracks;
        ++libraryRevision;
      }
      if(Array.isArray(payload.queue)||Array.isArray(payload.setlists))
@@ -481,5 +533,6 @@
    // Request genuine native library/readback, not a browser-local fallback.
    send("playerSubscribe");
  }
+ switchCollection("setlist");
  render();
 })();

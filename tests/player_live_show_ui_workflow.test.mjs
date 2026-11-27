@@ -94,21 +94,26 @@ assert.equal(selectedRow.children[0].dataset.selected,'true');
 assert.equal($('playerPitchTarget').dataset.next,'true');
 assert.match($('playerPitchTarget').textContent,/NEXT · Song 1400/);
 assert.equal($('playerUpNext').textContent,'Duplicate Song');
-assert.equal(selectedRow.children[1].tagName,'SELECT');
+assert.equal(selectedRow.children[1].tagName,'BUTTON');
 actions.length=0;
-selectedRow.children[1].value='append';selectedRow.children[1].fire('change');
+selectedRow.children[1].click();
+assert.equal($('playerSongMenu').hidden,false);
+$('playerSongMenu').children[2].click();
 assert.equal(actions.at(-1).detail.action,'playerQueueAppend');
 assert.equal(actions.at(-1).detail.value,1400);
-assert.equal(selectedRow.children[1].value,'');
+assert.equal($('playerSongMenu').hidden,true);
+$('playerQueueView').click();assert.equal($('playerList').hidden,true);assert.equal($('playerQueuePanel').hidden,false);
+$('playerSetlistView').click();assert.equal($('playerList').hidden,false);assert.equal($('playerQueuePanel').hidden,true);
 const rename=$('playerSetlistName');rename.tagName='INPUT';
 actions.length=0;
 $('arsonPlayer').fire('keydown',{key:' ',target:rename,preventDefault(){throw Error('space in text field must not be intercepted');}});
 assert.equal(actions.length,0);
 $('arsonPlayer').fire('keydown',{key:' ',target:$('arsonPlayer'),preventDefault(){}});
 assert.equal(actions.at(-1).detail.action,'playerPlay');
-const staleMenu=selectedRow.children[1];
+const freshRow=songRows().find(row=>row.dataset.songId==='1400');
+freshRow.children[1].click();const staleMenu=$('playerSongMenu').children[5];
 publish({tracks:songs,selected:1400,current:1399});
-actions.length=0;staleMenu.value='remove';staleMenu.fire('change');
+actions.length=0;staleMenu.click();
 assert.equal(actions.length,0,'stale contextual action cannot remove a different song');
 actions.length=0;
 selectedRow.children[0].fire('click');
@@ -132,12 +137,13 @@ assert.equal(queueRows().length,128);
 
 actions.length=0;
 queueRows()[8].fire('dragstart',{dataTransfer:data,preventDefault:prevent});
-const staleRow=queueRows()[0];
+const staleRow=queueRows()[0];const staleQueueRemove=staleRow.children[1].children[2];
 publish({queue,queueRevision:8,setlists:initial.setlists,pending:-1,
          activeSetlist:0,current:0,selected:0});
 staleRow.fire('drop',{dataTransfer:data,preventDefault:prevent});
 assert.equal(actions.length,0,
   'native queue revision change invalidates pending old browser drag');
+staleQueueRemove.click();assert.equal(actions.length,0,'stale queue button cannot remove a different entry');
 queueRows()[2].children[1].children[2].click();
 assert.deepEqual(
   JSON.parse(JSON.stringify(actions.at(-1).detail)),
@@ -163,4 +169,7 @@ assert.ok(songRows().length<=80);
 assert.doesNotMatch(player,/new Audio\s*\(|AudioContext\s*\(/,
   'WebView may never become a competing audio player');
 assert.equal($('playerRemaining').textContent,'−04:00');
+publish({queue:[],current:0,selected:0,pending:-1});assert.equal($('playerUpNext').textContent,'Song 0001');
+publish({queue:[],current:1999,selected:1999,pending:-1});assert.equal($('playerUpNext').textContent,'End of setlist');
+publish({queue:[],current:0,selected:1,pending:2});assert.equal($('playerNextLabel').textContent,'PREPARING');assert.equal($('playerUpNext').textContent,'Song 0002');
 console.log('V4 PASS: virtual list, queue epochs, contextual actions, explicit NEXT editing, safe typing and native-only playback');

@@ -10,3 +10,9 @@ Owner approved design direction 2026-11-27. Baseline canonical integration #899 
 ## Qualification
 - Existing player live-show test expanded for stale menu revision, NEXT label, typing safety and remaining time. Existing scoped contracts preserved. New exact-SHA CI, assembled Chromium 1366/1680/1920 and 100/125/150% scale, real Windows WebView/ASIO pending until actually run.
 - Preview first per #837: no new RC, installer, full native CTest or public publish. Reconcile latest #899 and #968/#970 before integration. 
+
+## V4.1 — Studio Noir precision finishing (27 Nov 2026)
+Benchmark: [Apple Music MiniPlayer](https://support.apple.com/en-gb/guide/music/mus71d7dcfce/mac) and [queue](https://support.apple.com/guide/music/queue-your-songs-musb1e6d1c76/mac), [Roon queue](https://help.roonlabs.com/portal/en/kb/articles/the-queue), [Stage Traxx playback](https://stagetraxx.com/docs/v4/playback/) and [playlists](https://stagetraxx.com/docs/v4/library/playlists/), [djay single-deck](https://help.algoriddim.com/user-manual/djay-pro-mac/getting-started/decks), [WCAG 2.2 target size](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum). Adopt compact single deck, separate queue view, precise controls, one contextual menu, explicit state; do not copy proprietary visuals.
+- Recessed display, tactile controls, custom filled slider and value displays, compact collection switch, one shared contextual menu, search icon, native routing indicator, sequential next display with pending/queue precedence. Preserve player volume and native intent. No guessed cover art or metadata.
+- Stale queue button and menu revisions guarded; no invalid external empty drag interpreted as row zero. No new DSP or routing. MiniPlayer and actual file metadata/artwork remain deferred (not present in accepted native projection).
+- Exact source tests expanded; full assembled visual QA pending. No Windows installer/RC.
