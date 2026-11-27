@@ -1,5 +1,6 @@
 """Actual assembled native Player UI. Test-only JUCE events; no audio claim."""
 from pathlib import Path
+import base64
 import tempfile
 import sys
 from playwright.sync_api import sync_playwright
@@ -63,26 +64,74 @@ def main():
             for full,ribbon in [("playerPlay","ribbonPlay"),("playerStop","ribbonStop"),
                                 ("playerPrevious","ribbonPrevious"),("playerNext","ribbonNext")]:
                 assert face(full)==face(ribbon),(full,face(full),face(ribbon))
-            # Thick polished glass is a single static CSS material, not a
-            # compositing overlay: no extra nodes, layout expansion or live blur.
+            screen=page.locator("#playerScreen")
             glass=panel.evaluate("""e=>{
-                const s=getComputedStyle(e),header=getComputedStyle(e.querySelector('.ap-top'));
-                return {gradients:(s.backgroundImage.match(/(?:linear|radial)-gradient\\(/g)||[]).length,
-                    rim:s.backgroundClip,shadows:(s.boxShadow.match(/inset/g)||[]).length,
-                    border:s.borderTopWidth,filter:s.filter,backdrop:s.backdropFilter,
-                    animation:s.animationName,header:header.backgroundImage,
-                    over:getComputedStyle(e,'::after').content};
+                const s=getComputedStyle(e),coat=getComputedStyle(e,'::after'),
+                    screen=getComputedStyle(e.querySelector('.ap-screen')),menu=getComputedStyle(e.querySelector('.ap-song-menu'));
+                return {gradients:(coat.backgroundImage.match(/(?:linear|radial)-gradient\\(/g)||[]).length,
+                    shadows:(coat.boxShadow.match(/inset/g)||[]).length,
+                    content:coat.content,position:coat.position,inset:[coat.top,coat.right,coat.bottom,coat.left],
+                    pointer:coat.pointerEvents,layer:Number(coat.zIndex),screenLayer:Number(screen.zIndex),
+                    menuLayer:Number(menu.zIndex),isolation:s.isolation,filter:coat.filter,
+                    backdrop:coat.backdropFilter,animation:coat.animationName,
+                    radius:coat.borderRadius,panelRadius:s.borderRadius,
+                    overflow:s.overflowY};
             }""")
-            assert glass["gradients"]==5 and glass["shadows"]==8,glass
-            assert glass["rim"].endswith("border-box") and glass["border"]=="1px",glass
+            assert glass["gradients"]==4 and glass["shadows"]==8,glass
+            assert glass["content"] not in ("none","normal") and glass["position"]=="absolute",glass
+            assert glass["inset"]==["0px"]*4 and glass["pointer"]=="none",glass
+            assert glass["layer"]>glass["menuLayer"]>glass["screenLayer"] and glass["isolation"]=="isolate",glass
             assert glass["filter"]==glass["backdrop"]==glass["animation"]=="none",glass
-            assert glass["over"] in ("none","normal") and glass["header"].count("linear-gradient")==2,glass
-            # Glass should not intercept the real button hit target.
-            play.scroll_into_view_if_needed()
-            assert play.evaluate("""e=>{const r=e.getBoundingClientRect();
-                return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}""")
-            panel.evaluate("e=>e.scrollTop=0")
-            assert panel.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")
+            assert glass["radius"]==glass["panelRadius"] and glass["overflow"]=="hidden",glass
+            assert screen.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")
+            def hit(control):
+                control.scroll_into_view_if_needed()
+                assert control.evaluate("""e=>{const r=e.getBoundingClientRect();
+                    return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}"""),control
+            # Pixel proof, not just computed z-index: compare actual composited
+            # control pixels with the front coat on/off. A rear background
+            # cannot tint an opaque dropdown or metal button surface.
+            def verify_coat_pixels(control):
+                control.scroll_into_view_if_needed()
+                hit(control)
+                rect=control.bounding_box()
+                assert rect and rect["width"]>8 and rect["height"]>8,rect
+                clip=dict(x=rect["x"]+3,y=rect["y"]+3,width=rect["width"]-6,height=rect["height"]-6)
+                on=page.screenshot(clip=clip,scale="css",animations="disabled")
+                off_style=page.add_style_tag(content="#arsonPlayer::after{visibility:hidden!important}")
+                try:
+                    off=page.screenshot(clip=clip,scale="css",animations="disabled")
+                finally:
+                    off_style.evaluate("e=>e.remove()")
+                stats=page.evaluate("""async ([a,b])=>{
+                    const pixels=async s=>{const bmp=await createImageBitmap(new Blob([Uint8Array.from(atob(s),c=>c.charCodeAt(0))],{type:'image/png'}));
+                        const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
+                        const ctx=c.getContext('2d');ctx.drawImage(bmp,0,0);bmp.close();
+                        return ctx.getImageData(0,0,c.width,c.height).data;};
+                    const [x,y]=await Promise.all([pixels(a),pixels(b)]);let changed=0,sum=0;
+                    for(let i=0;i<x.length;i+=4){const d=Math.abs(x[i]-y[i])+Math.abs(x[i+1]-y[i+1])+Math.abs(x[i+2]-y[i+2]);sum+=d;if(d>=3)changed++;}
+                    return {ratio:changed/(x.length/4),mean:sum/(x.length/4)/3};
+                }""",[base64.b64encode(v).decode("ascii") for v in (on,off)])
+                assert stats["ratio"]>.70 and stats["mean"]>1,stats
+                print("PLAYER_FRONT_COAT_PIXEL_PASS",width,control.get_attribute("id"),stats,flush=True)
+            verify_coat_pixels(play)
+            key=page.locator("#playerKeyPlus")
+            verify_coat_pixels(key)
+            page.evaluate("()=>window.__playerActions.length=0")
+            key.click()
+            assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerKeyStep","value":1}
+            tempo=page.locator("#playerTempoPlus")
+            hit(tempo)
+            tempo.click()
+            assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerTempoStep","value":1}
+            page.locator("#playerDetailsToggle").click()
+            dropdown=page.locator("#playerFadeMs")
+            verify_coat_pixels(dropdown)
+            dropdown.focus()
+            dropdown.press("ArrowDown")
+            assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerFadeMs","value":500}
+            page.locator("#playerDetailsToggle").click()
+            screen.evaluate("e=>e.scrollTop=0")
             listbox=page.locator("#playerList")
             assert listbox.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")
             # Hidden scrollbar does not change virtual list scroll mechanics.
@@ -91,7 +140,7 @@ def main():
             assert listbox.evaluate("e=>e.scrollTop>0")
             assert page.locator(".ap-songrow").count()<=80
             listbox.evaluate("e=>{e.scrollTop=0;e.dispatchEvent(new Event('scroll'))}")
-            panel.evaluate("e=>e.scrollTop=0")
+            screen.evaluate("e=>e.scrollTop=0")
             # Same exact skin and glyph in paused/playing native readback.
             page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",{**state,"transport":{**state["transport"],"state":"PAUSED"}})
             page.wait_for_function("()=>document.getElementById('ribbonPlay').getAttribute('aria-pressed')==='false'")
@@ -177,7 +226,9 @@ def main():
             menu=page.locator("#playerSongMenu")
             menu.wait_for(state="visible")
             assert page.evaluate("()=>window.__playerActions.length")==0
-            mb=menu.bounding_box();assert mb and mb["x"]>=0 and mb["y"]>=0 and mb["x"]+mb["width"]<=width+1 and mb["y"]+mb["height"]<=height+1,mb
+            mb=menu.bounding_box();pb=panel.bounding_box()
+            assert mb and pb and mb["x"]>=pb["x"] and mb["y"]>=pb["y"] and mb["x"]+mb["width"]<=pb["x"]+pb["width"] and mb["y"]+mb["height"]<=pb["y"]+pb["height"],(mb,pb)
+            hit(menu.get_by_role("menuitem",name="Add to queue"))
             page.screenshot(path=str(evidence/f"context-{width}-{height}.png"))
             menu.get_by_role("menuitem",name="Add to queue").click()
             assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerQueueAppend","value":1}
@@ -190,7 +241,7 @@ def main():
             mode=page.locator("#playerAutoNext")
             assert mode.inner_text()=="Repeat one"
             mode.click()
-            page.locator("#arsonPlayer").evaluate("el=>el.dispatchEvent(new Event(\"scroll\"))")
+            screen.evaluate("el=>el.dispatchEvent(new Event(\"scroll\"))")
             page.locator("#playerList").evaluate("el=>el.dispatchEvent(new Event(\"scroll\"))")
             assert menu.is_visible()
             menu.get_by_role("menuitem",name="Repeat all").click()

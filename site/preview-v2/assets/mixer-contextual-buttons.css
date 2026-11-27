@@ -268,9 +268,14 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #playerToggle[aria-expanded="true"]{color:#8cf0d0;border-color:#358c78}
 /* ArSon Player V4.2: approved local visual master, one scoped owner. */
 #arsonPlayer[hidden],#arsonPlayer [hidden],#playerMini[hidden]{display:none!important}
-#arsonPlayer{--ap-bg:#151b20;--ap-header:#20272d;--ap-recess:#10161a;--ap-border:#303a43;--ap-ink:#e4e9ee;--ap-muted:#9badb8;--ap-mint:#67d7c1;--ap-blue:#a5bed2;position:fixed;z-index:90;top:75px;right:12px;bottom:52px;width:min(410px,calc(100vw - 24px));display:flex;flex-direction:column;/* Optical slab: sharp softbox reflection, broad clear coat, dark substrate, polished rim. */background:linear-gradient(132deg,transparent 0%,transparent 17%,#f0fcff1a 17.2%,#e2f6ff30 18%,#d3eeff12 19.5%,transparent 28%,transparent 45%,#badcf512 45.2%,#eefaff1f 45.7%,transparent 47.4%) padding-box,radial-gradient(ellipse 120% 36% at 8% 0%,#d6f2ff26 0%,#c2e6fb0d 45%,transparent 100%) padding-box,linear-gradient(115deg,#b9e4fa16 0%,#b9e4fa05 24%,transparent 24.2%,transparent 72%,#92b7cf07 100%) padding-box,linear-gradient(180deg,#2b3b46 0%,#1d2b35 18%,#141f27 56%,#10171d 100%) padding-box,linear-gradient(145deg,#e4f7ff 0%,#9cb8c7 12%,#3d505d 38%,#6c8999 66%,#182630 84%,#97b7c6 100%) border-box;border:1px solid transparent;border-radius:12px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;box-shadow:inset 0 1px 0 #f4fcffb8,inset 1px 0 0 #dbf6ff80,inset 0 3px 0 #c9efff38,inset 3px 0 0 #a3d2ed30,inset -1px -1px 0 #7eafca66,inset -3px -3px 0 #030b12b3,inset 0 0 0 5px #a9d1e517,inset 0 0 0 6px #020a1170,0 2px 0 #536d7b,0 4px 0 #0b151d,0 6px 0 #050b10,0 18px 55px #0009;font:400 13px/1.4 "ArSonMix Inter",Inter,"Segoe UI",Arial,sans-serif;color:var(--ap-ink);color-scheme:dark}
+#arsonPlayer{--ap-bg:#151b20;--ap-header:#20272d;--ap-recess:#10161a;--ap-border:#303a43;--ap-ink:#e4e9ee;--ap-muted:#9badb8;--ap-mint:#67d7c1;--ap-blue:#a5bed2;position:fixed;z-index:90;top:75px;right:12px;bottom:52px;width:min(410px,calc(100vw - 24px));display:flex;flex-direction:column;isolation:isolate;background:linear-gradient(180deg,#25343e 0%,#1a2730 18%,#141e26 56%,#10171d 100%) padding-box,linear-gradient(145deg,#e4f7ff 0%,#9cb8c7 12%,#3d505d 38%,#6c8999 66%,#182630 84%,#97b7c6 100%) border-box;border:1px solid transparent;border-radius:12px;overflow:hidden;box-shadow:0 2px 0 #536d7b,0 4px 0 #0b151d,0 6px 0 #050b10,0 18px 55px #0009;font:400 13px/1.4 "ArSonMix Inter",Inter,"Segoe UI",Arial,sans-serif;color:var(--ap-ink);color-scheme:dark}
 #arsonPlayer *{box-sizing:border-box}
-#arsonPlayer > *{flex-shrink:0}
+/* A real front-glass paint order: chassis -> isolated scrolling screen ->
+   in-device popup -> one stationary optical coat.  The coat never receives
+   pointer input, never participates in layout or scroll, and has no DOM/tab stop. */
+#arsonPlayer>.ap-screen{position:relative;z-index:0;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;border-radius:inherit}
+#arsonPlayer>.ap-screen>*{flex-shrink:0}
+#arsonPlayer::after{content:"";position:absolute;inset:0;z-index:2;border-radius:inherit;pointer-events:none;user-select:none;background:linear-gradient(132deg,transparent 0%,transparent 15%,#f0fcff13 15.2%,#e2f6ff38 16%,#d3eeff17 17.5%,transparent 26%,transparent 44%,#badcf512 44.2%,#eefaff26 44.7%,transparent 46.4%),radial-gradient(ellipse 120% 36% at 8% 0%,#d6f2ff21 0%,#c2e6fb0b 45%,transparent 100%),linear-gradient(115deg,#b9e4fa10 0%,#b9e4fa06 24%,transparent 24.2%,transparent 72%,#92b7cf08 100%),linear-gradient(180deg,#d4efff12 0%,#c1e3f30c 55%,#b5d7e909 100%);box-shadow:inset 0 1px 0 #f4fcffb8,inset 1px 0 0 #dbf6ff80,inset 0 3px 0 #c9efff38,inset 3px 0 0 #a3d2ed30,inset -1px -1px 0 #7eafca66,inset -3px -3px 0 #030b12b3,inset 0 0 0 5px #a9d1e517,inset 0 0 0 6px #020a1170}
 #arsonPlayer button,#arsonPlayer input,#arsonPlayer select{font:inherit;color:inherit}
 #arsonPlayer button{border:0;background:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;gap:5px;touch-action:manipulation}
 #arsonPlayer button:hover{color:var(--ap-mint)}
@@ -279,7 +284,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer svg{width:16px;height:16px;flex:none}
 #arsonPlayer .ap-icon{width:28px;height:28px;border-radius:5px;color:var(--ap-muted)}
 #arsonPlayer .ap-icon:hover{background:#2a343b;color:var(--ap-ink)}
-#arsonPlayer .ap-top{height:44px;display:flex;align-items:center;gap:9px;padding:0 12px;background:linear-gradient(132deg,#f4fbff26 0%,#deefff12 25%,transparent 25.5%,transparent 57%,#d0efff12 57.5%,transparent 76%),linear-gradient(180deg,#526571 0%,#354651 38%,#263741 41%,#1b2831 100%);box-shadow:inset 0 1px #f2fbff8c,inset 0 3px #c4e6fa22,inset 3px 0 #b7dcf02b,inset -3px 0 #07131c90,0 1px #a6c6d34a;cursor:grab;position:sticky;top:0;z-index:2}
+#arsonPlayer .ap-top{height:44px;display:flex;align-items:center;gap:9px;padding:0 12px;background:linear-gradient(180deg,#43545f 0%,#31414b 38%,#263741 41%,#1b2831 100%);box-shadow:0 1px #a6c6d34a;cursor:grab;position:sticky;top:0;z-index:2}
 #arsonPlayer .ap-top>svg{color:var(--ap-mint);width:17px;height:17px}
 #arsonPlayer .ap-brand{font-size:13px;font-weight:450;flex:1}
 #arsonPlayer .ap-chrome{display:flex;align-items:center;gap:1px}
@@ -380,7 +385,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer #playerCueSummary{flex:1 0 100%}
 #arsonPlayer .ap-details .ap-settools{padding:4px 0}
 #arsonPlayer .ap-disclosure summary{cursor:pointer;padding:5px 0}
-#arsonPlayer .ap-song-menu{position:fixed;z-index:5;width:190px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;scrollbar-width:none;background:#222b32;border:1px solid #414e59;border-radius:7px;padding:4px;box-shadow:0 12px 28px #0008}
+ #arsonPlayer .ap-song-menu{position:absolute;z-index:1;width:190px;max-width:calc(100% - 12px);max-height:calc(100% - 12px);overflow:auto;scrollbar-width:none;background:#222b32;border:1px solid #414e59;border-radius:7px;padding:4px;box-shadow:0 12px 28px #0008}
 #arsonPlayer .ap-song-menu button{display:flex;width:100%;justify-content:flex-start;text-align:left;padding:7px 10px;color:var(--ap-ink);border-radius:4px;font-size:12px}
 #arsonPlayer .ap-song-menu button:hover:not(:disabled),#arsonPlayer .ap-song-menu button:focus-visible{background:#34434d;color:var(--ap-mint)}
 #arsonPlayer .ap-song-menu button[data-danger="true"]{color:#e7aea9;border-top:1px solid #39434d}
@@ -531,7 +536,5 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-songrow[data-favorite="true"][data-done="false"][data-current="false"][data-selected="false"] .ap-index{font-size:0;color:#d7c49c}
 #arsonPlayer .ap-songrow[data-favorite="true"][data-done="false"][data-current="false"][data-selected="false"] .ap-index::after{content:"★";font-size:11px}
 
-/* Tempered-glass chassis: static layered gradients and inset/outset rim only.
-   Inspired by dielectric Fresnel/clear-coat optics, not a physical shader.
-   No overlay stealing clicks, no blur/filter/animation; scroll stays native. */
-#arsonPlayer::-webkit-scrollbar,#arsonPlayer :is(#playerList,.ap-queue,.ap-song-menu)::-webkit-scrollbar{display:none;width:0;height:0}
+/* Scrollports remain scrollable, with no visible browser track. */
+#arsonPlayer :is(.ap-screen,#playerList,.ap-queue,.ap-song-menu)::-webkit-scrollbar{display:none;width:0;height:0}

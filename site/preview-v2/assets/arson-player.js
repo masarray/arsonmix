@@ -278,10 +278,15 @@
    if(menuOwner.isConnected===false){closeSongMenu(false);return;}
    const anchor=menuOwner.getBoundingClientRect?.(),panel=root.getBoundingClientRect?.(),m=songMenu.getBoundingClientRect?.();
    if(anchor&&panel&&m){
-     const vw=Number(window.innerWidth)||panel.right,vh=Number(window.innerHeight)||panel.bottom;
+     // Popups are part of the display, below the same glass. Clamp within
+     // the chassis padding box, not the viewport; scrolling remains native.
+     const left=panel.left+(root.clientLeft||0),top=panel.top+(root.clientTop||0);
+     const w=root.clientWidth||panel.width,h=root.clientHeight||panel.height;
      const pointer=event&&Number.isFinite(event.clientX)&&Number.isFinite(event.clientY);
-     const x=pointer?event.clientX:anchor.right-m.width,y=pointer?event.clientY:anchor.bottom+4;
-     songMenu.style.left=Math.max(4,Math.min(x,vw-m.width-4))+"px";songMenu.style.top=Math.max(4,Math.min(y,vh-m.height-4))+"px";
+     const x=(pointer?event.clientX:anchor.right-m.width)-left;
+     const y=(pointer?event.clientY:anchor.bottom+4)-top;
+     songMenu.style.left=Math.max(6,Math.min(x,w-m.width-6))+"px";
+     songMenu.style.top=Math.max(6,Math.min(y,h-m.height-6))+"px";
    }
  }
  const listOwnsMenu=()=>Boolean(menuOwner&&list.contains?.(menuOwner));
@@ -739,7 +744,7 @@
  });
  // Focus-induced/delayed scroll must not dismiss a header menu.
  list.addEventListener("scroll",()=>{if(listOwnsMenu())closeSongMenu(false);renderTracks();positionContext();},{passive:true});
- root.addEventListener("scroll",()=>positionContext(),{passive:true});$("playerQueuePanel").addEventListener("scroll",()=>{if(menuOwner&&$("playerQueuePanel").contains?.(menuOwner))closeSongMenu(false);else positionContext();},{passive:true});
+ $("playerScreen").addEventListener("scroll",()=>positionContext(),{passive:true});$("playerQueuePanel").addEventListener("scroll",()=>{if(menuOwner&&$("playerQueuePanel").contains?.(menuOwner))closeSongMenu(false);else positionContext();},{passive:true});
  window.addEventListener?.("resize",()=>{closeSongMenu(false);rendered="";renderTracks();renderWaveform(model.transport||{});});
  root.addEventListener("keydown",event=>{
    if(event.ctrlKey&&!event.altKey&&!event.shiftKey&&!event.metaKey&&event.key.toLowerCase()==="f"){event.preventDefault();event.stopPropagation?.();focusSearch();return;}

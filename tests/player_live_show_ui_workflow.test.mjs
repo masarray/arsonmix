@@ -258,7 +258,7 @@ $("playerSetlistView").click();search.value="";search.fire("input");
 listeners.get("arMixPlayerActivity")({schema:"arsonmix.activity.v1",favorites:[5],done:[5],recent:[4,5],repeat:1});
 assert.equal(songRows()[1].children[0].children[2].textContent,"DONE");
 assert.equal($("playerAutoText").textContent,"Repeat one");
-$("playerAutoNext").click();$("arsonPlayer").fire("scroll");$("playerList").fire("scroll");assert.equal($("playerSongMenu").hidden,false);$("playerSongMenu").children.find(x=>x.textContent==="Repeat all").click();assert.equal(actions.at(-1).detail.action,"playerRepeat");assert.equal(actions.at(-1).detail.value,2);
+$("playerAutoNext").click();$("playerScreen").fire("scroll");$("playerList").fire("scroll");assert.equal($("playerSongMenu").hidden,false);$("playerSongMenu").children.find(x=>x.textContent==="Repeat all").click();assert.equal(actions.at(-1).detail.action,"playerRepeat");assert.equal(actions.at(-1).detail.value,2);
 $("playerAfterSong").fire("change",{target:{value:"1"}});assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1).detail)),{action:"playerAutoAfter",value:{id:4,index:0,set:0,mode:1}});
 songRows()[0].children[1].click();$("playerSongMenu").children.find(x=>x.textContent==="Add to favorites").click();
 assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1).detail)),{action:"playerFavorite",value:{id:4,enabled:true}});
