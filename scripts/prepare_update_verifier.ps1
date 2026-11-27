@@ -23,6 +23,8 @@ try {
         $binary=Join-Path $work 'gh.exe'
         [IO.Compression.ZipFileExtensions]::ExtractToFile($entries[0],$binary)
     } finally {$zip.Dispose()}
+    if($pin.exeSha256 -cne '478be94eef02a4e71d2858b886f6f224494be0cc728668b7071a8e0a05fcaf7a' -or (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $pin.exeSha256){throw 'Pinned verifier executable changed'}
+    & ./scripts/test_public_update_attestation.ps1 -Archive $archive -Verifier $binary
     $versionOutput=& $binary --version
     if($LASTEXITCODE -ne 0 -or ($versionOutput -join ' ') -notmatch '^gh version 2\.106\.0(?:\s|$)'){throw 'Unexpected verifier version'}
     $env:GH_PAGER=''

@@ -205,7 +205,7 @@ function Get-AttestationVerifier([string]$installRoot=$PSScriptRoot) {
         $pin=Read-Json $manifest
         if($pin.version -cne '2.106.0' -or
            $pin.archiveSha256 -cne 'd406f442ca0baa3d3e9c695e9cded1aa48e67dad3294b8947e5ab84f980b4844' -or
-           [string]$pin.exeSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+           $pin.exeSha256 -cne '478be94eef02a4e71d2858b886f6f224494be0cc728668b7071a8e0a05fcaf7a' -or
            [long]$pin.exeBytes -lt 1MB -or [long]$pin.exeBytes -gt 100MB -or
            (Get-Item -LiteralPath $path).Length -ne [long]$pin.exeBytes -or
            (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $pin.exeSha256){return $null}
@@ -222,46 +222,80 @@ function Get-AttestationArguments([string]$path,[string]$tag,[string]$sha) {
         ' --source-ref refs/heads/releases/alpha/'+$tag+
         ' --source-digest '+$sha+' --signer-digest '+$sha+' --deny-self-hosted-runners')
 }
-function Convert-AttestationResponse([object]$response,[string]$destination) {
-    # The versioned public API (2022-11-28) returns inline Sigstore bundles.
-    # Never execute data, follow a supplied URL or accept a foreign repository.
-    $rows=@($response.attestations)
-    if($rows.Count -lt 1 -or $rows.Count -gt 30){throw 'No bounded public attestation bundle'}
-    $lines=[Collections.Generic.List[string]]::new()
-    foreach($row in $rows){
-        if([string]$row.repository_id -cne '1432648251' -or
-           $null -eq $row.PSObject.Properties['bundle'] -or $null -eq $row.bundle){continue}
-        $line=ConvertTo-Json -InputObject $row.bundle -Depth 60 -Compress
-        if($line.Length -gt 262144){throw 'Oversized attestation bundle'}
-        $lines.Add($line)
-    }
-    if($lines.Count -eq 0){throw 'No inline attestation from the expected repository'}
-    [IO.File]::WriteAllLines($destination,$lines.ToArray(),[Text.UTF8Encoding]::new($false))
+function Test-AttestationBundleUri([Uri]$uri,[string]$repositoryId) {
+    # GitHub's newer API may return a signed Azure Blob URL instead of an
+    # inline bundle. Only the documented attestation storage path is allowed.
+    return ($null -ne $uri -and $uri.IsAbsoluteUri -and
+        $uri.Scheme -ceq 'https' -and $uri.Port -eq 443 -and
+        $uri.UserInfo -eq '' -and $uri.Fragment -eq '' -and
+        $uri.DnsSafeHost -cmatch '^[a-z0-9]{3,24}\.blob\.core\.windows\.net$' -and
+        $uri.AbsolutePath.StartsWith(('/attestations/'+$repositoryId+'/'),[StringComparison]::Ordinal) -and
+        $uri.AbsolutePath -notmatch '%|\\|\.\.')
 }
-function Read-PublicAttestation([string]$digest,[string]$destination) {
-    if($digest -cnotmatch '^[a-f0-9]{64}$'){throw 'Invalid attestation subject digest'}
-    $request=[Net.HttpWebRequest]::Create("https://api.github.com/repos/masarray/arsonmix/attestations/sha256:$($digest)?per_page=30")
+function Read-BoundedAttestationJson([Uri]$uri,[int]$maxBytes) {
+    # Both callers validate the exact host/path before reaching here. No
+    # authorization headers, redirect following or logging signed URL queries.
+    $request=[Net.HttpWebRequest]::Create($uri)
     $request.AllowAutoRedirect=$false
     $request.Timeout=25000
     $request.ReadWriteTimeout=25000
     $request.UserAgent='ArSonMix-SmartUpdater/2'
-    $request.Accept='application/vnd.github+json'
-    $request.Headers['X-GitHub-Api-Version']='2022-11-28'
-    $response=$request.GetResponse()
+    $request.Accept='application/json, application/vnd.github+json'
+    if($uri.DnsSafeHost -ceq 'api.github.com'){
+        $request.Headers['X-GitHub-Api-Version']='2022-11-28'
+    }
+    try {$response=$request.GetResponse()} catch {throw 'Public attestation download unavailable'}
     try {
-        if([int]$response.StatusCode -ne 200 -or $response.ContentLength -gt 2MB){throw 'Unexpected public attestation response'}
+        if([int]$response.StatusCode -ne 200 -or $response.ContentLength -gt $maxBytes){throw 'Unexpected public attestation response'}
         $stream=$response.GetResponseStream()
         $memory=[IO.MemoryStream]::new()
         try {
             $buffer=New-Object byte[] 16384
             while(($count=$stream.Read($buffer,0,$buffer.Length)) -gt 0){
-                if($memory.Length+$count -gt 2MB){throw 'Public attestation exceeds 2MiB'}
+                if($memory.Length+$count -gt $maxBytes){throw 'Public attestation exceeds size limit'}
                 $memory.Write($buffer,0,$count)
             }
             $json=[Text.UTF8Encoding]::new($false,$true).GetString($memory.ToArray())
-            Convert-AttestationResponse ($json | ConvertFrom-Json) $destination
+            return ($json | ConvertFrom-Json)
         } finally {$memory.Dispose();$stream.Dispose()}
     } finally {$response.Dispose()}
+}
+function Convert-AttestationResponse([object]$response,[string]$destination,[string]$repositoryId='1432648251') {
+    $rows=@($response.attestations)
+    if($rows.Count -lt 1 -or $rows.Count -gt 30){throw 'No bounded public attestation bundle'}
+    $lines=[Collections.Generic.List[string]]::new()
+    $total=0
+    foreach($row in $rows){
+        if([string]$row.repository_id -cne $repositoryId){continue}
+        $bundle=$null
+        if($null -ne $row.PSObject.Properties['bundle'] -and $null -ne $row.bundle){
+            $bundle=$row.bundle
+        } elseif($null -ne $row.PSObject.Properties['bundle_url']){
+            $uri=$null
+            if(-not [Uri]::TryCreate([string]$row.bundle_url,[UriKind]::Absolute,[ref]$uri) -or
+               -not (Test-AttestationBundleUri $uri $repositoryId)){throw 'Unexpected attestation bundle URL'}
+            $bundle=Read-BoundedAttestationJson $uri 262144
+        }
+        if($null -eq $bundle){continue}
+        $line=ConvertTo-Json -InputObject $bundle -Depth 60 -Compress
+        $bytes=[Text.Encoding]::UTF8.GetByteCount($line)
+        $total+=$bytes
+        if($bytes -gt 262144 -or $total -gt 2MB){throw 'Oversized attestation bundle'}
+        $lines.Add($line)
+    }
+    if($lines.Count -eq 0){throw 'No attestation from the expected repository'}
+    [IO.File]::WriteAllLines($destination,$lines.ToArray(),[Text.UTF8Encoding]::new($false))
+}
+function Read-PublicAttestation([string]$digest,[string]$destination,
+        [string]$repository='masarray/arsonmix',[string]$repositoryId='1432648251') {
+    # cli/cli is only supplied by the build-side genuine signature smoke.
+    # Production always uses the literal ArSonMix defaults below.
+    if($digest -cnotmatch '^[a-f0-9]{64}$' -or
+       $repository -cnotmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or
+       $repositoryId -cnotmatch '^[0-9]+$'){throw 'Invalid attestation subject identity'}
+    $uri=[Uri]::new("https://api.github.com/repos/$repository/attestations/sha256:$($digest)?per_page=30")
+    $response=Read-BoundedAttestationJson $uri 2097152
+    Convert-AttestationResponse $response $destination $repositoryId
 }
 function Invoke-IsolatedVerifier([string]$verifier,[string]$arguments,[string]$privateConfig) {
     $info=[Diagnostics.ProcessStartInfo]::new()
@@ -296,12 +330,12 @@ function Invoke-IsolatedVerifier([string]$verifier,[string]$arguments,[string]$p
         return $result
     } finally {$child.Dispose()}
 }
-function Test-VerifiedRepositoryIdentity([object]$results) {
+function Test-VerifiedRepositoryIdentity([object]$results,[string]$repositoryId='1432648251') {
     $rows=@($results)
     if($rows.Count -lt 1 -or $rows.Count -gt 30){return $false}
     foreach($row in $rows){
         try {
-            if([string]$row.verificationResult.signature.certificate.sourceRepositoryIdentifier -ceq '1432648251'){return $true}
+            if([string]$row.verificationResult.signature.certificate.sourceRepositoryIdentifier -ceq $repositoryId){return $true}
         } catch {}
     }
     return $false
@@ -645,6 +679,12 @@ if($PolicySelfTest) {
        (Test-ReleaseTransition 'upgrade' $candidate $previous) -or
        (Test-ReleaseTransition 'repair' $previous $candidate) -or
        -not (Test-ReleaseTransition 'repair' $previous $previous)){throw 'Unsafe release transition accepted'}
+    if(-not (Test-AttestationBundleUri ([Uri]'https://tmaproduction.blob.core.windows.net/attestations/1432648251/2026/11/27/1.json.sn?sig=fixture') '1432648251') -or
+       (Test-AttestationBundleUri ([Uri]'https://attacker.example/attestations/1432648251/1.json') '1432648251') -or
+       (Test-AttestationBundleUri ([Uri]'https://tmaproduction.blob.core.windows.net/attestations/1/1.json') '1432648251') -or
+       (Test-AttestationBundleUri ([Uri]'http://tmaproduction.blob.core.windows.net/attestations/1432648251/1.json') '1432648251')){
+        throw 'Unsafe public bundle URL policy'
+    }
     $cert=[pscustomobject]@{verificationResult=[pscustomobject]@{signature=[pscustomobject]@{certificate=[pscustomobject]@{sourceRepositoryIdentifier='1432648251'}}}}
     if(-not (Test-VerifiedRepositoryIdentity @($cert)) -or
        (Test-VerifiedRepositoryIdentity @()) -or

@@ -624,6 +624,9 @@ test('Autonomous updater bundles a pinned verifier and never uses user GitHub cr
   assert.equal(pin.version,'2.106.0');
   assert.equal(pin.sha256,'d406f442ca0baa3d3e9c695e9cded1aa48e67dad3294b8947e5ab84f980b4844');
   assert.ok(u.includes(pin.sha256));
+  assert.ok(u.includes(pin.exeSha256));
+  assert.match(intake,/test_public_update_attestation\.ps1/);
+  assert.match(read('scripts/test_public_update_attestation.ps1'),/ARSONMIX_ANONYMOUS_REAL_ATTESTATION_PASS/);
   assert.match(u,/function Read-PublicAttestation/);
   assert.match(u,/sourceRepositoryIdentifier/);
   assert.match(u,/--custom-trusted-root/);
