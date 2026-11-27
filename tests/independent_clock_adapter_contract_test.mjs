@@ -146,7 +146,11 @@ test('saved ASIO startup failure keeps the host callback registered for manual A
   // Product default requests stereo IN 1+2; saved explicit masks remain authoritative.
   const initialise=engine.indexOf('auto error = deviceManager_.initialise (2, 2, savedSettings, !savedRoute);');
   assert.ok(registration>=0 && registration<initialise);
-  assert.match(engine,/attached_ = true;\s*const bool savedRoute/);
+  // Cold-start retry must not register the same callback twice.
+  const guard=engine.indexOf('if(!attached_) {');
+  const saved=engine.indexOf('const bool savedRoute',registration);
+  assert.ok(guard>=0&&guard<registration&&registration<saved&&saved<initialise);
+  assert.match(engine.slice(guard,saved),/if\(!attached_\)\s*\{\s*deviceManager_\.addAudioCallback \(this\);\s*attached_ = true;\s*\}\s*$/);
   assert.match(engine,/if \(error\.isNotEmpty\(\)\) return error;/);
   assert.match(host,/new juce::AudioDeviceSelectorComponent/);
   assert.match(host,/showDeviceSetup\(\)/);

@@ -7893,9 +7893,12 @@ test("U5 first sound uses the ordinary verified ChannelId input selector",()=>{
  assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,logicalInputRegistry:{references:[{}]}}}),null);
  assert.equal(protocol.firstSoundPlan({...s,graph:{...s.graph,channels:[{...s.graph.channels[0],source:{sourceFormat:"PLAYER"}}]}}),null);
  assert.equal(protocol.firstSoundPlan({...s,device:{...s.device,enabledInputs:[]}}),null);
- const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp");
- const f=b.slice(b.indexOf('if(field==="input"){\n        // Input selection'),b.indexOf('if(field==="external"){\n        if(event.type!=="change")return true;',b.indexOf('// Input selection is independent')));
- assert.ok(f.length>0);
+ // Git's Windows checkout may use CRLF; source boundaries are logical lines.
+ const b=read("web/approved-native-bridge.js").replace(/\r\n/g,"\n"),n=read("src/Main.cpp");
+ const begin=b.indexOf('if(field==="input"){\n        // Input selection');
+ const end=b.indexOf('if(field==="external"){\n        if(event.type!=="change")return true;',begin);
+ assert.ok(begin>=0&&end>begin);
+ const f=b.slice(begin,end);
  assert.match(f,/pendingNativeSources.set/);assert.match(f,/dispatchNativeSource/);assert.doesNotMatch(f,/emitEvent/);
  const h=n.slice(n.indexOf('if(action=="routingNativeSourcePatch"){',n.indexOf('if(action=="routingNativeSourcePatch"){')+1),n.indexOf('if(action=="routingNativeBusCreate"'));
  assert.match(h,/withNativeTopologyContinuity/);assert.match(h,/engine_.patchNativeInputSource/);
