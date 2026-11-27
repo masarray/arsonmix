@@ -462,9 +462,17 @@ el("mxHCorrection").addEventListener("click",()=>{
 // one-in-flight ACK/readback contract still owns accepted DSP state.
 // Pointer-up flushes the last value even if the frame has not run.
 sliders.forEach(({input})=>{
- window.ArMixFxGesture.bindRange(input,{enabled:()=>!!current&&(!native()||mode==="NATIVE")});
  const key=input.dataset.field;
  const apply=x=>edit({[key]:key==="gainDb"?x:x/100});
+ // Wheel must accumulate from the latest intended setting, not from a
+ // range element that Chromium may normalize during a fractional drag.
+ window.ArMixFxGesture.bindRange(input,{
+   enabled:()=>!!current&&(!native()||mode==="NATIVE"),
+   get:()=>{
+     const v=latest||pending?.settings||(heldPatch?{...settings,...heldPatch}:settings);
+     return key==="gainDb"?v[key]:v[key]*100;
+   },onChange:apply
+ });
  let gesture=null,frame=0;
  const cancel=()=>{if(frame)cancelAnimationFrame(frame);frame=0;gesture=null;};
  const live=()=>gesture&&!root.hidden&&current===gesture.owner&&
