@@ -33,7 +33,7 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.match(iss, /Source: "\.\.\\docs\\THIRD_PARTY_8D_SONKU_HRTF\.md"; Flags: dontcopy/);
 });
 
-test('interactive Setup automatically checks for signed VB-CABLE while mixer launch stays independent', () => {
+test('interactive Setup cannot be held by optional signed VB-CABLE, which remains an opt-in action', () => {
   const m = JSON.parse(read('config/vbcable-official-package.json'));
   const pack = read('scripts/prepare_vbcable_package.ps1');
   const bootstrap = read('installer/ArSonMixVBCableInstall.ps1');
@@ -47,12 +47,13 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(iss, /VBCABLE_Driver_Pack45\.zip/);
   const run = iss.slice(iss.indexOf('[Run]'), iss.indexOf('[Code]'));
   const entries = run.split('\n').filter(line => line.startsWith('Filename:'));
-  assert.equal(entries.length, 3);
+  assert.equal(entries.length, 2);
   assert.match(entries[0], /ArSonMixWebView2Prerequisite\.ps1/);
   assert.match(entries[0], /Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
-  assert.match(entries[1], /ArSonMixVBCableInstall\.ps1/);
-  assert.match(entries[1], /Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
-  assert.match(entries[2], /^Filename: "\{app\}\\ArSonMix\.exe"/);
+  assert.match(entries[1], /^Filename: "\{app\}\\ArSonMix\.exe"/);
+  assert.doesNotMatch(run, /ArSonMixVBCableInstall\.ps1/);
+  assert.match(iss, /Install optional VB-CABLE \(Administrator approval required\)/);
+  assert.match(iss, /-File ""\{app\}\\ThirdParty\\VB-Audio\\ArSonMixVBCableInstall\.ps1""/);
   for (const entry of entries) assert.doesNotMatch(entry, /;\s*(Check|Tasks):/i);
   assert.match(iss, /^RestartIfNeededByRun=no$/m);
   assert.doesNotMatch(iss + bootstrap, /VBCableRestart|RestartMarker|CanLaunchMixer|function NeedRestart/);
@@ -97,6 +98,9 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
             bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
             'pending reboot must be checked before launching a setup that can remove installed cable');
   assert.match(bootstrap, /-Verb RunAs/);
+  assert.match(bootstrap, /WaitForExit\(180000\)/);
+  assert.match(bootstrap, /\$vendorStillRunning/);
+  assert.doesNotMatch(bootstrap, /-Verb RunAs -Wait/);
   assert.match(bootstrap, /PENDING_REBOOT/);
   assert.doesNotMatch(bootstrap + iss, /certutil\s+-addstore|Add-TrustedPublisher\s*\(|SetDefaultEndpoint\s*\(|pnputil\s+\/delete-driver|Uninstall-PnpDevice\s|LocalMachine\\TrustedPublisher/i);
   assert.match(notice, /donationware/i);
@@ -115,6 +119,9 @@ test('WebView2 GUI prerequisite runs only on interactive setup from Microsoft-si
   assert.match(helper, /Microsoft-Signer/);
   assert.match(helper, /Microsoft-Uri \$response\.ResponseUri/);
   assert.match(helper, /-ArgumentList @\('\/silent','\/install'\)/);
+  assert.match(helper, /WaitForExit\(120000\)/);
+  assert.match(helper, /\$bootstrapperStillRunning/);
+  assert.doesNotMatch(helper, /-ArgumentList @\('\/silent','\/install'\) -Wait/);
   assert.match(helper, /ARSONMIX_WEBVIEW2_ALREADY_PRESENT/);
   assert.match(helper, /ARSONMIX_WEBVIEW2_INSTALLED/);
   assert.match(helper, /NEEDS_ATTENTION/);
