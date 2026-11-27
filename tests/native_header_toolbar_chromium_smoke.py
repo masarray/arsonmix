@@ -126,11 +126,12 @@ def main():
             assert page.locator('.armix-ribbon-nav .logo').is_hidden()
             assert page.locator('.armix-ribbon-nav .file-name').is_hidden()
             assert page.locator('.armix-ribbon-nav #trackCount').is_hidden()
-            right=visible[-2:]
-            assert [x["id"] for x in right]==["addTrack","Audio I/O"], (width,right)
-            assert abs(right[1]["left"]-right[0]["right"]-metrics["gap"])<=1.5, (width,right)
             ids=[x["id"] for x in visible]
-            assert ids.index("playerToggle") == ids.index("pluginsButton")+1, (width, ids)
+            assert ids.index("bankPrev")<ids.index("bankSelect")<ids.index("bankNext")<ids.index("addTrack")<ids.index("pluginsButton")<ids.index("playerToggle"),(width,ids)
+            assert ids[-1]=="mixContext",(width,ids)
+            assert page.locator("#pluginsButton").evaluate("el=>getComputedStyle(el,'::before').maskImage")!="none"
+            if width==1366:
+                page.screenshot(path="operator-ux-toolbar-mixer-1366.png")
             for a, b in zip(visible, visible[1:]):
                 # More can be pushed to the far right, never overlaid on controls.
                 assert a["right"] <= b["left"] + 1, (
@@ -214,6 +215,11 @@ def main():
             assert page.locator("#moreTools").get_attribute("open") is not None, (
                 width, "More menu did not open")
             more.click()
+            if width==1366:
+                for workflow in ("fx","routing","scenes","io"):
+                    page.locator("#ribbon-tab-"+workflow).click()
+                    assert page.locator("#ribbon-tab-"+workflow).get_attribute("aria-selected")=="true"
+                    page.screenshot(path=f"operator-ux-toolbar-{workflow}-1366.png")
             assert not errors, (width, "native JavaScript errors", errors)
             print("NATIVE_TOOLBAR", width, metrics["bar"], len(visible), flush=True)
             page.close()

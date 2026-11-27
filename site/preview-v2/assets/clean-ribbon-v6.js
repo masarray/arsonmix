@@ -172,7 +172,23 @@ function install(){
    sceneSelect:'scenes',saveScene:'scenes',recallScene:'scenes',addTrack:'mixer routing',
    playerMini:'mixer',playerToggle:'all',moreTools:'all',mixContext:'all'
  };
+ function orderCommands(){
+   // Maintain a single native command per action. DOM order also defines keyboard order.
+   const io=bar.querySelector(':scope > [data-native-io]');
+   const preferred=[more,$('bankPrev'),$('bankSelect'),$('bankNext'),$('densitySelect'),
+     bar.querySelector(':scope > .strip-view-switch'),$('globalFxToggle'),$('wireNavigatorToggle'),
+     $('wireMatrixToggle'),$('wireConfigToggle'),$('sofToggle'),$('sofTarget'),$('clearCue'),
+     $('sceneSelect'),$('recallScene'),$('saveScene'),scene,$('addTrack'),$('pluginsButton'),
+     player,$('playerToggle'),$('playerMini'),io,$('ribbonMainMix')].filter(el=>el?.parentElement===bar);
+   const known=new Set(preferred),context=$('mixContext');
+   const wanted=[...preferred,...Array.from(bar.children).filter(el=>!known.has(el)&&el!==context)];
+   if(context?.parentElement===bar)wanted.push(context);
+   // Move only when needed; a second child-list callback is a no-op.
+   let cursor=bar.firstElementChild;
+   for(const el of wanted){if(el===cursor)cursor=cursor.nextElementSibling;else bar.insertBefore(el,cursor);}
+ }
  function apply(){
+   orderCommands();
    for(const el of bar.children){
      if(el===player||el===scene)continue;
      const scope=el.classList.contains('strip-view-switch')?'mixer fx':el.matches('[data-native-io]')?'mixer io':group[el.id]||'all';
