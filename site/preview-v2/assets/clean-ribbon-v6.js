@@ -89,7 +89,7 @@ function install(){
    const tab=document.createElement('button');tab.type='button';tab.id='ribbon-tab-'+id;tab.className='armix-ribbon-tab';tab.dataset.workflow=id;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','armix-ribbon-commands');tab.style.zIndex=String(6-names.findIndex(n=>n[0]===id));tab.innerHTML=shape(id,126)+'<span>'+name+'</span>';tabs.append(tab);
  }
  header.append(tabs);bar.id='armix-ribbon-commands';
- summary.innerHTML=shape('menu',151,'armix-ribbon-menu-shape')+'<svg class="armix-ribbon-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>ArSon<span style="color:#51d4ef">Mix</span></span>';
+ summary.innerHTML=shape('menu',151,'armix-ribbon-menu-shape')+'<svg class="armix-ribbon-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="armix-menu-icon-closed" d="M4 6h16M4 12h16M4 18h16"/><path class="armix-menu-icon-open" d="m6 15 6-6 6 6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>ArSon<span class="armix-menu-brand-accent">Mix</span></span>';
  summary.setAttribute('aria-label','ArSonMix application menu');
  const compactMenu=installCompactMenu(more);
  const filter=$('viewFilter');

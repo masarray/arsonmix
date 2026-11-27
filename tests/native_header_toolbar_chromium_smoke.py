@@ -16,7 +16,7 @@ from native_event_fixture import NATIVE_EVENTS
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def assert_ribbon_seam(page, width, *, check_pixels=False):
+def assert_ribbon_seam(page, width, *, check_pixels=False, evidence_suffix=""):
     # Test the painted SVG and its summary, not just the details wrapper.
     geometry = page.evaluate("""()=>{
       const box=el=>{const r=el.getBoundingClientRect();
@@ -56,7 +56,41 @@ def assert_ribbon_seam(page, width, *, check_pixels=False):
         left,seam,active=samples
         distance=lambda a,b:sum(abs(x-y) for x,y in zip(a,b))
         assert distance(left,seam)<=18 and distance(seam,active)>=45,(width,geometry,samples)
-        Path(f"operator-ux-toolbar-seam-{width}.png").write_bytes(png)
+        Path(f"operator-ux-toolbar-seam-{width}{evidence_suffix}.png").write_bytes(png)
+
+def assert_menu_color_role(page, workflow, opened):
+    # Read the rendered SVG stop colors, not merely authored CSS tokens.
+    # Native <details> remains the disclosure authority; one tab is selected.
+    state=page.evaluate("""()=>{
+      const menu=document.querySelector('#moreTools');
+      const summary=menu.querySelector('summary');
+      const selected=[...document.querySelectorAll('.armix-ribbon-tabs [aria-selected=true]')];
+      const stops=el=>[...el.querySelectorAll('stop')].map(s=>getComputedStyle(s).stopColor);
+      return {open:menu.open,selected:selected.map(t=>t.id),
+        menuColors:stops(summary),tabColors:selected.length===1?stops(selected[0]):[],
+        label:getComputedStyle(summary).color,
+        brand:getComputedStyle(summary.querySelector('.armix-menu-brand-accent')).color,
+        closedGlyph:getComputedStyle(summary.querySelector('.armix-menu-icon-closed')).display,
+        openGlyph:getComputedStyle(summary.querySelector('.armix-menu-icon-open')).display};
+    }""")
+    assert state["open"]==opened and state["selected"]==["ribbon-tab-"+workflow],state
+    assert state["tabColors"]==["rgb(54, 184, 218)","rgb(32, 161, 195)","rgb(8, 127, 159)"],state
+    assert state["menuColors"]!=state["tabColors"],state
+    def rgb(color):
+        return [int(v) for v in color.removeprefix("rgb(").removesuffix(")").split(",")]
+    def luminance(color):
+        channels=[v/255 for v in rgb(color)]
+        return sum(w*(v/12.92 if v<=0.04045 else ((v+0.055)/1.055)**2.4)
+                   for w,v in zip((.2126,.7152,.0722),channels))
+    for stop in state["menuColors"]:
+        red,green,blue=rgb(stop)
+        assert blue>red>green,("amethyst role lost",state)
+        for fg in (state["label"],state["brand"]):
+            ratio=(max(luminance(fg),luminance(stop))+.05)/(min(luminance(fg),luminance(stop))+.05)
+            assert ratio>=4.5,("menu text contrast",ratio,state)
+    assert (state["openGlyph"]!="none")==opened,state
+    assert (state["closedGlyph"]!="none")== (not opened),state
+    return state
 
 def main():
     spec = importlib.util.spec_from_file_location(
@@ -187,6 +221,7 @@ def main():
             assert metrics['nav']['height']==40 and abs(metrics['more']['bottom']-metrics['nav']['bottom'])<=3,(width,metrics)
             assert page.locator('.armix-ribbon-tabs [role=tab]').count()==6
             assert_ribbon_seam(page,width,check_pixels=True)
+            closed_color=assert_menu_color_role(page,"mixer",False)
             tabs=page.locator('.armix-ribbon-tabs [role=tab]').evaluate_all("""nodes=>nodes.map(el=>({z:Number(getComputedStyle(el).zIndex),x:el.getBoundingClientRect().x,w:el.getBoundingClientRect().width,path:el.querySelector('path').getAttribute('d')}))""")
             assert all(tabs[i]["z"]>tabs[i+1]["z"] for i in range(5)),(width,tabs)
             assert all(abs(tabs[i]["x"]+tabs[i]["w"]-tabs[i+1]["x"]-22)<=1 for i in range(5)),(width,tabs)
@@ -218,7 +253,9 @@ def main():
             assert menu.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
             assert page.locator(".command-bar > .mixer-file-tool").count()==0
             menu.locator(":scope > summary").click()
-            assert_ribbon_seam(page,width)
+            assert_ribbon_seam(page,width,check_pixels=True,evidence_suffix="-menu-open")
+            open_color=assert_menu_color_role(page,"mixer",True)
+            assert open_color["menuColors"]!=closed_color["menuColors"]
             file_group = menu.locator(".mixer-file-tool")
             assert file_group.all_text_contents() == ["New", "Save", "Open"], width
             new = menu.locator("[data-native-new-project]")
@@ -291,6 +328,13 @@ def main():
                 width, "More menu did not open")
             more.click()
             assert_ribbon_seam(page,width)
+            assert_menu_color_role(page,"mixer",False)
+            # Keyboard disclosure and Escape preserve the current workspace.
+            more.focus()
+            page.keyboard.press("Enter")
+            assert_menu_color_role(page,"mixer",True)
+            page.keyboard.press("Escape")
+            assert_menu_color_role(page,"mixer",False)
             more.hover()
             page.mouse.down()
             try:
@@ -299,7 +343,7 @@ def main():
                 page.mouse.move(width-10,height-10)
                 page.mouse.up()
             if width==1366:
-                for workflow in ("fx","routing","scenes","io"):
+                for workflow in ("player","fx","routing","scenes","io"):
                     page.locator("#ribbon-tab-"+workflow).click()
                     assert page.locator("#ribbon-tab-"+workflow).get_attribute("aria-selected")=="true"
                     assert page.locator("#ribbonEmergency").is_visible()
@@ -307,6 +351,12 @@ def main():
                         assert page.locator("[data-ribbon-audio-summary]").is_visible()
                         assert page.locator("[data-ribbon-audio-summary] [data-audio-value]").all_text_contents()==["No device","—","—","—"]
                     page.screenshot(path=f"operator-ux-toolbar-{workflow}-1366.png")
+                    assert_menu_color_role(page,workflow,False)
+                    more.click()
+                    assert_menu_color_role(page,workflow,True)
+                    page.screenshot(path=f"operator-ux-menu-{workflow}-1366.png")
+                    page.keyboard.press("Escape")
+                    assert_menu_color_role(page,workflow,False)
             assert not errors, (width, "native JavaScript errors", errors)
             print("NATIVE_TOOLBAR", width, metrics["bar"], len(visible), flush=True)
             page.close()
