@@ -65,7 +65,7 @@ public:
         std::array<AutoDuckerSource,AutoDuckerCore::maxSources> keys{};
         bool valid=false;
         for(std::size_t i=0;i<applied_.count;++i){
-            keys[i]={applied_.sources[i],armix::mixer::AutoDuckerKeyScope::find(applied_.sources[i],n)};
+            keys[i]={applied_.sources[i],armix::mixer::AutoDuckerKeyScope::findPostFader(applied_.sources[i],n)};
             valid|=keys[i].key.valid();
         }
         core_.processSources(pcm.getWritePointer(0),pcm.getWritePointer(1),n,

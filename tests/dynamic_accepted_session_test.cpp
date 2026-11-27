@@ -1080,9 +1080,48 @@ static void verifyAutoDuckerKeyScope() {
     assert(visits==5);
 }
 
+void verifyAutoDuckerPostFaderDependencies(){
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"MUSIC"),add(1,ChannelRole::input,"VOICE"),
+        add(2,ChannelRole::group,"VOCALS",ProcessingFormat::stereo),
+        add(3,ChannelRole::main,"MAIN",ProcessingFormat::stereo)};
+    const auto made=roster.edit(0,create);assert(made.ok());
+    const auto music=made.createdIds[0],voice=made.createdIds[1],bus=made.createdIds[2],main=made.createdIds[3];
+    const std::array<ChannelEdit,3> links{output(music,main),output(voice,bus),output(bus,main)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=64;
+    req.sources={{music,0,-1,false},{voice,1,-1,false}};
+    req.postFaderSidechains={{bus,music},{voice,music}};
+    DynamicPreparedMixerBlock block;DynamicGraphError fault;
+    assert(DynamicPreparedMixerBlock::compile(roster,req,block,fault));
+    std::array<float,64> m{},v{},l{},r{};m.fill(.1f);v.fill(.2f);
+    const float* pins[]{m.data(),v.data()};
+    int seen=0;
+    const auto fx=[&](ChannelId id,float*,float*,int frames) noexcept{
+        if(id==music){
+            ++seen;
+            const auto k=AutoDuckerKeyScope::findPostFader(bus.value,frames);
+            const auto k2=AutoDuckerKeyScope::findPostFader(voice.value,frames);
+            assert(k.valid()&&k2.valid()&&k.left[0]>0.f&&k2.left[0]>0.f);
+            assert(!AutoDuckerKeyScope::findPostFader(main.value,frames).valid());
+        }else if(id==bus)assert(!AutoDuckerKeyScope::findPostFader(voice.value,frames).valid());
+    };
+    assert(block.process(pins,2,l.data(),r.data(),64,fx));assert(seen==1);
+    assert(block.prepareLatency([](ChannelId){return 0;},req.maxScratchBytes,fault));
+    DynamicPreparedMixerBlock delayed;
+    assert(DynamicPreparedMixerBlock::compile(roster,req,delayed,fault));
+    assert(!delayed.prepareLatency([&](ChannelId id){return id==voice?64:0;},req.maxScratchBytes,fault));
+    assert(fault.fault==DynamicGraphFault::sidechainLatency);
+    req.postFaderSidechains.push_back({main,music});
+    assert(!DynamicPreparedMixerBlock::compile(roster,req,block,fault));
+    assert(fault.fault==DynamicGraphFault::cycle);
+    assert(block.process(pins,2,l.data(),r.data(),64,fx));assert(seen==2);
+}
 int main() {
     armix::ducker_test::run(); // same standalone core cases in existing fast CI
     verifyAutoDuckerKeyScope();
+    verifyAutoDuckerPostFaderDependencies();
     verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm();
     verifyNativeDeleteTrackRetainsUnrelatedWires();
     verifyGroupMuteAffectsRealNativePcm();
