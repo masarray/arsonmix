@@ -81,7 +81,7 @@ const context=()=>{
 const hint=text=>{$("vtHint").textContent=text;};
 const presetBar=window.ArSonMixBuiltinFxPresetBar?.create({
  host:panel,select:$("vtPreset"),label:"Vocal Delay",catalogId:ID,
- context,stable:()=>!pending&&!tempoPending,
+ context,stable:()=>!pending&&!tempoPending&&!rotaryDirty,
  readAccepted:()=>({...accepted}),validate:valid,
  factoryValue:settings=>Object.entries(presets)
    .find(([,v])=>same(v,settings))?.[0]||"Custom",
@@ -229,7 +229,7 @@ $("vtBpm").addEventListener("blur",()=>{bpmScreen.dataset.editing="false";});
 for(const [key,id] of [["mode","vtMode"],["bpm","vtBpm"],
  ["division","vtDivision"],["repeats","vtRepeats"]]){
  $(id).addEventListener("change",()=>{
-  draft={...draft,[key]:Number($(id).value)};paint();send("nativeThrowSet");
+  draft={...draft,[key]:Number($(id).value)};paint();streamRotary();
  });
 }
 // Physical rotary control: vertical pointer drag, mouse wheel and keyboard.
@@ -251,7 +251,7 @@ function streamRotary(){
 // Stream during drag/wheel, one native edit in flight; retain latest draft.
 function bindRotary(face,key,step){
  const [min,max]=ranges[key];
- const quantize=v=>clamp(Math.round(v/step)*step,min,max);
+ const quantize=v=>clamp(Number((min+Math.round((v-min)/step)*step).toFixed(8)),min,max);
  let gesture=null;
  const update=v=>{if(!context())return;const next=quantize(v);if(next===draft[key])return;draft={...draft,[key]:next};paint();streamRotary();};
  face.addEventListener("pointerdown",e=>{
@@ -276,7 +276,7 @@ function bindRotary(face,key,step){
  face.addEventListener("wheel",e=>{
   const dir=window.ArMixFxGesture.direction(e);if(!dir||!context())return;
   e.preventDefault();e.stopPropagation();
-  update(draft[key]+dir*step*(e.shiftKey?1:3));
+  update(draft[key]+dir*step*(e.shiftKey?1:2));
  },{passive:false});
  face.addEventListener("keydown",e=>{
   const delta={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:5,PageDown:-5}[e.key];
@@ -433,7 +433,7 @@ backend()?.addEventListener?.("arMixBuiltinThrowSnapshot",reply=>{
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(panel.hidden)return;
  if(native()&&!context()){
-  pending=null;tempoPending=null;
+  pending=null;tempoPending=null;rotaryDirty=false;clearTimeout(wheelFlush);wheelFlush=null;
   hint("FX graph changed · reopen");
  }
  refreshMusicChannels();syncPower();

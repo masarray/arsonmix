@@ -75,6 +75,7 @@ const close=button("×",hide);close.classList.add("armix-builtin-fx-close");clos
 head.append(dom("span","mx-ducker-brand","ARSONMIX"),dom("strong","","Auto Ducker"),target,preset,power,close);panel.append(head);
 const content=dom("div","mx-ducker-content"),src=dom("div","mx-ducker-box"),srcTitle=dom("div","mx-ducker-title"),srcCount=dom("span","","TRIGGERS · 0"),edit=button("Edit sources",openPicker),sourceList=dom("div","mx-ducker-list");srcTitle.append(srcCount,edit);src.append(srcTitle,sourceList,dom("div","mx-ducker-note","Any selected source above threshold triggers one shared reduction."));
 const grBox=dom("div","mx-ducker-box"),phase=dom("span","mx-ducker-phase","Waiting"),grTitle=dom("div","mx-ducker-title");grTitle.append(dom("span","","GAIN REDUCTION"),phase);
+const meterObservers=new WeakMap();
 function makeMeter(rail,kind,cells){
  rail.dataset.kind=kind;
  const bed=dom("div","mx-ducker-led-bed"),fill=dom("div","mx-ducker-fill"),grid=dom("div","mx-ducker-led-grid");
@@ -82,14 +83,16 @@ function makeMeter(rail,kind,cells){
  for(let i=0;i<cells;i++)grid.append(dom("span","mx-ducker-led-cell"));
  bed.append(fill,grid);rail.append(bed);
  rail.dataset.cells=String(cells);
- // CSS width/height scales proportionally; inner cell is landscape even
- // at compact widths. Background gradient stays fixed while level changes.
+ // Geometry only; no layout read in native meter refresh.
+ const observer=new ResizeObserver(entries=>{for(const entry of entries)fill.style.setProperty("--full-width",entry.contentRect.width+"px");});
+ observer.observe(bed);
+ meterObservers.set(rail,observer);
  return fill;
 }
 function meterLevel(fill,fraction){
  const bed=fill.parentElement,cells=Number(bed.parentElement.dataset.cells);
  const f=clamp(fraction,0,1);fill.style.width=(Math.floor(f*cells+1e-8)/cells*100)+"%";
- fill.style.setProperty("--full-width",bed.clientWidth+"px");
+ 
 }
 const gr=dom("output","mx-ducker-gr","— dB"),rail=dom("div","mx-ducker-rail"),fill=makeMeter(rail,"gr",21);const ticks=dom("div","mx-ducker-ticks");for(const v of ["0","12","24","36 dB"])ticks.append(dom("span","",v));
 grBox.append(grTitle,gr,rail,ticks,dom("div","mx-ducker-lcd-note","STEREO LINK  ·  POST FADER"));content.append(src,grBox);
@@ -142,11 +145,11 @@ function send(){clearTimeout(sendTimer);sendTimer=0;if(!dirty||pending||!accepte
 function poll(){if(panel.hidden||!context()||!backend())return;const now=Date.now();if(read&&now-read.at<800)return;const c=context(),id="ducker-read-"+now+"-"+(++seq);read={id,c,at:now};backend().emitEvent("arMixAction",{action:"nativeDuckerSnapshot",requestId:id,...c});}
 function paint(){const n=view(),c=context(),row=channels().find(x=>x.id===current?.id),insert=row?.inserts?.[current?.slot],live=!!c&&!n?.logical,fresh=live&&Date.now()-meterTime<700,bypassed=!!(n?.raw?.globalFxBypassed||row?.fxRackBypassed||insert?.bypassed);target.textContent=row?.name||"Target unavailable";power.dataset.fxState=!c?"unknown":(n?.raw?.globalFxBypassed||row?.fxRackBypassed)?"rack-off":insert?.bypassed?"off":"on";power.disabled=!c||power.dataset.fxState==="rack-off";power.setAttribute("aria-pressed",String(power.dataset.fxState==="on"));power.title=bypassed?"Bypassed (slot, rack or global)":"Enabled";preset.disabled=!accepted||!c;edit.disabled=!accepted||!c||!!pending||dirty;
 for(const {num,range} of Object.values(controls)){num.disabled=range.disabled=!accepted||!c;}
-const signature=JSON.stringify(sources.map(id=>[id,channels().find(x=>x.id===id)?.name]));if(signature!==sourceSignature){sourceSignature=signature;sourceList.replaceChildren();for(const id of sources){const lane=channels().find(x=>x.id===id),item=dom("div","mx-ducker-source"),name=dom("span","",lane?.name||"Missing "+id),r=dom("div","mx-ducker-rail"),o=dom("output","mx-ducker-read","—");makeMeter(r,"source",12);item.append(name,r,o);item.dataset.sourceId=id;sourceList.append(item);}if(!sources.length)sourceList.append(dom("div","mx-ducker-note","No source selected · target stays unchanged."));}
+const signature=JSON.stringify(sources.map(id=>[id,channels().find(x=>x.id===id)?.name]));if(signature!==sourceSignature){sourceSignature=signature;for(const old of sourceList.querySelectorAll(".mx-ducker-rail"))meterObservers.get(old)?.disconnect();sourceList.replaceChildren();for(const id of sources){const lane=channels().find(x=>x.id===id),item=dom("div","mx-ducker-source"),name=dom("span","",lane?.name||"Missing "+id),r=dom("div","mx-ducker-rail"),o=dom("output","mx-ducker-read","—");makeMeter(r,"source",12);item.append(name,r,o);item.dataset.sourceId=id;sourceList.append(item);}if(!sources.length)sourceList.append(dom("div","mx-ducker-note","No source selected · target stays unchanged."));}
 srcCount.textContent="TRIGGERS · "+sources.length;for(const item of sourceList.querySelectorAll("[data-source-id]")){const id=item.dataset.sourceId,m=meters.get(id),lane=channels().find(x=>x.id===id),on=fresh&&m?.available&&Number.isFinite(m.dbfs)&&!!lane;item.dataset.active=String(!!on&&m.dbfs>=(accepted?.thresholdDb??-34));meterLevel(item.querySelector(".mx-ducker-fill"),on?clamp((m.dbfs+72)/72,0,1):0);item.querySelector("output").value=!lane?"Missing":lane.controls?.mute?"Muted":!fresh?"—":on?m.dbfs.toFixed(0)+" dB":"Unavailable";}
 const value=fresh&&!bypassed&&Number.isFinite(meterFrame?.gainReductionDb)?meterFrame.gainReductionDb:null;gr.value=value===null?"— dB":(-value).toFixed(1)+" dB";meterLevel(fill,value===null?0:clamp(value/36,0,1));phase.textContent=!c?"Unavailable":n.logical?"Offline":bypassed?"Bypassed":!fresh?"Waiting for audio":!sources.length?"No triggers":["Ready","Attack","Ducking","Hold","Release"][meterFrame?.phase]||"Ready";
 status.textContent=error||(!c?"Native instance unavailable — reopen from FX rack.":pending?"Waiting for native "+(pending.ack?"readback":"acknowledgement")+"…":dirty?"Applying settings…":n.logical?"Offline workspace · settings saved without live audio meters.":"");if(!picker.hidden)apply.disabled=!!pending||!c||sameSources([...selection],sources);}
-function hide(){if(dirty&&pending){error="Finish pending edit before closing";paint();return;}if(dirty)send();panel.hidden=true;picker.hidden=true;clearTimeout(sendTimer);current=null;read=null;pending=null;dirty=false;}
+function hide(){if(dirty&&pending){error="Finish pending edit before closing";paint();return;}if(dirty)send();panel.hidden=true;picker.hidden=true;clearTimeout(sendTimer);sendTimer=0;current=null;read=null;pending=null;dirty=false;}
 const b=backend();b?.addEventListener("arMixBuiltinDuckerAck",a=>{if(!pending||a?.requestId!==pending.id||!keyMatches(a,pending.c))return;if(a.status==="PENDING"){error="Waiting for audio callback";paint();return;}if(a.status!=="APPLIED"){error="Not applied · "+(a.errorCode||"rejected");pending=null;dirty=false;if(accepted)draft={...accepted};paintControls();paint();return;}pending.ack=true;read=null;poll();paint();});
 b?.addEventListener("arMixBuiltinDuckerSnapshot",a=>{if(!read||a?.requestId!==read.id)return;const c=context();read=null;if(!keyMatches(a,c)||String(a.graphRevision)!==String(c?.graphRevision)||a.status!=="ACCEPTED"||!valid(a.settings)||!Array.isArray(a.sources))return;accepted={...a.settings};sources=a.sources.map(String);if(a.meterSerial&&a.meterSerial!==lastMeter){lastMeter=a.meterSerial;meterTime=Date.now();meterFrame=a;meters=new Map((a.meters||[]).map(m=>[String(m.id),m]));}
 if(pending?.ack){const done=pending.action==="nativeDuckerSources"?sameSources(sources,pending.payload.sources):sameSettings(accepted,pending.payload.settings);if(done){if(pending.action==="nativeDuckerSources"){picker.hidden=true;edit.focus();}pending=null;error="";}}
@@ -154,5 +157,6 @@ if(!pending&&!dirty){draft={...accepted};paintControls();}if(!pending&&dirty)sen
 window.addEventListener("keydown",e=>{if(e.key!=="Escape"||panel.hidden)return;if(!picker.hidden){picker.hidden=true;edit.focus();}else hide();e.stopPropagation();});
 setInterval(()=>{if(panel.hidden)return;if(!context()&&pending){pending=null;dirty=false;error="FX instance changed; reopen from rack";}poll();paint();},160);
 window.ArSonMixNativeDucker=Object.freeze({open(track,slot){const n=view(),id=api()?.nativeIdFor?.(track),row=n?.graph?.channels?.find(x=>x.id===id),insert=row?.inserts?.[slot];if(!backend()||!insert||insert.catalogId!==ID)return false;
+clearTimeout(sendTimer);sendTimer=0;lastSend=0;
 current={track,id,slot,instance:insert.id};accepted=null;draft={...radio};sources=[];pending=null;read=null;dirty=false;error="";lastMeter="";meterTime=0;meters.clear();meterFrame=null;sourceSignature="!";picker.hidden=true;panel.hidden=false;paintControls();paint();poll();return true;},close:hide});
 })();

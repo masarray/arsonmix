@@ -398,7 +398,10 @@ def main():
                 old_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
                 ratio_arc=ratio_dial.locator(".mx-comp-arc-progress")
                 old_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
-                ratio.press("ArrowRight")
+                ratio.hover()
+                page.keyboard.down("Shift")
+                page.mouse.wheel(0,-120)
+                page.keyboard.up("Shift")
                 new_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
                 new_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
                 assert ratio_body.evaluate("el=>getComputedStyle(el).transform")==old_body=="none",\

@@ -98,8 +98,15 @@ def main():
         depth.hover();page.mouse.wheel(0,-120)
         page.wait_for_function("()=>window.__actions.filter(x=>x.action==='nativeDuckerSet').at(-1)?.settings.depthDb>6")
         req=latest(page,"nativeDuckerSet")
+        page.mouse.wheel(0,-120)
+        assert latest(page,"nativeDuckerSet")["requestId"]==req["requestId"]
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
         readback(page,[SOURCE,MIC2],settings=req["settings"],serial="4")
+        page.wait_for_function("id=>window.__actions.filter(x=>x.action==='nativeDuckerSet').at(-1)?.requestId!==id",arg=req["requestId"])
+        final=latest(page,"nativeDuckerSet")
+        assert final["settings"]["depthDb"]>req["settings"]["depthDb"]
+        emit(page,"arMixBuiltinDuckerAck",packet(final,status="APPLIED"))
+        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5")
         # Each frame cell must be wider than it is high, not a portrait LED.
         assert editor.locator(".mx-ducker-led-cell").count()>20
         assert editor.locator(".mx-ducker-led-cell").evaluate_all("els=>els.every(e=>{const r=e.getBoundingClientRect();return r.width>r.height})")
