@@ -48,7 +48,7 @@ expected=apply_native_peq(expected)
 # the source repository or the already optimized distribution.
 with tempfile.TemporaryDirectory(prefix="armix-operator-contract-") as td:
     owned=Path(td)
-    owners=("mixer-chrome-material.css","mixer-plugin-browser.css","mixer-fx-rack.css")
+    owners=("mixer-chrome-material.css","mixer-plugin-browser.css","mixer-fx-rack.css","mixer-contextual-buttons.css")
     for name in owners:
         shutil.copy2(ROOT/"site/preview-v2/assets"/name,owned/name)
     # Recreate the SAME handle-free FX CSS owner as the production assembler,
