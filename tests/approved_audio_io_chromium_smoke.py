@@ -854,6 +854,10 @@ def verify_custom_recovery_routes(page,out):
     assert dialog.is_visible() and dialog.count()==1
     assert not page.evaluate("""()=>window.__actions.some(a=>
       ['audioSetup','playerChooseOutput','audioDeviceApply'].includes(a.action))""")
+    page.locator("[data-audio-close]").click()
+    emit(page,"arMixOpenAudioIO",True)
+    assert dialog.is_visible() and dialog.count()==1
+    assert not page.evaluate("()=>window.__actions.some(a=>a.action==='audioDeviceApply')")
 
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:

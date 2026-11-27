@@ -7957,3 +7957,10 @@ test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction ev
  assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
  assert.match(wireVM.routeDiagnostic({...snapshot,retained:true},"1"),/Audio unavailable/);
  });
+
+ test("legacy recovery routes to approved custom Audio I/O, not native selector",()=>{
+ const host=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ const block=host.slice(host.indexOf('else if (action == "audioSetup")'),host.indexOf('else if (action == "diagnosticRoute")'));
+ assert.match(block,/arMixOpenAudioIO/);assert.doesNotMatch(block,/showDeviceSetup\(/);
+ assert.match(bridge,/backend.addEventListener\("arMixOpenAudioIO",\(\)=>openNativeAudioIO\(\)\)/);
+ });

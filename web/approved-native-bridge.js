@@ -4871,9 +4871,8 @@
     const caption=item("span","more-tools-caption","AUDIO / SAFETY");
     const setup=item("button","tool","Audio I/O");
     setup.addEventListener("click",()=>{
-      // Reuse the EXISTING custom driver/endpoint pane. The stock JUCE
-      // selector is reserved for explicitly requested advanced recovery.
-      // Never create a second Audio Setup workflow from the More menu.
+      // Reuse the existing custom driver/endpoint pane for all workflows.
+      // No stock JUCE device selector, including explicit recovery.
       openNativeAudioIO();
     });
     inputSelect=item("select","toolbar-select","");
@@ -4938,7 +4937,16 @@
     const summary=item("summary","more-tools-caption","Advanced driver recovery");
     const driver=item("button","tool","Open Audio I/O recovery");
     driver.addEventListener("click",openNativeAudioIO);
-    advanced.append(summary,driver);
+    const prepare=item("button","tool","Prepare device recovery…");
+    prepare.title="Explicitly stop temporary diagnostic/independent-clock state before choosing a replacement in Audio I/O";
+    prepare.addEventListener("click",async()=>{
+      const epoch=hardware?.device?.epoch,config=hardware?.hardwareConfiguration;
+      if(deviceBusy())return;
+      if(!await confirmArson("Device recovery","Prepare the mixer for device recovery? Temporary diagnostic and independent-clock state may stop. Choose the replacement in Audio I/O.","Prepare recovery"))return;
+      if(deviceBusy()||hardware?.device?.epoch!==epoch||hardware?.hardwareConfiguration!==config){nativeToast("Device changed · review recovery again");return;}
+      backend.emitEvent("arMixAction",{action:"audioSetup"});
+    });
+    advanced.append(summary,driver,prepare);
     // First Sound P0: these are REAL JUCE diagnostic actions, not demo
     // toggles. The marker snapshots the 5-second PRE-event counters and
     // Windows RAM/process paging context from the existing 1 Hz control
@@ -6964,7 +6972,7 @@
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
     const target=event.target.closest?.(
-      "#preview,#addTrack,#addBus,#addFx,#addGroupBus,#addGroupSelected,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
+      "#preview,#addTrack,#addBus,#addFx,#addGroupBus,#addGroupSelected,#convertSelectedReverb,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
     if(!target)return;
     event.preventDefault();event.stopImmediatePropagation();
     const action=target.id==="pluginScan"?"scanVst3":
@@ -6973,6 +6981,14 @@
     if(action){
       backend.emitEvent("arMixAction",{action});
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
+      return;
+    }
+    if(target.id==="convertSelectedReverb"){
+      const selected=(scope?.tracks||[]).filter(t=>t.selected);
+      const row=selected.length===1?selected[0]:null;
+      const ch=activeView()?.graph?.channels?.find(c=>c.id===nativeIdFor(row));
+      const slot=(ch?.inserts?.length||0)-1;
+      if(!row||!convertDmxReverb(row,slot))nativeToast("Select one INPUT with Reverb-Sis as its last insert and MAIN output");
       return;
     }
     if(target.id==="addGroupSelected"){void requestGroupFromSelected();return;}
@@ -7052,6 +7068,8 @@
     if(aux&&!document.getElementById("addGroupBus")){
       const group=aux.cloneNode(false);group.id="addGroupBus";aux.after(group);
       const selected=aux.cloneNode(false);selected.id="addGroupSelected";group.after(selected);
+      const convert=aux.cloneNode(false);convert.id="convertSelectedReverb";convert.hidden=false;convert.disabled=false;convert.textContent="Reverb-Sis → FX Return";convert.title="Convert the selected channel’s last Reverb-Sis insert to a native shared wet return";
+      document.getElementById("addFx")?.after(convert);
     }
     for(const [id,label] of [["addBus","+ AUX"],["addGroupBus","+ Group BUS"],["addGroupSelected","Group selected…"],["addFx","+ FX Bus"]]){
       const el=document.getElementById(id);if(el){el.textContent=label;el.hidden=false;el.disabled=true;

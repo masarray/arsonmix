@@ -10368,7 +10368,11 @@ private:
                 if (error.isNotEmpty()) return emitNotice (error, true);
                 deviceSettingsDirty_ = true;
             }
-            showDeviceSetup();
+            // Legacy explicit recovery retains its device safety cleanup, but
+            // every user-facing setup now opens the approved custom WebView.
+            emitApprovedNativeSnapshot();
+            emitDeviceInventory(false);
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixOpenAudioIO",juce::var(true));
         }
         else if (action == "diagnosticRoute")
         {
