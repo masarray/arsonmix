@@ -39,12 +39,13 @@ public:
     bool save(juce::File studio,MixerSessionDocument document,
               std::vector<armix::shows::BinaryState> binary,
               Completion completion,juce::File exportFile={},NativeMixerSessionStore::ArchiveMode archiveMode=NativeMixerSessionStore::ArchiveMode::none,
-              bool verifyExportArchive=false) {
+              bool verifyExportArchive=false,bool liveControlsOnly=false) {
         if(busy_.exchange(true,std::memory_order_acq_rel))return false;
         studio_=std::move(studio);
         exportFile_=std::move(exportFile);
         archiveMode_=archiveMode;
         verifyExportArchive_=verifyExportArchive;
+        liveControlsOnly_=liveControlsOnly;
         doc_=std::move(document);
         states_=std::move(binary);
         done_=std::move(completion);
@@ -54,6 +55,7 @@ public:
         if(busy_.exchange(true,std::memory_order_acq_rel))return false;
         archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
         verifyExportArchive_=false;
+        liveControlsOnly_=false;
         exportFile_=std::move(file);
         readDone_=std::move(completion);
         return start();
@@ -73,6 +75,11 @@ private:
         try {
             NativeMixerSessionStore store(studio_);
             if(readDone_)error=NativeMixerSessionStore::readFile(exportFile_,doc_,states_);
+            else if(liveControlsOnly_) {
+                if(exportFile_!=juce::File{}||archiveMode_!=NativeMixerSessionStore::ArchiveMode::none||!states_.empty())
+                    error="Invalid live checkpoint worker request";
+                else error=store.commitLiveControls(std::move(doc_));
+            }
             else if(verifyExportArchive_) {
                 if(exportFile_==juce::File{} || exportFile_.exists() ||
                    exportFile_.getParentDirectory().createDirectory().failed())
@@ -132,7 +139,7 @@ private:
     Completion done_;
     ReadCompletion readDone_;
     NativeMixerSessionStore::ArchiveMode archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
-    bool verifyExportArchive_=false;
+    bool verifyExportArchive_=false,liveControlsOnly_=false;
     unsigned serial_=0;
     std::atomic<bool> busy_{false};
     std::shared_ptr<std::atomic<bool>> alive_=

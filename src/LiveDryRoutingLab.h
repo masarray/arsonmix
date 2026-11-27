@@ -3122,6 +3122,44 @@ public:
 
     // CONTROL-only capture of the currently INSTALLED ChannelId PCM graph.
     // Fail closed if any vendor cannot supply a quiescent binary state.
+    // CONTROL-owned accepted metadata only. Never acquire the render permit,
+    // call a vendor processor, copy binary state or gate any physical output.
+    juce::String captureLiveMixerControls(armix::session::MixerSessionDocument& document) const {
+        const auto ep=epoch(),rev=nativeAccepted_.pcmRevision;
+        const auto owners=nativeAccepted_.fxOwners;
+        if(!channelIdPhysicalPcmActive()||!owners||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev)||owners->externalChannel().value)
+            return "Live checkpoint requires an authoritative native mixer";
+        armix::session::MixerSessionDocument draft;
+        draft.roster=nativeAccepted_.graph.roster;
+        draft.acceptedRevision=draft.roster.revision();
+        draft.legacyIds=nativeAccepted_.graph.ids;
+        draft.outputs=nativeAccepted_.hardware;
+        draft.request=nativeAccepted_.graph.request;
+        draft.waitingAsioInputs=waitingAsioInputs_;
+        draft.logicalInputs=logicalInputs_;
+        draft.logicalOutputs=logicalOutputs_;
+        draft.externalOutputs=externalOutputAssignments_;
+        for(const auto& row:draft.roster.channels()) {
+            const auto count=owners->insertCount(row.id);
+            if(count>static_cast<std::size_t>(FxGraph::maxInsertsPerStrip))
+                return "Live checkpoint FX count exceeded";
+            if(owners->rackBypassed(row.id))draft.rackBypassed.push_back(row.id);
+            for(std::size_t slot=0;slot<count;++slot) {
+                const auto* owner=owners->ownerForControl(row.id,slot);
+                if(!owner||!*owner||(*owner)->instanceId.isEmpty()||(*owner)->catalogId.isEmpty())
+                    return "Live checkpoint FX identity unavailable";
+                draft.inserts.push_back({row.id,slot,(*owner)->catalogId,{}, {},(*owner)->name,0,
+                    (*owner)->bypassRequested.load(std::memory_order_acquire),(*owner)->instanceId});
+            }
+        }
+        if(epoch()!=ep||nativeAccepted_.fxOwners!=owners||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev))
+            return "Live mixer changed during metadata capture";
+        document=std::move(draft);
+        return {};
+    }
+
     juce::String captureNativeMixerSession(
             armix::session::MixerSessionDocument& document,
             std::vector<armix::shows::BinaryState>& blobs,

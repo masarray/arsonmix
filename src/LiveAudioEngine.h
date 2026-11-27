@@ -1939,6 +1939,22 @@ public:
 
     // Native session serialization is CONTROL-owned; all vendor binary reads
     // require MUTED MAIN/STREAM, with zero I/O in the physical audio callback.
+    juce::String captureLiveMixerControls(armix::session::MixerSessionDocument& document) {
+        if(!secondaryResumeReady()||!acceptedMixerBinding_||mainInterruptedByDevice()||
+           fxMovePhase_.load(std::memory_order_acquire)!=0)
+            return "Live checkpoint awaits verified mixer binding";
+        const auto ep=dryRoutingLab_.epoch();
+        auto error=dryRoutingLab_.captureLiveMixerControls(document);
+        if(error.isNotEmpty())return error;
+        document.binding=*acceptedMixerBinding_;
+        document.masterGain=masterGain_.load(std::memory_order_acquire);
+        document.masterMute=masterMute_.load(std::memory_order_acquire);
+        document.masterMono=masterMono_.load(std::memory_order_acquire);
+        if(ep!=dryRoutingLab_.epoch()||!secondaryResumeReady())
+            return "Live checkpoint device changed";
+        return {};
+    }
+
     juce::String captureNativeMixerSession(
             armix::session::MixerSessionDocument& document,
             std::vector<armix::shows::BinaryState>& states,bool retained=false) {

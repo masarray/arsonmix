@@ -2689,7 +2689,72 @@ static void checkCheckpointCadenceAndRecoveredMute() {
     assert(studio.deleteRecursively());
 }
 
+static void checkLiveControlsCheckpoint() {
+    SessionCheckpointCadence cadence;
+    CheckpointStamp stamp;
+    assert(!cadence.observeLive(0,true,true,stamp));
+    for(std::uint64_t t=1000;t<10000;t+=1000) {
+        ++stamp.live;assert(!cadence.observeLive(t,true,true,stamp));
+    }
+    ++stamp.live;assert(cadence.observeLive(10000,true,true,stamp));
+    assert(!cadence.observeLive(10001,false,true,stamp));
+
+    const auto studio=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMix-live-checkpoint","",false);
+    assert(studio.createDirectory().wasOk());
+    NativeMixerSessionStore store(studio);
+    auto doc=makeSession();
+    BinaryState blob;
+    const char state[]={1,2,3,4};
+    blob.bytes.append(state,sizeof(state));
+    blob.sha256=juce::SHA256(blob.bytes).toHexString();
+    doc.inserts.push_back({{1},0,"TestVendor|9|0","C:/FX/Test.vst3",blob.sha256,"EQ",9,false,"g5c-42"});
+    auto rows=doc.roster.channels();
+    rows[0].insertCatalogIds.push_back("TestVendor|9|0");
+    assert(doc.roster.restoreExact(doc.acceptedRevision,rows));
+    assert(store.commit(doc,{blob}).isEmpty());
+    const auto head=studio.getChildFile("MixerSession").getChildFile("HEAD");
+    const auto generation=head.loadFileAsString();
+    auto live=doc;
+    live.inserts[0].sha256.clear();
+    live.inserts[0].bypass=true;
+    live.masterGain=.21f;
+    live.resumeMain=false;
+    assert(live.roster.rememberLiveMix({1},.32f,.4f));
+    assert(store.commitLiveControls(live).isEmpty());
+    assert(head.loadFileAsString()==generation);
+    MixerSessionDocument loaded;
+    std::vector<BinaryState> states;
+    assert(store.load(loaded,states).isEmpty());
+    assert(loaded.masterGain==.21f&&loaded.resumeMain==false&&loaded.inserts[0].bypass);
+    assert(states.size()==1&&states[0].bytes==blob.bytes);
+    assert(loaded.roster.find({1})->faderLinear==.32f);
+    const auto overlay=studio.getChildFile("MixerSession").getChildFile("LIVE_CONTROLS");
+    const auto durable=overlay.loadFileAsString();
+    live.inserts[0].instanceId="g5c-43"; // same vendor, wrong instance
+    assert(store.commitLiveControls(live).isNotEmpty());
+    assert(overlay.loadFileAsString()==durable);
+    live.inserts[0].instanceId="g5c-42";
+    live.id="22222222-3333-4444-8555-666666666666";
+    assert(store.commitLiveControls(live).isNotEmpty());
+    assert(overlay.loadFileAsString()==durable);
+    assert(overlay.appendText("CORRUPT"));
+    assert(store.load(loaded,states).isEmpty()&&loaded.masterGain==doc.masterGain&&loaded.resumeMain==false);
+    assert(overlay.replaceWithText(durable));
+    doc.masterGain=.81f;
+    assert(store.commit(doc,{blob}).isEmpty());
+    assert(store.load(loaded,states).isEmpty()&&loaded.masterGain==.81f);
+    assert(studio.deleteRecursively());
+
+    const auto fresh=studio.getSiblingFile(studio.getFileName()+"-fresh");
+    auto noFx=makeSession();
+    assert(NativeMixerSessionStore(fresh).commitLiveControls(noFx).isEmpty());
+    assert(NativeMixerSessionStore(fresh).load(loaded,states).isEmpty()&&states.empty());
+    assert(fresh.deleteRecursively());
+}
+
 int main(){
+    checkLiveControlsCheckpoint();
     checkCheckpointCadenceAndRecoveredMute();
     verifyLiveInsertWithSecondaryMainTap();
     verifyDetachedPendingEqCapture();
