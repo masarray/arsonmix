@@ -20,12 +20,12 @@ def latest(page, action):
 def packet(action, **kw):
     return {**{k: action[k] for k in ("requestId","channelId","deviceEpoch","graphRevision","instanceId")}, **kw}
 
-def readback(page, sources, settings=DEFAULTS, serial="1"):
+def readback(page, sources, settings=DEFAULTS, serial="1", pending=False, available=True):
     req = latest(page, "nativeDuckerSnapshot")
     assert req, "native DSP readback absent"
     emit(page,"arMixBuiltinDuckerSnapshot",packet(req,status="ACCEPTED",offline=False,
-        settings=settings,sources=sources,meterSerial=serial,gainReductionDb=8,
-        phase=2,meters=[dict(id=x,available=True,dbfs=-18) for x in sources]))
+        settings=settings,sources=sources,pending=pending,meterSerial=serial,gainReductionDb=8,
+        phase=2,meters=[dict(id=x,available=available,dbfs=-18) for x in sources]))
 
 def main():
     spec=importlib.util.spec_from_file_location("bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -152,6 +152,32 @@ def main():
         assert edit_button.is_enabled()
         assert edit_button.evaluate("()=>window.__duckerEditMutations.length")==0
         assert_geometry()
+        # Source readout must fit the actual long state seen in Windows FIELD.
+        page.wait_for_function("()=>window.__actions.filter(x=>x.action==='nativeDuckerSnapshot').at(-1)!=null")
+        page.wait_for_timeout(180)
+        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="6",available=False)
+        assert editor.locator(".mx-ducker-read").first.inner_text()=="Unavailable"
+        assert_geometry()
+        # A missing ACK must not permanently lock the editor or replay held edits.
+        # Use real browser gestures and a native quiescence readback, never fake APPLIED.
+        depth.hover();page.mouse.wheel(0,-120)
+        page.wait_for_function("id=>window.__actions.filter(x=>x.action==='nativeDuckerSet').at(-1)?.requestId!==id",arg=final["requestId"])
+        lost=latest(page,"nativeDuckerSet")
+        page.mouse.wheel(0,-120)
+        page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Edit delayed'",timeout=12000)
+        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="7",pending=True)
+        assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
+        page.wait_for_timeout(180)
+        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="8",pending=False)
+        assert editor.locator(".mx-ducker-phase").inner_text()=="Check edit"
+        assert abs(float(depth.input_value())-final["settings"]["depthDb"])<.001
+        assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
+        emit(page,"arMixBuiltinDuckerAck",packet(lost,status="APPLIED"))
+        assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
+        # Numeric LCD keeps range and DSP draft consistent at boundaries.
+        numeric=editor.locator('input[type="number"][aria-label="Depth dB"]')
+        numeric.fill("");numeric.press("Tab")
+        assert abs(float(numeric.input_value())-final["settings"]["depthDb"])<.001
         # Each frame cell must be wider than it is high, not a portrait LED.
         assert editor.locator(".mx-ducker-led-cell").count()>20
         page.wait_for_function("""()=>[...document.querySelectorAll('#mxNativeDucker .mx-ducker-led-cell')]
