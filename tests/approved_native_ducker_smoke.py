@@ -114,11 +114,32 @@ def main():
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
         readback(page,[SOURCE,MIC2],settings=req["settings"],serial="3")
         assert editor.locator(".mx-ducker-source").count()==2
+        # Owner FIELD regression: no horizontal overflow or transient footer.
+        assert editor.locator(".mx-ducker-status").count()==0
+        def assert_geometry():
+            assert editor.evaluate("""e=>[e,e.querySelector('.mx-ducker-list'),
+              ...e.querySelectorAll('.mx-ducker-source,.mx-ducker-read')].every(
+                n=>n.scrollWidth<=n.clientWidth+1)"""),"horizontal overflow"
+        assert_geometry()
         # Wheel without click: edit starts while pointer is still over knob.
         depth=editor.locator('input[type="range"][aria-label="Depth dB"]')
+        edit_button=editor.get_by_role("button",name="Edit sources")
+        edit_button.evaluate("""e=>{
+          window.__duckerEditMutations=[];
+          window.__duckerEditObserver=new MutationObserver(
+            rs=>window.__duckerEditMutations.push(...rs.map(r=>r.attributeName)));
+          window.__duckerEditObserver.observe(e,{attributes:true,attributeFilter:['disabled']});
+        }""")
+        depth.focus()
+        assert depth.evaluate("""e=>getComputedStyle(
+          e.parentElement.querySelector('.mx-ducker-dial')).outlineStyle==='none'""")
         depth.hover();page.mouse.wheel(0,-120)
         page.wait_for_function("()=>window.__actions.filter(x=>x.action==='nativeDuckerSet').at(-1)?.settings.depthDb>6")
         req=latest(page,"nativeDuckerSet")
+        assert edit_button.is_enabled()
+        emit(page,"arMixBuiltinDuckerAck",packet(req,status="PENDING"))
+        assert edit_button.is_enabled()
+        assert editor.locator(".mx-ducker-phase").inner_text()!="Check edit"
         page.mouse.wheel(0,-120)
         assert latest(page,"nativeDuckerSet")["requestId"]==req["requestId"]
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
@@ -128,6 +149,9 @@ def main():
         assert final["settings"]["depthDb"]>req["settings"]["depthDb"]
         emit(page,"arMixBuiltinDuckerAck",packet(final,status="APPLIED"))
         readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5")
+        assert edit_button.is_enabled()
+        assert edit_button.evaluate("()=>window.__duckerEditMutations.length")==0
+        assert_geometry()
         # Each frame cell must be wider than it is high, not a portrait LED.
         assert editor.locator(".mx-ducker-led-cell").count()>20
         page.wait_for_function("""()=>[...document.querySelectorAll('#mxNativeDucker .mx-ducker-led-cell')]
@@ -141,7 +165,7 @@ def main():
         assert editor.get_by_text("MIC 2",exact=True).count()>=1
         editor.screenshot(path=str(ROOT/"auto-ducker-native-picker.png"))
         page.set_viewport_size({"width":500,"height":740})
-        assert editor.evaluate("e=>e.scrollWidth<=e.clientWidth+1")
+        assert_geometry()
         page.set_viewport_size({"width":1366,"height":768})
         editor.get_by_role("button",name="Cancel",exact=True).click()
         editor.get_by_role("button",name="Close Auto Ducker").click()
