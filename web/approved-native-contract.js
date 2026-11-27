@@ -315,7 +315,7 @@
     // the authored native graph/FX. It is not a destructive channel edit.
     if(!output.armed||output.recovering)
       return {available:false,split,reason:"Enable the additional output first."};
-    return {available:true,split,reason:split?"OBS receives MAIN. Your headphone routing and effects are preserved when you select Same mix.":"Separate mix creates a quiet PRE-fader starter on first use; existing headphone settings are preserved.",
+    return {available:true,split,reason:split?"Secondary playback receives MAIN. Your headphone routing and effects are preserved when you select Same mix.":"Separate mix creates a quiet PRE-fader starter on first use; existing headphone settings are preserved.",
       value:{enabled:!split,smart:true,deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision}};
   }
   function secondaryMonitorStarter(snapshot,live) {

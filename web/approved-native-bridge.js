@@ -3709,7 +3709,64 @@
     if(scope.sofTargetId===mix.id&&!scope.sofEnabled)scope.toggleSof(true);
     mix.toggle.focus();
   }
+  // MAIN MON is a presentation of the existing native secondary owner.
+  const mainMonitorAllowed=()=>extraLive?.directRouteAuthorized===true&&
+    extraLive?.adaptiveClockActive!==true&&extraLive?.dryRoutingLab?.hasAcceptedRoute===true&&
+    extraLive?.diagnosticRoute==="NORMAL";
+  let extraAutoInventoryStarted=false;
+  function paintMainMonitor(){
+    const select=document.querySelector("[data-main-monitor]");
+    if(!select)return;
+    const v=protocol.secondaryOutputView(hardware,extraLive);
+    const active=v.armed||v.recovering;
+    const primary=String(hardware?.device?.playbackDevice||"").toLowerCase();
+    const names=extraInventory.filter(n=>n.toLowerCase()!==primary);
+    const opts=[["","None"+(extraPending?" · applying":v.fault?" · fault":v.ready&&!active?" · muted":"")]];
+    if(active&&v.name)opts.push([v.name,v.name+(v.recovering?" · reconnecting":"")]);
+    else if(!v.split&&extraInventoryKnown)
+      for(const name of names)opts.push([name,name]);
+    if(!active&&!v.split)opts.push(["__armix_refresh__","Refresh devices…"]);
+    if(!active&&!v.split&&(v.fault||v.ready||v.name))
+      opts.push(["__armix_stop__","Disconnect"]);
+    if(v.split)opts.push(["__armix_split__","Separate mix · settings"]);
+    const value=v.split?"__armix_split__":active&&v.name?v.name:"";
+    const sig=JSON.stringify(opts);
+    if(select.dataset.signature!==sig){
+      select.replaceChildren(...opts.map(([value,label])=>new Option(label,value)));
+      select.dataset.signature=sig;
+    }
+    if(select.value!==value)select.value=value;
+    select.disabled=Boolean(extraPending)||deviceBusy()||v.split||extraInventoryPending||
+      (!active&&!v.fault&&!mainMonitorAllowed());
+    select.dataset.status=extraPending?"PENDING":v.state;
+    const title=extraError||(v.split?"Separate mix is configured in Output settings.":
+      v.fault?"Secondary output fault · select endpoint to retry or Disconnect.":
+      active?"Secondary output "+v.state+" · choose None before switching devices.":
+      !mainMonitorAllowed()?"Configure the primary audio device and mixer route first.":
+      "Choose a compatible Windows playback endpoint to mirror MAIN. Primary OUT is unchanged.");
+    if(select.title!==title)select.title=title;
+  }
+  document.addEventListener("change",event=>{
+    const select=event.target;
+    if(!select?.matches?.("[data-main-monitor]"))return;
+    const value=select.value;
+    const v=protocol.secondaryOutputView(hardware,extraLive);
+    paintMainMonitor();
+    if(extraPending||deviceBusy()||v.split)return;
+    if(value==="__armix_refresh__"){refreshAdditionalInventory(true);return;}
+    if(value===""||value==="__armix_stop__"){
+      if(v.ready||v.fault||v.recovering||v.name)
+        requestAdditionalOutput("secondaryOutputStop",null,true);
+      return;
+    }
+    if(!mainMonitorAllowed()||v.armed||v.recovering||!extraInventoryKnown||
+       !extraInventoryId||!extraInventory.includes(value)||
+       value.toLowerCase()===String(hardware?.device?.playbackDevice||"").toLowerCase())return;
+    extraSelected=value;
+    requestAdditionalOutput("secondaryOutputEnable",value,true);
+  });
   function paintAdditionalOutput(){
+    paintMainMonitor();
     if(!extraControls||!extraSurfaceOpen())return;
     const live=extraLive, busy=Boolean(extraPending)||deviceBusy(),
       destination=protocol.secondaryOutputView(hardware,live),
@@ -3753,7 +3810,7 @@
     mixHint.hidden=modeButton.hidden&&starterButton.hidden&&editButton.hidden&&!armed;
     const hint=starter?"Headphones have no sends. Create a quiet PRE-fader mix, or edit existing routing in the mixer.":
       split?mix.reason+(edit?" · Edit headphone mix to adjust sends. PRE sends ignore the source channel fader.":""):
-      mix.available?"Headphones and OBS receive the same mix. "+mix.reason:mix.reason;
+      mix.available?"Primary and secondary playback receive the same mix. "+mix.reason:mix.reason;
     if(mixHint.textContent!==hint)mixHint.textContent=hint;
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
@@ -3768,7 +3825,7 @@
       !allowed?"Audio device or mixer routing is not ready. Check Audio I/O.":
       extraInventoryPending?"Reading Windows playback devices…":
       !extraInventoryKnown?"Waiting for Windows playback devices…":
-      !options.length?"No Windows playback endpoint found. Connect or enable a virtual cable.":
+      !options.length?"No compatible Windows playback endpoint found. Connect or enable a playback device.":
       extraHasSaved&&!extraPreferred&&!select.value?"Saved output unavailable · choose a destination.":
       "Choose a destination, then Enable output.";
     const status=extraField("status");
@@ -3777,13 +3834,13 @@
     error.hidden=!extraError;
     if(error.textContent!==extraError)error.textContent=extraError;
   }
-  function requestAdditionalOutput(action,value){
-    if(!extraSurfaceOpen()||(action!=="secondaryOutputStop"&&(extraPending||deviceBusy()))||
+  function requestAdditionalOutput(action,value,quick=false){
+    if((!extraSurfaceOpen()&&!(quick&&document.querySelector("[data-main-monitor]")))||(action!=="secondaryOutputStop"&&(extraPending||deviceBusy()))||
        extraPending?.action==="secondaryOutputStop")return;
     const requestId="extra-out-"+(++extraSerial);
     extraError="";
     const before=protocol.secondaryOutputView(hardware,extraLive);
-    extraPending={requestId,action,value,acked:false,statusSerial:extraStatusSerial,
+    extraPending={requestId,action,value,quick,acked:false,statusSerial:extraStatusSerial,
       epoch:hardware?.device?.epoch,config:hardware?.hardwareConfiguration,endpoint:before.name,
       workspaceGeneration:hardware?.raw?.workspaceGeneration,
       pair:(before.split?hardware?.raw?.physicalMonitorOutputs:hardware?.raw?.physicalMainOutputs)?.slice()};
@@ -3837,12 +3894,12 @@
     panel.append(close);
     const content=document.createElement("section");content.className="armix-stream-controls";
     content.setAttribute("aria-label","Additional Output controls");
-    content.innerHTML=`<div class="armix-stream-heading"><strong>Send to OBS / virtual cable</strong><span class="armix-stream-mode" data-extra-mode></span></div>
+    content.innerHTML=`<div class="armix-stream-heading"><strong>Secondary playback output (MON)</strong><span class="armix-stream-mode" data-extra-mode></span></div>
       <label>Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
       <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-repair hidden>Set up audio</button></div>
       <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
       <div class="armix-stream-actions"><button type="button" data-extra-mix hidden>Separate headphone mix</button><button type="button" data-extra-starter hidden>Create headphone mix</button><button type="button" data-extra-edit-mix hidden>Edit headphone mix</button><span class="armix-stream-hint" data-extra-mix-hint hidden></span></div>
-      <div class="armix-stream-hint">OBS receives MAIN. In OBS choose the matching recording device (VB-CABLE: CABLE Output). Your primary audio device stays unchanged.</div>`;
+      <div class="armix-stream-hint">Mirrors MAIN to a separate compatible Windows playback device. Primary OUT stays unchanged in Same mix mode. For virtual cables, select the matching recording endpoint in the receiving application.</div>`;
     panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
     extraField("refresh").onclick=()=>refreshAdditionalInventory(true);
     extraField("repair").onclick=()=>{
@@ -4205,7 +4262,6 @@
           <div class="armix-device-note">Choose Mono or Stereo, then Apply on the row. Blue = installed; amber = draft.</div>
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
-          <div class="armix-stream-inline" data-audio-extra-output></div>
           <div class="armix-output-heading">Destinations</div>
           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <details data-audio-hardware-routing>
@@ -4213,6 +4269,7 @@
             <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
             <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair. Blue = installed; amber = draft.</div>
           </details>
+          <div class="armix-stream-inline" data-audio-extra-output></div>
           <div data-monitor-timing hidden class="armix-device-note">
             <strong>MONITOR timing</strong> · <span data-monitor-timing-value></span>
             <button type="button" data-monitor-timing-toggle disabled>Use singer low latency</button>
@@ -5105,7 +5162,7 @@
       toolbar.insertBefore(newProject,firstTool);
       const extraOutput=item("button","tool","Output");
       extraOutput.type="button";
-      extraOutput.title="Send MAIN to OBS, virtual cable or another Windows playback device";
+      extraOutput.title="Configure secondary playback output and separate mix";
       extraOutput.dataset.nativeExtraOutput="true";
       extraOutput.addEventListener("click",openAdditionalOutput);
       toolbar.insertBefore(extraOutput,document.getElementById("moreTools"));
@@ -5669,8 +5726,10 @@
     backend.addEventListener("arMixSecondaryOutputAck",ack=>{
       if(!extraPending||ack?.requestId!==extraPending.requestId||ack.action!==extraPending.action)return;
       if(ack.ok!==true){
+        const quick=extraPending.quick;
         extraPending=null;
         extraError=String(ack.error||"Additional output rejected");
+        if(quick)nativeToast(extraError);
         if(/list changed|identity changed|endpoint missing/i.test(extraError)){
           extraSelected="";extraInventoryKnown=false;
           refreshAdditionalInventory(true);
@@ -5691,6 +5750,10 @@
       settleAdditionalOutput(live);
       paintAdditionalOutput();
       const current=protocol.secondaryOutputView(hardware,live);
+      if(!extraAutoInventoryStarted&&mainMonitorAllowed()&&document.querySelector("[data-main-monitor]")){
+        extraAutoInventoryStarted=true;
+        if(!extraInventoryKnown&&!extraInventoryPending)refreshAdditionalInventory();
+      }
       // Reuse existing status cadence, no interval or hidden-window scan.
       if(extraSurfaceOpen()&&!extraInventoryPending&&!extraPending&&!current.armed&&!current.recovering&&
          (!extraInventoryKnown||!extraInventory.length||(extraHasSaved&&!extraPreferred))&&

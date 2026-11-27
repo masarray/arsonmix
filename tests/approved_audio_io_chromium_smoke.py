@@ -474,7 +474,7 @@ def verify_additional_output(page,out):
     panel=page.get_by_role("dialog",name="Additional Output")
     assert panel.is_visible()
     assert page.evaluate("()=>typeof window.__arMixOpenAdditionalOutput")== "undefined"
-    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    inventory_req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputInventory').at(-1)")
     assert inventory_req["action"]=="secondaryOutputInventory"
     emit(page,"arMixSecondaryOutputInventory",{"requestId":"foreign","outputs":["Speakers"]})
     assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
@@ -482,13 +482,13 @@ def verify_additional_output(page,out):
     assert panel.get_by_label("Windows playback device").input_value()=="CABLE Input"
     # Same list, different verified preference must update selection.
     panel.get_by_role("button",name="Refresh").click()
-    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    inventory_req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputInventory').at(-1)")
     assert inventory_req["force"] is True
     emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],
          "outputs":["CABLE Input","Speakers"],"preferredOutput":"Speakers","hasSavedOutput":True})
     assert panel.get_by_label("Windows playback device").input_value()=="Speakers"
     panel.get_by_role("button",name="Refresh").click()
-    inventory_req=page.evaluate("()=>window.__actions.at(-1)")
+    inventory_req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputInventory').at(-1)")
     emit(page,"arMixSecondaryOutputInventory",{"requestId":inventory_req["requestId"],
          "outputs":["CABLE Input","Speakers"],"preferredOutput":"","hasSavedOutput":True})
     assert panel.get_by_label("Windows playback device").input_value()==""
@@ -580,6 +580,54 @@ def verify_additional_output(page,out):
     print("ASIO_VENDOR_PANEL_DIRECT_DISPATCH_PASS (mock transport; physical driver HWND not tested)")
     assert not errors,errors
 
+
+def verify_main_monitor_shortcut(page,out):
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    page.goto((out / "index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",outputArmed=True,
+        enabledOutputs=list(range(8)),
+        outputEndpoints=[{"id":"out:"+str(i),"port":i,"callback":i,
+                          "label":"Maono "+str(i+1),"active":True} for i in range(8)])
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],
+                 externalRevision="2",externalOutputs=[])
+    emit(page,"arMixConsoleSnapshot",state)
+    live={"monitor":True,"directRouteAuthorized":True,"adaptiveClockActive":False,
+          "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True},
+          "secondaryOutputReady":False,"secondaryOutputArmed":False}
+    emit(page,"arMixStatus",live)
+    mon=page.get_by_label("MAIN secondary monitor output")
+    assert mon.is_visible() and mon.input_value()==""
+    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputInventory').at(-1)")
+    assert req and req["requestId"]
+    emit(page,"arMixSecondaryOutputInventory",{"requestId":req["requestId"],
+         "outputs":["CABLE Input","Speakers","USB DAC"]})
+    assert mon.input_value()==""
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').length")==0
+    primary=page.locator(".strip.master select[data-field=output]").input_value()
+    mon.select_option("USB DAC")
+    enable=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
+    assert enable["value"]=="USB DAC" and enable["inventoryId"]==req["requestId"]
+    assert mon.input_value()=="" and mon.is_disabled()
+    emit(page,"arMixSecondaryOutputAck",{"requestId":enable["requestId"],"action":enable["action"],"ok":True})
+    assert mon.input_value()==""
+    live.update(secondaryOutputReady=True,secondaryOutputArmed=True,secondaryOutputName="USB DAC")
+    emit(page,"arMixStatus",live)
+    assert mon.input_value()=="USB DAC"
+    assert page.locator(".strip.master select[data-field=output]").input_value()==primary
+    mon.select_option("")
+    stop=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputStop').at(-1)")
+    assert stop["requestId"] and mon.input_value()=="USB DAC"
+    emit(page,"arMixSecondaryOutputAck",{"requestId":stop["requestId"],"action":stop["action"],"ok":True})
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,secondaryOutputName="")
+    emit(page,"arMixStatus",live)
+    assert mon.input_value()==""
+    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm','audioDeviceApply'].includes(a.action)).length")==0
 
 def verify_independent_output(page,out,legacy_empty=False):
     """Two-pin native fixture: one mode action, no manual mute/arm ritual."""
@@ -776,6 +824,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_additional_output(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        verify_main_monitor_shortcut(page,out)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_independent_output(page,out)
