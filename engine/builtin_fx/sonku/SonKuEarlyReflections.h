@@ -6,6 +6,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP>=2)
+#include <emmintrin.h>
+#endif
 #include "SonKuMeasuredHrir.h"
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
 #include "SonKuP83SpeakerScene.h"
@@ -55,6 +58,8 @@ public:
     static constexpr int sourceCount=2;
     static constexpr int ringFrames=8192;
     static constexpr int geometryInterval=64;
+    // Product configuration, before prepare/publication only.
+    void enableMovingFirOptimization(bool enabled) noexcept { movingFirOptimized_=enabled; }
     // Diagnostic only: target reuse is never an audio-state authority.
     std::uint64_t skippedGeometryUpdates() const noexcept {
         return geometryCacheSkips_;
@@ -399,6 +404,38 @@ public:
                         }
                     };
 #endif
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH && (defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP>=2))
+                    // Baseline x64 SSE2. Fully fresh contiguous nonfused moving
+                    // paths only. Same delay, history and coefficient slew;
+                    // four accumulation lanes require a numerical PCM gate.
+                    if(movingFirOptimized_ && !fused && !p.kernelStationary &&
+                       freshTaps==hrir::taps && fastContiguousHrir_ && idx>=hrir::taps){
+                        static_assert(hrir::taps%4==0);
+                        const auto f=_mm_set1_ps(frac),one=_mm_set1_ps(1.f-frac);
+                        const auto slew=_mm_set1_ps(kernelSlew_);
+                        auto sumL=_mm_setzero_ps(),sumR=_mm_setzero_ps();
+                        const float* first=signal.data()+idx;
+                        for(int k=0;k<hrir::taps;k+=4){
+                            auto a=_mm_loadu_ps(first-k-3);
+                            auto b=_mm_loadu_ps(first-k-4);
+                            a=_mm_shuffle_ps(a,a,_MM_SHUFFLE(0,1,2,3));
+                            b=_mm_shuffle_ps(b,b,_MM_SHUFFLE(0,1,2,3));
+                            const auto x=_mm_add_ps(_mm_mul_ps(one,a),_mm_mul_ps(f,b));
+                            auto hL=_mm_loadu_ps(p.kernel[0].data()+k);
+                            auto hR=_mm_loadu_ps(p.kernel[1].data()+k);
+                            hL=_mm_add_ps(hL,_mm_mul_ps(slew,_mm_sub_ps(_mm_loadu_ps(p.targetKernel[0].data()+k),hL)));
+                            hR=_mm_add_ps(hR,_mm_mul_ps(slew,_mm_sub_ps(_mm_loadu_ps(p.targetKernel[1].data()+k),hR)));
+                            _mm_storeu_ps(p.kernel[0].data()+k,hL);
+                            _mm_storeu_ps(p.kernel[1].data()+k,hR);
+                            sumL=_mm_add_ps(sumL,_mm_mul_ps(x,hL));
+                            sumR=_mm_add_ps(sumR,_mm_mul_ps(x,hR));
+                        }
+                        alignas(16) float sl[4],sr[4];
+                        _mm_store_ps(sl,sumL);_mm_store_ps(sr,sumR);
+                        l=(sl[0]+sl[1])+(sl[2]+sl[3]);
+                        r=(sr[0]+sr[1])+(sr[2]+sr[3]);
+                    }else
+#endif
 #if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH && defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH && defined(_MSC_VER) && !defined(__clang__)
                     // Stationary, non-fused, contiguous FIR: hoist dispatch
                     // out of the tap loop, preserve ordered sums and bounds.
@@ -695,6 +732,7 @@ private:
     float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f,kernelSlew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
     int write_=0,untilGeometry_=0,validFrames_=0;
+    bool movingFirOptimized_=false; // immutable product policy, not a scene edit
     bool geometryCacheValid_=false;
     double cachedAzimuth_=0.;
     float cachedSpread_=0.f,cachedYaw_=0.f;

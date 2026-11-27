@@ -1,0 +1,23 @@
+{
+  "schema": "arsonmix.sonku-field-implementation.v1",
+  "status": "FIELD_CANDIDATE_NOT_RELEASED",
+  "approvedSourceSha": "3095af08b817d59a3e14874dab404bf6e243f38a",
+  "canonicalPredecessor": "a61749fbcfa3f11a3268528af4c7cf9fd780e740",
+  "files": {
+    "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "3c5c8e7a4460d46ed0a5f2f5bc2bf31b7b7fbeca",
+    "engine/builtin_fx/sonku/SonKuSpatialCore.h": "140d87e1360ec0f8f2f24f953c5ba86a4d4f3e3c",
+    "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "72dfac1b5b6250c7e5e2d4cb6a0b80b135a3a8ac",
+    "engine/builtin_fx/SonKuSpatialProcessor.h": "fc2452fd12e296340719a9450926d265fbff1e63"
+  },
+  "previousImplementation": {
+    "engine/builtin_fx/sonku/SonKuEarlyReflections.h": "c92a1fc88cf129e606a6e7c1ba4df1e32269fc65",
+    "engine/builtin_fx/sonku/SonKuSpatialCore.h": "f9a02f3eb7c04b1d84bdbc14d3d270d94f5fec69",
+    "engine/builtin_fx/sonku/SonKuP98SceneVoicing.h": "b3125950536d9fb9e16d948da2cfe53f92718185",
+    "engine/builtin_fx/SonKuSpatialProcessor.h": "60993a16ada364c9ee5440f75432f693dc36accd"
+  },
+  "evidence": {
+    "preReconciliationRun": "https://github.com/masarray/arsonmix/actions/runs/46077882960",
+    "scope": "GCC and MSVC full-orbit numerical parity and full ImmerSIB fixture bit-exact on prior candidate; reconciled source must independently repeat"
+  },
+  "policy": "Exact field source identity only, not owner listening approval, full host qualification, protected merge or release. Preserve prior approved manifest and optimized implementation receipt."
+}
