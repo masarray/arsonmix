@@ -60,21 +60,18 @@ jobs:
           $catalogText = & ctest --test-dir build -C Release --show-only=json-v1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $catalog = ($catalogText | Out-String | ConvertFrom-Json)
-          if ('ArSonPlayerRealWavDecodeResampleAndTransport' -notin @($catalog.tests | ForEach-Object { $_.name })) {
-            throw 'PLAYER_DECK_CTEST_MISSING'
+          $registered = @($catalog.tests | ForEach-Object { $_.name })
+          foreach ($required in @('ArSonPlayerRealWavDecodeResampleAndTransport', 'ArSonPlayerV1V2V3SetlistArchiveMigrationAndPersistence')) {
+            if ($required -notin $registered) { throw "PLAYER_CTEST_MISSING name=$required" }
           }
       - name: Compile ONLY real native player decoder test target
         shell: pwsh
         run: |
           cmake --build build --config Release --parallel 2 --target ARMixPlayerDecodeTests ARMixPlayerSetlistArchiveTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run ONLY real WAV player/loop/seek/crossfade regression
+      - name: Run real WAV transport and durable setlist archive regressions
         shell: pwsh
         run: |
-          ctest --test-dir build -C Release --output-on-failure `
-            -R '^(ArSonPlayerRealWavDecodeResampleAndTransport|ArSonPlayerV1V2V3SetlistArchiveMigrationAndPersistence)
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host 'PLAYER_DECK_REAL_JUCE_WAV_CTEST=PASS (physical ASIO NOT qualified)'
-
+          ctest --test-dir build -C Release --output-on-failure --no-tests=error -R '^(ArSonPlayerRealWavDecodeResampleAndTransport|ArSonPlayerV1V2V3SetlistArchiveMigrationAndPersistence)$'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host 'PLAYER_DECK_REAL_JUCE_WAV_CTEST=PASS (physical ASIO NOT qualified)'
