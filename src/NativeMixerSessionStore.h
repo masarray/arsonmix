@@ -5,6 +5,7 @@
 #include <juce_cryptography/juce_cryptography.h>
 #include <algorithm>
 #include <set>
+#include <map>
 #include <utility>
 #include <vector>
 
@@ -235,6 +236,50 @@ public:
         return {};
     }
 
+    // Serialized session IO worker only. A small atomic overlay references
+    // the immutable HEAD's verified FX blobs; never copy them on each fader
+    // change. New FX without a captured binary require a full idle checkpoint.
+    juce::String commitLiveControls(MixerSessionDocument draft) const {
+        if(draft.logicalOnly||!armix::shows::detail::uuid(draft.id))
+            return "Invalid live checkpoint identity";
+        const auto head=root_.getChildFile("HEAD");
+        const auto generation=readPointer(head);
+        if(generation.isEmpty()) {
+            if(exists()||!draft.inserts.empty())
+                return "Live checkpoint awaits first verified FX snapshot";
+            return commit(draft,{});
+        }
+        MixerSessionDocument base;
+        std::vector<armix::shows::BinaryState> blobs;
+        auto error=readGeneration(root_.getChildFile("versions").getChildFile(generation),base,blobs);
+        if(error.isNotEmpty())return error;
+        if(!attachLiveHashes(base,draft))
+            return "Live checkpoint awaits verified FX snapshot for current session";
+        const auto json=Codec::encode(draft);
+        MixerSessionDocument verified;
+        if(json.getNumBytesAsUTF8()>maxJson||!Codec::decode(json,verified))
+            return "Live checkpoint document rejected";
+        const auto file=root_.getChildFile("LIVE_CONTROLS");
+        if(!Input::managedPath(root_,file))return "Unsafe live checkpoint path";
+        // Compare canonical metadata only; do not rewrite identical state.
+        const auto prior=readLiveControls(generation,base,blobs);
+        if(prior!=OverlayResult::invalid) {
+            base.savedMs=draft.savedMs;
+            if(Codec::encode(base)==json)return {};
+        }
+        const auto hash=juce::SHA256(json.toRawUTF8(),json.getNumBytesAsUTF8()).toHexString();
+        const auto payload=generation+"\n"+hash+"\n"+json;
+        juce::TemporaryFile staging(file);
+        if(!staging.getFile().replaceWithText(payload))
+            return "Cannot stage live checkpoint";
+        juce::String check;
+        if(!Input::text(staging.getFile(),maxJson+128,check)||check!=payload||
+           readPointer(head)!=generation)
+            return "Live checkpoint readback or HEAD changed";
+        return staging.overwriteTargetFileWithTemporary()
+            ?juce::String{}:juce::String("Cannot atomically publish live checkpoint");
+    }
+
     // Read normal HEAD only: no silent fallback to an older performance.
     juce::String load(MixerSessionDocument& out,
                       std::vector<armix::shows::BinaryState>& states) const {
@@ -247,6 +292,12 @@ public:
         if(error.isNotEmpty())return error;
         if(readPointer(root_.getChildFile("HEAD"))!=pointer)
             return "Mixer HEAD changed during read";
+        // Only a matching, validated overlay may replace base metadata.
+        // Missing/corrupt overlay never discards the verified FX checkpoint.
+        if(readLiveControls(pointer,doc,binary)==OverlayResult::invalid)
+            doc.resumeMain=false;
+        if(readPointer(root_.getChildFile("HEAD"))!=pointer)
+            return "Mixer HEAD changed during live checkpoint read";
         // A recovered generation must stay muted even if the process dies
         // before its first new checkpoint. The marker is bound to this HEAD.
         const auto recovery=root_.getChildFile("RECOVERED_MUTED");
@@ -301,6 +352,51 @@ public:
     }
 private:
     juce::File root_;
+    enum class OverlayResult { absent, applied, invalid };
+    // Exact durable instance identity, not slot number or plugin display name.
+    // MOVE/REMOVE may reuse a blob; ADD/REPLACE with a new instance cannot.
+    static bool attachLiveHashes(const MixerSessionDocument& base,MixerSessionDocument& draft) {
+        if(base.logicalOnly||draft.logicalOnly||base.id!=draft.id)return false;
+        std::map<juce::String,const StoredInsert*> byId;
+        for(const auto& fx:base.inserts)
+            if(fx.instanceId.isNotEmpty()&&!byId.emplace(fx.instanceId,&fx).second)return false;
+        std::set<juce::String> used;
+        for(auto& fx:draft.inserts) {
+            const auto it=byId.find(fx.instanceId);
+            if(fx.instanceId.isEmpty()||it==byId.end()||!used.insert(fx.instanceId).second)
+                return false;
+            const auto& old=*it->second;
+            if(old.catalogId!=fx.catalogId||old.path!=fx.path||old.uid!=fx.uid||
+               (fx.sha256.isNotEmpty()&&fx.sha256!=old.sha256))return false;
+            fx.sha256=old.sha256;
+        }
+        return true;
+    }
+    OverlayResult readLiveControls(const juce::String& generation,MixerSessionDocument& doc,
+            std::vector<armix::shows::BinaryState>& blobs) const {
+        const auto file=root_.getChildFile("LIVE_CONTROLS");
+        if(!file.exists())return OverlayResult::absent;
+        juce::String text;
+        if(!Input::managedPath(root_,file)||!Input::text(file,maxJson+128,text))
+            return OverlayResult::invalid;
+        // Fixed-width ASCII header; stale overlays after a new full HEAD
+        // (including NEW/Open/archive) cannot replace that generation.
+        if(text.length()<102||text[36]!='\n'||text[101]!='\n')
+            return OverlayResult::invalid;
+        const auto bound=text.substring(0,36);
+        if(!armix::shows::detail::uuid(bound))return OverlayResult::invalid;
+        if(bound!=generation)return OverlayResult::absent;
+        const auto expected=text.substring(37,101),json=text.substring(102);
+        MixerSessionDocument candidate;
+        if(!safeHash(expected)||juce::SHA256(json.toRawUTF8(),json.getNumBytesAsUTF8()).toHexString()!=expected||
+           !Codec::decode(json,candidate)||!attachLiveHashes(doc,candidate))
+            return OverlayResult::invalid;
+        std::set<juce::String> hashes;
+        for(const auto& fx:candidate.inserts)hashes.insert(fx.sha256);
+        std::erase_if(blobs,[&](const auto& blob){return !hashes.contains(blob.sha256);});
+        doc=std::move(candidate);
+        return OverlayResult::applied;
+    }
     static bool safeHash(const juce::String& hash) {
         return hash.length()==64 && hash.containsOnly("0123456789abcdef");
     }

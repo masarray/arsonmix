@@ -193,3 +193,23 @@ test('MON persistence retries newest accepted intent without reusing stale prefe
  assert.match(main,/if\(!updaterProbeMode_\)\(void\)persistSecondaryPreference\(true\)/);
  assert.match(main,/serviceSecondaryInventory\(\);\s*\(void\)persistSecondaryPreference\(\)/);
 });
+
+test('live checkpoint uses accepted metadata and immutable FX identity without muting or vendor capture',()=>{
+ const lab=read('src/LiveDryRoutingLab.h');
+ const capture=lab.split('juce::String captureLiveMixerControls(')[1].split('juce::String captureNativeMixerSession(')[0];
+ assert.match(capture,/nativeAccepted_\.matches\(nativePublisher_,ep,rev\)/);
+ assert.match(capture,/\(\*owner\)->instanceId/);
+ assert.doesNotMatch(capture,/tryCaptureState|RealtimeRenderPermit|Thread::sleep|getStateInformation/);
+ const host=main.split('juce::String saveLiveMixerControls()')[1].split('juce::String saveMixerSession(')[0];
+ assert.doesNotMatch(host,/setOutputMuted|setMonitorEnabled|captureNativeMixerSession/);
+ assert.match(host,/engine_\.captureLiveMixerControls\(doc\)/);
+ assert.match(host,/lastMixerSessionFingerprint_\.clear\(\)/);
+ assert.match(main,/liveCheckpointCadence_\.observeLive\(checkpointNow,!engine_\.allOutputsDisarmed\(\)/);
+ const worker=read('src/NativeMixerSessionSaveWorker.h');
+ assert.match(worker,/store\.commitLiveControls\(std::move\(doc_\)\)/);
+ const store=read('src/NativeMixerSessionStore.h');
+ assert.match(store,/if\(bound!=generation\)return OverlayResult::absent/);
+ assert.match(store,/if\(base.logicalOnly\|\|draft.logicalOnly\|\|base.id!=draft.id\)return false/);
+ assert.match(store,/old.catalogId!=fx.catalogId\|\|old.path!=fx.path\|\|old.uid!=fx.uid/);
+ assert.match(store,/staging.overwriteTargetFileWithTemporary\(\)/);
+});

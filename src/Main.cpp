@@ -1029,7 +1029,7 @@ private:
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     std::uint64_t workspaceGeneration_=0; // message-thread committed workspace identity
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
-    armix::session::SessionCheckpointCadence sessionCheckpointCadence_;
+    armix::session::SessionCheckpointCadence sessionCheckpointCadence_,liveCheckpointCadence_;
     bool mixerSessionStartupInspected_=false;
     std::unique_ptr<juce::XmlElement> pendingStartupAsioSettings_;
     bool pendingStartupWasapi_=false;
@@ -6110,6 +6110,46 @@ private:
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",mixerSessionStatus_);
         if(usedPrevious)emitNotice("Last verified mixer checkpoint restored with MAIN muted.",true);
         emitApprovedNativeSnapshot();
+        return {};
+    }
+
+    // No mute, render permit, vendor getState or disk I/O on CONTROL here.
+    // The same session worker binds metadata to the last verified FX bytes.
+    juce::String saveLiveMixerControls() {
+        if(logicalMixer_.readOnly()||mixerSessionRecoveryPending_||
+           engine_.allOutputsDisarmed()||engine_.mainInterruptedByDevice())
+            return "Live checkpoint not admitted";
+        armix::session::MixerSessionDocument doc;
+        auto error=engine_.captureLiveMixerControls(doc);
+        if(error.isNotEmpty())return error;
+        doc.id=mixerSessionId_.isNotEmpty()?mixerSessionId_:
+            juce::Uuid().toDashedString().toLowerCase();
+        doc.savedMs=juce::Time::currentTimeMillis();
+        doc.resumeMain=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+        if(hotkeys_.activeSession()==doc.id)doc.hotkeys=hotkeys_.sessionEntries();
+        error=resolveMixerSessionCatalog(doc,true);
+        if(error.isNotEmpty())return error;
+        const auto pendingId=doc.id;
+        auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+        if(!mixerSessionWorker_.save(settingsDirectory(),std::move(doc),{},
+            [safe,pendingId](juce::String failure){
+                if(safe==nullptr)return;
+                if(failure.isEmpty()) {
+                    safe->mixerSessionId_=pendingId;
+                    // A full idle capture must supersede the live overlay,
+                    // even when its controls equal the previous full snapshot.
+                    safe->lastMixerSessionFingerprint_.clear();
+                    safe->mixerSessionStatus_="LIVE_CONTROLS_SAVED_LAST_VERIFIED_FX";
+                    safe->mixerSessionError_.clear();
+                } else {
+                    safe->liveCheckpointCadence_.failed(monotonicMilliseconds());
+                    if(safe->mixerSessionError_!=failure)
+                        safe->diagnostics_.record("LIVE_CHECKPOINT_DEFERRED",failure);
+                    safe->mixerSessionStatus_="LIVE_CHECKPOINT_DEFERRED";
+                    safe->mixerSessionError_=failure;
+                }
+            },{},armix::session::NativeMixerSessionStore::ArchiveMode::none,false,true))
+            return "Mixer session IO worker unavailable";
         return {};
     }
 
@@ -12409,6 +12449,16 @@ private:
                  checkpointReady,engine_.sessionCheckpointStamp())) {
             const auto error=saveMixerSession(false);
             if(error.isNotEmpty())sessionCheckpointCadence_.failed(checkpointNow);
+        }
+        if(liveCheckpointCadence_.observeLive(checkpointNow,!engine_.allOutputsDisarmed(),
+                 checkpointReady,engine_.sessionCheckpointStamp())) {
+            const auto error=saveLiveMixerControls();
+            if(error.isNotEmpty()) {
+                liveCheckpointCadence_.failed(checkpointNow);
+                if(mixerSessionError_!=error)diagnostics_.record("LIVE_CHECKPOINT_DEFERRED",error);
+                mixerSessionStatus_="LIVE_CHECKPOINT_DEFERRED";
+                mixerSessionError_=error;
+            }
         }
         if (engine_.finalizeGraphSwitch())
         {
