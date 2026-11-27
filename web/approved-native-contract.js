@@ -779,6 +779,7 @@
       case "SET_FX_SLOT_BYPASS":
         return !!row && Number.isInteger(v.slot) && v.slot>=0 &&
           isBool(v.enabled) && row.inserts?.[v.slot]?.bypassed===v.enabled;
+      case "SET_WIRE_GAIN":
       case "SET_SEND_TAP":
       case "SET_SEND_ENABLED": {
         // Both are exact EdgeId edits to an existing PARALLEL send.
@@ -792,6 +793,9 @@
           e.from===p.channelId && e.primaryOutput===false && e.enabled!==false);
         if(old.length!==1 || updated.length!==1 ||
            old[0].to!==updated[0].to)return false;
+        if(p.operation==="SET_WIRE_GAIN")
+          return Number.isFinite(v.gainLinear)&&v.gainLinear>=0&&v.gainLinear<=2&&
+            Number.isFinite(updated[0].gainLinear)&&Math.abs(updated[0].gainLinear-v.gainLinear)<0.00001;
         if(p.operation==="SET_SEND_TAP")
           return ["PRE_FADER","POST_FADER"].includes(v.tap) &&
             (old[0].tapStage||old[0].tap)!==v.tap &&
@@ -824,7 +828,7 @@
           return validId(change.to) && edges.some(e=>
             e.to===change.to && e.primaryOutput===false &&
             validId(e.edgeId) && !present(e.edgeId) &&
-            (change.tap===undefined || change.tap===e.tap) &&
+            (change.tap===undefined || change.tap===(e.tapStage||e.tap)) &&
             (change.gainLinear===undefined ||
               (Number.isFinite(change.gainLinear) &&
                Number.isFinite(e.gainLinear) &&

@@ -62,6 +62,43 @@ SPLIT_BOOTSTRAP = """
 })();
 """
 
+PROJECT_MENU = """<details id="projectMenu" class="project-menu">
+ <summary class="project-menu-trigger" aria-label="Main menu" title="Main menu">
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/></svg>
+ </summary>
+ <div class="project-menu-panel" aria-label="Mixer menu">
+  <div class="project-menu-label">PROJECT</div>
+  <button type="button" class="project-menu-item mixer-file-tool" data-project-file="New" data-native-new-project="true" disabled title="Available in the Windows mixer"><img src="assets/mixer-new.svg" alt="" width="16" height="16">New</button>
+  <button type="button" class="project-menu-item mixer-file-tool" data-project-file="Save" disabled title="Available in the Windows mixer"><img src="assets/mixer-save.svg" alt="" width="16" height="16">Save</button>
+  <button type="button" class="project-menu-item mixer-file-tool" data-project-file="Open" disabled title="Available in the Windows mixer"><img src="assets/mixer-open.svg" alt="" width="16" height="16">Open</button>
+  <div class="project-menu-label">MIXER</div>
+  <button type="button" class="project-menu-item" data-project-action="wireNavigatorToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="5" cy="6" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="18" r="2"/></svg>Routes</button>
+  <button type="button" class="project-menu-item" data-project-action="wireMatrixToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16M12 4v16"/></svg>Routing matrix</button>
+  <button type="button" class="project-menu-item" data-project-action="wireConfigToggle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg>WIRE setup</button>
+  <button type="button" class="project-menu-item" data-project-action="audioIO" disabled title="Available in the Windows mixer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="2"/><circle cx="9" cy="12" r="2"/><path d="M15 12h2M8 4v3M16 4v3"/></svg>Audio I/O</button>
+ </div>
+ </details>"""
+
+PROJECT_MENU_BOOTSTRAP = """
+(function installProjectMenu(){
+ const menu=document.getElementById('projectMenu');
+ if(!menu)return;
+ const trigger=menu.querySelector('summary');
+ const close=()=>{menu.open=false;};
+ menu.addEventListener('click',e=>{
+  const item=e.target.closest('[data-project-action]');
+  if(!item||item.disabled)return;
+  const id=item.dataset.projectAction;
+  const target=id==='audioIO'?document.querySelector('[data-native-io]'):document.getElementById(id);
+  close();target?.click();
+ });
+ document.addEventListener('pointerdown',e=>{if(menu.open&&!menu.contains(e.target))close();},true);
+ document.addEventListener('focusin',e=>{if(menu.open&&!menu.contains(e.target))close();},true);
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&menu.open){close();trigger.focus();e.preventDefault();}},true);
+ menu.addEventListener('toggle',()=>trigger.setAttribute('aria-expanded',String(menu.open)));
+})();
+"""
+
 OPERATOR_CSS = """
 /* V60 physical-fader-priority console, same rail/strip/Master tokens.
    At very short heights preserve minimum usable controls and scroll vertically. */
@@ -82,7 +119,33 @@ OPERATOR_CSS = """
 .window-title .file-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .window-title .right{margin-left:auto;min-width:0;max-width:48%;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap;color:#90b6c8;font-size:10px;font-weight:400}
-.command-bar .mixer-file-tool{display:inline-flex;align-items:center;gap:5px}
+/* Project commands are one left-anchored menu, not three permanent toolbar buttons. */
+.app .command-bar .project-menu{position:relative;flex:0 0 auto;margin:0}
+.project-menu-trigger{list-style:none;display:grid;place-items:center;width:30px;height:29px;
+ border:1px solid #50616b;border-radius:4px;background:#263844;color:#d8e3e9;cursor:pointer}
+.project-menu-trigger::-webkit-details-marker{display:none}
+.project-menu-trigger:hover,.project-menu[open] .project-menu-trigger{background:#3a4c58}
+.project-menu-panel{position:absolute;top:calc(100% + 6px);left:0;width:205px;
+ max-height:calc(100vh - 90px);overflow-y:auto;padding:5px;background:#18262f;
+ border:1px solid #536571;border-radius:6px;box-shadow:0 8px 25px #0007;
+ display:flex;flex-direction:column;gap:1px}
+.project-menu:not([open]) .project-menu-panel{display:none}
+.project-menu-label{padding:7px 8px 3px;color:#8eacbc;font-size:9px;font-weight:500;letter-spacing:.08em}
+.project-menu-label:not(:first-child){border-top:1px solid #53657155;margin-top:3px}
+.project-menu-panel .project-menu-item{display:flex;align-items:center;gap:10px;
+ width:100%;height:29px;padding:0 8px;border:0;border-radius:3px;
+ background:transparent;color:#e0e8ed;text-align:left;font:400 12px Inter,Arial,sans-serif;cursor:pointer}
+.project-menu-panel .project-menu-item img,.project-menu-panel .project-menu-item svg{
+ width:16px;height:16px;flex:none;pointer-events:none}
+.project-menu-panel .project-menu-item:hover:not(:disabled),.project-menu-panel .project-menu-item:focus-visible{background:#314752}
+.project-menu-panel .project-menu-item:disabled{opacity:.42;cursor:not-allowed}
+.app .command-bar:has(.project-menu[open]){z-index:1200!important}
+.app .command-bar #mixContext{display:inline-flex!important;align-items:center;
+ min-width:0;max-width:140px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+ font-size:10px;color:#a9c1cf;letter-spacing:.025em;padding:0 4px}
+.app .command-bar:has(#sofToggle[aria-pressed="true"]) #mixContext{color:#8fe1de}
+@media(max-width:1200px){.app .command-bar #mixContext{max-width:88px}}
+@media(max-width:760px){.app .command-bar #mixContext{display:none!important}}
 .command-bar .mixer-file-tool img{display:block;flex:none;pointer-events:none}
 .command-bar #densitySelect,.command-bar [for="densitySelect"],.command-bar #mode{display:none!important}
 #channelIdentity .identity-head{cursor:move;touch-action:none}
@@ -109,6 +172,16 @@ def apply_operator_ux(html: str, assets: Path) -> str:
         '<header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">OPERATOR-FIRST · SINGLE LIVE CONSOLE REFERENCE</span></header>',
         '<header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="right" id="trackCount" aria-live="off">10 audio · 1 bus · master</span></header>',
         "compact title status")
+    html = once(html,
+        '<div class="command-bar" role="toolbar" aria-label="Live mixer controls">',
+        '<div class="command-bar" role="toolbar" aria-label="Live mixer controls">'+PROJECT_MENU,
+        "leftmost project menu")
+    html = once(html, '</body>', '<script>'+PROJECT_MENU_BOOTSTRAP+'</script></body>',
+        "project menu keyboard and pointer ownership")
+    html = once(html, 'title="Less-frequent mixer operations">More ···',
+        'title="Channel and advanced mixer operations">Tools ···', "contextual tools label")
+    html = once(html, 'aria-pressed="false">Sends on Faders</button>',
+        'aria-pressed="false">SOF</button>', "compact mixer mode key")
     old_title = re.compile(r'(?m)^    <div class="mixer-title">.*id="trackCount".*</div>\n')
     html, count = old_title.subn("", html)
     if count != 1:

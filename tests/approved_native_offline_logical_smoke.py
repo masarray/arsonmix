@@ -47,7 +47,7 @@ def logical_graph(revision="1", extra=False, source_only=False):
             "supportedOps":["CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
                 "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN",
                 "SET_MUTE","SET_SOLO","SET_PROCESSING_FORMAT",
-                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP",
+                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP","SET_WIRE_GAIN",
                 "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
                 "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"],
             "dynamicChannels":True,"groups":True,
@@ -225,11 +225,14 @@ def main():
         new_project.click()
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
         # The leftmost New shortcut delegates to exactly the same transaction.
-        toolbar_new=page.locator(".command-bar > [data-native-new-project]")
+        project=page.locator("#projectMenu")
+        project.locator("summary").click()
+        toolbar_new=project.locator("[data-native-new-project]")
         assert toolbar_new.inner_text()=="New" and toolbar_new.is_visible()
         page.once("dialog",lambda dialog:dialog.dismiss())
         toolbar_new.click()
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
+        project.locator("summary").click()
         page.once("dialog",lambda dialog:dialog.accept())
         toolbar_new.click()
         assert page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='nativeMixerNewOffline').length")==1
@@ -354,6 +357,23 @@ def main():
           if(!edge||!primary)throw Error('Missing exact accepted logical SEND/primary');
           return {source:src.id,parallel:edge.id,primary:primary.id};
         }""")
+        assert not page.locator("#sofToggle").is_disabled()
+        page.locator("#sofToggle").click()
+        page.locator("#sofTarget").select_option(str(page.evaluate(
+            "()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(t=>t.name==='AUX A').id")))
+        fader=page.locator(f'#tracks .strip[data-id="{wire_ids["source"]}"] .fader')
+        assert not fader.is_disabled(), "Saved SEND must remain editable without PCM"
+        fader.evaluate("(el)=>{el.value='-12';el.dispatchEvent(new Event('input',{bubbles:true}));}")
+        assert not page.evaluate("()=>window.__events.some(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN')")
+        fader.evaluate("(el)=>{el.dispatchEvent(new Event('change',{bubbles:true}));}")
+        page.wait_for_function("()=>window.__events.some(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN')")
+        gain_req=page.evaluate("()=>window.__events.filter(e=>e.name==='arMixLogicalIntent').at(-1).payload")
+        assert gain_req["channelId"]=="1" and gain_req["payload"]["edgeId"]=="1001"
+        assert abs(gain_req["payload"]["gainLinear"]-10**(-12/20))<0.00001
+        # Reject fixture request to restore accepted state before PRE/POST test.
+        emit(page,"arMixLogicalAck",{"requestId":gain_req["requestId"],"status":"REJECTED","errorCode":"FIXTURE"})
+        emit(page,"arMixConsoleSnapshot",staged)
+        page.locator("#sofToggle").click()
         assert page.evaluate("""([src,edge,primary])=>{
           const hooks=window.__ARMIX_NATIVE_M2__;
           return hooks.canWireTap(edge,src) && !hooks.canWireTap(primary,src);

@@ -132,11 +132,14 @@ def main():
                 assert item["left"] >= -1 and item["right"] <= width+1, (
                     width, "toolbar control outside viewport", item)
             # Real file group, not CSS visual reordering: tab order follows DOM.
-            file_group = page.locator(".command-bar > .mixer-file-tool")
+            assert page.locator(".command-bar > .mixer-file-tool").count()==0
+            menu=page.locator("#projectMenu")
+            assert menu.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
+            menu.locator("summary").click()
+            file_group = menu.locator(".mixer-file-tool")
             assert file_group.all_text_contents() == ["New", "Save", "Open"], width
-            new = page.locator(".command-bar > [data-native-new-project]")
+            new = menu.locator("[data-native-new-project]")
             assert new.count() == 1 and new.is_visible(), width
-            assert new.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
             assert new.get_by_role("img").count() == 0  # decorative icon
             image = new.locator("img")
             assert image.get_attribute("alt") == ""
@@ -144,7 +147,9 @@ def main():
             page.wait_for_function("()=>{const i=document.querySelector('[data-native-new-project] img');return i.complete&&i.naturalWidth>0}")
             assert image.bounding_box()["width"] == 16 and image.bounding_box()["height"] == 16, width
             for caption in ("Save", "Open"):
-                button = page.locator('.command-bar .mixer-file-tool').filter(has_text=caption)
+                if menu.get_attribute("open") is None:
+                    menu.locator("summary").click()
+                button = menu.locator('.mixer-file-tool').filter(has_text=caption)
                 assert button.count() == 1 and button.is_visible(), (
                     width, "native file control not usable", caption)
                 button.click()

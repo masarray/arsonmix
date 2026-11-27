@@ -130,9 +130,12 @@
   }
 
   function sofAvailable(snapshot,canToggle) {
-    return snapshot?.admitted===true&&snapshot.retained!==true&&
-      canToggle===true&&SOF_OPS.every(op=>
-        snapshot.graph?.capabilities?.supportedOps?.includes(op));
+    const operations=snapshot?.graph?.capabilities?.supportedOps;
+    const logical=snapshot?.logical===true&&snapshot.readOnly!==true;
+    return snapshot?.retained!==true&&canToggle===true&&
+      (logical?["SET_WIRE_GAIN","SET_SEND_ENABLED","SET_SEND_TAP","WIRE_TRANSACTION"]:SOF_OPS)
+        .every(op=>operations?.includes(op))&&
+      (logical||snapshot?.admitted===true);
   }
 
   // An uncommitted SOF CONNECT+GAIN UI pair is one atomic real SEND
@@ -197,7 +200,7 @@
   }
   // Never MAIN/primary, self, ordinal, stale or ambiguous duplicate.
   function sofSendEdge(snapshot,{sourceId,destinationId}={}) {
-    if(snapshot?.admitted!==true||snapshot.retained===true||
+    if((snapshot?.admitted!==true&&!(snapshot?.logical===true&&snapshot.readOnly!==true))||snapshot.retained===true||
        !nativeId(sourceId)||!nativeId(destinationId))return null;
     const graph=snapshot.graph;
     const source=graph?.channels?.filter(ch=>ch.id===sourceId);

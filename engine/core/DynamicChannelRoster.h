@@ -68,7 +68,7 @@ struct ChannelEdit final {
         // Control-document metadata (rack/slot bypass) changes revision
         // without changing a fader, audio descriptor or live PCM topology.
         touchDocumentRevision,
-        setInputGain, setSendEnabled, setSendTap, setWireSumGain
+        setInputGain, setSendEnabled, setSendTap, setWireSumGain, setSendGain
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
@@ -284,6 +284,7 @@ public:
                     it->solo=op.enabled;
                     break;
                 case ChannelEdit::Kind::setSendEnabled:
+                case ChannelEdit::Kind::setSendGain:
                 case ChannelEdit::Kind::setSendTap: {
                     const auto edge=std::find_if(it->sends.begin(),it->sends.end(),
                         [&](const auto& send){return send.edgeId==op.sendEdgeId;});
@@ -293,7 +294,11 @@ public:
                         result.fault=ChannelEditFault::invalidAction;
                     else if(op.kind==ChannelEdit::Kind::setSendEnabled)
                         edge->enabled=op.enabled;
-                    else edge->preFader=op.preFader; // post-FX PRE, not PRE_FX
+                    else if(op.kind==ChannelEdit::Kind::setSendGain) {
+                        if(!std::isfinite(op.value)||op.value<0.f||op.value>2.f)
+                            result.fault=ChannelEditFault::invalidValue;
+                        else edge->gain=op.value;
+                    } else edge->preFader=op.preFader; // post-FX PRE, not PRE_FX
                     break;
                 }
                 case ChannelEdit::Kind::touchDocumentRevision:
