@@ -85,6 +85,9 @@ def exercise(browser, out, width, height):
     toggle.click()
     target.select_option(label=next(label for label in options if "STAGE BUS" in label))
     assert page.locator("#mixContext").inner_text() == "SEND MIX → STAGE BUS"
+    receiver=page.locator(f'#tracks .strip[data-id="{target.input_value()}"] .fader')
+    assert receiver.is_enabled(), "Selected destination retains its own bus master fader"
+    assert abs(float(receiver.input_value()))<.01
     on = source.locator('[data-action="sofOn"]')
     tap = source.locator('[data-action="sofTap"]')
     assert on.is_enabled() and tap.is_enabled()
@@ -162,20 +165,58 @@ def exercise(browser, out, width, height):
     emit(page,"arMixConsoleSnapshot",state)
     assert state["graph"]["channels"][0]["controls"]["faderDb"]==-7.5
     assert intent_list(page,"SET_FADER")==[]
+    # Real held pointer: an accepted earlier value must not fight the newest drag.
+    travel = source.locator(".fader-travel").bounding_box()
+    x = travel["x"] + travel["width"]/2
+    page.mouse.move(x, travel["y"] + travel["height"]*.65)
+    page.mouse.down()
+    first = wait_for_intents(page,"SET_WIRE_GAIN",2)
+    page.mouse.move(x, travel["y"] + travel["height"]*.25, steps=5)
+    desired = float(fader.input_value())
+    assert abs(first["payload"]["gainLinear"]-10**(desired/20))>.001
+    ack(page,state,first)
+    state["graph"]["edges"][1]["gainLinear"] = first["payload"]["gainLinear"]
+    emit(page,"arMixConsoleSnapshot",state)
+    assert abs(float(fader.input_value())-desired)<.051, "SEND readback fought held drag"
+    page.mouse.up()
+    final = wait_for_intents(page,"SET_WIRE_GAIN",3)
+    assert final["payload"]["edgeId"]==SEND
+    assert abs(final["payload"]["gainLinear"]-10**(desired/20))<1e-8
+    assert abs(float(fader.input_value())-desired)<.051, "SEND cap jumped after release"
+    ack(page,state,final)
+    state["graph"]["edges"][1]["gainLinear"] = final["payload"]["gainLinear"]
+    emit(page,"arMixConsoleSnapshot",state)
+    assert abs(float(fader.input_value())-desired)<.051
+    assert intent_list(page,"SET_FADER")==[]
     page.screenshot(path=f"arsonmix-native-sof-{width}.png")
 
     # The absence of an admitted EdgeId must never trigger an automatic
     # patch, a ghost send, nor an unintended MAIN fader write.
     state["graph"].update(revision="4",rosterRevision="4")
     state["mixerSession"].update(routeRevision="4",rosterRevision="4")
-    state["graph"]["edges"].pop(1)
+    removed_send=state["graph"]["edges"].pop(1)
     emit(page,"arMixConsoleSnapshot",state)
     assert "NO SEND" in source.locator(".sof-badge").inner_text()
-    assert source.locator('[data-action="sofOn"]').is_disabled()
-    assert source.locator('[data-action="sofTap"]').is_disabled()
+    assert source.get_by_role("button",name="Assign PRE send").is_enabled()
+    assert source.get_by_role("button",name="Assign POST send").is_enabled()
     before=len(page.evaluate("()=>window.__nativeIntents"))
     assert source.locator(".fader").is_disabled()
     assert len(page.evaluate("()=>window.__nativeIntents"))==before
+    source.get_by_role("button",name="Assign PRE send").click()
+    assignment=wait_for_intents(page,"APPLY_WIRE_TRANSACTION",2)
+    assert assignment["targetChannelId"]==SOURCE
+    change=assignment["payload"]["changes"][0]
+    assert change=={"op":"CONNECT","from":SOURCE,"to":RECEIVER,"tap":"PRE_FADER","gainLinear":0},change
+    assert source.locator(".fader").is_disabled(), "No speculative graph"
+    state["graph"].update(revision="5",rosterRevision="5")
+    state["mixerSession"].update(routeRevision="5",rosterRevision="5")
+    ack(page,state,assignment)
+    assert source.locator(".fader").is_disabled(), "ACK alone is not routing evidence"
+    state["graph"]["edges"].append({**removed_send,"edgeId":"9223372036854775899","tap":"PRE_FADER","gainLinear":0})
+    emit(page,"arMixConsoleSnapshot",state)
+    assert source.locator(".fader").is_enabled()
+    assert float(source.locator(".fader").input_value())==-60
+    assert intent_list(page,"SET_FADER")==[]
 
     toggle.click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"
@@ -318,6 +359,47 @@ def exercise_dmx_conversion(browser, out):
     page.close()
 
 
+def exercise_create_fx_return(browser,out):
+    page=browser.new_page(viewport={"width":1366,"height":900})
+    errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
+    page.add_init_script(NATIVE_EVENTS+"""window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled",timeout=15000)
+    state=admitted_session()
+    graph=state["graph"]
+    graph["capabilities"]["supportedOps"].append("CREATE_GROUP")
+    emit(page,"arMixConsoleSnapshot",state)
+    page.locator("#moreTools > summary").click()
+    page.locator("#addFx").click()
+    request=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeBusCreate').at(-1)")
+    assert request and request["purpose"]=="FX" and request["graphRevision"]=="2"
+    wet_id="9007199254740999"
+    wet=copy.deepcopy(graph["channels"][1])
+    wet.update(id=wet_id,name="FX Return 1",role="FX_RETURN",primaryOutId=MAIN,
+        inserts=[{"id":"new-wet-lease-1","catalogId":"armix.builtin.vocal-reverb-return.v1",
+                  "name":"Reverb-Sis Return","bypassed":False}])
+    assert page.locator('#tracks .strip[data-native-role="FX_RETURN"]').count()==0
+    emit(page,"arMixNativeBusAck",{"requestId":request["requestId"],"ok":True,
+        "createdId":wet_id,"graphRevision":"3"})
+    assert page.locator('#tracks .strip[data-native-role="FX_RETURN"]').count()==0
+    graph.update(revision="3",rosterRevision="4")
+    graph["channels"].append(wet)
+    graph["edges"].append(dict(graph["edges"][0],edgeId="9223372036854775991",
+        **{"from":wet_id,"to":MAIN,"primaryOutput":True,"gainLinear":1}))
+    graph["destinations"]=[{k:c[k] for k in ("id","role","name")} for c in graph["channels"]]
+    state["mixerSession"].update(routeRevision="3",rosterRevision="4",
+        channels=copy.deepcopy(graph["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    strip=page.locator('#tracks .strip[data-native-role="FX_RETURN"]')
+    strip.wait_for(state="attached",timeout=15000)
+    assert "Reverb-Sis Return" in strip.inner_text()
+    assert not errors,errors
+    page.close()
+
+
 def main():
     spec=importlib.util.spec_from_file_location(
         "native_bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -333,6 +415,7 @@ def main():
                     exercise(browser,out,width,height)
                     exercise_dmx(browser,out,width,height)
                 exercise_dmx_conversion(browser,out)
+                exercise_create_fx_return(browser,out)
             finally:
                 browser.close()
     print("PASS native SOF actual Chromium: exact EdgeId ON/OFF, PRE tap, gain, ACK/readback, no ghost patch or MAIN fader write; two viewports")

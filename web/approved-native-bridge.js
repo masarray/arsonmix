@@ -459,6 +459,7 @@
     return false; // Prevent original Pages demo mutation until authoritative readback.
   }
   const pendingWireGains=new Map();
+  const wireGainVisualTargets=new Map(); // latest gesture, including in-flight readback
   let wireGainFlushQueued=false;
   let startupWire=null, startupWireSerial=0, activeWireAttempt=null;
   function deferStartupWire(ops,retries=0){
@@ -569,6 +570,38 @@
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
   const activeView=()=>logicalView||controller?.state()?.current;
+  // One exact handoff for retained FX actions. The selected operation is
+  // immutable while waiting for ACK and an independently accepted workspace.
+  function requestRetainedFxAction(t,slot,action,options={}){
+    const current=controller?.state()?.current,id=nativeIdFor(t);
+    const row=current?.graph?.channels?.find(ch=>ch.id===id);
+    if(logicalView||current?.retained!==true||!row||
+       !Number.isInteger(slot)||slot<0||slot>=8)return false;
+    const fx=row.inserts?.[slot],empty=slot===row.inserts?.length;
+    if(!fx?.id&&!empty)return false;
+    if(empty&&!["fxOn","insertFx"].includes(action))return false;
+    if(!empty&&action==="insertFx")return false;
+    if(pendingRetainedEditor){
+      status("Preparing offline mixer · previous FX request pending");return true;
+    }
+    const requestId="retained-editor-"+(++retainedEditorSerial);
+    pendingRetainedEditor={requestId,channelId:id,slot,
+      catalogId:fx?.catalogId||"",instanceId:fx?.id||"",empty,
+      epoch:current.device.epoch,revision:current.graph.revision,
+      recenter:options.recenter===true,acknowledged:false,action,
+      selectedCatalogId:options.selectedCatalogId};
+    status("Preparing offline mixer · audio output remains safe");
+    backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",
+      requestId,channelId:id,slot,instanceId:fx?.id||"",
+      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision});
+    window.setTimeout(()=>{
+      if(pendingRetainedEditor?.requestId!==requestId)return;
+      pendingRetainedEditor=null;
+      status("Offline mixer preparation expired · retry");
+      controller?.subscribe();
+    },10000);
+    return true;
+  }
   // Dedicated logical transactions never advertise physical PCM admission.
   // Native commits to .smix BEFORE ACK; the NEXT subscribe proves readback.
   function logicalIntent(operation,channelId,payload={}) {
@@ -622,17 +655,25 @@
       const plan=wireVM.gainDispatchPlan(current,edgeId,edit);
       if(plan.kind==="ROLLBACK"){
         // Stale identity, malformed gain, or duplicate EdgeId: fail closed.
+        wireGainVisualTargets.delete(edgeId);
         scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
+        paintSofGainReadback(current);
         continue;
       }
       if(plan.kind==="CONFIRMED"){
+        wireGainVisualTargets.delete(edgeId);
+        paintSofGainReadback(current);
         scope?.syncNativeWireGains?.(nativeWireGainReadback(current));
         continue;
       }
       const result=controller.intent("SET_WIRE_GAIN",plan.source,{
         edgeId:plan.edgeId,gainLinear:plan.gainLinear});
       if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
-      else status("WIRE gain rejected · "+result.error);
+      else {
+        wireGainVisualTargets.delete(edgeId);
+        paintSofGainReadback(current);
+        status("WIRE gain rejected · "+result.error);
+      }
       return; // next coalesced target follows ACK + independent readback
     }
   }
@@ -651,7 +692,9 @@
     const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
     if(!admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
     // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
-    pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
+    const edit={source,gain:db<=-60?0:Math.pow(10,db/20),db,identity:current.identity};
+    pendingWireGains.set(edgeId,edit);
+    wireGainVisualTargets.set(edgeId,edit);
     queueWireGainFlush();return true;
   }
   function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
@@ -788,6 +831,20 @@
     if(matches.length!==1)return null;
     return wireVM.sofSendEdge(current,{sourceId:nativeIdFor(t),
       destinationId:nativeIdFor(matches[0])});
+  }
+  function sofAssignmentPlan(t){
+    const current=controller?.state()?.current;
+    const target=scope?.tracks?.find(x=>x.id===scope.sofTargetId);
+    if(!scope?.sofEnabled||!flags.acceptedGraphConnected||!current?.admitted||
+       current.retained||!nativeSofSource(t)||!target||
+       !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION"))return null;
+    const from=nativeIdFor(t),to=nativeIdFor(target);
+    if(!from||!to||from===to)return null;
+    const source=current.graph.channels.find(ch=>ch.id===from);
+    const destination=current.graph.channels.find(ch=>ch.id===to);
+    if(!wireVM.sofSourceRole(source?.role)||!wireVM.sofTargetRole(destination?.role)||
+       current.graph.edges.some(e=>e.from===from&&e.to===to))return null;
+    return {from,to};
   }
   function syncNativeSofAvailability(next=controller?.state()?.current) {
     const admitted=wireVM.sofAvailable(next,!!scope?.toggleSof);
@@ -986,7 +1043,33 @@
   // rollback. No duplicate DSP math or synthetic accepted control state.
   function nativeWireGainReadback(next){
     return wireVM.gainReadback(next?.graph?.edges||[],
-      uiByWireId,pendingWireGains,next?.graph?.channels||[]);
+      uiByWireId,wireGainVisualTargets,next?.graph?.channels||[]);
+  }
+  // Accepted PCM remains authoritative. Keep the latest desired visual level
+  // across a held pointer, queued target and in-flight ACK; never write PCM here.
+  function settleWireGainVisuals(next,confirmed){
+    for(const [id,edit] of wireGainVisualTargets){
+      const edge=next?.graph?.edges?.find(e=>e.edgeId===id&&e.from===edit.source&&e.enabled&&e.primaryOutput===false);
+      if(!next?.admitted||next.identity!==edit.identity||!edge){
+        wireGainVisualTargets.delete(id);pendingWireGains.delete(id);continue;
+      }
+      if(confirmed?.operation==="SET_WIRE_GAIN"&&confirmed.payload.edgeId===id&&
+         !pendingWireGains.has(id)&&Math.abs(edge.gainLinear-edit.gain)<0.00001)
+        wireGainVisualTargets.delete(id);
+    }
+  }
+  function paintSofGainReadback(next){
+    if(!scope?.sofEnabled||!next?.admitted)return;
+    for(const t of scope.tracks||[]){
+      if(!nativeSofSource(t)||scope.activeFaderId===t.id)continue;
+      const edge=selectedNativeSofEdge(t);
+      if(!edge)continue;
+      const draft=wireGainVisualTargets.get(edge.edgeId);
+      const db=draft?.identity===next.identity?draft.db:undefined;
+      const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+      if(!root)continue;
+      scope.syncFaderVisual?.(t,root,db);
+    }
   }
   // Paint ONLY an independently accepted ChannelId input scalar. Comparing
   // the actual DOM as well as the model also repairs a rejected/expired gain
@@ -1075,9 +1158,9 @@
           const label=(local.sendEnabled===false?'OFF · saved ':'LEVEL ')+db+' dB';
           if(readout.textContent!==label)readout.textContent=label;
         }
-        if(t&&slider&&document.activeElement!==slider){
-          slider.value=String(local.levelDb);
-          scope.syncFaderVisual?.(t);
+        if(t&&slider&&scope.activeFaderId!==t.id){
+          const draft=wireGainVisualTargets.get(edge.edgeId);
+          scope.syncFaderVisual?.(t,root,draft?.identity===next.identity?draft.db:undefined);
         }
       }
     }
@@ -1743,13 +1826,19 @@
       nativeToast(strip.name+" added · choose its IN to receive audio");
     }else{
       pendingBusCreate=null;syncAddTrack(next);
-      status("BUS added · native ChannelId PCM and WIRE readback verified");
+      const strip=scope?.tracks?.find(t=>t.id===uiByNativeId.get(p.createdId));
+      if(strip)scope?.revealTrack?.(strip);
+      status(p.connectMain===false?"AUX added · no MAIN route · choose destination":p.purpose==="FX"?"FX Return added · wet-only processor verified · assign SEND":"BUS added · native ChannelId PCM and WIRE readback verified");
     }
   }
   function requestNativeBusCreate(track=false,fxBus=false){
+    return requestNativeReceivingStrip(track,fxBus?"FX":"AUX");
+  }
+  function requestNativeReceivingStrip(track,purpose,selection=[]){
+    const prefix=purpose==="FX"?"FX Return ":purpose==="GROUP"?"Group Bus ":"Aux Bus ";
     if(logicalView)
       return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,
-        track?{}:{name:(fxBus?"FX Bus ":"Aux Bus ")+(logicalView.graph.channels.length+1)}).ok;
+        track?{}:{name:prefix+(logicalView.graph.channels.length+1),purpose,connectMain:purpose!=="AUX",...(selection.length?{selection}:{})}).ok;
     const accepted=controller?.state()?.current,operation=
       track?"CREATE_CHANNEL":"CREATE_GROUP";
     const plan=stripVM.rosterMutationPlan(accepted,{
@@ -1759,11 +1848,11 @@
     });
     if(plan.kind!=="READY")return false;
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
-    pendingBusCreate={requestId,track,...plan.pending};
+    pendingBusCreate={requestId,track,...plan.pending,selection,purpose,connectMain:track||purpose!=="AUX"};
     syncAddTrack(accepted);
-    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose:fxBus?"FX":"AUX"});
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose,...(selection.length?{selection}:{})});
     const label=track?"Audio Track":"BUS";
-    status("Adding "+label+" → MAIN · native PCM pending");
+    status("Adding "+label+(track||purpose!=="AUX"?" → MAIN":" · choose a separate output")+" · native PCM pending");
     window.setTimeout(()=>{
       if(pendingBusCreate?.requestId!==requestId)return;
       pendingBusCreate=null;
@@ -1772,6 +1861,21 @@
       controller?.subscribe();
     },8000);
     return true;
+  }
+  async function requestGroupFromSelected(){
+    const view=activeView(),selected=(scope?.tracks||[]).filter(t=>t.selected);
+    const ids=selected.map(t=>nativeIdFor(t));
+    if(!view||!ids.length||ids.some(id=>!id)||new Set(ids).size!==ids.length||
+       ids.some(id=>!wireVM.sofSourceRole(view.graph.channels.find(ch=>ch.id===id)?.role))){
+      nativeToast("Select one or more audio, group or FX return channels first");return;
+    }
+    const offline=!!logicalView,token=offline?logicalView.workspaceToken:view.identity,revision=view.graph.revision;
+    if(!await confirmArson("Create Group BUS","Route "+ids.length+" selected channel(s) through a new Group BUS → MAIN? Existing parallel sends are retained.","Create group"))return;
+    const fresh=activeView();
+    if(!fresh||!!logicalView!==offline||(offline?logicalView.workspaceToken:fresh.identity)!==token||fresh.graph.revision!==revision){
+      nativeToast("Mixer changed · select the channels again");return;
+    }
+    if(!requestNativeReceivingStrip(false,"GROUP",ids))nativeToast("Group creation unavailable · wait for accepted mixer");
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
   let pendingFxEditorAck=null,fxEditorSerial=0; // HWND feedback, never PCM owner
@@ -2262,6 +2366,8 @@
   }
   function paintFaderReadback(t,visualDb,changed){
     if(scope?.activeFaderId===t.id)return;
+    // SOF uses an EdgeId, not the ChannelId fader visual lease.
+    if(scope?.sofEnabled&&scope.sofTargetId!==t.id&&nativeSofSource(t))return;
     const view=visualDb===null?t:{...t,level:visualDb};
     // Only repair a changed control or genuinely stale mounted DOM. Never
     // rewrite unrelated strips during a held drag or meter-only update.
@@ -2518,7 +2624,7 @@
   }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
-  function requestExternalOutput(t,label,el=null){
+  async function requestExternalOutput(t,label,el=null){
         const previous=t.externalOutput||"None";
         if(busOutputPending){
           if(el)el.value=previous;
@@ -2545,9 +2651,17 @@
         }
         if(plan.kind==="NO_CHANGE"){if(el)el.value=previous;return true;}
         const {left,right,epoch,revision}=plan;
-        const confirmed=!plan.requiresConfirmation || window.confirm(
-          plan.confirmation);
-        if(!confirmed){if(el)el.value=previous;return true;}
+        // Restore installed selection before asynchronous confirmation.
+        if(el)el.value=previous;
+        if(plan.requiresConfirmation&&!await confirmIo("External output",plan.confirmation,"Enable output"))return true;
+        const freshTrack=scope?.tracks?.find(x=>nativeIdFor(x)===id);
+        if(!freshTrack||(freshTrack.externalOutput||"None")!==previous)return true;
+        const freshPlan=stripVM.externalOutputPlan({native:controller?.state()?.current,
+          hardware,channelId:id,selectedLabel:label,currentLabel:previous,
+          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),channelName:freshTrack.name});
+        if(JSON.stringify(freshPlan)!==JSON.stringify(plan)){
+          nativeToast("Routing changed · review external output again");return true;
+        }
         const requestId="out-o-"+(++externalSerial);
         pendingExternal.set(id,{requestId,channelId:id,left,right,
           epoch,revision,acked:false});
@@ -2583,14 +2697,15 @@
     if(value.textContent!==summary)value.textContent=summary;
     toggle.textContent=busy?"Applying…":p.policy==="INDEPENDENT_MONITOR"?"Use aligned":"Use singer low latency";
     toggle.disabled=busy||!p.editable||matrixBusy()||!matrixReady(next);
-    toggle.onclick=()=>{
+    toggle.onclick=async()=>{
       const live=protocol.monitorTimingView(hardware);
       if(!live?.editable||live.revision!==p.revision||live.epoch!==p.epoch||matrixBusy()||!matrixReady(hardware))return;
       const policy=live.policy==="GLOBAL_ALIGNED"?"INDEPENDENT_MONITOR":"GLOBAL_ALIGNED";
       const warning=policy==="INDEPENDENT_MONITOR"?
         "Use a separate singer monitor only. MAIN and MONITOR may have different timing; do not sum them acoustically or electrically. Removes up to "+ms(live.potentialSaving)+" of graph alignment, not hardware or insert latency.":
         "Restore global MAIN/MONITOR alignment?";
-      if(!window.confirm(warning+" Outputs remain disarmed. Session only."))return;
+      if(!await confirmIo("Monitor timing",warning+" Outputs remain disarmed. Session only.","Apply timing"))return;
+      if(!matrixReady(hardware)||JSON.stringify(protocol.monitorTimingView(hardware))!==JSON.stringify(live))return;
       const requestId="monitor-timing-"+(++monitorTimingSerial);
       monitorTimingPending={requestId,epoch:live.epoch,roster:live.rosterRevision,
         base:live.revision,policy,config:hardware.hardwareConfiguration,main:live.main,monitor:live.monitor,ack:null};
@@ -2637,7 +2752,7 @@
       deviceVM.setupPinsApplied(deviceInventory,deviceChoice)&&
       deviceVM.setupMatrixDeviceMatches(deviceInventory,snapshot);
   }
-  function applyMatrixRow(side,id,label,lease,requested=null){
+  async function applyMatrixRow(side,id,label,lease,requested=null){
     const current=controller?.state()?.current;
     const view=deviceVM.patchMatrix(hardware,side);
     const row=view.rows.find(x=>x.id===id&&x.editable);
@@ -2672,7 +2787,11 @@
       if(!requested||JSON.stringify(row.pair)!==lease.busPairs?.[id])return;
       const choice=row.choices.find(x=>x.label===label&&x.left===requested.left&&x.right===requested.right);
       if(!choice||choice.label===row.selected||
-         !window.confirm("Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO."))return;
+         !await confirmIo("Remap bus output","Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO.","Remap output"))return;
+      if(!matrixReady(hardware))return;
+      const fresh=deviceVM.patchMatrix(hardware,side).rows.find(x=>x.id===id&&x.editable);
+      if(!fresh||JSON.stringify(fresh.pair)!==JSON.stringify(row.pair)||
+         !fresh.choices.some(x=>x.label===label&&x.left===choice.left&&x.right===choice.right))return;
       const requestId="bus-out-"+(++busOutputSerial);
       busOutputPending={requestId,id,epoch:lease.epoch,config:lease.config,revision:lease.revision,
         left:choice.left,right:choice.right,acked:false};
@@ -2902,7 +3021,10 @@
       },5000);
     };
     save.onclick=()=>send("SAVE");
-    remove.onclick=()=>{if(existing.value&&window.confirm("Remove this routing preset? Installed routes are unchanged."))send("REMOVE");};
+    remove.onclick=async()=>{
+      const id=existing.value;
+      if(id&&await confirmIo("Remove routing preset","Remove this routing preset? Installed routes are unchanged.","Remove preset")&&existing.value===id)send("REMOVE");
+    };
     importProfile.onclick=()=>{
       if(locked)return;
       let profile;
@@ -3024,13 +3146,16 @@
     port.onchange=loadPort;
     name.oninput=format.onchange=left.onchange=right.onchange=update;
     channel.onchange=()=>{logicalIoChannel=channel.value;update();};
-    const send=operation=>{
+    const send=async operation=>{
       if(buttons[operation].disabled||busy||logicalIoPending||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
          hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
          hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
          hardware.raw?.logicalInputRegistry?.revision!==data.revision)return;
+      const draft=()=>JSON.stringify([port.value,channel.value,name.value,format.value,left.value,right.value]);
+      const before=draft();
       if((operation==="BIND"||operation==="UNBIND")&&used()&&
-         !window.confirm("Update every mixer channel using this logical input?"))return;
+         !await confirmIo("Logical input","Update every mixer channel using this logical input?","Update input"))return;
+      if(before!==draft()||!matrixReady(hardware))return;
       const l=currentPin(left),r=format.value==="STEREO"?currentPin(right):null;
       const requestId="logical-io-"+(++logicalIoSerial);
       const payload={action:"routingLogicalInputEdit",requestId,operation,
@@ -3110,14 +3235,17 @@
     };
     port.onchange=loadPort;name.oninput=pair.onchange=update;
     channel.onchange=()=>{logicalOutChannel=channel.value;update();};
-    const send=operation=>{
+    const send=async operation=>{
       if(buttons[operation].disabled||busy||logicalIoPending||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
          hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
          hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
          hardware.raw?.logicalOutputRegistry?.revision!==data.revision||hardware.raw?.operatorOutputMuted!==true||
          hardware.device.outputArmed!==false||hardware.raw?.physicalBusSecondaryArmed!==false)return;
       const confirmed=["BIND","UNBIND","ASSIGN","CLEAR"].includes(operation);
-      if(confirmed&&!window.confirm("Confirm logical output change? Verify the exact hardware destination. MAIN and STREAM must remain muted."))return;
+      const draft=()=>JSON.stringify([port.value,channel.value,name.value,pair.value]);
+      const before=draft();
+      if(confirmed&&!await confirmIo("Logical output","Confirm logical output change? Verify the exact hardware destination. MAIN and STREAM must remain muted.","Apply output"))return;
+      if(before!==draft()||!matrixReady(hardware))return;
       const selectedPair=pairs.find(q=>String(q.l.port)===pair.value);
       const requestId="logical-io-"+(++logicalIoSerial);
       const payload={action:"routingLogicalOutputEdit",requestId,operation,confirmed,
@@ -3169,7 +3297,7 @@
     for(const [op,label,unavailable] of buttons){
       const button=document.createElement("button");button.type="button";button.textContent=label;
       button.disabled=busy||!!ioDefaultsPending||data.readOnly||unavailable;
-      button.onclick=()=>{
+      button.onclick=async()=>{
         if(button.disabled||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
            hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
            hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
@@ -3179,7 +3307,7 @@
            (op==="LOAD"&&hardware.raw?.ioDefaults?.canLoad!==true))return;
         const message=op==="SAVE"?"Use the current logical input and output port definitions for future empty mixers? Channel assignments, FX and output arm are not saved.":
           op==="LOAD"?"Load default port definitions into this empty muted mixer? No channel will be assigned or armed.":"Clear the saved I/O default? The current mixer will not change.";
-        if(!window.confirm(message))return;
+        if(!await confirmIo("I/O defaults",message,label)||!matrixReady(hardware))return;
         const requestId="io-default-"+(++ioDefaultsSerial);
         ioDefaultsPending={requestId,op,epoch:next.device.epoch,config:next.hardwareConfiguration,
           revision:data.revision,inputRevision:ins.revision,outputRevision:outs.revision,
@@ -3619,6 +3747,56 @@
     element.textContent=operatorMessage(message);element.hidden=false;
     window.clearTimeout(toastTimer);
     toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
+  }
+  // Async confirmation must not rely on the old synchronous modal freeze.
+  // Capture authority and routing state, never continuously changing meters.
+  function ioConfirmationLease(){
+    const h=hardware,d=h?.device,g=h?.graph,r=h?.raw,a=deviceInventory?.active;
+    return JSON.stringify([h?.admitted,h?.retained,h?.identity,h?.hardwareConfiguration,
+      r?.workspaceGeneration,d?.epoch,d?.backend,d?.captureDevice,d?.playbackDevice,
+      d?.enabledInputs,d?.enabledOutputs,d?.outputArmed,g?.revision,g?.rosterRevision,
+      r?.operatorOutputMuted,r?.physicalBusSecondaryArmed,r?.physicalBusOutputObserved,
+      r?.physicalMainOutputs,r?.physicalMonitorOutputs,r?.externalRevision,r?.externalOutputs,
+      r?.logicalInputRegistry?.revision,r?.logicalOutputRegistry?.revision,
+      r?.ioDefaults?.revision,r?.ioDefaults?.canLoad,
+      a?.deviceGeneration,deviceInventory?.namedPatches?.revision]);
+  }
+  async function confirmIo(title,message,actionLabel){
+    if(matrixBusy()||namedPatchPending||!hardware?.admitted||hardware.retained)return false;
+    const lease=ioConfirmationLease();
+    if(!await confirmArson(title,message,actionLabel))return false;
+    if(matrixBusy()||namedPatchPending||lease!==ioConfirmationLease()){
+      nativeToast("Audio I/O changed · review and confirm again");return false;
+    }
+    return true;
+  }
+  let arsonConfirmation=null;
+  function confirmArson(title,message,actionLabel="Continue"){
+    if(arsonConfirmation)return Promise.resolve(false);
+    const focus=document.activeElement,dialog=document.createElement("dialog");
+    dialog.className="armix-confirm-dialog";
+    dialog.setAttribute("aria-label",title);
+    dialog.style.cssText="border:1px solid #467083;border-radius:8px;background:#142631;color:#e3eff4;width:min(390px,90vw);padding:15px;font:12px system-ui,sans-serif;box-shadow:0 16px 56px #0009";
+    const heading=document.createElement("h2");heading.textContent=title;heading.style.cssText="font-size:14px;font-weight:600;margin:0 0 10px";
+    const body=document.createElement("p");body.textContent=message;body.style.cssText="line-height:1.5;margin:0 0 14px";
+    const actions=document.createElement("div");actions.style.cssText="display:flex;justify-content:flex-end;gap:8px";
+    const cancel=document.createElement("button"),accept=document.createElement("button");
+    for(const [button,label] of [[cancel,"Cancel"],[accept,actionLabel]]){
+      button.type="button";button.className="tool";button.textContent=label;actions.append(button);
+    }
+    dialog.append(heading,body,actions);document.body.append(dialog);
+    return new Promise(resolve=>{
+      const finish=ok=>{
+        if(arsonConfirmation!==dialog)return;
+        arsonConfirmation=null;if(dialog.open)dialog.close();dialog.remove();
+        if(focus?.isConnected)focus.focus?.({preventScroll:true});resolve(ok);
+      };
+      arsonConfirmation=dialog;
+      cancel.onclick=()=>finish(false);accept.onclick=()=>finish(true);
+      dialog.addEventListener("cancel",ev=>{ev.preventDefault();finish(false);});
+      dialog.addEventListener("close",()=>finish(false));
+      try{dialog.showModal();cancel.focus();}catch{finish(false);}
+    });
   }
   let lastAudioRepairAt=-Infinity;
   function recommendAudioRepair(context) {
@@ -4773,9 +4951,8 @@
     const caption=item("span","more-tools-caption","AUDIO / SAFETY");
     const setup=item("button","tool","Audio I/O");
     setup.addEventListener("click",()=>{
-      // Reuse the EXISTING custom driver/endpoint pane. The stock JUCE
-      // selector is reserved for explicitly requested advanced recovery.
-      // Never create a second Audio Setup workflow from the More menu.
+      // Reuse the existing custom driver/endpoint pane for all workflows.
+      // No stock JUCE device selector, including explicit recovery.
       openNativeAudioIO();
     });
     inputSelect=item("select","toolbar-select","");
@@ -4832,22 +5009,38 @@
     });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
-    // Everyday I/O remains in the one approved /preview/ mixer. Keep the
-    // raw JUCE selector as an explicitly advanced recovery tool only.
+    // Everyday I/O and driver recovery use the same custom Audio I/O pane.
+    // Vendor ASIO dialogs remain available through its explicit driver action.
     inputSelect.hidden=true;routeBtn.hidden=true;armBtn.hidden=true;
     const advanced=document.createElement("details");
     advanced.className="arNativeAdvancedRecovery";
     const summary=item("summary","more-tools-caption","Advanced driver recovery");
-    const driver=item("button","tool","Open JUCE driver recovery");
-    driver.addEventListener("click",()=>{
+    const driver=item("button","tool","Open Audio I/O recovery");
+    driver.addEventListener("click",openNativeAudioIO);
+    const prepare=item("button","tool","Prepare device recovery…");
+    prepare.title="Explicitly stop temporary diagnostic/independent-clock state before choosing a replacement in Audio I/O";
+    prepare.addEventListener("click",async()=>{
+      const epoch=hardware?.device?.epoch,config=hardware?.hardwareConfiguration;
+      if(deviceBusy())return;
+      if(!await confirmArson("Device recovery","Prepare the mixer for device recovery? Temporary diagnostic and independent-clock state may stop. Choose the replacement in Audio I/O.","Prepare recovery"))return;
+      if(deviceBusy()||hardware?.device?.epoch!==epoch||hardware?.hardwareConfiguration!==config){nativeToast("Device changed · review recovery again");return;}
       backend.emitEvent("arMixAction",{action:"audioSetup"});
     });
-    advanced.append(summary,driver);
+    advanced.append(summary,driver,prepare);
     // First Sound P0: these are REAL JUCE diagnostic actions, not demo
     // toggles. The marker snapshots the 5-second PRE-event counters and
     // Windows RAM/process paging context from the existing 1 Hz control
     // timer. No sampling or file I/O happens in the ASIO callback.
     const healthTitle=item("span","more-tools-caption","AUDIO HEALTH");
+    const inspect=item("button","tool","Inspect selected routing");
+    inspect.addEventListener("click",()=>{
+      const tracks=[...(scope?.tracks||[]),scope?.master];
+      const selected=tracks.filter(t=>t?.selected);
+      if(selected.length!==1){nativeToast("Select one mixer channel to inspect routing");return;}
+      nativeToast(wireVM.routeDiagnostic(controller?.state()?.current,nativeIdFor(selected[0])));
+      const routes=document.getElementById("wireNavigatorToggle");
+      if(routes?.getAttribute("aria-expanded")!=="true")routes?.click();
+    });
     const tone=item("button","tool","Test MAIN output");
     tone.title="Start or stop a quiet tone on the verified MAIN pair without reopening the driver";
     tone.addEventListener("click",()=>{
@@ -5028,13 +5221,15 @@
     const newSessionButtons=[["New Project · empty mixer","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
       button.title=mode==="EMPTY"?"Start fresh · previous mixer archived, output muted":"Offline only · previous checkpoint archived in Studio/SessionArchive";
-      button.addEventListener("click",()=>{
+      button.addEventListener("click",async()=>{
         const current=controller?.state()?.current;
         if(mode==="EMPTY"&&!logicalView&&current?.admitted){
           if(current.raw?.liveNewSessionAvailable!==true){
             nativeToast("Finish current operations before New Project");return;
           }
-          if(!window.confirm("Start a new mixer? The current project is archived first. Output will remain muted."))return;
+          if(!await confirmArson("New Project","Start a new mixer? The current project is archived first. Output will remain muted.","New Project"))return;
+          const fresh=controller?.state()?.current;
+          if(logicalView||fresh?.identity!==current.identity||fresh?.raw?.workspaceGeneration!==current.raw?.workspaceGeneration||fresh?.raw?.liveNewSessionAvailable!==true){nativeToast("Mixer changed · review New Project again");return;}
           retirePendingRackEditor();
           inlineFxClip?.closeRackEditors();
           backend.emitEvent("arMixAction",{action:"nativeMixerNewLive",confirmed:true,
@@ -5049,9 +5244,11 @@
         if(mode==="RESET_IO"&&hardware?.raw?.offlineResetIoAvailable!==true){
           nativeToast("Reset requires a saved offline session with no logical port assignments");return;
         }
-        if(!window.confirm(mode==="RESET_IO"?
+        const token=logicalView.workspaceToken,revision=logicalView.graph.revision;
+        if(!await confirmArson(mode==="RESET_IO"?"Reset I/O":"New Project",mode==="RESET_IO"?
           "Replace only logical I/O port definitions? Mixer, FX and shortcuts are retained; a backup is archived.":
           "Create a new offline mixer? The current saved session is archived. No audio output will be armed."))return;
+        if(!logicalView||pendingLogical||logicalView.workspaceToken!==token||logicalView.graph.revision!==revision){nativeToast("Mixer changed · review operation again");return;}
         backend.emitEvent("arMixAction",{action:"nativeMixerNewOffline",mode,confirmed:true,
           workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
       });
@@ -5059,16 +5256,18 @@
     });
     const archiveButton=item("button","tool","Open session archive");
     archiveButton.title="Open an archived mixer offline; current checkpoint is backed up first";
-    archiveButton.addEventListener("click",()=>{
+    archiveButton.addEventListener("click",async()=>{
       if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
         nativeToast("Disconnect audio and finish mixer operations before opening an archive");return;
       }
-      if(window.confirm("Open an archived session? Current saved mixer is archived first; output remains muted."))
-        backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
+      const token=logicalView.workspaceToken,revision=logicalView.graph.revision;
+      if(!await confirmArson("Open session archive","Current saved mixer is archived first; output remains muted.","Open archive"))return;
+      if(!logicalView||pendingLogical||logicalView.workspaceToken!==token||logicalView.graph.revision!==revision){nativeToast("Mixer changed · review archive again");return;}
+      backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
           workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
     });
     menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
-      healthTitle,tone,mark,report,advanced,
+      healthTitle,inspect,tone,mark,report,advanced,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
@@ -5186,7 +5385,7 @@
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
     latestInputGainDrafts.clear();latestLogicalInputGains.clear();
     pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
-    pendingWireGains.clear();pendingNativeControl.clear();
+    pendingWireGains.clear();wireGainVisualTargets.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
     pendingM4Controls.clear();pendingM4RackPowers.clear();
     // MV-18: these two hardware-scoped leases were previously omitted.
@@ -5210,6 +5409,7 @@
       "Mixer authority changed · old control gestures discarded");
   }
   function onNativeReadback(next,confirmed) {
+    settleWireGainVisuals(next,confirmed);
     // This callback is invoked only by the existing schema-v6 reconciler.
     // No Device Setup, hardware panel or strip state may mutate until the
     // candidate read-model AND native device identity are admitted below.
@@ -5370,7 +5570,7 @@
           status("Retained FX slot changed before offline editor could open");
         }
       }
-      for(const id of ["addBus","addFx"]){
+      for(const id of ["addBus","addFx","addGroupBus","addGroupSelected"]){
         const addBus=document.getElementById(id);if(!addBus)continue;
         addBus.hidden=false;
         addBus.disabled=!!pendingLogical||staged.readOnly||!staged.graph.capabilities.supportedOps.includes("CREATE_GROUP");
@@ -5435,7 +5635,7 @@
     syncAddTrack(next);
     if(pendingTrackDelete && pendingTrackDelete.epoch!==next?.device?.epoch)
       pendingTrackDelete=null;
-    for(const id of ["addBus","addFx"]){
+    for(const id of ["addBus","addFx","addGroupBus","addGroupSelected"]){
       const addBus=document.getElementById(id);if(!addBus)continue;
       addBus.hidden=false;
       addBus.disabled=!nativeAdmitted||!caps?.supportedOps?.includes("CREATE_GROUP")||!!pendingBusCreate||!!pendingTrackDelete;
@@ -5550,6 +5750,7 @@
       emit:(name,payload)=>backend.emitEvent(name,payload),
       onAccepted:(next,confirmed)=>{
         onNativeReadback(next,confirmed);
+        if(confirmed?.operation==="SET_WIRE_GAIN")paintSofGainReadback(next);
         const accepted=controller?.state()?.current;
         if(fxRackVM.nativeEditorAckResult(pendingFxEditorAck,null,accepted,{
           verifiedM4:m4Verified(accepted),offline:!!logicalView,
@@ -5603,7 +5804,8 @@
           pendingNativeWireRetract=null; // rejected routing must never reel
           activeWireAttempt=null;
           startupWire=null;
-          pendingWireGains.clear();
+          pendingWireGains.clear();wireGainVisualTargets.clear();
+          if(state.current)paintSofGainReadback(state.current);
           // The controller deliberately freezes current on a rejected ACK.
           // Repaint only an inspector that still says PENDING from that
           // admitted PCM readback, without a new intent, timer or graph edit.
@@ -5930,6 +6132,7 @@
         "Scanning real VST3… "+(progress.done||0)+"/"+(progress.total||"…"):
         "Native VST3 scan finished; results from JUCE catalog";
     });
+    backend.addEventListener("arMixOpenAudioIO",()=>openNativeAudioIO());
     backend.addEventListener("arMixNotice",notice=>{
       // ConsoleWindow::emitNotice publishes {text,error}, never {message}.
       // The mismatched field hid native VST3 layout/latency, driver and
@@ -6091,18 +6294,20 @@
         }
         return true;
       }
-      if(field==="level"&&scope?.sofEnabled&&nativeSofSource(t)){
+      if(field==="level"&&scope?.sofEnabled&&scope.sofTargetId!==t.id&&nativeSofSource(t)){
+        if(!el.isConnected||el.disabled)return true;
         const edge=selectedNativeSofEdge(t),db=Number(el.value);
         const uiId=edge&&uiByWireId.get(edge.edgeId);
         if(!edge||uiId===undefined||!Number.isFinite(db)||db< -60||db>6){
           status("SENDS ON FADERS · patch a selected WIRE destination first");
           scope?.syncFaderVisual?.(t);return true;
         }
-        if(event.type!=="change"){
-          previewFaderWithoutModelMutation(t,db);return true;
-        }
-        if(!requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db}))
+        if(!requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db})){
           status("SEND LEVEL rejected · accepted WIRE identity changed");
+          scope?.syncFaderVisual?.(t);
+          return true;
+        }
+        previewFaderWithoutModelMutation(t,db);
         return true;
       }
       if(field==="wireChannelLevel"){
@@ -6176,7 +6381,7 @@
       }
       if(field==="external"){
         if(event.type!=="change")return true;
-        return requestExternalOutput(t,el.value,el);
+        void requestExternalOutput(t,el.value,el);return true;
       }
       if(field==="output"){
         if(event.type!=="change")return true;
@@ -6243,6 +6448,16 @@
     },
     consumeAction(t,action,btn) {
       if (!connected)return false;
+      if(action==="sofAssignPre"||action==="sofAssignPost"){
+        const plan=sofAssignmentPlan(t);
+        if(!plan||controller?.state()?.pending){nativeToast("SEND assignment unavailable · wait for accepted routing");return true;}
+        const {from,to}=plan;
+        const tap=action==="sofAssignPre"?"PRE_FADER":"POST_FADER";
+        const result=controller.intent("APPLY_WIRE_TRANSACTION",from,{changes:[{op:"CONNECT",from,to,tap,gainLinear:0}]});
+        if(result.ok){status("Assigning silent SEND · native readback pending");window.setTimeout(()=>controller?.expire(result.requestId),8000);}
+        else nativeToast("SEND assignment rejected · "+result.error);
+        return true;
+      }
       // PRE/POST is an exact EdgeId structural graph transaction, not a
       // cosmetic browser mode nor a channel-wide batch change.
       if(action==="tapMode"||action==="sofTap"){
@@ -6283,6 +6498,13 @@
       if (["wireExpand","wireSource","wireRoute"].includes(action))
         return false;
       if(action==="removeFx") {
+        const row=activeView()?.graph?.channels?.find(ch=>ch.id===nativeIdFor(t));
+        const slotToRemove=Number(btn?.dataset.slot);
+        const isWet=fx=>["armix.builtin.vocal-reverb-return.v1","armix.builtin.vocal-delay-return.v1"].includes(fx?.catalogId);
+        if(row?.role==="FX_RETURN"&&isWet(row.inserts?.[slotToRemove])&&row.inserts.filter(isWet).length===1){
+          nativeToast("FX Return requires a wet-only processor · delete the return channel or replace its wet FX");
+          return true;
+        }
         if(logicalView){
           const id=nativeIdFor(t),row=logicalView.graph.channels.find(ch=>ch.id===id);
           const slot=Number(btn?.dataset.slot);
@@ -6295,9 +6517,7 @@
         if(current?.retained===true){
           // Reuse exact existing offline workspace handoff, then delete only
           // after verified document readback; never change the stale PCM rack.
-          nativeHooks.consumeAction(t,"openPlugin",btn);
-          if(pendingRetainedEditor?.channelId===id&&pendingRetainedEditor.slot===slot)
-            pendingRetainedEditor.action="removeFx";
+          requestRetainedFxAction(t,slot,"removeFx");
           return true;
         }
         editNativeFx(t,slot,null,0,token);return true;
@@ -6310,7 +6530,7 @@
         // projection readiness. The native dispatcher still fences busy I/O.
         if(!logicalView&&!deviceReady()&&editorView?.admitted!==true&&
            editorView?.retained!==true){
-          recommendAudioRepair("FX editor unavailable · audio processing unavailable");
+          status("FX editor waiting for the native mixer workspace");
           return true;
         }
         const slot=Number(btn?.dataset.slot),current=activeView();
@@ -6336,23 +6556,7 @@
               scope?.openFastPicker?.(t,slot,btn);
               return true;
             }
-            if(pendingRetainedEditor){
-              status("Finishing the previous offline editor request");
-              return true;
-            }
-            const requestId="retained-editor-"+(++retainedEditorSerial);
-            pendingRetainedEditor={requestId,channelId:id,slot,
-              catalogId:fx?.catalogId||"",instanceId:fx?.id||"",empty,
-              epoch:current.device.epoch,revision:current.graph.revision,
-              recenter,acknowledged:false};
-            backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",
-              requestId,channelId:id,slot,instanceId:fx?.id||"",
-              deviceEpoch:current.device.epoch,graphRevision:current.graph.revision});
-            window.setTimeout(()=>{
-              if(pendingRetainedEditor?.requestId!==requestId)return;
-              pendingRetainedEditor=null;
-              status("Offline FX recovery expired · refresh native mixer");
-            },10000);
+            requestRetainedFxAction(t,slot,"openPlugin",{recenter});
             return true;
           }
           const plan=fxRackVM.editorNavigationPlan(current,{channelId:id,slot,
@@ -6420,8 +6624,12 @@
         return true; // never fall through to demo or unsupported action
       }
       if(action==="slotPower"){
-        if(!logicalView&&!deviceReady()){
-          recommendAudioRepair("FX Power unavailable");
+        if(!logicalView&&controller?.state()?.current?.retained===true){
+          requestRetainedFxAction(t,Number(btn?.dataset.slot),"slotPower");
+          return true;
+        }
+        if(!logicalView&&!controller?.state()?.current?.admitted&&!deviceReady()){
+          status("FX Power unavailable · waiting for native workspace");
           return true;
         }
         if(logicalView){
@@ -6442,8 +6650,12 @@
         return true;
       }
       if(action==="fxOn"){
-        if(!logicalView&&!deviceReady()){
-          recommendAudioRepair("FX Rack unavailable");
+        if(!logicalView&&controller?.state()?.current?.retained===true){
+          requestRetainedFxAction(t,0,"fxOn");
+          return true;
+        }
+        if(!logicalView&&!controller?.state()?.current?.admitted&&!deviceReady()){
+          status("FX Rack unavailable · waiting for native workspace");
           return true;
         }
         if(logicalView){
@@ -6707,19 +6919,7 @@
         if(!plugin||!row||!Number.isInteger(slot)||slot<0||slot>=8||slot!==row.inserts?.length){
           nativeToast("Choose the next empty FX slot");return true;
         }
-        if(pendingRetainedEditor){status("Finishing the previous offline editor request");return true;}
-        const requestId="retained-editor-"+(++retainedEditorSerial);
-        pendingRetainedEditor={requestId,channelId:nativeId,slot,empty:true,
-          epoch:accepted.device.epoch,revision:accepted.graph.revision,
-          acknowledged:false,action:"insertFx",selectedCatalogId:id};
-        status("Preparing saved mixer workspace · audio output remains safe");
-        backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",requestId,
-          channelId:nativeId,slot,instanceId:"",deviceEpoch:accepted.device.epoch,
-          graphRevision:accepted.graph.revision});
-        window.setTimeout(()=>{
-          if(pendingRetainedEditor?.requestId!==requestId)return;
-          pendingRetainedEditor=null;status("Offline FX recovery expired · refresh native mixer");
-        },10000);
+        requestRetainedFxAction(track,slot,"insertFx",{selectedCatalogId:id});
         return true;
       }
       if(accepted?.admitted || mixerSession()?.authority==="CHANNEL_ID") {
@@ -6772,7 +6972,7 @@
       // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
       // write the main channel's SET_FADER or M4 faderDb by accident.
       if (event.target.closest?.(".fader-box")||event.target.classList.contains("fader")){
-        if(scope?.sofEnabled&&nativeSofSource(t)){
+        if(scope?.sofEnabled&&scope.sofTargetId!==t.id&&nativeSofSource(t)){
           const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
           if(!edge||id===undefined||
              !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))
@@ -6838,7 +7038,7 @@
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
     const target=event.target.closest?.(
-      "#preview,#addTrack,#addBus,#addFx,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
+      "#preview,#addTrack,#addBus,#addFx,#addGroupBus,#addGroupSelected,#convertSelectedReverb,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
     if(!target)return;
     event.preventDefault();event.stopImmediatePropagation();
     const action=target.id==="pluginScan"?"scanVst3":
@@ -6849,6 +7049,16 @@
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
       return;
     }
+    if(target.id==="convertSelectedReverb"){
+      const selected=(scope?.tracks||[]).filter(t=>t.selected);
+      const row=selected.length===1?selected[0]:null;
+      const ch=activeView()?.graph?.channels?.find(c=>c.id===nativeIdFor(row));
+      const slot=(ch?.inserts?.length||0)-1;
+      if(!row||!convertDmxReverb(row,slot))nativeToast("Select one INPUT with Reverb-Sis as its last insert and MAIN output");
+      return;
+    }
+    if(target.id==="addGroupSelected"){void requestGroupFromSelected();return;}
+    if(target.id==="addGroupBus"){requestNativeReceivingStrip(false,"GROUP");return;}
     if(target.id==="addBus"||target.id==="addTrack"||target.id==="addFx"){
       requestNativeBusCreate(target.id==="addTrack",target.id==="addFx");return;
     }
@@ -6920,9 +7130,16 @@
     reset:"Demo reset must not erase a live mixer"
   });
   function presentNativeOnlyTools(){
-    for(const [id,label] of [["addBus","+ AUX / BUS"],["addFx","+ FX Bus"]]){
+    const aux=document.getElementById("addBus");
+    if(aux&&!document.getElementById("addGroupBus")){
+      const group=aux.cloneNode(false);group.id="addGroupBus";aux.after(group);
+      const selected=aux.cloneNode(false);selected.id="addGroupSelected";group.after(selected);
+      const convert=aux.cloneNode(false);convert.id="convertSelectedReverb";convert.hidden=false;convert.disabled=false;convert.textContent="Reverb-Sis → FX Return";convert.title="Convert the selected channel’s last Reverb-Sis insert to a native shared wet return";
+      document.getElementById("addFx")?.after(convert);
+    }
+    for(const [id,label] of [["addBus","+ AUX"],["addGroupBus","+ Group BUS"],["addGroupSelected","Group selected…"],["addFx","+ FX Return"]]){
       const el=document.getElementById(id);if(el){el.textContent=label;el.hidden=false;el.disabled=true;
-        el.title="Create a receiving GROUP with independent routing and insert rack";}
+        el.title=id==="addBus"?"Independent AUX · starts with no MAIN route":id==="addFx"?"Shared Reverb-Sis wet return · assign SEND explicitly":"Create a receiving GROUP with independent routing and insert rack";}
     }
     for(const [id,reason] of Object.entries(nativeReferenceOnly)){
       const el=document.getElementById(id);

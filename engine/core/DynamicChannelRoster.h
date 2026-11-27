@@ -558,7 +558,7 @@ public:
     // stereo ChannelId, OUT -> MAIN, without borrowing an input or requiring
     // a selection. CONTROL only; native graph publication is separate.
     ChannelEditResult createStandaloneBus(std::uint64_t expectedRevision,
-                                         std::string name,ChannelRole role) {
+                                         std::string name,ChannelRole role,bool connectMain=true) {
         ChannelEditResult result;result.revision=revision_;
         if(expectedRevision!=revision_) {
             result.fault=ChannelEditFault::staleRevision;return result;
@@ -582,7 +582,7 @@ public:
         ChannelStripDefinition bus;
         bus.id={nextId_};bus.role=role;bus.format=ProcessingFormat::stereo;
         bus.name=std::move(name);
-        bus.sends.push_back({mainIt->id,1.f,false,0.f,true});
+        if(connectMain)bus.sends.push_back({mainIt->id,1.f,false,0.f,true});
         const auto position=static_cast<std::size_t>(mainIt-candidate.begin());
         candidate.insert(candidate.begin()+static_cast<std::ptrdiff_t>(position),
                          std::move(bus));
@@ -602,6 +602,24 @@ public:
         nextEdgeId_=stagedNextEdge;
         index_.swap(stagedIndex);result.createdIds.push_back({nextId_++});
         result.revision=++revision_;return result;
+    }
+
+    // Build the receiving strip and its mandatory wet insert reference on
+    // a private candidate. The caller still has to prepare a matching real
+    // processor lease before publishing any PCM. Never expose an empty return.
+    ChannelEditResult createReverbReturn(std::uint64_t expectedRevision,std::string name) {
+        auto candidate=*this;
+        auto created=candidate.createStandaloneBus(expectedRevision,std::move(name),ChannelRole::fxReturn,true);
+        if(!created.ok())return created;
+        ChannelEdit insert;
+        insert.kind=ChannelEdit::Kind::addInsertReference;
+        insert.id=created.createdIds.front();
+        insert.text="armix.builtin.vocal-reverb-return.v1";
+        auto edited=candidate.edit(candidate.revision(),std::span<const ChannelEdit>{&insert,1});
+        if(!edited.ok()){edited.revision=revision_;return edited;}
+        created.revision=edited.revision;
+        *this=std::move(candidate);
+        return created;
     }
 
     // Studio Console Remove Bus: reconnect incoming exclusive primary OUT to

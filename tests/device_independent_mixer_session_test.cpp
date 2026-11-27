@@ -19,6 +19,26 @@ int main() {
     valid(logical.roster().size()==15);
     valid(logical.revision()==1);
 
+    {
+        DeviceIndependentMixerSession mixes;
+        const auto aux=mixes.createBus(mixes.revision(),"Headphones",ChannelRole::group,false);
+        valid(aux.accepted()&&aux.createdIds.size()==1);
+        const auto* auxRow=mixes.roster().find(aux.createdIds.front());
+        valid(auxRow&&auxRow->sends.empty());
+        const ChannelId selected[]={id(1),id(2)};
+        const auto group=mixes.createGroupForSelected(mixes.revision(),selected,"Vocals");
+        valid(group.accepted()&&group.createdIds.size()==1);
+        for(auto source:selected){
+            const auto* row=mixes.roster().find(source);
+            valid(row&&row->sends.size()==1&&row->sends.front().primaryOutput&&
+                  row->sends.front().destination==group.createdIds.front());
+        }
+        const auto revision=mixes.revision();
+        const ChannelId invalid[]={id(1),mixes.mainId()};
+        valid(!mixes.createGroupForSelected(revision,invalid,"Invalid").accepted());
+        valid(mixes.revision()==revision);
+    }
+
     // 1) A genuine session document needs NO ASIO, WASAPI, fake pin,
     // callback, graph publisher or monitor before a normal track edit.
     ChannelEdit create;
@@ -225,5 +245,19 @@ int main() {
     valid(restored.removeInput(restored.revision(),backing).accepted());
     valid(!restored.roster().find(backing));
     valid(restored.mainId()==stableMain);
-    std::cout<<"Device-independent logical mixer: 8 scenarios PASS\n";
+    // New FX Return is one logical transaction, not an empty dry bus.
+    const auto beforeReturn=restored.revision();
+    auto fxReturn=restored.createReverbReturn(beforeReturn,"Room Return");
+    valid(fxReturn.accepted() && fxReturn.createdIds.size()==1);
+    const auto returnId=fxReturn.createdIds.front();
+    const auto* wet=restored.roster().find(returnId);
+    valid(wet&&wet->role==ChannelRole::fxReturn&&wet->insertCatalogIds.size()==1&&
+          wet->insertCatalogIds[0]=="armix.builtin.vocal-reverb-return.v1"&&
+          wet->sends.size()==1&&wet->sends.front().destination==stableMain&&wet->sends.front().primaryOutput);
+    const auto afterReturn=restored.revision();
+    valid(!restored.createReverbReturn(beforeReturn,"Stale").accepted()&&restored.revision()==afterReturn);
+    DeviceIndependentMixerSession recovered;
+    valid(recovered.restore(restored.roster()));
+    valid(recovered.roster().find(returnId)->insertCatalogIds==wet->insertCatalogIds);
+    std::cout<<"Device-independent logical mixer: 9 scenarios PASS\n";
 }

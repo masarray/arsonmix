@@ -179,7 +179,7 @@ def verify_logical_inputs(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
     page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
-      window.confirm=()=>true;
+      window.confirm=()=>{throw Error('Stock confirmation must not be used');};
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
         ...window.__nativeListenerMethods
@@ -245,7 +245,7 @@ def verify_bus_remap(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
     page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
-      window.confirm=()=>true;
+      window.confirm=()=>{throw Error('Stock confirmation must not be used');};
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
         ...window.__nativeListenerMethods
@@ -278,7 +278,26 @@ def verify_bus_remap(page,out):
     assert not any(x.startswith(("OUT 3/4","OUT 7/8")) for x in choices),choices
     select.select_option(label=next(x for x in choices if x.startswith("OUT 5/6")))
     assert main.locator('[data-draft="true"]').count()==4
-    main.get_by_role("button",name="Apply",exact=True).click()
+    apply=main.get_by_role("button",name="Apply",exact=True)
+    apply.click()
+    dialog=page.get_by_role("dialog",name="Remap bus output")
+    assert dialog.is_visible()
+    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
+    dialog.get_by_role("button",name="Cancel",exact=True).click()
+    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
+    apply.click()
+    state["device"]["outputArmed"]=True
+    state["operatorOutputMuted"]=False
+    emit(page,"arMixConsoleSnapshot",state)
+    dialog.get_by_role("button",name="Remap output",exact=True).click()
+    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
+    state["device"]["outputArmed"]=False
+    state["operatorOutputMuted"]=True
+    emit(page,"arMixConsoleSnapshot",state)
+    select=main.get_by_label("MAIN assignment",exact=True)
+    select.select_option(label=next(x for x in select.locator("option").all_text_contents() if x.startswith("OUT 5/6")))
+    apply.click()
+    dialog.get_by_role("button",name="Remap output",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingPhysicalBusOutput').at(-1)")
     assert req and req["bus"]=="MAIN" and req["confirmed"] is True,req
     assert (req["previousLeft"],req["previousRight"],req["left"],req["right"])==(0,1,4,5),req
@@ -308,7 +327,7 @@ def verify_logical_outputs(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
     page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
-      window.confirm=()=>true;
+      window.confirm=()=>{throw Error('Stock confirmation must not be used');};
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
         ...window.__nativeListenerMethods
@@ -356,6 +375,7 @@ def verify_logical_outputs(page,out):
     select.select_option(portid)
     page.get_by_label("Logical output stereo pair",exact=True).select_option("4")
     page.get_by_role("button",name="Apply output pair",exact=True).click()
+    page.get_by_role("dialog",name="Logical output").get_by_role("button",name="Apply output",exact=True).click()
     bind=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalOutputEdit').at(-1)")
     assert bind["operation"]=="BIND" and bind["confirmed"] is True
     assert (bind["left"],bind["right"],bind["leftName"],bind["rightName"])==(4,5,"ASIO 5","ASIO 6")
@@ -368,12 +388,14 @@ def verify_logical_outputs(page,out):
     channel=page.get_by_label("Logical output channel",exact=True)
     channel.select_option(SOURCE)
     page.get_by_role("button",name="Assign to channel",exact=True).click()
+    page.get_by_role("dialog",name="Logical output").get_by_role("button",name="Apply output",exact=True).click()
     assign=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalOutputEdit').at(-1)")
     assert assign["operation"]=="ASSIGN" and assign["channelId"]==SOURCE and assign["portId"]==portid
     emit(page,"arMixLogicalOutputAck",{"requestId":assign["requestId"],"ok":False,"error":"fixture reject"})
     assert channel.is_enabled()
     assert "Stage Amp" not in channel.locator("option[value='"+SOURCE+"']").inner_text()
     page.get_by_role("button",name="Assign to channel",exact=True).click()
+    page.get_by_role("dialog",name="Logical output").get_by_role("button",name="Apply output",exact=True).click()
     assign=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingLogicalOutputEdit').at(-1)")
     new_rev=str(int(rev)+1)
     emit(page,"arMixLogicalOutputAck",{"requestId":assign["requestId"],"ok":True,
@@ -398,7 +420,7 @@ def verify_io_defaults(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
     page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
-      window.confirm=()=>true;
+      window.confirm=()=>{throw Error('Stock confirmation must not be used');};
       window.__JUCE__={backend:{
         emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
         ...window.__nativeListenerMethods
@@ -426,6 +448,7 @@ def verify_io_defaults(page,out):
     clear=page.get_by_role("button",name="Clear Default",exact=True)
     assert save.is_enabled() and load.is_disabled() and clear.is_disabled()
     save.click()
+    page.get_by_role("dialog",name="I/O defaults").get_by_role("button",name="Make Default",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioIoDefaults').at(-1)")
     assert req["operation"]=="SAVE" and req["revision"]=="0" and req["outputRevision"]=="2"
     assert req["confirmed"] is True and "ports" not in req
@@ -441,6 +464,7 @@ def verify_io_defaults(page,out):
     emit(page,"arMixConsoleSnapshot",state)
     assert save.is_disabled() and load.is_enabled()
     load.click()
+    page.get_by_role("dialog",name="I/O defaults").get_by_role("button",name="Load Default",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioIoDefaults').at(-1)")
     assert req["operation"]=="LOAD" and req["revision"]=="1" and req["outputRevision"]=="3"
     emit(page,"arMixIoDefaultsAck",{"requestId":req["requestId"],"ok":True,"revision":"1",
@@ -452,6 +476,7 @@ def verify_io_defaults(page,out):
     emit(page,"arMixConsoleSnapshot",state)
     assert save.is_enabled() and load.is_disabled()
     clear.click()
+    page.get_by_role("dialog",name="I/O defaults").get_by_role("button",name="Clear Default",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='audioIoDefaults').at(-1)")
     emit(page,"arMixIoDefaultsAck",{"requestId":req["requestId"],"ok":False,"error":"fixture reject"})
     assert clear.is_enabled()
@@ -829,6 +854,36 @@ def verify_first_sound(page,out,single=False):
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='monitor').length")==0
 
 
+def verify_custom_recovery_routes(page,out):
+    """Normal recovery and Player must reuse custom Audio I/O, never JUCE."""
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>document.querySelector('.command-bar > [data-native-io]')")
+    assert page.get_by_text("Open JUCE driver recovery",exact=True).count()==0
+    page.locator("#moreTools > summary").click()
+    page.locator(".arNativeAdvancedRecovery > summary").click()
+    page.get_by_role("button",name="Open Audio I/O recovery").click()
+    dialog=page.locator(".armix-audio-dialog")
+    assert dialog.is_visible()
+    assert dialog.count()==1
+    page.locator("[data-audio-close]").click()
+    assert not dialog.is_visible()
+    page.locator("#playerToggle").click()
+    emit(page,"arMixPlayerState",{"schema":"arsonmix.player.v1",
+        "chooseOutput":True,"error":"Choose a verified MAIN output"})
+    page.locator("#playerChooseOutput").click()
+    assert dialog.is_visible() and dialog.count()==1
+    assert not page.evaluate("""()=>window.__actions.some(a=>
+      ['audioSetup','playerChooseOutput','audioDeviceApply'].includes(a.action))""")
+    page.locator("[data-audio-close]").click()
+    emit(page,"arMixOpenAudioIO",True)
+    assert dialog.is_visible() and dialog.count()==1
+    assert not page.evaluate("()=>window.__actions.some(a=>a.action==='audioDeviceApply')")
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -870,6 +925,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_io_defaults(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        verify_custom_recovery_routes(page,out)
         page.close()
         browser.close()
     print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output, muted bus remap, logical disclosure race and defaults")

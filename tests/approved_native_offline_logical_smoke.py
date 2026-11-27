@@ -414,6 +414,45 @@ def main():
         assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")!="logical-editable"
         assert page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixLogicalIntent').length""")==0
+        # Power on a retained empty rack must capture the authoritative
+        # workspace, not show an I/O repair modal or send a PCM command.
+        rack=page.locator("#tracks .strip").first
+        rack.locator('[data-action="fxOn"]').click()
+        page.wait_for_function("""()=>window.__events.some(e=>
+            e.payload?.action==='retainedFxOfflineOpen')""")
+        request=page.evaluate("""()=>window.__events.find(e=>
+            e.payload?.action==='retainedFxOfflineOpen').payload""")
+        assert request["channelId"]=="1" and request["slot"]==0
+        assert request["deviceEpoch"]=="69" and request["graphRevision"]=="2"
+        assert request["instanceId"]==""
+        assert not page.evaluate("""()=>window.__events.some(e=>
+            e.name==='arMixLogicalIntent' || e.name==='arMixConsoleIntent')""")
+        # Native capture ACK alone cannot make a stale saved mirror editable.
+        emit(page,"arMixRetainedFxOfflineAck",{"requestId":request["requestId"],"ok":True})
+        assert page.evaluate("""()=>window.__events.filter(e=>
+            e.name==='arMixLogicalIntent').length""")==0
+        captured=retained_snapshot(stale_scalar=True)
+        offline=captured["logicalMixer"]
+        offline.update(retainedOffline=True,retainedDeviceEpoch="69",
+            retainedGraphRevision="2",retainedCaptureDeviceEpoch="69",
+            retainedCaptureGraphRevision="2")
+        offline["graph"]["channels"][0]["controls"]["faderDb"]=-7
+        emit(page,"arMixConsoleSnapshot",captured)
+        page.wait_for_function("""()=>window.__events.some(e=>
+            e.name==='arMixLogicalIntent'&&e.payload?.operation==='SET_FX_RACK_BYPASS')""")
+        intent=page.evaluate("""()=>window.__events.filter(e=>
+            e.name==='arMixLogicalIntent').at(-1).payload""")
+        assert intent["channelId"]=="1" and intent["payload"]=={"enabled":True}
+        assert not page.evaluate("""()=>window.__events.some(e=>e.name==='arMixConsoleIntent')""")
+        emit(page,"arMixLogicalAck",{"requestId":intent["requestId"],"status":"ACCEPTED",
+            "errorCode":"NONE","revision":"3","physicalOutputAdmitted":False})
+        applied=copy.deepcopy(captured)
+        applied["logicalMixer"]["revision"]="3"
+        applied["logicalMixer"]["graph"]["revision"]="3"
+        applied["logicalMixer"]["graph"]["rosterRevision"]="3"
+        applied["logicalMixer"]["graph"]["channels"][0]["fxRackBypassed"]=True
+        emit(page,"arMixConsoleSnapshot",applied)
+        page.wait_for_function("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks[0].fxOn===false""")
         assert not errors,errors
         browser.close()
     print("PASS native compiled GUI: offline ACK, workspace replacement, WIRE SOURCE ONLY and retained PCM isolation")

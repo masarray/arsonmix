@@ -10,6 +10,11 @@
 #include "../engine/device/DeviceSessionTransitionPolicy.h"
 #include "../engine/core/NativeFxRackTransaction.h"
 #include "../engine/builtin_fx/VocalReverbProcessor.h"
+#include "../engine/builtin_fx/ChannelEqProcessor.h"
+#include "../engine/builtin_fx/GraphicEq31Processor.h"
+#include "../engine/builtin_fx/ChannelCompressorProcessor.h"
+#include "../engine/builtin_fx/AutoDuckerProcessor.h"
+#include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "VstBusLayout.h"
 #include "../engine/core/NativeDryRouteCommand.h"
@@ -1858,7 +1863,8 @@ public:
                   const std::string& name,float sendGain,
                   armix::mixer::ChannelId remove={},
                   bool outputsDisarmed=false,
-                  const std::function<void()>& beforePublish={}) {
+                  const std::function<void()>& beforePublish={},bool connectMain=true,
+                  armix::mixer::DynamicChannelFxLeaseBank::Lease wetReturn={}) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1872,13 +1878,13 @@ public:
         if(!outputsDisarmed) {
             reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
         }
-        // A new FX_RETURN has no attached native VST3 owner yet. Reusing
-        // the old lease bank cannot create an insert for the new ChannelId:
-        // its parallel input would be routed back as extra DRY PCM. Until
-        // INSERT/REMOVE FX is transactional for dynamic BUSes, reject
-        // creation instead of offering a falsely wet, louder return.
-        // Original M4 AUX 1-4 remain true processed FX return paths.
-        if(!remove.value && role==ChannelRole::fxReturn) {
+        // Require a prepared, independently owned wet-only processor.
+        // Roster, insert reference and processor lease publish together.
+        // An empty return must never route a second copy of dry PCM.
+        if(!remove.value && role==ChannelRole::fxReturn &&
+           (!wetReturn||!wetReturn->processor||!wetReturn->silenceBypass||
+            wetReturn->catalogId!=armix::builtin_fx::VocalReverbProcessor::wetReturnIdentity||
+            !selection.empty()||!connectMain)) {
             reply.error="FX_RETURN_REQUIRES_NATIVE_VST3_OWNER";return reply;
         }
         // Original AUX lanes become ordinary native ChannelId FX returns
@@ -1890,9 +1896,11 @@ public:
             if(remove.value) {
                 changed=next.removeBusAndRestoreSources(
                     expectedRosterRevision,remove);
+            } else if(role==ChannelRole::fxReturn) {
+                changed=next.createReverbReturn(expectedRosterRevision,name);
             } else if(selection.empty()) {
                 changed=next.createStandaloneBus(
-                    expectedRosterRevision,name,role);
+                    expectedRosterRevision,name,role,connectMain);
             } else {
                 changed=next.createBusForSelected(
                     expectedRosterRevision,selection,name,role,sendGain);
@@ -1908,6 +1916,10 @@ public:
                 DynamicChannelFxLeaseBank::reuseWithoutChannel(
                     expectedEpoch,expectedPcmRevision+1,
                     *nativeAccepted_.fxOwners,remove,bank):
+                role==ChannelRole::fxReturn?
+                DynamicChannelFxLeaseBank::appendOwned(
+                    expectedEpoch,expectedPcmRevision+1,*nativeAccepted_.fxOwners,
+                    changed.createdIds.front(),ProcessingFormat::stereo,std::move(wetReturn),bank):
                 DynamicChannelFxLeaseBank::reuseRevision(
                     expectedEpoch,expectedPcmRevision+1,
                     *nativeAccepted_.fxOwners,bank);
@@ -3034,6 +3046,40 @@ public:
             return {};
         } catch(...) {return "Retained mixer capture initialization failed";}
     }
+    // The prior PCM epoch is no longer admitted. Its queued scalar edits
+    // may never get another callback. Only known, bounded native mailboxes
+    // can be settled here, under BOTH the graph render permit and processor
+    // gate. No processBlock, fake clock, arbitrary VST call or live ACK.
+    // Old-epoch completions are drained into the processor's accepted state;
+    // the new logical workspace readback is the only new authority.
+    template<class Processor>
+    static bool settleDetachedMailbox(FxGraph::FxInstance& fx) noexcept {
+        auto* p=dynamic_cast<Processor*>(fx.processor.get());
+        if(!p)return false;
+        typename Processor::Completion completion{};
+        (void)p->pollCompletion(completion);
+        p->consumeRealtimeEdits();
+        (void)p->pollCompletion(completion);
+        return true;
+    }
+    enum class DetachedMailbox { ready,retry,unsupported };
+    static DetachedMailbox settleDetachedNativeFx(FxGraph::FxInstance& fx) noexcept {
+        armix::rt::RealtimeRenderPermit processorPermit(fx.processing);
+        if(!processorPermit)return DetachedMailbox::retry;
+        if(fx.processFaulted())return DetachedMailbox::unsupported;
+        if(!fx.nativeControl||fx.nativeControl->stateSnapshotQuiescent())
+            return DetachedMailbox::ready;
+        using namespace armix::builtin_fx;
+        const bool supported=settleDetachedMailbox<ChannelEqProcessor>(fx) ||
+            settleDetachedMailbox<GraphicEq31Processor>(fx) ||
+            settleDetachedMailbox<ChannelCompressorProcessor>(fx) ||
+            settleDetachedMailbox<AutoDuckerProcessor>(fx) ||
+            settleDetachedMailbox<ChannelHarmonyProcessor>(fx);
+        if(!supported)return DetachedMailbox::unsupported;
+        return fx.nativeControl->stateSnapshotQuiescent()?
+            DetachedMailbox::ready:DetachedMailbox::retry;
+    }
+
     juce::String stepRetainedMixerCapture(RetainedMixerCapture& c,bool& done) {
         done=false;
         if(!retainedCaptureCurrent(c))return "Audio connection changed; retry offline FX";
@@ -3049,6 +3095,11 @@ public:
             const auto* owner=c.owners->ownerForControl(id,c.slot);
             if(!owner||!*owner||!(*owner)->processor||(*owner)->catalogId.isEmpty())
                 return "Native FX lease missing during capture";
+            if(!retainedCaptureCurrent(c))return "Audio connection changed; retry offline FX";
+            const auto settlement=settleDetachedNativeFx(**owner);
+            if(settlement==DetachedMailbox::retry)return {}; // bounded next CONTROL turn
+            if(settlement==DetachedMailbox::unsupported)
+                return "FX state not safely quiescent: "+(*owner)->catalogId;
             juce::MemoryBlock bytes;
             if(!(*owner)->tryCaptureState(bytes))
                 return "VST3 state not quiescent: "+(*owner)->catalogId;
@@ -3718,9 +3769,8 @@ public:
         if(!retained)
             state->setProperty("latencySamples",nativePublisher_.latencySamples(epoch(),nativeAccepted_.pcmRevision));
         juce::Array<juce::var> allowed;
-        // Only expose operations backed by a real DSP lease. Dynamic
-        // FX_RETURN insertion is not available until a native VST3 owner
-        // can be prepared for its new ChannelId; do not advertise it.
+        // Only expose operations backed by a real DSP lease. The Add FX
+        // Return workflow prepares its wet-only owner before publication.
         if(!retained)
           for(const char* op: {"NATIVE_CREATE_GROUP_SELECTED",
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX",
@@ -3811,6 +3861,10 @@ public:
         const bool pcmMeterValid=!retained &&
             nativeMeterEpoch_.load(std::memory_order_acquire)==epoch()&&
             nativeMeterRevision_.load(std::memory_order_acquire)==nativeAccepted_.pcmRevision;
+        // Zero-filled placeholders are not measured silence. Only the
+        // callback-observed graph revision authorizes operator diagnosis.
+        if(pcmMeterValid)state->setProperty("meterGraphRevision",
+            juce::String(std::to_string(nativeAccepted_.pcmRevision)));
         std::size_t meterIndex=0;
         for(const auto& ch:routing->channels) {
             auto row=std::make_unique<juce::DynamicObject>();

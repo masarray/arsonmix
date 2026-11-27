@@ -400,7 +400,63 @@
     return {kind:"ROLLBACK"};
   }
 
-  return Object.freeze({gainDb,edgePresentation,parallelEdge,
+  function routeDiagnostic(snapshot,sourceId){
+    if(!snapshot?.admitted||snapshot.retained)return "Audio unavailable · check Audio I/O";
+    const graph=snapshot.graph,source=graph.channels.find(ch=>ch.id===sourceId);
+    if(!source)return "Channel unavailable · select an admitted channel";
+    if(source.controls?.mute===true)return source.name+" · channel muted";
+    const main=graph.mainChannelId, rows=new Map(graph.channels.map(ch=>[ch.id,ch]));
+    const outgoing=new Map();
+    for(const edge of graph.edges){
+      if(!edge.enabled||edge.sendEnabled===false||!(edge.gainLinear>0))continue;
+      if(!outgoing.has(edge.from))outgoing.set(edge.from,[]);
+      outgoing.get(edge.from).push(edge);
+    }
+    const visited=new Set([sourceId]),queue=[{id:sourceId,path:[sourceId]}];
+    let path=null,monitor=false,atMinimum=false;
+    for(let i=0;i<queue.length;i++){
+      const {id,path:route}=queue[i],row=rows.get(id);
+      if(id===main){path=route;break;}
+      if(row?.role==="MONITOR")monitor=true;
+      for(const edge of outgoing.get(id)||[]){
+        const target=rows.get(edge.to);
+        if(!target||target.controls?.mute===true||visited.has(edge.to))continue;
+        // Native PRE is post-insert/pre-fader; do not suppress it on a
+        // minimum fader. The -60 display is not proof of exactly zero PCM.
+        const pre=!edge.primaryOutput&&(edge.tapStage||edge.tap)==="PRE_FADER";
+        if(!pre&&row?.controls?.faderDb<=-60)atMinimum=true;
+        visited.add(edge.to);queue.push({id:edge.to,path:[...route,edge.to]});
+      }
+    }
+    const t=snapshot.telemetry,meters=t?.channelMeterRmsPeak;
+    const measured=typeof graph.revision==="string"&&t?.channelMeterGraphRevision===graph.revision;
+    const peak=id=>{
+      const m=meters?.[id];
+      if(!measured||!m||![m.peakL,m.peakR].every(v=>Number.isFinite(v)&&v>=0))return "N/A";
+      const value=Math.max(m.peakL,m.peakR);
+      return value===0?"silent":(20*Math.log10(value)).toFixed(1)+" dBFS";
+    };
+    const capture=()=>{
+      const pins=[source.source?.portId,source.source?.portIdRight].filter(Boolean);
+      if(!pins.length||t?.captureObserved!==true)return "N/A";
+      const values=pins.map(id=>{
+        const endpoint=snapshot.device?.inputEndpoints?.find(p=>p.id===id&&p.active);
+        return endpoint?t.captureCallbackPeaks?.[endpoint.callback]:null;
+      });
+      if(!values.every(v=>Number.isFinite(v)&&v>=0))return "N/A";
+      const value=Math.max(...values);return value===0?"silent":(20*Math.log10(value)).toFixed(1)+" dBFS";
+    };
+    const evidence=(source.role==="INPUT"?" · IN "+capture():"")+
+      " · POST "+peak(sourceId)+" · MAIN "+peak(main);
+    if(!path)return source.name+" · no enabled unmuted route to MAIN"+
+      (monitor?"; MONITOR route available":"; inspect OUT, WIRE and send levels")+evidence;
+    const chain=path.map(id=>rows.get(id)?.name||id).join(" → ");
+    return chain+" · active route to MAIN"+(atMinimum?" · check minimum fader (PRE may remain active)":"")+
+      evidence+(snapshot.device?.outputArmed===false?" · outputs disarmed":"")+
+      (graph.channels.some(ch=>ch.controls?.solo===true)?" · SOLO active":"")+
+      " · physical sound unverified";
+  }
+  return Object.freeze({routeDiagnostic,gainDb,edgePresentation,parallelEdge,
     acceptedParallelEdge,primaryChannelLevelPlan,channelSumLevelPlan,gainReadback,canEditTap,gestureTap,sofAvailable,
     compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,sofSourceRole,sofTargetRole,
     channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,

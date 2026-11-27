@@ -141,7 +141,28 @@ public:
         } else if(operation=="CREATE_GROUP") {
             const auto name=text.isNotEmpty()?text.toStdString():
                 ("Bus "+std::to_string(editor_.roster().size()));
-            result=editor_.createBus(expected,name,Role::group);
+            const auto rawSelection=payload.getProperty("selection",{});
+            const auto connectMain=payload.getProperty("connectMain",juce::var(true));
+            if(!connectMain.isBool())return bad("INVALID_GROUP_OUTPUT");
+            const auto purpose=payload.getProperty("purpose","").toString();
+            if(purpose=="FX"){
+                if(!rawSelection.isVoid()||!static_cast<bool>(connectMain))return bad("INVALID_FX_RETURN_REQUEST");
+                result=editor_.createReverbReturn(expected,name);
+            } else if(rawSelection.isVoid())result=editor_.createBus(expected,name,Role::group,static_cast<bool>(connectMain));
+            else {
+                const auto* ids=rawSelection.getArray();
+                if(!static_cast<bool>(connectMain)||!ids||ids->isEmpty()||static_cast<std::size_t>(ids->size())>editor_.roster().size())
+                    return bad("INVALID_GROUP_SELECTION");
+                std::vector<ChannelId> selected;
+                for(const auto& raw:*ids){
+                    std::uint64_t id=0;
+                    if(!armix::session::parseDecimal(raw,id)||!id||
+                       std::find(selected.begin(),selected.end(),ChannelId{id})!=selected.end())
+                        return bad("INVALID_GROUP_SELECTION");
+                    selected.push_back({id});
+                }
+                result=editor_.createGroupForSelected(expected,std::span<const ChannelId>{selected},name);
+            }
         } else if(operation=="REMOVE_BUS") {
             result=editor_.removeBus(expected,id);
         } else if(operation=="DELETE_CHANNEL") {
@@ -237,9 +258,7 @@ public:
             if(armix::mixer::isWetReturnCatalog(row->insertCatalogIds[index])&&
                std::count_if(row->insertCatalogIds.begin(),row->insertCatalogIds.end(),
                              armix::mixer::isWetReturnCatalog)==1)
-                for(const auto& from:editor_.roster().channels())
-                    for(const auto& send:from.sends)
-                        if(send.destination==id)return bad("DISCONNECT_WET_RETURN_INPUTS_FIRST");
+                return bad("FX_RETURN_REQUIRES_WET_PROCESSOR");
             edit.kind=ChannelEdit::Kind::removeInsertReference;
             edit.position=index;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});

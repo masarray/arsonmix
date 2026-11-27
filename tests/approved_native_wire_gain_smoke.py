@@ -268,7 +268,7 @@ def verify_external_output(page, out):
     presentation, NOT actual physical sound on an eight-pin ASIO device.
     """
     page.add_init_script(NATIVE_EVENTS + """window.__outActions=[];
-        window.confirm=()=>true;
+        window.confirm=()=>{throw Error('Stock confirmation must not be used');};
         window.__JUCE__={backend:{
           emitEvent(name,payload){if(name==='arMixAction')window.__outActions.push(payload);},
           ...window.__nativeListenerMethods}};""")
@@ -308,6 +308,14 @@ def verify_external_output(page, out):
     preset=next(x for x in choices if x.startswith("Preset · Streaming"))
     assert not any(x.startswith("Preset · Reserved") for x in choices)
     first.select_option(label=preset)
+    dialog=page.get_by_role("dialog",name="External output")
+    assert dialog.is_visible()
+    assert not page.evaluate("()=>window.__outActions.some(x=>x.action==='routingExternalOutput')")
+    dialog.get_by_role("button",name="Cancel",exact=True).click()
+    assert first.input_value()=="None"
+    assert not page.evaluate("()=>window.__outActions.some(x=>x.action==='routingExternalOutput')")
+    first.select_option(label=preset)
+    dialog.get_by_role("button",name="Enable output",exact=True).click()
     actions=page.evaluate("()=>window.__outActions.filter(x=>x.action==='routingExternalOutput')")
     assert len(actions)==1,actions
     requested=actions[0]
@@ -321,6 +329,7 @@ def verify_external_output(page, out):
     assert first.get_attribute("aria-busy") is None
     assert first.input_value()=="None"
     first.select_option(label=choice)
+    dialog.get_by_role("button",name="Enable output",exact=True).click()
     actions=page.evaluate("()=>window.__outActions.filter(x=>x.action==='routingExternalOutput')")
     assert len(actions)==2,actions
     accepted=actions[-1]
@@ -337,6 +346,8 @@ def verify_external_output(page, out):
     assert first.get_attribute("aria-busy") is None
     # A second independent ChannelId may deliberately share a physical pair.
     second.select_option(label=choice)
+    assert "SHARED" in dialog.inner_text()
+    dialog.get_by_role("button",name="Enable output",exact=True).click()
     actions=page.evaluate("()=>window.__outActions.filter(x=>x.action==='routingExternalOutput')")
     assert len(actions)==3,actions
     assert actions[-1]["channelId"]==RECEIVER

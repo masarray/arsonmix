@@ -154,10 +154,10 @@
  $("playerTempoPlus").addEventListener("click",()=>send("playerTempoStep",1));
  $("playerPitchReset").addEventListener("click",()=>send("playerPitchTempoReset"));
  $("playerChooseOutput").addEventListener("click",()=>{
-   // Interoperate with #968 custom Audio I/O, retain legacy native fallback.
+   // Preserve canonical Smart I/O owner; never open the retired legacy panel.
    const audioIO=document.querySelector?.(".command-bar > [data-native-io]");
    if(audioIO){audioIO.click();showFeedback("Choose MAIN output in Audio I/O, then press Play.");}
-   else send("playerChooseOutput");
+   else showFeedback("Audio I/O is unavailable. Reopen the mixer.",true);
  });
  $("playerNext").addEventListener("click",()=>{if(model.pending<0)send("playerNext");});
  $("playerAutoNext").addEventListener("click",()=>

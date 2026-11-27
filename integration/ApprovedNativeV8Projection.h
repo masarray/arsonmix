@@ -212,6 +212,9 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
         caps->setProperty("supportedOps",juce::var(ops));
     }
     t->setProperty("channelMeterRmsPeak",juce::var(meters.release()));
+    const auto meterRev=bus.getProperty("meterGraphRevision",{});
+    t->setProperty("channelMeterGraphRevision",
+        installed&&meterRev.isString()&&meterRev.toString()==rev.toString()?rev:juce::var());
     // productionCallbackLive deliberately stays FALSE until full FAT.
     return true;
 }

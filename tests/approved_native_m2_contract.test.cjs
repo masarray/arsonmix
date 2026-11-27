@@ -5703,6 +5703,9 @@ test("G-MV30 native roster ACK, concurrent lanes and exact later graph+roster pr
    raw:{mixerSession:{...session,routeRevision:revision,rosterRevision}}
  });
  assert.equal(settle(pCreate,advanced()),"CONFIRMED");
+ const grouped={...pCreate,selection:[src]};
+ assert.equal(settle(grouped,advanced()),"WAIT","Created bus alone cannot prove reroute");
+ assert.equal(settle(grouped,advanced(newlyCreated.map(ch=>ch.id===src?{...ch,primaryOutId:newId}:ch))),"CONFIRMED");
  assert.equal(settle(create,advanced()),"WAIT","readback-before-ACK does not finish");
  assert.equal(settle(pCreate,advanced(newlyCreated,"6","7")),"WAIT",
    "roster revision must advance beyond request baseline");
@@ -7033,7 +7036,12 @@ test("P0 Audio I/O help reacts to explicit failed operator intent without auto-A
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/function recommendAudioRepair\(context\)/);
  assert.match(bridge,/if\(!deviceReady\(\)\)recommendAudioRepair\("INPUT unavailable"\)/);
- assert.match(bridge,/recommendAudioRepair\("FX editor unavailable · audio processing unavailable"\)/);
+ const editor=bridge.slice(bridge.indexOf('if(action==="openPlugin"){'),bridge.indexOf('if(action==="globalFxOn"){'));
+ assert.match(editor,/status\("FX editor waiting for the native mixer workspace"\)/);
+ assert.doesNotMatch(editor,/recommendAudioRepair|openNativeAudioIO/);
+ assert.match(editor,/requestRetainedFxAction\(t,slot,"openPlugin",\{recenter\}\)/);
+ assert.match(bridge,/requestRetainedFxAction\(t,Number\(btn\?\.dataset\.slot\),"slotPower"\)/);
+ assert.match(bridge,/requestRetainedFxAction\(t,0,"fxOn"\)/);
  assert.match(bridge,/window\.setTimeout\(\(\)=>\{/);
  assert.match(bridge,/openNativeAudioIO\(\); \/\/ explicit repair prompt/);
  assert.match(bridge,/if\(now-lastAudioRepairAt<1600\)return true/);
@@ -7109,7 +7117,13 @@ test("P0 routing commands remain usable in More at all desktop widths",()=>{
 test("P0 offline picker is presentation-only until selection and Apply restores edited graph before MAIN",()=>{
  const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp"),engine=read("src/LiveAudioEngine.h");
  assert.match(bridge,/if\(empty\)\{\s*scope\?\.openFastPicker\?\.\(t,slot,btn\);\s*return true;/);
- assert.match(bridge,/action:"insertFx",selectedCatalogId:id/);
+ assert.match(bridge,/requestRetainedFxAction\(track,slot,"insertFx",\{selectedCatalogId:id\}\)/);
+ const handoff=bridge.slice(bridge.indexOf("function requestRetainedFxAction("),bridge.indexOf("function logicalIntent("));
+ assert.match(handoff,/current\?\.retained!==true/);
+ assert.match(handoff,/if\(pendingRetainedEditor\)\{/);
+ assert.match(handoff,/deviceEpoch:current\.device\.epoch,graphRevision:current\.graph\.revision/);
+ assert.match(handoff,/selectedCatalogId:options\.selectedCatalogId/);
+ assert.doesNotMatch(handoff,/arMixLogicalIntent|arMixConsoleIntent|openNativeAudioIO/);
  assert.match(bridge,/nativeHooks\.insertPlugin\(held\.selectedCatalogId/);
  assert.match(native,/if\(pendingRetainedFxCapture_ \|\| retainedOfflineFxActive_\)return; \/\/ never arm stale retained PCM/);
  assert.match(native,/engine_\.finishManualAudioSetup\(false,true\)/);
@@ -7746,7 +7760,7 @@ test("U3 Stop supersedes native opens and approved output selection pins invento
 
 test("U3 same-device Apply suspends and restores the verified stream without manual Stop",()=>{
  const n=read("src/Main.cpp");
- const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void chooseImport ("));
  assert.doesNotMatch(a,/Stop STREAM and finish/);
  assert.match(a,/captureSecondaryResumeIntent\(\)/);
  assert.match(a,/requested.playback==prepared.before.outputDeviceName/);
@@ -7769,7 +7783,7 @@ test("U4 independent headphone mix uses admitted two-pin native scope and correl
  const split={...s,raw:{...s.raw,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1]}};
  assert.equal(protocol.secondaryMixMode(split,live).value.enabled,false);
  const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js");
- const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void chooseImport ("));
  assert.doesNotMatch(a,/getCurrentAudioDevice\(/);
  assert.match(n,/engine_.disarmSecondaryOutput\(\);\s*error=engine_.patchDmxSplitOutput/);
  assert.match(b,/protocol.secondaryOutputSettlement\(p,hardware,live,extraStatusSerial\)/);
@@ -7942,4 +7956,93 @@ test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction ev
  const b=read("web/approved-native-bridge.js");
  assert.match(b,/workspaceGeneration:hardware\?\.raw\?\.workspaceGeneration/);
  assert.match(b,/scope\?\.cancelNativeSessionGestures\?\.\(\);[\s\S]*?extraPending=null;extraError="";/);
+});
+
+ test("unified route diagnostics report accepted topology, not physical audibility",()=>{
+ const ch=(id,name,mute=false)=>({id,name,controls:{mute,faderDb:0}});
+ const snapshot={admitted:true,graph:{mainChannelId:"3",channels:[ch("1","Vocal"),ch("2","AUX"),ch("3","MAIN")],edges:[{from:"1",to:"2",enabled:true,gainLinear:1},{from:"2",to:"3",enabled:true,gainLinear:0}]}};
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+ snapshot.graph.edges[1].gainLinear=1;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/active route to MAIN/);
+ snapshot.graph.channels[1].controls.mute=true;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+ assert.match(wireVM.routeDiagnostic({...snapshot,retained:true},"1"),/Audio unavailable/);
+ });
+
+ test("legacy recovery routes to approved custom Audio I/O, not native selector",()=>{
+ const host=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ const block=host.slice(host.indexOf('else if (action == "audioSetup")'),host.indexOf('else if (action == "diagnosticRoute")'));
+ assert.match(block,/arMixOpenAudioIO/);assert.doesNotMatch(block,/showDeviceSetup\(/);
+ assert.match(bridge,/backend.addEventListener\("arMixOpenAudioIO",\(\)=>openNativeAudioIO\(\)\)/);
+ });
+
+ test("custom Audio I/O confirmation is asynchronous and fenced against stale native authority",()=>{
+ const b=read("web/approved-native-bridge.js");
+ assert.doesNotMatch(b,/window\.confirm\s*\(/);
+ const f=b.slice(b.indexOf("function ioConfirmationLease()"),b.indexOf("let arsonConfirmation=null;"));
+ assert.match(f,/workspaceGeneration/);assert.match(f,/operatorOutputMuted/);
+ assert.match(f,/const lease=ioConfirmationLease\(\)/);
+ assert.match(f,/await confirmArson/);assert.match(f,/lease!==ioConfirmationLease\(\)/);
+ assert.equal((b.match(/await confirmIo\(/g)||[]).length,7);
+ });
+
+test("FX Return creation requires prepared wet processor and exact independent readback",()=>{
+ const lab=read("src/LiveDryRoutingLab.h"),engine=read("src/LiveAudioEngine.h");
+ const f=lab.slice(lab.indexOf("NativeBusResult editNativeBus("),lab.indexOf("NativeBusResult editNativeProcessingFormat("));
+ assert.match(f,/!wetReturn->silenceBypass/);assert.match(f,/next\.createReverbReturn/);
+ assert.match(f,/DynamicChannelFxLeaseBank::appendOwned/);
+ assert.ok(f.indexOf("DynamicChannelFxLeaseBank::appendOwned")<f.indexOf("nativePublisher_.commit"));
+ assert.match(engine,/prepareNativeVocalReverbReturn\(rate,frames,nullptr,0\)/);
+ const main="8",id="9",epoch="17";
+ const p={operation:"CREATE_GROUP",purpose:"FX",epoch,baseGraphRevision:"19",baseRosterRevision:"20",acked:true,ackRevision:"21",createdId:id,beforeIds:[main]};
+ const row={id,role:"FX_RETURN",primaryOutId:main,inserts:[{catalogId:"armix.builtin.vocal-reverb-return.v1"}]};
+ const snap={admitted:true,device:{epoch},graph:{revision:"21",rosterRevision:"22",mainChannelId:main,channels:[row]},raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch,routeRevision:"21",rosterRevision:"22"}}};
+ assert.equal(stripVM.rosterReadbackSettlement(p,snap),"CONFIRMED");
+ for(const ch of [{...row,role:"GROUP"},{...row,inserts:[]},{...row,primaryOutId:"7"}])
+   assert.equal(stripVM.rosterReadbackSettlement(p,{...snap,graph:{...snap.graph,channels:[ch]}}),"WAIT");
+});
+
+test("routing diagnosis uses current callback meter evidence and preserves PRE semantics",()=>{
+ const src={id:"1",name:"Vocal",role:"INPUT",source:{portId:"in:2"},controls:{mute:false,faderDb:-60}};
+ const bus={id:"2",name:"AUX",role:"GROUP",controls:{mute:false,faderDb:0}};
+ const main={id:"3",name:"MAIN",role:"MAIN",controls:{mute:false,faderDb:0}};
+ const graph={revision:"7",mainChannelId:"3",channels:[src,bus,main],edges:[
+ {from:"1",to:"2",enabled:true,gainLinear:1,primaryOutput:false,tapStage:"PRE_FADER"},
+ {from:"2",to:"3",enabled:true,gainLinear:1,primaryOutput:true,tapStage:"POST_FADER"}]};
+ const telemetry={channelMeterGraphRevision:"7",channelMeterRmsPeak:{"1":{peakL:0,peakR:0},"3":{peakL:.1,peakR:.1}},
+ captureObserved:true,captureCallbackPeaks:[.5]};
+ const snapshot={admitted:true,graph,telemetry,device:{outputArmed:false,inputEndpoints:[{id:"in:2",active:true,callback:0}]}};
+ const msg=wireVM.routeDiagnostic(snapshot,"1");
+ assert.match(msg,/Vocal → AUX → MAIN/);assert.match(msg,/IN -6.0 dBFS/);
+ assert.match(msg,/POST silent/);assert.match(msg,/MAIN -20.0 dBFS/);
+ assert.match(msg,/outputs disarmed/);assert.match(msg,/physical sound unverified/);
+ assert.doesNotMatch(msg,/minimum fader/);
+ assert.match(wireVM.routeDiagnostic({...snapshot,telemetry:{...telemetry,channelMeterGraphRevision:"6"}},"1"),/POST N\/A · MAIN N\/A/);
+ graph.edges[0].tapStage="POST_FADER";
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/minimum fader/);
+ graph.edges[0].sendEnabled=false;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+});
+
+test("no stock JUCE device selector survives in the production host",()=>{
+ const host=read("src/Main.cpp");
+ assert.doesNotMatch(host,/AudioDeviceSelectorComponent|AudioSetupWindow|showDeviceSetup\(/);
+ const a=host.slice(host.indexOf('else if (action == "audioSetup")'),host.indexOf('else if (action == "diagnosticRoute")'));
+ assert.match(a,/arMixOpenAudioIO/);
+ assert.match(host,/deviceApply_\.busy\(\)/);
+});
+
+test("startup recovery and update use branded non-modal native notice, not stock JUCE",()=>{
+ const host=read("src/Main.cpp");
+ assert.doesNotMatch(host,/juce::NativeMessageBox::showAsync|juce::AlertWindow/);
+ const recovery=host.slice(host.indexOf("class ArSonRecoveryNotice"),host.indexOf("class Browser final"));
+ assert.match(recovery,/MixerCaptionLookAndFeel/);assert.match(recovery,/ArSonNoticeButton/);
+ assert.match(recovery,/clearContentComponent\(\)/);assert.match(recovery,/MessageManager::callAsync/);
+ assert.match(recovery,/if\(accepted\)juce::URL/);
+ const archive=host.slice(host.indexOf('if(commandLine.trim()=="--archive-mixer-session"'),host.indexOf("// Paint the approved dark native splash"));
+ assert.match(archive,/if\(!accepted\)\{systemRequestedQuit\(\);return;\}/);
+ assert.match(archive,/quarantineForStartupRecovery/);
+ const update=host.slice(host.indexOf("class ArSonMixUpdateNotice"),host.indexOf("class ConsoleApp"));
+ assert.match(update,/MixerCaptionLookAndFeel/);assert.match(update,/ArSonNoticeButton/);
+ assert.match(update,/onAccept_ && onAccept_\(\)/);
 });

@@ -2314,7 +2314,7 @@ public:
            armix::mixer::ChannelRole role,
            std::span<const armix::mixer::ChannelId> selected,
            const std::string& name,float gain,
-           armix::mixer::ChannelId remove={}) {
+           armix::mixer::ChannelId remove={},bool connectMain=true) {
         LiveDryRoutingLab::NativeBusResult rejected;
         rejected.error="NATIVE_BUS_DEVICE_UNAVAILABLE";
         if(independent_.active() || !attached_ || secondaryOutput_.armed() ||
@@ -2327,6 +2327,22 @@ public:
         const bool wasMonitoring=isMonitorEnabled();
         bool publishing=false;
         try {
+            armix::mixer::DynamicChannelFxLeaseBank::Lease wetReturn;
+            if(!remove.value&&role==armix::mixer::ChannelRole::fxReturn){
+                auto* device=deviceManager_.getCurrentAudioDevice();
+                if(!device||!selected.empty()||!connectMain)return rejected;
+                const auto rate=device->getCurrentSampleRate();
+                const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
+                auto processor=armix::builtin_fx::prepareNativeVocalReverbReturn(rate,frames,nullptr,0);
+                if(!processor||deviceManager_.getCurrentAudioDevice()!=device||
+                   epoch!=dryRoutingLab_.epoch()||device->getCurrentSampleRate()!=rate||
+                   juce::jmax(32,device->getCurrentBufferSizeSamples())!=frames){
+                    rejected.error="NATIVE_WET_RETURN_PREPARE_REJECTED";return rejected;
+                }
+                wetReturn=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
+                    std::move(processor),armix::builtin_fx::VocalReverbProcessor::wetReturnIdentity,
+                    "Reverb-Sis Return",LiveDryRoutingLab::Block::hardFrameLimit);
+            }
             const auto result=dryRoutingLab_.editNativeBus(
                 epoch,pcmRevision,rosterRevision,role,selected,
                 name,gain,remove,true,[&] {
@@ -2335,7 +2351,7 @@ public:
                     // Add BUS. A late output gate covers only publication.
                     if(wasMonitoring)topologyPublicationMute_.store(
                         true,std::memory_order_release);
-                });
+                },connectMain,std::move(wetReturn));
             if(publishing) {
                 if(wasMonitoring &&
                    !armix::mixer::NativeTopologyEditSafety::mayRestoreMonitor(

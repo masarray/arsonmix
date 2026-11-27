@@ -13,10 +13,10 @@ inline bool prepareRackCatalogReplacement(const DynamicChannelRoster& prior,
        catalogs.size()>8)return false;
     const auto hasWet=[](const auto& ids){return std::any_of(ids.begin(),ids.end(),isWetReturnCatalog);};
     if(hasWet(catalogs)&&row->role!=ChannelRole::fxReturn)return false;
-    if(hasWet(row->insertCatalogIds)&&!hasWet(catalogs))
-        for(const auto& source:prior.channels())
-            for(const auto& send:source.sends)
-                if(send.destination==target)return false;
+    // A wet-only return remains a wet-only return even with zero incoming
+    // WIREs. Otherwise a later assignment would silently become dry gain.
+    // Delete the return channel explicitly, or replace with a wet catalog.
+    if(hasWet(row->insertCatalogIds)&&!hasWet(catalogs))return false;
     std::vector<ChannelEdit> ops;
     for(std::size_t n=row->insertCatalogIds.size();n>0;--n){
         ChannelEdit edit;edit.kind=ChannelEdit::Kind::removeInsertReference;
