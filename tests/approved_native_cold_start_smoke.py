@@ -381,9 +381,16 @@ def main():
             emit(page,"arMixNativeSessionAck",{"operation":"OPEN","ok":False,"error":"Invalid mixer JSON"})
             assert page.get_by_text("Invalid mixer JSON",exact=True).count()>=1
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
-            show_click("Test MAIN output")
+            select_ribbon_workflow(page,"io")
+            page.locator(".command-bar > [data-native-io]").click()
+            page.locator('[data-audio-tab="diagnostics"]').click()
+            page.locator(".armix-audio-diagnostics").get_by_text("Test MAIN output",exact=True).click()
             assert page.evaluate("()=>window.__events.at(-1).payload")=={
                 "action":"diagnosticRoute","value":"TOGGLE_MAIN_OUTPUT_TONE"}
+            page.locator("[data-audio-close]").click()
+            select_ribbon_workflow(page,"scenes")
+            application_menu.locator(":scope > summary").click()
+            application_menu.locator('[data-menu-category="scenes"]').click()
             show_click("Browse Shows")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[

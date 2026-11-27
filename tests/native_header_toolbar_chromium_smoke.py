@@ -271,20 +271,48 @@ def main():
             assert menu.locator("[data-native-emergency-output]").is_visible()
             assert not panel.get_by_text("Copy Audio Report",exact=True).is_visible()
             page.screenshot(path=f"operator-ux-application-menu-{width}.png")
-            panel.locator('[data-menu-category="diagnostics"]').click()
-            assert panel.get_by_text("Copy Audio Report",exact=True).is_visible()
-            assert not new.is_visible()
-            page.screenshot(path=f"operator-ux-menu-diagnostics-{width}.png")
-            panel.get_by_text("Copy Audio Report",exact=True).click()
-            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="copyDiagnosticReport"
-            panel.locator(".armix-menu-back").click()
-            assert new.is_visible()
-            for category in ("channel","view","scenes","settings"):
-                panel.locator('[data-menu-category="'+category+'"]').click()
-                assert panel.locator(".armix-menu-back").is_visible()
-                assert panel.locator(":scope > [data-armix-menu-active=false]:visible").count()==0
+            assert panel.locator('[data-menu-category="diagnostics"]').count()==0
+            assert panel.locator(".arNativeAdvancedRecovery").count()==0
+            assert panel.get_by_text("Test MAIN output",exact=True).count()==0
+            assert panel.get_by_text("Copy Audio Report",exact=True).count()==0
+            root=panel.bounding_box()
+            for category in ("session","channel","view","scenes","settings"):
+                row=panel.locator('[data-menu-category="'+category+'"]')
+                row.hover()
+                child=panel.locator("#armix-menu-"+category)
+                assert child.is_visible() and row.get_attribute("aria-expanded")=="true"
+                assert new.is_visible() and panel.locator(":scope > .armix-menu-category:visible").count()==5
+                assert panel.locator(".armix-menu-flyout:visible").count()==1
+                box=child.bounding_box()
+                assert box["x"]>=root["x"]+root["width"]-2,(width,root,box)
+                assert box["x"]+box["width"]<=width+1,(width,box)
+                assert box["y"]+box["height"]<=page.viewport_size["height"]+1,(width,box)
+                if category=="settings":
+                    assert child.get_by_text("Audio I/O",exact=True).is_visible()
+                    page.screenshot(path=f"operator-ux-menu-settings-{width}.png")
                 page.keyboard.press("Escape")
-                assert new.is_visible()
+                assert new.is_visible() and not child.is_visible()
+            row=panel.locator('[data-menu-category="settings"]')
+            row.focus()
+            page.keyboard.press("ArrowRight")
+            child=panel.locator("#armix-menu-settings")
+            assert child.is_visible()
+            assert child.evaluate("el=>el.contains(document.activeElement)")
+            page.keyboard.press("ArrowLeft")
+            assert not child.is_visible() and row.evaluate("el=>el===document.activeElement")
+            # Technical actions are still real native commands, now in Audio I/O.
+            row.click()
+            child.get_by_text("Audio I/O",exact=True).click()
+            dialog=page.locator(".armix-audio-dialog")
+            assert dialog.is_visible()
+            dialog.locator('[data-audio-tab="diagnostics"]').click()
+            diag=dialog.locator(".armix-audio-diagnostics")
+            assert diag.get_by_text("Copy Audio Report",exact=True).is_visible()
+            diag.get_by_text("Copy Audio Report",exact=True).click()
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="copyDiagnosticReport"
+            dialog.locator("[data-audio-close]").click()
+            if menu.get_attribute("open") is None:
+                menu.locator(":scope > summary").click()
             assert panel.bounding_box()["height"]<=300
             assert new.get_by_role("img").count() == 0  # decorative icon
             image = new.locator("img")

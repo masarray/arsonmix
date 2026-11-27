@@ -3788,6 +3788,7 @@
   // Compact DAW-style device preferences INSIDE the approved Windows GUI.
   // Only the existing AudioDeviceManager inventory/APPLY API is used. This
   // replaces the 740x590 default JUCE dialog for normal operator setup.
+  let audioDiagnosticTools=null;
   let devicePanel=null,deviceInventory=null,deviceChoice=null,deviceRequest=0,
       deviceState=deviceVM.setupInitial(),deviceApplyTimer=0;
   // Snapshot the actual initiating action; never infer it from a later tab.
@@ -4384,6 +4385,10 @@
         .armix-audio-dialog .armix-audio-pins{max-height:min(44vh,340px);gap:16px}
         .armix-audio-dialog .armix-audio-pins label{min-height:24px}
         .armix-audio-dialog [data-audio-tab="diagnostics"]{margin-left:auto}
+        .armix-diagnostic-tools{display:grid;gap:6px;margin-top:8px}
+        .armix-diagnostic-tools button{justify-content:flex-start;text-align:left}
+        .armix-diagnostic-tools details button{display:block;width:100%;margin-top:5px}
+        .armix-diagnostic-tools summary{cursor:pointer}
         .armix-driver-inventory{padding:12px 20px;border-top:1px solid #354b59}
         .armix-endpoint-fields .armix-device-actions{padding:0;border:0;background:transparent}
         .armix-audio-dialog .armix-device-actions{padding:12px 20px;
@@ -4541,6 +4546,7 @@
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
+      if(audioDiagnosticTools)devicePanel.querySelector(".armix-audio-diagnostics").append(audioDiagnosticTools);
       devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
       // Vendor settings are distinct from choosing a different audio device.
       devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
@@ -5072,7 +5078,7 @@
         expectedEpoch:ep,expectedRevision:rev});
       status("Verifying audio route after emergency stop");
     });
-    hardwareNote=item("span","more-tools-caption","Device not initialized");
+    hardwareNote=item("span","armix-device-note","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
     // Everyday I/O and driver recovery use the same custom Audio I/O pane.
     // Vendor ASIO dialogs remain available through its explicit driver action.
@@ -5096,12 +5102,13 @@
     // toggles. The marker snapshots the 5-second PRE-event counters and
     // Windows RAM/process paging context from the existing 1 Hz control
     // timer. No sampling or file I/O happens in the ASIO callback.
-    const healthTitle=item("span","more-tools-caption","AUDIO HEALTH");
     const inspect=item("button","tool","Inspect selected routing");
     inspect.addEventListener("click",()=>{
       const tracks=[...(scope?.tracks||[]),scope?.master];
       const selected=tracks.filter(t=>t?.selected);
       if(selected.length!==1){nativeToast("Select one mixer channel to inspect routing");return;}
+      if(deviceBusy())return;
+      closeNativeAudioIO();
       nativeToast(wireVM.routeDiagnostic(controller?.state()?.current,nativeIdFor(selected[0])));
       const routes=document.getElementById("wireNavigatorToggle");
       if(routes?.getAttribute("aria-expanded")!=="true")routes?.click();
@@ -5285,6 +5292,7 @@
     });
     const newSessionButtons=[["New Project · empty mixer","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
+      button.dataset.armixMenuPage=mode==="RESET_IO"?"settings":"session";
       button.title=mode==="EMPTY"?"Start fresh · previous mixer archived, output muted":"Offline only · previous checkpoint archived in Studio/SessionArchive";
       button.addEventListener("click",async()=>{
         const current=controller?.state()?.current;
@@ -5320,6 +5328,7 @@
       return button;
     });
     const archiveButton=item("button","tool","Open session archive");
+    archiveButton.dataset.armixMenuPage="session";
     archiveButton.title="Open an archived mixer offline; current checkpoint is backed up first";
     archiveButton.addEventListener("click",async()=>{
       if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
@@ -5331,8 +5340,13 @@
       backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
           workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
     });
-    menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
-      healthTitle,inspect,tone,mark,report,advanced,
+    // Engineering diagnostics belong to the existing native Audio I/O
+    // Diagnostics tab, never the operator's application menu.
+    audioDiagnosticTools=document.createElement("div");
+    audioDiagnosticTools.className="armix-diagnostic-tools";
+    audioDiagnosticTools.append(hardwareNote,inspect,tone,mark,report,advanced);
+    if(devicePanel)devicePanel.querySelector(".armix-audio-diagnostics").append(audioDiagnosticTools);
+    menu.append(caption,setup,muteBtn,...newSessionButtons,archiveButton,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.

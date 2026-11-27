@@ -1,0 +1,9 @@
+# V6 operator application menu — cascading navigation (2026-11-27)
+
+## Scope and root cause
+Owner screenshot shows Settings replacing root, PCM evidence and driver recovery inside an ordinary menu, and an always-scrollable page. V6 presentation previously switched a single panel's active page and grouped late bridge actions by headings. Keep root commands visible and open one right-side cascade anchored to the selected row. Separate session operations from device configuration; retain emergency stop/resume in root. Move original native health/readback, selected route inspection, MAIN test tone, glitch marker, report and advanced recovery to existing Audio I/O > Diagnostics. No new native actions, no output arming, no audio callback or state change.
+
+## Implementation and qualification
+Original command nodes/listeners retained, direct startup insertion observer only; no polling. Native file/Show/Audio I/O operations retained. Mouse hover/click, right/left and Escape; outside click dismisses; viewport-constrained submenu. Browser reference uses same assembled /preview/ source and does not gain native actions. See Microsoft Windows menu flyout guidance https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/menus and W3C fly-out guidance https://www.w3.org/WAI/tutorials/menus/flyout/ . Native controls retain native semantics, no false ARIA composite role.
+
+Chromium regression assertions extend existing native-header, cold-start, and Audio I/O suites. Verify root remains visible, flyout geometry, one open child, keyboard escape/return, report native event, original recovery/test-tone event. Syntax checks are not a Windows build, physical audio test, or visual acceptance. Exact-head CI and integrated FIELD qualification remain mandatory. Stack on the combined Player/Session branch #985; peer #987 must be reconciled without overwriting its independent changes.

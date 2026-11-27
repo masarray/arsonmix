@@ -872,9 +872,13 @@ def verify_custom_recovery_routes(page,out):
     assert page.get_by_text("Open JUCE driver recovery",exact=True).count()==0
     page.locator("#moreTools > summary").click()
     page.locator('[data-menu-category="settings"]').click()
-    page.locator(".arNativeAdvancedRecovery > summary").click()
-    page.get_by_role("button",name="Open Audio I/O recovery").click()
+    assert page.locator("#moreTools .arNativeAdvancedRecovery").count()==0
+    page.locator("#armix-menu-settings").get_by_role("button",name="Audio I/O",exact=True).click()
     dialog=page.locator(".armix-audio-dialog")
+    assert dialog.is_visible()
+    dialog.locator('[data-audio-tab="diagnostics"]').click()
+    dialog.locator(".arNativeAdvancedRecovery > summary").click()
+    dialog.get_by_role("button",name="Open Audio I/O recovery").click()
     assert dialog.is_visible()
     assert dialog.count()==1
     page.locator("[data-audio-close]").click()
