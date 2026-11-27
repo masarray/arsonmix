@@ -157,8 +157,13 @@ test('saved ASIO startup failure keeps the host callback registered for manual A
   const failurePath=engine.slice(failure,success);
   assert.match(failurePath,/if\(savedAsioPreflight\)\s*\{\s*startupAsioRetryIdentity_=\*savedAsioPreflight;\s*deviceManager_\.closeAudioDevice\(\);\s*\}\s*return error;/);
   assert.doesNotMatch(failurePath,/removeAudioCallback|\bdetach\s*\(/);
-  assert.match(host,/new juce::AudioDeviceSelectorComponent/);
-  assert.match(host,/showDeviceSetup\(\)/);
+  // The legacy JUCE selector was replaced by the approved Audio I/O WebView.
+  const setup=host.slice(host.indexOf('else if (action == "audioSetup")'),host.indexOf('else if (action == "diagnosticRoute")'));
+  assert.match(setup,/emitDeviceInventory\(false\)/);
+  assert.match(setup,/emitEventIfBrowserIsVisible\("arMixOpenAudioIO"/);
+  assert.match(host,/else if \(action == "audioDeviceApply"\)\s*\{\s*applyCustomAudioDevice\(args\);/);
+  assert.match(host,/\[this\] \{engine_\.beginManualAudioSetup\(\);\}/);
+  assert.match(host,/finishAudioSetupAndRecoverMixer\(mode\)/);
 });
 
 test('P0 ASIO live direct route fence blocks hotplug substitution before DSP',()=>{
