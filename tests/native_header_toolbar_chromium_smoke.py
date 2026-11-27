@@ -215,7 +215,7 @@ def main():
                  .map(el=>({hidden:getComputedStyle(el).display==='none',
                            height:el.getBoundingClientRect().height}))};
             }""")
-            assert metrics["bar"]["height"] == 38, (width, "incorrect native toolbar height", metrics)
+            assert metrics["bar"]["height"] == 42, (width, "incorrect native toolbar height", metrics)
             assert metrics["more"]["right"] <= width + 1, (
                 width, "overflow More menu outside window", metrics)
             assert metrics["dividers"][0]["height"] in (0, 21), (
@@ -236,6 +236,11 @@ def main():
             ids=[x["id"] for x in visible]
             assert ids.index("bankPrev")<ids.index("bankSelect")<ids.index("bankNext")<ids.index("viewFilter")<ids.index("addTrack")<ids.index("pluginsButton"),(width,ids)
             assert not page.locator("#playerToggle").is_visible()
+            segment=page.locator(".strip-view-switch")
+            assert segment.is_visible()
+            pill=segment.evaluate("""e=>{const s=getComputedStyle(e),a=e.querySelector('[aria-pressed=true]'),b=e.querySelector('[aria-pressed=false]');return {h:e.getBoundingClientRect().height,r:parseFloat(s.borderTopLeftRadius),border:s.borderTopColor,selected:getComputedStyle(a).backgroundColor,unselected:getComputedStyle(b).backgroundColor,selectedBorder:getComputedStyle(a).borderTopColor}}""")
+            assert 29<=pill["h"]<=32 and pill["r"]>=15,(width,pill)
+            assert pill["selected"]!=pill["unselected"] and pill["selectedBorder"]=="rgb(120, 167, 181)",(width,pill)
             assert page.locator("#ribbonQuickPlayer").is_visible()
             assert page.locator("#viewFilter").count()==1
             assert ids[-2:]==["mixContext","ribbonEmergency"],(width,ids)

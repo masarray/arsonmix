@@ -69,9 +69,19 @@ def main():
                       shine:getComputedStyle(e,'::after').backgroundImage,
                       glyph:e.querySelector('svg').innerHTML};
                 }""")
+            def assert_center(ident):
+                g=page.locator("#"+ident).evaluate("""e=>{
+                    const a=e.getBoundingClientRect(),svg=e.querySelector('svg'),b=svg.getBoundingClientRect(),p=svg.getBBox();
+                    return {dx:(b.left+b.width/2)-(a.left+a.width/2),dy:(b.top+b.height/2)-(a.top+a.height/2),
+                      vx:p.x+p.width/2-12,vy:p.y+p.height/2-12};
+                }""")
+                assert abs(g["dx"])<=0.5 and abs(g["dy"])<=0.5,(ident,g)
+                assert abs(g["vx"])<=1 and abs(g["vy"])<=1,(ident,g)
             for full,ribbon in [("playerPlay","ribbonPlay"),("playerStop","ribbonStop"),
                                 ("playerPrevious","ribbonPrevious"),("playerNext","ribbonNext")]:
                 assert face(full)==face(ribbon),(full,face(full),face(ribbon))
+                assert_center(full)
+                assert_center(ribbon)
             screen=page.locator("#playerScreen")
             glass=panel.evaluate("""e=>{
                 const s=getComputedStyle(e),coat=getComputedStyle(e,'::after'),
@@ -354,6 +364,12 @@ def main():
             mini.wait_for(state="visible")
             assert page.locator("#playerMiniArtworkFallback").get_attribute("data-art")==fallback.get_attribute("data-art")
             assert page.locator("#playerMiniArtworkFallback").is_hidden()  # Ribbon has no cover
+            # Only Mini is visible here; the device and ribbon buttons are
+            # hidden, so compare CSS tokens and glyph, not their zero rects.
+            assert face("playerMiniPlay")==face("playerPlay"),(width,face("playerMiniPlay"),face("playerPlay"))
+            assert face("playerMiniNext")==face("playerNext"),(width,face("playerMiniNext"),face("playerNext"))
+            assert_center("playerMiniPlay")
+            assert_center("playerMiniNext")
             page.locator("#playerMiniPlay").click()
             assert page.evaluate("()=>window.__playerActions.at(-1).action")=="playerPause"
             page.locator("#playerMiniExpand").click()

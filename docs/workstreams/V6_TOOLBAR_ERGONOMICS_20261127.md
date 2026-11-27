@@ -1,0 +1,11 @@
+# V6 ergonomic toolbar and native resize (2026-11-27)
+
+Owner screenshot: GAIN/FX RACK lacks a readable shared pill; Player glyphs appear off-centre, mini transport uses inconsistent visuals, border drag is difficult, toolbar needs a little more height. Build on #988, preserving approved copper ribbon and Player/Session work.
+
+- Command strip 38 -> 42 CSS px (navigation stays 40). 30px-class outlined two-segment well, 24px controls, state from existing aria-pressed. Static fills and one inset highlight; no moving slider or backdrop filter.
+- One CSS owner for all transport faces, explicit square size tokens (32 play, 28 previous/next, 22 stop), position-centered SVG and symmetric previous/next vectors. Play vector bounding box centred within 1 viewBox unit. Mixer MiniPlayer play/pause and next reuse the same skin and glyph as Player tab/full player; retain its song readout/expand and handlers. No new playback action or state owner.
+- Windows JUCE 8.0.15 native nonclient resize: verified pinned upstream ResizableWindow and DocumentWindow APIs and native WM_NCHITTEST. Reserve an 8-logical-unit native border (16 logical corner reach along reserved edge), eight direction hit test via findControlAtPoint, base delegation for client/native titlebar/fullscreen/kiosk, original size limits. One-pixel painted outline, no WebView drag, no HWND replacement/subclass. Existing JUCE peer constrainer remains authoritative. Physical HWND/WebView2 interaction requires installed Windows FAT, especially 100/125/150% DPI. No audio changes.
+- Previous #988 exact-head UI 46013825732 failed at Escape hover/root assertion; preserve menu command ownership by capture-phase Escape and focus repair; existing Audio I/O suite and fast native passed. Do not weaken the original assertion.
+- Source, actual assembled Chromium, and native geometry regression added. No duplicate FIELD or release.
+
+References: JUCE 8.0.15 source https://github.com/juce-framework/JUCE/blob/8.0.15/modules/juce_gui_basics/native/juce_Windowing_windows.cpp ; https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-nchittest ; https://github.com/material-components/material-components-web/tree/master/packages/mdc-segmented-button .

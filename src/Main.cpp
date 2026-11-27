@@ -14,6 +14,7 @@
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
 #include "ArSonWindowChrome.h"
+#include "ArSonWindowResizeGeometry.h"
 #include "NativeOwnedFloatingWindow.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
@@ -774,6 +775,46 @@ public:
         }
 #endif
         return juce::DocumentWindow::keyPressed(key);
+    }
+
+    // JUCE 8.0.15 performs native borderless WM_NCHITTEST, but a WebView2
+    // child HWND can cover that client area. Reserve an actual native grip
+    // around the content and expose its eight resize directions to the peer.
+    // No WebView drag messages, HWND subclass or audio/control polling.
+    bool hasOperatorResizeGrip() const
+    {
+#if JUCE_WINDOWS
+        return isResizable() && !isUsingNativeTitleBar() && !isFullScreen() && !isKioskMode();
+#else
+        return false;
+#endif
+    }
+
+    juce::BorderSize<int> getBorderThickness() const override
+    {
+        if (hasOperatorResizeGrip())
+            return juce::BorderSize<int> (armix::windowchrome::resizeEdge);
+        return juce::DocumentWindow::getBorderThickness();
+    }
+
+    WindowControlKind findControlAtPoint (juce::Point<float> point) const override
+    {
+        using Zone = armix::windowchrome::ResizeZone;
+        switch (armix::windowchrome::resizeZone(point.x, point.y,
+                    static_cast<float>(getWidth()), static_cast<float>(getHeight()),
+                    hasOperatorResizeGrip()))
+        {
+            case Zone::left:        return WindowControlKind::sizeLeft;
+            case Zone::right:       return WindowControlKind::sizeRight;
+            case Zone::top:         return WindowControlKind::sizeTop;
+            case Zone::bottom:      return WindowControlKind::sizeBottom;
+            case Zone::topLeft:     return WindowControlKind::sizeTopLeft;
+            case Zone::topRight:    return WindowControlKind::sizeTopRight;
+            case Zone::bottomLeft:  return WindowControlKind::sizeBottomLeft;
+            case Zone::bottomRight: return WindowControlKind::sizeBottomRight;
+            case Zone::client:     break;
+        }
+        return juce::DocumentWindow::findControlAtPoint(point);
     }
 
     // Rebind the embedded WebView2 controller whenever its JUCE content

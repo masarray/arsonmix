@@ -5,7 +5,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const icon=(path,fill=false)=>'<svg viewBox="0 0 24 24" aria-hidden="true" '+(fill?'fill="currentColor"':'fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"')+'>'+path+'</svg>';
-const play=icon('<path d="M8 4.5a1 1 0 0 1 1.5-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 8 19.5z"/>',true);
+const play=icon('<path d="M6 5Q6 4 7 4.5L18 11Q19.5 12 18 13L7 19.5Q6 20 6 19Z"/>',true);
 const pause=icon('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',true);
 const button=(id,label,glyph)=>'<button type="button" id="'+id+'" title="'+label+'" aria-label="'+label+'">'+glyph+'</button>';
 // One disclosure and one cascade per category. Original command nodes and
@@ -92,10 +92,11 @@ function installCompactMenu(more){
      else (focusables(flyouts.get(page))[0]||nav.get(page))?.focus({preventScroll:true});
    }
  }
- more.addEventListener('toggle',()=>{if(!more.open)show('root');else position();});
- more.addEventListener('keydown',e=>{
+ more.addEventListener('toggle',()=>{if(!more.open)show('root');else{position();if(!more.contains(document.activeElement))summary?.focus({preventScroll:true});}});
+ document.addEventListener('keydown',e=>{
    if(!more.open)return;
-   const child=e.target.closest('.armix-menu-flyout'),category=e.target.closest('.armix-menu-category');
+   if(e.key!=='Escape'&&!more.contains(e.target))return;
+   const child=e.target.closest?.('.armix-menu-flyout'),category=e.target.closest?.('.armix-menu-category');
    if(e.key==='Escape'||(e.key==='ArrowLeft'&&child&&!e.target.matches('select,input'))){
      e.preventDefault();e.stopPropagation();
      if(page!=='root')show('root',true);else{more.open=false;summary?.focus();}
@@ -107,7 +108,7 @@ function installCompactMenu(more){
      const at=items.indexOf(e.target),next=at<0?(e.key==='ArrowDown'?0:items.length-1):(at+(e.key==='ArrowDown'?1:items.length-1))%items.length;
      e.preventDefault();items[next].focus({preventScroll:true});
    }
- });
+ },true);
  document.addEventListener('pointerdown',e=>{if(more.open&&!more.contains(e.target))more.open=false;},true);
  window.addEventListener('resize',position);
  // A Show list/readback may add rows after opening. Observe only the five
@@ -183,7 +184,7 @@ function install(){
    for(const b of caption.querySelectorAll('button'))b.title+=' (desktop application only)';
  }
  const player=document.createElement('div');player.className='armix-ribbon-player';player.hidden=true;player.setAttribute('role','group');player.setAttribute('aria-label','Player transport');
- player.innerHTML='<span class="armix-ribbon-track" id="ribbonTrack">No music loaded</span><input type="range" id="ribbonSeek" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span class="armix-ribbon-time" id="ribbonTime">00:00 / 00:00</span><div class="armix-ribbon-transport">'+button('ribbonPrevious','Previous',icon('<rect x="4" y="5" width="3.5" height="14" rx="1"/><path d="M19 5 8 12l11 7z"/>',true))+button('ribbonPlay','Play',play)+button('ribbonNext','Next',icon('<rect x="16.5" y="5" width="3.5" height="14" rx="1"/><path d="m5 5 11 7-11 7z"/>',true))+button('ribbonStop','Stop',icon('<rect x="5" y="5" width="14" height="14" rx="2"/>',true))+'</div><div class="armix-ribbon-options">'+button('ribbonLoop','Loop A–B',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/>'))+button('ribbonMode','Playback mode / repeat',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/><path d="M10 12h4"/>'))+button('ribbonQueue','Queue',icon('<path d="M3 5h17M3 10h17M3 15h10m3 0 5 3-5 3z"/>'))+'</div><label class="armix-ribbon-volume">'+icon('<path d="M3 9v6h4l5 4V5L7 9H3zm13 0a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/>')+'<input type="range" id="ribbonVolume" min="0" max="100" step="1" value="50" aria-label="Player level before channel FX"></label>';
+ player.innerHTML='<span class="armix-ribbon-track" id="ribbonTrack">No music loaded</span><input type="range" id="ribbonSeek" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span class="armix-ribbon-time" id="ribbonTime">00:00 / 00:00</span><div class="armix-ribbon-transport">'+button('ribbonPrevious','Previous',icon('<rect x="4" y="5" width="3" height="14" rx="1"/><path d="M20 5 9 12l11 7z"/>',true))+button('ribbonPlay','Play',play)+button('ribbonNext','Next',icon('<rect x="17" y="5" width="3" height="14" rx="1"/><path d="M4 5l11 7-11 7z"/>',true))+button('ribbonStop','Stop',icon('<rect x="5" y="5" width="14" height="14" rx="2"/>',true))+'</div><div class="armix-ribbon-options">'+button('ribbonLoop','Loop A–B',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/>'))+button('ribbonMode','Playback mode / repeat',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/><path d="M10 12h4"/>'))+button('ribbonQueue','Queue',icon('<path d="M3 5h17M3 10h17M3 15h10m3 0 5 3-5 3z"/>'))+'</div><label class="armix-ribbon-volume">'+icon('<path d="M3 9v6h4l5 4V5L7 9H3zm13 0a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/>')+'<input type="range" id="ribbonVolume" min="0" max="100" step="1" value="50" aria-label="Player level before channel FX"></label>';
  // Restore local V6 order with the same native action controls.
  const sep=()=>{const el=document.createElement('span');el.className='armix-ribbon-separator';el.setAttribute('aria-hidden','true');return el;};
  const readout=document.createElement('div');readout.className='armix-ribbon-readout';

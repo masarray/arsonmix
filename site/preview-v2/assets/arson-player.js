@@ -664,7 +664,7 @@
    loopBtn.title=model.loopAB?"Disable Loop A–B":"Loop A–B requires saved IN/OUT markers";
    loopBtn.setAttribute("aria-pressed",String(Boolean(model.loopAB)));
    const playing=state==="PLAYING";
-   for(const id of ["playerPlay","playerMiniPlay"]){const button=$(id);if(button.dataset.playing!==String(playing)){button.dataset.playing=String(playing);button.innerHTML=playing?"<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><rect x=\"6\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"/><rect x=\"14\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"/></svg>":"<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M8 4.5a1 1 0 0 1 1.5-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 8 19.5z\"/></svg>";button.setAttribute("aria-label",playing?"Pause":"Play");button.title=playing?"Pause":"Play";}}
+   for(const id of ["playerPlay","playerMiniPlay"]){const button=$(id);if(button.dataset.playing!==String(playing)){button.dataset.playing=String(playing);button.innerHTML=playing?"<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><rect x=\"6\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"/><rect x=\"14\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"/></svg>":"<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M6 5Q6 4 7 4.5L18 11Q19.5 12 18 13L7 19.5Q6 20 6 19Z\"/></svg>";button.setAttribute("aria-label",playing?"Pause":"Play");button.title=playing?"Pause":"Play";}}
    $("playerPrevious").disabled=!native||model.pending>=0||model.current<=0||Boolean(model.tracks[model.current-1]?.missing);
    $("playerMiniNext").disabled=model.pending>=0;$("playerNext").disabled=model.pending>=0;
    const editingIndex=model.selected>=0?model.selected:model.current;

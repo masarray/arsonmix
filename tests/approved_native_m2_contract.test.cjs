@@ -8154,3 +8154,17 @@ test("Cold restart MON projects actual prepared muted endpoint, not invented ARM
  assert.match(b,/ack.action==="secondaryOutputStop"&&ack.preferenceSaved===true/);
  assert.match(b,/v.ready&&!v.fault&&!active&&v.name===extraPreferred/);
 });
+
+
+test("V6 native window resize keeps WebView out of the eight-direction grip",()=>{
+ const native=read("src/Main.cpp"),geometry=read("src/ArSonWindowResizeGeometry.h"),chrome=read("src/ArSonWindowChrome.h");
+ assert.match(native,/getBorderThickness\(\) const override/);
+ assert.match(native,/return juce::BorderSize<int> \(armix::windowchrome::resizeEdge\)/);
+ assert.match(native,/isResizable\(\) && !isUsingNativeTitleBar\(\) && !isFullScreen\(\) && !isKioskMode\(\)/);
+ assert.match(native,/findControlAtPoint \(juce::Point<float> point\) const override/);
+ for(const edge of ["Left","Right","Top","Bottom","TopLeft","TopRight","BottomLeft","BottomRight"])assert.ok(native.includes("WindowControlKind::size"+edge+";"),edge);
+ assert.match(native,/return juce::DocumentWindow::findControlAtPoint\(point\)/);
+ assert.match(geometry,/resizeEdge = 8/);assert.match(geometry,/resizeCorner = 16/);
+ assert.equal((geometry.match(/static_assert\(/g)||[]).length,14);
+ assert.match(chrome,/drawResizableWindowBorder[\s\S]*g\.drawRect \(0, 0, w, h, 1\)/);
+});
