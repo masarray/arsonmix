@@ -119,6 +119,22 @@ class BundleTests(unittest.TestCase):
             with zipfile.ZipFile(self.root / "unsafe.zip") as z, self.assertRaises(ValueError):
                 bundle.zip_members(z, "ArSonEQ.vst3")
 
+    def test_single_versioned_wrapper_is_allowed_not_combined_roots(self):
+        rel = "ArSonEQ.vst3/Contents/x86_64-win/ArSonEQ.vst3"
+        with zipfile.ZipFile(self.root / "wrapper.zip", "w") as z:
+            z.writestr("ArSonEQ-v1.0-Windows-x64/" + rel, b"fixture")
+        with zipfile.ZipFile(self.root / "wrapper.zip") as z:
+            self.assertEqual(bundle.zip_members(z, "ArSonEQ.vst3")[0][1],
+                             "Contents/x86_64-win/ArSonEQ.vst3")
+        for paths in ([rel, "other/ArSonEQ.vst3/Contents/Resources/moduleinfo.json"],
+                      ["first/"+rel, "second/ArSonEQ.vst3/Contents/Resources/moduleinfo.json"],
+                      ["foreign.vst3/"+rel]):
+            with zipfile.ZipFile(self.root / "wrappers.zip", "w") as z:
+                for path in paths:
+                    z.writestr(path, b"fixture")
+            with zipfile.ZipFile(self.root / "wrappers.zip") as z, self.assertRaises(ValueError):
+                bundle.zip_members(z, "ArSonEQ.vst3")
+
     def test_extra_factory_file_is_rejected(self):
         with patch.object(bundle, "download_release",
                           side_effect=lambda _p, target: shutil.copyfile(self.archive, target)):

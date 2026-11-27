@@ -121,6 +121,7 @@ def zip_members(z, bundle):
     chosen = []
     seen = set()
     total = 0
+    selected_root = None
     for info in z.infolist():
         # Ignore zip folder markers and unrelated top-level build metadata.
         if info.is_dir():
@@ -141,8 +142,17 @@ def zip_members(z, bundle):
             # Standalone EXEs and foreign plugins must never enter the factory.
             continue
         i = positions[0]
-        if i > 1 or (i == 1 and parts[0] not in ("VST3", "vst3", "Plugin")):
-            fail("unexpected VST3 archive root")
+        # Supplier ZIPs may put the exact named bundle under one
+        # versioned wrapper directory. The wrapper is never extracted.
+        # Require a single root for ALL chosen resources; no merging two
+        # different copies of the module, even with disjoint filenames.
+        if i == 1 and (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,119}", parts[0])
+                       or parts[0].endswith((".", " ")) or parts[0].lower().endswith(".vst3")):
+            fail("unexpected VST3 archive root: " + repr(parts[0][:120]))
+        root = tuple(parts[:i])
+        if selected_root is not None and root != selected_root:
+            fail("multiple VST3 archive roots")
+        selected_root = root
         sub = parts[i + 1:]
         if not sub:
             fail("Windows JUCE VST3 must be a bundle directory")
