@@ -97,7 +97,11 @@
  $("playerTempoMinus").addEventListener("click",()=>send("playerTempoStep",-1));
  $("playerTempoPlus").addEventListener("click",()=>send("playerTempoStep",1));
  $("playerPitchReset").addEventListener("click",()=>send("playerPitchTempoReset"));
- $("playerChooseOutput").addEventListener("click",()=>send("playerChooseOutput"));
+ $("playerChooseOutput").addEventListener("click",()=>{
+   const audioIO=document.querySelector(".command-bar > [data-native-io]");
+   if(audioIO){audioIO.click();showFeedback("Choose MAIN output in Audio I/O, then press Play.");}
+   else showFeedback("Audio I/O is unavailable. Reopen the mixer.",true);
+ });
  $("playerNext").addEventListener("click",()=>send("playerNext"));
  $("playerAutoNext").addEventListener("click",()=>
    send("playerAutoNext",!model.autoNext));

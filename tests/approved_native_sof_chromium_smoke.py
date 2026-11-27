@@ -162,6 +162,29 @@ def exercise(browser, out, width, height):
     emit(page,"arMixConsoleSnapshot",state)
     assert state["graph"]["channels"][0]["controls"]["faderDb"]==-7.5
     assert intent_list(page,"SET_FADER")==[]
+    # Real held pointer: an accepted earlier value must not fight the newest drag.
+    travel = source.locator(".fader-travel").bounding_box()
+    x = travel["x"] + travel["width"]/2
+    page.mouse.move(x, travel["y"] + travel["height"]*.65)
+    page.mouse.down()
+    first = wait_for_intents(page,"SET_WIRE_GAIN",2)
+    page.mouse.move(x, travel["y"] + travel["height"]*.25, steps=5)
+    desired = float(fader.input_value())
+    assert abs(first["payload"]["gainLinear"]-10**(desired/20))>.001
+    ack(page,state,first)
+    state["graph"]["edges"][1]["gainLinear"] = first["payload"]["gainLinear"]
+    emit(page,"arMixConsoleSnapshot",state)
+    assert abs(float(fader.input_value())-desired)<.051, "SEND readback fought held drag"
+    page.mouse.up()
+    final = wait_for_intents(page,"SET_WIRE_GAIN",3)
+    assert final["payload"]["edgeId"]==SEND
+    assert abs(final["payload"]["gainLinear"]-10**(desired/20))<1e-8
+    assert abs(float(fader.input_value())-desired)<.051, "SEND cap jumped after release"
+    ack(page,state,final)
+    state["graph"]["edges"][1]["gainLinear"] = final["payload"]["gainLinear"]
+    emit(page,"arMixConsoleSnapshot",state)
+    assert abs(float(fader.input_value())-desired)<.051
+    assert intent_list(page,"SET_FADER")==[]
     page.screenshot(path=f"arsonmix-native-sof-{width}.png")
 
     # The absence of an admitted EdgeId must never trigger an automatic

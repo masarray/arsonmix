@@ -455,6 +455,7 @@
     return false; // Prevent original Pages demo mutation until authoritative readback.
   }
   const pendingWireGains=new Map();
+  const wireGainVisualTargets=new Map(); // latest gesture, including in-flight readback
   let wireGainFlushQueued=false;
   let startupWire=null, startupWireSerial=0, activeWireAttempt=null;
   function deferStartupWire(ops,retries=0){
@@ -618,17 +619,25 @@
       const plan=wireVM.gainDispatchPlan(current,edgeId,edit);
       if(plan.kind==="ROLLBACK"){
         // Stale identity, malformed gain, or duplicate EdgeId: fail closed.
+        wireGainVisualTargets.delete(edgeId);
         scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(current));
+        paintSofGainReadback(current);
         continue;
       }
       if(plan.kind==="CONFIRMED"){
+        wireGainVisualTargets.delete(edgeId);
+        paintSofGainReadback(current);
         scope?.syncNativeWireGains?.(nativeWireGainReadback(current));
         continue;
       }
       const result=controller.intent("SET_WIRE_GAIN",plan.source,{
         edgeId:plan.edgeId,gainLinear:plan.gainLinear});
       if(result.ok)window.setTimeout(()=>controller?.expire(result.requestId),8000);
-      else status("WIRE gain rejected · "+result.error);
+      else {
+        wireGainVisualTargets.delete(edgeId);
+        paintSofGainReadback(current);
+        status("WIRE gain rejected · "+result.error);
+      }
       return; // next coalesced target follows ACK + independent readback
     }
   }
@@ -647,7 +656,9 @@
     const edgeId=wireByUiId.get(op.edgeId),source=nativeByUiId.get(op.sourceId);
     if(!admittedParallelWire(op.sourceId,op.edgeId,"SET_WIRE_GAIN"))return false;
     // A physical SEND fader floor is -infinity (zero PCM), NOT -60 dB linear.
-    pendingWireGains.set(edgeId,{source,gain:db<=-60?0:Math.pow(10,db/20),identity:current.identity});
+    const edit={source,gain:db<=-60?0:Math.pow(10,db/20),db,identity:current.identity};
+    pendingWireGains.set(edgeId,edit);
+    wireGainVisualTargets.set(edgeId,edit);
     queueWireGainFlush();return true;
   }
   function nativeOutputTargets(t,channels=activeView()?.graph?.channels||[]){
@@ -982,7 +993,33 @@
   // rollback. No duplicate DSP math or synthetic accepted control state.
   function nativeWireGainReadback(next){
     return wireVM.gainReadback(next?.graph?.edges||[],
-      uiByWireId,pendingWireGains,next?.graph?.channels||[]);
+      uiByWireId,wireGainVisualTargets,next?.graph?.channels||[]);
+  }
+  // Accepted PCM remains authoritative. Keep the latest desired visual level
+  // across a held pointer, queued target and in-flight ACK; never write PCM here.
+  function settleWireGainVisuals(next,confirmed){
+    for(const [id,edit] of wireGainVisualTargets){
+      const edge=next?.graph?.edges?.find(e=>e.edgeId===id&&e.from===edit.source&&e.enabled&&e.primaryOutput===false);
+      if(!next?.admitted||next.identity!==edit.identity||!edge){
+        wireGainVisualTargets.delete(id);pendingWireGains.delete(id);continue;
+      }
+      if(confirmed?.operation==="SET_WIRE_GAIN"&&confirmed.payload.edgeId===id&&
+         !pendingWireGains.has(id)&&Math.abs(edge.gainLinear-edit.gain)<0.00001)
+        wireGainVisualTargets.delete(id);
+    }
+  }
+  function paintSofGainReadback(next){
+    if(!scope?.sofEnabled||!next?.admitted)return;
+    for(const t of scope.tracks||[]){
+      if(!nativeSofSource(t)||scope.activeFaderId===t.id)continue;
+      const edge=selectedNativeSofEdge(t);
+      if(!edge)continue;
+      const draft=wireGainVisualTargets.get(edge.edgeId);
+      const db=draft?.identity===next.identity?draft.db:undefined;
+      const root=document.querySelector('.strip[data-id="'+t.id+'"]');
+      if(!root)continue;
+      scope.syncFaderVisual?.(t,root,db);
+    }
   }
   // Paint ONLY an independently accepted ChannelId input scalar. Comparing
   // the actual DOM as well as the model also repairs a rejected/expired gain
@@ -1071,9 +1108,9 @@
           const label=(local.sendEnabled===false?'OFF · saved ':'LEVEL ')+db+' dB';
           if(readout.textContent!==label)readout.textContent=label;
         }
-        if(t&&slider&&document.activeElement!==slider){
-          slider.value=String(local.levelDb);
-          scope.syncFaderVisual?.(t);
+        if(t&&slider&&scope.activeFaderId!==t.id){
+          const draft=wireGainVisualTargets.get(edge.edgeId);
+          scope.syncFaderVisual?.(t,root,draft?.identity===next.identity?draft.db:undefined);
         }
       }
     }
@@ -2258,6 +2295,8 @@
   }
   function paintFaderReadback(t,visualDb,changed){
     if(scope?.activeFaderId===t.id)return;
+    // SOF uses an EdgeId, not the ChannelId fader visual lease.
+    if(scope?.sofEnabled&&nativeSofSource(t))return;
     const view=visualDb===null?t:{...t,level:visualDb};
     // Only repair a changed control or genuinely stale mounted DOM. Never
     // rewrite unrelated strips during a held drag or meter-only update.
@@ -4828,16 +4867,14 @@
     });
     hardwareNote=item("span","more-tools-caption","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
-    // Everyday I/O remains in the one approved /preview/ mixer. Keep the
-    // raw JUCE selector as an explicitly advanced recovery tool only.
+    // Everyday I/O and driver recovery use the same custom Audio I/O pane.
+    // Vendor ASIO dialogs remain available through its explicit driver action.
     inputSelect.hidden=true;routeBtn.hidden=true;armBtn.hidden=true;
     const advanced=document.createElement("details");
     advanced.className="arNativeAdvancedRecovery";
     const summary=item("summary","more-tools-caption","Advanced driver recovery");
-    const driver=item("button","tool","Open JUCE driver recovery");
-    driver.addEventListener("click",()=>{
-      backend.emitEvent("arMixAction",{action:"audioSetup"});
-    });
+    const driver=item("button","tool","Open Audio I/O recovery");
+    driver.addEventListener("click",openNativeAudioIO);
     advanced.append(summary,driver);
     // First Sound P0: these are REAL JUCE diagnostic actions, not demo
     // toggles. The marker snapshots the 5-second PRE-event counters and
@@ -5182,7 +5219,7 @@
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
     latestInputGainDrafts.clear();latestLogicalInputGains.clear();
     pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
-    pendingWireGains.clear();pendingNativeControl.clear();
+    pendingWireGains.clear();wireGainVisualTargets.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
     pendingM4Controls.clear();pendingM4RackPowers.clear();
     // MV-18: these two hardware-scoped leases were previously omitted.
@@ -5545,7 +5582,9 @@
     controller = protocol.createController({
       emit:(name,payload)=>backend.emitEvent(name,payload),
       onAccepted:(next,confirmed)=>{
+        settleWireGainVisuals(next,confirmed);
         onNativeReadback(next,confirmed);
+        if(confirmed?.operation==="SET_WIRE_GAIN")paintSofGainReadback(next);
         const accepted=controller?.state()?.current;
         if(fxRackVM.nativeEditorAckResult(pendingFxEditorAck,null,accepted,{
           verifiedM4:m4Verified(accepted),offline:!!logicalView,
@@ -5599,7 +5638,8 @@
           pendingNativeWireRetract=null; // rejected routing must never reel
           activeWireAttempt=null;
           startupWire=null;
-          pendingWireGains.clear();
+          pendingWireGains.clear();wireGainVisualTargets.clear();
+          if(state.current)paintSofGainReadback(state.current);
           // The controller deliberately freezes current on a rejected ACK.
           // Repaint only an inspector that still says PENDING from that
           // admitted PCM readback, without a new intent, timer or graph edit.
@@ -6088,17 +6128,19 @@
         return true;
       }
       if(field==="level"&&scope?.sofEnabled&&nativeSofSource(t)){
+        if(!el.isConnected||el.disabled)return true;
         const edge=selectedNativeSofEdge(t),db=Number(el.value);
         const uiId=edge&&uiByWireId.get(edge.edgeId);
         if(!edge||uiId===undefined||!Number.isFinite(db)||db< -60||db>6){
           status("SENDS ON FADERS · patch a selected WIRE destination first");
           scope?.syncFaderVisual?.(t);return true;
         }
-        if(event.type!=="change"){
-          previewFaderWithoutModelMutation(t,db);return true;
-        }
-        if(!requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db}))
+        if(!requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db})){
           status("SEND LEVEL rejected · accepted WIRE identity changed");
+          scope?.syncFaderVisual?.(t);
+          return true;
+        }
+        previewFaderWithoutModelMutation(t,db);
         return true;
       }
       if(field==="wireChannelLevel"){
