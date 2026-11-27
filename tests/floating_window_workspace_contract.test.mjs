@@ -125,7 +125,13 @@ test('P0-C shared FX workspace raises existing nodes, bounds z-order and closes 
  assert.equal(c.style.zIndex,'9002');
  assert.ok(Number(c.style.zIndex)>Number(g.style.zIndex));
  let consumed=0;
- winHandlers.keydown({key:'Escape',preventDefault(){consumed++},stopImmediatePropagation(){consumed++}});
+ // Capture must allow a focused editor's own text/number cancellation.
+ const edit={closest:selector=>selector.startsWith('#')?c:{}};
+ winHandlers.keydown({key:'Escape',target:edit,preventDefault(){consumed++},stopImmediatePropagation(){consumed++}});
+ assert.equal(consumed,0);assert.deepEqual(closed,[]);assert.equal(ws.activeEditor(),c);
+ // A normal non-edit control still closes only the top window.
+ const button={closest:selector=>selector.startsWith('#')?c:null};
+ winHandlers.keydown({key:'Escape',target:button,preventDefault(){consumed++},stopImmediatePropagation(){consumed++}});
  assert.deepEqual(closed,[roots[0]]);assert.equal(consumed,2);
  assert.equal(ws.activeEditor(),g);
  assert.ok(!g.hidden&&!e.hidden);

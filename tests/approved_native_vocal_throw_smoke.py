@@ -172,13 +172,17 @@ def main():
             # Click the LCD to enter editing; Escape restores the accepted
             # native setting without issuing a new DSP command.
             assert editor.locator("#vtBpm").is_hidden()
+            before_cancel=page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeThrowSet').length")
             editor.locator("#vtDisplayBpm").click()
             assert editor.locator("#vtBpm").is_visible()
             assert editor.locator("#vtBpm").input_value()=="120"
             editor.locator("#vtBpm").fill("133")
             editor.locator("#vtBpm").press("Escape")
+            assert editor.is_visible(), "Escape must cancel the local BPM edit, not close the editor"
             assert editor.locator("#vtBpm").is_hidden()
+            assert editor.locator("#vtDisplayBpm").is_visible()
             assert editor.locator("#vtDisplayBpm").inner_text()=="120"
+            assert page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeThrowSet').length")==before_cancel
             assert editor.locator("#vtBeatRail i[data-on='true']").count()==3
             assert editor.locator(".vt-encoder-bank .vt-encoder-face").count()==6
             assert editor.locator("#vtWetDial[role='slider']").count()==1

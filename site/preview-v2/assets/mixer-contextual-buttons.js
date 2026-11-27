@@ -448,6 +448,13 @@
    else if(popup.matches('.mx-fxp-menu,#mxHPresetMenu'))popup.hidden=true;
    event.preventDefault();event.stopImmediatePropagation();return;
   }
+  // A focused local text/number edit or native select owns Escape before
+  // the enclosing modeless window. In capture phase the target's own
+  // preventDefault/stopPropagation has not run yet (e.g. Vocal Delay BPM).
+  // Do not swallow that cancellation or close a panel with an active edit.
+  const target=event.target;
+  if(target?.closest?.(rootSelector)===panel&&target.closest(
+   'input:not([type=button]):not([type=submit]):not([type=reset]):not([type=checkbox]):not([type=radio]):not([type=range]),textarea,select,[contenteditable]:not([contenteditable="false"])'))return;
   if(closeActive()){event.preventDefault();event.stopImmediatePropagation();}
  },true);
  const center=el=>{
