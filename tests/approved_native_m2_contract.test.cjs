@@ -1821,11 +1821,22 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  assert.match(contract,/ch\.inserts\[payload\.slot\]\?\.catalogId===payload\.catalogId/);
  assert.match(lab,/epoch\(\),false,std::move\(fx\),false,true\)/);
  assert.match(pub,/verifiedInternalFxOnly/);
- const install=engine.slice(engine.indexOf("installNativeVst3("),
-                            engine.indexOf("bool bypassNativeVst3(",engine.indexOf("installNativeVst3(")));
- assert.doesNotMatch(install,/!allOutputsDisarmed\(\)/);
- assert.match(install,/secondaryOutput_\.armed\(\)/);
- assert.match(install,/getLatencySamples\(\)>armix::dsp::StereoLatencyDelay::maximumSamples/);
+ for(const [start,end] of [
+   ["installNativeBuiltInFx(","bool selectNativeMusicTempoSource("],
+   ["installNativeVst3(","bool rackFileAllowed("]
+ ]){
+   const install=engine.slice(engine.indexOf(start),engine.indexOf(end,engine.indexOf(start)));
+   assert.ok(install.length>500);
+   assert.doesNotMatch(install,/secondaryOutput_\.armed\(\)|!allOutputsDisarmed\(\)/,
+     "secondary MAIN copy must not block live insert");
+   assert.match(install,/independent_\.active\(\)/);
+   assert.match(install,/!directFence_\.permitted\(\)/);
+   assert.match(install,/routeReconfiguring_/);
+   assert.match(install,/getLatencySamples\(\)>armix::dsp::StereoLatencyDelay::maximumSamples/);
+   assert.match(install,/attachNativeInsert\([\s\S]*allOutputsDisarmed\(\)/);
+ }
+ assert.match(pub,/independentMonitorPublished_ \|\|/);
+ assert.match(main,/NATIVE_FX_INSERT_REJECTED/);
 });
 test("Native VST3 insert ACK + readback distinguishes vendor catalog key from live instance token",()=>{
   const base=acceptedFixture();

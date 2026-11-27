@@ -3541,6 +3541,12 @@ private:
         ack->setProperty("graphRevision",graph.getProperty("revision","0"));
         ack->setProperty("rosterRevision",graph.getProperty("rosterRevision","0"));
         ack->setProperty("productionCallbackLive",false);
+        if(request.getProperty("operation","").toString()=="LOAD_INSERT" ||
+           (translated.ok() && translated.translated.getProperty("operation","").toString()=="NATIVE_LOAD_INSERT")) {
+            diagnostics_.record(nativeStillAdmitted?"NATIVE_FX_INSERT_ACCEPTED":"NATIVE_FX_INSERT_REJECTED",
+                ack->getProperty("errorCode").toString()+
+                " | secondaryArmed="+juce::String(engine_.secondaryArmed()?"YES":"NO"));
+        }
         if(browser_.loaded)
             browser_.emitEventIfBrowserIsVisible("arMixConsoleAck",
                                                juce::var(ack.release()));
