@@ -67,6 +67,7 @@ def snapshot(revision="1",extra=False,source_only=False,workspace_token="workspa
     raw["productionCallbackLive"]=False
     raw["mixerSession"]={"authority":"NONE","deviceEpoch":"0"}
     graph=logical_graph(revision,extra,source_only)
+    raw["globalFxBypassed"]=False  # Published on every native mixer snapshot.
     raw["logicalMixer"]={"schema":"arsonmix.native.logical-mixer.v1",
         "authority":"LOGICAL_ONLY","workspaceToken":workspace_token,
         "revision":revision,"graph":graph,
