@@ -82,9 +82,13 @@ def assert_menu_color_role(page, workflow, opened):
         channels=[v/255 for v in rgb(color)]
         return sum(w*(v/12.92 if v<=0.04045 else ((v+0.055)/1.055)**2.4)
                    for w,v in zip((.2126,.7152,.0722),channels))
+    # Lock the approved copper palette for normal and hovered disclosure states.
+    allowed = [[[89,72,59],[66,51,41],[48,37,31]],[[121,84,56],[91,61,43],[62,45,35]],[[149,91,52],[140,80,45],[96,52,31]],[[152,96,58],[144,84,47],[101,57,33]]]
+    actual=[rgb(stop) for stop in state["menuColors"]]
+    assert actual in allowed[2:4] if opened else actual in allowed[0:2],state
     for stop in state["menuColors"]:
         red,green,blue=rgb(stop)
-        assert blue>red>green,("amethyst role lost",state)
+        assert red>green>blue,("copper role lost",state)
         for fg in (state["label"],state["brand"]):
             ratio=(max(luminance(fg),luminance(stop))+.05)/(min(luminance(fg),luminance(stop))+.05)
             assert ratio>=4.5,("menu text contrast",ratio,state)
