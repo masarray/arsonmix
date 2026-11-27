@@ -33,6 +33,18 @@ def main():
             geometry=play.evaluate("e=>({w:e.offsetWidth,h:e.offsetHeight,r:getComputedStyle(e).borderRadius})")
             assert geometry["w"]==44 and geometry["h"]==44 and geometry["r"]=="50%",geometry
             page.screenshot(path=str(evidence/f"player-{width}-{height}.png"))
+            assert page.locator("#playerSetlistSelect").is_disabled()
+            search=page.locator("#playerSearch")
+            search.fill("2 track")
+            assert " / 30 songs" in page.locator("#playerCount").inner_text()
+            page.evaluate("()=>window.__playerActions.length=0")
+            search.press("ArrowDown")
+            assert page.evaluate("()=>window.__playerActions.length")==0
+            search.fill("Track 2")
+            search.press("Enter")
+            assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerSelect","value":1}
+            search.fill("")
+
             row=page.locator('.ap-songrow[data-song-id="1"] .ap-song')
             row.scroll_into_view_if_needed()
             page.evaluate("()=>window.__playerActions.length=0")

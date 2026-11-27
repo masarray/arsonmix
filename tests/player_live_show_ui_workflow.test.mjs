@@ -105,7 +105,7 @@ assert.equal($('playerSongMenu').hidden,true);
 actions.length=0;selectedRow.fire('contextmenu',{clientX:100,clientY:200,preventDefault(){},stopPropagation(){}});
 assert.equal($('playerSongMenu').hidden,false);assert.equal(actions.length,0,'right click does not select or play');
 $('playerSongMenu').fire('keydown',{key:'End',preventDefault(){},stopPropagation(){}});
-assert.equal(document.activeElement.textContent,'Prepare / edit key & tempo');
+assert.equal(document.activeElement.textContent,'Remove from setlist');
 $('playerSongMenu').fire('keydown',{key:'Escape',preventDefault(){},stopPropagation(){}});
 assert.equal($('playerSongMenu').hidden,true);assert.equal(document.activeElement,selectedRow.children[1]);
 $('playerQueueView').click();assert.equal($('playerList').hidden,true);assert.equal($('playerQueuePanel').hidden,false);
@@ -117,7 +117,7 @@ assert.equal(actions.length,0);
 $('arsonPlayer').fire('keydown',{key:' ',target:$('arsonPlayer'),preventDefault(){}});
 assert.equal(actions.at(-1).detail.action,'playerPlay');
 const freshRow=songRows().find(row=>row.dataset.songId==='1400');
-freshRow.children[1].click();const staleMenu=$('playerSongMenu').children[5];
+freshRow.children[1].click();const staleMenu=$('playerSongMenu').children.find(x=>x.textContent==='Remove from setlist');
 publish({tracks:songs,selected:1400,current:1399});
 actions.length=0;staleMenu.click();
 assert.equal(actions.length,0,'stale contextual action cannot remove a different song');
@@ -201,6 +201,21 @@ publish({current:1,selected:1,pending:-1,transport:{title:'Song 0001',durationSe
 actions.length=0;seek.fire('change');assert.equal(actions.length,0,'seek gesture cannot cross song identity');
 seek.fire('keydown');seek.value='500';seek.fire('change');assert.equal(actions.at(-1).detail.value,90);
 const current=songRows().find(row=>row.dataset.songId==='1');
-if(current){current.children[1].click();assert.equal($('playerSongMenu').children[5].disabled,true);}
+if(current){current.children[1].click();assert.equal($('playerSongMenu').children.find(x=>x.textContent==='Remove from setlist').disabled,true);}
 
 console.log('V4.2 PASS: right click, keyboard menu, virtual rows, queue epochs, native MiniPlayer and library view');
+
+const modified=songs.map(s=>s.id===1999?{...s,title:"Café Session 1999",artist:"Acoustic"}:s);
+publish({tracks:modified,queue:[],current:1,selected:1,pending:-1,transport:{state:"PLAYING",title:"Song 0001"}});
+search.value="1999 cafe";search.fire("input");
+assert.equal(songRows().length,1);assert.equal($("playerCount").textContent,"1 / 2000 songs");
+actions.length=0;search.fire("keydown",{key:"ArrowDown",preventDefault(){}});assert.equal(actions.length,0);
+assert.equal(document.activeElement,songRows()[0].children[0]);
+search.fire("keydown",{key:"Enter",preventDefault(){}});assert.equal(actions.at(-1).detail.action,"playerSelect");assert.equal(actions.at(-1).detail.value,1999);
+search.fire("keydown",{key:"Enter",ctrlKey:true,preventDefault(){}});assert.equal(actions.at(-1).detail.action,"playerQueueAppend");
+search.fire("keydown",{key:"Escape",preventDefault(){}});assert.equal(search.value,"");
+actions.length=0;assert.equal($("playerSetlistSelect").disabled,true);$("playerNewSetlist").click();assert.equal(actions.length,0);
+publish({transport:{state:"STOPPED"}});assert.equal($("playerSetlistSelect").disabled,false);
+$("playerOptions").click();$("playerSongMenu").children.find(x=>x.textContent==="Show current song").click();
+assert.equal(document.activeElement,songRows().find(row=>row.dataset.songId==="1").children[0]);assert.equal(actions.length,0);
+console.log("V4.4 PASS: search, keyboard focus, live setlist guard");
