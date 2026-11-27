@@ -72,8 +72,14 @@ public:
         decks_[static_cast<std::size_t>(
             active_.load(std::memory_order_acquire))].play();
     }
+    // Only cancel an unarmed standby, never an acknowledged crossfade.
+    bool cancelPendingTransition() noexcept {
+        if(!pending_.exchange(false,std::memory_order_acq_rel))return false;
+        failed_.store(false,std::memory_order_release);
+        return true;
+    }
     void pause() noexcept {
-        pending_.store(false,std::memory_order_release);
+        (void)cancelPendingTransition();
         failed_.store(false,std::memory_order_release);
         for(auto& deck:decks_)deck.pause();
     }

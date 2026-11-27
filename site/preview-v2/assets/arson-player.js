@@ -117,6 +117,8 @@
  $("playerLoopAB").addEventListener("click",()=>
    send("playerLoopToggle",!Boolean(model.loopAB)));
  const seek=$("playerSeek"),waveCanvas=$("playerWaveform");
+ const canSeek=()=>native&&model.pending<0&&!model.transport?.crossfading&&
+   Number(model.transport?.durationSeconds)>0;
  let draggingSeek=false,seekOrigin=null,seekCancelled=false;
  const seekIdentity=()=>[model.activeSetlist,model.current,libraryRevision,Number(model.transport?.durationSeconds)||0].join("|");
  seek.addEventListener("pointerdown",()=>{draggingSeek=true;seekCancelled=false;seekOrigin=seekIdentity();});
@@ -133,7 +135,7 @@
    const length=Number(model.transport?.durationSeconds)||0;
    const fraction=Number(seek.value)/1000;
    paintRange(seek,fraction*100);
-   if(native&&model.pending<0&&length>0 && Number.isFinite(fraction))
+   if(canSeek()&&Number.isFinite(fraction))
      send("playerSeek",Math.max(0,Math.min(length,
        Math.round(fraction*length*100)/100)));
  });
@@ -175,7 +177,7 @@
  };
  waveCanvas.addEventListener("click",event=>{
    const rect=waveCanvas.getBoundingClientRect?.(),length=Number(model.transport?.durationSeconds)||0;
-   if(!native||model.pending>=0||event.button>0||!rect?.width||length<=0||!Number.isFinite(event.clientX))return;
+   if(!canSeek()||event.button>0||!rect?.width||!Number.isFinite(event.clientX))return;
    const fraction=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width));
    send("playerSeek",Math.round(fraction*length*100)/100);
  });
@@ -332,7 +334,7 @@
  list.addEventListener("contextmenu",event=>{if(!event.target?.closest?.(".ap-songrow")){event.preventDefault();event.stopPropagation();showSetOptions($("playerSetOptions"),event);}});
  contextBind(waveCanvas,event=>{
    const current=model.current,revision=libraryRevision;
-   const valid=()=>native&&model.current===current&&libraryRevision===revision&&model.pending<0;
+   const valid=()=>canSeek()&&model.current===current&&libraryRevision===revision;
    const editable=()=>valid()&&current>=0&&model.selected===current&&Number(model.transport?.durationSeconds)>0;
    const cue=id=>()=>{if(editable())send(id);};
    showContext(waveCanvas,"Waveform",[
@@ -636,7 +638,7 @@
          +t.currentSeconds/(+t.durationSeconds)))):0);
    }
    paintRange(seek,Number(seek.value)/10);
-   seek.disabled=!(+t.durationSeconds>0)||!native||model.pending>=0;
+   seek.disabled=!canSeek();
    renderWaveform(t);
    const currentSong=model.tracks?.[model.current];
    const inPoint=Number(currentSong?.cueIn)||0;
@@ -707,7 +709,9 @@
         "Music playing · output muted",
       ERROR:"Unable to decode this file"
    }[state]||"");
-   const indicator=model.libraryBusy && !model.error?
+   const indicator=model.mediaRefreshQueued && !model.error && !t.error?
+     "Metadata refresh queued…":
+     model.libraryBusy && !model.error?
      "Adding songs from folder…":
      (t.processingChangePending && !model.error && !t.error &&
        state!=="EMPTY" && state!=="ERROR")

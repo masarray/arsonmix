@@ -301,3 +301,16 @@ publish({pending:-1,transport:{state:"STOPPED"}});
 assert.equal($("playerCueIn").disabled,false);
 assert.equal($("playerNext").disabled,false);
 console.log("Player output recovery, STOP during pending and cue re-enable PASS");
+
+// Do not emit seek commands during crossfade, show native queued refresh.
+publish({pending:-1,transport:{state:"PLAYING",crossfading:true}});
+assert.equal($("playerSeek").disabled,true);
+assert.equal($("playerCueIn").disabled,true);
+actions.length=0;$("playerSeek").fire("keydown");$("playerSeek").value="500";$("playerSeek").fire("change");
+assert.equal(actions.length,0);
+publish({transport:{state:"PLAYING",crossfading:false},mediaRefreshQueued:true});
+assert.equal($("playerSeek").disabled,false);
+assert.equal($("playerFeedback").textContent,"Metadata refresh queued…");
+publish({mediaRefreshQueued:false});
+assert.notEqual($("playerFeedback").textContent,"Metadata refresh queued…");
+console.log("P1 crossfade seek suppression and metadata refresh readback PASS");

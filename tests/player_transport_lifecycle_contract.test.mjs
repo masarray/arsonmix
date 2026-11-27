@@ -41,3 +41,9 @@ assert.match(timer,/playerLibrary_\[static_cast<std::size_t>\(playerCurrent_\)\]
 assert.match(source,/if\(playerMediaRefreshRequested_\)\{\s*if\(playerMediaBusy_\|\|playerCoverBusy_\)return;/);
 assert.doesNotMatch(source,/playerError_="Media scan is in progress"/,"refresh should coalesce, not reject while scanning");
 console.log("Queued song identity and coalesced refresh contracts PASS");
+
+assert.match(timer,/loopDue\(phase=="PLAYING",phase=="ENDED"/);
+assert.match(timer,/playerError_="Loop standby failed; press Play or Next to retry";\s*playerLoopCurrent_=false;\s*\(void\)playerAutoAdvanceGate_\.claim\(\)/);
+assert.match(source,/playerLoopCurrent_ && playerPendingIndex_>=0 &&\s*playerPendingIndex_==playerCurrent_ &&\s*engine_\.cancelPlayerPendingTransition\(\)/);
+assert.match(source,/setProperty\("mediaRefreshQueued",playerMediaRefreshRequested_\)/);
+console.log("P1 loop EOF fallback, pending cancel and refresh readback contracts PASS");

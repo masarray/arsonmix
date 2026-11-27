@@ -6850,6 +6850,7 @@ private:
             playerError_="Player library state is inconsistent; no snapshot published";
             return;
         }
+        snapshot.getDynamicObject()->setProperty("mediaRefreshQueued",playerMediaRefreshRequested_);
         browser_.emitEventIfBrowserIsVisible("arMixPlayerState",snapshot);
         emitPlayerActivity();pumpPlayerMedia();
     }
@@ -7328,6 +7329,14 @@ private:
         if(action=="playerLoopToggle") {
             const bool enable=value.isBool() && static_cast<bool>(value);
             if(!enable) {
+                // Only cancel the unacknowledged rehearsal repeat.
+                if(playerLoopCurrent_ && playerPendingIndex_>=0 &&
+                   playerPendingIndex_==playerCurrent_ &&
+                   engine_.cancelPlayerPendingTransition()) {
+                    playerPendingIndex_=-1;
+                    playerPendingQueueFile_={};
+                    playerAutomaticPending_=false;
+                }
                 playerLoopCurrent_=false;
                 playerError_.clear();
                 emitPlayerState();return;
@@ -7360,6 +7369,10 @@ private:
             const auto cues=playerTrackSettings_[static_cast<std::size_t>(
                 playerCurrent_)];
             const auto transport=engine_.playerStatus();
+            if(playerPendingIndex_>=0 || static_cast<bool>(transport.getProperty("crossfading",false))) {
+                playerError_="Finish the song transition before editing cue markers";
+                return emitPlayerState();
+            }
             const double now=static_cast<double>(
                 transport.getProperty("currentSeconds",0.0));
             const double total=static_cast<double>(
@@ -12256,7 +12269,7 @@ private:
             // Reuse the exact M3 standby worker for a click-safe A-B return;
             // never seek inside the hardware callback.
             if(playerLoopCurrent_ && activeCurrent &&
-               phase=="PLAYING" && !fading && !preparing &&
+               (phase=="PLAYING" || phase=="ENDED") && !fading && !preparing &&
                playerPendingIndex_<0) {
                 const auto loop=playerTrackSettings_[
                     static_cast<std::size_t>(playerCurrent_)];
@@ -12275,15 +12288,16 @@ private:
                     // alternating A/B decoders can share generation IDs.
                     // On failure, turn looping off below (no retry storm).
                     if(armix::player::PlayerShowTransitionPolicy::
-                           armBeforeEnd(position,duration,fade,0.085,loop.tempo)) {
+                           loopDue(phase=="PLAYING",phase=="ENDED",position,duration,fade,0.085,loop.tempo)) {
                         if(engine_.queuePlayerTransition(currentFile,
                            loop.key,loop.tempo,fade,loop.cueIn,loop.cueOut)) {
                             playerPendingIndex_=playerCurrent_;
                             playerPendingQueueFile_={};
                             playerError_.clear();
                         } else {
-                            playerError_="Loop standby failed; original music remains";
+                            playerError_="Loop standby failed; press Play or Next to retry";
                             playerLoopCurrent_=false;
+                            (void)playerAutoAdvanceGate_.claim();
                         }
                     }
                 } else playerLoopCurrent_=false;

@@ -554,6 +554,18 @@ int main() {
                 assert(now.mediaDuration<=4*48000+1);
                 assert(now.title==longFile.getFileNameWithoutExtension());
             }
+            // Cancel only unarmed standby; retain current playback and generation.
+            assert(loop.queueTransition(longFile,0,100,180,1.,4.));
+            assert(loop.transitionPending());
+            const auto beforeCancel=loop.snapshot();
+            assert(loop.cancelPendingTransition());
+            assert(!loop.transitionPending());
+            assert(!loop.cancelPendingTransition());
+            assert(!loop.service());
+            assert(loop.isPlayingRequested());
+            loop.pull(left.data(),right.data(),256);
+            assert(loop.snapshot().generation==beforeCancel.generation);
+            assert(loop.snapshot().mediaPlayed>beforeCancel.mediaPlayed);
             // A user STOP during standby must prevent any stale queue from
             // becoming a different current after the decoder completes.
             assert(loop.queueTransition(longFile,0,100,180,1.,4.));
