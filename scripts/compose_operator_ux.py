@@ -110,6 +110,132 @@ def once(source: str, before: str, after: str, label: str) -> str:
         raise ValueError("Operator UX anchor drift: " + label)
     return source.replace(before, after, 1)
 
+
+# V7 Plugin Manager: explicit desktop catalog and scanner workspace. The immutable
+# historical HTML remains untouched; both native and Pages consume this composition.
+PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop workspace, not mixer keys. */
+.plugin-browser{position:fixed!important;z-index:90!important;top:76px!important;right:max(14px,calc((100vw - 1000px)/2))!important;left:auto;bottom:auto!important;width:min(1000px,calc(100vw - 28px))!important;height:min(620px,calc(100dvh - 90px))!important;max-width:calc(100vw - 28px)!important;max-height:calc(100dvh - 48px)!important;min-width:min(740px,calc(100vw - 28px))!important;min-height:300px!important;display:flex;flex-direction:column;box-sizing:border-box;resize:both!important;overflow:hidden!important;background:#1a2b35!important;color:#c6d6df;border:1px solid #49616f!important;border-radius:5px!important;box-shadow:0 12px 32px #0009!important;pointer-events:auto!important;font-size:11px;font-weight:400}
+.plugin-browser[hidden]{display:none!important}
+.plugin-browser[style*="left:"]{right:auto!important}
+.plugin-browser:not([hidden]) .plugin-head{cursor:move!important;touch-action:none!important;user-select:none!important}
+.plugin-head{height:44px;flex:none;display:flex;align-items:center;padding:6px 12px;background:#233743!important;border-bottom:1px solid #405663;gap:8px}
+.plugin-head-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;font-size:13px;font-weight:500;letter-spacing:0;pointer-events:none!important}
+.plugin-target{font-size:10px;color:#a3becd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
+.plugin-head button{cursor:pointer!important}
+.plugin-workspace{display:grid;grid-template-columns:246px minmax(0,1fr);flex:1;min-height:0;overflow:hidden}
+.plugin-sidebar{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto;background:#1d303b;border-right:1px solid #3b515e;padding:12px;gap:12px}
+.plugin-sidebar-title{font-size:10px;color:#9cb4c3;letter-spacing:.055em;text-transform:uppercase;font-weight:500}
+.plugin-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.plugin-browser .plugin-actions button,.plugin-browser .scan-add button{height:30px!important;min-height:30px!important;padding:0 8px!important;background:#263e4c!important;background-image:none!important;border:1px solid #466576!important;border-radius:3px!important;box-shadow:none!important;color:#d9e8ef!important;font-size:11px!important;font-weight:500!important;white-space:nowrap}
+.plugin-browser #pluginScan{background:#24566b!important;border-color:#487c90!important;color:#edf8ff!important}
+.plugin-browser .plugin-actions button:hover:not(:disabled),.plugin-browser .scan-add button:hover:not(:disabled){background:#345568!important;border-color:#75a9bb!important}
+.plugin-browser .plugin-actions button:disabled{opacity:.5!important;cursor:not-allowed}
+.plugin-scan-settings{display:flex;flex-direction:column;min-width:0;gap:8px;padding:0;background:transparent;border:0}
+.scan-title{font-size:10px;letter-spacing:.035em;color:#9cb4c3;font-weight:500}
+.scan-paths{display:flex;flex-direction:column;gap:0;max-height:184px;min-height:48px;overflow:auto;border:1px solid #3c5361;background:#162832}
+.scan-path{display:flex;align-items:center;gap:5px;min-width:0;min-height:29px;padding:3px 6px;border-bottom:1px solid #2b414d;font-size:10px}
+.scan-path>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scan-path small{color:#94afbd;flex:none}.scan-path button{background:transparent;border:0;color:#a7bdc8}
+.scan-add{display:flex;flex-wrap:wrap;gap:6px}.scan-add input{flex:1 1 100%;min-width:0;height:29px;padding:0 7px;color:#dfedf3;background:#132630;border:1px solid #3f5866;border-radius:3px}
+.scan-add button{width:100%}
+.scan-status{font-size:10px;color:#b1c4cf;line-height:1.5;overflow-wrap:anywhere}
+.plugin-disclaimer{margin-top:auto;color:#93aab8;font-size:10px;line-height:1.45;padding-top:8px;border-top:1px solid #394f5c;overflow-wrap:anywhere}
+.plugin-catalog{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:#142630}
+.plugin-catalog-tools{display:flex;flex:none;gap:8px;align-items:center;padding:9px 10px;border-bottom:1px solid #3b515e;background:#1b303b}
+.plugin-search-row{display:flex;min-width:0;flex:1}
+.plugin-search-row input{width:100%;min-width:0;height:30px;padding:0 9px;background:#10232d;color:#e0edf4;border:1px solid #45606e;border-radius:3px;font-size:11px}
+.plugin-filters{display:flex;gap:6px;min-width:0}
+.plugin-filters select{width:112px;min-width:0;height:30px;background:#203642;color:#c6d9e4;border:1px solid #405b6b;border-radius:3px;padding:0 5px;font-size:11px}
+.plugin-catalog{--plugin-columns:minmax(0,1fr) 112px 25px 25px;--plugin-identity:minmax(0,1.55fr) minmax(0,1fr) minmax(0,.75fr)}
+.plugin-headings,.plugin-item{display:grid;grid-template-columns:var(--plugin-columns);gap:0;align-items:center;min-width:0}
+.plugin-headings{height:28px;flex:none;background:#263c49;color:#a9bfcc;font-size:10px;border-bottom:1px solid #48616e;padding:0 6px}
+.plugin-heading-identity,.plugin-choose{display:grid;grid-template-columns:var(--plugin-identity);gap:0;align-items:center;min-width:0;text-align:left}
+.plugin-heading-identity>span,.plugin-choose>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 7px}
+.plugin-heading-status,.plugin-labels{display:grid;grid-template-columns:48px 64px;align-items:center;min-width:0}
+.plugin-heading-status>span,.plugin-labels>span{padding:0 4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plugin-heading-icon{text-align:center}
+.plugin-results{flex:1;min-height:0;overflow:auto;background:#142630;scrollbar-gutter:stable}
+.plugin-headings{overflow-y:scroll;scrollbar-color:transparent transparent}
+.plugin-item{height:27px;min-height:27px;padding:0 6px;border-bottom:1px solid #29404b;background:#182b35;box-sizing:border-box}
+.plugin-item:nth-child(even){background:#1c303b}
+.plugin-item:hover,.plugin-item:focus-within{background:#294858}
+.plugin-browser .plugin-choose{height:26px!important;min-height:26px!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;background-image:none!important;box-shadow:none!important;align-items:center;cursor:pointer;color:#d9e6ee;font-size:11px}
+.plugin-item.disabled .plugin-choose{opacity:.52}
+.plugin-name{font-size:11px;color:#e2edf3;font-weight:400}
+.plugin-meta,.plugin-category{font-size:10px;color:#a9bfcc;font-weight:400}
+.plugin-labels{font-size:10px;color:#a7bdca}
+.plugin-pill{color:#b6cbd8;border:0;border-radius:0;background:none}
+.plugin-pill.problem,.plugin-item.disabled .plugin-labels{color:#e2a49b}
+.plugin-browser .plugin-flag{height:24px!important;width:24px!important;min-width:0!important;padding:0!important;border:0!important;border-radius:2px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;color:#849ca9;font-size:13px;line-height:24px}
+.plugin-browser .plugin-flag.starred{color:#d9bd79!important}
+.plugin-browser .plugin-flag:hover{background:#3a5665!important;color:#edf7fc!important}
+.plugin-empty{padding:24px 12px;text-align:center;color:#9cb4c2;font-size:11px}
+.plugin-footer{display:flex;align-items:center;min-height:30px!important;height:auto!important;flex:none;padding:5px 12px!important;border-top:1px solid #3b515e;background:#1c303b;color:#a7bdca;font-size:10px;gap:8px}
+.plugin-footer #pluginCount{flex:1;color:#afc4cf}
+.plugin-browser button:focus-visible,.plugin-browser input:focus-visible,.plugin-browser select:focus-visible{outline:2px solid #9ad9ed!important;outline-offset:-2px}
+.console-body.plugin-open #viewport{margin-right:0!important}
+.plugin-browser[hidden],.fast-picker[hidden]{display:none!important}
+@media(max-width:760px){
+ .plugin-browser{min-width:min(310px,calc(100vw - 28px))!important;min-height:230px!important;top:55px!important;height:min(620px,calc(100dvh - 70px))!important}
+ .plugin-workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+ .plugin-sidebar{grid-row:2;max-height:145px;border-right:0;border-top:1px solid #3b515e;padding:8px;gap:7px}
+ .plugin-catalog{grid-row:1;--plugin-identity:minmax(0,1fr) minmax(0,.75fr);--plugin-columns:minmax(0,1fr) 84px 23px 23px}
+ .plugin-heading-status,.plugin-labels{grid-template-columns:38px 46px}
+ .plugin-category,.plugin-heading-category{display:none}
+ .plugin-catalog-tools{flex-wrap:wrap;gap:5px;padding:6px}
+ .plugin-search-row{flex-basis:100%}
+ .plugin-filters{flex:1}.plugin-filters select{width:auto;flex:1}
+}
+"""
+
+def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
+    start = html.index('    <aside id="pluginBrowser"')
+    end = html.index('    </aside>', start) + len('    </aside>')
+    original = html[start:end]
+    # Retain exact controls, IDs, existing native event handlers and file input.
+    def line(marker):
+        matches = [s.strip() for s in original.splitlines() if marker in s]
+        if len(matches) != 1:
+            raise ValueError("Plugin workspace anchor drift: " + marker)
+        return matches[0]
+    head = line('id="pluginDragHandle"')
+    head = once(head, 'PLUGIN MANAGER', 'Plugin Manager', 'manager title')
+    search = line('class="plugin-search-row"')
+    filters = line('class="plugin-filters"')
+    results = line('id="pluginResults"')
+    footer = line('id="pluginCount"')
+    footer_match = re.fullmatch(r'<div class="plugin-footer">(<span id="pluginCount">.*?</span>)(.*)</div>', footer)
+    if not footer_match:
+        raise ValueError("Plugin Manager footer drift")
+    count, actions = footer_match.groups()
+    actions = once(actions, 'Import list…', 'Import…', 'import label')
+    actions = once(actions, 'Import plugin metadata from a JSON registry exported by a scanner', 'Import VST3 in native host; import metadata in browser reference', 'import tooltip')
+    scan_start = original.index('<div class="plugin-scan-settings">')
+    scan_end = original.index('<div class="plugin-disclaimer">', scan_start)
+    scan = original[scan_start:scan_end].strip()
+    disclaimer = line('class="plugin-disclaimer"')
+    headings = ('<div class="plugin-headings"><div class="plugin-heading-identity">'
+                '<span>Name</span><span>Vendor</span><span class="plugin-heading-category">Category</span></div>'
+                '<div class="plugin-heading-status"><span>Format</span><span>Status</span></div>'
+                '<span class="plugin-heading-icon" title="Favorites">★</span>'
+                '<span class="plugin-heading-icon" title="Visibility">⊘</span></div>')
+    markup = ('    <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>\n'
+              + head + '\n<div class="plugin-workspace"><section class="plugin-sidebar" aria-label="Plugin management">'
+              + '<div class="plugin-sidebar-title">Library actions</div><div class="plugin-actions">' + actions + '</div>'
+              + scan + disclaimer + '</section><section class="plugin-catalog" aria-label="Plugin catalog">'
+              + '<div class="plugin-catalog-tools">' + search + filters + '</div>'
+              + headings + results + '<div class="plugin-footer">' + count
+              + '<span>Click a plugin to insert</span></div></section></div>\n    </aside>')
+    html = html[:start] + markup + html[end:]
+    html = once(html,
+        """<span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+(latency?' · '+escapeHtml(latency):'')+(usedBy.length?' · Used '+usedBy.length:'')+'</span>""",
+        """<span class="plugin-meta" title="'+escapeHtml(p.vendor)+'">'+escapeHtml(p.vendor)+'</span><span class="plugin-category" title="'+escapeHtml([p.category,latency,usedBy.length?'Used '+usedBy.length:''].filter(Boolean).join(' · '))+'">'+escapeHtml(p.category)+'</span>""",
+        "plugin row column layout")
+    # Replace only the manager portion of its existing CSS owner. Quick Picker
+    # keeps its existing implementation, CSS and interactions.
+    fast = plugin.index('.fast-picker{position:absolute;')
+    return html, PLUGIN_WORKSPACE_CSS + "\n" + plugin[fast:]
+
 def apply_operator_ux(html: str, assets: Path) -> str:
     """Evolve only the deployed HTML and two existing CSS owners, fail-closed."""
     html = once(html,
@@ -312,6 +438,7 @@ function openChannelIdentity(t,anchor){""",
         raise ValueError("Plugin Manager hardware key selector inventory drift")
     chrome_path.write_text(chrome.rstrip()+"\n"+OPERATOR_CSS+"\n",encoding="utf-8")
     # V9: unified modal close material is compiled from its sole CSS owner.
+    html, plugin = apply_plugin_workspace(html, plugin)
     plugin_path.write_text(plugin,encoding="utf-8")
     html = once(html, "restorePluginPreferences();init();", SPLIT_BOOTSTRAP+"\nrestorePluginPreferences();init();", "startup geometry bootstrap")
     if html.count('id="trackCount"')!=1 or 'id="pluginMinimize"' in html:

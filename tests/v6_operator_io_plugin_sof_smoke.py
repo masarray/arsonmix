@@ -65,6 +65,32 @@ def exercise(browser,out,width,height,tap):
     assert manager.locator(".plugin-empty").is_visible()
     manager.locator("#pluginSearch").fill("")
     assert manager.locator(".plugin-item").count()>0
+    # Populate a realistic catalog using the same native readback fixture.
+    emit(page,"arMixCatalog",{"items":[{"id":f"fixture-{i}","name":f"Fixture VST {i:03d}","vendor":"Fixture Vendor","category":"Utility","format":"VST3"} for i in range(258)],"builtIns":[{"id":"armix.builtin.fixture.v1","name":"Fixture processor","category":"Utility"}]})
+    page.wait_for_function("()=>document.querySelectorAll('#pluginResults .plugin-item').length>=258")
+    geometry=manager.evaluate("""el=>{
+      const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom}};
+      const side=el.querySelector('.plugin-sidebar'),cat=el.querySelector('.plugin-catalog'),list=el.querySelector('.plugin-results');
+      const row=list.querySelector('.plugin-item'),headers=el.querySelector('.plugin-headings');
+      return {panel:rect(el),side:rect(side),cat:rect(cat),list:rect(list),row:rect(row),
+        headers:rect(headers),name:rect(row.querySelector('.plugin-name')),vendor:rect(row.querySelector('.plugin-meta')),
+        category:rect(row.querySelector('.plugin-category')),scroll:list.scrollHeight>list.clientHeight};
+    }""")
+    assert geometry["panel"]["w"]>=min(950,width-30),geometry
+    assert geometry["panel"]["right"]<=width and geometry["panel"]["bottom"]<=height,geometry
+    assert geometry["side"]["right"]<=geometry["cat"]["x"]+1,geometry
+    assert geometry["row"]["h"]==27 and geometry["list"]["h"]>=300,geometry
+    assert geometry["vendor"]["x"]>=geometry["name"]["right"]-1 and geometry["category"]["x"]>=geometry["vendor"]["right"]-1,geometry
+    assert geometry["scroll"],geometry
+    assert manager.locator("#pluginScan").is_visible() and manager.locator("#pluginImport").is_visible()
+    assert manager.locator("#pluginAddPath").is_visible()
+    assert manager.locator("#pluginSearch").is_visible()
+    manager.locator("#pluginSearch").fill("Fixture VST 257")
+    assert manager.locator(".plugin-item").count()==1
+    assert manager.locator(".plugin-item .plugin-meta").inner_text()=="Fixture Vendor"
+    manager.locator("#pluginSearch").fill("")
+    assert manager.locator(".plugin-item").count()>=258
+    print("PASS professional plugin workspace density and catalog geometry",width,geometry,flush=True)
     page.screenshot(path=f"v6-plugin-manager-{width}.png")
     manager.locator("#pluginClose").click()
     assert manager.is_hidden()
