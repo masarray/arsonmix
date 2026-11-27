@@ -273,8 +273,16 @@ public:
         const auto hash=juce::SHA256(json.toRawUTF8(),json.getNumBytesAsUTF8()).toHexString();
         const auto payload=generation+"\n"+hash+"\n"+json;
         juce::TemporaryFile staging(file);
-        if(!staging.getFile().replaceWithText(payload,false,false,"\n"))
+        // The receipt has LF separators, but Codec::encode emits CRLF JSON
+        // in JUCE. Text-mode writing normalises the JSON after hashing it.
+        // Preserve the exact UTF-8 bytes (no BOM or line-ending conversion).
+        auto output=staging.getFile().createOutputStream();
+        if(!output||!output->openedOk()||
+           !output->write(payload.toRawUTF8(),payload.getNumBytesAsUTF8()))
             return "Cannot stage live checkpoint";
+        output->flush();
+        if(output->getStatus().failed())return "Cannot flush live checkpoint";
+        output.reset(); // close before bounded readback and atomic replacement
         juce::String check;
         if(!Input::text(staging.getFile(),maxJson+128,check)||check!=payload||
            readPointer(head)!=generation)

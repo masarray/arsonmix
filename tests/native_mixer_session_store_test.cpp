@@ -2739,7 +2739,9 @@ static void checkLiveControlsCheckpoint() {
     live.masterGain=.21f;
     live.resumeMain=false;
     assert(live.roster.rememberLiveMix({1},.32f,.4f));
-    assert(store.commitLiveControls(live).isEmpty());
+    const auto liveError=store.commitLiveControls(live);
+    if(liveError.isNotEmpty())std::cerr<<"LIVE_CHECKPOINT_ERROR "<<liveError.toStdString()<<"\n";
+    assert(liveError.isEmpty());
     assert(head.loadFileAsString()==generation);
     MixerSessionDocument loaded;
     std::vector<BinaryState> states;
@@ -2748,7 +2750,18 @@ static void checkLiveControlsCheckpoint() {
     assert(states.size()==1&&states[0].bytes==blob.bytes);
     assert(loaded.roster.find({1})->faderLinear==.32f);
     const auto overlay=studio.getChildFile("MixerSession").getChildFile("LIVE_CONTROLS");
-    const auto durable=overlay.loadFileAsString();
+    juce::String durable;
+    assert(NativeMixerSessionStore::Input::text(overlay,NativeMixerSessionStore::maxJson+128,durable));
+    auto expectedLive=live;
+    expectedLive.inserts[0].sha256=blob.sha256;
+    const auto expectedJson=Codec::encode(expectedLive);
+    const auto expectedHash=juce::SHA256(expectedJson.toRawUTF8(),expectedJson.getNumBytesAsUTF8()).toHexString();
+    // Fixed LF header plus exact hashed JSON, including JUCE's CRLF and
+    // byte length; no text conversion or extra header bytes are allowed.
+    assert(durable==generation.trim()+"\n"+expectedHash+"\n"+expectedJson);
+    assert(overlay.getSize()==static_cast<juce::int64>(durable.getNumBytesAsUTF8()));
+    assert(store.commitLiveControls(live).isEmpty());
+    assert(overlay.loadFileAsString()==durable && head.loadFileAsString()==generation);
     live.inserts[0].instanceId="g5c-43"; // same vendor, wrong instance
     assert(store.commitLiveControls(live).isNotEmpty());
     assert(overlay.loadFileAsString()==durable);
@@ -2758,7 +2771,9 @@ static void checkLiveControlsCheckpoint() {
     assert(overlay.loadFileAsString()==durable);
     assert(overlay.appendText("CORRUPT"));
     assert(store.load(loaded,states).isEmpty()&&loaded.masterGain==doc.masterGain&&loaded.resumeMain==false);
-    assert(overlay.replaceWithText(durable,false,false,"\n"));
+    assert(overlay.replaceWithData(durable.toRawUTF8(),durable.getNumBytesAsUTF8()));
+    assert(store.load(loaded,states).isEmpty() && loaded.masterGain==.21f &&
+           loaded.resumeMain==false && states.size()==1 && states[0].bytes==blob.bytes);
     doc.masterGain=.81f;
     assert(store.commit(doc,{blob}).isEmpty());
     assert(store.load(loaded,states).isEmpty()&&loaded.masterGain==.81f);
