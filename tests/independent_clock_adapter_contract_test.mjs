@@ -151,7 +151,12 @@ test('saved ASIO startup failure keeps the host callback registered for manual A
   const saved=engine.indexOf('const bool savedRoute',registration);
   assert.ok(guard>=0&&guard<registration&&registration<saved&&saved<initialise);
   assert.match(engine.slice(guard,saved),/if\(!attached_\)\s*\{\s*deviceManager_\.addAudioCallback \(this\);\s*attached_ = true;\s*\}\s*$/);
-  assert.match(engine,/if \(error\.isNotEmpty\(\)\) return error;/);
+  const failure=engine.indexOf('if (error.isNotEmpty()) {',initialise);
+  const success=engine.indexOf('startupAsioRetryIdentity_.reset();',failure);
+  assert.ok(failure>initialise&&success>failure);
+  const failurePath=engine.slice(failure,success);
+  assert.match(failurePath,/if\(savedAsioPreflight\)\s*\{\s*startupAsioRetryIdentity_=\*savedAsioPreflight;\s*deviceManager_\.closeAudioDevice\(\);\s*\}\s*return error;/);
+  assert.doesNotMatch(failurePath,/removeAudioCallback|\bdetach\s*\(/);
   assert.match(host,/new juce::AudioDeviceSelectorComponent/);
   assert.match(host,/showDeviceSetup\(\)/);
 });
