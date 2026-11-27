@@ -7,7 +7,11 @@ $ast=[Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'installer
 foreach($name in @('Read-Json','Test-RegularUpdateFile','Expand-PortablePayload')){
     $matches=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name},$false))
     if($matches.Count -ne 1){throw "Missing unique verifier function: $name"}
-    . ([scriptblock]::Create($matches[0].Extent.Text))
+    $source=$matches[0].Extent.Text
+    # Explicit test instrumentation avoids PowerShell command auto-loading
+    # or module precedence shadowing a Get-FileHash proxy.
+    if($name -ceq 'Expand-PortablePayload'){$source=$source.Replace('Get-FileHash -LiteralPath','Measure-FileHash -LiteralPath')}
+    . ([scriptblock]::Create($source))
 }
 function Fail([string]$reason){throw $reason}
 function Expand-PortablePayloadBaseline([IO.Stream]$lease,[string]$target,[string]$sourceSha,[switch]$VerifyOnly) {
@@ -112,7 +116,7 @@ function Expand-PortablePayloadBaseline([IO.Stream]$lease,[string]$target,[strin
                 try{
                     $expectedHash=[BitConverter]::ToString($algorithm.ComputeHash($entryStream)).Replace('-','').ToLowerInvariant()
                 }finally{$entryStream.Dispose();$algorithm.Dispose()}
-                if((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedHash){throw 'Cached portable member hash mismatch'}
+                if((Measure-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedHash){throw 'Cached portable member hash mismatch'}
                 continue
             }
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($dest))|Out-Null
@@ -136,7 +140,7 @@ function Expand-PortablePayloadBaseline([IO.Stream]$lease,[string]$target,[strin
         if($build.sourceCommit -cne $sourceSha -or $build.executable -cne [IO.Path]::GetFileName($binary) -or
            $build.exeSha256 -cnotmatch '^[a-f0-9]{64}$' -or
            [long]$build.guiExeBytes -ne (Get-Item -LiteralPath $binary).Length -or
-           (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $build.exeSha256 -or
+           (Measure-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $build.exeSha256 -or
            (Get-Content -LiteralPath (Join-Path $target 'portable_mode.txt') -Raw).Trim() -cne 'ARSONMIX_PORTABLE_WORKSPACE_V1'){
             throw 'Portable payload provenance mismatch'
         }
@@ -147,10 +151,10 @@ function Expand-PortablePayloadBaseline([IO.Stream]$lease,[string]$target,[strin
 # complete production function (archive decompression, tree walk, hashes).
 $script:hashCalls=0;$script:hashBytes=[long]0;$script:binaryCalls=0
 $script:checkLease=$false;$script:leaseDenied=$false
-function Get-FileHash([string]$LiteralPath,[string]$Algorithm='SHA256'){
+function Measure-FileHash([string]$LiteralPath,[string]$Algorithm='SHA256'){
     $length=(Get-Item -LiteralPath $LiteralPath).Length
     $script:hashCalls++;$script:hashBytes+=$length
-    if([IO.Path]::GetFileName($LiteralPath) -ceq 'ArSonMix-GUI10CH-P012-Windows-x64.exe'){
+    if([IO.Path]::GetFileName($LiteralPath) -ieq 'ArSonMix-GUI10CH-P012-Windows-x64.exe'){
         $script:binaryCalls++
         if($script:checkLease){
             try{$write=[IO.File]::Open($LiteralPath,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);$write.Dispose()}
@@ -159,16 +163,16 @@ function Get-FileHash([string]$LiteralPath,[string]$Algorithm='SHA256'){
     }
     Microsoft.PowerShell.Utility\Get-FileHash -LiteralPath $LiteralPath -Algorithm $Algorithm
 }
-function Measure-Variant([string]$variant,[string]$archive,[string]$payload,[string]$sha){
+function Measure-Variant([string]$variant,[string]$archive,[string]$payload,[string]$sha,[switch]$ProbeLease){
     $script:hashCalls=0;$script:hashBytes=[long]0;$script:binaryCalls=0
-    $script:checkLease=$variant -ceq 'after';$script:leaseDenied=$false
+    $script:checkLease=[bool]$ProbeLease;$script:leaseDenied=$false
     $stream=[IO.File]::OpenRead($archive)
     $sw=[Diagnostics.Stopwatch]::StartNew()
     try{
         if($variant -ceq 'before'){Expand-PortablePayloadBaseline $stream $payload $sha -VerifyOnly}
         else{Expand-PortablePayload $stream $payload $sha -VerifyOnly}
     }finally{$sw.Stop();$stream.Dispose()}
-    if($script:checkLease -and -not $script:leaseDenied){throw 'Optimized verifier did not hold executable read lease'}
+    if($script:checkLease -and -not $script:leaseDenied){throw "Optimized verifier did not hold executable read lease (hash calls=$script:hashCalls; binary calls=$script:binaryCalls)"}
     [pscustomobject]@{variant=$variant;ms=$sw.Elapsed.TotalMilliseconds;calls=$script:hashCalls;bytes=$script:hashBytes;binaryCalls=$script:binaryCalls}
 }
 Add-Type -AssemblyName System.IO.Compression
@@ -205,7 +209,7 @@ try{
     }finally{$zipStream.Dispose()}
     # Warm both paths, then alternate order to reduce file-cache/order bias.
     [void](Measure-Variant 'before' $archive $payload $sha)
-    [void](Measure-Variant 'after' $archive $payload $sha)
+    [void](Measure-Variant 'after' $archive $payload $sha -ProbeLease)
     $before=@();$after=@()
     for($i=0;$i -lt 7;$i++){
         $order=if($i%2 -eq 0){@('before','after')}else{@('after','before')}
