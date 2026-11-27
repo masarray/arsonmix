@@ -568,6 +568,7 @@ jobs:
           run_test tests/approved_native_cold_start_smoke.py
           run_test tests/approved_native_fx_param_hotkey_smoke.py
           run_test tests/approved_native_offline_logical_smoke.py
+          run_test tests/v6_operator_io_plugin_sof_smoke.py
           run_test tests/native_header_toolbar_chromium_smoke.py
           run_test tests/approved_native_wire_gain_smoke.py
           run_test tests/approved_css_stage_d_single_bundle_smoke.py
@@ -872,6 +873,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: V6 Plugin Manager exact assembled Chromium geometry and native actions
+        run: python tests/v6_operator_io_plugin_sof_smoke.py
       - name: Landing public storefront desktop/mobile Chromium and download journey
         run: python tests/landing_page_browser_smoke.py
       # Fail fast: clipped editor is the actual PR feature gate. Testing it
