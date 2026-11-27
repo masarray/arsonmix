@@ -101,21 +101,39 @@
 
   function gainReadback(edges,uiByEdgeId,pendingGains,channels=[]) {
     if(!Array.isArray(edges))return [];
-    return edges.filter(e=>e.enabled===true)
-      .flatMap(e=>{
-        const id=uiByEdgeId.get(e.edgeId);
-        if(id===undefined)return [];
-        if(e.primaryOutput===true) {
-          const rows=channels.filter(ch=>ch.id===e.from&&
-            ch.primaryOutId===e.to);
-          if(rows.length!==1||e.gainLinear!==1||
-             !Number.isFinite(rows[0].controls?.faderDb))return [];
-          return [{id,pending:false,levelDb:0}];
+    let byChannelId=null;
+    const result=[];
+    for(let i=0;i<edges.length;i++){
+      if(!(i in edges))continue;
+      const e=edges[i];
+      if(e.enabled!==true)continue;
+      const id=uiByEdgeId.get(e.edgeId);
+      if(id===undefined)continue;
+      if(e.primaryOutput===true){
+        if(e.gainLinear!==1)continue;
+        if(!byChannelId){
+          byChannelId=new Map();
+          channels.forEach(ch=>{
+            const key=ch.id;
+            byChannelId.set(key,byChannelId.has(key)?null:ch);
+          });
         }
+        let row=byChannelId.get(e.from);
+        // Preserve exact source/destination match cardinality for ambiguous
+        // IDs; never silently pick one of multiple matching native rows.
+        if(row===null){
+          const rows=channels.filter(ch=>ch.id===e.from&&ch.primaryOutId===e.to);
+          row=rows.length===1?rows[0]:undefined;
+        }
+        if(!row||row.id!==e.from||row.primaryOutId!==e.to||
+           !Number.isFinite(row.controls?.faderDb))continue;
+        result.push({id,pending:false,levelDb:0});
+      }else{
         const levelDb=gainDb(e.gainLinear);
-        return levelDb===null?[]:
-          [{id,pending:pendingGains.has(e.edgeId),levelDb}];
-      });
+        if(levelDb!==null)result.push({id,pending:pendingGains.has(e.edgeId),levelDb});
+      }
+    }
+    return result;
   }
 
   function canEditTap(edge,{pending=false,readOnly=false,

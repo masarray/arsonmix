@@ -8334,3 +8334,52 @@ test("External OUT steady readback indexes exact ChannelId and avoids unchanged 
  assert.equal(p.rebuilt.nodes[11][1][2].status,"NONE");
  assert.equal(p.restored.nodes[0][1][2].status,"LIVE");
 });
+
+
+test("WIRE gain readback indexes accepted primary sources once per snapshot",()=>{
+  const main="18446744073709551615";
+  for(const n of [12,24,64,128]){
+    let reads=0;
+    const channels=Array.from({length:n},(_,i)=>{
+      const id=String(9007199254740993n+BigInt(i));
+      return {get id(){reads++;return id;},primaryOutId:main,controls:{faderDb:-3}};
+    });
+    const edges=channels.flatMap((ch,i)=>[
+      {edgeId:"p"+i,from:ch.id,to:main,enabled:true,primaryOutput:true,gainLinear:1},
+      {edgeId:"s"+i,from:ch.id,to:main,enabled:true,primaryOutput:false,gainLinear:.5}
+    ]);
+    const ids=new Map(edges.map((e,i)=>[e.edgeId,i]));
+    const pending=new Map([["s1",true],["p1",true]]);
+    const expected=edges.map((e,id)=>({id,pending:e.edgeId==="s1",
+      levelDb:e.primaryOutput?0:-6}));
+    reads=0;
+    for(let i=0;i<120;i++)assert.deepEqual(wireVM.gainReadback(edges,ids,pending,channels),expected);
+    assert.equal(reads,2*n*120,"one index build and one exact identity check per primary");
+  }
+});
+test("WIRE indexed gain readback preserves rejection, exact pair cardinality and fresh snapshots",()=>{
+  const source="9007199254740993",other="9007199254740994",main="18446744073709551615";
+  const ch={id:source,primaryOutId:main,controls:{faderDb:-60}};
+  const edge={edgeId:"11",from:source,to:main,enabled:true,primaryOutput:true,gainLinear:1};
+  const ids=new Map([["11",0],["12",1]]),pending=new Map([["11",true],["12",true]]);
+  const primary=[{id:0,pending:false,levelDb:0}];
+  const readback=(channels,e=edge)=>wireVM.gainReadback([e],ids,pending,channels);
+  assert.deepEqual(readback([ch]),primary);
+  assert.deepEqual(readback([ch,{...ch}]),[]);
+  assert.deepEqual(readback([ch,{...ch,primaryOutId:other}]),primary);
+  assert.deepEqual(readback([{...ch,id:other}]),[]);
+  assert.deepEqual(readback([{...ch,id:Number(source)}]),[]);
+  assert.deepEqual(readback([{...ch,controls:{faderDb:NaN}}]),[]);
+  assert.deepEqual(readback([{...ch,primaryOutId:other}]),[]);
+  assert.deepEqual(readback([ch],{...edge,gainLinear:.99}),[]);
+  assert.deepEqual(readback([ch],{...edge,enabled:false}),[]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"unmapped"}),[]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"12",primaryOutput:false,gainLinear:0}),
+    [{id:1,pending:true,levelDb:-60}]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"12",primaryOutput:false,gainLinear:-1}),[]);
+  const changed=[ch];
+  assert.deepEqual(readback(changed),primary);
+  changed[0]={...ch,primaryOutId:other};
+  assert.deepEqual(readback(changed),[],"no stale cross-snapshot index");
+  assert.deepEqual(readback([,ch]),primary);
+});
