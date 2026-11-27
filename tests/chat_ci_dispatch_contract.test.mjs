@@ -667,9 +667,8 @@ test('dispatch history invalid timestamp or impossible density fails closed',asy
   await assert.rejects(recentScopedMilestones(async()=>{throw Error('unexpected request');},'p1-windows.yml','invalid'),/CI_PR_CREATED_AT_INVALID/);
 });
 
-test('canonical integrated build exposes exact portable preview before full test compilation without weakening final FAT',()=>{
-  const p0 = new URL('../.github/workflows/p0-console-compile-preflight.yml',import.meta.url);
-  const build=readFileSync(p0,'utf8');
+test('integrated development is portable-only; full CTest and installer require explicit owner RC',()=>{
+  const build=readFileSync(new URL('../.github/workflows/p0-console-compile-preflight.yml',import.meta.url),'utf8');
   const link=build.indexOf('INTEGRATED_CONSOLE_LINK_PASS');
   const label=build.indexOf("$manifest.fatStatus='FIELD_PREVIEW_FULL_CTEST_NOT_RUN'");
   const verify=build.indexOf('verify_native_windows_artifact.ps1 -OutputDir field-preview-dist');
@@ -678,6 +677,16 @@ test('canonical integrated build exposes exact portable preview before full test
   const ctest=build.indexOf('--output-junit integrated-ctest.xml');
   const fat=build.indexOf('P12 exact-source Windows installer qualification');
   assert.ok(link>=0 && link<label && label<verify && verify<upload && upload<full && full<ctest && ctest<fat);
+  assert.ok(build.includes("FIELD_PREVIEW: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'staging/io-reverb-integrated-') }}"));
+  assert.ok(build.includes("RC_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate == true }}"));
+  assert.ok(build.includes("github.actor == github.repository_owner && inputs.release_candidate == true && inputs.expected_sha == github.sha"));
+  assert.ok(build.includes("$tests=if($env:FIELD_PREVIEW -eq 'true'){'OFF'}else{'ON'}"));
+  assert.ok(build.includes('"-DBUILD_TESTING=$tests"'));
+  assert.ok(build.includes("$env:FIELD_PREVIEW -ne 'true' -and $env:GITHUB_REF_NAME -in"));
+  for(const step of ['Verify early Windows FIELD portable preview','Upload early portable FIELD preview (full CTest not run)'])
+    assert.ok(build.includes("name: "+step+"\n        if: env.FIELD_PREVIEW == 'true'"));
+  for(const step of ['Integrated full native CTest (no packaging)','P12 exact-source Windows installer qualification','Upload exact-SHA internal installer (never a public release)'])
+    assert.ok(build.includes("name: "+step+"\n        if: env.RC_REQUESTED == 'true'"));
   assert.match(build,/name: ArSonMix-Windows-Field-Preview-\$\{\{ github\.sha \}\}/);
   assert.match(build,/path: field-preview-dist\//);
   assert.match(build,/P12_NATIVE_TEST_EVIDENCE_INCOMPLETE/);

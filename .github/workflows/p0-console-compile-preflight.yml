@@ -10,15 +10,29 @@ on:
       - staging/io-reverb-integrated-p10-p11-20261125
       - staging/io-reverb-integrated-p12-20261125
       - staging/io-reverb-integrated-global-20261125
-    # These are explicit qualification branches, not general development.
-    # Every new HEAD needs its own evidence, even a UI/workflow-only commit.
+    # Integrated branch pushes are development FIELD previews, never RC FAT.
+  workflow_dispatch:
+    inputs:
+      release_candidate:
+        type: boolean
+        required: true
+        default: false
+        description: 'Explicit owner RC request (full native CTest and installer)'
+      expected_sha:
+        type: string
+        required: true
+        description: 'Exact integrated branch HEAD SHA approved for RC'
 permissions:
   contents: read
 concurrency:
-  group: p0-console-compile-preflight-${{ github.ref }}
-  cancel-in-progress: true
+  group: p0-console-compile-preflight-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'rc' || 'development' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 jobs:
   actual-console-translation-unit:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner && inputs.release_candidate == true && inputs.expected_sha == github.sha && (github.ref_name == 'staging/io-reverb-integrated-global-20261125' || github.ref_name == 'staging/io-reverb-integrated-p12-20261125'))
+    env:
+      FIELD_PREVIEW: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'staging/io-reverb-integrated-') }}
+      RC_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate == true }}
     runs-on: windows-2022
     timeout-minutes: 85
     steps:
@@ -50,7 +64,8 @@ jobs:
           Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
           $actual = (& git rev-parse HEAD).Trim()
           if ($actual -ne $env:GITHUB_SHA) { throw 'P0_PREFLIGHT_SOURCE_MISMATCH' }
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
+          $tests=if($env:FIELD_PREVIEW -eq 'true'){'OFF'}else{'ON'}
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" "-DBUILD_TESTING=$tests" -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
           if ($LASTEXITCODE -ne 0) { throw 'P0_PREFLIGHT_CONFIGURE_FAILED' }
           $targets = (& ninja -C build -t targets all)
           if ($LASTEXITCODE -ne 0) { throw 'P0_PREFLIGHT_TARGETS_FAILED' }
@@ -62,7 +77,7 @@ jobs:
           # Test the actual JUCE disk store with assertions enabled before
           # compiling the production translation unit. This is not FAT or a
           # protected nativeFull gate and does not publish an executable.
-          if ($env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125','staging/io-reverb-integrated-p10-p11-20261125','staging/io-reverb-integrated-p12-20261125','staging/io-reverb-integrated-global-20261125')) {
+          if ($env:FIELD_PREVIEW -ne 'true' -and $env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125','staging/io-reverb-integrated-p10-p11-20261125','staging/io-reverb-integrated-p12-20261125','staging/io-reverb-integrated-global-20261125')) {
             cmake --build build --parallel 2 --target ARMixChannelAppearanceTests
             if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_COMPILE_FAILED' }
             $catalog = (& ctest --test-dir build --show-only=json-v1 | Out-String | ConvertFrom-Json)
@@ -94,7 +109,7 @@ jobs:
           cmake --build build --parallel 2 --target $objects
           if ($LASTEXITCODE -ne 0) { throw 'P0_PRODUCTION_TRANSLATION_UNIT_FAILED' }
           Write-Host "P0_PRODUCTION_MAIN_COMPILE_PASS exact=$actual (object only, NOT full FAT)"
-      - name: Integrated product link (same executable for preview and final FAT)
+      - name: Integrated product link (Release x64)
         if: startsWith(github.ref_name, 'staging/io-reverb-integrated-')
         shell: pwsh
         run: |
@@ -108,10 +123,10 @@ jobs:
           cmake --build build --parallel 2 --target ARMixConsole
           if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_CONSOLE_LINK_FAILED' }
           Write-Host "INTEGRATED_CONSOLE_LINK_PASS exact=$actual"
-      # Give the operator the exact compiled application before building the
-      # much larger native test target set. This is NOT full CTest or installer FAT.
+      # Development ends after the verified portable upload. Full native tests
+      # and the installer are reserved for the explicit owner RC event.
       - name: Verify early Windows FIELD portable preview
-        if: github.ref_name == 'staging/io-reverb-integrated-global-20261125'
+        if: env.FIELD_PREVIEW == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -132,7 +147,7 @@ jobs:
           if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_DISTRIBUTION_FAILED'}
           Write-Host "EARLY_FIELD_PREVIEW_VERIFIED exact=$actual"
       - name: Upload early portable FIELD preview (full CTest not run)
-        if: github.ref_name == 'staging/io-reverb-integrated-global-20261125'
+        if: env.FIELD_PREVIEW == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-Windows-Field-Preview-${{ github.sha }}
@@ -141,7 +156,7 @@ jobs:
           retention-days: 14
           compression-level: 0
       - name: Integrated full native CTest (no packaging)
-        if: startsWith(github.ref_name, 'staging/io-reverb-integrated-')
+        if: env.RC_REQUESTED == 'true'
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -157,17 +172,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_FULL_CTEST_FAILED' }
           Write-Host "INTEGRATED_FULL_CTEST_PASS exact=$actual (no hardware or installer FAT)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always() && startsWith(github.ref_name, 'staging/io-reverb-integrated-')
+        if: always() && env.RC_REQUESTED == 'true'
         with:
           name: integrated-native-ctest-${{ github.sha }}
           path: build/integrated-ctest.xml
           if-no-files-found: ignore
           retention-days: 7
-      # P12 is an explicitly named, internal test branch. No release,
-      # Pages, tag, protected nativeFull or main-only FAT dispatcher changes.
-      # The previous full build must succeed; never package an object-only run.
+      # Explicit owner RC qualification only. No release, Pages or tag here.
+      # Full CTest must succeed; never package an object-only or FIELD run.
       - name: P12 exact-source Windows installer qualification
-        if: (github.ref_name == 'staging/io-reverb-integrated-p12-20261125' || github.ref_name == 'staging/io-reverb-integrated-global-20261125')
+        if: env.RC_REQUESTED == 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -252,7 +266,7 @@ jobs:
             ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'p12-internal/P12_QUALIFICATION.json' -Encoding utf8
           Write-Host "P12_INTERNAL_INSTALLER_SOFTWARE_FAT_PASS exact=$actual"
       - name: Upload exact-SHA internal installer (never a public release)
-        if: (github.ref_name == 'staging/io-reverb-integrated-p12-20261125' || github.ref_name == 'staging/io-reverb-integrated-global-20261125')
+        if: env.RC_REQUESTED == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ArSonMix-P12-Internal-Installer-${{ github.sha }}
