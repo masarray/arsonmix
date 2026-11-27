@@ -338,6 +338,7 @@ body :is(#mxNativePeq,#mxNativeComp,#mxNativeDucker,#mxNativeGeq31,#mxNativeHarm
  #mxNativeVocalThrow,#mxNativeSonKu){left:0!important;top:0!important}
 </style>
 <script defer src="assets/approved-native-contract.js"></script>
+<script defer src="assets/mixer-builtin-fx-gesture.js"></script>
 <script defer src="assets/mixer-builtin-fx-preset-bar.js"></script>
 <script defer src="assets/approved-floating-fx-bridge.js"></script>
 </head><body><output id="fxWindowStatus" role="status">Loading owned FX editor…</output>

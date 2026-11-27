@@ -113,7 +113,7 @@ const sliderDefs=[["color","COLOR",0,100,1],["space","SPACE",0,100,1],
                   ["wet","WET",0,100,1],["gainDb","GAIN",-24,12,0.5]];
 for(const [key,label,min,max,step] of sliderDefs){
  const box=document.createElement("label");box.className="mx-harm-slider";
- box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag horizontally or use arrow keys">`;
+ box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag or hover + wheel; Shift fine; arrow keys">`;
  el("mxHSliders").append(box);
 }
 const fresh=()=>({key:0,scale:0,voices:3,voiceMode:0,correction:false,
@@ -448,10 +448,13 @@ el("mxHCorrection").addEventListener("click",()=>{
  const desired=latest||pending?.settings||settings;
  edit({correction:!desired.correction});
 });
-sliders.forEach(({input})=>input.addEventListener("input",()=>{
+sliders.forEach(({input})=>{
+ window.ArMixFxGesture.bindRange(input,{enabled:()=>!!current&&(!native()||mode==="NATIVE")});
+ input.addEventListener("input",()=>{
  const k=input.dataset.field,x=Number(input.value);
  edit({[k]:k==="gainDb"?x:x/100});
-}));
+ });
+});
 
  // Disk-only preset actions accept either a verified physical lease or an
  // exact committed logical FX identity; never require AUDIO SETUP for save.

@@ -137,7 +137,7 @@ Object.entries(defs).forEach(([key,r])=>{
  const input=dom("input","mx-comp-slider");
  input.type="range";input.min=String(r.min);input.max=String(r.max);
  input.step=String(r.step);input.setAttribute("aria-label",r.label);
- input.title="Drag vertically; Shift for fine; arrows for steps; double-click to reset";
+ input.title="Drag or hover + wheel; Shift for fine; arrows for steps; double-click to reset";
  item.append(name,dial,output,input);
  inputs[key]={item,input,output,dial,body,pointer,arcProgress};
  const changeValue=value=>{
@@ -148,6 +148,7 @@ Object.entries(defs).forEach(([key,r])=>{
   else delayed={...draft};
  };
  input.addEventListener("input",()=>changeValue(Number(input.value)));
+ window.ArMixFxGesture.bindRange(input,{get:()=>draft[key],enabled:()=>!!current&&(!native()||!!context()),onChange:changeValue});
  input.addEventListener("change",()=>{if(native())send();else saveDemo();});
  let drag=null;
  input.addEventListener("pointerdown",e=>{
@@ -516,6 +517,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
 window.setInterval(()=>{
  if(panel.hidden)return;
  presetBar.tick();
+ if(delayed&&!pending&&Date.now()-lastSend>=130&&context())send();
  paintMeters();
  if(native()&&context()&&!snapshot()?.logical)requestSnapshot();
 },160);

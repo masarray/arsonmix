@@ -10,6 +10,7 @@ HARMONY_SCRIPT='<script defer src="assets/mixer-native-harmony.js?v=harmony2-fx-
 THROW_SCRIPT='<script defer src="assets/mixer-native-vocal-throw.js?v=throw-2-fx-recovery"></script>'
 SONKU_SCRIPT='<script defer src="assets/mixer-native-sonku.js?v=sonku-2-fx-recovery"></script>'
 GEQ_SCRIPT='<script defer src="assets/mixer-native-geq31.js?v=geq-v14h-centered-output"></script>'
+GESTURE_SCRIPT='<script defer src="assets/mixer-builtin-fx-gesture.js?v=1"></script>'
 PRESET_SCRIPT='<script defer src="assets/mixer-builtin-fx-preset-bar.js?v=preset-shared-m4"></script>'
 
 PICKER_HEAD="function renderFastPicker(){"
@@ -223,5 +224,5 @@ def apply_native_peq(html: str)->str:
         if html.count(before)!=1:
             raise ValueError('Ambiguous approved picker/editor anchor: '+before[:90])
         html=html.replace(before,after,1)
-    html=html.replace('</body>',PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+DUCKER_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n'+GEQ_SCRIPT+'\n</body>',1)
+    html=html.replace('</body>',GESTURE_SCRIPT+'\n'+PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+DUCKER_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n'+GEQ_SCRIPT+'\n</body>',1)
     return html

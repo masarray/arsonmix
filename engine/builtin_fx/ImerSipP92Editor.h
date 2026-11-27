@@ -86,6 +86,8 @@ public:
                 juce::Slider::LinearHorizontal);
             slider.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
             slider.setRange(lower[i],upper[i],step[i]);
+            slider.setScrollWheelEnabled(true);
+            slider.setChangeNotificationOnlyOnRelease(false);
             slider.setLookAndFeel(&skin_);
             slider.onValueChange=[this,i]{
                 applySliderEdit(i);

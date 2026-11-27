@@ -93,6 +93,16 @@ def main():
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
         readback(page,[SOURCE,MIC2],settings=req["settings"],serial="3")
         assert editor.locator(".mx-ducker-source").count()==2
+        # Wheel without click: edit starts while pointer is still over knob.
+        depth=editor.locator('input[type="range"][aria-label="Depth dB"]')
+        depth.hover();page.mouse.wheel(0,-120)
+        page.wait_for_function("()=>window.__actions.filter(x=>x.action==='nativeDuckerSet').at(-1)?.settings.depthDb>6")
+        req=latest(page,"nativeDuckerSet")
+        emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
+        readback(page,[SOURCE,MIC2],settings=req["settings"],serial="4")
+        # Each frame cell must be wider than it is high, not a portrait LED.
+        assert editor.locator(".mx-ducker-led-cell").count()>20
+        assert editor.locator(".mx-ducker-led-cell").evaluate_all("els=>els.every(e=>{const r=e.getBoundingClientRect();return r.width>r.height})")
         editor.screenshot(path=str(ROOT/"auto-ducker-native-editor.png"))
         editor.get_by_role("button",name="Edit sources").click()
         editor.get_by_label("Search trigger sources").fill("MIC 2")

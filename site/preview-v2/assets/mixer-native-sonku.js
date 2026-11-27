@@ -964,6 +964,8 @@ for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim
   input.dispatchEvent(new Event("change",{bubbles:true}));
  });
 }
+for(const input of root.querySelectorAll('input[type="range"]'))
+ window.ArMixFxGesture.bindRange(input,{enabled:()=>!!current&&(!native()||!!context())});
 const map=$("skMap");
 function toAzimuth(e) {
  // SVG user-space is authoritative despite CSS borders/DPI/letterboxing.

@@ -332,8 +332,8 @@ svg.addEventListener("dblclick",e=>{
  change(i,fresh()[i]);e.preventDefault();
 });
 svg.addEventListener("wheel",e=>{
- const hit=e.target.closest?.("[data-eq-node]");if(!hit)return;
- const i=Number(hit.dataset.eqNode);selected=i;e.preventDefault();
+ const hit=e.target.closest?.("[data-eq-node]");if(!hit||!window.ArMixFxGesture.direction(e)||presetBatch||(!context()&&native()))return;
+ const i=Number(hit.dataset.eqNode);selected=i;e.preventDefault();e.stopPropagation();
  const b=effective()[i];
  if(CUT(i))change(i,{slope:b.slope===12?24:12,enabled:true});
  else if(!SHELF(i))change(i,{q:clamp(b.q*Math.exp((e.deltaY<0?1:-1)*(e.shiftKey?.025:.09)),.2,12),enabled:true});
@@ -371,7 +371,7 @@ for(const [key,k] of Object.entries(knobs)){
  });
  k.circle.addEventListener("pointercancel",()=>{gesture=null;draft=null;draw()});
  k.circle.addEventListener("wheel",e=>{
-  if(k.box.classList.contains("disabled"))return;e.preventDefault();
+  if(k.box.classList.contains("disabled")||!window.ArMixFxGesture.direction(e)||presetBatch||(!context()&&native()))return;e.preventDefault();e.stopPropagation();
   adjust(e,e.deltaY<0?3:-3);
   change(selected,effective()[selected],false);
  },{passive:false});
