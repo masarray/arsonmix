@@ -997,6 +997,12 @@
   // structural graph change. Updating them must not replace DOM strips,
   // steal focus, interrupt a fader drag or reallocate WIRE render objects.
   // The verified individual bypass flag stays distinct from rack bypass.
+  function setFxReadbackAttribute(el,key,value){
+    if(el.getAttribute(key)!==value)el.setAttribute(key,value);
+  }
+  function setFxReadbackData(el,key,value){
+    if(el.dataset[key]!==value)el.dataset[key]=value;
+  }
   function paintNativeFxPowerReadback(ch,t,globalFxBypassed){
     const readback=fxRackVM.powerReadback(ch,globalFxBypassed,t.name);
     if(!readback)return true; // no authoritative DSP value to paint
@@ -1021,23 +1027,27 @@
     if(!Array.isArray(t.slotBypass))t.slotBypass=Array(8).fill(false);
     for(const slot of readback.slots)t.slotBypass[slot.index]=slot.bypassed;
     if(!rack)return true; // virtual bank: native snapshot still owns model
-    rack.dataset.fxChainEnabled=String(readback.enabled);
-    rack.dataset.globalFxEnabled=String(readback.globalEnabled);
-    rack.classList.toggle("is-chain-bypassed",readback.chainBypassed);
-    header.setAttribute("aria-pressed",readback.headerPressed);
-    header.title=readback.headerTitle;
-    header.setAttribute("aria-label",readback.headerLabel);
+    setFxReadbackData(rack,"fxChainEnabled",String(readback.enabled));
+    setFxReadbackData(rack,"globalFxEnabled",String(readback.globalEnabled));
+    if(rack.classList.contains("is-chain-bypassed")!==readback.chainBypassed)
+      rack.classList.toggle("is-chain-bypassed",readback.chainBypassed);
+    setFxReadbackAttribute(header,"aria-pressed",readback.headerPressed);
+    setFxReadbackAttribute(header,"aria-label",readback.headerLabel);
+    // Native context-menu policy strips browser titles. Keep useful latency
+    // and upstream gate information accessible without recreating titles.
     for(const slot of readback.slots){
       const row=rows.find(r=>r.dataset.slot===String(slot.index));
-      if(slot.latencyTitle!==null)row.title=slot.latencyTitle;
-      row.dataset.fxSlotEnabled=String(!slot.bypassed);
-      row.dataset.fxEffective=String(slot.effective);
-      row.classList.toggle("is-active",slot.effective);
-      row.classList.toggle("is-bypassed",!slot.effective);
+      setFxReadbackData(row,"fxSlotEnabled",String(!slot.bypassed));
+      setFxReadbackData(row,"fxEffective",String(slot.effective));
+      if(row.classList.contains("is-active")!==slot.effective)
+        row.classList.toggle("is-active",slot.effective);
+      if(row.classList.contains("is-bypassed")===slot.effective)
+        row.classList.toggle("is-bypassed",!slot.effective);
       const button=row.querySelector('[data-action="slotPower"]');
-      button.setAttribute("aria-pressed",slot.pressed);
-      button.title=slot.title;
-      button.setAttribute("aria-label",slot.label);
+      setFxReadbackAttribute(button,"aria-pressed",slot.pressed);
+      setFxReadbackAttribute(button,"aria-label",slot.label);
+      const description=slot.title+(slot.latencyTitle?" · "+slot.latencyTitle:"");
+      setFxReadbackAttribute(button,"aria-description",description);
     }
     return true;
   }
@@ -2214,12 +2224,15 @@
     const decision=fxRackVM.globalPowerSettlement(pendingGlobalFx,current,context);
     if(decision==="CONFIRMED"||decision==="STALE")pendingGlobalFx=null;
     const actual=current?.raw?.globalFxBypassed;
-    if(context&&typeof actual==="boolean"&&!pendingGlobalFx)
+    if(context&&typeof actual==="boolean"&&!pendingGlobalFx&&
+       (!button?.dataset||button.dataset.fxPowerState!==(actual?"bypassed":"on")))
       window.__ARMIX_SET_GLOBAL_FX_VIEW__?.(!actual);
     if(button){
-      button.disabled=!context||!!pendingGlobalFx;
-      button.setAttribute("aria-busy",String(!!pendingGlobalFx));
-      if(!context)button.title="Global FX requires admitted physical audio";
+      const disabled=!context||!!pendingGlobalFx;
+      if(button.disabled!==disabled)button.disabled=disabled;
+      setFxReadbackAttribute(button,"aria-busy",String(!!pendingGlobalFx));
+      setFxReadbackAttribute(button,"aria-description",
+        context?"Global override preserves individual FX settings":"Global FX requires admitted physical audio");
     }
   }
   function toggleGlobalFx(enableOnly=false){
