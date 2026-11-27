@@ -9,3 +9,7 @@ Owner screenshot: GAIN/FX RACK lacks a readable shared pill; Player glyphs appea
 - Source, actual assembled Chromium, and native geometry regression added. No duplicate FIELD or release.
 
 References: JUCE 8.0.15 source https://github.com/juce-framework/JUCE/blob/8.0.15/modules/juce_gui_basics/native/juce_Windowing_windows.cpp ; https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-nchittest ; https://github.com/material-components/material-components-web/tree/master/packages/mdc-segmented-button .
+
+## Local qualification (before assembled qualification)
+- GCC C++20 with UBSan, exact header Git blob be41d0468b8b07e8dc58d290d326e93951851a0d: 14 compile-time assertions, 24,646,600 client/edge classifications across 9 window sizes (493,536 edge hits), plus 24,646,600 disabled classifications PASS. This is geometry, not Windows HWND drag.
+- Real Chromium/Playwright isolated exact transport CSS (4825 characters, FNV-1a a93f21eb), same glyph fixture and legacy reset challenge: 288 assertion groups PASS across 4 sizes/DPI and paused/playing; circle sizes, SVG frame and vector centering, faces and glyph equality across ribbon, full and mini. Isolated segmented CSS 24 groups PASS. First assembled CI at 96018925 failed because another CSS owner kept pill height at 28px. Explicit 30px size and inset now own the actual geometry. Existing assembled test retained and expanded to 1084x634 inner viewport (1100x650 outer - 2x8 native grip). No installed Windows verification yet.

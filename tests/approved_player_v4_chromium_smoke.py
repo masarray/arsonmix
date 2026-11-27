@@ -236,6 +236,8 @@ def main():
             page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",{**state,"transport":{**state["transport"],"state":"PAUSED"}})
             page.wait_for_function("()=>document.getElementById('ribbonPlay').getAttribute('aria-pressed')==='false'")
             assert face("playerPlay")==face("ribbonPlay")
+            assert_center("playerPlay")
+            assert_center("ribbonPlay")
             page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
             page.wait_for_function("()=>document.getElementById('ribbonPlay').getAttribute('aria-pressed')==='true'")
             assert face("playerPlay")==face("ribbonPlay")

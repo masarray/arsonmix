@@ -105,7 +105,7 @@ def main():
         dst = Path(folder)
         bundle.stage(dst)
         browser = pw.chromium.launch(headless=True)
-        for width, height in ((1680, 900), (1366, 768), (1200, 740), (1100, 650)):
+        for width, height in ((1680, 900), (1366, 768), (1200, 740), (1100, 650), (1084, 634)):
             page = browser.new_page(viewport={"width": width, "height": height})
             errors = []
             page.on("pageerror", lambda err: errors.append(str(err)))
