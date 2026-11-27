@@ -84,7 +84,7 @@
 ){--ari-on-top:#3b8c6e;--ari-on-hi:#50a783;--ari-on-mid:#3d956f;--ari-on-bottom:#308665;--ari-on-edge:#266347;--ari-on-ink:#f0fff7}
 .app :is(#mode,#wireNavigatorToggle,#wireMatrixToggle,#pluginsButton)
 {--ari-on-top:#388ea9;--ari-on-hi:#54aec6;--ari-on-mid:#3e94ae;--ari-on-bottom:#2d839c;--ari-on-edge:#246577;--ari-on-ink:#152b36}
-.app :is(#sofToggle,#saveScene,#recallScene,#pluginScan,#pluginImport)
+.app :is(#sofToggle,#saveScene,#recallScene)
 {--ari-on-top:#3c76a7;--ari-on-hi:#548ebd;--ari-on-mid:#417aaa;--ari-on-bottom:#366b99;--ari-on-edge:#28486f;--ari-on-ink:#f4faff}
 .app :is(#sceneSafe,#preview,#wireWsUndo)
 {--ari-on-top:#ba8034;--ari-on-hi:#cc9849;--ari-on-mid:#b98033;--ari-on-bottom:#aa722a;--ari-on-edge:#7d5021;--ari-on-ink:#21180c}
