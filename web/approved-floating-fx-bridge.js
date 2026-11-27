@@ -22,7 +22,7 @@
     "armix.builtin.8d-sonku.v1":
       ["mixer-native-sonku.js","ArSonMixNativeSonKu","#mxNativeSonKu"]
   });
-  let current=null,identity=null,busyLoad=null,pending=null;
+  let current=null,identity=null,busyLoad=null,mountedCatalog=null;
   let acceptedWorkspace=""; // retained exact workspace, even between snapshots
   let powerSequence=0,pendingPower=null;
   // Physical power has two independent proofs. An ACK is not a fresh rack
@@ -164,11 +164,21 @@
     const loader=new Promise((resolve,reject)=>{
       const script=document.createElement("script");
       script.src="assets/"+entry[0]; // ONLY allowlisted, no user-controlled URLs.
-      script.onload=()=>resolve(window[entry[1]]);
-      script.onerror=()=>reject(Error("Approved FX asset unavailable"));
+      const fail=()=>{
+        script.remove();
+        reject(Error("Approved FX asset unavailable · reopen from FX Rack"));
+      };
+      script.onload=()=>{
+        const host=window[entry[1]];
+        if(typeof host?.open!=="function")fail();
+        else resolve(host);
+      };
+      script.onerror=fail;
       document.head.append(script);
     });
     scriptCache.set(catalog,loader);
+    // Cache successful modules, not a transient load failure.
+    loader.catch(()=>{if(scriptCache.get(catalog)===loader)scriptCache.delete(catalog);});
     return loader;
   }
   function mount(payload) {
@@ -203,7 +213,7 @@
     current=next;
     settlePhysicalPower();
     acceptedWorkspace=next.view.workspaceToken||"";
-    if(pending===proposed.catalogId) {
+    if(mountedCatalog===proposed.catalogId) {
       // A repeated rack double-click must re-show the SAME exact editor
       // after its original Close button hid the DOM/owned HWND. Merely
       // raising the HWND would show an empty dark panel.
@@ -220,11 +230,16 @@
       }
       return;
     }
-    pending=proposed.catalogId;
-    const request=identity;
-    importEditor(proposed.catalogId).then(host=>{
-      if(identity!==request || !host?.open) {
-        inform("Approved FX editor unavailable");return;
+    if(busyLoad)return; // repeated opens coalesce while the script is loading
+    const catalog=proposed.catalogId;
+    const load=importEditor(catalog);
+    busyLoad=load;
+    load.then(host=>{
+      // Use the latest validated identity, including a trusted logical
+      // rekey received while loading. Never open a disconnected owner.
+      const request=identity;
+      if(!current||request?.catalogId!==catalog||!host?.open) {
+        inform("FX session changed · reopen from FX Rack");return;
       }
       const track={id:request.channelId,nativeId:request.channelId,
         name:current.channel.name||"Channel",slotBypass:[]};
@@ -269,10 +284,13 @@
           slot:identity.slot,catalogId:identity.catalogId});
       });
       observer.observe(root,{attributes:true,attributeFilter:["hidden"]});
+      mountedCatalog=catalog;
       backend.emitEvent("arMixFloatingMounted",{
         catalogId:request.catalogId,channelId:request.channelId,
         instanceId:request.instanceId,slot:request.slot});
-    }).catch(error=>inform(String(error.message||error)));
+    }).catch(error=>inform(String(error.message||error))).finally(()=>{
+      if(busyLoad===load)busyLoad=null;
+    });
   }
   backend.addEventListener("arMixFloatingOpen",mount);
   backend.addEventListener("arMixConsoleSnapshot",snapshot=>{

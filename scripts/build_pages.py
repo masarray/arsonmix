@@ -9,6 +9,7 @@ from approved_fx_rack_interaction import apply_fx_rack_interaction
 from compose_native_peq import apply_native_peq
 from compose_operator_ux import apply_operator_ux
 from compose_clean_ribbon import apply_clean_ribbon
+from compose_rounded_micro_keys import apply_rounded_micro_keys
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser()
 p.add_argument('--out',default='dist-pages')
@@ -98,6 +99,7 @@ canonical_html=apply_fx_rack_interaction(canonical_html,buttons_dest/'assets')
 canonical_html=apply_native_peq(canonical_html)
 canonical_html=apply_operator_ux(canonical_html,buttons_dest/'assets')
 canonical_html=apply_clean_ribbon(canonical_html,buttons_dest/'assets')
+apply_rounded_micro_keys(buttons_dest/'assets')
 # The shipped UI is composed from inline JS as well as owner assets. Check all
 # inline code BEFORE packaging or deployment: a single unterminated string
 # otherwise leaves an empty mixer despite green source/PNG contract tests.
