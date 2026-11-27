@@ -2414,6 +2414,38 @@ static void verifyCreatedWetReturnPcmAndRecovery(){
     assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
     saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;
     saved.masterMute=true;saved.resumeMain=false;
+    // Device loss must preserve the actual leased processor state, not a stale disk mirror.
+    const auto oldEpoch=mixer.epoch();
+    mixer.deviceStopped();
+    assert(!mixer.channelIdPhysicalPcmActive() && mixer.hasRetainedNativeSession());
+    LiveDryRoutingLab::RetainedMixerCapture detached;
+    assert(mixer.beginRetainedMixerCapture(detached).isEmpty());
+    assert(detached.ownerEpoch==oldEpoch && detached.observedEpoch!=oldEpoch);
+    bool done=false;
+    for(unsigned i=0;i<1024 && !done;++i)
+        assert(mixer.stepRetainedMixerCapture(detached,done).isEmpty());
+    assert(done);
+    detached.document.id=saved.id;detached.document.savedMs=saved.savedMs;
+    detached.document.binding=saved.binding;
+    detached.document.masterGain=saved.masterGain;
+    detached.document.masterMute=true;detached.document.resumeMain=false;
+    detached.document.masterMono=saved.masterMono;
+    NativeLogicalMixerWorkspace offline;
+    assert(offline.load(std::move(detached.document),std::move(detached.states)));
+    const auto* prior=offline.storedFx(wet,0);
+    assert(prior && prior->instanceId==token && prior->bypass);
+    const auto hash=prior->sha256;
+    juce::var edit(new juce::DynamicObject());
+    edit.getDynamicObject()->setProperty("workspaceToken",offline.workspaceToken());
+    edit.getDynamicObject()->setProperty("baseRevision",juce::String(std::to_string(offline.revision())));
+    edit.getDynamicObject()->setProperty("operation","SET_FX_RACK_BYPASS");
+    edit.getDynamicObject()->setProperty("channelId",juce::String(std::to_string(wet.value)));
+    edit.getDynamicObject()->setProperty("value",true);
+    assert(offline.apply(edit).accepted);
+    assert(offline.storedFx(wet,0)->sha256==hash);
+    assert(!static_cast<bool>(offline.snapshot().getProperty("physicalOutputAdmitted",true)));
+    saved=offline.document();blobs=offline.states();
+    assert(std::find(saved.rackBypassed.begin(),saved.rackBypassed.end(),wet)!=saved.rackBypassed.end());
     const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory)
         .getNonexistentChildFile("armix-created-wet-","",false);
     assert(folder.createDirectory().wasOk());
@@ -2435,6 +2467,7 @@ static void verifyCreatedWetReturnPcmAndRecovery(){
     assert(armix::device::JuceActivePortSnapshot::capture(&replacement,recovered.epoch(),newPins,fault));
     assert(NativeMixerSessionFxRestore::prepare(reopened,states,formats,48000.,480,newPins.epoch,
         recovered.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(bank->rackBypassed(wet));
     const auto* lease=bank->ownerForControl(wet,0);
     assert(lease&&*lease&&(*lease)->instanceId==token&&(*lease)->silenceBypass&&(*lease)->bypassRequested.load());
     assert(recovered.restoreNativeMixerSession(reopened,std::move(bank),newPins,true).isEmpty());

@@ -7036,7 +7036,12 @@ test("P0 Audio I/O help reacts to explicit failed operator intent without auto-A
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/function recommendAudioRepair\(context\)/);
  assert.match(bridge,/if\(!deviceReady\(\)\)recommendAudioRepair\("INPUT unavailable"\)/);
- assert.match(bridge,/recommendAudioRepair\("FX editor unavailable · audio processing unavailable"\)/);
+ const editor=bridge.slice(bridge.indexOf('if(action==="openPlugin"){'),bridge.indexOf('if(action==="globalFxOn"){'));
+ assert.match(editor,/status\("FX editor waiting for the native mixer workspace"\)/);
+ assert.doesNotMatch(editor,/recommendAudioRepair|openNativeAudioIO/);
+ assert.match(editor,/requestRetainedFxAction\(t,slot,"openPlugin",\{recenter\}\)/);
+ assert.match(bridge,/requestRetainedFxAction\(t,Number\(btn\?\.dataset\.slot\),"slotPower"\)/);
+ assert.match(bridge,/requestRetainedFxAction\(t,0,"fxOn"\)/);
  assert.match(bridge,/window\.setTimeout\(\(\)=>\{/);
  assert.match(bridge,/openNativeAudioIO\(\); \/\/ explicit repair prompt/);
  assert.match(bridge,/if\(now-lastAudioRepairAt<1600\)return true/);
@@ -7112,7 +7117,13 @@ test("P0 routing commands remain usable in More at all desktop widths",()=>{
 test("P0 offline picker is presentation-only until selection and Apply restores edited graph before MAIN",()=>{
  const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp"),engine=read("src/LiveAudioEngine.h");
  assert.match(bridge,/if\(empty\)\{\s*scope\?\.openFastPicker\?\.\(t,slot,btn\);\s*return true;/);
- assert.match(bridge,/action:"insertFx",selectedCatalogId:id/);
+ assert.match(bridge,/requestRetainedFxAction\(track,slot,"insertFx",\{selectedCatalogId:id\}\)/);
+ const handoff=bridge.slice(bridge.indexOf("function requestRetainedFxAction("),bridge.indexOf("function logicalIntent("));
+ assert.match(handoff,/current\?\.retained!==true/);
+ assert.match(handoff,/if\(pendingRetainedEditor\)\{/);
+ assert.match(handoff,/deviceEpoch:current\.device\.epoch,graphRevision:current\.graph\.revision/);
+ assert.match(handoff,/selectedCatalogId:options\.selectedCatalogId/);
+ assert.doesNotMatch(handoff,/arMixLogicalIntent|arMixConsoleIntent|openNativeAudioIO/);
  assert.match(bridge,/nativeHooks\.insertPlugin\(held\.selectedCatalogId/);
  assert.match(native,/if\(pendingRetainedFxCapture_ \|\| retainedOfflineFxActive_\)return; \/\/ never arm stale retained PCM/);
  assert.match(native,/engine_\.finishManualAudioSetup\(false,true\)/);
