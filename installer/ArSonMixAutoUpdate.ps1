@@ -26,6 +26,8 @@ $approvalPath=Join-Path $root 'approved.json'
 $logPath=Join-Path $root 'last-result.txt'
 $mutex=$null
 $locked=$false
+$rollbackGuard=$null
+$rollbackProof=$null
 # Network, hashing and installer orchestration must yield CPU to live ASIO.
 try { [Diagnostics.Process]::GetCurrentProcess().PriorityClass =
     [Diagnostics.ProcessPriorityClass]::BelowNormal } catch { }
@@ -117,11 +119,33 @@ function Approved-Installer([object]$release) {
        $null -eq (Find-Asset $release 'SHA256SUMS.txt' 1)){return $null}
     return (Find-Asset $release "ArSonMix-$tag-Windows-x64-Setup.exe" 2097152)
 }
+# Digest-scoped partials cannot be reused across changed release assets.
+function Get-PartialAssetPath([string]$destination,[string]$hash) {
+    if($hash -cnotmatch '^[a-f0-9]{64}$'){throw 'Invalid partial asset identity'}
+    return ($destination+'.'+$hash+'.partial')
+}
+function Get-ResumeResponseMode([int]$status,[string]$range,[long]$contentLength,[long]$offset,[long]$expected) {
+    if($offset -lt 0 -or $expected -lt 1 -or $offset -ge $expected){return 'reject'}
+    if($status -eq 200 -and ($contentLength -eq -1 -or $contentLength -eq $expected)){return 'restart'}
+    if($status -eq 206 -and $offset -gt 0){
+        $wanted='bytes '+$offset+'-'+($expected-1)+'/'+$expected
+        if($range -ceq $wanted -and ($contentLength -eq -1 -or $contentLength -eq $expected-$offset)){return 'append'}
+    }
+    return 'reject'
+}
+function Test-RegularUpdateFile([string]$path) {
+    try {
+        $info=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+        return (-not $info.PSIsContainer -and ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0)
+    } catch {return $false}
+}
 function Download-Verified([object]$asset,[string]$destination) {
+    if([string]$asset.digest -cnotmatch '^sha256:[a-f0-9]{64}$'){Fail 'Invalid asset digest'}
     $expectedHash=([string]$asset.digest).Substring(7)
     $expectedBytes=[int64]$asset.size
-    if($expectedBytes -gt 209715200){Fail 'Asset exceeds 200MiB hard limit'}
-    if(Test-Path -LiteralPath $destination -PathType Leaf) {
+    if($expectedBytes -lt 1 -or $expectedBytes -gt 209715200){Fail 'Asset exceeds 200MiB hard limit'}
+    if(Test-Path -LiteralPath $destination) {
+        if(-not (Test-RegularUpdateFile $destination)){Fail 'Unsafe cached asset path'}
         $existing=Get-Item -LiteralPath $destination
         if($existing.Length -eq $expectedBytes -and
            (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $expectedHash) {
@@ -131,63 +155,94 @@ function Download-Verified([object]$asset,[string]$destination) {
     }
     $parent=[IO.Path]::GetDirectoryName($destination)
     [IO.Directory]::CreateDirectory($parent) | Out-Null
-    $part=$destination+'.partial'
-    if(Test-Path -LiteralPath $part){Remove-Item -LiteralPath $part -Force}
-    $request=[Net.HttpWebRequest]::Create([string]$asset.browser_download_url)
-    $request.Timeout=30000
-    $request.ReadWriteTimeout=30000
-    $request.UserAgent='ArSonMix-SmartUpdater/1'
-    $request.AllowAutoRedirect=$false
-    $response=$null
-    $streamIn=$null
-    $streamOut=$null
+    if(((Get-Item -LiteralPath $parent -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){Fail 'Unsafe asset cache directory'}
+    $part=Get-PartialAssetPath $destination $expectedHash
+    # Only one partial per exact asset filename; discard superseded digests.
+    $prefix=[IO.Path]::GetFileName($destination)+'.'
+    foreach($stale in @(Get-ChildItem -LiteralPath $parent -File -Force)){
+        if($stale.Name.StartsWith($prefix,[StringComparison]::Ordinal) -and
+           $stale.Name.Substring($prefix.Length) -cmatch '^[a-f0-9]{64}\.partial$' -and
+           $stale.FullName -cne $part -and (Test-RegularUpdateFile $stale.FullName)){
+            Remove-Item -LiteralPath $stale.FullName -Force
+        }
+    }
+    [long]$offset=0
+    if(Test-Path -LiteralPath $part){
+        if(-not (Test-RegularUpdateFile $part)){Fail 'Unsafe partial asset path'}
+        $offset=(Get-Item -LiteralPath $part).Length
+        if($offset -eq $expectedBytes -and
+           (Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $expectedHash){
+            [IO.File]::Move($part,$destination);return
+        }
+        if($offset -ge $expectedBytes){Remove-Item -LiteralPath $part -Force;$offset=0}
+    }
+    $uri=[Uri]$asset.browser_download_url
+    $response=$null;$streamIn=$null;$streamOut=$null
+    $discard=$false
     try {
         for($hop=0; $hop -le 5; $hop++){
-            $uri=$request.RequestUri
-            if($uri.Scheme -cne 'https' -or $uri.Port -ne 443 -or $uri.UserInfo -ne '' -or
+            if($uri.Scheme -cne 'https' -or $uri.Port -ne 443 -or $uri.UserInfo -ne '' -or $uri.Fragment -ne '' -or
                @('github.com','release-assets.githubusercontent.com','objects.githubusercontent.com') -cnotcontains $uri.DnsSafeHost){
-                Fail 'Unexpected download redirect destination'
+                $discard=$true;Fail 'Unexpected download redirect destination'
             }
-            $response=$request.GetResponse()
+            $request=[Net.HttpWebRequest]::Create($uri)
+            $request.Timeout=30000;$request.ReadWriteTimeout=30000
+            $request.UserAgent='ArSonMix-SmartUpdater/2'
+            $request.AllowAutoRedirect=$false
+            if($offset -gt 0){$request.AddRange($offset)}
+            try {$response=$request.GetResponse()}
+            catch [Net.WebException]{
+                $errorResponse=$_.Exception.Response
+                if($null -ne $errorResponse){
+                    try {if([int]$errorResponse.StatusCode -eq 416){$discard=$true}} finally {$errorResponse.Dispose()}
+                }
+                throw
+            }
             if([int]$response.StatusCode -notin @(301,302,303,307,308)){break}
             $location=$response.Headers['Location']
             $response.Dispose();$response=$null
-            if($hop -eq 5 -or [string]::IsNullOrWhiteSpace($location)){Fail 'Invalid release redirect chain'}
-            $next=[Uri]::new($uri,$location)
-            if($next.Scheme -cne 'https'){Fail 'Non-HTTPS release redirect'}
-            $request=[Net.HttpWebRequest]::Create($next)
-            $request.Timeout=30000
-            $request.ReadWriteTimeout=30000
-            $request.UserAgent='ArSonMix-SmartUpdater/1'
-            $request.AllowAutoRedirect=$false
+            if($hop -eq 5 -or [string]::IsNullOrWhiteSpace($location)){$discard=$true;Fail 'Invalid release redirect chain'}
+            $uri=[Uri]::new($uri,$location)
         }
-        if($null -eq $response -or [int]$response.StatusCode -ne 200){Fail 'Unexpected release response'}
+        if($null -eq $response){Fail 'Missing release response'}
         $uri=$response.ResponseUri
-        if($uri.Scheme -cne 'https' -or
-           @('github.com','release-assets.githubusercontent.com','objects.githubusercontent.com') -cnotcontains $uri.DnsSafeHost) {
-            Fail 'Unexpected download redirect destination'
+        if($uri.Scheme -cne 'https' -or $uri.Port -ne 443 -or $uri.UserInfo -ne '' -or
+           @('github.com','release-assets.githubusercontent.com','objects.githubusercontent.com') -cnotcontains $uri.DnsSafeHost){
+            $discard=$true;Fail 'Unexpected download redirect destination'
         }
-        if($response.ContentLength -gt $expectedBytes){Fail 'Oversize release response'}
+        $mode=Get-ResumeResponseMode ([int]$response.StatusCode) ([string]$response.Headers['Content-Range']) $response.ContentLength $offset $expectedBytes
+        if($mode -ceq 'reject'){$discard=$true;Fail 'Invalid release range response'}
+        if($mode -ceq 'restart'){
+            # Servers may ignore Range. Replace, never append a full body.
+            $offset=0
+            $streamOut=[IO.File]::Open($part,[IO.FileMode]::Create,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        } else {
+            $streamOut=[IO.File]::Open($part,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            if($streamOut.Length -ne $offset){$discard=$true;Fail 'Partial asset changed before resume'}
+            [void]$streamOut.Seek($offset,[IO.SeekOrigin]::Begin)
+            Log-Result ('RESUMING_VERIFIED_DOWNLOAD '+$offset+'/'+$expectedBytes)
+        }
         $streamIn=$response.GetResponseStream()
-        $streamOut=[IO.File]::Open($part,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
         $buffer=New-Object byte[] 65536
-        [int64]$total=0
+        [long]$total=$offset
         while(($read=$streamIn.Read($buffer,0,$buffer.Length)) -gt 0) {
             $total+=$read
-            if($total -gt $expectedBytes){Fail 'Response larger than release metadata'}
+            if($total -gt $expectedBytes){$discard=$true;Fail 'Response larger than release metadata'}
             $streamOut.Write($buffer,0,$read)
         }
         $streamOut.Flush($true)
         $streamOut.Dispose();$streamOut=$null
         if($total -ne $expectedBytes){Fail 'Incomplete release download'}
         $hash=(Get-FileHash -LiteralPath $part -Algorithm SHA256).Hash.ToLowerInvariant()
-        if($hash -cne $expectedHash){Fail 'Release SHA256 mismatch'}
+        if($hash -cne $expectedHash){$discard=$true;Fail 'Release SHA256 mismatch'}
         [IO.File]::Move($part,$destination)
     } finally {
         if($null -ne $streamOut){$streamOut.Dispose()}
         if($null -ne $streamIn){$streamIn.Dispose()}
         if($null -ne $response){$response.Dispose()}
-        if(Test-Path -LiteralPath $part){Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue}
+        # Network interruption retains incomplete bytes only; protocol or
+        # digest mismatch invalidates them. Nothing partial is executable.
+        if($discard -and (Test-RegularUpdateFile $part)){Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue}
     }
 }
 # Independent signature trust. The installer ships a pinned upstream verifier;
@@ -634,7 +689,21 @@ function Restore-InstalledRelease([string]$sourceSha) {
     # Keep verified installer cached for next recovery; no Studio cleanup.
 }
 
-function Run-Installer([string]$file,[object]$asset,[string]$tag,[string]$sha,[switch]$AllowMissingExeRecovery) {
+# This proof exists ONLY in the current supervisor's memory. It is issued
+# after cryptographic attestation under a read-only file lease, before any
+# installer replaces the verifier. Persisted state can never issue this proof.
+function Test-RollbackProof([object]$proof,[IO.FileStream]$lease,[string]$file,[object]$asset,[string]$tag,[string]$sha) {
+    try {
+        return ($null -ne $proof -and $null -ne $lease -and $lease.CanRead -and
+            -not $lease.SafeFileHandle.IsClosed -and
+            [string]::Equals($lease.Name,[IO.Path]::GetFullPath($file),[StringComparison]::OrdinalIgnoreCase) -and
+            $proof.path -ceq [IO.Path]::GetFullPath($file) -and $proof.tag -ceq $tag -and
+            $proof.sha -ceq $sha -and $proof.digest -ceq $asset.digest -and
+            [long]$proof.bytes -eq [long]$asset.size -and
+            (Test-StagedAsset $file $asset))
+    } catch {return $false}
+}
+function Run-Installer([string]$file,[object]$asset,[string]$tag,[string]$sha,[switch]$AllowMissingExeRecovery,[switch]$UseVerifiedRollback) {
     # Inno performs exact-path process shutdown and EXE replacement preflight.
     # Its silent [Run] is disabled: only this supervisor relaunches once.
     if(-not (Test-Path -LiteralPath $file -PathType Leaf)){return $false}
@@ -642,7 +711,11 @@ function Run-Installer([string]$file,[object]$asset,[string]$tag,[string]$sha,[s
     $guard=[IO.File]::Open($file,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try {
     if(-not (Test-StagedAsset $file $asset)){Fail 'Installer bytes changed before execution'}
-    Assert-InstallerAttestation $file $tag $sha
+    if($UseVerifiedRollback){
+        if(-not (Test-RollbackProof $rollbackProof $rollbackGuard $file $asset $tag $sha)){Fail 'In-memory rollback proof invalid'}
+    } else {
+        Assert-InstallerAttestation $file $tag $sha
+    }
     if(-not (Test-NoActiveMixer)){Fail 'Mixer is active; update deferred'}
     $info=New-Object Diagnostics.ProcessStartInfo
     $info.FileName=$file
@@ -924,6 +997,38 @@ if($PolicySelfTest) {
 
     Write-Output 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS'
+    # Deterministic protocol and offline rollback lease fixtures.
+    if((Get-ResumeResponseMode 206 'bytes 100-999/1000' 900 100 1000) -cne 'append' -or
+       (Get-ResumeResponseMode 200 '' 1000 100 1000) -cne 'restart' -or
+       (Get-ResumeResponseMode 206 'bytes 99-999/1000' 901 100 1000) -cne 'reject' -or
+       (Get-ResumeResponseMode 206 'bytes 100-999/1001' 900 100 1000) -cne 'reject' -or
+       (Get-ResumeResponseMode 206 'bytes 100-999/1000' 899 100 1000) -cne 'reject' -or
+       (Get-ResumeResponseMode 416 '' 0 100 1000) -cne 'reject' -or
+       (Get-ResumeResponseMode 200 '' 999 100 1000) -cne 'reject'){throw 'Resume response policy failed'}
+    if((Get-PartialAssetPath 'asset.exe' ('a'*64)) -ceq (Get-PartialAssetPath 'asset.exe' ('b'*64))){throw 'Partial identity collision'}
+    Write-Output 'ARSONMIX_UPDATER_RESUME_POLICY_PASS'
+    $leaseDir=Join-Path ([IO.Path]::GetTempPath()) ('armix-rollback-'+[guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($leaseDir)|Out-Null
+    $lease=$null
+    try {
+        $previous=Join-Path $leaseDir 'previous.exe'
+        [IO.File]::WriteAllBytes($previous,(New-Object byte[] 2097152))
+        $asset=[pscustomobject]@{digest='sha256:'+(Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash.ToLowerInvariant();size=2097152}
+        $proof=[pscustomobject]@{path=$previous;tag='v0.5.0-alpha.1';sha=('a'*40);digest=$asset.digest;bytes=$asset.size}
+        $lease=[IO.File]::Open($previous,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        if(-not (Test-RollbackProof $proof $lease $previous $asset $proof.tag $proof.sha)){throw 'Valid rollback lease rejected'}
+        if((Test-RollbackProof $null $lease $previous $asset $proof.tag $proof.sha) -or
+           (Test-RollbackProof $proof $lease $previous $asset $proof.tag ('b'*40))){throw 'Unissued or wrong identity rollback proof accepted'}
+        $rejected=$false
+        try {[IO.File]::WriteAllBytes($previous,[byte[]](1,2,3))} catch {$rejected=$true}
+        if(-not $rejected){throw 'Rollback lease allowed replacement'}
+        $lease.Dispose();$lease=$null
+        if(Test-RollbackProof $proof $lease $previous $asset $proof.tag $proof.sha){throw 'Expired rollback proof accepted'}
+    } finally {
+        if($null -ne $lease){$lease.Dispose()}
+        Remove-Item -LiteralPath $leaseDir -Recurse -Force
+    }
+    Write-Output 'ARSONMIX_UPDATER_OFFLINE_ROLLBACK_LEASE_PASS'
     Write-Output 'ARSONMIX_UPDATER_POLICY_PASS'
     exit 0
 }
@@ -1204,7 +1309,14 @@ try {
         Log-Result 'INSTALLER_BYTES_CHANGED_UPDATE_DEFERRED'
         exit 0
     }
+    # Keep the previously authenticated installer immutable until this
+    # transaction finishes. Rollback does not depend on the NEW verifier or
+    # network access after installation. No proof is persisted across restart.
+    $rollbackGuard=[IO.File]::Open($oldPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    if(-not (Test-StagedAsset $oldPath $oldAsset)){Fail 'Rollback bytes changed before attestation'}
     Assert-InstallerAttestation $oldPath ([string]$state.previousTag) ([string]$state.previousSha)
+    $rollbackProof=[pscustomobject]@{path=[IO.Path]::GetFullPath($oldPath);tag=[string]$state.previousTag;
+        sha=[string]$state.previousSha;digest=[string]$oldAsset.digest;bytes=[long]$oldAsset.size}
     $state.phase='installing'
     $state.installAttempts=[int]$state.installAttempts+1
     Write-State $state
@@ -1221,6 +1333,7 @@ try {
         Write-State $state
         Log-Result ($(if($state.operation -ceq 'repair'){'REPAIRED '}else{'HEALTHY '})+$new.tag_name)
         Remove-Item -LiteralPath $approvalPath -Force -ErrorAction SilentlyContinue
+        if($null -ne $rollbackGuard){$rollbackGuard.Dispose();$rollbackGuard=$null;$rollbackProof=$null}
         Clear-StagedVendorFiles $state
         exit 0
     }
@@ -1267,7 +1380,7 @@ try {
     if(-not (Test-StagedAsset $oldPath $oldAsset)){
         Fail 'Rollback installer modified after verified stage'
     }
-    if(Run-Installer $oldPath $oldAsset ([string]$state.previousTag) ([string]$state.previousSha)) {
+    if(Run-Installer $oldPath $oldAsset ([string]$state.previousTag) ([string]$state.previousSha) -UseVerifiedRollback) {
         if(Test-InstalledRelease $installedSha) {
             $state.phase='rolled-back'
             Write-State $state
@@ -1292,6 +1405,7 @@ try {
     } catch { }
     Log-Result ('FAIL_CLOSED '+$_.Exception.Message)
 } finally {
+    if($null -ne $rollbackGuard){$rollbackGuard.Dispose()}
     if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}
     if($null -ne $mutex){$mutex.Dispose()}
 }

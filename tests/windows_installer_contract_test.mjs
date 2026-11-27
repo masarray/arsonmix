@@ -659,3 +659,26 @@ test('Update Center is a bounded message-thread presentation and scheduler, neve
   assert.match(center,/window\.clearInterval\(poll\)/);
   assert.match(center,/state\?\.requestId!==latest/);
 });
+
+test('Resume uses digest-scoped partials, exact HTTP range, and full hash before promotion',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(u,/function Get-ResumeResponseMode/);
+  assert.match(u,/Get-PartialAssetPath \$destination \$expectedHash/);
+  assert.match(u,/\$request\.AddRange\(\$offset\)/);
+  assert.match(u,/Content-Range/);
+  assert.match(u,/if\(\$mode -ceq 'restart'\)/);
+  assert.match(u,/if\(\$hash -cne \$expectedHash\)\{\$discard=\$true;Fail/);
+  assert.match(u,/ARSONMIX_UPDATER_RESUME_POLICY_PASS/);
+});
+test('Rollback survives verifier replacement and offline network only under same-process verified lease',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const at=u.indexOf('$rollbackGuard=[IO.File]::Open($oldPath');
+  const sign=u.indexOf('Assert-InstallerAttestation $oldPath',at);
+  const proof=u.indexOf('$rollbackProof=[pscustomobject]',sign);
+  const install=u.indexOf('$upgradeOK=Run-Installer $newPath',proof);
+  assert.ok(at>0&&sign>at&&proof>sign&&install>proof);
+  assert.match(u,/Run-Installer \$oldPath .* -UseVerifiedRollback/);
+  assert.match(u,/Test-RollbackProof \$rollbackProof \$rollbackGuard/);
+  assert.match(u,/ARSONMIX_UPDATER_OFFLINE_ROLLBACK_LEASE_PASS/);
+  assert.match(u,/if\(\$null -ne \$rollbackGuard\)\{\$rollbackGuard\.Dispose\(\)\}/);
+});
