@@ -892,6 +892,7 @@
     const previous = new Map(scope.tracks.concat(scope.master).map(t=>[t.id,t]));
     const nextTracks = [], localByNative = new Map(), nextNativeByUi = new Map();
     let nextMaster = null, inputOrdinal=0;
+    const resolveInputLabel=deviceVM.inputLabelResolver(hardware);
     // Reserve surviving ChannelIds before assigning any new ordinal. A new
     // first row must never steal the DOM/model ID of a later surviving row.
     const reserved=new Set(accepted.channels.map(ch=>uiByNativeId.get(ch.id)).filter(id=>id!==undefined));
@@ -936,7 +937,7 @@
       const labels=stripVM.readbackBindings({native,channel:ch,
         channels:accepted.channels,
         targets:nativeOutputTargets(t,accepted.channels),
-        inputLabel:inputLabelFor});
+        inputLabel:resolveInputLabel});
       if(labels.input!==undefined)t.input=labels.input;
       if(labels.output!==undefined)t.output=labels.output;
       const direct=Array.isArray(native.raw?.externalOutputs)?
@@ -1432,7 +1433,6 @@
     return physical.some(p=>p?.mode==="PLAYER")?physical:[...physical,
       {label:"Music Player",mode:"PLAYER",left:-1,right:-1,deckId:"1"}];
   };
-  const inputLabelFor=row=>deviceVM.inputLabel(hardware,row);
   // ChannelId and the existing M4 use the SAME ten native input ordinals.
   // GUI track reorder must never silently repatch a different physical lane.
   const m4TrackIds=Array.isArray(scope?.tracks)?
@@ -2645,6 +2645,7 @@
       m4?.active,m4?.routingRevision,rows]);
     if(signature===lastM4UiSignature)return;
     lastM4UiSignature=signature;
+    const resolveInputLabel=deviceVM.inputLabelResolver(hardware);
     for(let i=0;i<10;++i){
       const t=scope.tracks.find(x=>x.id===m4TrackIds[i]);
       if(t?.kind!=="audio")continue;
@@ -2653,7 +2654,7 @@
       // selection. Do not borrow source/OUT data from the demo or a prior
       // device session.
       const row=acceptedM4?rows[i]:null;
-      t.input=inputLabelFor(row);
+      t.input=resolveInputLabel(row);
       if(row && typeof row.main==="boolean")
         t.output=row.main?"Master":"SOURCE ONLY (No Main)";
       if(row && ["MONO","STEREO"].includes(row.channelFormat)){
@@ -5426,8 +5427,7 @@
     const showSelect=item("select","toolbar-select","");
     const showRecall=item("button","tool","Recall Show");
     const showRecover=item("button","tool","Recover Last Good");
-    // Show operation details belong to transient status, not the menu.
-    const showNote=document.createElement("span");
+    // Show operation details belong to the visible status channel, not the menu.
     showSelect.setAttribute("aria-label","Saved native Show");
     showSelect.style.maxWidth="210px";showSelect.style.fontSize="11px";
     showSelect.hidden=true;showUpdate.hidden=true;
@@ -5449,9 +5449,14 @@
       showRecall.disabled=showBusy||!muted||!entry||entry.needsRecovery;
       showRecover.disabled=showBusy||!muted||!entry||!entry.hasPrevious;
     }
+    function showRejected(operation,ack,fallback){
+      const message=operation+" rejected: "+String(ack?.error||fallback);
+      status(message);
+      nativeToast(message);
+    }
     function showRefresh(){
       showBusy=true;showControls();
-      showNote.textContent="Browsing verified native Shows…";
+      status("Browsing saved Shows…");
       backend.emitEvent("arMixAction",{action:"routingDryShowList"});
     }
     showSave.addEventListener("click",()=>{
@@ -5460,7 +5465,7 @@
         status("SHOW SAVE requires MUTED output");return;
       }
       showBusy=true;showControls();
-      showNote.textContent="Capturing accepted routing and VST3 state…";
+      status("Saving Show…");
       backend.emitEvent("arMixAction",{action:"routingDryShowSave"});
     });
     showUpdate.addEventListener("click",()=>{
@@ -5468,7 +5473,7 @@
       if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id)||
          hardware?.device?.outputArmed!==false)return;
       showBusy=true;showControls();
-      showNote.textContent="Saving verified next generation · previous Show retained…";
+      status("Saving new Show version…");
       backend.emitEvent("arMixAction",{action:"routingDryShowSave",value:id});
     });
     showBrowse.addEventListener("click",()=>{if(!showBusy)showRefresh();});
@@ -5478,7 +5483,7 @@
       if(showBusy||!entry||entry.needsRecovery||!showUuid.test(id)||
          hardware?.device?.outputArmed!==false)return;
       showBusy=true;showControls();
-      showNote.textContent="Verifying Show / preparing native FX · output stays MUTED…";
+      status("Preparing Show · Output stays muted…");
       backend.emitEvent("arMixAction",{action:"routingDryShowRecall",value:id});
     });
     showRecover.addEventListener("click",()=>{
@@ -5486,7 +5491,7 @@
       if(showBusy||!entry?.hasPrevious||!showUuid.test(id)||
          hardware?.device?.outputArmed!==false)return;
       showBusy=true;showControls();
-      showNote.textContent="Verifying previous generation · valid latest will NOT be overwritten…";
+      status("Checking previous Show version…");
       backend.emitEvent("arMixAction",{action:"routingDryShowRecover",value:id});
     });
     backend.addEventListener("arMixNativeShowSaveAck",ack=>{
@@ -5495,8 +5500,7 @@
         status("SHOW SAVED · native verified state · OUTPUT MUTED");
         showRefresh();
       }else{
-        showNote.textContent="Save rejected: "+String(ack?.error||"Native capture rejected");
-        status(showNote.textContent);
+        showRejected("Save",ack,"Show capture rejected");
       }
     });
     backend.addEventListener("arMixNativeShowListAck",ack=>{
@@ -5516,18 +5520,16 @@
       }
       showSelect.hidden=false;showUpdate.hidden=false;
       showRecall.hidden=false;showRecover.hidden=false;
-      showNote.textContent=ack?.ok===true
-        ?showEntries.size+" saved Shows · mute output before recall/recovery"
-        :"Browse rejected: "+String(ack?.error||"Native storage unavailable");
       showControls();
+      if(ack?.ok===true)status(showEntries.size+" saved Shows");
+      else showRejected("Browse",ack,"Show storage unavailable");
     });
     backend.addEventListener("arMixNativeShowRecallAck",ack=>{
       showBusy=false;showControls();
-      showNote.textContent=ack?.ok===true
-        ?"SHOW RESTORED · OUTPUT MUTED; verify physical pins before MONITOR ON"
-        :"Recall rejected: "+String(ack?.error||"Native route unchanged");
-      if(ack?.ok===true)controller?.subscribe();
-      status(showNote.textContent);
+      if(ack?.ok===true){
+        controller?.subscribe();
+        status("Show restored · Output muted; verify pins before enabling output");
+      }else showRejected("Recall",ack,"Show route unchanged");
     });
     backend.addEventListener("arMixNativeShowRecoverAck",ack=>{
       showBusy=false;showControls();
@@ -5535,8 +5537,7 @@
         status("Last verified Show restored on disk · muted; recall explicitly");
         showRefresh();
       }else{
-        showNote.textContent="Recovery rejected: "+String(ack?.error||"Previous generation invalid");
-        status(showNote.textContent);
+        showRejected("Recovery",ack,"Previous Show version invalid");
       }
     });
 
@@ -7428,8 +7429,9 @@
         if(scope?.sofEnabled&&scope.sofTargetId!==t.id&&nativeSofSource(t)){
           const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
           if(!edge||id===undefined||
-             !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))
-            status("SOF unity reset unavailable · select one admitted SEND");
+             !(logicalView?queueLogicalSendGain(edge,0,true):
+               requestWireGain({sourceId:t.id,edgeId:id,levelDb:0})))
+            status("SOF unity reset unavailable · select one editable SEND");
           return true;
         }
         if(!streamFaderControl(t.kind==="master"?"masterGain":"faderDb",t,0,true))

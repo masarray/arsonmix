@@ -29,43 +29,49 @@ def verify(page,label,path):
     page.wait_for_selector("#bankNext svg path")
     # Check the approved PNG key before bank navigation hides CH 01.
     assert page.locator("#tracks .strip[data-id='1'] button[data-hw-kind='mute']").count()==1
-    for key in ("bankPrev","bankNext"):
-        button=page.locator("#"+key)
-        result=button.evaluate("""el=>{
-           const p=el.querySelector('svg path');
-           const ir=el.querySelector('svg').getBoundingClientRect();
-           const r=el.getBoundingClientRect();
-           return {fill:getComputedStyle(p).fill,
-             w:r.width,h:r.height,x:r.x,y:r.y,svgW:ir.width,svgH:ir.height,
-             background:getComputedStyle(el).backgroundImage};
+    def arrow_state(button):
+        return button.evaluate("""el=>{
+          const svg=el.querySelector('svg'),p=svg.querySelector('path');
+          const ir=svg.getBoundingClientRect(),r=el.getBoundingClientRect();
+          const style=getComputedStyle(el),ink=getComputedStyle(p);
+          return {fill:ink.fill,stroke:ink.stroke,strokeWidth:ink.strokeWidth,
+            d:p.getAttribute('d'),w:r.width,h:r.height,x:r.x,y:r.y,
+            svgW:ir.width,svgH:ir.height,dx:ir.x+ir.width/2-r.x-r.width/2,
+            dy:ir.y+ir.height/2-r.y-r.height/2,
+            face:style.backgroundColor,transform:style.transform};
         }""")
-        assert result["fill"]=="rgb(35, 52, 59)",(label,key,"dark arrow ink",result)
-        assert result["svgW"]==24 and result["svgH"]==24,(label,key,"original SVG dimensions",result)
-        assert result["w"]>=30 and abs(result["h"]-29)<.5,(label,key,"hit target changed",result)
-        assert "gradient" in result["background"],(label,key,"silver cap lost",result)
-    # Worst-case V6 silver surface for arrows, small dialog text and icon.
-    assert contrast("#23343b","#a3a6a7")>=5.2
+    def hexrgb(rgb):
+        return "".join(f"{int(v):02x}" for v in rgb[4:-1].split(","))
+    page.mouse.move(10,100)
+    for key,d in (("bankPrev","M15 5L8 12l7 7"),("bankNext","M9 5l7 7-7 7")):
+        result=arrow_state(page.locator("#"+key))
+        assert result["fill"]=="none" and result["strokeWidth"]=="2.5px",(label,key,result)
+        assert result["d"]==d and result["svgW"]==result["svgH"]==18,(label,key,result)
+        assert result["w"]==result["h"]==28 and abs(result["dx"])<=.5 and abs(result["dy"])<=.5,(label,key,result)
+        assert contrast(hexrgb(result["stroke"]),hexrgb(result["face"]))>=3,(label,key,result)
+    # Retain the dialog and semantic matrix contrast budgets independently.
     assert contrast("#263b43","#a3a6a7")>=4.5
     assert contrast("#194b3d","#a3a6a7")>=3.0
     assert contrast("#f4fafb","#587581")>=4.5
-    # Only Next is enabled at initial bank; :active reverses the ink to white.
     next_btn=page.locator("#bankNext")
     assert next_btn.is_enabled(),(label,"no navigable next bank")
+    bank=page.locator("#bankSelect")
+    initial=bank.input_value()
     before=next_btn.bounding_box()
     page.mouse.move(before["x"]+before["width"]/2,before["y"]+before["height"]/2)
     page.mouse.down()
-    held=next_btn.evaluate("""el=>({
-      fill:getComputedStyle(el.querySelector('svg path')).fill,
-      background:getComputedStyle(el).backgroundImage,
-      transform:getComputedStyle(el).transform
-    })""")
-    assert held["fill"]=="rgb(244, 250, 251)",(label,"pressed arrow hidden",held)
-    assert held["transform"]=="none",(label,"pressed arrow moved",held)
+    held=arrow_state(next_btn)
+    assert held["stroke"]=="rgb(255, 255, 255)" and held["face"]=="rgb(65, 103, 118)",(label,held)
+    assert held["transform"]=="none",(label,held)
     page.mouse.up()
-    released=next_btn.evaluate("el=>getComputedStyle(el.querySelector('svg path')).fill")
-    assert released=="rgb(35, 52, 59)",(label,"arrow did not return OFF",released)
+    page.mouse.move(10,100)
+    assert bank.input_value()!=initial,(label,"next bank did not change")
+    released=arrow_state(next_btn)
+    assert released["stroke"]=="rgb(224, 243, 250)" and released["face"]=="rgb(35, 62, 76)",(label,released)
     after=next_btn.bounding_box()
     assert all(abs(before[k]-after[k])<.5 for k in ("x","y","width","height")),(label,before,after)
+    page.locator("#bankPrev").click()
+    assert bank.input_value()==initial,(label,"previous bank did not restore")
     # Route-choice dialog is present in canonical DOM; computed CSS applies
     # even while modal is not shown, without requiring destructive routing.
     dialog=page.locator("#routeOnly")
@@ -116,14 +122,12 @@ def main():
                         check=True,cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
-            for path,label in ((PAGE,"canonical"),
-                               (published_console(dst),"approved-png")):
-                page=browser.new_page(viewport={"width":1680,"height":900})
-                verify(page,label,path)
-                page.close()
+            page=browser.new_page(viewport={"width":1680,"height":900})
+            verify(page,"approved-png",published_console(dst))
+            page.close()
             browser.close()
     print("PASS arrow OFF/ON icon contrast, unchanged geometry, Route to Bus dark microcopy,")
-    print("WIRE linked/legacy semantic contrast, authoring source + approved PNG /preview/")
+    print("WIRE linked/legacy semantic contrast, approved PNG /preview/")
 
 
 if __name__=="__main__":

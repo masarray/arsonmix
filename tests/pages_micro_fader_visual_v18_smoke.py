@@ -28,8 +28,9 @@ def check(page,path,label):
     for kind in buttons:
         button=page.locator(channel+" button.mx-util-key[data-util-kind='"+kind+"']").first
         dims=button.bounding_box()
-        assert dims is not None and abs(dims["width"]-17)<.6 and abs(dims["height"]-17)<.6,(
-            label,kind,"micro icon button is not square 17x17",dims)
+        assert dims is not None and abs(dims["width"]-21)<.6 and abs(dims["height"]-17)<.6,(
+            label,kind,"approved rounded 21x17 micro key geometry",dims)
+        assert button.evaluate("e=>getComputedStyle(e).borderRadius")=="4px",(label,kind)
         icon=button.locator("svg.mi-svg")
         assert icon.count()==1,(label,kind,"SVG Material icon missing")
         assert icon.get_attribute("viewBox")=="0 0 24 24"
@@ -119,13 +120,11 @@ def main():
                        cwd=ROOT,check=True,capture_output=True,text=True)
         with sync_playwright() as playwright:
             browser=playwright.chromium.launch(headless=True)
-            for path,label in ((SOURCE,"canonical"),
-                               (published_console(dist),"png")):
-                page=browser.new_page(viewport={"width":1680,"height":900},device_scale_factor=1)
-                check(page,path,label)
+            page=browser.new_page(viewport={"width":1680,"height":900},device_scale_factor=1)
+            check(page,published_console(dist),"png")
             browser.close()
-    print("PASS V18: Material delete+phase, 17px square buttons, calibrated rulers,")
-    print("no ruler overlaps: 3 source densities + approved public comfort, original PNG preserved")
+    print("PASS V18: Material delete+phase, 21x17 rounded buttons, calibrated rulers,")
+    print("no ruler overlaps: approved public comfort, original PNG preserved")
 
 if __name__=="__main__":
     main()

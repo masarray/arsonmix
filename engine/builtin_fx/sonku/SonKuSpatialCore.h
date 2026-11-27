@@ -227,6 +227,16 @@ public:
     // Separate branded processors (e.g. ImmerSIB) remain P9.8 until they
     // independently adopt its P9.9 voicing. No extra PCM graph or state ABI.
     void optInP99ForSonKuInsert() noexcept { p99ForSonKuInsert_=true; }
+    // Separate switches permit exact performance A/B without tonal changes.
+    // Only the real SonKu product calls this, on the unpublished instance.
+    void optInSonKuP106(bool optimize,bool balance) noexcept {
+        room_.enableMovingFirOptimization(optimize);
+#if defined(SONKU_P98_SCENE_VOICING_RESEARCH) && SONKU_P98_SCENE_VOICING_RESEARCH
+        p98Voicing_.enableBalancedPresence(balance);
+#else
+        (void)balance;
+#endif
+    }
 #endif
 #if defined(SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH) && SONKU_IMMERSIB_P99_VOCAL_ROOM_RESEARCH
     void optInImmerSIBVocalRoom() noexcept {immersibP99Enabled_=true;}

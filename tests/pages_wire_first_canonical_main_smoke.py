@@ -2,7 +2,7 @@
 """WIRE-first A: native-execution NOT claimed. Real Chromium control-plane integration."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from operator_wire_menu import open_wire_config, toggle_wire_routes
+from operator_wire_menu import open_wire_config, toggle_wire_routes, open_application_menu
 
 import subprocess,sys,tempfile
 from approved_publication_fixture import published_console
@@ -271,19 +271,34 @@ def run():
         page.goto(PAGE.as_uri())
         control=main_button(page,5)
         click_main(page, control)
+        def scene_controls():
+            setup=page.locator("#wireConfigWindow")
+            if setup.is_visible():
+                page.locator("#wireConfigClose").click()
+            tab=page.locator("#ribbon-tab-scenes")
+            tab.click()
+            assert tab.get_attribute("aria-selected")=="true"
+            assert page.locator("#saveScene").is_visible()
+            assert page.locator("#recallScene").is_visible()
+        scene_controls()
         page.locator("#saveScene").click()
         assert edge(page,5,"out") is None
         click_main(page, control)
         assert edge(page,5,"out")
+        scene_controls()
         page.locator("#recallScene").click()
         assert edge(page,5,"out") is None,"Scene recreated an intentionally unplugged MAIN"
         # Snapshot SAFE preserves the current unpatched source against old scene.
         click_main(page, control)
+        scene_controls()
         page.locator("#saveScene").click()
         click_main(page, control)
-        page.locator("#moreTools > summary").click()
+        scene_controls()
+        more=open_application_menu(page,"scenes")
+        assert page.locator("#sceneSafe").is_visible()
         page.locator("#sceneSafe").click()
-        page.locator("#moreTools > summary").click()
+        if more.evaluate("e=>e.open"):
+            more.locator(":scope > summary").click()
         page.locator("#sceneSelect").select_option("1")
         page.locator("#recallScene").click()
         assert edge(page,5,"out") is None,"Snapshot SAFE overwrote live MAIN route"

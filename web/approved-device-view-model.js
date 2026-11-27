@@ -39,8 +39,11 @@
   function physicalInputChoice(snapshot,mode,left,right){
     if(mode==="NONE"&&left===-1&&right===-1)return {label:"None",mode,left,right};
     if(!Number.isInteger(left)||!Number.isInteger(right))return null;
-    const pins=activeInputPins(snapshot),a=pins.find(p=>p.port===left),
-      b=pins.find(p=>p.port===right);
+    const pins=activeInputPins(snapshot);
+    return physicalInputChoiceFromPins(pins.find(p=>p.port===left),
+      pins.find(p=>p.port===right),mode,left,right);
+  }
+  function physicalInputChoiceFromPins(a,b,mode,left,right){
     if(!a)return null;
     if(mode==="MONO"&&right===-1)return {
       label:"Mono · "+a.label+" [IN "+(left+1)+"]",mode,left,right};
@@ -53,12 +56,17 @@
   }
   function inputChoices(snapshot) {
     const pins=activeInputPins(snapshot).slice().sort((a,b)=>a.port-b.port);
+    // One call-local index of this accepted inventory; never cache across
+    // native snapshots, device epochs or remaps. Preserve first match.
+    const pinByPort=new Map();
+    for(const pin of pins)if(!pinByPort.has(pin.port))pinByPort.set(pin.port,pin);
     const entries=[{label:"None",mode:"NONE",left:-1,right:-1}];
     const keys=new Set(["NONE:-1:-1"]);
     const add=(mode,left,right)=>{
       const key=mode+":"+left+":"+right;
       if(keys.has(key))return;
-      const choice=physicalInputChoice(snapshot,mode,left,right);
+      if(!Number.isInteger(left)||!Number.isInteger(right))return;
+      const choice=physicalInputChoiceFromPins(pinByPort.get(left),pinByPort.get(right),mode,left,right);
       if(choice){entries.push(choice);keys.add(key);}
     };
     for(const p of pins)add("MONO",p.port,-1);
@@ -213,12 +221,21 @@
       roster:live?snapshot.graph?.rosterRevision:"",
       pins,rows,choices};
   }
-  function inputLabel(snapshot,row) {
+  function inputLabel(snapshot,row,choices) {
     if(!row||row.mode==="NONE")return "None";
     if(row.mode==="BUS")return INTERNAL_BUS;
-    const found=inputChoices(snapshot).find(x=>x.mode===row.mode &&
+    const found=(choices??inputChoices(snapshot)).find(x=>x.mode===row.mode &&
       x.left===row.left && x.right===row.right);
     return found?.label||"None";
+  }
+  // A resolver belongs to ONE synchronous presentation pass only. Lazy so
+  // unpatched / BUS-only passes do not enumerate any physical choices.
+  function inputLabelResolver(snapshot) {
+    let choices;
+    return row=>{
+      if(!row||row.mode==="NONE"||row.mode==="BUS")return inputLabel(snapshot,row);
+      return inputLabel(snapshot,row,choices??=inputChoices(snapshot));
+    };
   }
   // The installed route and new assignment are different views of the
   // same physical inventory; reserved ports must remain visible in readback.
@@ -786,7 +803,7 @@
     }
     return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,inputLabelResolver,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,

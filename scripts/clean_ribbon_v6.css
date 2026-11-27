@@ -35,6 +35,12 @@ html .app #armix-ribbon-commands.armix-ribbon .tool::before,html .app #armix-rib
 html .app #armix-ribbon-commands.armix-ribbon .tool:hover:not(:disabled){background:#9abccb19!important;border-color:#93b5c22b!important;color:#f1f8fb!important}
 html .app #armix-ribbon-commands.armix-ribbon .tool:is(.active,[aria-pressed=true],[aria-expanded=true]){background:#4bb6ce26!important;border-color:#62b9cb56!important;color:#9ce8f4!important}
 html .app #armix-ribbon-commands.armix-ribbon #globalFxToggle[aria-pressed=true]{background:#46b78920!important;border-color:#6ac89b48!important;color:#a6e7ca!important}
+/* Momentary ribbon commands need a visible pressed state without a geometry
+   change. Preserve the dedicated FX safety and bank navigation palettes. */
+html .app #armix-ribbon-commands.armix-ribbon>button.tool:not(.bank-arrow):not(#globalFxToggle):active:not(:disabled){background:#4bb6ce26!important;border-color:#62b9cb56!important;color:#9ce8f4!important}
+/* Ribbon caption inherits the current V6 owner rather than legacy Inter ink. */
+html .app #armix-ribbon-commands.armix-ribbon #globalFxToggle .global-fx-label{font:inherit!important;color:inherit!important}
+html .app #armix-ribbon-commands.armix-ribbon #globalFxToggle .global-fx-power-icon{color:inherit!important}
 html .app #armix-ribbon-commands.armix-ribbon .toolbar-select{border:1px solid #83a6b42e!important;border-radius:14px!important;background-color:#0d202a!important;color:#d2e2e9!important;box-shadow:none!important;height:25px!important;min-height:25px!important;max-height:25px!important}
 html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch{display:inline-flex!important;align-items:center;flex:none;gap:2px!important;padding:2px!important;height:30px!important;min-height:30px!important;max-height:30px!important;border:1px solid #688b9b!important;border-radius:999px!important;background:#0d202a!important;box-sizing:border-box!important}
 html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool{height:24px!important;min-height:24px!important;max-height:24px!important;padding:0 10px!important;border-radius:999px!important;justify-content:center!important;align-items:center!important}

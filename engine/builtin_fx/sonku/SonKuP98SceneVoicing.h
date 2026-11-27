@@ -23,6 +23,8 @@ public:
     void enableFixedStageWarmth(bool enabled) noexcept {
         fixedStageWarmth_=enabled;
     }
+    // SonKu-only voicing policy, set before prepare; no new filter or latency.
+    void enableBalancedPresence(bool enabled) noexcept { balancedPresence_=enabled; }
     bool prepare(double sampleRate) noexcept {
         if (!std::isfinite(sampleRate) ||
             (std::abs(sampleRate-44100.)>.1 && std::abs(sampleRate-48000.)>.1))
@@ -64,6 +66,16 @@ public:
         // articulator on original L/R, instead of reviving the 2k boost.
         auto target=curves_[stageWarm?Neutral:
                                (enabled && valid(scene)?scene:Neutral)];
+        if(balancedPresence_ && enabled && scene>=Signature && scene<=Cinema){
+            // The P99 center focus and P97 stage already contribute presence.
+            // Reduce redundant P98 source/ear boosts, retain body and room air.
+            // Existing 55ms slew handles preset changes; no detector pumping.
+            target[0]*=.45f;
+            target[3]*=.40f;
+            target[4]*=.75f;
+            target[5]*=.50f;
+            target[10]=(scene==Signature?.12f:scene==Cinema?.08f:.05f);
+        }
         if(stageWarm) {
             // Prepared EAR-linked static de-harsh (same 3450Hz transfer
             // in both ears, after full direct+room sum). This is NOT
@@ -226,6 +238,7 @@ private:
     std::array<Filter,2> warmSource_{}; // identical fixed L/R transfer
     std::array<Filter,2> fixedVocalDetail_{}; // stationary 1.1k focus, NO SIDE ducking
     float warmGain_=0.f,fixedVocalDetailGain_=0.f;
+    bool balancedPresence_=false; // only actual 8D-SonKu candidate opts in
     bool fixedStageWarmth_=false; // non-ImmerSIB behavior unchanged
     float sideAirLow_=0.f;
     std::array<float,12> gains_{};
