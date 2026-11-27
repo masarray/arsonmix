@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
-from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN, open_audio_io_command
+from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN, open_audio_io_command, select_ribbon_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -323,6 +323,7 @@ def main():
             g0['mixerSession']={'authority':'NONE','deviceEpoch':g0['device']['epoch'],'channels':[]}
             g0['legacyM4']={'active':True,'routeAccepted':False,'routingRevision':'1'}
             emit(page,'arMixConsoleSnapshot',g0)
+            select_ribbon_workflow(page,"mixer")
             add_track=page.locator('.command-bar #addTrack')
             assert add_track.is_enabled()
             add_track.click()

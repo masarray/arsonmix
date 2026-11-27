@@ -542,7 +542,7 @@ def verify_additional_output(page,out):
     assert panel.get_by_role("alert").inner_text()=="Endpoint rejected"
     panel.get_by_role("button",name="Enable output",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
-    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True,"preferenceSaved":True,"endpoint":"CABLE Input"})
     assert panel.get_by_role("button",name="Enable output",exact=True).is_disabled()
     live.update(secondaryOutputReady=True,secondaryOutputName="CABLE Input")
     emit(page,"arMixStatus",live)
@@ -581,7 +581,9 @@ def verify_additional_output(page,out):
     emit(page,"arMixStatus",live)
     inline.get_by_role("button",name="Disconnect").click()
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputStop').at(-1)")
-    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True})
+    # Stop completion includes the native durable-preference receipt. Without
+    # it the saved endpoint must remain disconnectable, not falsely cleared.
+    emit(page,"arMixSecondaryOutputAck",{"requestId":req["requestId"],"action":req["action"],"ok":True,"preferenceSaved":True})
     live.update(secondaryOutputReady=False,secondaryOutputArmed=False,secondaryOutputName="",
                 secondaryOutputFault=False,secondaryOutputRecovering=False,secondaryOutputRecoveryName="")
     emit(page,"arMixStatus",live)
