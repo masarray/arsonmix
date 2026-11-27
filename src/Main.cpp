@@ -13535,7 +13535,7 @@ private:
                                            .getChildFile ("v1.0")
                                            .getChildFile ("powershell.exe");
         const bool portable=smartUpdaterPortableEligible();
-        if (portable && applyStaged) return false;
+        // Portable exit only prepares a versioned payload; never switches or runs it.
         if ((smartUpdaterInstallEligible() || portable)
             && updaterScript.existsAsFile() && provenance.existsAsFile()
             && powerShell.existsAsFile())
@@ -13546,7 +13546,7 @@ private:
                 "-File", updaterScript.getFullPathName(),
                 "-OwnerProcessId", juce::String (static_cast<int> (::GetCurrentProcessId())) };
             if (applyStaged)
-                command.add ("-ApplyStaged");
+                command.add (portable ? "-PreparePortable" : "-ApplyStaged");
             else if(checkNow)
                 command.add ("-CheckNow");
             juce::ChildProcess supervisor;

@@ -6,10 +6,12 @@ param([ValidateRange(0,2147483647)][int]$OwnerProcessId=0,
       [switch]$PolicySelfTest,
       [switch]$ApplyStaged,
       [switch]$RecoveryMode,
-      [switch]$CheckNow)
+      [switch]$CheckNow,
+      [switch]$PreparePortable)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if($CheckNow -and ($ApplyStaged -or $RecoveryMode -or $PolicySelfTest)){throw 'CheckNow is check-only'}
+if($PreparePortable -and ($CheckNow -or $ApplyStaged -or $RecoveryMode -or $PolicySelfTest)){throw 'PreparePortable is preparation-only'}
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
 
 $repo='masarray/arsonmix'
@@ -30,6 +32,7 @@ $mutex=$null
 $locked=$false
 $rollbackGuard=$null
 $rollbackProof=$null
+$portableOwner=$null
 # Network, hashing and installer orchestration must yield CPU to live ASIO.
 try { [Diagnostics.Process]::GetCurrentProcess().PriorityClass =
     [Diagnostics.ProcessPriorityClass]::BelowNormal } catch { }
@@ -589,7 +592,7 @@ function Publish-VerifiedPortableDownload([string]$stageFile,[string]$destinatio
     [IO.File]::Move($stageFile,$destination)
 }
 function Test-PortableCacheLayout {
-    foreach($folder in @($PSScriptRoot,$root,(Join-Path $root 'stage'),(Join-Path $root 'downloads'))){
+    foreach($folder in @($PSScriptRoot,$root,(Join-Path $root 'stage'),(Join-Path $root 'downloads'),(Join-Path $root 'payloads'))){
         if(Test-Path -LiteralPath $folder){
             $info=Get-Item -LiteralPath $folder -Force
             if(-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $false}
@@ -654,6 +657,137 @@ function Invoke-PortableUpdateCheck {
     $state.newAsset=[pscustomobject]@{name=$asset.name;digest=$asset.digest;size=$asset.size}
     Write-State $state
     Log-Result ('PORTABLE_DOWNLOAD_READY '+$candidate.tag_name)
+}
+
+
+# Extract only a publisher-authenticated archive under a live read-only lease.
+# This is preparation, NOT activation; no private workspace is copied or moved.
+function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourceSha) {
+    if($sourceSha -cnotmatch '^[a-f0-9]{40}$' -or (Test-Path -LiteralPath $target)){throw 'Unsafe portable payload target'}
+    Add-Type -AssemblyName System.IO.Compression
+    $lease.Position=0
+    $zip=[IO.Compression.ZipArchive]::new($lease,[IO.Compression.ZipArchiveMode]::Read,$true)
+    try {
+        if($zip.Entries.Count -lt 1 -or $zip.Entries.Count -gt 4096){throw 'Portable member count out of bounds'}
+        $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $fileNames=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+        $members=[Collections.Generic.List[object]]::new()
+        [long]$total=0
+        foreach($entry in $zip.Entries){
+            $name=$entry.FullName
+            $dir=$name.EndsWith('/')
+            $rel=if($dir){$name.Substring(0,$name.Length-1)}else{$name}
+            if($rel.Length -lt 1 -or $rel.Length -gt 2048 -or $rel.Contains('\')){throw 'Unsafe portable member path'}
+            $parts=$rel.Split('/')
+            if($parts[0] -in @('Studio','.ArSonMixUpdates')){throw 'Portable archive contains private workspace'}
+            foreach($part in $parts){
+                if($part -eq '' -or $part -in @('.','..') -or $part -match '[<>:"|?*\x00-\x1f]' -or
+                   $part.EndsWith('.') -or $part.EndsWith(' ') -or
+                   $part.Split('.')[0].TrimEnd() -match '^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$'){
+                    throw 'Unsafe portable member component'
+                }
+            }
+            $type=($entry.ExternalAttributes -shr 16) -band 0xf000
+            if(($type -ne 0 -and $type -ne 0x8000 -and $type -ne 0x4000) -or
+               ($entry.ExternalAttributes -band 0x400) -ne 0 -or
+               ($dir -and ($entry.Length -ne 0 -or $type -eq 0x8000)) -or
+               (-not $dir -and $type -eq 0x4000)){throw 'Unsupported portable member type'}
+            if(-not $seen.Add($rel)){throw 'Duplicate portable member'}
+            if(-not $dir){
+                [void]$fileNames.Add($rel)
+                $total+=$entry.Length
+                if($entry.Length -lt 0 -or $total -gt 2GB){throw 'Portable expansion exceeds 2GiB'}
+            }
+            $members.Add([pscustomobject]@{entry=$entry;relative=$rel;directory=$dir})
+        }
+        foreach($member in $members){
+            $parts=$member.relative.Split('/')
+            for($i=1;$i -lt $parts.Length;$i++){
+                if($fileNames.Contains(($parts[0..($i-1)] -join '/'))){throw 'Portable file/directory collision'}
+            }
+        }
+        foreach($required in @('ArSonMix-GUI10CH-P012-Windows-x64.exe','BUILD_PROVENANCE.json','portable_mode.txt',
+                               'ArSonMixAutoUpdate.ps1','UpdateVerifier/gh.exe','UpdateVerifier/verifier.json')){
+            if(-not $fileNames.Contains($required)){throw 'Portable payload missing required file'}
+        }
+        # Unique scratch directory is supplied by the caller, never the active app.
+        [IO.Directory]::CreateDirectory($target)|Out-Null
+        $prefix=[IO.Path]::GetFullPath($target).TrimEnd('\')+'\'
+        $buffer=New-Object byte[] 65536
+        foreach($member in $members){
+            $dest=[IO.Path]::GetFullPath((Join-Path $target $member.relative))
+            if(-not $dest.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw 'Portable member escapes payload'}
+            if($member.directory){[IO.Directory]::CreateDirectory($dest)|Out-Null;continue}
+            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($dest))|Out-Null
+            $inputStream=$member.entry.Open()
+            try{
+                $outputStream=[IO.File]::Open($dest,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+                try{
+                    [long]$written=0
+                    while(($n=$inputStream.Read($buffer,0,$buffer.Length)) -gt 0){
+                        $written+=$n
+                        if($written -gt $member.entry.Length){throw 'Portable member length overflow'}
+                        $outputStream.Write($buffer,0,$n)
+                    }
+                    if($written -ne $member.entry.Length){throw 'Portable member length mismatch'}
+                    $outputStream.Flush($true)
+                }finally{$outputStream.Dispose()}
+            }finally{$inputStream.Dispose()}
+        }
+        $build=Read-Json (Join-Path $target 'BUILD_PROVENANCE.json')
+        $binary=Join-Path $target 'ArSonMix-GUI10CH-P012-Windows-x64.exe'
+        if($build.sourceCommit -cne $sourceSha -or $build.executable -cne [IO.Path]::GetFileName($binary) -or
+           $build.exeSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+           [long]$build.guiExeBytes -ne (Get-Item -LiteralPath $binary).Length -or
+           (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $build.exeSha256 -or
+           (Get-Content -LiteralPath (Join-Path $target 'portable_mode.txt') -Raw).Trim() -cne 'ARSONMIX_PORTABLE_WORKSPACE_V1'){
+            throw 'Portable payload provenance mismatch'
+        }
+    }finally{$zip.Dispose()}
+}
+function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
+    if($null -eq $owner -or -not $owner.WaitForExit(120000)){return}
+    # A replacement portable session may have started while the owner exited.
+    # Defer all extraction in that case; never close a process.
+    foreach($process in [Diagnostics.Process]::GetProcessesByName([IO.Path]::GetFileNameWithoutExtension($exe))){
+        try {return} finally {$process.Dispose()}
+    }
+    if(-not (Test-PortableCacheLayout) -or -not (Test-RegularUpdateFile $statePath)){return}
+    $state=Read-Json $statePath
+    $build=Read-Json $provenance
+    if($state.phase -cne 'portable-ready' -or $state.previousSha -cne $build.sourceCommit){return}
+    $tag=[string]$state.candidateTag;$sha=[string]$state.candidateSha
+    if($null -eq (Version-Key $tag) -or $sha -cnotmatch '^[a-f0-9]{40}$'){return}
+    $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/2';'X-GitHub-Api-Version'='2022-11-28'}
+    $selection=Select-PortableRelease (Read-PublishedReleases $headers) ([string]$build.sourceCommit)
+    if($null -eq $selection.candidate -or $selection.candidate.tag_name -cne $tag -or $selection.candidate.target_commitish -cne $sha){return}
+    $asset=Approved-Portable $selection.candidate
+    if($asset.digest -cne $state.newAsset.digest -or [long]$asset.size -ne [long]$state.newAsset.size -or $asset.name -cne $state.newAsset.name){return}
+    $zipPath=Join-Path (Join-Path $root 'downloads') ([string]$asset.name)
+    if(-not (Test-RegularUpdateFile $zipPath)){return}
+    $parent=Join-Path $root 'payloads'
+    $target=Join-Path $parent ($sha+'-'+([string]$asset.digest).Substring(7))
+    # Existing payloads are not trusted or overwritten; activation must
+    # independently validate the archive and every payload file in a future step.
+    if(Test-Path -LiteralPath $target){return}
+    $lease=[IO.File]::Open($zipPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    $scratch=Join-Path $parent ('.prepare-'+[guid]::NewGuid().ToString('N'))
+    try{
+        if(-not (Test-StagedAsset $zipPath $asset)){throw 'Portable ZIP changed before preparation'}
+        Assert-InstallerAttestation $zipPath $tag $sha -PortableZip
+        [IO.Directory]::CreateDirectory($parent)|Out-Null
+        if(-not (Test-PortableCacheLayout)){throw 'Unsafe portable payload cache'}
+        Expand-PortablePayload $lease $scratch $sha
+        # Same-volume directory rename is the only publication boundary.
+        [IO.Directory]::Move($scratch,$target)
+        Log-Result ('PORTABLE_PAYLOAD_PREPARED '+$tag)
+    }finally{
+        $lease.Dispose()
+        # Scratch is a new updater-owned directory, never the active workspace.
+        if(Test-Path -LiteralPath $scratch -PathType Container){
+            Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Test-StagedAsset([string]$path,[object]$asset) {
@@ -1173,6 +1307,58 @@ if($PolicySelfTest) {
         if(-not $rejected -or [IO.File]::ReadAllText($destination) -cne 'private modified file'){throw 'Portable promotion overwrote existing data'}
     } finally {$root=$priorRoot;$logPath=$priorLogPath;Remove-Item -LiteralPath $portableFixture -Recurse -Force}
     Write-Output 'ARSONMIX_PORTABLE_DOWNLOAD_POLICY_PASS'
+
+    # Exercise actual ZIP extraction (not a mock) without executing payloads.
+    $fixture=Join-Path ([IO.Path]::GetTempPath()) ('armix-payload-'+[guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($fixture)|Out-Null
+    Add-Type -AssemblyName System.IO.Compression
+    try{
+        $binaryBytes=[byte[]](1,2,3,4)
+        $hashSource=Join-Path $fixture 'binary'
+        [IO.File]::WriteAllBytes($hashSource,$binaryBytes)
+        $expected=(Get-FileHash -LiteralPath $hashSource -Algorithm SHA256).Hash.ToLowerInvariant()
+        $sha='a'*40
+        $manifest=ConvertTo-Json -Compress @{sourceCommit=$sha;executable='ArSonMix-GUI10CH-P012-Windows-x64.exe';guiExeBytes=4;exeSha256=$expected}
+        $makeZip={
+            param([string]$path,[string]$extra)
+            $out=[IO.File]::Open($path,[IO.FileMode]::CreateNew)
+            try{
+                $archive=[IO.Compression.ZipArchive]::new($out,[IO.Compression.ZipArchiveMode]::Create,$true)
+                try{
+                    $entries=[ordered]@{'ArSonMix-GUI10CH-P012-Windows-x64.exe'=$binaryBytes;
+                        'BUILD_PROVENANCE.json'=[Text.Encoding]::UTF8.GetBytes($manifest);
+                        'portable_mode.txt'=[Text.Encoding]::UTF8.GetBytes('ARSONMIX_PORTABLE_WORKSPACE_V1');
+                        'ArSonMixAutoUpdate.ps1'=[byte[]](1);'UpdateVerifier/gh.exe'=[byte[]](2);
+                        'UpdateVerifier/verifier.json'=[byte[]](3)}
+                    foreach($name in $entries.Keys){
+                        $stream=$archive.CreateEntry($name).Open()
+                        try{$bytes=$entries[$name];$stream.Write($bytes,0,$bytes.Length)}finally{$stream.Dispose()}
+                    }
+                    if($extra){$stream=$archive.CreateEntry($extra).Open();$stream.Dispose()}
+                }finally{$archive.Dispose()}
+            }finally{$out.Dispose()}
+        }
+        foreach($case in @('valid','traversal','studio','duplicate','reserved','collision','wrong-source')){
+            $extra=switch($case){
+                traversal {'../escape.txt'} studio {'Studio/private.smix'}
+                duplicate {'updateverifier/GH.EXE'} reserved {'CON.txt'}
+                collision {'UpdateVerifier'} default {''}
+            }
+            $zipFile=Join-Path $fixture ($case+'.zip')
+            & $makeZip $zipFile $extra
+            $target=Join-Path $fixture $case
+            $stream=[IO.File]::OpenRead($zipFile)
+            $rejected=$false
+            try{Expand-PortablePayload $stream $target $(if($case -eq 'wrong-source'){'b'*40}else{$sha})}
+            catch{$rejected=$true}finally{$stream.Dispose()}
+            if($case -eq 'valid'){
+                if($rejected -or -not (Test-Path -LiteralPath (Join-Path $target 'UpdateVerifier/gh.exe'))){throw 'Valid portable payload rejected'}
+            }elseif(-not $rejected){throw "Unsafe portable payload accepted: $case"}
+        }
+        if(Test-Path -LiteralPath (Join-Path $fixture 'escape.txt')){throw 'ZIP traversal escaped staging'}
+    }finally{Remove-Item -LiteralPath $fixture -Recurse -Force}
+    Write-Output 'ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS'
+
     Write-Output 'ARSONMIX_UPDATER_RESUME_POLICY_PASS'
     $leaseDir=Join-Path ([IO.Path]::GetTempPath()) ('armix-rollback-'+[guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($leaseDir)|Out-Null
@@ -1201,6 +1387,12 @@ if($PolicySelfTest) {
 }
 
 try {
+    if($PreparePortable){
+        if(-not $portable -or -not (Owns-Exe $OwnerProcessId)){exit 0}
+        $portableOwner=[Diagnostics.Process]::GetProcessById($OwnerProcessId)
+        if(-not [string]::Equals([IO.Path]::GetFullPath($portableOwner.MainModule.FileName),$exe,[StringComparison]::OrdinalIgnoreCase)){exit 0}
+        [void]$portableOwner.Handle # pin the original process identity across mutex wait
+    }
     if($portable -and (-not (Test-PortableCacheLayout) -or $ApplyStaged -or $RecoveryMode)){exit 0}
     if($RecoveryMode -and -not (Test-Path -LiteralPath $provenance -PathType Leaf)) {
         Show-RecoveryFailure 'Installation version metadata is missing'
@@ -1208,19 +1400,20 @@ try {
     }
     if(-not (Test-Path -LiteralPath $provenance -PathType Leaf) -or
        (-not $RecoveryMode -and -not (Test-Path -LiteralPath $exe -PathType Leaf)) -or
-       (-not $ApplyStaged -and -not $RecoveryMode -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
+       (-not $PreparePortable -and -not $ApplyStaged -and -not $RecoveryMode -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
     # One update worker per user, for installed and portable packages,
     # arbitrary scripts outside {app}, or second ArSonMix updater instance.
     if($portable -and ($ApplyStaged -or $RecoveryMode)){exit 0}
     $mutex=[Threading.Mutex]::new($false,'Local\ArSonMix.AutoUpdater.v1')
     try {
-        $locked=$mutex.WaitOne($(if($ApplyStaged -or $RecoveryMode){60000}else{0}))
+        $locked=$mutex.WaitOne($(if($PreparePortable -or $ApplyStaged -or $RecoveryMode){60000}else{0}))
     } catch [Threading.AbandonedMutexException] {
         # Previous worker was killed. WaitOne owns the mutex despite throwing.
         $locked=$true
         Log-Result 'ABANDONED_MUTEX_RECLAIMED'
     }
     if(-not $locked){exit 0}
+    if($PreparePortable){Invoke-PortablePreparation $portableOwner;exit 0}
     if($portable){Invoke-PortableUpdateCheck;exit 0}
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $file=Read-Json $provenance
@@ -1574,6 +1767,7 @@ try {
     } catch { }
     if(-not $portable -or (Test-PortableCacheLayout)){Log-Result ('FAIL_CLOSED '+$_.Exception.Message)}
 } finally {
+    if($null -ne $portableOwner){$portableOwner.Dispose()}
     if($null -ne $rollbackGuard){$rollbackGuard.Dispose()}
     if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}
     if($null -ne $mutex){$mutex.Dispose()}

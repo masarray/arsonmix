@@ -371,6 +371,7 @@ test('updater script has one coherent main try/finally and no duplicated tail', 
   const script = read('installer/ArSonMixAutoUpdate.ps1').replace(/\r\n/g, '\n');
   const tail = [
     '} finally {',
+    '    if($null -ne $portableOwner){$portableOwner.Dispose()}',
     '    if($null -ne $rollbackGuard){$rollbackGuard.Dispose()}',
     '    if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}',
     '    if($null -ne $mutex){$mutex.Dispose()}',
@@ -686,7 +687,7 @@ test('Rollback survives verifier replacement and offline network only under same
 
 test('Portable release handoff downloads an attested ZIP but cannot apply or modify Studio',()=>{
   const u=read('installer/ArSonMixAutoUpdate.ps1'),n=read('src/Main.cpp'),bridge=read('web/approved-native-bridge.js');
-  const work=u.slice(u.indexOf('function Invoke-PortableUpdateCheck'),u.indexOf('function Test-StagedAsset'));
+  const work=u.slice(u.indexOf('function Invoke-PortableUpdateCheck'),u.indexOf('function Expand-PortablePayload'));
   assert.match(work,/Download-PortableVerified/);
   assert.ok(work.indexOf('Download-PortableVerified $candidate $asset $stageFile')<work.indexOf('Publish-VerifiedPortableDownload $stageFile $destination $asset'));
   assert.match(u,/Portable download destination already exists with different bytes/);
@@ -694,8 +695,22 @@ test('Portable release handoff downloads an attested ZIP but cannot apply or mod
   assert.match(u,/if\(\$portable -and \(\$ApplyStaged -or \$RecoveryMode\)\)\{exit 0\}/);
   assert.match(u,/Assert-InstallerAttestation \$destination \$tag \$sha -PortableZip/);
   assert.match(u,/ARSONMIX_PORTABLE_DOWNLOAD_POLICY_PASS/);
-  assert.match(n,/if \(portable && applyStaged\) return false/);
+  assert.match(n,/command.add \(portable \? "-PreparePortable" : "-ApplyStaged"\)/);
   assert.match(bridge,/Portable download only/);
   assert.match(read('.github/workflows/alpha-preview-publish.yml'),/-IncludePortableUpdater/);
   assert.match(read('scripts/build_verify_windows_installer.ps1'),/PORTABLE_RELEASE_UPDATE_DOWNLOADER_STAGED/);
+});
+
+
+test('Portable preparation is post-exit, authenticated under a lease, isolated and non-activating',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const p=u.slice(u.indexOf('function Invoke-PortablePreparation'),u.indexOf('function Test-StagedAsset'));
+  assert.match(p,/WaitForExit\(120000\)/);
+  assert.match(p,/FileShare\]::Read/);
+  assert.ok(p.indexOf('Assert-InstallerAttestation $zipPath')<p.indexOf('Expand-PortablePayload $lease'));
+  assert.ok(p.indexOf('Expand-PortablePayload $lease')<p.indexOf('[IO.Directory]::Move($scratch,$target)'));
+  assert.doesNotMatch(p,/Run-Installer|Start-Process|Launch-WithHealth|Move-Item/);
+  assert.match(u,/Portable archive contains private workspace/);
+  assert.match(u,/Portable file\/directory collision/);
+  assert.match(u,/ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS/);
 });
