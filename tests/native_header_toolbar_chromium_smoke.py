@@ -4,6 +4,8 @@
 Verify breathing room, semantic group separators, no overlapped controls and
 the original file/menu actions at ordinary and minimum Windows widths.
 """
+import base64
+import math
 import importlib.util
 import tempfile
 from pathlib import Path
@@ -13,6 +15,48 @@ from native_event_fixture import NATIVE_EVENTS
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+def assert_ribbon_seam(page, width, *, check_pixels=False):
+    # Test the painted SVG and its summary, not just the details wrapper.
+    geometry = page.evaluate("""()=>{
+      const box=el=>{const r=el.getBoundingClientRect();
+        return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:r.width,h:r.height};};
+      const menu=document.querySelector('#moreTools>summary');
+      const tab=document.querySelector('#ribbon-tab-mixer');
+      const nav=document.querySelector('.armix-ribbon-nav');
+      return {menu:box(menu),face:box(menu.querySelector('.armix-ribbon-menu-shape')),
+        tab:box(tab),tabFace:box(tab.querySelector('svg')),nav:box(nav),
+        rail:parseFloat(getComputedStyle(nav).borderBottomWidth),
+        max:getComputedStyle(menu).maxHeight,
+        transform:getComputedStyle(menu).transform};
+    }""")
+    m, f, t, tf, n = (geometry[key] for key in ("menu","face","tab","tabFace","nav"))
+    assert geometry["max"]=="32px" and geometry["transform"]=="none", (width, geometry)
+    assert all(abs(r["h"]-32)<0.1 for r in (m,f,t,tf)), (width, geometry)
+    assert max(r["y"] for r in (m,f,t,tf))-min(r["y"] for r in (m,f,t,tf))<0.25, (width, geometry)
+    assert all(abs(r["bottom"]-(n["bottom"]-geometry["rail"]))<0.25 for r in (m,f,t,tf)), (width, geometry)
+    assert abs(m["right"]-t["x"]-22)<0.25, (width, geometry)
+    if check_pixels:
+        # Sample inside the lower diagonal where menu overlaps active Mixer.
+        # Before correction the overlap sample was cyan, not dark like the menu.
+        x0=math.floor(m["x"])
+        y0=math.floor(m["y"])
+        clip={"x":x0,"y":y0,"width":math.ceil(t["right"])-x0,
+              "height":math.ceil(t["bottom"])-y0}
+        png=page.screenshot(clip=clip,scale="css")
+        samples=page.evaluate("""async ({png,points})=>{
+          const im=new Image();im.src='data:image/png;base64,'+png;await im.decode();
+          const c=document.createElement('canvas');c.width=im.width;c.height=im.height;
+          const ctx=c.getContext('2d');ctx.drawImage(im,0,0);
+          return points.map(([x,y])=>Array.from(ctx.getImageData(x,y,1,1).data).slice(0,3));
+        }""",{"png":base64.b64encode(png).decode("ascii"),"points":[
+          [math.floor(m["x"]+45)-x0,math.floor(m["bottom"])-2-y0],
+          [math.floor(m["right"]-12)-x0,math.floor(m["bottom"])-2-y0],
+          [math.floor(t["x"]+45)-x0,math.floor(t["bottom"])-2-y0]]})
+        left,seam,active=samples
+        distance=lambda a,b:sum(abs(x-y) for x,y in zip(a,b))
+        assert distance(left,seam)<=18 and distance(seam,active)>=45,(width,geometry,samples)
+        Path(f"operator-ux-toolbar-seam-{width}.png").write_bytes(png)
 
 def main():
     spec = importlib.util.spec_from_file_location(
@@ -119,6 +163,7 @@ def main():
             # V6 menu belongs to the navigation row, not the command row.
             assert metrics['nav']['height']==40 and abs(metrics['more']['bottom']-metrics['nav']['bottom'])<=3,(width,metrics)
             assert page.locator('.armix-ribbon-tabs [role=tab]').count()==6
+            assert_ribbon_seam(page,width,check_pixels=True)
             tabs=page.locator('.armix-ribbon-tabs [role=tab]').evaluate_all("""nodes=>nodes.map(el=>({z:Number(getComputedStyle(el).zIndex),x:el.getBoundingClientRect().x,w:el.getBoundingClientRect().width,path:el.querySelector('path').getAttribute('d')}))""")
             assert all(tabs[i]["z"]>tabs[i+1]["z"] for i in range(5)),(width,tabs)
             assert all(abs(tabs[i]["x"]+tabs[i]["w"]-tabs[i+1]["x"]-22)<=1 for i in range(5)),(width,tabs)
@@ -149,6 +194,7 @@ def main():
             assert menu.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
             assert page.locator(".command-bar > .mixer-file-tool").count()==0
             menu.locator(":scope > summary").click()
+            assert_ribbon_seam(page,width)
             file_group = menu.locator(".mixer-file-tool")
             assert file_group.all_text_contents() == ["New", "Save", "Open"], width
             new = menu.locator("[data-native-new-project]")
@@ -220,6 +266,14 @@ def main():
             assert page.locator("#moreTools").get_attribute("open") is not None, (
                 width, "More menu did not open")
             more.click()
+            assert_ribbon_seam(page,width)
+            more.hover()
+            page.mouse.down()
+            try:
+                assert_ribbon_seam(page,width)
+            finally:
+                page.mouse.move(width-10,height-10)
+                page.mouse.up()
             if width==1366:
                 for workflow in ("fx","routing","scenes","io"):
                     page.locator("#ribbon-tab-"+workflow).click()
@@ -232,8 +286,22 @@ def main():
             assert not errors, (width, "native JavaScript errors", errors)
             print("NATIVE_TOOLBAR", width, metrics["bar"], len(visible), flush=True)
             page.close()
+        # Fractional Windows display scaling must retain the same baseline.
+        for scale in (1.25,1.5):
+            page=browser.new_page(viewport={"width":1366,"height":768},device_scale_factor=scale)
+            page.add_init_script(NATIVE_EVENTS + """window.__events=[];
+                window.__JUCE__={backend:{
+                    emitEvent(name,payload){window.__events.push({name,payload});},
+                    ...window.__nativeListenerMethods
+                }};""")
+            page.goto((dst/"index.html").as_uri())
+            page.locator("#ribbon-tab-mixer").wait_for(state="visible")
+            assert_ribbon_seam(page,1366)
+            page.screenshot(path=f"operator-ux-toolbar-seam-dpi-{scale}.png",
+                            clip={"x":0,"y":0,"width":310,"height":44})
+            page.close()
         browser.close()
-    print("PASS native toolbar: spacing, group borders, actions, four viewports")
+    print("PASS native toolbar: spacing, group borders, actions, four viewports and ribbon seam DPI checks")
 
 
 if __name__ == "__main__":
