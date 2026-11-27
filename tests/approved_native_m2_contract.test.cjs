@@ -8139,3 +8139,15 @@ test("Channel context menu exposes non-destructive FX save and real native recei
  assert.match(n,/file=file\.withFileExtension\("\.arfx"\)/);
  assert.match(b,/notice\?\.error===true\|\|rackReceipt/);
 });
+
+test("Cold restart MON projects actual prepared muted endpoint, not invented ARM",()=>{
+ const pick=protocol.mainMonitorPreference;
+ assert.equal(pick(["Broadcast"],"Broadcast",true,true).label,"Broadcast · ready / off");
+ assert.equal(pick(["Other"],"Broadcast",true,true).endpoint,"");
+ assert.equal(pick(["Broadcast"],"",false,true).value,"");
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js");
+ assert.match(n,/prepareOnStartup/);
+ assert.match(n,/preferenceSaved=forgetSecondaryStartupSelection\(\)/);
+ assert.match(b,/ack.action==="secondaryOutputStop"&&ack.preferenceSaved===true/);
+ assert.match(b,/v.ready&&!v.fault&&!active&&v.name===extraPreferred/);
+});

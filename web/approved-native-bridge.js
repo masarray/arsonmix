@@ -3954,14 +3954,15 @@
     const active=v.armed||v.recovering;
     const primary=String(hardware?.device?.playbackDevice||"").toLowerCase();
     const names=extraInventory.filter(n=>n.toLowerCase()!==primary);
-    const saved=protocol.mainMonitorPreference(names,extraPreferred,extraHasSaved);
+    const prepared=v.ready&&!v.fault&&!active&&v.name===extraPreferred;
+    const saved=protocol.mainMonitorPreference(names,extraPreferred,extraHasSaved,prepared);
     const opts=[["","None"+(extraPending?" · applying":v.fault?" · fault":v.ready&&!active?" · muted":"")]];
     if(!active&&!v.split&&saved.value)opts.push([saved.value,saved.label]);
     if(active&&v.name)opts.push([v.name,v.name+(v.recovering?" · reconnecting":"")]);
     else if(!v.split&&mainMonitorAllowed()&&extraInventoryKnown&&!extraInventoryPending)
       for(const name of names)opts.push([name,name===saved.endpoint?"Enable "+name:name]);
     if(!active&&!v.split)opts.push(["__armix_refresh__","Refresh devices…"]);
-    if(!active&&!v.split&&(v.fault||v.ready||v.name))
+    if(!active&&!v.split&&(v.fault||v.ready||v.name||extraHasSaved))
       opts.push(["__armix_stop__","Disconnect"]);
     if(v.split)opts.push(["__armix_split__","Separate mix"]);
     opts.push(["__armix_settings__","MON settings…"]);
@@ -3994,7 +3995,7 @@
     if(v.split||value==="__armix_saved__"||value==="__armix_saved_missing__")return;
     if(value==="__armix_refresh__"){refreshAdditionalInventory(true);return;}
     if(value===""||value==="__armix_stop__"){
-      if(v.ready||v.fault||v.recovering||v.name)
+      if(v.ready||v.fault||v.recovering||v.name||extraHasSaved)
         requestAdditionalOutput("secondaryOutputStop",null,true);
       return;
     }
@@ -4027,7 +4028,7 @@
     extraField("refresh").disabled=busy||extraInventoryPending;
     extraField("connect").disabled=busy||!allowed||armed||recovering||!extraInventoryKnown||!options.includes(select.value);
     extraField("stop").disabled=extraPending?.action==="secondaryOutputStop"||
-      (!ready&&!fault&&!name&&!recovering&&extraPending?.action!=="secondaryOutputEnable");
+      (!ready&&!fault&&!name&&!recovering&&!extraHasSaved&&extraPending?.action!=="secondaryOutputEnable");
     extraField("repair").hidden=!live||allowed||busy||armed||recovering;
     const mode=split?"Separate headphone mix":"Same mix";
     if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
@@ -5953,6 +5954,9 @@
         if(["secondaryOutputEnable","secondaryOutputConnect","secondaryOutputArm"].includes(ack.action)&&ack.preferenceSaved===true&&ack.endpoint){
           extraPreferred=ack.endpoint;extraHasSaved=true;
         }
+        if(ack.action==="secondaryOutputStop"&&ack.preferenceSaved===true){
+          extraPreferred="";extraHasSaved=false;extraSelected="";
+        }
         if(extraPending.action==="secondaryMonitorStarter"||extraPending.action==="secondaryOutputSplit")
           extraPending.ackRevision=String(ack.graphRevision||"");
         // A fresh status and accepted graph may already have arrived while
@@ -5972,6 +5976,9 @@
         extraAutoInventoryStarted=true;
         if(!extraInventoryKnown&&!extraInventoryPending)refreshAdditionalInventory();
       }
+      // Refresh once when native cold-start preparation discovers a returned endpoint.
+      if(current.ready&&!previous.ready&&current.name&&!extraInventory.includes(current.name)&&!extraInventoryPending)
+        refreshAdditionalInventory(true);
       // Reuse existing status cadence, no interval or hidden-window scan.
       if(extraSurfaceOpen()&&!extraInventoryPending&&!extraPending&&!current.armed&&!current.recovering&&
          (!extraInventoryKnown||!extraInventory.length||(extraHasSaved&&!extraPreferred))&&

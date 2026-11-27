@@ -382,9 +382,9 @@
     return cables.length===1?cables[0]:"";
   }
   // A saved endpoint is a selection, never proof of PCM or permission to ARM.
-  function mainMonitorPreference(names,preferred,hasSaved) {
+  function mainMonitorPreference(names,preferred,hasSaved,prepared=false) {
     if(typeof preferred==="string"&&preferred&&names.includes(preferred))
-      return {value:"__armix_saved__",label:preferred+" · saved / off",endpoint:preferred};
+      return {value:"__armix_saved__",label:preferred+(prepared?" · ready / off":" · saved / off"),endpoint:preferred};
     if(hasSaved)return {value:"__armix_saved_missing__",label:"Saved device unavailable · off",endpoint:""};
     return {value:"",label:"None",endpoint:""};
   }

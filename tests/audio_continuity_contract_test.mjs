@@ -123,3 +123,18 @@ test('approved machine profile remains pending on IO failure and flushes on norm
   assert.match(main,/if\(!updaterProbeMode_\)persistApprovedAudioSettings\(true\)/);
   assert.match(main,/mixerSessionWorker_\.finishForShutdown\(true\);\s*engine_\.stop\(\)/);
 });
+
+test('cold MON preparation is separate from ARM and waits for verified restored graph',()=>{
+ const s=main.split('void serviceStartupSecondaryPreparation()')[1].split('// Same-session, same-graph recovery only')[0];
+ assert.match(s,/mixerSessionRecoveryPending_\|\|startupFxGuard_/);
+ assert.match(s,/!engine_\.secondaryResumeReady\(\)/);
+ assert.match(s,/!engine_\.hasBoundMixerRoute\(\)/);
+ assert.match(s,/current.selection.id!=wanted.id/);
+ assert.match(s,/engine_\.connectSecondaryOutput\(wanted.name,wanted.id\)/);
+ assert.doesNotMatch(s,/enableSecondaryOutput\(|armSecondaryOutput\(true\)|setMonitorEnabled/);
+ assert.match(s,/generation!=startupSecondaryRetry_\.generation\(\)/);
+ assert.match(s,/epoch!=engine_\.dryRoutingLabEpoch\(\)/);
+ assert.match(s,/startupSecondaryRetry_\.failed\(now\)/);
+ assert.match(main,/cancelSecondaryContinuity\(\);\s*cancelStartupSecondaryPreparation\(\)/);
+ assert.match(main,/serviceSecondaryContinuity\(\);\s*serviceStartupSecondaryPreparation\(\)/);
+});

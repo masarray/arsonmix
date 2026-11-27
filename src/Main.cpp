@@ -4321,9 +4321,11 @@ private:
     std::optional<PendingVendorStream> pendingVendorStream_;
     // Machine-local preference is NOT ARM authority. Endpoint ID never leaves
     // native control. A portable show cannot silently select a different PC's sink.
-    struct SecondaryPreference { juce::String name; std::wstring id; };
+    struct SecondaryPreference { juce::String name; std::wstring id; bool prepare=true; };
     std::optional<SecondaryPreference> secondaryPreference_;
     bool secondaryPreferenceLoaded_=false;
+    bool startupSecondaryPending_=true;
+    armix::device::AudioContinuityRetry startupSecondaryRetry_;
     juce::File secondaryPreferenceFile() const {
         return machineSettingsDirectory().getChildFile("secondary-output.json");
     }
@@ -4337,25 +4339,36 @@ private:
         if(data.getProperty("version",{})!=juce::var(1)||!name.isString()||!id.isString())return;
         const auto label=name.toString(),identity=id.toString();
         if(label.isEmpty()||label.length()>240||identity.isEmpty()||identity.length()>2048)return;
-        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer())};
+        const auto prepare=data.getProperty("prepareOnStartup",true); // migrate existing v1 preferences
+        if(!prepare.isBool())return;
+        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer()),bool(prepare)};
     }
-    bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId) {
+    bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true) {
         loadSecondaryPreference();
         if(name.isEmpty()||name.length()>240||endpointId.empty()||endpointId.size()>2048)return false;
         if(secondaryPreference_&&secondaryPreference_->name==name&&
-           secondaryPreference_->id==endpointId)return true;
+           secondaryPreference_->id==endpointId&&secondaryPreference_->prepare==prepare)return true;
         auto data=std::make_unique<juce::DynamicObject>();
         data->setProperty("version",1);
         data->setProperty("name",name);
         data->setProperty("endpointId",juce::String(endpointId.c_str()));
+        data->setProperty("prepareOnStartup",prepare);
         if(machineSettingsDirectory().createDirectory().wasOk()&&
            secondaryPreferenceFile().replaceWithText(juce::JSON::toString(juce::var(data.release()),true)))
         {
-            secondaryPreference_=SecondaryPreference{name,endpointId};
+            secondaryPreference_=SecondaryPreference{name,endpointId,prepare};
             return true;
         }
         diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Machine-local preference not saved");
         return false;
+    }
+    bool forgetSecondaryStartupSelection() {
+        loadSecondaryPreference();
+        return !secondaryPreference_||rememberSecondaryPreference(secondaryPreference_->name,secondaryPreference_->id,false);
+    }
+    void cancelStartupSecondaryPreparation() noexcept {
+        startupSecondaryPending_=false;
+        startupSecondaryRetry_.cancel();
     }
     // One bounded discovery flight for both output surfaces. Worker owns
     // only read-only MMDevice enumeration, never engine, GUI or audio objects.
@@ -4386,14 +4399,14 @@ private:
                label.length()>240||label==directName)continue;
             outputs.add(label);
             secondaryPublishedIds_.emplace(label,ep.id);
-            if(secondaryPreference_&&label==secondaryPreference_->name&&ep.id==secondaryPreference_->id)
+            if(secondaryPreference_&&secondaryPreference_->prepare&&label==secondaryPreference_->name&&ep.id==secondaryPreference_->id)
                 preferred=label;
         }
         auto result=std::make_unique<juce::DynamicObject>();
         result->setProperty("requestId",request);
         result->setProperty("outputs",juce::var(outputs));
         result->setProperty("preferredOutput",preferred);
-        result->setProperty("hasSavedOutput",secondaryPreference_.has_value());
+        result->setProperty("hasSavedOutput",secondaryPreference_&&secondaryPreference_->prepare);
         result->setProperty("error",inventory.error);
         if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputInventory",juce::var(result.release()));
     }
@@ -4425,6 +4438,55 @@ private:
         catch(...) {secondaryInventoryCache_=SecondaryInventory{{},"Cannot read playback devices"};}
         secondaryInventoryAt_=static_cast<std::uint64_t>(monotonicMilliseconds());
         emitSecondaryInventory();
+    }
+    // Cold-start preparation is intentionally separate from same-process ARM
+    // continuity. Only the existing secondary sink is opened; never arm it.
+    // Wait for the accepted restored graph and healthy primary callback.
+    void serviceStartupSecondaryPreparation() {
+        if(!startupSecondaryPending_||!audioEngineStarted_||!mixerSessionStartupInspected_)return;
+        loadSecondaryPreference();
+        if(!secondaryPreference_||!secondaryPreference_->prepare||vendorSafeRecoveryActive()||
+           engine_.hasRuntimeFxFault()) {cancelStartupSecondaryPreparation();return;}
+        if(mixerSessionRecoveryPending_||startupFxGuard_||deviceApply_.busy()||catalog_.busy()||
+           nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||logicalVendorEditor_||
+           pendingRetainedFxCapture_||retainedOfflineFxActive_||directCallbackStalled_||
+           pendingSecondaryStop_||engine_.hasPendingDirectRestore()||!engine_.secondaryResumeReady()||
+           !engine_.hasBoundMixerRoute())return;
+        if(engine_.secondaryArmed()) {cancelStartupSecondaryPreparation();return;}
+        const auto wanted=*secondaryPreference_;
+        if(engine_.secondarySelectedEndpointId()==wanted.id) {
+            cancelStartupSecondaryPreparation();return;
+        }
+        const auto now=monotonicMilliseconds();
+        startupSecondaryRetry_.fault(now);
+        if(!startupSecondaryRetry_.due(now))return;
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
+        if(!lease)return;
+        const auto generation=startupSecondaryRetry_.generation();
+        const auto epoch=engine_.dryRoutingLabEpoch(),revision=engine_.outputArmRevision();
+        const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(wanted.name);
+        if(current.ok()&&current.selection.id!=wanted.id) {
+            diagnostics_.record("SECONDARY_STARTUP_IDENTITY_CHANGED","Saved MON endpoint replaced; explicit selection required");
+            cancelStartupSecondaryPreparation();
+            return;
+        }
+        if(generation!=startupSecondaryRetry_.generation())return;
+        const auto error=current.ok()?engine_.connectSecondaryOutput(wanted.name,wanted.id):current.error;
+        if(generation!=startupSecondaryRetry_.generation()||pendingSecondaryStop_||
+           epoch!=engine_.dryRoutingLabEpoch()||revision!=engine_.outputArmRevision()) {
+            engine_.disconnectSecondaryOutput();
+            cancelStartupSecondaryPreparation();
+            return;
+        }
+        if(error.isEmpty()&&!engine_.secondaryArmed()&&engine_.secondarySelectedEndpointId()==wanted.id) {
+            diagnostics_.record("SECONDARY_STARTUP_PREPARED","Verified MON connected; output remains disarmed");
+            cancelStartupSecondaryPreparation();
+            return;
+        }
+        if(error.isEmpty())engine_.disconnectSecondaryOutput();
+        startupSecondaryRetry_.failed(now);
+        if(startupSecondaryRetry_.attempts()==1)
+            diagnostics_.record("SECONDARY_STARTUP_WAITING",error.isNotEmpty()?error:juce::String("Endpoint readback incomplete"));
     }
     // Same-session, same-graph recovery only. Never carries ARM permission
     // across process restart, explicit disconnect, driver or route change.
@@ -7174,7 +7236,13 @@ private:
            (action=="monitor"&&args.getProperty("value",{}).isBool()&&!bool(args.getProperty("value",{})))) {
             pendingVendorStream_.reset();
             cancelSecondaryContinuity();
+            cancelStartupSecondaryPreparation();
         }
+        if(action=="nativeMixerNewLive"||action=="nativeMixerNewOffline"||
+           action=="nativeMixerFileOpen"||action=="nativeMixerOpenArchive"||
+           action=="routingDryStop"||action=="routingDryApply"||
+           action=="routingDryShowRecall"||action=="routingDryShowRecover")
+            cancelStartupSecondaryPreparation();
         if(deviceApply_.busy()&&action=="secondaryOutputStop") {
             // STOP supersedes even an in-flight vendor open. Close the PCM
             // gate now; defer native object destruction until lease release.
@@ -10732,6 +10800,10 @@ private:
                 preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId());
                 if(!preferenceSaved)emitNotice("Output changed, but MON selection could not be saved. Check settings folder permissions.",true);
             }
+            if(error.isEmpty()&&action=="secondaryOutputStop") {
+                preferenceSaved=forgetSecondaryStartupSelection();
+                if(!preferenceSaved)emitNotice("MON disconnected, but startup preference could not be saved. Check settings folder permissions.",true);
+            }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("preferenceSaved",preferenceSaved);
             ack->setProperty("ok",error.isEmpty());
@@ -12131,6 +12203,7 @@ private:
         serviceAutomaticMain();
         serviceVendorStreamRecovery();
         serviceSecondaryContinuity();
+        serviceStartupSecondaryPreparation();
         // Autosave only while ALL outputs are muted. Vendor-state reads
         // happen on CONTROL; disk commits run on ONE serialized IO worker.
         // A performance with armed speakers/stream is never interrupted for
