@@ -11889,9 +11889,10 @@ private:
             const auto now=monotonicMilliseconds();
             if(!shutdown&&now<deviceSettingsRetryAt_)return;
             auto* activeDevice=engine_.devices().getCurrentAudioDevice();
-            if(engine_.hasTemporaryDiagnosticDevice()||engine_.independentClockActive()||
-               !engine_.directRouteAuthorized()||engine_.hasRetainedUnboundMixer()||
-               deviceApply_.busy()||!(activeDevice != nullptr && activeDevice->isOpen()))return;
+            const bool verified=!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
+                engine_.directRouteAuthorized() && !engine_.hasRetainedUnboundMixer() &&
+                !deviceApply_.busy() && activeDevice != nullptr && activeDevice->isOpen();
+            if(!verified)return;
             auto xml=engine_.devices().createStateXml();
             if(!xml)return;
             const auto text=xml->toString();
