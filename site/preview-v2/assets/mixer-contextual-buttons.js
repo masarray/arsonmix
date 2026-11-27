@@ -200,21 +200,21 @@
 
 /* Built-in FX wheel gestures are owned by each editor through mixer-builtin-fx-gesture.js. */
 
-/* One owner for short-lived UTILITY panels, not FX editors. First open is
-   centred in the app; subsequent opens retain the user's moved location.
-   Outside pointer or focus transfer invokes the EXISTING close button, so
-   navigator toggles, Player transport and plugin-manager state stay coherent. */
+/* Shared initial placement, distinct lifetime policies. First open is
+   centred; subsequent opens retain the user's moved location.
+   Transient utilities dismiss on outside pointer/focus. The Player is a
+   persistent modeless workspace: only its explicit controls can hide it. */
 (()=>{
  'use strict';
  const list=[
   ['pluginBrowser','pluginClose','pluginsButton'],
-  ['arsonPlayer','playerClose','playerToggle'],
+  ['arsonPlayer','playerClose','playerToggle',false],
   ['wireWorkspace','wireWsClose','wireNavigatorToggle'],
   ['wireConfigWindow','wireConfigClose','wireConfigToggle']
  ];
- const panels=()=>list.map(([id,close,trigger])=>({
+ const panels=()=>list.map(([id,close,trigger,dismissOnOutside=true])=>({
   panel:document.getElementById(id),close:document.getElementById(close),
-  trigger:document.getElementById(trigger)
+  trigger:document.getElementById(trigger),dismissOnOutside
  })).filter(x=>x.panel&&x.close);
  const visible=panel=>!panel.hidden&&panel.getClientRects().length>0;
  const margin=12;
@@ -250,8 +250,8 @@
  function dismissOutside(target){
   if(!target?.closest)return;
   if(target.closest('#routeChoice,#fastPicker,.mx-fxp-form'))return;
-  for(const {panel,close,trigger} of panels()){
-   if(!visible(panel)||panel.contains(target)||trigger?.contains(target))continue;
+  for(const {panel,close,trigger,dismissOnOutside} of panels()){
+   if(!dismissOnOutside||!visible(panel)||panel.contains(target)||trigger?.contains(target))continue;
    if(panel.id==='wireWorkspace'&&
       target.closest('#wireMatrixToggle,#wireNavigatorToggle,[data-wire-open]'))continue;
    if(panel.id==='wireConfigWindow'&&

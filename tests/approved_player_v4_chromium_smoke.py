@@ -360,7 +360,30 @@ def main():
                 assert page.locator(".ap-songrow").count()<=80
                 print("64k Chromium catalogue search seconds",time.perf_counter()-start,flush=True)
             page.locator("#playerSetlistView").click()
+            # The Player is modeless, not an outside-dismissed popup. Exercise
+            # real pointer and keyboard focus transfer plus native readback.
+            before=page.evaluate("()=>window.__playerActions.length")
+            panel_rect=panel.bounding_box()
+            mixer_tab=page.locator("#ribbon-tab-mixer")
+            mixer_tab.focus()
+            assert panel.is_visible() and mixer_tab.evaluate("e=>e===document.activeElement")
+            mixer_tab.click()
+            assert panel.is_visible() and mixer_tab.get_attribute("aria-selected")=="true"
+            page.locator("#ribbon-tab-player").click()
+            assert panel.is_visible()
+            page.locator("#playerToggle").click()
+            assert panel.is_visible() and panel.bounding_box()==panel_rect
+            search.focus()
+            page.keyboard.press("Escape")
+            assert panel.is_visible()
+            page.evaluate("()=>window.dispatchEvent(new Event('blur'))")
+            assert panel.is_visible()
+            publish(dict(transport=state["transport"]))
+            assert panel.is_visible()
+            assert page.locator("#playerToggle").get_attribute("aria-expanded")=="true"
+            assert page.evaluate("()=>window.__playerActions.length")==before
             page.locator("#playerClose").click()
+            assert panel.is_hidden()
             page.locator("#ribbon-tab-mixer").click()
             mini=page.locator("#playerMini")
             mini.wait_for(state="visible")
@@ -374,6 +397,10 @@ def main():
             assert_center("playerMiniNext")
             page.locator("#playerMiniPlay").click()
             assert page.evaluate("()=>window.__playerActions.at(-1).action")=="playerPause"
+            page.locator("#playerMiniExpand").click()
+            assert panel.is_visible() and mini.is_hidden()
+            page.locator("#playerMinimize").click()
+            assert panel.is_hidden() and mini.is_visible()
             page.locator("#playerMiniExpand").click()
             assert panel.is_visible() and mini.is_hidden()
             assert not errors,errors

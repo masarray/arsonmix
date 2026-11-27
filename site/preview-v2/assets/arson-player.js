@@ -63,6 +63,9 @@
      String(v%60).padStart(2,"0");
  };
  const open=visible=>{
+   // Opening an already visible modeless Player must not hide it, rebuild
+   // its playlist or steal mixer focus during an unrelated state update.
+   if(visible&&!root.hidden)return;
    if(!visible)closeSongMenu(false);
    root.hidden=!visible;updateMini();
    toggle.setAttribute("aria-expanded",String(visible));
@@ -76,7 +79,8 @@
      (collectionView==="queue"?$("playerQueueView"):$("playerSearch")).focus({preventScroll:true});
    }
  };
- toggle.addEventListener("click",()=>open(root.hidden));
+ // Open Player is an open-only command; close/minimize remain explicit.
+ toggle.addEventListener("click",()=>open(true));
  $("playerClose").addEventListener("click",()=>open(false));
  $("playerMinimize").addEventListener("click",()=>{open(false);if(!$("playerMini").hidden)$("playerMiniExpand").focus();});
  $("playerMiniExpand").addEventListener("click",()=>open(true));
@@ -748,7 +752,10 @@
  window.addEventListener?.("resize",()=>{closeSongMenu(false);rendered="";renderTracks();renderWaveform(model.transport||{});});
  root.addEventListener("keydown",event=>{
    if(event.ctrlKey&&!event.altKey&&!event.shiftKey&&!event.metaKey&&event.key.toLowerCase()==="f"){event.preventDefault();event.stopPropagation?.();focusSearch();return;}
-   if(event.key==="Escape"){event.stopPropagation();if(menuOwner){event.preventDefault();closeSongMenu(true);return;}open(false);toggle.focus();return;}
+   if(event.key==="Escape"){
+     // Escape may dismiss a transient song menu, never the Player itself.
+     event.stopPropagation();if(menuOwner){event.preventDefault();closeSongMenu(true);}return;
+   }
    const target=event.target;
    const interactive=target?.isContentEditable||["INPUT","TEXTAREA","SELECT","BUTTON","SUMMARY","A"].includes(target?.tagName)||target?.closest?.("button,input,select,textarea,summary,a,[contenteditable=true]");
    if(event.key===" "&&!event.repeat&&!interactive&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey){
