@@ -1124,6 +1124,7 @@ private:
     std::unique_ptr<juce::FileChooser> namedIoFileChooser_;
     std::unique_ptr<juce::FileChooser> fxRackFileChooser_;
     std::unique_ptr<ArSonRecoveryNotice> fxRackConsent_;
+    juce::var fxRackActiveReceipt_,fxRackLastReceipt_; // control-thread only, bounded to two records
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
@@ -6573,6 +6574,16 @@ private:
         }
         return {};
     }
+    static bool matchesFxRackFileReceipt(const juce::var& receipt,const juce::var& args) {
+        return receipt.isObject()&&
+            receipt.getProperty("requestId",{})==args.getProperty("requestId",{})&&
+            receipt.getProperty("operation",{})==args.getProperty("operation",{})&&
+            receipt.getProperty("channelId",{})==args.getProperty("channelId",{});
+    }
+    void publishFxRackFileReceipt(const juce::var& receipt) {
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixFxRackFileResult",receipt);
+    }
     void emitFxRackFileResult(const juce::var& args,const juce::String& phase,
                               const juce::String& message) {
         auto receipt=std::make_unique<juce::DynamicObject>();
@@ -6581,8 +6592,29 @@ private:
         receipt->setProperty("channelId",args.getProperty("channelId",{}));
         receipt->setProperty("phase",phase);
         receipt->setProperty("message",message);
-        if(browser_.loaded)
-            browser_.emitEventIfBrowserIsVisible("arMixFxRackFileResult",juce::var(receipt.release()));
+        const juce::var result(receipt.release());
+        // WebView2 may be hidden when the native picker finishes. Preserve the
+        // exact terminal result independently of best-effort event delivery.
+        if(phase=="CHOOSER")fxRackActiveReceipt_=result;
+        else {
+            if(matchesFxRackFileReceipt(fxRackActiveReceipt_,args))fxRackActiveReceipt_=juce::var{};
+            fxRackLastReceipt_=result;
+        }
+        publishFxRackFileReceipt(result);
+    }
+    void readFxRackFileResult(const juce::var& args) {
+        const auto request=args.getProperty("requestId",{}).toString();
+        if(!request.startsWith("fx-rack-file-")||request.length()>64)return;
+        if(matchesFxRackFileReceipt(fxRackActiveReceipt_,args))return; // still active; never retry a write
+        if(matchesFxRackFileReceipt(fxRackLastReceipt_,args))
+            return publishFxRackFileReceipt(fxRackLastReceipt_);
+        // Unknown is not failure/success and must not erase another receipt.
+        auto receipt=std::make_unique<juce::DynamicObject>();
+        for(const auto* key:{"requestId","operation","channelId"})
+            receipt->setProperty(key,args.getProperty(key,{}));
+        receipt->setProperty("phase","UNKNOWN");
+        receipt->setProperty("message","FX rack file: Result unavailable; verify the file and rack before retrying");
+        publishFxRackFileReceipt(juce::var(receipt.release()));
     }
     bool rackFileOperationBusy() const {
         return sessionLifecycleShuttingDown_||namedIoFileChooser_||mixerFileDialogOpen_||
@@ -7635,6 +7667,7 @@ private:
         auto action = args.getProperty ("action", {}).toString();
         if(action=="secondaryOutputInventory")return requestSecondaryInventory(args);
         if(action=="fxRackFile")return chooseFxRackFile(args);
+        if(action=="fxRackFileReadback")return readFxRackFileResult(args);
         if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
         if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
             if (!deviceApply_.busy())

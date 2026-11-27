@@ -8148,6 +8148,15 @@ test("Channel context menu exposes non-destructive FX save and real native recei
  assert.match(b,/receipt\.phase==="COMPLETED"&&!\["SAVE","SAVE_SINGLE"\]\.includes\(pending\.operation\)/);
  assert.match(b,/arMixFxRackFileResult/);
  assert.match(n,/emitFxRackFileResult\(args,"CHOOSER"/);
+ assert.match(n,/fxRackActiveReceipt_,fxRackLastReceipt_/);
+ const replay=n.slice(n.indexOf("void readFxRackFileResult("),n.indexOf("bool rackFileOperationBusy()"));
+ assert.match(replay,/matchesFxRackFileReceipt\(fxRackActiveReceipt_,args\)\)return/);
+ assert.match(replay,/publishFxRackFileReceipt\(fxRackLastReceipt_\)/);
+ assert.match(replay,/setProperty\("phase","UNKNOWN"\)/);
+ assert.doesNotMatch(replay,/chooseFxRackFile|applyRackFile|captureRackFile|NativeFxRackArchive::save/);
+ assert.match(n,/if\(action=="fxRackFileReadback"\)return readFxRackFileResult\(args\)/);
+ assert.match(b,/action:"fxRackFileReadback",\.\.\.rackFilePending/);
+ assert.match(b,/window\.clearTimeout\(rackFileReadbackTimer\)/);
  assert.match(n,/rackFileTargetAvailable\(ep,rev,roster,channel\)/);
  assert.match(n,/fxRackConsent_=std::make_unique<ArSonRecoveryNotice>/);
  assert.match(n,/if\(accepted\)perform\(true\)/);

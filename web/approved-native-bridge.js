@@ -3815,7 +3815,19 @@
   // Snapshot the actual initiating action; never infer it from a later tab.
   let closeAfterVerifiedPinApply=false;
   const deviceBusy=()=>Boolean(deviceState.pending);
-  let toastTimer=0,rackFileSerial=0,rackFilePending=null;
+  let toastTimer=0,rackFileSerial=0,rackFilePending=null,rackFileReadbackTimer=0;
+  function readRackFileReceipt(){
+    if(rackFilePending&&document.visibilityState!=="hidden")
+      backend.emitEvent("arMixAction",{action:"fxRackFileReadback",...rackFilePending});
+  }
+  function scheduleRackFileReadback(){
+    window.clearTimeout(rackFileReadbackTimer);
+    if(!rackFilePending)return;
+    rackFileReadbackTimer=window.setTimeout(()=>{
+      readRackFileReceipt();
+      scheduleRackFileReadback();
+    },2000);
+  }
   function nativeToast(message){
     let element=document.getElementById("armixNativeToast");
     if(!element){
@@ -6306,11 +6318,13 @@
       const pending=rackFilePending;
       if(!pending||receipt?.requestId!==pending.requestId||
          receipt.operation!==pending.operation||receipt.channelId!==pending.channelId||
-         !["CHOOSER","CANCELLED","FAILED","COMPLETED"].includes(receipt.phase)||
+         !["CHOOSER","CANCELLED","FAILED","COMPLETED","UNKNOWN"].includes(receipt.phase)||
          typeof receipt.message!=="string"||!receipt.message.startsWith("FX rack file:"))return;
       status(receipt.message);
       if(receipt.phase==="CHOOSER")return; // not success, no toast
       rackFilePending=null;
+      window.clearTimeout(rackFileReadbackTimer);
+      rackFileReadbackTimer=0;
       if(receipt.phase==="COMPLETED"&&!["SAVE","SAVE_SINGLE"].includes(pending.operation)){
         retirePendingRackEditor([pending.channelId]);
         inlineFxClip?.closeRackEditors([pending.channelId]);
@@ -6392,9 +6406,10 @@
     // terminal native receipt (not the click) retires changed editor leases.
     const requestId="fx-rack-file-"+Date.now()+"-"+(++rackFileSerial);
     rackFilePending={requestId,operation,channelId:identity.channelId};
+    status("FX rack file: Opening file dialog…");
+    scheduleRackFileReadback();
     backend.emitEvent("arMixAction",{action:"fxRackFile",requestId,operation,...identity,
       slot:single?slot:-1,instanceId:single?token:""});
-    status("FX rack file: Opening file dialog…");
     return true;
   }
   const nativeHooks=Object.freeze({
