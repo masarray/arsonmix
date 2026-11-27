@@ -129,6 +129,16 @@ int main() {
         assert(!info.missing&&info.channels==2&&info.sampleRate==44100.0);
         assert(std::abs(info.seconds-16384.0/44100.0)<1e-6);
         assert(info.title==file.getFileNameWithoutExtension());
+        const auto cache=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("arson-player-cache","",false);
+        bool hit=true;
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&hit);
+        assert(Media::probeCached(file,formats,cache,true,&hit)==info&&!hit);
+        const auto originalTime=file.getLastModificationTime();
+        assert(file.setLastModificationTime(juce::Time(originalTime.toMilliseconds()-10000)));
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
+        assert(file.setLastModificationTime(originalTime));
+        assert(cache.deleteRecursively());
         assert(Media::probe(file.withFileExtension(".missing"),formats).missing);
         juce::MemoryOutputStream png;
         assert(juce::Base64::convertFromBase64(png,"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aO1sAAAAASUVORK5CYII="));

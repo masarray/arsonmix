@@ -125,6 +125,57 @@ struct PlayerMediaMetadata {
         });
         return m;
     }
+    bool operator==(const PlayerMediaMetadata&)const=default;
+    // Worker-only bounded persistent cache. Direct-mapped slots guarantee
+    // a finite file count even when catalogues are replaced over time.
+    static juce::File cacheSlot(const juce::File& directory,const juce::File& file){
+        const auto slot=static_cast<unsigned long long>(file.getFullPathName().hashCode64())%8192;
+        return directory.getChildFile(juce::String(static_cast<int>(slot))+".json");
+    }
+    static PlayerMediaMetadata probeCached(const juce::File& file,juce::AudioFormatManager& formats,
+                                          const juce::File& directory,bool force=false,bool* hit=nullptr){
+        if(hit)*hit=false;
+        if(!file.existsAsFile())return probe(file,formats);
+        const auto path=file.getFullPathName();
+        const auto size=juce::String(file.getSize());
+        const auto modified=juce::String(file.getLastModificationTime().toMilliseconds());
+        const auto target=cacheSlot(directory,file);
+        if(!force&&target.existsAsFile()&&target.getSize()<=16384){
+            const auto doc=juce::JSON::parse(target.loadFileAsString());
+            if(static_cast<int>(doc.getProperty("version",0))==1&&
+               doc.getProperty("path","").toString()==path&&
+               doc.getProperty("size","").toString()==size&&doc.getProperty("modified","").toString()==modified){
+                const auto row=doc.getProperty("metadata",{});
+                PlayerMediaMetadata value;
+                const auto str=[&](const char* key,int limit){return row.getProperty(key,"").toString().substring(0,limit);};
+                value.title=str("title",512);value.artist=str("artist",512);value.album=str("album",512);value.format=str("format",64);
+                value.seconds=static_cast<double>(row.getProperty("durationSeconds",0.0));
+                value.sampleRate=static_cast<double>(row.getProperty("sampleRate",0.0));
+                const int channels=static_cast<int>(row.getProperty("channels",0));
+                if(value.title.isNotEmpty()&&value.format.isNotEmpty()&&std::isfinite(value.seconds)&&value.seconds>0&&
+                   std::isfinite(value.sampleRate)&&value.sampleRate>0&&channels>0&&channels<=1024){
+                    value.channels=static_cast<unsigned>(channels);
+                    if(hit)*hit=true;
+                    return value;
+                }
+            }
+        }
+        auto value=probe(file,formats);
+        // Do not cache unreadable, missing or concurrently changed media.
+        if(value.missing||value.format.isEmpty()||value.seconds<=0||!file.existsAsFile()||
+           juce::String(file.getSize())!=size||juce::String(file.getLastModificationTime().toMilliseconds())!=modified)
+            return value;
+        auto doc=std::make_unique<juce::DynamicObject>();
+        doc->setProperty("version",1);doc->setProperty("path",path);
+        doc->setProperty("size",size);doc->setProperty("modified",modified);
+        doc->setProperty("metadata",value.project(0));
+        const auto json=juce::JSON::toString(juce::var(doc.release()),true);
+        if(json.getNumBytesAsUTF8()<=16384&&directory.createDirectory().wasOk()){
+            juce::TemporaryFile staging(target);
+            if(staging.getFile().replaceWithText(json))(void)staging.overwriteTargetFileWithTemporary();
+        }
+        return value;
+    }
     juce::var project(int id)const{
         auto obj=std::make_unique<juce::DynamicObject>();
         obj->setProperty("catalogId",id);obj->setProperty("title",title);

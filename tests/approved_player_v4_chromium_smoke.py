@@ -87,9 +87,13 @@ def main():
                 schema:'arsonmix.activity.v1',favorites:[1],done:[1],recent:[0,1],repeat:1})""")
             assert page.locator('.ap-songrow[data-song-id="1"]').get_attribute("data-done")=="true"
             assert page.locator('.ap-songrow[data-song-id="1"]').get_attribute("data-favorite")=="true"
+            assert page.locator('.ap-songrow[data-song-id="1"] .ap-index').evaluate("el=>getComputedStyle(el,\"::after\").content")=="\"DONE\""
             mode=page.locator("#playerAutoNext")
             assert mode.inner_text()=="Repeat one"
             mode.click()
+            page.locator("#arsonPlayer").evaluate("el=>el.dispatchEvent(new Event(\"scroll\"))")
+            page.locator("#playerList").evaluate("el=>el.dispatchEvent(new Event(\"scroll\"))")
+            assert menu.is_visible()
             menu.get_by_role("menuitem",name="Repeat all").click()
             assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerRepeat","value":2}
             page.locator("#playerLibraryView").click()
@@ -100,6 +104,18 @@ def main():
             assert page.locator(".ap-songrow").get_attribute("data-song-id")=="1"
             page.locator("#playerLibraryFilter").select_option("recent")
             assert page.locator(".ap-songrow").count()==2
+            if width==1366:
+                import time
+                start=time.perf_counter()
+                page.evaluate("""()=>window.__nativeListeners.get('arMixPlayerCatalogue')({
+                    schema:'arsonmix.catalogue.v1',rows:Array.from({length:64000},(_,catalogId)=>({catalogId,title:'Catalogue '+String(catalogId).padStart(5,'0')}))})""")
+                page.locator("#playerLibraryFilter").select_option("all")
+                search.fill("Catalogue 63999")
+                assert page.locator(".ap-songrow").count()==1
+                assert page.locator(".ap-songrow").get_attribute("data-song-id")=="63999"
+                search.fill("")
+                assert page.locator(".ap-songrow").count()<=80
+                print("64k Chromium catalogue search seconds",time.perf_counter()-start,flush=True)
             page.locator("#playerSetlistView").click()
             page.locator("#playerClose").click()
             mini=page.locator("#playerMini")

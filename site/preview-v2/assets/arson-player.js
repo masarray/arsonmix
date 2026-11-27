@@ -268,15 +268,21 @@
      item.addEventListener("click",()=>{if(menuOwner!==owner||epoch!==menuEpoch||!valid()||item.disabled)return;closeSongMenu(true);execute();});songMenu.append(item);
    }
    songMenu.hidden=false;
-   const anchor=owner.getBoundingClientRect?.(),panel=root.getBoundingClientRect?.(),m=songMenu.getBoundingClientRect?.();
+   positionContext(event);
+   Array.from(songMenu.children).slice(1).find(item=>!item.disabled)?.focus({preventScroll:true});
+ }
+ function positionContext(event){
+   if(!menuOwner)return;
+   if(menuOwner.isConnected===false){closeSongMenu(false);return;}
+   const anchor=menuOwner.getBoundingClientRect?.(),panel=root.getBoundingClientRect?.(),m=songMenu.getBoundingClientRect?.();
    if(anchor&&panel&&m){
      const vw=Number(window.innerWidth)||panel.right,vh=Number(window.innerHeight)||panel.bottom;
      const pointer=event&&Number.isFinite(event.clientX)&&Number.isFinite(event.clientY);
      const x=pointer?event.clientX:anchor.right-m.width,y=pointer?event.clientY:anchor.bottom+4;
      songMenu.style.left=Math.max(4,Math.min(x,vw-m.width-4))+"px";songMenu.style.top=Math.max(4,Math.min(y,vh-m.height-4))+"px";
    }
-   Array.from(songMenu.children).slice(1).find(item=>!item.disabled)?.focus({preventScroll:true});
  }
+ const listOwnsMenu=()=>Boolean(menuOwner&&list.contains?.(menuOwner));
  function contextBind(surface,openMenu){
    surface.addEventListener("contextmenu",event=>{event.preventDefault();event.stopPropagation();openMenu(event);});
    surface.addEventListener("keydown",event=>{if(event.key==="ContextMenu"||(event.shiftKey&&event.key==="F10")){event.preventDefault();event.stopPropagation();openMenu(null);}});
@@ -463,7 +469,8 @@
      const id=Number(row.dataset.songId),song=enriched(catalogView()?model.catalogue[id]:model.tracks[id]);
      const activeId=catalogView()?(activeCatalogueIndex.get(id)??-2):id;
      const choose=row.children[0];
-     row.dataset.selected=String(activeId>=0&&activeId===model.selected);row.dataset.current=String(activeId>=0&&activeId===model.current);row.dataset.missing=String(Boolean(song?.missing));
+     const endedCurrent=activeId>=0&&activeId===model.current&&model.transport?.state==="ENDED";
+     row.dataset.selected=String(activeId>=0&&activeId===model.selected&&!endedCurrent);row.dataset.current=String(activeId>=0&&activeId===model.current&&!endedCurrent);row.dataset.missing=String(Boolean(song?.missing));
      choose.dataset.selected=row.dataset.selected;choose.dataset.current=row.dataset.current;
      choose.setAttribute("aria-selected",row.dataset.selected);
      row.dataset.favorite=String(favorites.has(song?.catalogId));row.dataset.done=String(completed.has(song?.catalogId));
@@ -493,6 +500,7 @@
      const total=known?(duration(seconds)+(known<filtered.length?"+":"")):"";
      setText($("playerCount"),(query?filtered.length+" / "+pool.length:pool.length)+" songs"+(total?" · "+total:""));
      if(collectionView==="library"&&!global)filtered=[...filtered].sort((a,b)=>String(a.title||"").localeCompare(String(b.title||"")));
+     if(list.scrollTop>=filtered.length*ROW_HEIGHT)list.scrollTop=0;
      rendered="";
    }
    const visible=Math.max(24,Math.min(80,
@@ -507,7 +515,7 @@
    }
    rendered=signature;
    const songs=filtered.slice(start,end);
-   closeSongMenu(false);
+   if(listOwnsMenu())closeSongMenu(false);
    list.replaceChildren();
    if(!filtered.length){
      const message=document.createElement("div");
@@ -708,7 +716,7 @@
    showFeedback(indicator,Boolean(model.error||t.error));
    $("playerRouteLight").dataset.state=(model.error||t.error||(state==="PLAYING"&&!t.routeAudible))?"warning":state==="PLAYING"&&t.routeAudible?"audible":"idle";
    $("playerChooseOutput").hidden=!native || !Boolean(model.chooseOutput);
-   const missing=model.tracks.find(x=>x.id===model.selected)?.missing;
+   const missing=enriched(model.tracks[model.selected])?.missing;
    $("playerRelink").hidden=!native || !missing;
    $("playerAddFolder").disabled=Boolean(model.libraryBusy);
    $("playerAdd").disabled=Boolean(model.libraryBusy);
@@ -726,8 +734,9 @@
    if(event.key==="ArrowDown"&&filtered.length){event.preventDefault();event.stopPropagation?.();focusTrack(0);}
    if(event.key==="Enter"&&!event.repeat&&!event.altKey&&!event.metaKey&&!event.shiftKey&&filtered.length){event.preventDefault();event.stopPropagation?.();const song=filtered[0],id=catalogView()?(activeCatalogueIndex.get(song.catalogId)??-1):song.id;if(native&&id>=0){if(event.ctrlKey){if(!song.missing&&model.queue.length<128)send("playerQueueAppend",id);}else send("playerSelect",id);}focusTrack(0);}
  });
- list.addEventListener("scroll",()=>{closeSongMenu(false);renderTracks();},{passive:true});
- root.addEventListener("scroll",()=>closeSongMenu(false),{passive:true});$("playerQueuePanel").addEventListener("scroll",()=>closeSongMenu(false),{passive:true});
+ // Focus-induced/delayed scroll must not dismiss a header menu.
+ list.addEventListener("scroll",()=>{if(listOwnsMenu())closeSongMenu(false);renderTracks();positionContext();},{passive:true});
+ root.addEventListener("scroll",()=>positionContext(),{passive:true});$("playerQueuePanel").addEventListener("scroll",()=>{if(menuOwner&&$("playerQueuePanel").contains?.(menuOwner))closeSongMenu(false);else positionContext();},{passive:true});
  window.addEventListener?.("resize",()=>{closeSongMenu(false);rendered="";renderTracks();renderWaveform(model.transport||{});});
  root.addEventListener("keydown",event=>{
    if(event.ctrlKey&&!event.altKey&&!event.shiftKey&&!event.metaKey&&event.key.toLowerCase()==="f"){event.preventDefault();event.stopPropagation?.();focusSearch();return;}
@@ -742,7 +751,7 @@
  if(native){
    backend.addEventListener("arMixPlayerActivity",payload=>{if(payload?.schema!=="arsonmix.activity.v1")return;const ids=values=>Array.isArray(values)?values.filter(id=>Number.isInteger(id)&&id>=0&&id<64000):[];favorites=new Set(ids(payload.favorites));completed=new Set(ids(payload.done));recent=ids(payload.recent).slice(0,256);repeatMode=[0,1,2].includes(payload.repeat)?payload.repeat:0;++activityRevision;render();});
    backend.addEventListener("arMixPlayerCatalogue",payload=>{if(payload?.schema!=="arsonmix.catalogue.v1"||!Array.isArray(payload.rows))return;model.catalogue=payload.rows.slice(0,64000);++libraryRevision;if(collectionView==="library")renderTracks();});
-   backend.addEventListener("arMixPlayerMedia",payload=>{if(payload?.schema!=="arsonmix.media.v1"||!Array.isArray(payload.rows))return;for(const row of payload.rows)if(Number.isInteger(row.catalogId)&&row.catalogId>=0&&row.catalogId<64000)media.set(row.catalogId,row);++mediaRevision;render();});
+   backend.addEventListener("arMixPlayerMedia",payload=>{if(payload?.schema!=="arsonmix.media.v1"||!Array.isArray(payload.rows))return;for(const row of payload.rows)if(Number.isInteger(row.catalogId)&&row.catalogId>=0&&row.catalogId<64000){media.set(row.catalogId,row);const activeId=activeCatalogueIndex.get(row.catalogId);if(Number.isInteger(activeId)&&model.tracks[activeId]&&typeof row.missing==="boolean")model.tracks[activeId].missing=row.missing;}++mediaRevision;render();});
    backend.addEventListener("arMixPlayerCover",payload=>{const incoming=Number(payload?.catalogId);if(incoming!==coverId||payload?.uri!==coverUri)failedCover=null;coverId=incoming;coverUri=typeof payload?.uri==="string"&&payload.uri.length<=350000&&/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(payload.uri)?payload.uri:"";render();});
    backend.addEventListener("arMixPlayerMediaReset",()=>{media.clear();++mediaRevision;coverId=-1;coverUri="";failedCover=null;render();});
    backend.addEventListener("arMixPlayerState",payload=>{

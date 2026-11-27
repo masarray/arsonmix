@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include "../src/PlayerSetlistArchive.h"
+#include "../src/PlayerFavoritesStore.h"
 #include "../src/PlayerSetlistRepository.h"
 #include "../src/PlayerSetlistEditTransaction.h"
 #include "../src/PlayerLibraryEditPlan.h"
@@ -42,6 +43,16 @@ int main() {
     const auto other=juce::File::getSpecialLocation(
         juce::File::tempDirectory).getChildFile("arsonmix-mv14-other.mp3")
             .getFullPathName();
+    // Restart-style reload of the actual favorite sidecar, plus corruption preservation.
+    using Favorites=armix::player::PlayerFavoritesStore;
+    const auto favoriteFile=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("arson-player-favorites",".json",false);
+    assert(Favorites::load(favoriteFile)&&Favorites::load(favoriteFile)->empty());
+    const Favorites::Songs favoriteSongs{juce::File(path),juce::File(other)};
+    assert(Favorites::save(favoriteFile,favoriteSongs));
+    assert(Favorites::load(favoriteFile)==favoriteSongs);
+    assert(favoriteFile.replaceWithText("{invalid"));
+    assert(!Favorites::load(favoriteFile));
+    assert(favoriteFile.deleteFile());
     // Catalogue survives removal and remains independent of active set.
     const std::vector<SavedSet> one={{"Show",{juce::File(path)},{Track{}}}};
     auto withCatalogue=Archive::parse(Archive::serialize(one,0,false,180,{juce::File(other)}));

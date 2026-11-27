@@ -531,3 +531,9 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-songrow[data-done="true"]:not([data-current="true"]):not([data-selected="true"]) .ap-songname{color:#879ba6}
 #arsonPlayer .ap-songrow[data-favorite="true"] .ap-songname{color:#d7c49c}
 #arsonPlayer #playerAfterSongTarget{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Visible status without an extra column. */
+#arsonPlayer .ap-songrow[data-done="true"][data-current="false"][data-selected="false"] .ap-index{font-size:0;color:#8faeaa}
+#arsonPlayer .ap-songrow[data-done="true"][data-current="false"][data-selected="false"] .ap-index::after{content:"DONE";font-size:8px}
+#arsonPlayer .ap-songrow[data-favorite="true"][data-done="false"][data-current="false"][data-selected="false"] .ap-index{font-size:0;color:#d7c49c}
+#arsonPlayer .ap-songrow[data-favorite="true"][data-done="false"][data-current="false"][data-selected="false"] .ap-index::after{content:"★";font-size:11px}

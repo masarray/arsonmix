@@ -258,7 +258,7 @@ $("playerSetlistView").click();search.value="";search.fire("input");
 listeners.get("arMixPlayerActivity")({schema:"arsonmix.activity.v1",favorites:[5],done:[5],recent:[4,5],repeat:1});
 assert.equal(songRows()[1].children[0].children[2].textContent,"DONE");
 assert.equal($("playerAutoText").textContent,"Repeat one");
-$("playerAutoNext").click();$("playerSongMenu").children.find(x=>x.textContent==="Repeat all").click();assert.equal(actions.at(-1).detail.action,"playerRepeat");assert.equal(actions.at(-1).detail.value,2);
+$("playerAutoNext").click();$("arsonPlayer").fire("scroll");$("playerList").fire("scroll");assert.equal($("playerSongMenu").hidden,false);$("playerSongMenu").children.find(x=>x.textContent==="Repeat all").click();assert.equal(actions.at(-1).detail.action,"playerRepeat");assert.equal(actions.at(-1).detail.value,2);
 $("playerAfterSong").fire("change",{target:{value:"1"}});assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1).detail)),{action:"playerAutoAfter",value:{id:4,index:0,set:0,mode:1}});
 songRows()[0].children[1].click();$("playerSongMenu").children.find(x=>x.textContent==="Add to favorites").click();
 assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1).detail)),{action:"playerFavorite",value:{id:4,enabled:true}});
@@ -267,3 +267,24 @@ listeners.get("arMixPlayerCatalogue")({schema:"arsonmix.catalogue.v1",rows:Array
 $("playerLibraryFilter").fire("change",{target:{value:"favorites"}});assert.equal(songRows().length,1);assert.equal(songRows()[0].dataset.songId,"5");
 $("playerLibraryFilter").fire("change",{target:{value:"recent"}});assert.equal(songRows().length,2);assert.equal(songRows()[0].dataset.songId,"4");
 console.log("V4.8 activity, filters, favorites, playback mode and per-song intent PASS");
+
+// Finalization: stress all 64,000 native catalogue entries without DOM growth.
+const big=Array.from({length:64000},(_,catalogId)=>({catalogId,title:"Catalogue "+String(catalogId).padStart(5,"0")}));
+const started=Date.now();
+listeners.get("arMixPlayerCatalogue")({schema:"arsonmix.catalogue.v1",rows:big});
+$("playerLibraryFilter").fire("change",{target:{value:"all"}});
+search.value="Catalogue 63999";search.fire("input");
+assert.equal(songRows().length,1);assert.equal(songRows()[0].dataset.songId,"63999");
+search.value="";search.fire("input");assert.ok(songRows().length<=80);
+list.scrollTop=63990*34;list.fire("scroll");assert.ok(songRows().length<=80);
+assert.ok(songRows().some(x=>x.dataset.songId==="63999"));
+console.log("64k catalogue search+scroll fixture ms="+(Date.now()-started));
+
+// Native worker can mark a previously present file missing and recover it.
+$("playerSetlistView").click();search.value="";search.fire("input");
+publish({tracks:[{...songs[0],catalogId:4,missing:false}],current:0,selected:0,transport:{state:"READY"}});
+listeners.get("arMixPlayerMedia")({schema:"arsonmix.media.v1",rows:[{catalogId:4,title:"Song 0000",missing:true}]});
+assert.equal(songRows()[0].dataset.missing,"true");
+listeners.get("arMixPlayerMedia")({schema:"arsonmix.media.v1",rows:[{catalogId:4,title:"Song 0000",missing:false}]});
+assert.equal(songRows()[0].dataset.missing,"false");
+console.log("File disappearance/recovery readback PASS");

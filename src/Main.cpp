@@ -55,6 +55,7 @@
 #include "PlayerLibraryEditPlan.h"
 #include "PlayerStateProjection.h"
 #include "PlayerMediaMetadata.h"
+#include "PlayerFavoritesStore.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
@@ -997,7 +998,9 @@ private:
     std::map<juce::File,int> playerCatalogueIds_;
     std::map<int,armix::player::PlayerMediaMetadata> playerMedia_;
     bool playerMediaBusy_=false,playerCatalogueRequested_=false;
-    std::size_t playerMediaCursor_=0;
+    std::size_t playerMediaCursor_=0,playerMediaRecheckCursor_=0;
+    juce::uint32 playerMediaRecheckAt_=0,playerCoverRecheckAt_=0;
+    bool playerMediaForceRefresh_=false;
     int playerCoverId_=-1;
     juce::String playerCover_;
     bool playerCoverBusy_=false;
@@ -1019,6 +1022,7 @@ private:
     int playerRepeat_=0; // explicit session preference, never restored into playback
     armix::player::PlayerSessionActivity playerActivity_;
     std::set<juce::File> playerFavorites_;
+    bool playerFavoritesWritable_=true;
     bool playerActivityDirty_=true,playerAutomaticPending_=false;
     bool playerLoopCurrent_=false; // explicit rehearsal toggle, never persisted
     bool playerFolderBusy_=false; // GUI only; background scanner never touches this
@@ -6676,32 +6680,50 @@ private:
     }
     void pumpPlayerMedia(){
         if(!browser_.loaded)return;
+        const auto now=juce::Time::getMillisecondCounter();
         if(!playerMediaBusy_){
+            const bool recheck=now-playerMediaRecheckAt_>=1000;
+            if(recheck)playerMediaRecheckAt_=now;
             std::vector<std::pair<int,juce::File>> batch;
-            const auto add=[&](int id){
-                if(batch.size()>=12||playerMedia_.contains(id)||id<0||id>=static_cast<int>(playerCatalogue_.size()))return;
+            const auto add=[&](int id,bool refresh=false){
+                if(batch.size()>=12||(!refresh&&playerMedia_.contains(id))||id<0||id>=static_cast<int>(playerCatalogue_.size()))return;
                 if(std::none_of(batch.begin(),batch.end(),[&](const auto& row){return row.first==id;}))
                     batch.emplace_back(id,playerCatalogue_[static_cast<std::size_t>(id)]);
             };
             for(const auto index:{playerCurrent_,playerSelected_}){
                 if(index>=0&&index<static_cast<int>(playerLibrary_.size())){
                     const auto found=playerCatalogueIds_.find(playerLibrary_[static_cast<std::size_t>(index)]);
-                    if(found!=playerCatalogueIds_.end())add(found->second);
+                    if(found!=playerCatalogueIds_.end())add(found->second,recheck);
                 }
             }
             for(const auto& file:playerLibrary_){if(batch.size()>=12)break;const auto found=playerCatalogueIds_.find(file);if(found!=playerCatalogueIds_.end())add(found->second);}
             while(playerCatalogueRequested_&&batch.size()<12&&playerMediaCursor_<playerCatalogue_.size())add(static_cast<int>(playerMediaCursor_++));
+            if(recheck){
+                const auto count=playerCatalogueRequested_?playerCatalogue_.size():playerLibrary_.size();
+                for(std::size_t n=0;n<12&&n<count&&batch.size()<12;++n){
+                    const auto index=playerMediaRecheckCursor_++%count;
+                    add(playerCatalogueRequested_?static_cast<int>(index):playerCatalogueId(static_cast<int>(index)),true);
+                }
+            }
             if(!batch.empty()){
                 playerMediaBusy_=true;
-                std::thread([safe=juce::Component::SafePointer<ConsoleWindow>(this),batch=std::move(batch)]{
+                const auto directory=settingsDirectory().getChildFile("player-media-cache-v1");
+                const bool force=playerMediaForceRefresh_;
+                std::set<int> forceIds;
+                if(force)for(const auto& [id,file]:batch)if(!playerMedia_.contains(id))forceIds.insert(id);
+                std::thread([safe=juce::Component::SafePointer<ConsoleWindow>(this),batch=std::move(batch),directory,forceIds=std::move(forceIds)]{
                     juce::AudioFormatManager formats;formats.registerBasicFormats();
                     std::vector<std::pair<int,armix::player::PlayerMediaMetadata>> results;
-                    for(const auto& [id,file]:batch)results.emplace_back(id,armix::player::PlayerMediaMetadata::probe(file,formats));
+                    for(const auto& [id,file]:batch)results.emplace_back(id,armix::player::PlayerMediaMetadata::probeCached(file,formats,directory,forceIds.contains(id)));
                     juce::MessageManager::callAsync([safe,results=std::move(results)]() mutable{
                         if(!safe)return;
                         safe->playerMediaBusy_=false;juce::Array<juce::var> rows;
-                        for(auto& [id,media]:results){rows.add(media.project(id));safe->playerMedia_.insert_or_assign(id,std::move(media));}
-                        safe->emitPlayerMedia(rows);
+                        for(auto& [id,media]:results){
+                            const auto old=safe->playerMedia_.find(id);
+                            if(old!=safe->playerMedia_.end()&&old->second==media)continue;
+                            rows.add(media.project(id));safe->playerMedia_.insert_or_assign(id,std::move(media));
+                        }
+                        if(!rows.isEmpty())safe->emitPlayerMedia(rows);
                     });
                 }).detach();
             }
@@ -6712,8 +6734,9 @@ private:
             const auto found=playerCatalogueIds_.find(playerLibrary_[static_cast<std::size_t>(playerCurrent_)]);
             if(found!=playerCatalogueIds_.end())id=found->second;
         }
-        if(id==playerCoverId_)return;
-        playerCoverId_=id;playerCover_.clear();emitPlayerCover();
+        if(id==playerCoverId_&&(id<0||now-playerCoverRecheckAt_<5000))return;
+        playerCoverRecheckAt_=now;
+        if(id!=playerCoverId_){playerCoverId_=id;playerCover_.clear();emitPlayerCover();}
         if(id<0)return;
         playerCoverBusy_=true;
         std::thread([safe=juce::Component::SafePointer<ConsoleWindow>(this),id,file=playerCatalogue_[static_cast<std::size_t>(id)]]{
@@ -6721,7 +6744,7 @@ private:
             juce::MessageManager::callAsync([safe,id,cover=std::move(cover)]{
                 if(!safe)return;
                 safe->playerCoverBusy_=false;
-                if(safe->playerCoverId_==id){safe->playerCover_=cover;safe->emitPlayerCover();}
+                if(safe->playerCoverId_==id&&safe->playerCatalogueId(safe->playerCurrent_)==id&&safe->playerCover_!=cover){safe->playerCover_=cover;safe->emitPlayerCover();}
             });
         }).detach();
     }
@@ -6743,21 +6766,9 @@ private:
     // Preferences are independent of setlist persistence. An explicit
     // favorite gesture writes a bounded atomic sidecar, never on playback ticks.
     void restorePlayerFavorites(){
-        const auto file=settingsDirectory().getChildFile("player-favorites.json");
-        if(!file.existsAsFile()||file.getSize()>9*1024*1024)return;
-        const auto doc=juce::JSON::parse(file.loadFileAsString());
-        const auto values=doc.getProperty("files",{});
-        if(static_cast<int>(doc.getProperty("version",0))!=1)return;
-        if(const auto* rows=values.getArray()){
-            if(rows->size()>2000)return;
-            for(const auto& row:*rows){
-                const auto path=row.toString();
-                if(row.isString()&&path.length()<=4096&&juce::File::isAbsolutePath(path)){
-                    const juce::File song(path);
-                    if(armix::player::PlayerLibraryPolicy::supported(song))playerFavorites_.insert(song);
-                }
-            }
-        }
+        auto songs=armix::player::PlayerFavoritesStore::load(settingsDirectory().getChildFile("player-favorites.json"));
+        playerFavoritesWritable_=songs.has_value();
+        if(songs)playerFavorites_=std::move(*songs);
     }
     int playerCatalogueId(int index) const {
         if(index<0||index>=static_cast<int>(playerLibrary_.size()))return -1;
@@ -6797,12 +6808,8 @@ private:
             candidate.insert(file);
         }else candidate.erase(file);
         if(candidate==playerFavorites_)return;
-        juce::Array<juce::var> rows;for(const auto& song:candidate)rows.add(song.getFullPathName());
-        auto doc=std::make_unique<juce::DynamicObject>();
-        doc->setProperty("version",1);doc->setProperty("files",juce::var(rows));
-        juce::TemporaryFile staging(settingsDirectory().getChildFile("player-favorites.json"));
-        if(!staging.getFile().replaceWithText(juce::JSON::toString(juce::var(doc.release()),false))||
-           !staging.overwriteTargetFileWithTemporary()){
+        if(!playerFavoritesWritable_){playerError_="Favorites archive is invalid; original file preserved";return emitPlayerState();}
+        if(!armix::player::PlayerFavoritesStore::save(settingsDirectory().getChildFile("player-favorites.json"),candidate)){
             playerError_="Unable to save favorites";emitPlayerState();return;
         }
         playerFavorites_=std::move(candidate);playerActivityDirty_=true;playerError_.clear();emitPlayerState();
@@ -7235,7 +7242,7 @@ private:
         }
         if(action=="playerMediaRefresh"){
             if(playerMediaBusy_||playerCoverBusy_){playerError_="Media scan is in progress";return emitPlayerState();}
-            playerMedia_.clear();playerMediaCursor_=0;playerCoverId_=-1;playerCover_.clear();
+            playerMedia_.clear();playerMediaCursor_=0;playerMediaRecheckCursor_=0;playerMediaForceRefresh_=true;playerCoverId_=-1;playerCover_.clear();
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPlayerMediaReset",juce::var(true));
             playerError_.clear();return emitPlayerState(true);
         }
