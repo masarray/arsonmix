@@ -268,7 +268,7 @@ jobs:
     needs: quick
     # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
     # Preserve fast-only checks for unrelated GUI and engine branches.
-    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-')) || ( (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -351,7 +351,7 @@ jobs:
     needs: quick
     # Run dedicated Vocal Delay visual validation in the reconciled native
     # engine branch too; generic /preview/ smoke does not call this fixture.
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/vocal-delay-') || startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') }}
+    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-')) || ( github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/vocal-delay-') || startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -402,6 +402,22 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  harmony-gesture-preview:
+    name: Harmonice hover wheel and accepted PCM readback FAT
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - run: python tests/approved_native_harmony_smoke.py
+
   auto-ducker-preview:
     name: Auto Ducker actual Chromium trigger picker and ACK FAT
     needs: quick
@@ -427,7 +443,7 @@ jobs:
   compressor-preview:
     name: Native Compressor actual Chromium screenshot and ACK FAT
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'feature/native-zero-latency-compressor-20261108' || github.head_ref == 'feature/native-compressor-live-lcd-meters-20261108' || (startsWith(github.head_ref, 'feature/compressor-') || startsWith(github.head_ref, 'fix/compressor-'))) }}
+    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-')) || ( github.event_name == 'pull_request' && (github.head_ref == 'feature/native-zero-latency-compressor-20261108' || github.head_ref == 'feature/native-compressor-live-lcd-meters-20261108' || (startsWith(github.head_ref, 'feature/compressor-') || startsWith(github.head_ref, 'fix/compressor-'))) ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -490,7 +506,7 @@ jobs:
   geq31-webview:
     name: GEQ31 single-renderer WebView GUI, 31 labels, PCM ACK (3 viewports)
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/geq31-') }}
+    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-')) || ( github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/geq31-') ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 14
     steps:
