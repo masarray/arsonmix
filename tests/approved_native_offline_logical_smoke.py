@@ -9,6 +9,7 @@ import tempfile
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
 from operator_wire_menu import open_application_menu
+from approved_native_wire_gain_smoke import select_ribbon_workflow
 from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -205,8 +206,11 @@ def main():
         # Open it as the operator would; never assert hidden children visible.
         assert page.locator("#addTrack").is_visible()
         assert page.locator("#addTrack").is_enabled()
-        open_application_menu(page, "channel")
-        assert page.locator("#addBus").is_visible()
+        # Native V6 places Add BUS on the Routing ribbon, not in the cascade.
+        select_ribbon_workflow(page, "routing")
+        add_bus=page.locator(".command-bar > #addBus")
+        assert add_bus.count()==1 and add_bus.is_visible() and add_bus.is_enabled()
+        select_ribbon_workflow(page, "mixer")
         open_application_menu(page, "session")
         # Archive action requires accepted offline authority and confirmation.
         archive=page.get_by_role("button",name="Open session archive",exact=True)
@@ -362,6 +366,37 @@ def main():
           if(!edge||!primary)throw Error('Missing exact accepted logical SEND/primary');
           return {source:src.id,parallel:edge.id,primary:primary.id};
         }""")
+        # Offline SOF is a saved EdgeId transaction, not a second PCM graph.
+        select_ribbon_workflow(page, "mixer")
+        sof=page.locator("#sofToggle")
+        assert sof.is_enabled()
+        sof.click()
+        page.locator("#sofTarget").select_option(str(page.evaluate(
+            "()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(t=>t.name==='AUX A').id")))
+        fader=page.locator(f'#tracks .strip[data-id="{wire_ids["source"]}"] .fader')
+        assert fader.is_enabled(), "Saved SEND must be editable without PCM"
+        page.screenshot(path="arsonmix-offline-sof.png")
+        gain_events="()=>window.__events.filter(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN')"
+        fader.evaluate("(el)=>{el.value='-12';el.dispatchEvent(new Event('input',{bubbles:true}));}")
+        assert len(page.evaluate(gain_events))==0, "Offline disk edit must wait for release"
+        fader.evaluate("(el)=>{el.dispatchEvent(new Event('change',{bubbles:true}));}")
+        page.wait_for_function(f"()=>({gain_events})().length===1")
+        gain_req=page.evaluate(gain_events)[-1]["payload"]
+        assert gain_req["channelId"]=="1" and gain_req["baseRevision"]=="1"
+        assert gain_req["payload"]["edgeId"]=="1001"
+        assert abs(gain_req["payload"]["gainLinear"]-10**(-12/20))<0.00001
+        emit(page,"arMixLogicalAck",{"requestId":gain_req["requestId"],"status":"REJECTED","errorCode":"FIXTURE"})
+        emit(page,"arMixConsoleSnapshot",staged)
+        # Exercise the actual delegated double-click handler on the fader box.
+        fader.locator("xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' fader-box ')][1]").dispatch_event("dblclick")
+        page.wait_for_function(f"()=>({gain_events})().length===2")
+        reset_req=page.evaluate(gain_events)[-1]["payload"]
+        assert reset_req["channelId"]=="1" and reset_req["baseRevision"]=="1"
+        assert reset_req["payload"]=={"edgeId":"1001","gainLinear":1}
+        assert not page.evaluate("()=>window.__events.some(e=>e.name==='arMixConsoleIntent'||e.payload?.operation==='SET_FADER'||e.payload?.action==='monitor')")
+        emit(page,"arMixLogicalAck",{"requestId":reset_req["requestId"],"status":"REJECTED","errorCode":"FIXTURE"})
+        emit(page,"arMixConsoleSnapshot",staged)
+        sof.click()
         assert page.evaluate("""([src,edge,primary])=>{
           const hooks=window.__ARMIX_NATIVE_M2__;
           return hooks.canWireTap(edge,src) && !hooks.canWireTap(primary,src);

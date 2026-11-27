@@ -8482,3 +8482,18 @@ test("One synchronous input-label resolver per projection preserves exact choice
   assert.match(source,/inputLabel:resolveInputLabel/);
   assert.match(source,/t\.input=resolveInputLabel\(row\)/);
 });
+
+
+test("Offline SOF unity reset uses the saved SEND path, not admitted PCM",()=>{
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("consumeDoubleClick(event,t) {");
+ const end=source.indexOf("applyIdentity:",start);
+ assert.ok(start>=0&&end>start);
+ const reset=source.slice(start,end);
+ const a=reset.indexOf("if(scope?.sofEnabled");
+ const z=reset.indexOf("if(!streamFaderControl",a);
+ assert.ok(a>=0&&z>a);
+ assert.match(reset.slice(a,z),/logicalView\?queueLogicalSendGain\(edge,0,true\)/);
+ assert.match(reset.slice(a,z),/requestWireGain\(\{sourceId:t.id,edgeId:id,levelDb:0\}\)/);
+ assert.doesNotMatch(reset.slice(a,z),/SET_FADER/);
+});

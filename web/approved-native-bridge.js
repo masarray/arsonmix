@@ -7429,8 +7429,9 @@
         if(scope?.sofEnabled&&scope.sofTargetId!==t.id&&nativeSofSource(t)){
           const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
           if(!edge||id===undefined||
-             !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))
-            status("SOF unity reset unavailable · select one admitted SEND");
+             !(logicalView?queueLogicalSendGain(edge,0,true):
+               requestWireGain({sourceId:t.id,edgeId:id,levelDb:0})))
+            status("SOF unity reset unavailable · select one editable SEND");
           return true;
         }
         if(!streamFaderControl(t.kind==="master"?"masterGain":"faderDb",t,0,true))

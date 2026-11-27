@@ -982,12 +982,25 @@ static void verifyOfflineLogicalSessionAndFile() {
     enabled.getDynamicObject()->setProperty("enabled",false);
     assert(workspace.apply(command("SET_SEND_ENABLED",enabled,track)).accepted);
     assert(!workspace.document().roster.find(offlineTrackId)->sends.back().enabled);
-    // Reopen must retain both OFF and PRE without inventing a LIVE PCM graph.
+    // Gain is also a saved parallel EdgeId edit, even with the SEND OFF.
+    auto gain=juce::var(new juce::DynamicObject());
+    gain.getDynamicObject()->setProperty("edgeId",juce::String(std::to_string(parallelEdge)));
+    gain.getDynamicObject()->setProperty("gainLinear",0.25);
+    assert(workspace.apply(command("SET_WIRE_GAIN",gain,track)).accepted);
+    assert(workspace.document().roster.find(offlineTrackId)->sends.back().gain==.25f);
+    const auto stableGainRevision=workspace.revision();
+    const auto stableGainDocument=Codec::encode(workspace.document());
+    gain.getDynamicObject()->setProperty("edgeId",juce::String(std::to_string(planned.front().edgeId)));
+    assert(!workspace.apply(command("SET_WIRE_GAIN",gain,track)).accepted);
+    assert(workspace.revision()==stableGainRevision);
+    assert(Codec::encode(workspace.document())==stableGainDocument);
+    // Reopen must retain OFF, PRE and gain without inventing a LIVE PCM graph.
     NativeLogicalMixerWorkspace offlineCopy;
     assert(offlineCopy.load(workspace.document(),workspace.states()));
     const auto* copied=offlineCopy.document().roster.find(offlineTrackId);
     assert(copied && copied->sends.size()==2 && copied->sends.back().preFader &&
-           !copied->sends.back().enabled && copied->sends.front().primaryOutput);
+           !copied->sends.back().enabled && copied->sends.front().primaryOutput &&
+           copied->sends.back().gain==.25f);
     assert(!static_cast<bool>(offlineCopy.snapshot().getProperty("physicalOutputAdmitted",true)));
     // Replacing the document invalidates pending intents even if its exact
     // revision (or even the saved document ID) is the same.
@@ -1041,6 +1054,11 @@ static void verifyOfflineLogicalSessionAndFile() {
     NativeLogicalMixerWorkspace reopened;
     assert(reopened.load(restored));
     assert(reopened.revision()==workspace.revision());
+    const auto* persistedSend=reopened.document().roster.find(offlineTrackId);
+    assert(persistedSend && persistedSend->sends.size()==2 &&
+           persistedSend->sends.back().edgeId==parallelEdge &&
+           persistedSend->sends.back().gain==.25f &&
+           !persistedSend->sends.back().enabled && persistedSend->sends.back().preFader);
     assert(reopened.snapshot().getProperty("graph",{}).getProperty(
         "channels",{}).getArray()->size()==16);
     // A failed disk transaction must leave both the live snapshot and the

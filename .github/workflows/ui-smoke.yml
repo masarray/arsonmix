@@ -572,6 +572,7 @@ jobs:
           run_test tests/approved_native_wire_gain_smoke.py
           run_test tests/approved_css_stage_d_single_bundle_smoke.py
           run_test tests/sof_contextual_console_smoke.py
+          run_test tests/approved_native_sof_chromium_smoke.py
           run_test tests/pages_v60_fader_wire_tactile_smoke.py
           run_test tests/approved_css_stage_c_computed_parity_smoke.py
           run_test tests/pages_wire_first_canonical_main_smoke.py
