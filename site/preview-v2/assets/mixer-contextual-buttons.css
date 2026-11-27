@@ -510,5 +510,17 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-song-menu button[data-danger="true"]{margin-top:3px}
 
 #arsonPlayer #playerArtwork{width:100%;height:100%;object-fit:cover;border-radius:inherit}
-#arsonPlayer #playerArtworkFallback{display:grid;place-items:center}
+/* Same compact geometry, fixed bundled artwork. */
+#arsonPlayer .ap-trackmark,#playerMini .ap-mini-cover{overflow:hidden;position:relative}
+#arsonPlayer .ap-cover-fallback,#playerMini .ap-cover-fallback{display:block;width:100%;height:100%;background-size:cover;background-position:center;border-radius:inherit}
+#playerMini .ap-mini-cover{width:25px;height:25px;flex:none;border-radius:5px;background:#19262e}
+#playerMini #playerMiniArtwork{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+#playerMini [hidden]{display:none!important}
+.ap-cover-fallback[data-art="blue-hour"]{background-image:url("player-cover-blue-hour.svg")}
+.ap-cover-fallback[data-art="prism"]{background-image:url("player-cover-prism.svg")}
+.ap-cover-fallback[data-art="tide"]{background-image:url("player-cover-tide.svg")}
+.ap-cover-fallback[data-art="dune"]{background-image:url("player-cover-dune.svg")}
+.ap-cover-fallback[data-art="bloom"]{background-image:url("player-cover-bloom.svg")}
+.ap-cover-fallback[data-art="still"]{background-image:url("player-cover-still.svg")}
+.ap-cover-fallback[data-art="unavailable"]{background-image:url("player-cover-unavailable.svg")}
 #arsonPlayer #playerCount{font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;text-overflow:ellipsis}

@@ -21,7 +21,7 @@ def main():
             page.add_init_script(NATIVE_EVENTS+"""window.__playerActions=[];window.__JUCE__={backend:{emitEvent(name,payload){if(name==='arMixAction'&&String(payload.action).startsWith('player'))window.__playerActions.push(payload)},...window.__nativeListenerMethods}};""")
             page.goto((out/"index.html").as_uri())
             page.wait_for_function("()=>window.__nativeListeners.has('arMixPlayerState')")
-            tracks=[dict(id=i,title="Track "+str(i+1),keySemitones=0,tempoPercent=100,cueIn=0,cueOut=0,missing=False) for i in range(30)]
+            tracks=[dict(id=i,catalogId=i,title="Track "+str(i+1),keySemitones=0,tempoPercent=100,cueIn=0,cueOut=0,missing=False) for i in range(30)]
             state=dict(schema="arsonmix.player.v1",tracks=tracks,queue=[dict(id=0,title="Track 2")],setlists=[dict(id=0,name="Acoustic Session",count=30)],activeSetlist=0,current=0,selected=0,pending=-1,queueRevision=1,autoNext=False,transport=dict(state="PLAYING",title="Track 1",durationSeconds=240,currentSeconds=102,routeAudible=True,waveform=[(i*1729)%65536 for i in range(256)]))
             page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
             page.locator("#playerToggle").click()
@@ -32,6 +32,16 @@ def main():
             play=page.locator("#playerPlay")
             geometry=play.evaluate("e=>({w:e.offsetWidth,h:e.offsetHeight,r:getComputedStyle(e).borderRadius})")
             assert geometry["w"]==44 and geometry["h"]==44 and geometry["r"]=="50%",geometry
+            fallback=page.locator("#playerArtworkFallback")
+            assert fallback.is_visible()
+            assert fallback.get_attribute("data-art") in ("blue-hour","prism","tide","dune","bloom")
+            assert fallback.evaluate("""async el=>{
+                const url=getComputedStyle(el).backgroundImage.slice(5,-2);
+                const image=new Image();image.src=url;await image.decode();
+                return image.naturalWidth===512&&image.naturalHeight===512;
+            }""")
+            for name in ("blue-hour","prism","tide","dune","bloom","still","unavailable"):
+                assert (out/"assets"/f"player-cover-{name}.svg").is_file()
             page.screenshot(path=str(evidence/f"player-{width}-{height}.png"))
             assert page.locator("#playerSetlistSelect").is_disabled()
             search=page.locator("#playerSearch")
@@ -59,6 +69,8 @@ def main():
             page.locator("#playerClose").click()
             mini=page.locator("#playerMini")
             mini.wait_for(state="visible")
+            assert page.locator("#playerMiniArtworkFallback").get_attribute("data-art")==fallback.get_attribute("data-art")
+            assert page.locator("#playerMiniArtworkFallback").is_visible()
             page.locator("#playerMiniPlay").click()
             assert page.evaluate("()=>window.__playerActions.at(-1).action")=="playerPause"
             page.locator("#playerMiniExpand").click()

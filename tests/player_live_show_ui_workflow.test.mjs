@@ -233,3 +233,21 @@ search.value="Library 1";search.fire("input");actions.length=0;
 songRows()[0].children[1].click();$("playerSongMenu").children[1].click();
 assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1).detail)),{action:"playerCatalogueAdd",value:{id:1,set:0}});
 assert.equal(actions.length,1);console.log("P0 UI metadata, duration and global catalogue intent PASS");
+
+// Original art precedence and fallback remain presentation-only.
+publish({tracks:[{...songs[0],catalogId:4},{...songs[1],catalogId:5}],current:0,selected:0});
+const initialArt=$("playerArtworkFallback").dataset.art;
+assert.ok(["blue-hour","prism","tide","dune","bloom"].includes(initialArt));
+assert.equal($("playerMiniArtworkFallback").dataset.art,initialArt);
+listeners.get("arMixPlayerCover")({catalogId:4,uri:"data:image/png;base64,AAAA"});
+assert.equal($("playerArtwork").hidden,false);assert.equal($("playerMiniArtwork").hidden,false);
+$("playerArtwork").fire("error",{currentTarget:$("playerArtwork")});
+assert.equal($("playerArtwork").hidden,true);assert.equal($("playerMiniArtwork").hidden,true);
+publish({current:0,selected:0});assert.equal($("playerArtworkFallback").dataset.art,initialArt);assert.equal($("playerArtwork").hidden,true);
+publish({current:1,selected:1});assert.equal($("playerArtwork").hidden,true);
+listeners.get("arMixPlayerCover")({catalogId:4,uri:"data:image/png;base64,BBBB"});assert.equal($("playerArtwork").hidden,true);
+publish({tracks:[{...songs[0],catalogId:4},{...songs[1],catalogId:5,missing:true}],current:1,selected:1});
+assert.equal($("playerArtworkFallback").dataset.art,"unavailable");
+publish({current:-1,selected:-1,transport:{state:"EMPTY",title:""}});
+assert.equal($("playerArtworkFallback").dataset.art,"still");
+console.log("Artwork priority, stable fallback, missing and MiniPlayer PASS");

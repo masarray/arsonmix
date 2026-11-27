@@ -16,6 +16,37 @@
    else showFeedback("Playback is available in the ArSonMix desktop app",true);
  };
  const media=new Map();let mediaRevision=0,coverId=-1,coverUri="";
+ // Fixed local asset allowlist: no file path or URL from tags.
+ const fallbackArts=["blue-hour","prism","tide","dune","bloom"];
+ function fallbackArt(song,raw,state){
+   if(!song)return "still";
+   if(song.missing||state==="ERROR")return "unavailable";
+   const key=song.album&&song.artist?song.artist+"\u001f"+song.album:(raw?.title||song.title||"");
+   let hash=2166136261;
+   for(let i=0;i<key.length;++i)hash=Math.imul(hash^key.charCodeAt(i),16777619);
+   return fallbackArts[(hash>>>0)%fallbackArts.length];
+ }
+ let failedCover=null;
+ function paintArtwork(song,raw,state){
+   const art=fallbackArt(song,raw,state);
+   const uri=song&&!song.missing&&state!=="ERROR"&&song.catalogId===coverId?coverUri:"";
+   const accepted=uri&&failedCover!==uri?uri:"";
+   const label=art==="still"?"No song loaded":art==="unavailable"?"Music unavailable":"Internal artwork · original cover unavailable";
+   for(const [imageId,fallbackId] of [["playerArtwork","playerArtworkFallback"],["playerMiniArtwork","playerMiniArtworkFallback"]]){
+     const image=$(imageId),fallback=$(fallbackId);
+     if(fallback.dataset.art!==art){fallback.dataset.art=art;fallback.title=label;fallback.setAttribute("aria-label",label);}
+     if(image.dataset.uri!==accepted){
+       image.dataset.uri=accepted;image.hidden=!accepted;fallback.hidden=Boolean(accepted);
+       if(accepted)image.src=accepted;else image.removeAttribute?.("src");
+     }
+   }
+ }
+ function coverError(event){
+   const image=event.currentTarget||this;
+   const uri=image?.dataset?.uri;
+   if(!uri||uri!==coverUri)return;
+   failedCover=uri;paintArtwork(enriched(model.tracks[model.current]),model.tracks[model.current],model.transport?.state);
+ }
  const enriched=song=>song?{...song,...(media.get(song.catalogId)||{}),missing:typeof song.missing==="boolean"?song.missing:media.get(song.catalogId)?.missing}:null;
  const activeCatalogueIndex=new Map();
  const catalogView=()=>collectionView==="library"&&Array.isArray(model.catalogue);
@@ -552,8 +583,7 @@
    setText($("playerNowSubtitle"),[currentMedia?.artist||t.artist,currentMedia?.album].filter(Boolean).join(" · ")||(t.title?"Local music file":"Music player"));
    const format=currentMedia?.format||t.format,rate=currentMedia?.sampleRate||t.sampleRate,channels=currentMedia?.channels||t.channels;
    setText($("playerNowMeta"),[format,rate?Math.round(rate/100)/10+" kHz":"",channels===2?"Stereo":channels===1?"Mono":""].filter(Boolean).join(" · "));
-   const artwork=$("playerArtwork"),uri=currentMedia?.catalogId===coverId?coverUri:"";
-   if(artwork.dataset.uri!==uri){artwork.dataset.uri=uri;artwork.hidden=!uri;$("playerArtworkFallback").hidden=Boolean(uri);if(uri)artwork.src=uri;else artwork.removeAttribute?.("src");}
+   paintArtwork(currentMedia,model.tracks[model.current],state);
    setText($("playerMiniTitle"),currentMedia?.title||t.title||"No music loaded");setText($("playerMiniTime"),duration(t.currentSeconds)+" / "+duration(t.durationSeconds)+" · Key "+(model.tracks?.[model.current]?.keySemitones??0));updateMini();
    setText($("playerElapsed"),duration(t.currentSeconds));
    setText($("playerDuration"),duration(t.durationSeconds));
@@ -679,12 +709,12 @@
      event.preventDefault();$("playerPlay").click();
    }
  });
- $("playerArtwork").addEventListener("error",()=>{$("playerArtwork").hidden=true;$("playerArtworkFallback").hidden=false;});
+ for(const id of ["playerArtwork","playerMiniArtwork"])$(id).addEventListener("error",coverError);
  if(native){
    backend.addEventListener("arMixPlayerCatalogue",payload=>{if(payload?.schema!=="arsonmix.catalogue.v1"||!Array.isArray(payload.rows))return;model.catalogue=payload.rows.slice(0,64000);++libraryRevision;if(collectionView==="library")renderTracks();});
    backend.addEventListener("arMixPlayerMedia",payload=>{if(payload?.schema!=="arsonmix.media.v1"||!Array.isArray(payload.rows))return;for(const row of payload.rows)if(Number.isInteger(row.catalogId)&&row.catalogId>=0&&row.catalogId<64000)media.set(row.catalogId,row);++mediaRevision;render();});
-   backend.addEventListener("arMixPlayerCover",payload=>{coverId=Number(payload?.catalogId);coverUri=typeof payload?.uri==="string"&&payload.uri.length<=350000&&/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(payload.uri)?payload.uri:"";render();});
-   backend.addEventListener("arMixPlayerMediaReset",()=>{media.clear();++mediaRevision;coverId=-1;coverUri="";render();});
+   backend.addEventListener("arMixPlayerCover",payload=>{const incoming=Number(payload?.catalogId);if(incoming!==coverId||payload?.uri!==coverUri)failedCover=null;coverId=incoming;coverUri=typeof payload?.uri==="string"&&payload.uri.length<=350000&&/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(payload.uri)?payload.uri:"";render();});
+   backend.addEventListener("arMixPlayerMediaReset",()=>{media.clear();++mediaRevision;coverId=-1;coverUri="";failedCover=null;render();});
    backend.addEventListener("arMixPlayerState",payload=>{
      if(!payload || payload.schema!=="arsonmix.player.v1")return;
      if(Array.isArray(payload.tracks)){
