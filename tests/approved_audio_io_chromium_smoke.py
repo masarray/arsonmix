@@ -775,6 +775,8 @@ def verify_independent_output(page,out,legacy_empty=False):
     before=page.evaluate("()=>window.__actions.length")
     edit.click()
     assert not panel.is_visible()
+    assert page.locator("#ribbon-tab-mixer").get_attribute("aria-selected")=="true"
+    assert page.locator("#sofToggle").is_visible()
     assert page.locator("#mixContext").inner_text()=="MONITOR MIX"
     mon=page.get_by_label("MAIN secondary monitor output")
     # SOF rebuilds MAIN; the accepted route must be painted immediately,

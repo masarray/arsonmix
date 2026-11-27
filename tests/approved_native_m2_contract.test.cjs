@@ -7240,7 +7240,10 @@ test("P2 offline GAIN coalesces released values until durable ACK and exact read
 test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop is separate",()=>{
  const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp");
  assert.doesNotMatch(bridge,/dataset\.nativeMonitor|data-native-monitor|toolbar\.insertBefore\(monitor/);
- assert.match(bridge,/menu\.append\(caption,setup,muteBtn,hardwareNote/);
+ assert.match(bridge,/menu\.append\(caption,setup,muteBtn,\.\.\.newSessionButtons,archiveButton/);
+ assert.match(bridge,/audioDiagnosticTools\.append\(hardwareNote,inspect,tone,mark,report,advanced\)/);
+ assert.match(bridge,/querySelector\("\.armix-audio-diagnostics"\)\.append\(audioDiagnosticTools\)/);
+ assert.doesNotMatch(bridge,/menu\.append\([^;]*(?:hardwareNote|healthTitle|tone,mark,report|advanced)/);
  assert.match(bridge,/Resume after emergency stop/);
  assert.match(bridge,/EMERGENCY STOP · MORE → RESUME/);
  const start=native.indexOf("void serviceAutomaticMain()"),end=native.indexOf("void requestAutomaticMain",start);

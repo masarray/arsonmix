@@ -3951,6 +3951,10 @@
       mix.target.dispatchEvent(new Event("change",{bubbles:true}));
     }
     if(scope.sofTargetId===mix.id&&!scope.sofEnabled)scope.toggleSof(true);
+    // Explicit Edit headphone mix must expose its existing SOF controls.
+    // Ribbon selection is presentation only, not a second target or PCM write.
+    const mixerTab=document.getElementById('ribbon-tab-mixer');
+    if(mixerTab&&mixerTab.getAttribute('aria-selected')!=='true')mixerTab.click();
     mix.toggle.focus();
   }
   // MAIN MON is a presentation of the existing native secondary owner.

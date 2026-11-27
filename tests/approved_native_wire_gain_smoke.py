@@ -171,7 +171,7 @@ def verify_inspector_rejected_gain(page, out):
     # production Matrix entry lives in More > WIRE TOOLS. Exercise the
     # actual visible menu, not a hidden compatibility trigger.
     more=page.locator("#moreTools")
-    more.locator(":scope > summary").click()
+    open_menu_category(page,"settings")
     assert more.evaluate("(el)=>el.open")
     menu_matrix=more.locator('[data-wire-open="matrix"]')
     assert menu_matrix.is_visible(), "More must retain accessible Matrix"
@@ -241,9 +241,22 @@ def select_ribbon_workflow(page, workflow):
     """Use the real operator tab before interacting with contextual commands."""
     tab=page.locator("#ribbon-tab-"+workflow)
     tab.wait_for(state="visible")
-    if tab.get_attribute("aria-selected")!="true":
+    if tab.get_attribute("aria-selected")!="true" or page.locator("#moreTools").get_attribute("open") is not None:
         tab.click()
     assert tab.get_attribute("aria-selected")=="true"
+
+def open_menu_category(page, category):
+    """Open the actual right-hand cascade; never force-click a hidden action."""
+    menu=page.locator("#moreTools")
+    if menu.get_attribute("open") is None:
+        menu.locator(":scope > summary").click()
+    panel=menu.locator(".more-tools-panel")
+    row=panel.locator('[data-menu-category="'+category+'"]')
+    child=panel.locator("#armix-menu-"+category)
+    if not child.is_visible():
+        row.click()
+    assert child.is_visible() and row.get_attribute("aria-expanded")=="true"
+    return child
 
 def open_audio_io_command(page):
     select_ribbon_workflow(page,"io")
