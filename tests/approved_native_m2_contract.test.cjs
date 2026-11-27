@@ -8383,3 +8383,55 @@ test("WIRE indexed gain readback preserves rejection, exact pair cardinality and
   assert.deepEqual(readback(changed),[],"no stale cross-snapshot index");
   assert.deepEqual(readback([,ch]),primary);
 });
+
+
+test("I/O input choice projection scans physical inventory once, preserves custom pairs and fresh readback",()=>{
+  const count=64;
+  let reads=0;
+  const endpoints=Array.from({length:count},(_,port)=>({
+    port,label:"Input "+(port+1),get active(){reads++;return true;}
+  }));
+  const hardware={device:{backend:"ASIO",inputEndpoints:endpoints,
+    enabledInputs:Array.from({length:count},(_,i)=>i)},
+    admitted:true,retained:false,graph:{channels:[
+      {source:{sourceFormat:"STEREO",portId:"in:63",portIdRight:"in:0"}},
+      {source:{sourceFormat:"STEREO",portId:"in:0",portIdRight:"in:63"}},
+      {source:{sourceFormat:"STEREO",portId:"in:63",portIdRight:"in:0"}},
+      {source:{sourceFormat:"STEREO",portId:"in:9",portIdRight:"in:9"}},
+      {source:{sourceFormat:"STEREO",portId:"in:3",portIdRight:"in:64"}},
+      {source:{sourceFormat:"STEREO",portId:"in:5",portIdRight:"in:8",bindingState:"NEEDS_REMAP"}}
+    ]}};
+  const choices=deviceVM.inputChoices(hardware);
+  assert.equal(reads,count,"one inventory scan regardless of choice count");
+  assert.equal(choices.length,1+64+63+2);
+  assert.deepEqual(choices.slice(-2),[
+    deviceVM.physicalInputChoice(hardware,"STEREO",63,0),
+    deviceVM.physicalInputChoice(hardware,"STEREO",0,63)]);
+  for(const choice of choices)
+    assert.deepEqual(choice,deviceVM.physicalInputChoice(hardware,choice.mode,choice.left,choice.right));
+  // Same JS object, changed inventory: no cache, no phantom stale choices.
+  hardware.device.enabledInputs=hardware.device.enabledInputs.filter(p=>p!==63);
+  endpoints[0].label="Renamed input";
+  reads=0;
+  const changed=deviceVM.inputChoices(hardware);
+  assert.equal(reads,count);
+  assert.ok(changed.every(x=>x.left!==63&&x.right!==63));
+  assert.equal(changed[1].label,"Mono · Renamed input [IN 1]");
+  assert.equal(deviceVM.inputChoices({...hardware,retained:true}).length,1+63+62);
+  const legacy={...hardware,admitted:false,raw:{mixerSession:{authority:"M4",channels:[
+    {source:{mode:"STEREO",left:7,right:2}},
+    {source:{mode:"STEREO",left:2.5,right:7}},
+    {source:{mode:"STEREO",left:7,right:63}}
+  ]}}};
+  assert.deepEqual(deviceVM.inputChoices(legacy).at(-1),
+    deviceVM.physicalInputChoice(legacy,"STEREO",7,2));
+  assert.equal(deviceVM.inputChoices(legacy).length,1+63+62+1);
+  const duplicate={device:{enabledInputs:[0,1],inputEndpoints:[
+    {port:1,label:"Input 2",active:true},{port:0,label:"First",active:true},
+    {port:0,label:"Second",active:true}]}};
+  assert.deepEqual(deviceVM.inputChoices(duplicate),[
+    deviceVM.physicalInputChoice(duplicate,"NONE",-1,-1),
+    deviceVM.physicalInputChoice(duplicate,"MONO",0,-1),
+    deviceVM.physicalInputChoice(duplicate,"MONO",1,-1),
+    deviceVM.physicalInputChoice(duplicate,"STEREO",0,1)]);
+});
