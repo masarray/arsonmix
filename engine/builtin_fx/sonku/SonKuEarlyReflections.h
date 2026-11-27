@@ -6,6 +6,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP>=2)
+#include <emmintrin.h>
+#endif
 #include "SonKuMeasuredHrir.h"
 #if defined(SONKU_P83_PHYSICAL_SPEAKER_RESEARCH) && SONKU_P83_PHYSICAL_SPEAKER_RESEARCH
 #include "SonKuP83SpeakerScene.h"
@@ -376,22 +379,6 @@ public:
                         return std::array<float,2>{hL,hR};
                     };
                     const auto render=[&](auto&& sample) noexcept {
-                        // Independent coefficient pass: no per-tap stationary/fusion
-                        // branch on moving, non-fused paths. Keep ordered PCM sums.
-                        // Warming history still advances ALL taps, but reads only fresh ones.
-                        if(movingFirOptimized_ && !fused && !p.kernelStationary){
-                            for(int ear=0;ear<2;++ear){
-                                auto& kernel=p.kernel[ear];
-                                const auto& target=p.targetKernel[ear];
-                                for(int k=0;k<hrir::taps;++k)
-                                    kernel[k]+=kernelSlew_*(target[k]-kernel[k]);
-                            }
-                            for(int k=0;k<freshTaps;++k){
-                                const float x=sample(k);
-                                l+=x*p.kernel[0][k];r+=x*p.kernel[1][k];
-                            }
-                            return;
-                        }
                         for(int k=0;k<freshTaps;++k){
                             const float v=sample(k);
                             const auto h=advance(k);
@@ -416,6 +403,38 @@ public:
                             l+=v*hL;r+=v*hR;
                         }
                     };
+#endif
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH && (defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP>=2))
+                    // Baseline x64 SSE2. Fully fresh contiguous nonfused moving
+                    // paths only. Same delay, history and coefficient slew;
+                    // four accumulation lanes require a numerical PCM gate.
+                    if(movingFirOptimized_ && !fused && !p.kernelStationary &&
+                       freshTaps==hrir::taps && fastContiguousHrir_ && idx>=hrir::taps){
+                        static_assert(hrir::taps%4==0);
+                        const auto f=_mm_set1_ps(frac),one=_mm_set1_ps(1.f-frac);
+                        const auto slew=_mm_set1_ps(kernelSlew_);
+                        auto sumL=_mm_setzero_ps(),sumR=_mm_setzero_ps();
+                        const float* first=signal.data()+idx;
+                        for(int k=0;k<hrir::taps;k+=4){
+                            auto a=_mm_loadu_ps(first-k-3);
+                            auto b=_mm_loadu_ps(first-k-4);
+                            a=_mm_shuffle_ps(a,a,_MM_SHUFFLE(0,1,2,3));
+                            b=_mm_shuffle_ps(b,b,_MM_SHUFFLE(0,1,2,3));
+                            const auto x=_mm_add_ps(_mm_mul_ps(one,a),_mm_mul_ps(f,b));
+                            auto hL=_mm_loadu_ps(p.kernel[0].data()+k);
+                            auto hR=_mm_loadu_ps(p.kernel[1].data()+k);
+                            hL=_mm_add_ps(hL,_mm_mul_ps(slew,_mm_sub_ps(_mm_loadu_ps(p.targetKernel[0].data()+k),hL)));
+                            hR=_mm_add_ps(hR,_mm_mul_ps(slew,_mm_sub_ps(_mm_loadu_ps(p.targetKernel[1].data()+k),hR)));
+                            _mm_storeu_ps(p.kernel[0].data()+k,hL);
+                            _mm_storeu_ps(p.kernel[1].data()+k,hR);
+                            sumL=_mm_add_ps(sumL,_mm_mul_ps(x,hL));
+                            sumR=_mm_add_ps(sumR,_mm_mul_ps(x,hR));
+                        }
+                        alignas(16) float sl[4],sr[4];
+                        _mm_store_ps(sl,sumL);_mm_store_ps(sr,sumR);
+                        l=(sl[0]+sl[1])+(sl[2]+sl[3]);
+                        r=(sr[0]+sr[1])+(sr[2]+sr[3]);
+                    }else
 #endif
                     if(fastContiguousHrir_ && idx>=hrir::taps){
                         // For 8052/8192 ring positions the entire 140-tap

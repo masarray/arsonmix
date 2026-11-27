@@ -37,6 +37,7 @@ static void parity(int rate,int block){
     auto s=p99::DefaultOrbitStage::settings();
     auto a=make(rate,false,false,s),b=make(rate,true,false,s);
     std::vector<double> ta,tb;
+    double error=0.,energy=0.;float maxError=0.f;
     for(int n=0;n<768;++n){
         // Include activation epochs, spread zero/fusion, direction and scene edits.
         if(n==200||n==250||n==400||n==500||n==600){
@@ -66,11 +67,17 @@ static void parity(int rate,int block){
         else{run(a,l,r,ta);run(b,ll,rr,tb);}
         for(int i=0;i<block;++i){
             assert(std::isfinite(l[i])&&std::isfinite(r[i]));
-            assert(bits(l[i],ll[i])&&bits(r[i],rr[i]));
+            const float dl=l[i]-ll[i],dr=r[i]-rr[i];
+            maxError=std::max({maxError,std::abs(dl),std::abs(dr)});
+            error+=double(dl)*dl+double(dr)*dr;
+            energy+=double(l[i])*l[i]+double(r[i])*r[i];
+            assert(std::isfinite(ll[i])&&std::isfinite(rr[i]));
         }
     }
+    assert(energy>0.);
+    assert(maxError<2.e-4f && error/energy<1.e-10);
+    std::printf("SONKU_P106_FIR_NUMERIC rate=%d frames=%d max_abs=%.9g relative_error_power=%.9g\n",rate,block,maxError,error/energy);
     report(ta,rate,block,"reference");report(tb,rate,block,"fir_only");
-    std::printf("SONKU_P106_FIR_PCM_EXACT rate=%d frames=%d\n",rate,block);
 }
 static double tone(int rate,int hz,int scene,bool balanced){
     p98::SceneVoicing v;
