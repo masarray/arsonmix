@@ -4570,6 +4570,20 @@ test("MV-5 EXTERNAL OUT preflight fails closed on stale, ambiguous or prohibited
  ])assert.equal(plan(invalid).kind,"UNAVAILABLE",JSON.stringify(invalid));
 });
 
+test("Output matrix external route preserves uint64 epoch and revision without Number conversion",()=>{
+ const id="9007199254740993",epoch="9007199254740997",revision="18446744073709551615";
+ const native={admitted:true,device:{epoch},graph:{revision,channels:[{id,role:"INPUT"}]}};
+ const hardware={device:{epoch,backend:"ASIO",enabledOutputs:[2,3],
+   outputEndpoints:[{port:2,active:true},{port:3,active:true}]},
+   raw:{externalRevision:revision,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],externalOutputs:[]}};
+ const plan=stripVM.externalOutputPlan({native,hardware,channelId:id,selectedLabel:"OUT 3/4",
+   currentLabel:"None",choices:[{label:"OUT 3/4",left:2,right:3}]});
+ assert.equal(plan.kind,"READY");
+ assert.equal(plan.epoch,epoch);assert.equal(plan.revision,revision);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.ok(bridge.includes("await requestExternalOutput(null,label,null,id)"));
+ assert.ok(bridge.includes("for(const [id,pending] of pendingExternal)"));
+});
 test("GUI-1 external OUT pending waits for matching ACK and later readback",()=>{
   const p={requestId:"ext-1",epoch:"19",left:2,right:3,acked:false};
   const row={physicalLeft:2,physicalRight:3};
