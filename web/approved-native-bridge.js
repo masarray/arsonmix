@@ -6000,6 +6000,7 @@
   }
   const nativeHooks=Object.freeze({
     rackFileTarget,rackFile:requestRackFile,
+    paintMainMonitor, // synchronous presentation only; no native command
     enabled:connected,
     requestDeleteTrack:requestNativeTrackDelete,
     requestDeleteStrip:requestNativeStripDelete,
@@ -6944,6 +6945,7 @@
     installFirstSoundMenu();
     presentFxCatalog(); // compiled native FX, never demo or vendor placeholders
     updateHardwarePanel(null);
+    paintMainMonitor();
     stopDemo();
     status("NATIVE: subscribed · waiting for true device and accepted ChannelId graph");
     // Only the installed native Pages scope can authenticate host GUI readiness.

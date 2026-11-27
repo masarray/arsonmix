@@ -632,6 +632,13 @@ def verify_main_monitor_shortcut(page,out):
     emit(page,"arMixStatus",live)
     assert mon.input_value()=="USB DAC"
     assert page.locator(".strip.master select[data-field=output]").input_value()==primary
+    # GAIN/FX mode rebuilds strips even while native telemetry is unchanged.
+    before=page.evaluate("()=>window.__actions.length")
+    for view in ("gainView","fxView"):
+        page.locator("#"+view).click()
+        assert mon.is_enabled() and mon.input_value()=="USB DAC"
+        assert page.locator(".strip.master select[data-field=output]").input_value()==primary
+        assert page.evaluate("()=>window.__actions.length")==before
     mon.select_option("")
     stop=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputStop').at(-1)")
     assert stop["requestId"] and mon.input_value()=="USB DAC"
@@ -739,10 +746,16 @@ def verify_independent_output(page,out,legacy_empty=False):
     edit.click()
     assert not panel.is_visible()
     assert page.locator("#mixContext").inner_text()=="MONITOR MIX"
+    mon=page.get_by_label("MAIN secondary monitor output")
+    # SOF rebuilds MAIN; the accepted route must be painted immediately,
+    # with no injected telemetry, timeout, or synthetic native action.
+    assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
     page.locator("#sofToggle").click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"
-    page.get_by_label("MAIN secondary monitor output").select_option("__armix_settings__")
+    assert mon.is_enabled() and mon.input_value()=="__armix_split__"
+    assert page.evaluate("()=>window.__actions.length")==before
+    mon.select_option("__armix_settings__")
     panel.get_by_role("button",name="Use same mix").click()
     same=page.evaluate("()=>window.__actions.at(-1)")
     assert same["action"]=="secondaryOutputSplit" and same["value"]["enabled"] is False

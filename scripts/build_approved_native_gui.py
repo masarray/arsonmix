@@ -84,6 +84,14 @@ NATIVE_EVENT_HOOKS = (
      "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"
      " if(type==='output'&&window.__JUCE__?.backend)\n"
      "  return window.__ARMIX_NATIVE_M2__?.outputChoices?.(t)||[t.output];\n"),
+    # Rehydrate the MAIN MON selector synchronously after every strip rebuild.
+    # A view/bank/SOF change must never wait for the next hardware telemetry.
+    (" masterEl.innerHTML=strip(master);\n",
+     " masterEl.innerHTML=strip(master);\n"
+     " window.__ARMIX_NATIVE_M2__?.paintMainMonitor?.();\n"),
+    (" old.replaceWith(updated);\n",
+     " old.replaceWith(updated);\n"
+     " if(t.kind==='master')window.__ARMIX_NATIVE_M2__?.paintMainMonitor?.();\n"),
     ("function replugWireEdge(sourceId,oldDestId,nextDestId){\n",
      "function replugWireEdge(sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId){\n"
      " if(window.__JUCE__?.backend && releasePoint!==undefined){\n"
