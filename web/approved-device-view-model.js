@@ -105,6 +105,18 @@
     }
     return result;
   }
+  function matrixCrosspointChoice(row,candidates,port,side){
+    if(!row?.editable||!Array.isArray(candidates)||!Number.isInteger(port))return null;
+    const installed=candidates.find(x=>x.label===row.selected);
+    const hits=x=>x.left===port||x.right===port;
+    if(installed&&hits(installed)){
+      if(row.bus)return null; // MAIN / admitted physical monitor cannot be removed here
+      return candidates.find(x=>x.left===-1&&x.right===-1)||null;
+    }
+    const stereo=side==="output"||installed?.mode==="STEREO"||
+      ((!installed||installed.mode==="NONE")&&row.format==="STEREO");
+    return candidates.find(x=>(side==="output"||x.mode===(stereo?"STEREO":"MONO"))&&hits(x))||null;
+  }
   function patchMatrix(snapshot,side) {
     const input=side==="input", d=snapshot?.device;
     const names=input?d?.inputEndpoints:d?.outputEndpoints;
@@ -774,7 +786,7 @@
     }
     return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,namedPatchChoices,busOutputChoices,
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,

@@ -180,6 +180,57 @@ def exercise(browser,out,width,height,tap,close_reference):
     manager.locator("#pluginSearch").fill("")
     assert manager.locator(".plugin-item").count()>=258
     assert assert_column_alignment(manager)["columns"]==7
+    # V6 faces and selectors must be real rendered controls, never emoji.
+    page.mouse.move(0,0)
+    controls=manager.evaluate("""el=>{
+      const props=['height','borderRadius','backgroundColor','borderTopColor','color','fontSize','fontWeight','boxShadow'];
+      const read=e=>Object.fromEntries(props.map(k=>[k,getComputedStyle(e)[k]]));
+      const add=document.querySelector('#addTrack'),bank=document.querySelector('#bankSelect');
+      const buttons=['pluginImport','pluginScan','pluginAddPath'].map(id=>read(document.getElementById(id)));
+      const filters=['pluginCategory','pluginView'].map(id=>read(document.getElementById(id)));
+      const icons=[...el.querySelectorAll('.plugin-heading-icon'),...el.querySelector('.plugin-item').querySelectorAll('.plugin-flag')].map(e=>{
+        const r=e.getBoundingClientRect(),p=getComputedStyle(e,'::before');
+        return {w:r.width,h:r.height,iw:p.width,ih:p.height,mask:p.maskImage,text:e.textContent.trim()};
+      });
+      return {buttons,filters,icons,add:add?read(add):null,bank:bank?read(bank):null};
+    }""")
+    assert controls["add"],controls
+    for face in controls["buttons"]:
+        for key in ("height","borderRadius","backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
+            assert face[key]==controls["add"][key],(key,face,controls["add"])
+    for face in controls["filters"]:
+        assert face["height"]=="25px" and face["borderRadius"]=="14px",face
+        assert face["backgroundColor"]=="rgb(13, 32, 42)",face
+        if controls["bank"]:
+            for key in ("height","borderRadius","backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
+                assert face[key]==controls["bank"][key],(key,face,controls["bank"])
+    for icon in controls["icons"]:
+        assert icon["w"]==24 and icon["h"]==24 and icon["iw"]=="16px" and icon["ih"]=="16px",icon
+        assert icon["mask"]!="none" and icon["text"]=="",icon
+    assert controls["icons"][0]["mask"]==controls["icons"][2]["mask"]
+    assert controls["icons"][1]["mask"]==controls["icons"][3]["mask"]
+    manager.locator("#pluginSearch").fill("Fixture VST 257")
+    favorite=manager.locator('[data-plugin-action="fav"]')
+    hidden=manager.locator('[data-plugin-action="hide"]')
+    assert favorite.get_attribute("aria-pressed")=="false"
+    favorite.click()
+    assert favorite.get_attribute("aria-pressed")=="true"
+    assert favorite.evaluate("e=>getComputedStyle(e,'::before').maskImage")!=controls["icons"][0]["mask"]
+    manager.locator("#pluginView").select_option("favorites")
+    assert manager.locator(".plugin-item").count()==1
+    favorite.click()
+    assert manager.locator(".plugin-empty").is_visible()
+    manager.locator("#pluginView").select_option("all")
+    hidden.click()
+    assert manager.locator(".plugin-empty").is_visible()
+    manager.locator("#pluginView").select_option("hidden")
+    assert hidden.get_attribute("aria-pressed")=="true"
+    hidden.click()
+    assert manager.locator(".plugin-empty").is_visible()
+    manager.locator("#pluginView").select_option("all")
+    manager.locator("#pluginSearch").fill("")
+    assert assert_column_alignment(manager)["columns"]==7
+    print("PASS V6 controls, shared 16px Lucide masks, favorite/hide/filter round-trip",width,flush=True)
     close=manager.locator("#pluginClose")
     close.screenshot(path=f"v6-plugin-manager-close-{width}.png")
     actual_close=close_visual_states(page,close)
@@ -189,6 +240,7 @@ def exercise(browser,out,width,height,tap,close_reference):
     page.screenshot(path=f"v6-plugin-manager-{width}.png")
     # Preserve responsive layout after a real viewport resize, not just a CSS query.
     page.set_viewport_size({"width":720,"height":768})
+    page.wait_for_function("""()=>{const r=document.querySelector("#pluginBrowser").getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth+.5&&r.bottom<=innerHeight+.5}""")
     assert assert_column_alignment(manager)["columns"]==6
     page.screenshot(path=f"v6-plugin-manager-narrow-{width}.png")
     manager.locator("#pluginClose").click()

@@ -126,17 +126,18 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-sidebar{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto;background:#1d303b;border-right:1px solid #3b515e;padding:12px;gap:12px}
 .plugin-sidebar-title{font-size:10px;color:#a7beca;letter-spacing:.055em;text-transform:uppercase;font-weight:500}
 .plugin-library-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.plugin-browser .plugin-library-actions button,.plugin-browser .scan-add button{height:30px!important;min-height:30px!important;padding:0 8px!important;background:#263e4c!important;background-image:none!important;border:1px solid #466576!important;border-radius:3px!important;box-shadow:none!important;color:#d9e8ef!important;font-size:11px!important;font-weight:500!important;white-space:nowrap}
-.plugin-browser #pluginScan{background:#24566b!important;border-color:#487c90!important;color:#edf8ff!important}
-.plugin-browser .plugin-library-actions button:hover:not(:disabled),.plugin-browser .scan-add button:hover:not(:disabled){background:#345568!important;border-color:#75a9bb!important}
-.plugin-browser .plugin-library-actions button:disabled{opacity:.5!important;cursor:not-allowed}
+/* V6 Clean Ribbon visual recipe: compact pill, cyan action face, no metal. */
+.plugin-browser :is(.plugin-library-actions,.scan-add) button{display:inline-flex!important;align-items:center;justify-content:center;gap:5px;height:27px!important;min-height:27px!important;max-height:27px!important;padding:0 10px!important;background:#78c8d514!important;background-image:none!important;border:1px solid #83c7d344!important;border-radius:15px!important;box-shadow:none!important;color:#b6edf6!important;font:400 11px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important;text-shadow:none!important;white-space:nowrap;cursor:pointer}
+.plugin-browser :is(.plugin-library-actions,.scan-add) button:hover:not(:disabled){background:#9abccb19!important;border-color:#93b5c22b!important;color:#f1f8fb!important}
+.plugin-browser :is(.plugin-library-actions,.scan-add) button:active:not(:disabled){background:#4bb6ce26!important;border-color:#62b9cb56!important;color:#9ce8f4!important}
+.plugin-browser :is(.plugin-library-actions,.scan-add) button:disabled{opacity:.45!important;cursor:not-allowed}
 .plugin-scan-settings{display:flex;flex-direction:column;min-width:0;gap:8px;padding:12px 0 0;background:transparent;border:0;border-top:1px solid #3b515e}
 .scan-title{font-size:10px;letter-spacing:.035em;color:#9cb4c3;font-weight:500}
 .scan-paths{display:flex;flex-direction:column;gap:0;max-height:184px;min-height:48px;overflow:auto;border:1px solid #3c5361;background:#162832}
 .scan-path{display:flex;align-items:center;gap:5px;min-width:0;min-height:29px;padding:3px 6px;border-bottom:1px solid #2b414d;font-size:10px}
 .scan-path>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .scan-path small{color:#94afbd;flex:none}.scan-path button{background:transparent;border:0;color:#a7bdc8}
-.scan-add{display:flex;flex-wrap:wrap;gap:6px}.scan-add input{flex:1 1 100%;min-width:0;height:29px;padding:0 7px;color:#dfedf3;background:#132630;border:1px solid #3f5866;border-radius:3px}
+.scan-add{display:flex;flex-wrap:wrap;gap:6px}.scan-add input{flex:1 1 100%;min-width:0;height:27px;padding:0 10px;color:#d2e2e9;background:#0d202a;border:1px solid #83a6b42e;border-radius:14px;font:400 11px "Segoe UI",Arial,sans-serif}
 .scan-add button{width:100%}
 .scan-status{font-size:10px;color:#b1c4cf;line-height:1.5;overflow-wrap:anywhere;padding:8px 9px;border-left:2px solid #567b8c;background:#172b36;border-radius:0 3px 3px 0}
 .plugin-disclaimer{margin-top:auto;color:#93aab8;font-size:10px;line-height:1.45;padding-top:8px;border-top:1px solid #394f5c;overflow-wrap:anywhere}
@@ -145,9 +146,11 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-search-row{position:relative;display:flex;min-width:0;flex:1}
 .plugin-search-row::before{content:"";position:absolute;left:10px;top:9px;width:9px;height:9px;border:1.5px solid #8eacbc;border-radius:50%;pointer-events:none}
 .plugin-search-row::after{content:"";position:absolute;left:19px;top:19px;width:5px;height:1.5px;border-radius:1px;background:#8eacbc;transform:rotate(45deg);pointer-events:none}
-.plugin-search-row input{width:100%;min-width:0;height:30px;padding:0 9px 0 31px;background:#10232d;color:#e0edf4;border:1px solid #45606e;border-radius:4px;font-size:11px;letter-spacing:0}
+.plugin-search-row input{width:100%;min-width:0;height:30px;padding:0 9px 0 31px;background:#0d202a;color:#d2e2e9;border:1px solid #83a6b42e;border-radius:15px;font:400 11px "Segoe UI",Arial,sans-serif;letter-spacing:0}
 .plugin-filters{display:flex;gap:6px;min-width:0}
-.plugin-filters select{width:112px;min-width:0;height:30px;background:#203642;color:#c6d9e4;border:1px solid #405b6b;border-radius:3px;padding:0 5px;font-size:11px}
+.plugin-browser .plugin-filters select{width:112px;min-width:0;height:25px!important;min-height:25px!important;max-height:25px!important;appearance:none!important;border:1px solid #83a6b42e!important;border-radius:14px!important;background-color:#0d202a!important;color:#d2e2e9!important;box-shadow:none!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' stroke='%239db5c2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")!important;background-position:right 8px center!important;background-repeat:no-repeat!important;padding:0 24px 0 10px!important;font:400 11px "Segoe UI",Arial,sans-serif!important;text-transform:none!important;cursor:pointer}
+.plugin-browser .plugin-filters{align-items:center}
+.plugin-browser .plugin-filters select:hover:not(:disabled){border-color:#93b5c280!important;color:#f1f8fb!important}
 .plugin-catalog{--plugin-columns:minmax(0,1fr) 112px 25px 25px;--plugin-identity:minmax(0,1.55fr) minmax(0,1fr) minmax(0,.75fr)}
 .plugin-headings,.plugin-item{display:grid;grid-template-columns:var(--plugin-columns);gap:0;align-items:center;min-width:0;width:100%;box-sizing:border-box}
 .plugin-headings{height:28px;flex:none;background:#233b49;color:#bdd0db;font-size:10px;font-weight:500;border-bottom:1px solid #4a6473;padding:0 6px}
@@ -155,7 +158,18 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-heading-identity>span,.plugin-choose>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 7px;box-sizing:border-box;text-align:left}
 .plugin-heading-status,.plugin-labels{display:grid;grid-template-columns:48px 64px;align-items:center;min-width:0;width:100%;box-sizing:border-box}
 .plugin-heading-status>span,.plugin-labels>span{padding:0 4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;text-align:left}
-.plugin-heading-icon{text-align:center;justify-self:center;width:24px}
+/* Lucide star/ban, ISC; notice in workstream doc. Shared mask per icon,
+   no emoji/font baseline, no extra SVG nodes per catalog entry. */
+.plugin-browser{--plugin-star:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11.525%202.295a.53.53%200%200%201%20.95%200l2.31%204.679a2.123%202.123%200%200%200%201.595%201.16l5.166.756a.53.53%200%200%201%20.294.904l-3.736%203.638a2.123%202.123%200%200%200-.611%201.878l.882%205.14a.53.53%200%200%201-.771.56l-4.618-2.428a2.122%202.122%200%200%200-1.973%200L6.396%2021.01a.53.53%200%200%201-.77-.56l.881-5.139a2.122%202.122%200%200%200-.611-1.879L2.16%209.795a.53.53%200%200%201%20.294-.906l5.165-.755a2.122%202.122%200%200%200%201.597-1.16z%22%2F%3E%3C%2Fsvg%3E");--plugin-star-on:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22black%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11.525%202.295a.53.53%200%200%201%20.95%200l2.31%204.679a2.123%202.123%200%200%200%201.595%201.16l5.166.756a.53.53%200%200%201%20.294.904l-3.736%203.638a2.123%202.123%200%200%200-.611%201.878l.882%205.14a.53.53%200%200%201-.771.56l-4.618-2.428a2.122%202.122%200%200%200-1.973%200L6.396%2021.01a.53.53%200%200%201-.77-.56l.881-5.139a2.122%202.122%200%200%200-.611-1.879L2.16%209.795a.53.53%200%200%201%20.294-.906l5.165-.755a2.122%202.122%200%200%200%201.597-1.16z%22%2F%3E%3C%2Fsvg%3E");--plugin-ban:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%2210%22%2F%3E%3Cpath%20d%3D%22m4.929%204.929%2014.142%2014.142%22%2F%3E%3C%2Fsvg%3E")}
+.plugin-heading-icon,.plugin-browser .plugin-flag{display:grid!important;place-items:center;justify-self:center;box-sizing:border-box;width:24px!important;height:24px!important;color:#96b0be;font-size:0!important;line-height:1!important}
+.plugin-heading-icon::before,.plugin-browser .plugin-flag::before{content:"";display:block;width:16px;height:16px;background:currentColor;mask:var(--plugin-glyph) center/contain no-repeat;pointer-events:none}
+.plugin-heading-icon[data-plugin-icon="star"],.plugin-browser .plugin-flag[data-plugin-action="fav"]{--plugin-glyph:var(--plugin-star)}
+.plugin-heading-icon[data-plugin-icon="ban"],.plugin-browser .plugin-flag[data-plugin-action="hide"]{--plugin-glyph:var(--plugin-ban)}
+.plugin-browser .plugin-flag[data-plugin-action="fav"][aria-pressed="true"]{--plugin-glyph:var(--plugin-star-on);color:#e4bf70!important}
+.plugin-browser .plugin-flag[data-plugin-action="hide"][aria-pressed="true"]{color:#f0a39e!important;background:#d66c6a20!important}
+.plugin-browser .plugin-flag:hover{background:#9abccb19!important;color:#f1f8fb!important}
+.plugin-browser .plugin-flag[aria-pressed="true"]:hover{color:#fff!important}
+
 .plugin-results{min-height:0;background:#142630}
 .plugin-table-scroll{flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable;background:#142630;overscroll-behavior:contain}
 .plugin-headings{position:sticky;top:0;z-index:2;box-sizing:border-box}
@@ -169,9 +183,7 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-labels{font-size:10px;color:#a7bdca;letter-spacing:0}
 .plugin-pill{color:#b6cbd8;border:0;border-radius:0;background:none}
 .plugin-pill.problem,.plugin-item.disabled .plugin-labels{color:#e2a49b}
-.plugin-browser .plugin-flag{display:grid!important;place-items:center;justify-self:center;text-align:center!important;height:24px!important;width:24px!important;min-width:0!important;padding:0!important;border:0!important;border-radius:2px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;color:#849ca9;font-size:13px;line-height:24px}
-.plugin-browser .plugin-flag.starred{color:#d9bd79!important}
-.plugin-browser .plugin-flag:hover{background:#3a5665!important;color:#edf7fc!important}
+.plugin-browser .plugin-flag{min-width:0!important;padding:0!important;border:0!important;border-radius:6px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;cursor:pointer;color:#96b0be}
 .plugin-empty{padding:24px 12px;text-align:center;color:#9cb4c2;font-size:11px}
 .plugin-footer{display:flex;align-items:center;min-height:30px!important;height:auto!important;flex:none;padding:5px 12px!important;border-top:1px solid #3b515e;background:#1c303b;color:#a7bdca;font-size:10px;gap:8px}
 .plugin-footer #pluginCount{flex:1;color:#afc4cf;font-variant-numeric:tabular-nums;letter-spacing:0}
@@ -187,7 +199,7 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
  .plugin-category,.plugin-heading-category{display:none}
  .plugin-catalog-tools{flex-wrap:wrap;gap:5px;padding:6px}
  .plugin-search-row{flex-basis:100%}
- .plugin-filters{flex:1}.plugin-filters select{width:auto;flex:1}
+ .plugin-filters{flex:1}.plugin-browser .plugin-filters select{width:auto;flex:1}
 }
 """
 
@@ -205,7 +217,7 @@ def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
     head = once(head, 'PLUGIN MANAGER', 'Plugin Manager', 'manager title')
     head = once(head, 'class="plugin-close"', 'class="plugin-close armix-floating-close"', 'shared Close semantic owner')
     search = line('class="plugin-search-row"')
-    filters = line('class="plugin-filters"')
+    filters = line('class="plugin-filters"').replace('★ Favorites', 'Favorites')
     results = line('id="pluginResults"')
     footer = line('id="pluginCount"')
     footer_match = re.fullmatch(r'<div class="plugin-footer">(<span id="pluginCount">.*?</span>)(.*)</div>', footer)
@@ -221,8 +233,8 @@ def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
     headings = ('<div class="plugin-headings"><div class="plugin-heading-identity">'
                 '<span>Name</span><span>Vendor</span><span class="plugin-heading-category">Category</span></div>'
                 '<div class="plugin-heading-status"><span>Format</span><span>Status</span></div>'
-                '<span class="plugin-heading-icon" title="Favorites" aria-label="Favorite">★</span>'
-                '<span class="plugin-heading-icon" title="Hide or show effect" aria-label="Visibility">⊘</span></div>')
+                '<span class="plugin-heading-icon" data-plugin-icon="star" title="Favorites" aria-label="Favorite"></span>'
+                '<span class="plugin-heading-icon" data-plugin-icon="ban" title="Hide or show effect" aria-label="Visibility"></span></div>')
     markup = ('    <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>\n'
               + head + '\n<div class="plugin-workspace"><section class="plugin-sidebar" aria-label="Plugin management">'
               + '<div class="plugin-sidebar-title">Library actions</div><div class="plugin-library-actions">' + actions + '</div>'
@@ -235,6 +247,33 @@ def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
         """<span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+(latency?' · '+escapeHtml(latency):'')+(usedBy.length?' · Used '+usedBy.length:'')+'</span>""",
         """<span class="plugin-meta" title="'+escapeHtml(p.vendor)+'">'+escapeHtml(p.vendor)+'</span><span class="plugin-category" title="'+escapeHtml([p.category,latency,usedBy.length?'Used '+usedBy.length:''].filter(Boolean).join(' · '))+'">'+escapeHtml(p.category)+'</span>""",
         "plugin row column layout")
+    # Keep existing IDs/handlers and preference state; change only presentation.
+    html = once(html, """title="Toggle favorite">★</button>""",
+        """aria-pressed="'+String(!!p.favorite)+'" title="Toggle favorite"></button>""", "favorite vector")
+    html = once(html, """title="Hide or show effect">'+(p.hidden?'◉':'⊘')+'</button>""",
+        """aria-pressed="'+String(!!p.hidden)+'" title="Hide or show effect"></button>""", "visibility vector")
+    # On resize/open, clamp actual fixed bounds including prior drag or native
+    # first-show centering. No polling or meter work.
+    html = once(html, "function setBrowser(open){", """function fitPluginWindow(){
+ const panel=plugEl('pluginBrowser');
+ if(panel.hidden)return;
+ const r=panel.getBoundingClientRect(),cs=getComputedStyle(panel),gap=4;
+ const x=Math.max(gap,Math.min(innerWidth-r.width-gap,r.left));
+ const y=Math.max(gap,Math.min(innerHeight-r.height-gap,r.top));
+ if(Math.abs(x-r.left)>.5){
+  const left=parseFloat(cs.left);
+  panel.style.setProperty('left',((Number.isFinite(left)?left:panel.offsetLeft)+x-r.left)+'px','important');
+  panel.style.setProperty('right','auto','important');
+ }
+ if(Math.abs(y-r.top)>.5){
+  const top=parseFloat(cs.top);
+  panel.style.setProperty('top',((Number.isFinite(top)?top:panel.offsetTop)+y-r.top)+'px','important');
+ }
+}
+window.addEventListener('resize',()=>{if(!plugEl('pluginBrowser').hidden)requestAnimationFrame(fitPluginWindow)},{passive:true});
+function setBrowser(open){""", "bounded manager viewport")
+    html = once(html, "renderPluginCatalog();renderScanPaths();", 
+        "renderPluginCatalog();renderScanPaths();fitPluginWindow();", "fit open manager")
     # Replace only the manager portion of its existing CSS owner. Quick Picker
     # keeps its existing implementation, CSS and interactions.
     fast = plugin.index('.fast-picker{position:absolute;')

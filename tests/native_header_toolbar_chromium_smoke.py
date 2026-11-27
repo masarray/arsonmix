@@ -499,9 +499,14 @@ def main():
                     page.locator("#ribbon-tab-"+workflow).click()
                     assert page.locator("#ribbon-tab-"+workflow).get_attribute("aria-selected")=="true"
                     assert page.locator("#ribbonEmergency").is_visible()
+                    if workflow=="routing":
+                        for command in ("addTrack","addBus","addFx","addGroupBus","addGroupSelected"):
+                            assert page.locator("#"+command).is_visible(),command
                     if workflow=="io":
                         assert page.locator("[data-ribbon-audio-summary]").is_visible()
-                        assert page.locator("[data-ribbon-audio-summary] [data-audio-value]").all_text_contents()==["No device","—","—","—"]
+                        assert page.locator("[data-ribbon-audio-summary] span[data-audio-value]").all_text_contents()==["No device","—","—"]
+                        buffer=page.locator("[data-ribbon-audio-summary] select[data-audio-value=buffer]")
+                        assert buffer.is_disabled() and buffer.locator("option:checked").inner_text()=="—"
                     page.screenshot(path=f"operator-ux-toolbar-{workflow}-1366.png")
                     assert_menu_color_role(page,workflow,False)
                     more.click()
