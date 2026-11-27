@@ -33,6 +33,7 @@
      // the visible window after the approved Player panel is shown.
      rendered="";
      renderTracks();
+     renderWaveform(model.transport||{});
      $("playerSearch").focus({preventScroll:true});
    }
  };
@@ -66,31 +67,41 @@
  });
  let lastWaveSignature="";
  const renderWaveform=transport=>{
-   const peaks=transport.waveform;
-   if(!Array.isArray(peaks)||peaks.length!==256)return;
-   const fraction=Number(transport.durationSeconds)>0?
-     Math.max(0,Math.min(1,
-       Number(transport.currentSeconds)/Number(transport.durationSeconds))):0;
-   // Incremental worker histogram. Redraw only when bins or playhead change.
-   const signature=peaks.join(",")+"|"+Math.round(fraction*256);
+   const peaks=transport.waveform, length=Number(transport.durationSeconds)||0;
+   const fraction=length>0?Math.max(0,Math.min(1,(Number(transport.currentSeconds)||0)/length)):0;
+   const song=model.tracks?.[model.current], inPoint=Number(song?.cueIn)||0,outPoint=Number(song?.cueOut)||0;
+   const rect=waveCanvas.getBoundingClientRect?.();
+   const dpr=Math.min(3,Math.max(1,Number(window.devicePixelRatio)||1));
+   const w=rect?.width>0?Math.max(1,Math.round(rect.width*dpr)):waveCanvas.width;
+   const h=rect?.height>0?Math.max(1,Math.round(rect.height*dpr)):waveCanvas.height;
+   const valid=Array.isArray(peaks)&&peaks.length===256&&length>0;
+   const signature=[w,h,model.current,inPoint,outPoint,Math.round(fraction*w),valid?peaks.join(","):"empty"].join("|");
    if(signature===lastWaveSignature)return;
    lastWaveSignature=signature;
-   const ctx=waveCanvas.getContext("2d");
-   if(!ctx)return;
-   const w=waveCanvas.width,h=waveCanvas.height,half=h/2;
-   ctx.clearRect(0,0,w,h);
-   ctx.fillStyle="#1e363e";ctx.fillRect(0,0,w,h);
-   for(let i=0;i<256;++i){
-     // Display only already decoded regions, no fake waveform data.
+   if(waveCanvas.width!==w)waveCanvas.width=w;
+   if(waveCanvas.height!==h)waveCanvas.height=h;
+   const ctx=waveCanvas.getContext("2d");if(!ctx)return;
+   ctx.clearRect(0,0,w,h);ctx.fillStyle="#10161b";ctx.fillRect(0,0,w,h);
+   if(!valid)return;
+   const half=h/2, step=w/256;
+   for(let i=0;i<256;i++){
      const normalized=Math.max(0,Math.min(1,(Number(peaks[i])||0)/65535));
-     const size=Math.max(0,Math.sqrt(normalized)*(half-2));
+     const size=Math.sqrt(normalized)*Math.max(0,half-3*dpr);
      if(size<0.5)continue;
-     ctx.fillStyle=i<=fraction*256?"#62d1b4":"#567e87";
-     ctx.fillRect(i,half-size,1,size*2);
+     ctx.fillStyle=i/256<=fraction?"#67dac0":"#465e6c";
+     ctx.fillRect(i*step,half-size,Math.max(1,step*.74),size*2);
    }
-   ctx.fillStyle="#def1e9";
-   ctx.fillRect(Math.round(fraction*255),0,1,h);
+   for(const point of [inPoint,outPoint]){
+     if(point>0&&point<=length){ctx.fillStyle="#a6c4e0";ctx.fillRect(Math.min(w-dpr,point/length*w),0,dpr,h);}
+   }
+   ctx.fillStyle="#e5ebf0";ctx.fillRect(Math.min(w-dpr,fraction*w),0,dpr,h);
  };
+ waveCanvas.addEventListener("click",event=>{
+   const rect=waveCanvas.getBoundingClientRect?.(),length=Number(model.transport?.durationSeconds)||0;
+   if(!native||!rect?.width||length<=0||!Number.isFinite(event.clientX))return;
+   const fraction=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width));
+   send("playerSeek",Math.round(fraction*length*100)/100);
+ });
 
  $("playerKeyMinus").addEventListener("click",()=>send("playerKeyStep",-1));
  $("playerKeyPlus").addEventListener("click",()=>send("playerKeyStep",1));
@@ -288,7 +299,9 @@
      state.textContent=song.missing?"Missing":
        song.id===model.current?"NOW":
        song.id===model.selected?"NEXT":"";
-     choose.append(index,title,state);
+     const key=document.createElement("span");key.className="ap-songkey";
+     const semitones=Number(song.keySemitones)||0;key.textContent=(semitones>0?"+":"")+semitones+" st";
+     choose.append(index,title,state,key);
      choose.addEventListener("click",()=>send("playerSelect",song.id));
      choose.addEventListener("dblclick",()=>send("playerPlayNow",song.id));
      choose.addEventListener("keydown",event=>{
@@ -297,19 +310,29 @@
          send("playerPlayNow",song.id);
        }
      });
-     const actions=document.createElement("span");
-     actions.className="ap-row-actions";
-     const move=delta=>send("playerMoveSong",
-       {from:song.id,to:song.id+delta});
-     actions.append(
-       actionButton("↑","Move "+song.title+" up",()=>move(-1)),
-       actionButton("↓","Move "+song.title+" down",()=>move(1)),
-       actionButton("↥","Play "+song.title+" next",
-         ()=>send("playerQueueNext",song.id)),
-       actionButton("+","Add "+song.title+" to queue",
-         ()=>send("playerQueueAppend",song.id)),
-       actionButton("×","Remove "+song.title+" from this setlist",
-         ()=>send("playerRemoveSong",song.id)));
+     // One keyboard-accessible contextual selector per song. No overlay
+     // escapes the virtual scroller, and every command retains native ownership.
+     const actions=document.createElement("select");actions.className="ap-row-menu";
+     actions.setAttribute("aria-label","Actions for "+song.title);
+     actions.title="Actions for "+song.title;actions.disabled=!native;
+     const revision=libraryRevision,setlist=model.activeSetlist;
+     const options=[["","⋯"],["up","Move earlier"],["down","Move later"],["next","Play next"],["append","Add to queue"],["remove","Remove from setlist"]];
+     for(const [value,label] of options){
+       const option=document.createElement("option");option.value=value;option.textContent=label;
+       option.disabled=(value==="up"&&song.id===0)||(value==="down"&&song.id===model.tracks.length-1);
+       actions.append(option);
+     }
+     actions.value="";
+     actions.addEventListener("change",()=>{
+       const choice=actions.value;actions.value="";
+       if(!native||revision!==libraryRevision||setlist!==model.activeSetlist)return;
+       if(choice==="up"&&song.id>0)send("playerMoveSong",{from:song.id,to:song.id-1});
+       else if(choice==="down"&&song.id<model.tracks.length-1)send("playerMoveSong",{from:song.id,to:song.id+1});
+       else if(choice==="next")send("playerQueueNext",song.id);
+       else if(choice==="append")send("playerQueueAppend",song.id);
+       else if(choice==="remove")send("playerRemoveSong",song.id);
+     });
+
      row.addEventListener("dragstart",event=>{
        queueDrag=null; // catalogue and queue are distinct drag domains
        event.dataTransfer?.setData("text/plain",String(song.id));
@@ -337,6 +360,10 @@
    $("playerNow").textContent=t.title||"No music loaded";
    $("playerElapsed").textContent=duration(t.currentSeconds);
    $("playerDuration").textContent=duration(t.durationSeconds);
+   $("playerRemaining").textContent="−"+duration(Math.max(0,(Number(t.durationSeconds)||0)-(Number(t.currentSeconds)||0)));
+   $("playerState").textContent=({EMPTY:"NO TRACK",PLAYING:"NOW PLAYING",PAUSED:"PAUSED",PREPARING:"PREPARING",ENDED:"FINISHED",ERROR:"PLAYBACK ERROR"})[state]||"CURRENT · "+state;
+   const nextTitle=model.queue?.[0]?.title||(model.selected!==model.current?model.tracks?.[model.selected]?.title:"");
+   $("playerUpNext").textContent=nextTitle||"No next song selected";
    if(!draggingSeek && document.activeElement!==seek){
      seek.value=String(+t.durationSeconds>0?
        Math.round(1000*Math.min(1,Math.max(0,
@@ -362,13 +389,23 @@
    loopBtn.disabled=!editable || (!model.loopAB && !loopValid);
    loopBtn.textContent=model.loopAB?"Loop A–B · On":"Loop A–B";
    loopBtn.setAttribute("aria-pressed",String(Boolean(model.loopAB)));
-   $("playerPlay").textContent=state==="PLAYING"?"Ⅱ Pause":"▶ Play";
+   const playButton=$("playerPlay"),playing=state==="PLAYING";
+   if(playButton.dataset.playing!==String(playing)){
+     playButton.dataset.playing=String(playing);
+     playButton.innerHTML=playing?"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M9 5v14M15 5v14\" stroke-width=\"3\"/></svg><span>Pause</span>":"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.7\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 5 11 7-11 7z\" fill=\"currentColor\" stroke=\"none\"/></svg><span>Play</span>";
+     playButton.setAttribute("aria-label",playing?"Pause":"Play");
+     playButton.title=playing?"Pause":"Play";
+   }
    const editingIndex=model.selected>=0?model.selected:model.current;
    const chosen=model.tracks[editingIndex];
    // These controls are song presets: NEXT can be prepared during a live
    // CURRENT performance. The JUCE engine only applies when appropriate.
    const editingNext=editingIndex>=0 && editingIndex!==model.current;
    const targetDescription=editingNext?"queued next song":"current song";
+   const pitchTarget=$("playerPitchTarget");
+   pitchTarget.dataset.next=String(editingNext);
+   pitchTarget.textContent="KEY / TEMPO · "+(editingNext?"NEXT":editingIndex>=0?"CURRENT":"NO TRACK")+(chosen?.title?" · "+chosen.title:"");
+   pitchTarget.title=pitchTarget.textContent;
    const pitchRow=root.querySelector(".ap-pitchtempo");
    if(pitchRow)pitchRow.setAttribute("aria-label",
       "Music pitch and playback speed for "+targetDescription);
@@ -382,7 +419,7 @@
    $("playerKeyPlus").disabled=key>=6;
    $("playerTempoMinus").disabled=tempo<=80;
    $("playerTempoPlus").disabled=tempo>=120;
-   $("playerAutoNext").textContent=model.autoNext?"Auto Next · On":"Auto Next · Off";
+   $("playerAutoNext").textContent=model.autoNext?"Auto next · On":"Stop after song";
    $("playerAutoNext").setAttribute("aria-pressed",String(model.autoNext));
    $("playerFadeMs").value=String(model.crossfadeMs??180);
    const acceptedVolume=Number(t.volumePercent??50);
@@ -419,11 +456,12 @@
  }
  search.addEventListener("input",renderTracks);
  list.addEventListener("scroll",renderTracks,{passive:true});
- window.addEventListener?.("resize",()=>{rendered="";renderTracks();});
+ window.addEventListener?.("resize",()=>{rendered="";renderTracks();renderWaveform(model.transport||{});});
  root.addEventListener("keydown",event=>{
    if(event.key==="Escape"){event.stopPropagation();open(false);toggle.focus();}
-   if(event.key===" " && event.target!==search &&
-      event.target.tagName!=="BUTTON"){
+   const target=event.target;
+   const interactive=target?.isContentEditable||["INPUT","TEXTAREA","SELECT","BUTTON","SUMMARY","A"].includes(target?.tagName)||target?.closest?.("button,input,select,textarea,summary,a,[contenteditable=true]");
+   if(event.key===" "&&!event.repeat&&!interactive&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey){
      event.preventDefault();$("playerPlay").click();
    }
  });

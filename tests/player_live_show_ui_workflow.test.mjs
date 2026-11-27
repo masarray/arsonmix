@@ -91,6 +91,25 @@ assert.strictEqual(songRows()[0].children[0],firstButton,
   'CURRENT/NEXT ACK must preserve row/button identity for double-click');
 const selectedRow=songRows().find(row=>row.dataset.songId==='1400');
 assert.equal(selectedRow.children[0].dataset.selected,'true');
+assert.equal($('playerPitchTarget').dataset.next,'true');
+assert.match($('playerPitchTarget').textContent,/NEXT · Song 1400/);
+assert.equal($('playerUpNext').textContent,'Duplicate Song');
+assert.equal(selectedRow.children[1].tagName,'SELECT');
+actions.length=0;
+selectedRow.children[1].value='append';selectedRow.children[1].fire('change');
+assert.equal(actions.at(-1).detail.action,'playerQueueAppend');
+assert.equal(actions.at(-1).detail.value,1400);
+assert.equal(selectedRow.children[1].value,'');
+const rename=$('playerSetlistName');rename.tagName='INPUT';
+actions.length=0;
+$('arsonPlayer').fire('keydown',{key:' ',target:rename,preventDefault(){throw Error('space in text field must not be intercepted');}});
+assert.equal(actions.length,0);
+$('arsonPlayer').fire('keydown',{key:' ',target:$('arsonPlayer'),preventDefault(){}});
+assert.equal(actions.at(-1).detail.action,'playerPlay');
+const staleMenu=selectedRow.children[1];
+publish({tracks:songs,selected:1400,current:1399});
+actions.length=0;staleMenu.value='remove';staleMenu.fire('change');
+assert.equal(actions.length,0,'stale contextual action cannot remove a different song');
 actions.length=0;
 selectedRow.children[0].fire('click');
 selectedRow.children[0].fire('dblclick');
@@ -143,4 +162,5 @@ $('playerToggle').fire('click'); // opening hidden panel remeasures viewport
 assert.ok(songRows().length<=80);
 assert.doesNotMatch(player,/new Audio\s*\(|AudioContext\s*\(/,
   'WebView may never become a competing audio player');
-console.log('M6 PASS: 2000-song virtualization, 128 queue, duplicates, revision-locked drag, search and native-only playback');
+assert.equal($('playerRemaining').textContent,'−04:00');
+console.log('V4 PASS: virtual list, queue epochs, contextual actions, explicit NEXT editing, safe typing and native-only playback');
