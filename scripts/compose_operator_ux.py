@@ -119,12 +119,12 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-browser[style*="left:"]{right:auto!important}
 .plugin-browser:not([hidden]) .plugin-head{cursor:move!important;touch-action:none!important;user-select:none!important}
 .plugin-head{height:44px;flex:none;display:flex;align-items:center;padding:6px 12px;background:#233743!important;border-bottom:1px solid #405663;gap:8px}
-.plugin-head-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;font-size:13px;font-weight:500;letter-spacing:0;pointer-events:none!important}
+.plugin-head-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;font-size:13px;font-weight:500;letter-spacing:.01em;pointer-events:none!important;color:#edf4f8}
 .plugin-target{font-size:10px;color:#a3becd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
-.plugin-head button{cursor:pointer!important}
+/* Close has no local face, icon, hover or pressed rule. Shared contextual owner only. */
 .plugin-workspace{display:grid;grid-template-columns:246px minmax(0,1fr);flex:1;min-height:0;overflow:hidden}
 .plugin-sidebar{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto;background:#1d303b;border-right:1px solid #3b515e;padding:12px;gap:12px}
-.plugin-sidebar-title{font-size:10px;color:#9cb4c3;letter-spacing:.055em;text-transform:uppercase;font-weight:500}
+.plugin-sidebar-title{font-size:10px;color:#a7beca;letter-spacing:.055em;text-transform:uppercase;font-weight:500}
 .plugin-library-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .plugin-browser .plugin-library-actions button,.plugin-browser .scan-add button{height:30px!important;min-height:30px!important;padding:0 8px!important;background:#263e4c!important;background-image:none!important;border:1px solid #466576!important;border-radius:3px!important;box-shadow:none!important;color:#d9e8ef!important;font-size:11px!important;font-weight:500!important;white-space:nowrap}
 .plugin-browser #pluginScan{background:#24566b!important;border-color:#487c90!important;color:#edf8ff!important}
@@ -147,18 +147,19 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-filters{display:flex;gap:6px;min-width:0}
 .plugin-filters select{width:112px;min-width:0;height:30px;background:#203642;color:#c6d9e4;border:1px solid #405b6b;border-radius:3px;padding:0 5px;font-size:11px}
 .plugin-catalog{--plugin-columns:minmax(0,1fr) 112px 25px 25px;--plugin-identity:minmax(0,1.55fr) minmax(0,1fr) minmax(0,.75fr)}
-.plugin-headings,.plugin-item{display:grid;grid-template-columns:var(--plugin-columns);gap:0;align-items:center;min-width:0}
-.plugin-headings{height:28px;flex:none;background:#263c49;color:#a9bfcc;font-size:10px;border-bottom:1px solid #48616e;padding:0 6px}
-.plugin-heading-identity,.plugin-choose{display:grid;grid-template-columns:var(--plugin-identity);gap:0;align-items:center;min-width:0;text-align:left}
-.plugin-heading-identity>span,.plugin-choose>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 7px}
-.plugin-heading-status,.plugin-labels{display:grid;grid-template-columns:48px 64px;align-items:center;min-width:0}
-.plugin-heading-status>span,.plugin-labels>span{padding:0 4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.plugin-heading-icon{text-align:center}
-.plugin-results{flex:1;min-height:0;overflow:auto;background:#142630;scrollbar-gutter:stable}
-.plugin-headings{overflow-y:scroll;scrollbar-color:transparent transparent}
+.plugin-headings,.plugin-item{display:grid;grid-template-columns:var(--plugin-columns);gap:0;align-items:center;min-width:0;width:100%;box-sizing:border-box}
+.plugin-headings{height:28px;flex:none;background:#233b49;color:#bdd0db;font-size:10px;font-weight:500;border-bottom:1px solid #4a6473;padding:0 6px}
+.plugin-heading-identity,.plugin-browser .plugin-choose{display:grid!important;grid-template-columns:var(--plugin-identity);gap:0;align-items:center;min-width:0;width:100%;box-sizing:border-box;text-align:left!important;justify-content:stretch!important}
+.plugin-heading-identity>span,.plugin-choose>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 7px;box-sizing:border-box;text-align:left}
+.plugin-heading-status,.plugin-labels{display:grid;grid-template-columns:48px 64px;align-items:center;min-width:0;width:100%;box-sizing:border-box}
+.plugin-heading-status>span,.plugin-labels>span{padding:0 4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;text-align:left}
+.plugin-heading-icon{text-align:center;justify-self:center;width:24px}
+.plugin-results{min-height:0;background:#142630}
+.plugin-table-scroll{flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable;background:#142630;overscroll-behavior:contain}
+.plugin-headings{position:sticky;top:0;z-index:2;box-sizing:border-box}
 .plugin-item{height:27px;min-height:27px;padding:0 6px;border-bottom:1px solid #29404b;background:#182b35;box-sizing:border-box}
-.plugin-item:nth-child(even){background:#1c303b}
-.plugin-item:hover,.plugin-item:focus-within{background:#294858}
+.plugin-item:nth-child(even){background:#1a2e39}
+.plugin-item:hover,.plugin-item:focus-within{background:#264553;box-shadow:inset 2px 0 #74b9ce}
 .plugin-browser .plugin-choose{height:26px!important;min-height:26px!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;background-image:none!important;box-shadow:none!important;align-items:center;cursor:pointer;color:#d9e6ee;font-size:11px}
 .plugin-item.disabled .plugin-choose{opacity:.52}
 .plugin-name{font-size:11px;color:#e2edf3;font-weight:400}
@@ -166,13 +167,13 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-labels{font-size:10px;color:#a7bdca}
 .plugin-pill{color:#b6cbd8;border:0;border-radius:0;background:none}
 .plugin-pill.problem,.plugin-item.disabled .plugin-labels{color:#e2a49b}
-.plugin-browser .plugin-flag{height:24px!important;width:24px!important;min-width:0!important;padding:0!important;border:0!important;border-radius:2px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;color:#849ca9;font-size:13px;line-height:24px}
+.plugin-browser .plugin-flag{display:grid!important;place-items:center;justify-self:center;text-align:center!important;height:24px!important;width:24px!important;min-width:0!important;padding:0!important;border:0!important;border-radius:2px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;color:#849ca9;font-size:13px;line-height:24px}
 .plugin-browser .plugin-flag.starred{color:#d9bd79!important}
 .plugin-browser .plugin-flag:hover{background:#3a5665!important;color:#edf7fc!important}
 .plugin-empty{padding:24px 12px;text-align:center;color:#9cb4c2;font-size:11px}
 .plugin-footer{display:flex;align-items:center;min-height:30px!important;height:auto!important;flex:none;padding:5px 12px!important;border-top:1px solid #3b515e;background:#1c303b;color:#a7bdca;font-size:10px;gap:8px}
 .plugin-footer #pluginCount{flex:1;color:#afc4cf}
-.plugin-browser button:focus-visible,.plugin-browser input:focus-visible,.plugin-browser select:focus-visible{outline:2px solid #9ad9ed!important;outline-offset:-2px}
+.plugin-browser button:not(#pluginClose):focus-visible,.plugin-browser input:focus-visible,.plugin-browser select:focus-visible{outline:2px solid #9ad9ed!important;outline-offset:-2px}
 .console-body.plugin-open #viewport{margin-right:0!important}
 .plugin-browser[hidden],.fast-picker[hidden]{display:none!important}
 @media(max-width:760px){
@@ -200,6 +201,7 @@ def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
         return matches[0]
     head = line('id="pluginDragHandle"')
     head = once(head, 'PLUGIN MANAGER', 'Plugin Manager', 'manager title')
+    head = once(head, 'class="plugin-close"', 'class="plugin-close armix-floating-close"', 'shared Close semantic owner')
     search = line('class="plugin-search-row"')
     filters = line('class="plugin-filters"')
     results = line('id="pluginResults"')
@@ -217,14 +219,14 @@ def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
     headings = ('<div class="plugin-headings"><div class="plugin-heading-identity">'
                 '<span>Name</span><span>Vendor</span><span class="plugin-heading-category">Category</span></div>'
                 '<div class="plugin-heading-status"><span>Format</span><span>Status</span></div>'
-                '<span class="plugin-heading-icon" title="Favorites">★</span>'
-                '<span class="plugin-heading-icon" title="Visibility">⊘</span></div>')
+                '<span class="plugin-heading-icon" title="Favorites" aria-label="Favorite">★</span>'
+                '<span class="plugin-heading-icon" title="Hide or show effect" aria-label="Visibility">⊘</span></div>')
     markup = ('    <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>\n'
               + head + '\n<div class="plugin-workspace"><section class="plugin-sidebar" aria-label="Plugin management">'
               + '<div class="plugin-sidebar-title">Library actions</div><div class="plugin-library-actions">' + actions + '</div>'
               + scan + disclaimer + '</section><section class="plugin-catalog" aria-label="Plugin catalog">'
               + '<div class="plugin-catalog-tools">' + search + filters + '</div>'
-              + headings + results + '<div class="plugin-footer">' + count
+              + '<div class="plugin-table-scroll">' + headings + results + '</div><div class="plugin-footer">' + count
               + '<span>Click a plugin to insert</span></div></section></div>\n    </aside>')
     html = html[:start] + markup + html[end:]
     html = once(html,

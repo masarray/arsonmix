@@ -2,13 +2,89 @@
 from pathlib import Path
 import importlib.util
 import tempfile
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
+from approved_floating_fx_window_smoke import INIT, document, CHANNEL, INSTANCE
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
 from approved_native_offline_logical_smoke import snapshot, emit
 
 ROOT=Path(__file__).resolve().parents[1]
 
-def exercise(browser,out,width,height,tap):
+
+# Compare actual header and rendered rows, including scrollbar/filtered states.
+def assert_column_alignment(manager):
+    result=manager.evaluate("""el=>{
+      const headers=[...el.querySelectorAll('.plugin-heading-identity>span,.plugin-heading-status>span,.plugin-heading-icon')];
+      const list=el.querySelector('.plugin-results');
+      const visible=e=>getComputedStyle(e).display!=='none';
+      const box=e=>{const r=e.getBoundingClientRect();return [r.left,r.width]};
+      const textStart=e=>{const r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.left+parseFloat(s.paddingLeft)+parseFloat(s.borderLeftWidth)};
+      const h=headers.filter(visible);
+      const scroll=el.querySelector('.plugin-table-scroll');
+      const sample=[...list.querySelectorAll('.plugin-item')];
+      const rows=sample.length>1?[sample[0],sample[Math.floor(sample.length/2)],sample.at(-1)]:sample;
+      const errors=[];
+      for(const row of rows){
+        const cells=[...row.querySelectorAll('.plugin-choose>span,.plugin-labels>span,.plugin-flag')].filter(visible);
+        if(cells.length!==h.length){errors.push(['column count',h.length,cells.length]);continue;}
+        for(let i=0;i<h.length;i++){
+          const [hx,hw]=box(h[i]),[cx,cw]=box(cells[i]);
+          const isIcon=h[i].classList.contains('plugin-heading-icon');
+          const delta=isIcon?Math.abs(hx+hw/2-cx-cw/2):Math.abs(textStart(h[i])-textStart(cells[i]));
+          if(delta>0.5)errors.push([h[i].textContent,delta,hx,cx,hw,cw]);
+        }
+      }
+      return {errors,rows:rows.length,columns:h.length,scroll:scroll.scrollHeight>scroll.clientHeight};
+    }""")
+    assert result["rows"]>0 and not result["errors"],result
+    return result
+
+CLOSE_VISUAL = """el=>{
+ const props=['width','height','minWidth','maxWidth','minHeight','maxHeight','borderRadius',
+  'borderTopColor','borderTopWidth','backgroundImage','boxShadow','color','fontSize','lineHeight','filter','opacity'];
+ const icon=['backgroundImage','backgroundSize','backgroundPosition','display','opacity','inset','transform'];
+ const read=(style,keys)=>Object.fromEntries(keys.map(k=>[k,style[k]]));
+ return {face:read(getComputedStyle(el),props),icon:read(getComputedStyle(el,'::after'),icon),
+  before:getComputedStyle(el,'::before').display};
+}"""
+
+def close_visual_states(page,button):
+    page.mouse.move(0,0)
+    normal=button.evaluate(CLOSE_VISUAL)
+    button.hover()
+    # Hover state uses the shared red socket; active is a real pointer hold.
+    hover=button.evaluate(CLOSE_VISUAL)
+    box=button.bounding_box()
+    page.mouse.move(box["x"]+box["width"]/2,box["y"]+box["height"]/2)
+    page.mouse.down()
+    try: active=button.evaluate(CLOSE_VISUAL)
+    finally:
+        page.mouse.move(0,0)
+        page.mouse.up()
+    assert normal["face"]["width"]=="24px" and normal["face"]["height"]=="24px",normal
+    assert "svg" in normal["icon"]["backgroundImage"],normal
+    assert "rgb(239, 62, 80)" in active["face"]["backgroundImage"],active
+    return [normal,hover,active]
+
+def reference_close(browser,url):
+    page=browser.new_page(viewport={"width":1580,"height":900},reduced_motion="reduce")
+    try:
+        page.add_init_script(INIT)
+        page.goto(url)
+        page.wait_for_function("()=>window.__fxOutbound?.some(x=>x.name==='arMixFloatingReady')")
+        catalog="armix.builtin.channel-eq.v1"
+        page.evaluate("(p)=>window.__fxDispatch('arMixFloatingOpen',p)",{
+            "snapshot":document(catalog),"channelId":CHANNEL,"slot":0,
+            "catalogId":catalog,"instanceId":INSTANCE})
+        close=page.locator("#mxNativePeq .armix-builtin-fx-close")
+        close.wait_for(state="visible")
+        close.screenshot(path="v6-plugin-manager-close-reference.png")
+        return close_visual_states(page,close)
+    finally: page.close()
+
+def exercise(browser,out,width,height,tap,close_reference):
     page=browser.new_page(viewport={"width":width,"height":height})
     errors=[]
     page.on("pageerror",lambda error:errors.append(str(error)))
@@ -73,7 +149,7 @@ def exercise(browser,out,width,height,tap):
     page.screenshot(path=f"v6-plugin-manager-{width}.png")
     geometry=manager.evaluate("""el=>{
       const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom}};
-      const side=el.querySelector('.plugin-sidebar'),cat=el.querySelector('.plugin-catalog'),list=el.querySelector('.plugin-results');
+      const side=el.querySelector('.plugin-sidebar'),cat=el.querySelector('.plugin-catalog'),list=el.querySelector('.plugin-table-scroll');
       const row=list.querySelector('.plugin-item'),headers=el.querySelector('.plugin-headings');
       return {panel:rect(el),side:rect(side),cat:rect(cat),list:rect(list),row:rect(row),
         headers:rect(headers),name:rect(row.querySelector('.plugin-name')),vendor:rect(row.querySelector('.plugin-meta')),
@@ -85,16 +161,31 @@ def exercise(browser,out,width,height,tap):
     assert geometry["row"]["h"]==27 and geometry["list"]["h"]>=300,geometry
     assert geometry["vendor"]["x"]>=geometry["name"]["right"]-1 and geometry["category"]["x"]>=geometry["vendor"]["right"]-1,geometry
     assert geometry["scroll"],geometry
+    assert assert_column_alignment(manager)["columns"]==7
+    manager.locator(".plugin-table-scroll").evaluate("e=>{e.scrollTop=400}")
+    assert assert_column_alignment(manager)["columns"]==7
+    manager.locator(".plugin-table-scroll").evaluate("e=>{e.scrollTop=0}")
     assert manager.locator("#pluginScan").is_visible() and manager.locator("#pluginImport").is_visible()
     assert manager.locator("#pluginAddPath").is_visible()
     assert manager.locator("#pluginSearch").is_visible()
     manager.locator("#pluginSearch").fill("Fixture VST 257")
     assert manager.locator(".plugin-item").count()==1
     assert manager.locator(".plugin-item .plugin-meta").inner_text()=="Fixture Vendor"
+    assert not assert_column_alignment(manager)["scroll"]
     manager.locator("#pluginSearch").fill("")
     assert manager.locator(".plugin-item").count()>=258
+    assert assert_column_alignment(manager)["columns"]==7
+    close=manager.locator("#pluginClose")
+    close.screenshot(path=f"v6-plugin-manager-close-{width}.png")
+    actual_close=close_visual_states(page,close)
+    assert actual_close==close_reference,{"manager":actual_close,"builtInEq":close_reference}
+    print("PASS all 7 column coordinates <=0.5px (scroll, filter) and exact built-in EQ Close normal/hover/active",width,flush=True)
     print("PASS professional plugin workspace density and catalog geometry",width,geometry,flush=True)
     page.screenshot(path=f"v6-plugin-manager-{width}.png")
+    # Preserve responsive layout after a real viewport resize, not just a CSS query.
+    page.set_viewport_size({"width":720,"height":768})
+    assert assert_column_alignment(manager)["columns"]==6
+    page.screenshot(path=f"v6-plugin-manager-narrow-{width}.png")
     manager.locator("#pluginClose").click()
     assert manager.is_hidden()
     assert not errors,errors
@@ -105,12 +196,21 @@ def main():
     bundle=importlib.util.module_from_spec(spec);spec.loader.exec_module(bundle)
     with tempfile.TemporaryDirectory(prefix="v6-operator-") as d:
         out=Path(d);bundle.stage(out)
-        with sync_playwright() as pw:
-            browser=pw.chromium.launch(headless=True)
-            try:
-                exercise(browser,out,1366,900,"PRE_FADER")
-                exercise(browser,out,1024,768,"POST_FADER")
-            finally: browser.close()
+        class Handler(SimpleHTTPRequestHandler):
+            def log_message(self,*args):pass
+        server=ThreadingHTTPServer(("127.0.0.1",0),partial(Handler,directory=str(out)))
+        Thread(target=server.serve_forever,daemon=True).start()
+        try:
+            with sync_playwright() as pw:
+                browser=pw.chromium.launch(headless=True)
+                try:
+                    reference=reference_close(browser,f"http://127.0.0.1:{server.server_address[1]}/fx-window.html")
+                    exercise(browser,out,1366,900,"PRE_FADER",reference)
+                    exercise(browser,out,1024,768,"POST_FADER",reference)
+                finally: browser.close()
+        finally:
+            server.shutdown()
+            server.server_close()
     print("PASS V6 direct PRE/POST, no speculative route or duplicate pending intent, manager controls (two viewports)")
 
 if __name__=="__main__":main()
