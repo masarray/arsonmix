@@ -125,11 +125,11 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-workspace{display:grid;grid-template-columns:246px minmax(0,1fr);flex:1;min-height:0;overflow:hidden}
 .plugin-sidebar{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto;background:#1d303b;border-right:1px solid #3b515e;padding:12px;gap:12px}
 .plugin-sidebar-title{font-size:10px;color:#9cb4c3;letter-spacing:.055em;text-transform:uppercase;font-weight:500}
-.plugin-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.plugin-browser .plugin-actions button,.plugin-browser .scan-add button{height:30px!important;min-height:30px!important;padding:0 8px!important;background:#263e4c!important;background-image:none!important;border:1px solid #466576!important;border-radius:3px!important;box-shadow:none!important;color:#d9e8ef!important;font-size:11px!important;font-weight:500!important;white-space:nowrap}
+.plugin-library-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.plugin-browser .plugin-library-actions button,.plugin-browser .scan-add button{height:30px!important;min-height:30px!important;padding:0 8px!important;background:#263e4c!important;background-image:none!important;border:1px solid #466576!important;border-radius:3px!important;box-shadow:none!important;color:#d9e8ef!important;font-size:11px!important;font-weight:500!important;white-space:nowrap}
 .plugin-browser #pluginScan{background:#24566b!important;border-color:#487c90!important;color:#edf8ff!important}
-.plugin-browser .plugin-actions button:hover:not(:disabled),.plugin-browser .scan-add button:hover:not(:disabled){background:#345568!important;border-color:#75a9bb!important}
-.plugin-browser .plugin-actions button:disabled{opacity:.5!important;cursor:not-allowed}
+.plugin-browser .plugin-library-actions button:hover:not(:disabled),.plugin-browser .scan-add button:hover:not(:disabled){background:#345568!important;border-color:#75a9bb!important}
+.plugin-browser .plugin-library-actions button:disabled{opacity:.5!important;cursor:not-allowed}
 .plugin-scan-settings{display:flex;flex-direction:column;min-width:0;gap:8px;padding:0;background:transparent;border:0}
 .scan-title{font-size:10px;letter-spacing:.035em;color:#9cb4c3;font-weight:500}
 .scan-paths{display:flex;flex-direction:column;gap:0;max-height:184px;min-height:48px;overflow:auto;border:1px solid #3c5361;background:#162832}
@@ -221,7 +221,7 @@ def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
                 '<span class="plugin-heading-icon" title="Visibility">⊘</span></div>')
     markup = ('    <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>\n'
               + head + '\n<div class="plugin-workspace"><section class="plugin-sidebar" aria-label="Plugin management">'
-              + '<div class="plugin-sidebar-title">Library actions</div><div class="plugin-actions">' + actions + '</div>'
+              + '<div class="plugin-sidebar-title">Library actions</div><div class="plugin-library-actions">' + actions + '</div>'
               + scan + disclaimer + '</section><section class="plugin-catalog" aria-label="Plugin catalog">'
               + '<div class="plugin-catalog-tools">' + search + filters + '</div>'
               + headings + results + '<div class="plugin-footer">' + count

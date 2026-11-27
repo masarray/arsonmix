@@ -60,6 +60,7 @@ def exercise(browser,out,width,height,tap):
     manager=page.locator("#pluginBrowser")
     assert manager.is_visible()
     assert manager.locator(".plugin-results").evaluate("e=>getComputedStyle(e).backgroundColor")=="rgb(20, 38, 48)"
+    page.screenshot(path=f"v6-plugin-manager-initial-{width}.png")
     assert manager.locator("#pluginScan").evaluate("e=>getComputedStyle(e).backgroundImage")=="none"
     manager.locator("#pluginSearch").fill("zzzz-no-match")
     assert manager.locator(".plugin-empty").is_visible()
@@ -68,6 +69,8 @@ def exercise(browser,out,width,height,tap):
     # Populate a realistic catalog using the same native readback fixture.
     emit(page,"arMixCatalog",{"items":[{"id":f"fixture-{i}","name":f"Fixture VST {i:03d}","vendor":"Fixture Vendor","category":"Utility","format":"VST3"} for i in range(258)],"builtIns":[{"id":"armix.builtin.fixture.v1","name":"Fixture processor","category":"Utility"}]})
     page.wait_for_function("()=>document.querySelectorAll('#pluginResults .plugin-item').length>=258")
+    manager.screenshot(path=f"v6-plugin-manager-detail-{width}.png")
+    page.screenshot(path=f"v6-plugin-manager-{width}.png")
     geometry=manager.evaluate("""el=>{
       const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,right:r.right,bottom:r.bottom}};
       const side=el.querySelector('.plugin-sidebar'),cat=el.querySelector('.plugin-catalog'),list=el.querySelector('.plugin-results');
