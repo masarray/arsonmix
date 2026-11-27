@@ -141,7 +141,22 @@ public:
         } else if(operation=="CREATE_GROUP") {
             const auto name=text.isNotEmpty()?text.toStdString():
                 ("Bus "+std::to_string(editor_.roster().size()));
-            result=editor_.createBus(expected,name,Role::group);
+            const auto rawSelection=payload.getProperty("selection",{});
+            if(rawSelection.isVoid())result=editor_.createBus(expected,name,Role::group);
+            else {
+                const auto* ids=rawSelection.getArray();
+                if(!ids||ids->isEmpty()||static_cast<std::size_t>(ids->size())>editor_.roster().size())
+                    return bad("INVALID_GROUP_SELECTION");
+                std::vector<ChannelId> selected;
+                for(const auto& raw:*ids){
+                    std::uint64_t id=0;
+                    if(!armix::session::parseDecimal(raw,id)||!id||
+                       std::find(selected.begin(),selected.end(),ChannelId{id})!=selected.end())
+                        return bad("INVALID_GROUP_SELECTION");
+                    selected.push_back({id});
+                }
+                result=editor_.createGroupForSelected(expected,std::span<const ChannelId>{selected},name);
+            }
         } else if(operation=="REMOVE_BUS") {
             result=editor_.removeBus(expected,id);
         } else if(operation=="DELETE_CHANNEL") {

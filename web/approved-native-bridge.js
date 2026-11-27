@@ -1796,11 +1796,11 @@
   function requestNativeBusCreate(track=false,fxBus=false){
     return requestNativeReceivingStrip(track,fxBus?"FX":"AUX");
   }
-  function requestNativeReceivingStrip(track,purpose){
+  function requestNativeReceivingStrip(track,purpose,selection=[]){
     const prefix=purpose==="FX"?"FX Bus ":purpose==="GROUP"?"Group Bus ":"Aux Bus ";
     if(logicalView)
       return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,
-        track?{}:{name:prefix+(logicalView.graph.channels.length+1)}).ok;
+        track?{}:{name:prefix+(logicalView.graph.channels.length+1),...(selection.length?{selection}:{})}).ok;
     const accepted=controller?.state()?.current,operation=
       track?"CREATE_CHANNEL":"CREATE_GROUP";
     const plan=stripVM.rosterMutationPlan(accepted,{
@@ -1810,9 +1810,9 @@
     });
     if(plan.kind!=="READY")return false;
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
-    pendingBusCreate={requestId,track,...plan.pending};
+    pendingBusCreate={requestId,track,...plan.pending,selection};
     syncAddTrack(accepted);
-    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose});
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose,...(selection.length?{selection}:{})});
     const label=track?"Audio Track":"BUS";
     status("Adding "+label+" → MAIN · native PCM pending");
     window.setTimeout(()=>{
@@ -1823,6 +1823,21 @@
       controller?.subscribe();
     },8000);
     return true;
+  }
+  async function requestGroupFromSelected(){
+    const view=activeView(),selected=(scope?.tracks||[]).filter(t=>t.selected);
+    const ids=selected.map(t=>nativeIdFor(t));
+    if(!view||!ids.length||ids.some(id=>!id)||new Set(ids).size!==ids.length||
+       ids.some(id=>!wireVM.sofSourceRole(view.graph.channels.find(ch=>ch.id===id)?.role))){
+      nativeToast("Select one or more audio, group or FX return channels first");return;
+    }
+    const offline=!!logicalView,token=offline?logicalView.workspaceToken:view.identity,revision=view.graph.revision;
+    if(!await confirmArson("Create Group BUS","Route "+ids.length+" selected channel(s) through a new Group BUS → MAIN? Existing parallel sends are retained.","Create group"))return;
+    const fresh=activeView();
+    if(!fresh||!!logicalView!==offline||(offline?logicalView.workspaceToken:fresh.identity)!==token||fresh.graph.revision!==revision){
+      nativeToast("Mixer changed · select the channels again");return;
+    }
+    if(!requestNativeReceivingStrip(false,"GROUP",ids))nativeToast("Group creation unavailable · wait for accepted mixer");
   }
   let pendingFxInsert=null,fxRequestSerial=0,nativeCatalog=new Map();
   let pendingFxEditorAck=null,fxEditorSerial=0; // HWND feedback, never PCM owner
@@ -3673,6 +3688,34 @@
     window.clearTimeout(toastTimer);
     toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
   }
+  let arsonConfirmation=null;
+  function confirmArson(title,message,actionLabel="Continue"){
+    if(arsonConfirmation)return Promise.resolve(false);
+    const focus=document.activeElement,dialog=document.createElement("dialog");
+    dialog.className="armix-confirm-dialog";
+    dialog.setAttribute("aria-label",title);
+    dialog.style.cssText="border:1px solid #467083;border-radius:8px;background:#142631;color:#e3eff4;width:min(390px,90vw);padding:15px;font:12px system-ui,sans-serif;box-shadow:0 16px 56px #0009";
+    const heading=document.createElement("h2");heading.textContent=title;heading.style.cssText="font-size:14px;font-weight:600;margin:0 0 10px";
+    const body=document.createElement("p");body.textContent=message;body.style.cssText="line-height:1.5;margin:0 0 14px";
+    const actions=document.createElement("div");actions.style.cssText="display:flex;justify-content:flex-end;gap:8px";
+    const cancel=document.createElement("button"),accept=document.createElement("button");
+    for(const [button,label] of [[cancel,"Cancel"],[accept,actionLabel]]){
+      button.type="button";button.className="tool";button.textContent=label;actions.append(button);
+    }
+    dialog.append(heading,body,actions);document.body.append(dialog);
+    return new Promise(resolve=>{
+      const finish=ok=>{
+        if(arsonConfirmation!==dialog)return;
+        arsonConfirmation=null;if(dialog.open)dialog.close();dialog.remove();
+        if(focus?.isConnected)focus.focus?.({preventScroll:true});resolve(ok);
+      };
+      arsonConfirmation=dialog;
+      cancel.onclick=()=>finish(false);accept.onclick=()=>finish(true);
+      dialog.addEventListener("cancel",ev=>{ev.preventDefault();finish(false);});
+      dialog.addEventListener("close",()=>finish(false));
+      try{dialog.showModal();cancel.focus();}catch{finish(false);}
+    });
+  }
   let lastAudioRepairAt=-Infinity;
   function recommendAudioRepair(context) {
     // The user explicitly attempted a live input or FX operation. Avoid
@@ -5088,13 +5131,15 @@
     const newSessionButtons=[["New Project · empty mixer","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
       button.title=mode==="EMPTY"?"Start fresh · previous mixer archived, output muted":"Offline only · previous checkpoint archived in Studio/SessionArchive";
-      button.addEventListener("click",()=>{
+      button.addEventListener("click",async()=>{
         const current=controller?.state()?.current;
         if(mode==="EMPTY"&&!logicalView&&current?.admitted){
           if(current.raw?.liveNewSessionAvailable!==true){
             nativeToast("Finish current operations before New Project");return;
           }
-          if(!window.confirm("Start a new mixer? The current project is archived first. Output will remain muted."))return;
+          if(!await confirmArson("New Project","Start a new mixer? The current project is archived first. Output will remain muted.","New Project"))return;
+          const fresh=controller?.state()?.current;
+          if(logicalView||fresh?.identity!==current.identity||fresh?.raw?.workspaceGeneration!==current.raw?.workspaceGeneration||fresh?.raw?.liveNewSessionAvailable!==true){nativeToast("Mixer changed · review New Project again");return;}
           retirePendingRackEditor();
           inlineFxClip?.closeRackEditors();
           backend.emitEvent("arMixAction",{action:"nativeMixerNewLive",confirmed:true,
@@ -5109,9 +5154,11 @@
         if(mode==="RESET_IO"&&hardware?.raw?.offlineResetIoAvailable!==true){
           nativeToast("Reset requires a saved offline session with no logical port assignments");return;
         }
-        if(!window.confirm(mode==="RESET_IO"?
+        const token=logicalView.workspaceToken,revision=logicalView.graph.revision;
+        if(!await confirmArson(mode==="RESET_IO"?"Reset I/O":"New Project",mode==="RESET_IO"?
           "Replace only logical I/O port definitions? Mixer, FX and shortcuts are retained; a backup is archived.":
           "Create a new offline mixer? The current saved session is archived. No audio output will be armed."))return;
+        if(!logicalView||pendingLogical||logicalView.workspaceToken!==token||logicalView.graph.revision!==revision){nativeToast("Mixer changed · review operation again");return;}
         backend.emitEvent("arMixAction",{action:"nativeMixerNewOffline",mode,confirmed:true,
           workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
       });
@@ -5119,12 +5166,14 @@
     });
     const archiveButton=item("button","tool","Open session archive");
     archiveButton.title="Open an archived mixer offline; current checkpoint is backed up first";
-    archiveButton.addEventListener("click",()=>{
+    archiveButton.addEventListener("click",async()=>{
       if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
         nativeToast("Disconnect audio and finish mixer operations before opening an archive");return;
       }
-      if(window.confirm("Open an archived session? Current saved mixer is archived first; output remains muted."))
-        backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
+      const token=logicalView.workspaceToken,revision=logicalView.graph.revision;
+      if(!await confirmArson("Open session archive","Current saved mixer is archived first; output remains muted.","Open archive"))return;
+      if(!logicalView||pendingLogical||logicalView.workspaceToken!==token||logicalView.graph.revision!==revision){nativeToast("Mixer changed · review archive again");return;}
+      backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
           workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
     });
     menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
@@ -5431,7 +5480,7 @@
           status("Retained FX slot changed before offline editor could open");
         }
       }
-      for(const id of ["addBus","addFx","addGroupBus"]){
+      for(const id of ["addBus","addFx","addGroupBus","addGroupSelected"]){
         const addBus=document.getElementById(id);if(!addBus)continue;
         addBus.hidden=false;
         addBus.disabled=!!pendingLogical||staged.readOnly||!staged.graph.capabilities.supportedOps.includes("CREATE_GROUP");
@@ -5496,7 +5545,7 @@
     syncAddTrack(next);
     if(pendingTrackDelete && pendingTrackDelete.epoch!==next?.device?.epoch)
       pendingTrackDelete=null;
-    for(const id of ["addBus","addFx","addGroupBus"]){
+    for(const id of ["addBus","addFx","addGroupBus","addGroupSelected"]){
       const addBus=document.getElementById(id);if(!addBus)continue;
       addBus.hidden=false;
       addBus.disabled=!nativeAdmitted||!caps?.supportedOps?.includes("CREATE_GROUP")||!!pendingBusCreate||!!pendingTrackDelete;
@@ -6913,7 +6962,7 @@
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
     const target=event.target.closest?.(
-      "#preview,#addTrack,#addBus,#addFx,#addGroupBus,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
+      "#preview,#addTrack,#addBus,#addFx,#addGroupBus,#addGroupSelected,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
     if(!target)return;
     event.preventDefault();event.stopImmediatePropagation();
     const action=target.id==="pluginScan"?"scanVst3":
@@ -6924,6 +6973,7 @@
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
       return;
     }
+    if(target.id==="addGroupSelected"){void requestGroupFromSelected();return;}
     if(target.id==="addGroupBus"){requestNativeReceivingStrip(false,"GROUP");return;}
     if(target.id==="addBus"||target.id==="addTrack"||target.id==="addFx"){
       requestNativeBusCreate(target.id==="addTrack",target.id==="addFx");return;
@@ -6999,8 +7049,9 @@
     const aux=document.getElementById("addBus");
     if(aux&&!document.getElementById("addGroupBus")){
       const group=aux.cloneNode(false);group.id="addGroupBus";aux.after(group);
+      const selected=aux.cloneNode(false);selected.id="addGroupSelected";group.after(selected);
     }
-    for(const [id,label] of [["addBus","+ AUX"],["addGroupBus","+ Group BUS"],["addFx","+ FX Bus"]]){
+    for(const [id,label] of [["addBus","+ AUX"],["addGroupBus","+ Group BUS"],["addGroupSelected","Group selected…"],["addFx","+ FX Bus"]]){
       const el=document.getElementById(id);if(el){el.textContent=label;el.hidden=false;el.disabled=true;
         el.title="Create a receiving GROUP with independent routing and insert rack";}
     }

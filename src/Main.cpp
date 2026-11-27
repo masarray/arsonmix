@@ -8929,10 +8929,26 @@ private:
                     int count=0;
                     if(rows)for(const auto& row:*rows)
                         if(row.getProperty("role","").toString()=="GROUP")++count;
-                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                    const auto rawSelection=args.getProperty("selection",{});
+                    std::vector<armix::mixer::ChannelId> selection;
+                    bool selectionValid=rawSelection.isVoid();
+                    if(const auto* ids=rawSelection.getArray()){
+                        selectionValid=args.getProperty("purpose","").toString()=="GROUP" &&
+                            !ids->isEmpty() && rows && ids->size()<=rows->size();
+                        for(const auto& raw:*ids){
+                            std::uint64_t id=0;
+                            if(!armix::console::approvedNativeId(raw,id)||!id||
+                               std::find(selection.begin(),selection.end(),armix::mixer::ChannelId{id})!=selection.end()){
+                                selectionValid=false;break;
+                            }
+                            selection.push_back({id});
+                        }
+                    }
+                    if(!selectionValid)result.error="INVALID_GROUP_SELECTION";
+                    else result=withNativeTopologyContinuity(ep,rev,false,[&]{
                         return engine_.editNativeBus(ep,rev,roster,
                             armix::mixer::ChannelRole::group,
-                            std::span<const armix::mixer::ChannelId>{},
+                            std::span<const armix::mixer::ChannelId>{selection},
                             (args.getProperty("purpose","").toString()=="FX"?"FX Bus ":
                              args.getProperty("purpose","").toString()=="GROUP"?"Group Bus ":"Aux Bus ")+std::to_string(count+1),1.f);
                     });

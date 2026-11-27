@@ -99,6 +99,13 @@ public:
         return commit(std::move(candidate),std::move(result));
     }
 
+    Result createGroupForSelected(std::uint64_t expected,std::span<const ChannelId> selected,std::string name) {
+        if(!initialized_)return {ChannelEditFault::invalidAction,revision(),{}};
+        auto candidate=roster_;
+        auto result=candidate.createBusForSelected(expected,selected,std::move(name),ChannelRole::group,1.f);
+        return commit(std::move(candidate),std::move(result));
+    }
+
     Result removeBus(std::uint64_t expected,ChannelId id) {
         if(!initialized_)return {ChannelEditFault::invalidAction,revision(),{}};
         auto candidate=roster_;

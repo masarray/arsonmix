@@ -5703,6 +5703,9 @@ test("G-MV30 native roster ACK, concurrent lanes and exact later graph+roster pr
    raw:{mixerSession:{...session,routeRevision:revision,rosterRevision}}
  });
  assert.equal(settle(pCreate,advanced()),"CONFIRMED");
+ const grouped={...pCreate,selection:[src]};
+ assert.equal(settle(grouped,advanced()),"WAIT","Created bus alone cannot prove reroute");
+ assert.equal(settle(grouped,advanced(newlyCreated.map(ch=>ch.id===src?{...ch,primaryOutId:newId}:ch))),"CONFIRMED");
  assert.equal(settle(create,advanced()),"WAIT","readback-before-ACK does not finish");
  assert.equal(settle(pCreate,advanced(newlyCreated,"6","7")),"WAIT",
    "roster revision must advance beyond request baseline");

@@ -321,7 +321,8 @@
       return decimalId(pending.createdId)&&
         !pending.beforeIds?.includes(pending.createdId)&&
         matches.length===1&&
-        matches[0].role===ROSTER_OPS[pending.operation].role?
+        matches[0].role===ROSTER_OPS[pending.operation].role&&
+        (!pending.selection?.length||pending.selection.every(id=>g.channels.some(ch=>ch.id===id&&ch.primaryOutId===pending.createdId)))?
         "CONFIRMED":"WAIT";
     return (pending.operation==="DELETE_CHANNEL"||
        pending.operation==="REMOVE_BUS")&&
