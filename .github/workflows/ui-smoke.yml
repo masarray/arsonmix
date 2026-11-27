@@ -511,7 +511,7 @@ jobs:
   auto-ducker-preview:
     name: Auto Ducker actual Chromium trigger picker and ACK FAT
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/auto-ducker-') || startsWith(github.head_ref, 'fix/p0-ducker-')) }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/auto-ducker-') || startsWith(github.head_ref, 'fix/p0-ducker-') || github.head_ref == 'fix/p0-live-fx-transaction-recovery-20261127') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -524,6 +524,9 @@ jobs:
           python -m playwright install --with-deps chromium
       - run: python tests/approved_native_ducker_smoke.py
       - run: python tests/approved_floating_fx_window_smoke.py
+      - name: Global native rack power and structural recovery
+        if: github.head_ref == 'fix/p0-live-fx-transaction-recovery-20261127'
+        run: python tests/approved_native_fx_edit_smoke.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() }}
         with:
