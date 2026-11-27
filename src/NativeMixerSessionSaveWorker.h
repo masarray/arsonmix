@@ -32,9 +32,10 @@ public:
         done_={};readDone_={};states_.clear();
         // Archive lifecycle commits may have published HEAD just before
         // shutdown. Never discard their authoritative workspace adoption.
-        if((applySaveCompletion||archiveMode_!=NativeMixerSessionStore::ArchiveMode::none)&&completion)
+        if((applySaveCompletion||liveControlsOnly_||archiveMode_!=NativeMixerSessionStore::ArchiveMode::none)&&completion)
             completion(saveResult_);
         archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
+        liveControlsOnly_=false;
     }
     bool save(juce::File studio,MixerSessionDocument document,
               std::vector<armix::shows::BinaryState> binary,
@@ -129,6 +130,7 @@ private:
         auto readCallback=std::move(readDone_);
         readDone_={};
         archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
+        liveControlsOnly_=false;
         if(readCallback)readCallback(std::move(error),std::move(doc_),std::move(states_));
         else if(callback)callback(std::move(error));
     }
