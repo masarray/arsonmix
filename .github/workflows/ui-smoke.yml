@@ -405,7 +405,7 @@ jobs:
   studio-audio-io:
     name: Studio Audio I/O real Chromium routing interaction
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127') }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-asio-panel-main-sof-recovery-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
