@@ -40,14 +40,21 @@ SPLIT_BOOTSTRAP = """
     // Favor a taller physical fader by borrowing at most 48px of genuinely
     // spare FX space. Retain at least 125px for insert controls, and never
     // change the synchronized source/MASTER/rail mechanical alignment.
-    const half=Math.round(h/2);
+    // The fixed upper rows can exceed the old 680px floor after ribbon /
+    // routing changes. Preserve the existing 125px FX reserve AND a
+    // balanced lower deck by allowing only the necessary vertical scroll.
+    // Reuse this measured rail and existing resize/fold observer; no new reads.
+    const bothExpanded=!root.classList.contains('collapsed-send')&&!root.classList.contains('collapsed-fx');
+    const minExpanded=bothExpanded?Math.max(680,Math.ceil(2*(identity+route+send+125))):0;
+    const half=Math.round(Math.max(h,minExpanded)/2);
     const fxBase=Math.max(125,Math.round(half-identity-route-send));
     const boost=Math.min(48,Math.max(0,fxBase-125));
     const fader=Math.max(130,Math.round(half-pan-switches-footer+boost));
     const fx=fxBase-boost;
-    const signature=fader+':'+fx;
+    const signature=fader+':'+fx+':'+minExpanded;
     if(signature===previous)return;
     previous=signature;
+    root.style.setProperty('--ux-expanded-min-h',minExpanded+'px');
     root.style.setProperty('--v13-fader-h',fader+'px','important');
     root.style.setProperty('--ux-fx-balanced-h',fx+'px','important');
   }
@@ -70,7 +77,7 @@ OPERATOR_CSS = """
   --v13-fader-h:max(130px,calc(50% - var(--pan-h) - var(--switch-h) - var(--footer-h)))!important;
   --ux-fx-balanced-h:max(125px,calc(50% - var(--identity-h) - var(--route-h) - var(--send-h)));
 }
-.console-body:not(.collapsed-send):not(.collapsed-fx){min-height:680px!important}
+.console-body:not(.collapsed-send):not(.collapsed-fx){min-height:max(680px,var(--ux-expanded-min-h,680px))!important}
 .console-body.collapsed-route{--route-h:23px!important}
 .console-body:not(.collapsed-fx) .strip .fx-section,
 .console-body:not(.collapsed-fx) .section-rail>.rail-cell.fx{
