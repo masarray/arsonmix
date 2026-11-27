@@ -2732,6 +2732,7 @@
           nativeToast("Routing changed · review external output again");return true;
         }
         const requestId="out-o-"+(++externalSerial);
+        if(matrixChannelId!==null)outputMatrixDrafts.delete(id);
         pendingExternal.set(id,{requestId,channelId:id,left,right,
           epoch,revision,acked:false});
         if(el)el.value=previous;el?.setAttribute("aria-busy","true");
@@ -2864,6 +2865,7 @@
       if(!fresh||JSON.stringify(fresh.pair)!==JSON.stringify(row.pair)||
          !fresh.choices.some(x=>x.label===label&&x.left===choice.left&&x.right===choice.right))return;
       const requestId="bus-out-"+(++busOutputSerial);
+      outputMatrixDrafts.delete(id);
       busOutputPending={requestId,id,epoch:lease.epoch,config:lease.config,revision:lease.revision,
         left:choice.left,right:choice.right,acked:false};
       backend.emitEvent("arMixAction",{action:"routingPhysicalBusOutput",requestId,
