@@ -45,16 +45,21 @@ html .app #armix-ribbon-commands.armix-ribbon:not([data-ribbon-tab=player]) #pla
 .armix-ribbon-player button:disabled{opacity:.44;cursor:not-allowed}
 .armix-ribbon-player button:focus-visible,.armix-ribbon-player input:focus-visible{outline:2px solid #73d6e6;outline-offset:1px}
 .armix-ribbon-player button svg{width:16px;height:16px;pointer-events:none}
-.armix-ribbon-transport button{--face-top:#49606c;--face-bottom:#293f4a;--ring-top:#d5e5ea;--ring-bottom:#849aa5;position:relative;isolation:isolate;border:1px solid transparent;border-radius:50%;width:28px;height:28px;background:linear-gradient(155deg,var(--face-top),var(--face-bottom)) padding-box,linear-gradient(145deg,var(--ring-top) 5%,#aabfc9 33%,var(--ring-bottom) 72%,#d6e3e8 100%) border-box;box-shadow:inset 0 1px 1px #f0faff20,inset 0 -1px 1px #0c1e272c,0 1px 2px #08151d50}
-.armix-ribbon-transport button::after{content:"";position:absolute;inset:1px;border-radius:inherit;background:radial-gradient(ellipse at 37% 10%,#e9f7ff1e,transparent 67%);pointer-events:none}
-.armix-ribbon-transport button svg{fill:currentColor;stroke:none;z-index:1;width:15px;height:15px}
-.armix-ribbon-transport #ribbonPlay{width:32px;height:32px;--face-top:#61737e;--face-bottom:#344b57;--ring-top:#e5f0f3;--ring-bottom:#a1b3bd}
-.armix-ribbon-transport #ribbonPlay svg{width:19px;height:19px}
-.armix-ribbon-transport #ribbonPlay[aria-pressed=true]{--face-top:#367f8b;--face-bottom:#23515e;--ring-top:#acf0f4;--ring-bottom:#64aab9}
-.armix-ribbon-transport #ribbonStop{width:22px;height:22px;margin-left:5px;--ring-top:#849ca8;--ring-bottom:#536f7b;--face-top:#3a515e;--face-bottom:#283e49}
-.armix-ribbon-transport #ribbonStop svg{width:12px;height:12px}
-.armix-ribbon-transport button:hover:not(:disabled){filter:brightness(1.17)}
-.armix-ribbon-transport button:active:not(:disabled){transform:scale(.94)}
+/* One transport skin for the toolbar, full device and MiniPlayer. */
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPrevious,#ribbonPlay,#ribbonNext,#ribbonStop,#playerPrevious,#playerPlay,#playerNext,#playerStop,#playerLoopAB,#playerMiniPlay,#playerMiniNext){display:grid;place-items:center;box-sizing:border-box;flex-shrink:0;padding:0;color:#f3f9fb;cursor:pointer;--face-top:#49606c;--face-bottom:#293f4a;--ring-top:#d5e5ea;--ring-bottom:#849aa5;position:relative;isolation:isolate;border:1px solid transparent;border-radius:50%;width:28px;height:28px;background:linear-gradient(155deg,var(--face-top),var(--face-bottom)) padding-box,linear-gradient(145deg,var(--ring-top) 5%,#aabfc9 33%,var(--ring-bottom) 72%,#d6e3e8 100%) border-box;box-shadow:inset 0 1px 1px #f0faff20,inset 0 -1px 1px #0c1e272c,0 1px 2px #08151d50}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPrevious,#ribbonPlay,#ribbonNext,#ribbonStop,#playerPrevious,#playerPlay,#playerNext,#playerStop,#playerLoopAB,#playerMiniPlay,#playerMiniNext)::after{content:"";position:absolute;inset:1px;border-radius:inherit;background:radial-gradient(ellipse at 37% 10%,#e9f7ff1e,transparent 67%);pointer-events:none}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPrevious,#ribbonPlay,#ribbonNext,#ribbonStop,#playerPrevious,#playerPlay,#playerNext,#playerStop,#playerLoopAB,#playerMiniPlay,#playerMiniNext) svg{fill:currentColor;stroke:none;z-index:1;width:15px;height:15px;pointer-events:none}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>#playerLoopAB svg{fill:none;stroke:currentColor;stroke-width:1.65}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPlay,#playerPlay,#playerMiniPlay){width:32px;height:32px;--face-top:#61737e;--face-bottom:#344b57;--ring-top:#e5f0f3;--ring-bottom:#a1b3bd}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPlay,#playerPlay,#playerMiniPlay) svg{width:19px;height:19px}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPlay,#playerPlay,#playerMiniPlay):is([aria-pressed=true],[data-playing=true]),:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>#playerLoopAB[aria-pressed=true]{--face-top:#367f8b;--face-bottom:#23515e;--ring-top:#acf0f4;--ring-bottom:#64aab9}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonStop,#playerStop){width:22px;height:22px;--ring-top:#849ca8;--ring-bottom:#536f7b;--face-top:#3a515e;--face-bottom:#283e49}
+.armix-ribbon-transport #ribbonStop{margin-left:5px}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonStop,#playerStop) svg{width:12px;height:12px}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPrevious,#ribbonPlay,#ribbonNext,#ribbonStop,#playerPrevious,#playerPlay,#playerNext,#playerStop,#playerLoopAB,#playerMiniPlay,#playerMiniNext):hover:not(:disabled){filter:brightness(1.17)}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPrevious,#ribbonPlay,#ribbonNext,#ribbonStop,#playerPrevious,#playerPlay,#playerNext,#playerStop,#playerLoopAB,#playerMiniPlay,#playerMiniNext):active:not(:disabled){transform:scale(.94)}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPrevious,#ribbonPlay,#ribbonNext,#ribbonStop,#playerPrevious,#playerPlay,#playerNext,#playerStop,#playerLoopAB,#playerMiniPlay,#playerMiniNext):disabled{opacity:.44;cursor:not-allowed}
+:is(.armix-ribbon-transport,#arsonPlayer .ap-transport,#playerMini)>:is(#ribbonPrevious,#ribbonPlay,#ribbonNext,#ribbonStop,#playerPrevious,#playerPlay,#playerNext,#playerStop,#playerLoopAB,#playerMiniPlay,#playerMiniNext):focus-visible{outline:2px solid #73d6e6;outline-offset:1px}
 .armix-ribbon-options{height:29px;gap:2px;padding:2px 4px;border:1px solid #7796a45e;border-radius:18px;background:linear-gradient(#a3c1cd0e,#11262f26)}
 .armix-ribbon-options button{height:23px;width:29px;border:1px solid transparent;border-radius:12px;background:transparent;color:#d8e7ed}
 .armix-ribbon-options button[aria-pressed=true]{background:linear-gradient(165deg,#329da8,#0e6a7b);color:#f2fdff}

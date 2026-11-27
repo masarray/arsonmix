@@ -49,7 +49,38 @@ def main():
             box=panel.bounding_box();assert box and box["x"]>=0 and box["x"]+box["width"]<=width+2,(width,box)
             play=page.locator("#playerPlay")
             geometry=play.evaluate("e=>({w:e.offsetWidth,h:e.offsetHeight,r:getComputedStyle(e).borderRadius})")
-            assert geometry["w"]==44 and geometry["h"]==44 and geometry["r"]=="50%",geometry
+            assert geometry==dict(w=32,h=32,r="50%"),geometry
+            # The full device, mini and ribbon share identical transport faces.
+            # Compare computed CSS, not a second hand-copied colour assertion.
+            def face(ident):
+                return page.locator("#"+ident).evaluate("""e=>{
+                    const s=getComputedStyle(e),g=getComputedStyle(e.querySelector('svg'));
+                    return {w:s.width,h:s.height,r:s.borderRadius,bg:s.backgroundImage,
+                      shadow:s.boxShadow,color:s.color,svgW:g.width,svgH:g.height,
+                      shine:getComputedStyle(e,'::after').backgroundImage,
+                      glyph:e.querySelector('svg').innerHTML};
+                }""")
+            for full,ribbon in [("playerPlay","ribbonPlay"),("playerStop","ribbonStop"),
+                                ("playerPrevious","ribbonPrevious"),("playerNext","ribbonNext")]:
+                assert face(full)==face(ribbon),(full,face(full),face(ribbon))
+            assert panel.evaluate("e=>getComputedStyle(e).backgroundImage.includes('linear-gradient')")
+            assert panel.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")
+            listbox=page.locator("#playerList")
+            assert listbox.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")
+            # Hidden scrollbar does not change virtual list scroll mechanics.
+            listbox.scroll_into_view_if_needed()
+            listbox.evaluate("e=>{e.scrollTop=34*12;e.dispatchEvent(new Event('scroll'))}")
+            assert listbox.evaluate("e=>e.scrollTop>0")
+            assert page.locator(".ap-songrow").count()<=80
+            listbox.evaluate("e=>{e.scrollTop=0;e.dispatchEvent(new Event('scroll'))}")
+            panel.evaluate("e=>e.scrollTop=0")
+            # Same exact skin and glyph in paused/playing native readback.
+            page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",{**state,"transport":{**state["transport"],"state":"PAUSED"}})
+            page.wait_for_function("()=>document.getElementById('ribbonPlay').getAttribute('aria-pressed')==='false'")
+            assert face("playerPlay")==face("ribbonPlay")
+            page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
+            page.wait_for_function("()=>document.getElementById('ribbonPlay').getAttribute('aria-pressed')==='true'")
+            assert face("playerPlay")==face("ribbonPlay")
             fallback=page.locator("#playerArtworkFallback")
             assert fallback.is_visible()
             assert fallback.get_attribute("data-art") in ("blue-hour","prism","tide","dune","bloom")
