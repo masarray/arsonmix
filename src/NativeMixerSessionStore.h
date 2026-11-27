@@ -251,7 +251,10 @@ public:
         }
         MixerSessionDocument base;
         std::vector<armix::shows::BinaryState> blobs;
-        auto error=readGeneration(root_.getChildFile("versions").getChildFile(generation),base,blobs);
+        // The immutable generation was fully verified when committed. During
+        // live updates validate metadata and bounded blob paths/sizes only;
+        // full binary SHA verification remains mandatory on restore.
+        auto error=readGeneration(root_.getChildFile("versions").getChildFile(generation),base,blobs,false);
         if(error.isNotEmpty())return error;
         if(!attachLiveHashes(base,draft))
             return "Live checkpoint awaits verified FX snapshot for current session";
@@ -270,7 +273,7 @@ public:
         const auto hash=juce::SHA256(json.toRawUTF8(),json.getNumBytesAsUTF8()).toHexString();
         const auto payload=generation+"\n"+hash+"\n"+json;
         juce::TemporaryFile staging(file);
-        if(!staging.getFile().replaceWithText(payload))
+        if(!staging.getFile().replaceWithText(payload,false,false,"\n"))
             return "Cannot stage live checkpoint";
         juce::String check;
         if(!Input::text(staging.getFile(),maxJson+128,check)||check!=payload||
@@ -421,7 +424,8 @@ private:
     }
     static juce::String readGeneration(const juce::File& generation,
                        MixerSessionDocument& out,
-                       std::vector<armix::shows::BinaryState>& states) {
+                       std::vector<armix::shows::BinaryState>& states,
+                       bool verifyBlobs=true) {
         const auto jsonFile=generation.getChildFile("mixer.json");
         const auto sumFile=generation.getChildFile("mixer.sha256");
         if(!generation.isDirectory()||!jsonFile.existsAsFile()||
@@ -452,6 +456,12 @@ private:
             if(!file.existsAsFile()||file.getSize()<0||file.getSize()>maxState)
                 return "Mixer VST3 state missing or oversized";
             if(!Input::managedPath(root,file))return "Unsafe mixer blob path";
+            if(!verifyBlobs) {
+                const auto size=file.getSize();
+                if(size<0||size>maxState||size>maxTotal-total)return "Mixer vendor state budget exceeded";
+                total+=size;
+                continue;
+            }
             armix::shows::BinaryState blob;
             blob.sha256=hash;
             if(!Input::read(file,std::min(maxState,maxTotal-total),blob.bytes,true)||

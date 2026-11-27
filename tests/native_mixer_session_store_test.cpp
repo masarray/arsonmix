@@ -2740,7 +2740,7 @@ static void checkLiveControlsCheckpoint() {
     assert(overlay.loadFileAsString()==durable);
     assert(overlay.appendText("CORRUPT"));
     assert(store.load(loaded,states).isEmpty()&&loaded.masterGain==doc.masterGain&&loaded.resumeMain==false);
-    assert(overlay.replaceWithText(durable));
+    assert(overlay.replaceWithText(durable,false,false,"\n"));
     doc.masterGain=.81f;
     assert(store.commit(doc,{blob}).isEmpty());
     assert(store.load(loaded,states).isEmpty()&&loaded.masterGain==.81f);
