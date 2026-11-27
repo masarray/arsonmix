@@ -2250,7 +2250,10 @@
     window.setTimeout(()=>{
       if(pendingGlobalFx?.requestId!==requestId)return;
       pendingGlobalFx=null;
-      status("Global FX A/B not confirmed · keeping previous audible state");
+      // Clear only the failed gesture. Do not assert what is audible:
+      // the native operation may have applied while its receipt was lost.
+      syncGlobalFxReadback();
+      status("Global FX A/B unconfirmed · check accepted readback and retry");
       controller?.subscribe(); // Readback is authoritative, never optimistic.
     },8000);
     return true;
@@ -6072,6 +6075,7 @@
       if(verdict==="IGNORE")return;
       if(verdict==="REJECTED"){
         pendingGlobalFx=null;
+        syncGlobalFxReadback(); // rejected receipt must not leave the button disabled
         status("Global FX rejected · "+String(ack?.error||"stale device revision"));
       }else pendingGlobalFx.acked=true;
       controller?.subscribe(); // ACK alone never establishes physical bypass.
