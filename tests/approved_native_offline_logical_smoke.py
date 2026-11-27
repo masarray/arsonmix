@@ -47,7 +47,7 @@ def logical_graph(revision="1", extra=False, source_only=False):
             "supportedOps":["CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
                 "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN",
                 "SET_MUTE","SET_SOLO","SET_PROCESSING_FORMAT",
-                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP",
+                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP","SET_WIRE_GAIN",
                 "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
                 "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"],
             "dynamicChannels":True,"groups":True,
@@ -225,7 +225,7 @@ def main():
         new_project.click()
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
         # The leftmost New shortcut delegates to exactly the same transaction.
-        toolbar_new=page.locator(".command-bar > [data-native-new-project]")
+        toolbar_new=page.locator("#moreTools [data-native-new-project]")
         assert toolbar_new.inner_text()=="New" and toolbar_new.is_visible()
         page.once("dialog",lambda dialog:dialog.dismiss())
         toolbar_new.click()

@@ -113,6 +113,24 @@ int main() {
     valid(track->sends.back().destination==stableMain &&
           !track->sends.back().primaryOutput);
 
+    // Device-independent send level changes only its exact parallel EdgeId.
+    {
+        DeviceIndependentMixerSession trial;
+        valid(trial.restore(logical.roster()));
+        const auto sendId=track->sends.back().edgeId;
+        const auto revision=trial.revision();
+        ChannelEdit gain;gain.kind=ChannelEdit::Kind::setSendGain;
+        gain.id=backing;gain.sendEdgeId=sendId;gain.value=.625f;
+        valid(trial.edit(revision,std::span<const ChannelEdit>{&gain,1}).accepted());
+        const auto* row=trial.roster().find(backing);
+        valid(row->sends.back().edgeId==sendId&&row->sends.back().gain==.625f);
+        valid(row->sends.front().edgeId==serialEdge&&row->sends.front().gain==1.f);
+        gain.sendEdgeId=serialEdge;
+        valid(!trial.edit(trial.revision(),std::span<const ChannelEdit>{&gain,1}).accepted());
+        gain.sendEdgeId=sendId;gain.value=0.f;
+        valid(trial.edit(trial.revision(),std::span<const ChannelEdit>{&gain,1}).accepted());
+        valid(trial.roster().find(backing)->sends.back().gain==0.f);
+    }
     // SEND ON/OFF is a state of the exact parallel EdgeId, NOT removal.
     // Primary OUT and a different edge may not be touched accidentally.
     const auto sendEdge=track->sends.back().edgeId;

@@ -25,14 +25,17 @@ def verify_custom_input(page,out):
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     # Owner's file group: New is the first toolbar item, with a loaded
     # document-plus icon and no extra word in the visible/accessibility label.
-    new=page.locator(".command-bar > [data-native-new-project]")
+    menu=page.locator("#moreTools")
+    assert menu.evaluate("(el)=>el===el.parentElement.firstElementChild")
+    menu.locator("summary").click()
+    new=page.locator("#moreTools [data-native-new-project]")
     assert new.is_visible() and new.inner_text()=="New"
     assert page.locator(".command-bar [data-native-extra-output], .command-bar [data-native-first-sound]").count()==0
-    assert new.evaluate("(el)=>el===el.parentElement.firstElementChild")
-    assert page.locator(".command-bar > .mixer-file-tool").all_text_contents()==["New","Save","Open"]
+    assert page.locator("#moreTools .mixer-file-tool").all_text_contents()==["New","Save","Open"]
     page.wait_for_function("()=>{const i=document.querySelector('[data-native-new-project] img');return i&&i.complete&&i.naturalWidth>0}")
     icon=new.locator("img")
     assert icon.get_attribute("src")=="assets/mixer-new.svg" and icon.get_attribute("alt")==""
+    menu.locator("summary").click()
     # Mixer + Anti Noiz may subscribe to the same real JUCE event.
     assert page.evaluate("()=>window.__nativeListenerCount('arMixConsoleSnapshot')") >= 2
     state=snapshot()
