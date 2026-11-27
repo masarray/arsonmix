@@ -3012,6 +3012,7 @@ private:
             cancelSecondaryContinuity();
             cancelStartupSecondaryPreparation();
             engine_.setMonitorEnabled(false);
+            cancelPendingPhysicalBusPatch("BUS OUTPUT: emergency stop");
             engine_.cancelAsioResetMonitorIntent();
             autoMainEpoch_=0;
             diagnostics_.record("OUTPUT_MUTE","ON | PANIC_MUTE hotkey");
@@ -4854,6 +4855,102 @@ private:
             if(secondaryRetry_.attempts()==1)
                 diagnostics_.record("SECONDARY_HOTPLUG_WAITING",error);
         }
+    }
+    struct PendingPhysicalBusPatch {
+        juce::var args;
+        std::uint64_t epoch,revision,deadline;
+        armix::device::NativeDeviceApplyCoordinator::Lease lease;
+    };
+    std::optional<PendingPhysicalBusPatch> pendingPhysicalBusPatch_;
+    void emitPhysicalBusOutputAck(const juce::var& args,const juce::String& error) {
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",args.getProperty("requestId",{}));
+        ack->setProperty("ok",error.isEmpty());ack->setProperty("error",error);
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPhysicalBusOutputAck",juce::var(ack.release()));
+        if(error.isNotEmpty())emitNotice(error,true);
+        emitApprovedNativeSnapshot();
+    }
+    void cancelPendingPhysicalBusPatch(const juce::String& reason) {
+        if(!pendingPhysicalBusPatch_)return;
+        auto args=pendingPhysicalBusPatch_->args;
+        pendingPhysicalBusPatch_.reset();
+        engine_.finishPhysicalBusPatchFade(true); // return to OLD route only, never arm
+        emitPhysicalBusOutputAck(args,reason);
+    }
+    void servicePendingPhysicalBusPatch() {
+        if(!pendingPhysicalBusPatch_)return;
+        const auto& p=*pendingPhysicalBusPatch_;
+        if(engine_.dryRoutingLabEpoch()!=p.epoch||engine_.outputArmRevision()!=p.revision||
+           static_cast<std::uint64_t>(monotonicMilliseconds())>=p.deadline||
+           !engine_.secondaryResumeReady()) {
+            cancelPendingPhysicalBusPatch("BUS OUTPUT: callback fade or route verification expired");return;
+        }
+        if(!engine_.physicalBusPatchFadeReady())return;
+        auto args=p.args;
+        pendingPhysicalBusPatch_.reset(); // release CONTROL lease before same-thread patch
+        handlePhysicalBusOutput(args,true);
+    }
+    void handlePhysicalBusOutput(const juce::var& args,bool afterFade=false) {
+            const auto id=args.getProperty("requestId",{}).toString();
+            const auto bus=args.getProperty("bus",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{}),rv=args.getProperty("revision",{});
+            const auto left=args.getProperty("left",{}),right=args.getProperty("right",{});
+            const auto oldL=args.getProperty("previousLeft",{}),oldR=args.getProperty("previousRight",{});
+            const auto leftName=args.getProperty("leftName",{}),rightName=args.getProperty("rightName",{});
+            const auto confirmed=args.getProperty("confirmed",{});
+            const auto status=engine_.status().getProperty("dryRoutingLab",{});
+            const auto native=status.getProperty("nativeBus",{});
+            juce::String error="BUS OUTPUT: invalid/stale request or audio transaction busy";
+            bool attempted=false;
+            if(id.startsWith("bus-out-")&&id.length()<=64&&(bus=="MAIN"||bus=="MONITOR")&&
+               !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !pendingVendorStream_&&!secondaryRetry_.pending()&&!pendingSecondaryStop_&&
+               !pendingRetainedFxCapture_&&!retainedOfflineFxActive_&&!engine_.hasRuntimeFxFault()&&
+               !directCallbackStalled_&&engine_.devices().getCurrentAudioDeviceType()=="ASIO"&&
+               engine_.secondaryResumeReady()&&engine_.hasBoundMixerRoute()&&
+               confirmed.isBool()&&static_cast<bool>(confirmed)&&
+               left.isInt()&&right.isInt()&&oldL.isInt()&&oldR.isInt()&&
+               leftName.isString()&&rightName.isString()&&
+               armix::console::nativeSessionTokenMatches(ep,status.getProperty("epoch",{}))&&
+               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{}))) {
+                const bool active=engine_.isMonitorEnabled()||engine_.secondaryArmed();
+                if(active&&!afterFade) {
+                    auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::busOutputPatch);
+                    if(lease&&engine_.beginPhysicalBusPatchFade()) {
+                        pendingPhysicalBusPatch_.emplace(PendingPhysicalBusPatch{args,
+                            engine_.dryRoutingLabEpoch(),engine_.outputArmRevision(),
+                            static_cast<std::uint64_t>(monotonicMilliseconds())+2000,std::move(lease)});
+                        return; // correlated ACK only after AUDIO fade-out and patch
+                    }
+                    return emitPhysicalBusOutputAck(args,"BUS OUTPUT: output transition busy");
+                }
+                attempted=true;
+                const bool resumeMain=engine_.isMonitorEnabled()&&!operatorOutputMuted_;
+                const auto stream=engine_.captureSecondaryResumeIntent();
+                // Temporary control transaction, not an operator emergency stop.
+                // Existing physical output lease fences a callback using the old pair.
+                autoMainEpoch_=0;
+                cancelSecondaryContinuity();
+                engine_.setMonitorEnabled(false);
+                engine_.disarmSecondaryOutput();
+                error=engine_.patchPhysicalBusOutput(
+                    armix::console::nativeSessionTokenValue(ep),armix::console::nativeSessionTokenValue(rv),
+                    bus=="MONITOR",{static_cast<int>(oldL),static_cast<int>(oldR)},
+                    {static_cast<int>(left),static_cast<int>(right)},leftName.toString(),rightName.toString());
+                if(afterFade)engine_.finishPhysicalBusPatchFade(error.isEmpty()&&(resumeMain||stream.has_value()));
+                if(error.isEmpty()) {
+                    if(resumeMain)requestAutomaticMain(false);
+                    if(stream)pendingVendorStream_=PendingVendorStream{*stream,
+                        engine_.dryRoutingLabEpoch(),engine_.outputArmRevision(),
+                        static_cast<std::uint64_t>(monotonicMilliseconds())+5000,resumeMain};
+                } else if(resumeMain||stream) {
+                    // Failure stays safely muted; never guess a destination.
+                    operatorOutputMuted_=true;
+                    diagnostics_.record("OUTPUT_MUTE","ON | bus remap rejected");
+                }
+            }
+            if(afterFade&&!attempted)engine_.finishPhysicalBusPatchFade(true);
+            emitPhysicalBusOutputAck(args,error);
     }
     void serviceVendorStreamRecovery() {
         if(!pendingVendorStream_)return;
@@ -7573,6 +7670,12 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        if(pendingPhysicalBusPatch_&&(action=="monitor"||action=="secondaryOutputArm"||
+           action=="secondaryOutputStop"||action=="audioDeviceApply"||action=="audioSetup"||
+           action=="audioDriverPanel") &&
+           ((action!="monitor"&&action!="secondaryOutputArm")||
+            (args.getProperty("value",{}).isBool()&&!bool(args.getProperty("value",{})))))
+            cancelPendingPhysicalBusPatch("BUS OUTPUT: superseded by operator action");
         if(action=="secondaryOutputInventory")return requestSecondaryInventory(args);
         if(action=="fxRackFile")return chooseFxRackFile(args);
         if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
@@ -9160,58 +9263,7 @@ private:
             if(error.isEmpty())emitApprovedNativeSnapshot();else emitNotice(error,true);
             return;
         }
-        if(action=="routingPhysicalBusOutput") {
-            const auto id=args.getProperty("requestId",{}).toString();
-            const auto bus=args.getProperty("bus",{}).toString();
-            const auto ep=args.getProperty("deviceEpoch",{}),rv=args.getProperty("revision",{});
-            const auto left=args.getProperty("left",{}),right=args.getProperty("right",{});
-            const auto oldL=args.getProperty("previousLeft",{}),oldR=args.getProperty("previousRight",{});
-            const auto leftName=args.getProperty("leftName",{}),rightName=args.getProperty("rightName",{});
-            const auto confirmed=args.getProperty("confirmed",{});
-            const auto status=engine_.status().getProperty("dryRoutingLab",{});
-            const auto native=status.getProperty("nativeBus",{});
-            juce::String error="BUS OUTPUT: invalid/stale request or audio transaction busy";
-            if(id.startsWith("bus-out-")&&id.length()<=64&&(bus=="MAIN"||bus=="MONITOR")&&
-               !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
-               !pendingVendorStream_&&!secondaryRetry_.pending()&&!pendingSecondaryStop_&&
-               !pendingRetainedFxCapture_&&!retainedOfflineFxActive_&&!engine_.hasRuntimeFxFault()&&
-               engine_.secondaryResumeReady()&&engine_.hasBoundMixerRoute()&&
-               confirmed.isBool()&&static_cast<bool>(confirmed)&&
-               left.isInt()&&right.isInt()&&oldL.isInt()&&oldR.isInt()&&
-               leftName.isString()&&rightName.isString()&&
-               armix::console::nativeSessionTokenMatches(ep,status.getProperty("epoch",{}))&&
-               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{}))) {
-                const bool resumeMain=engine_.isMonitorEnabled()&&!operatorOutputMuted_;
-                const auto stream=engine_.captureSecondaryResumeIntent();
-                // Temporary control transaction, not an operator emergency stop.
-                // Existing physical output lease fences a callback using the old pair.
-                autoMainEpoch_=0;
-                cancelSecondaryContinuity();
-                engine_.setMonitorEnabled(false);
-                engine_.disarmSecondaryOutput();
-                error=engine_.patchPhysicalBusOutput(
-                    armix::console::nativeSessionTokenValue(ep),armix::console::nativeSessionTokenValue(rv),
-                    bus=="MONITOR",{static_cast<int>(oldL),static_cast<int>(oldR)},
-                    {static_cast<int>(left),static_cast<int>(right)},leftName.toString(),rightName.toString());
-                if(error.isEmpty()) {
-                    if(resumeMain)requestAutomaticMain(false);
-                    if(stream)pendingVendorStream_=PendingVendorStream{*stream,
-                        engine_.dryRoutingLabEpoch(),engine_.outputArmRevision(),
-                        static_cast<std::uint64_t>(monotonicMilliseconds())+5000,resumeMain};
-                } else if(resumeMain||stream) {
-                    // Failure stays safely muted; never guess a destination.
-                    operatorOutputMuted_=true;
-                    diagnostics_.record("OUTPUT_MUTE","ON | bus remap rejected");
-                }
-            }
-            auto ack=std::make_unique<juce::DynamicObject>();
-            ack->setProperty("requestId",id);ack->setProperty("ok",error.isEmpty());
-            ack->setProperty("error",error);
-            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPhysicalBusOutputAck",juce::var(ack.release()));
-            if(error.isEmpty())emitApprovedNativeSnapshot();
-            else {emitNotice(error,true);emitApprovedNativeSnapshot();}
-            return;
-        }
+        if(action=="routingPhysicalBusOutput")return handlePhysicalBusOutput(args);
         if(action=="routingExternalOutput") {
             const auto requestId=args.getProperty("requestId",{}).toString();
             const auto channelText=args.getProperty("channelId",{}).toString();
@@ -11182,7 +11234,12 @@ private:
             if(error.isEmpty()&&(action=="secondaryOutputConnect"||action=="secondaryOutputEnable"||
                action=="secondaryOutputArm")) {
                 const auto name=engine_.status().getProperty("secondaryOutputName","").toString();
-                preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId(),true,engine_.secondaryArmed());
+                const auto identity=engine_.secondarySelectedEndpointId();
+                if(action=="secondaryOutputArm"&&!bool(value)&&identity.empty()) {
+                    loadSecondaryPreference();
+                    if(secondaryPreference_)preferenceSaved=rememberSecondaryPreference(
+                        secondaryPreference_->name,secondaryPreference_->id,secondaryPreference_->prepare,false);
+                } else preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId(),true,engine_.secondaryArmed());
                 if(!preferenceSaved)emitNotice("Output changed, but MON selection could not be saved. Check settings folder permissions.",true);
             }
             if(error.isEmpty()&&action=="secondaryOutputStop") {
@@ -12444,6 +12501,7 @@ private:
                 attachAudioPowerNotifications(peer->getNativeHandle());
             }
 #endif
+        servicePendingPhysicalBusPatch();
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
         if(pendingSecondaryStop_) {
             auto stop=std::move(*pendingSecondaryStop_);

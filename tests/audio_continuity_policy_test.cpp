@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AudioContinuityPolicy.h"
+#include "../engine/core/BusPatchEnvelope.h"
+#include <array>
 #include <cassert>
 #include <cstdint>
 
@@ -47,4 +49,37 @@ int main() {
     assert(retry.pending());
     retry.cancel();
     assert(!retry.pending());
+
+    using armix::mixer::BusPatchEnvelope;
+    BusPatchEnvelope fade;
+    std::array<float,32> left{},right{},tap{};
+    float* pcm[]={left.data(),right.data()};
+    auto block=[&](bool audible=true){
+        left.fill(1.f);right.fill(1.f);tap.fill(1.f);
+        return fade.process(pcm,2,tap.data(),nullptr,32,48000.,true,audible);
+    };
+    assert(fade.begin()&&!fade.begin());
+    float last=1.f;
+    BusPatchEnvelope::Block b;
+    for(int i=0;i<8;++i){
+        b=block();
+        for(float sample:left){assert(sample>=0.f&&sample<=last);last=sample;}
+        assert(left==right&&left==tap);
+        if(i<7){assert(!b.complete);fade.acknowledge(b);}
+    }
+    assert(b.complete&&!fade.ready()); // receipt is after PCM publication
+    fade.acknowledge(b);assert(fade.ready());
+    b=block();assert(left.back()==0.f&&tap.back()==0.f);
+    fade.finish(true);
+    b=block(false);assert(!b.complete&&left.back()==0.f);
+    last=0.f;
+    for(int i=0;i<8;++i){
+        b=block();
+        for(float sample:left){assert(sample>=last&&sample<=1.f);last=sample;}
+        fade.acknowledge(b);
+    }
+    assert(b.complete&&left.back()==1.f&&fade.begin());
+    b=block();fade.finish(true);fade.acknowledge(b);
+    b=block();assert(left.back()>left.front()); // cancellation restores old level
+    fade.reset();b=block();assert(b.phase==BusPatchEnvelope::idle&&left.front()==1.f);
 }

@@ -243,7 +243,7 @@ test('nested device transaction permits explicit STOP but rejects ARM with nativ
 });
 
 test('smart bus remap uses native temporary stop and verified continuation, not an operator latch on success',()=>{
- const p=main.split('if(action=="routingPhysicalBusOutput")')[1].split('if(action=="routingExternalOutput")')[0];
+ const p=main.split('void handlePhysicalBusOutput(')[1].split('void serviceVendorStreamRecovery()')[0];
  assert.match(p,/const bool resumeMain=engine_\.isMonitorEnabled\(\)&&!operatorOutputMuted_/);
  assert.match(p,/engine_\.captureSecondaryResumeIntent\(\)/);
  assert.ok(p.indexOf('engine_.setMonitorEnabled(false)')<p.indexOf('engine_.patchPhysicalBusOutput('));
@@ -254,4 +254,17 @@ test('smart bus remap uses native temporary stop and verified continuation, not 
  const panic=main.split('if(mapping.operation=="PANIC_MUTE")')[1].split('// Existing control-thread guards')[0];
  assert.match(panic,/pendingVendorStream_\.reset\(\)/);
  assert.match(panic,/cancelStartupSecondaryPreparation\(\)/);
+});
+
+test('physical bus remap waits for AUDIO fade receipt with bounded CONTROL lease',()=>{
+ const p=main.split('void servicePendingPhysicalBusPatch()')[1].split('void serviceVendorStreamRecovery()')[0];
+ assert.match(p,/monotonicMilliseconds\(\)\)>=p.deadline/);
+ assert.match(p,/if\(!engine_\.physicalBusPatchFadeReady\(\)\)return/);
+ assert.match(p,/handlePhysicalBusOutput\(args,true\)/);
+ assert.match(p,/engine_\.beginPhysicalBusPatchFade\(\)/);
+ assert.match(p,/Purpose::busOutputPatch/);
+ assert.match(engine,/busPatchEnvelope_\.process\(outputs,outputChannels/);
+ assert.ok(engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels')<engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)'));
+ assert.ok(engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
+ assert.match(main,/servicePendingPhysicalBusPatch\(\);\s*if\(deviceApply_\.busy\(\)\)return/);
 });

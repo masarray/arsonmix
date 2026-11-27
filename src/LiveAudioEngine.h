@@ -24,6 +24,7 @@
 #include "../engine/device/LiveSecondaryOutputDevice.h"
 #include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/core/NativeOutputTransition.h"
+#include "../engine/core/BusPatchEnvelope.h"
 #include "../engine/core/NativeRenderAuthority.h"
 #include "../engine/device/AsioPriorityDeviceManager.h"
 #include "../engine/device/AsioRegistryIdentityProbe.h"
@@ -1681,6 +1682,13 @@ public:
             return "DMX: verified playback identity changed";
         return dryRoutingLab_.patchDmxSplitOutput(ep,rev,rosterRev,enable,pins,allOutputsDisarmed(),seedStarter);
     }
+
+    bool beginPhysicalBusPatchFade() noexcept {
+        return secondaryResumeReady()&&attached_&&dryRoutingLab_.channelIdPhysicalPcmActive()&&
+            fxMovePhase_.load(std::memory_order_acquire)==0&&busPatchEnvelope_.begin();
+    }
+    bool physicalBusPatchFadeReady() const noexcept {return busPatchEnvelope_.ready();}
+    void finishPhysicalBusPatchFade(bool resume) noexcept {busPatchEnvelope_.finish(resume);}
 
     juce::String patchPhysicalBusOutput(std::uint64_t ep,std::uint64_t rev,
             bool monitor,std::array<int,2> previous,std::array<int,2> wanted,
@@ -3923,6 +3931,7 @@ private:
     Loopback loopback_;
     std::atomic_flag loopbackRendering_=ATOMIC_FLAG_INIT;
     std::atomic<bool> topologyPublicationMute_ { false };
+    armix::mixer::BusPatchEnvelope busPatchEnvelope_;
     // Persistent in-process operator intent; independent of audio device epoch.
     armix::device::OutputContinuityIntent mainOutputIntent_;
     std::atomic<bool> resumeMainAfterAsioReset_{false};
@@ -4077,6 +4086,7 @@ private:
 
     void audioDeviceStopped() override
     {
+        busPatchEnvelope_.reset();
         // Never turn a device STOP into a persistent MUTE. Display idle is not
         // a device event, and even a genuine device STOP preserves desired MAIN.
         if(mainOutputIntent_.desired()) {
@@ -4446,6 +4456,16 @@ private:
                 } else if(routedFxMove==2)
                     fxMovePhase_.store(0,std::memory_order_release);
             }
+            const auto patchFade=busPatchEnvelope_.process(outputs,outputChannels,
+                splitMain?secondaryMainTap[0]:nullptr,splitMain?secondaryMainTap[1]:nullptr,
+                samples,sampleRateHz_,routed&&nativePcm,outputGate.hardware||outputGate.secondary);
+            if(patchFade.phase!=armix::mixer::BusPatchEnvelope::idle){
+                movedPeakL=movedPeakR=0.f;
+                for(int i=0;i<samples;++i){
+                    if(nativeMain[0])movedPeakL=std::max(movedPeakL,std::abs(nativeMain[0][i]));
+                    if(nativeMain[1])movedPeakR=std::max(movedPeakR,std::abs(nativeMain[1][i]));
+                }
+            }
             if(cycle.fadeOut)handoff_.endCycle(cycle); // RT pointer publish only
             // Replace the physical outputs only for the explicitly initiated
             // wired probe, after the accepted render, and before any sink copy.
@@ -4455,6 +4475,7 @@ private:
                     dryRoutingLab_.epoch(),routed && nativePcm && outputGate.hardware &&
                     !outputGate.secondary && !secondaryOutput_.armed() &&
                     !cycle.fadeOut && !cycle.fadeIn && routedFxMove==0 &&
+                    patchFade.phase==armix::mixer::BusPatchEnvelope::idle &&
                     monitor_.load(std::memory_order_acquire) && directFence_.permitted() &&
                     !masterMute_.load(std::memory_order_acquire) &&
                     !routeReconfiguring_.load(std::memory_order_acquire) &&
@@ -4477,8 +4498,10 @@ private:
             // Only actually routed audio can produce a live output meter.
             const float left=routed?dryRoutingLab_.peakLeft():0.f;
             const float right=routed?dryRoutingLab_.peakRight():0.f;
-            const float audibleLeft=(routedFxMove!=0||cycle.fadeOut||cycle.fadeIn)?movedPeakL:left;
-            const float audibleRight=(routedFxMove!=0||cycle.fadeOut||cycle.fadeIn)?movedPeakR:right;
+            const bool transitioning=routedFxMove!=0||cycle.fadeOut||cycle.fadeIn||
+                patchFade.phase!=armix::mixer::BusPatchEnvelope::idle;
+            const float audibleLeft=transitioning?movedPeakL:left;
+            const float audibleRight=transitioning?movedPeakR:right;
             inputPeak_.store(juce::jmin(1.f,rawCapturePeak),std::memory_order_relaxed);
             postFxPeak_.store(juce::jmin(1.f,juce::jmax(left,right)),std::memory_order_relaxed);
             outputPeakL_.store(juce::jmin(1.f,audibleLeft),std::memory_order_relaxed);
@@ -4504,7 +4527,10 @@ private:
                 publishDriverBufferPeaks(l,r);
             }else publishDriverBufferPeaks(wroteMain?audibleLeft:0.f,wroteMain?audibleRight:0.f);
             const auto pressureRevision=nativePcm&&(wroteMain||wroteMonitor)&&!cycle.fadeIn&&!cycle.fadeOut&&
-                routedFxMove==0&&!probePermit?dryRoutingLab_.renderedNativeRevision():0;
+                routedFxMove==0&&!probePermit&&patchFade.phase==armix::mixer::BusPatchEnvelope::idle?
+                dryRoutingLab_.renderedNativeRevision():0;
+            // Fade-out receipt is visible only after hardware/tap PCM is processed.
+            busPatchEnvelope_.acknowledge(patchFade);
             recordRenderTiming(beginUs,periodUs,outputLease.epoch,pressureRevision);
             return;
         }
