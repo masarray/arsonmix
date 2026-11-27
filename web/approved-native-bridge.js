@@ -5243,6 +5243,7 @@
       "Mixer authority changed · old control gestures discarded");
   }
   function onNativeReadback(next,confirmed) {
+    settleWireGainVisuals(next,confirmed);
     // This callback is invoked only by the existing schema-v6 reconciler.
     // No Device Setup, hardware panel or strip state may mutate until the
     // candidate read-model AND native device identity are admitted below.
@@ -5582,7 +5583,6 @@
     controller = protocol.createController({
       emit:(name,payload)=>backend.emitEvent(name,payload),
       onAccepted:(next,confirmed)=>{
-        settleWireGainVisuals(next,confirmed);
         onNativeReadback(next,confirmed);
         if(confirmed?.operation==="SET_WIRE_GAIN")paintSofGainReadback(next);
         const accepted=controller?.state()?.current;
