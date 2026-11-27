@@ -8,10 +8,10 @@
 .plugin-search-row{height:41px;display:flex;align-items:center;padding:5px 9px;flex:none}
 .plugin-search-row input{min-width:0;width:100%;height:29px;border:1px solid #485156;border-radius:2px;padding:4px 8px;background:#171c1e;color:#e1e7e9;outline-offset:0}
 .plugin-filters{height:34px;display:flex;gap:6px;padding:0 9px 6px;flex:none}
-.plugin-filters select{min-width:0;flex:1;height:26px;background:#33383a;color:#cbd0d2;border:1px solid #505559;padding:0 4px;font-size:10px}
+.plugin-filters select{min-width:0;flex:1;height:26px;background:#142a36;color:#d2e3eb;border:1px solid #3c5867;padding:0 4px;font-size:10px}
 .plugin-headings{height:22px;flex:none;padding:4px 9px;display:flex;justify-content:space-between;color:#89989e;font-size:9px;border-bottom:1px solid #171a1c}
-.plugin-item{min-height:48px;padding:5px 7px;border-bottom:1px solid #1a1c1d;display:flex;gap:5px;align-items:center}
-.plugin-item:hover{background:#30383b}
+.plugin-item{min-height:43px;padding:5px 9px;border-bottom:1px solid #263b47;display:flex;gap:6px;align-items:center}
+.plugin-item:hover,.plugin-item:focus-within{background:#233d4b}
 .plugin-choose{flex:1;min-width:0;background:transparent;border:0;padding:3px 1px;text-align:left;display:flex;flex-direction:column;gap:4px}
 .plugin-item.disabled .plugin-choose{opacity:.5}
 @media(max-width:940px){
@@ -32,7 +32,7 @@
  overflow:hidden!important;pointer-events:auto!important;
 }
 .plugin-browser:not([hidden]) .plugin-head{cursor:move!important;touch-action:none!important;user-select:none!important}
-.plugin-head{background:linear-gradient(#3b5260,#223944)!important}
+.plugin-head{background:#223844!important}
 .plugin-head-title{pointer-events:none!important}
 .plugin-head button{cursor:pointer!important}
 .plugin-browser.minimized{
@@ -47,11 +47,11 @@
 /* Single-window plugin browser: light solid overlay, no blur/animated shadows. */
 
 .plugin-target{font-size:10px;color:#81b5c7;letter-spacing:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.plugin-close{background:transparent;border:0;color:#aeb7bc;font-size:23px;width:24px;height:26px;line-height:24px}
-.plugin-close:hover{color:#fff;background:#4b5052}
-.plugin-results{flex:1;min-height:0;overflow-y:auto;background:#25282a}
-.plugin-name{font-size:11px;color:#e0e3e4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.plugin-meta{font-size:9px;color:#899da6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plugin-browser .plugin-head button{background:#192d38;border:1px solid #426171;color:#c8e0ea;font-size:17px;width:26px;height:26px;line-height:22px;border-radius:4px;box-shadow:none}
+.plugin-browser .plugin-head button:hover{color:#fff;background:#345464}
+.plugin-results{flex:1;min-height:0;overflow-y:auto;background:#142630}
+.plugin-name{font-size:12px;color:#e0edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.plugin-meta{font-size:10px;color:#a2bac7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .plugin-labels{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex:none;font-size:9px;color:#87969c}
 .plugin-pill{color:#a6b6bb;border:1px solid #495156;padding:1px 4px;border-radius:2px}
 .plugin-pill.problem{color:#da9990;border-color:#85554f}
@@ -61,9 +61,11 @@
 .plugin-empty{padding:20px 12px;text-align:center;color:#88979b;font-size:11px}
 .plugin-footer{height:auto!important;min-height:40px!important;box-sizing:border-box!important;flex:none;display:flex;align-items:center;padding:0 7px;gap:6px;border-top:1px solid #181a1b;font-size:10px}
 .plugin-footer span{flex:1;color:#a0afb6}
-.plugin-footer button{background:#393d40;border:1px solid #4f575b;color:#bcc6ca;border-radius:2px;padding:4px 6px;font-size:10px}
+.plugin-footer button,.scan-add button{background:#203c4b;border:1px solid #436779;color:#d2e8f1;border-radius:4px;padding:5px 8px;font-size:11px;min-height:28px}
+.plugin-footer button:hover:not(:disabled),.scan-add button:hover:not(:disabled){background:#31596b;border-color:#75a9bb}
+.plugin-browser button:focus-visible,.plugin-browser input:focus-visible,.plugin-browser select:focus-visible{outline:2px solid #98d6eb;outline-offset:-2px}
 .plugin-footer button:disabled{color:#657175;opacity:1;cursor:not-allowed}
-.plugin-disclaimer{padding:7px 9px;flex:none;color:#c2ac85;background:#35322d;font-size:9px;line-height:1.3}
+.plugin-disclaimer{padding:7px 9px;flex:none;color:#b2c6ce;background:#182a34;font-size:9px;line-height:1.3}
 @media(max-width:940px){}
 
 

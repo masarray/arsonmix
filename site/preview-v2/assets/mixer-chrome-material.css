@@ -979,7 +979,6 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
  .more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
  .identity-actions button.console-control,
- .plugin-footer button,
  .route-choice-head button,
  .route-choice-option,
  button.hw-key
@@ -992,8 +991,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 :is(
  .command-bar button.tool,.command-bar summary.tool,
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key
 )::before{
  content:""!important;position:absolute!important;pointer-events:none!important;
  border:0!important;box-shadow:none!important;opacity:1!important;
@@ -1001,8 +999,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 :is(
  .command-bar button.tool,.command-bar summary.tool,
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key
 )::after{
  content:""!important;position:absolute!important;pointer-events:none!important;
  border:0!important;box-shadow:none!important;opacity:1!important;
@@ -1012,24 +1009,21 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
 :is(
  .command-bar button.tool,.command-bar summary.tool,
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key
 ):active:not(:disabled){
  filter:none!important;
 }
 :is(
  .command-bar button.tool,.command-bar summary.tool,
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key
 ):focus-visible{
  outline:2px solid #9ceaff!important;outline-offset:2px!important;
 }
 :is(
  .command-bar button.tool,.command-bar summary.tool,
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key
 ):disabled{
  opacity:.5!important;cursor:not-allowed!important;
 }
@@ -1073,8 +1067,7 @@ html,body{background:var(--am-metal-base)!important;color:var(--am-text-primary)
    very shallow mechanical travel. Do not flatten latched MUTE/SOLO. */
 :is(.command-bar button.tool,.command-bar summary.tool,
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key){
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key){
  will-change:auto!important;
 }
 /* Remove convolution-style glow and blur work. All depth comes from
@@ -1098,8 +1091,7 @@ html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .a
 /* Important: one real physical material for push-buttons. Layout stays put. */
 :is(.command-bar button.tool,.command-bar summary.tool,
  .more-tools-panel button.tool,.console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key){
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key){
  color:var(--am-hw-key-ink)!important;
  border-color:var(--am-hw-key-border)!important;
  text-shadow:0 1px 0 rgba(0,0,0,.23)!important;
@@ -1150,8 +1142,7 @@ html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .a
    highlight, colored lens middle, dark lower skirt, sharp edge. */
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key){
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key){
  --am-hw-key-press-y:1px;
  user-select:none!important;-webkit-user-select:none!important;
  border-radius:2px!important;
@@ -1159,15 +1150,13 @@ html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .a
 }
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key)::before{
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key)::before{
  top:0!important;left:1px!important;right:1px!important;height:2px!important;
  background:var(--am-hw-key-upper-glint)!important;
 }
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key)::after{
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key)::after{
  bottom:0!important;left:2px!important;right:2px!important;height:1px!important;
  background:var(--am-hw-key-lower-glint)!important;
 }
@@ -1364,8 +1353,7 @@ html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .a
 /* Thin internal light (not glowing) — no repeated bright/dark bands. */
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key) {
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key) {
  background:linear-gradient(180deg,
    var(--am-hw-key-bright) 0%,
    var(--am-hw-key-face) 42%,
@@ -1378,14 +1366,12 @@ html :where(.app, .app *),html :where(.app, .app *)::before,html :where(.app, .a
 }
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key):hover {
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key):hover {
  filter:none!important;
 }
 :is(.command-bar button.tool,.command-bar summary.tool,.more-tools-panel button.tool,
  .console-body .strip .switch-section button.switch,
- .identity-actions button.console-control,.plugin-footer button,
- .route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled) {
+ .identity-actions button.console-control,.route-choice-head button,.route-choice-option,button.hw-key):active:not(:disabled) {
  transform:translateY(1px)!important;
  box-shadow:var(--am-hw-key-flat)!important;
 }
