@@ -46,3 +46,14 @@ test('real Windows-native USB move test is built in existing CTest and release i
   assert.match(architecture,/Backup \/ Restore|Backup\/Restore|BACKUP STUDIO/);
   assert.match(architecture,/one input channel|One live input channel/i);
 });
+
+
+test('managed payloads require explicit stable-root provisioning and never fork Studio',()=>{
+  assert.match(policy,/hasManagedPayloadShape/);
+  assert.match(policy,/ARSONMIX_PORTABLE_LAUNCHER_V2/);
+  assert.match(policy,/BoundedDataInput::managedPath\(stable,folder\)/);
+  assert.match(policy,/stable==juce::File\(\)\?juce::File\(\):stable.getChildFile \("Studio"\)/);
+  assert.match(main,/PortableWorkspace::hasManagedPayloadShape\(appFolder\)/);
+  assert.match(main,/PortableWorkspace::updateRootFor\(installDir\)/);
+  assert.match(read('tests/portable_workspace_test.cpp'),/dataRootFor\(version\)==rootA/);
+});

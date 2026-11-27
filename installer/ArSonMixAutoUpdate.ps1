@@ -22,7 +22,29 @@ $exe=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot $exeName))
 $provenance=Join-Path $PSScriptRoot 'BUILD_PROVENANCE.json'
 $local=$env:LOCALAPPDATA
 if([string]::IsNullOrWhiteSpace($local)){exit 0}
-$root=if($portable){Join-Path $PSScriptRoot '.ArSonMixUpdates'}else{Join-Path $local 'ArSonMix\Updates'}
+$portableStableRoot=$PSScriptRoot
+if($portable){
+    $folder=[IO.DirectoryInfo]::new($PSScriptRoot)
+    if($folder.Name -cmatch '^[a-f0-9]{40}-[a-f0-9]{64}$' -and $null -ne $folder.Parent -and
+       $folder.Parent.Name -ceq 'payloads' -and $null -ne $folder.Parent.Parent -and
+       $folder.Parent.Parent.Name -ceq '.ArSonMixUpdates' -and $null -ne $folder.Parent.Parent.Parent){
+        $stable=$folder.Parent.Parent.Parent
+        $cap=Join-Path $stable.FullName 'portable_launcher_v2.txt'
+        $marker=Join-Path $stable.FullName 'portable_mode.txt'
+        $payloadMarker=Join-Path $PSScriptRoot 'portable_mode.txt'
+        foreach($item in @($folder.FullName,$folder.Parent.FullName,$folder.Parent.Parent.FullName,$stable.FullName,$cap,$marker,$payloadMarker)){
+            try{$info=Get-Item -LiteralPath $item -Force}catch{exit 0}
+            if($info.Attributes -band [IO.FileAttributes]::ReparsePoint){exit 0}
+        }
+        if((Get-Item -LiteralPath $cap).Length -gt 128 -or (Get-Item -LiteralPath $marker).Length -gt 128 -or
+           (Get-Item -LiteralPath $payloadMarker).Length -gt 128 -or
+           (Get-Content -LiteralPath $cap -Raw).Trim() -cne 'ARSONMIX_PORTABLE_LAUNCHER_V2' -or
+           (Get-Content -LiteralPath $marker -Raw).Trim() -cne 'ARSONMIX_PORTABLE_WORKSPACE_V1' -or
+           (Get-Content -LiteralPath $payloadMarker -Raw).Trim() -cne 'ARSONMIX_PORTABLE_WORKSPACE_V1'){exit 0}
+        $portableStableRoot=$stable.FullName
+    }
+}
+$root=if($portable){Join-Path $portableStableRoot '.ArSonMixUpdates'}else{Join-Path $local 'ArSonMix\Updates'}
 $statePath=Join-Path $root 'state.json'
 # Consent is a usability acknowledgement, never a cryptographic trust boundary.
 # The worker independently verifies both published installers before execution.
@@ -598,7 +620,7 @@ function Test-PortableCacheLayout {
             if(-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $false}
         }
     }
-    foreach($path in @($statePath,($statePath+'.new'),$logPath)){
+    foreach($path in @($statePath,($statePath+'.new'),$logPath,(Join-Path $root 'prepared.json'))){
         if((Test-Path -LiteralPath $path) -and -not (Test-RegularUpdateFile $path)){return $false}
     }
     return $true
@@ -662,8 +684,12 @@ function Invoke-PortableUpdateCheck {
 
 # Extract only a publisher-authenticated archive under a live read-only lease.
 # This is preparation, NOT activation; no private workspace is copied or moved.
-function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourceSha) {
-    if($sourceSha -cnotmatch '^[a-f0-9]{40}$' -or (Test-Path -LiteralPath $target)){throw 'Unsafe portable payload target'}
+function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourceSha,[switch]$VerifyOnly) {
+    if($sourceSha -cnotmatch '^[a-f0-9]{40}$'){throw 'Unsafe portable payload identity'}
+    if($VerifyOnly){
+        if(-not (Test-Path -LiteralPath $target -PathType Container) -or
+           ((Get-Item -LiteralPath $target -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Unsafe cached portable payload'}
+    }elseif(Test-Path -LiteralPath $target){throw 'Unsafe portable payload target'}
     Add-Type -AssemblyName System.IO.Compression
     $lease.Position=0
     $zip=[IO.Compression.ZipArchive]::new($lease,[IO.Compression.ZipArchiveMode]::Read,$true)
@@ -710,14 +736,59 @@ function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourc
                                'ArSonMixAutoUpdate.ps1','UpdateVerifier/gh.exe','UpdateVerifier/verifier.json')){
             if(-not $fileNames.Contains($required)){throw 'Portable payload missing required file'}
         }
-        # Unique scratch directory is supplied by the caller, never the active app.
-        [IO.Directory]::CreateDirectory($target)|Out-Null
+        # Verification must also reject unexpected DLLs, plugins and directories;
+        # walk without following a reparse point and with the same count bound.
+        if($VerifyOnly){
+            $expectedDirs=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            foreach($member in $members){
+                if($member.directory){[void]$expectedDirs.Add($member.relative)}
+                $parts=$member.relative.Split('/')
+                for($i=1;$i -lt $parts.Length;$i++){[void]$expectedDirs.Add(($parts[0..($i-1)] -join '/'))}
+            }
+            $pending=[Collections.Generic.Queue[object]]::new()
+            $pending.Enqueue([pscustomobject]@{path=$target;relative=''})
+            $count=0;$actualFiles=0
+            while($pending.Count -gt 0){
+                $node=$pending.Dequeue()
+                foreach($item in Get-ChildItem -LiteralPath $node.path -Force){
+                    $count++
+                    if($count -gt 8192 -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Unsafe cached portable tree'}
+                    $relative=if($node.relative){$node.relative+'/'+$item.Name}else{$item.Name}
+                    if($item.PSIsContainer){
+                        if(-not $expectedDirs.Contains($relative)){throw 'Unexpected portable directory'}
+                        $pending.Enqueue([pscustomobject]@{path=$item.FullName;relative=$relative})
+                    }else{
+                        if(-not $fileNames.Contains($relative)){throw 'Unexpected portable file'}
+                        $actualFiles++
+                    }
+                }
+            }
+            if($actualFiles -ne $fileNames.Count){throw 'Cached portable file count mismatch'}
+        }else{
+            # Unique scratch directory is supplied by the caller, never the active app.
+            [IO.Directory]::CreateDirectory($target)|Out-Null
+        }
         $prefix=[IO.Path]::GetFullPath($target).TrimEnd('\')+'\'
         $buffer=New-Object byte[] 65536
         foreach($member in $members){
             $dest=[IO.Path]::GetFullPath((Join-Path $target $member.relative))
             if(-not $dest.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){throw 'Portable member escapes payload'}
-            if($member.directory){[IO.Directory]::CreateDirectory($dest)|Out-Null;continue}
+            if($member.directory){
+                if($VerifyOnly){
+                    if(-not (Test-Path -LiteralPath $dest -PathType Container)){throw 'Cached portable directory missing'}
+                }else{[IO.Directory]::CreateDirectory($dest)|Out-Null}
+                continue
+            }
+            if($VerifyOnly){
+                if(-not (Test-RegularUpdateFile $dest) -or (Get-Item -LiteralPath $dest).Length -ne $member.entry.Length){throw 'Cached portable member size/type mismatch'}
+                $algorithm=[Security.Cryptography.SHA256]::Create()
+                $entryStream=$member.entry.Open()
+                try{
+                    $expectedHash=[BitConverter]::ToString($algorithm.ComputeHash($entryStream)).Replace('-','').ToLowerInvariant()
+                }finally{$entryStream.Dispose();$algorithm.Dispose()}
+                if((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedHash){throw 'Cached portable member hash mismatch'}
+                continue
+            }
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($dest))|Out-Null
             $inputStream=$member.entry.Open()
             try{
@@ -745,6 +816,25 @@ function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourc
         }
     }finally{$zip.Dispose()}
 }
+# Write an independently replaceable record; an interrupted write leaves the
+# old record or no record, never a partially written JSON selected for launch.
+function Write-PortableReceipt([string]$path,[object]$receipt){
+    $parent=[IO.Path]::GetDirectoryName($path)
+    if(-not (Test-Path -LiteralPath $parent -PathType Container) -or
+       ((Get-Item -LiteralPath $parent -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Unsafe portable receipt parent'}
+    if((Test-Path -LiteralPath $path) -and -not (Test-RegularUpdateFile $path)){throw 'Unsafe portable receipt'}
+    $temp=Join-Path $parent ('.receipt-'+[guid]::NewGuid().ToString('N'))
+    try{
+        $bytes=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $receipt -Depth 6 -Compress))
+        $stream=[IO.File]::Open($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+        try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
+        if(Test-Path -LiteralPath $path){[IO.File]::Replace($temp,$path,$null)}
+        else{[IO.File]::Move($temp,$path)}
+    }finally{
+        if(Test-RegularUpdateFile $temp){Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue}
+    }
+}
+
 function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
     if($null -eq $owner -or -not $owner.WaitForExit(120000)){return}
     # A replacement portable session may have started while the owner exited.
@@ -767,9 +857,8 @@ function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
     if(-not (Test-RegularUpdateFile $zipPath)){return}
     $parent=Join-Path $root 'payloads'
     $target=Join-Path $parent ($sha+'-'+([string]$asset.digest).Substring(7))
-    # Existing payloads are not trusted or overwritten; activation must
-    # independently validate the archive and every payload file in a future step.
-    if(Test-Path -LiteralPath $target){return}
+    # A previous interrupted attempt may have published the directory but not
+    # its receipt. Re-authenticate and compare every byte; never overwrite it.
     $lease=[IO.File]::Open($zipPath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     $scratch=Join-Path $parent ('.prepare-'+[guid]::NewGuid().ToString('N'))
     try{
@@ -777,9 +866,18 @@ function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
         Assert-InstallerAttestation $zipPath $tag $sha -PortableZip
         [IO.Directory]::CreateDirectory($parent)|Out-Null
         if(-not (Test-PortableCacheLayout)){throw 'Unsafe portable payload cache'}
-        Expand-PortablePayload $lease $scratch $sha
-        # Same-volume directory rename is the only publication boundary.
-        [IO.Directory]::Move($scratch,$target)
+        if(Test-Path -LiteralPath $target){
+            Expand-PortablePayload $lease $target $sha -VerifyOnly
+        }else{
+            Expand-PortablePayload $lease $scratch $sha
+            # Same-volume directory rename is the only publication boundary.
+            [IO.Directory]::Move($scratch,$target)
+        }
+        # Receipt is observability, not permission to execute. It only records
+        # that the exact ZIP and payload were checked within this worker.
+        $receipt=[pscustomobject]@{schema='arsonmix.portable-prepared.v1';tag=$tag;sourceCommit=$sha;
+            digest=[string]$asset.digest;bytes=[long]$asset.size;previousSha=[string]$build.sourceCommit}
+        Write-PortableReceipt (Join-Path $root 'prepared.json') $receipt
         Log-Result ('PORTABLE_PAYLOAD_PREPARED '+$tag)
     }finally{
         $lease.Dispose()
@@ -1356,6 +1454,28 @@ if($PolicySelfTest) {
             }elseif(-not $rejected){throw "Unsafe portable payload accepted: $case"}
         }
         if(Test-Path -LiteralPath (Join-Path $fixture 'escape.txt')){throw 'ZIP traversal escaped staging'}
+        $valid=Join-Path $fixture 'valid'
+        $zipFile=Join-Path $fixture 'valid.zip'
+        $candidateFile=Join-Path $valid 'UpdateVerifier/gh.exe'
+        foreach($change in @('clean','same-size-tamper','extra-file','missing-file','extra-directory')){
+            switch($change){
+                'same-size-tamper' {[IO.File]::WriteAllBytes($candidateFile,[byte[]](9))}
+                'extra-file' {[IO.File]::WriteAllBytes($candidateFile,[byte[]](2));[IO.File]::WriteAllBytes((Join-Path $valid 'foreign.dll'),[byte[]](7))}
+                'missing-file' {Remove-Item -LiteralPath (Join-Path $valid 'foreign.dll');Remove-Item -LiteralPath $candidateFile}
+                'extra-directory' {[IO.File]::WriteAllBytes($candidateFile,[byte[]](2));[IO.Directory]::CreateDirectory((Join-Path $valid 'foreign'))|Out-Null}
+            }
+            $stream=[IO.File]::OpenRead($zipFile);$rejected=$false
+            try{Expand-PortablePayload $stream $valid $sha -VerifyOnly}catch{$rejected=$true}finally{$stream.Dispose()}
+            if(($change -eq 'clean' -and $rejected) -or ($change -ne 'clean' -and -not $rejected)){throw "Portable cached payload validation failed: $change"}
+        }
+        $receiptPath=Join-Path $fixture 'prepared.json'
+        Write-PortableReceipt $receiptPath ([pscustomobject]@{sourceCommit=$sha;tag='v0.5.0-alpha.8'})
+        # Simulate an abandoned temp from a crash; only canonical name is read.
+        [IO.File]::WriteAllText((Join-Path $fixture '.receipt-abandoned'),'partial')
+        if((Read-Json $receiptPath).sourceCommit -cne $sha){throw 'Initial portable receipt mismatch'}
+        Write-PortableReceipt $receiptPath ([pscustomobject]@{sourceCommit=('b'*40);tag='v0.5.0-alpha.9'})
+        if((Read-Json $receiptPath).sourceCommit -cne ('b'*40)){throw 'Portable receipt replacement mismatch'}
+        Write-Output 'ARSONMIX_PORTABLE_CACHE_REVALIDATION_PASS'
     }finally{Remove-Item -LiteralPath $fixture -Recurse -Force}
     Write-Output 'ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS'
 

@@ -30,8 +30,51 @@ struct PortableWorkspace final
         return executableFolder.getChildFile (marker).existsAsFile();
     }
 
+    // Managed portable layout is opt-in at the stable root. Legacy loose
+    // packages and FIELD builds still use their existing adjacent Studio.
+    static bool hasManagedPayloadShape (const juce::File& folder)
+    {
+        const auto key=folder.getFileName();
+        return folder.getParentDirectory().getFileName()=="payloads" &&
+            folder.getParentDirectory().getParentDirectory().getFileName()==".ArSonMixUpdates" &&
+            key.length()==105 && key[40]=='-' &&
+            key.substring(0,40).containsOnly("0123456789abcdef") &&
+            key.substring(41).containsOnly("0123456789abcdef");
+    }
+
+    static juce::File portableRootFor (const juce::File& folder)
+    {
+        if(!hasManagedPayloadShape(folder))return folder;
+        const auto stable=folder.getParentDirectory().getParentDirectory().getParentDirectory();
+        const auto capability=stable.getChildFile("portable_launcher_v2.txt");
+        const auto rootMarker=stable.getChildFile(marker);
+        const auto payloadMarker=folder.getChildFile(marker);
+        juce::String content,rootMode,payloadMode;
+        if(!BoundedDataInput::managedPath(stable,folder) ||
+           !BoundedDataInput::managedPath(stable,capability) ||
+           !BoundedDataInput::managedPath(stable,rootMarker) ||
+           !BoundedDataInput::managedPath(folder,payloadMarker) ||
+           !BoundedDataInput::text(capability,128,content) ||
+           content.trim()!="ARSONMIX_PORTABLE_LAUNCHER_V2" ||
+           !BoundedDataInput::text(rootMarker,128,rootMode) ||
+           rootMode.trim()!="ARSONMIX_PORTABLE_WORKSPACE_V1" ||
+           !BoundedDataInput::text(payloadMarker,128,payloadMode) ||
+           payloadMode.trim()!="ARSONMIX_PORTABLE_WORKSPACE_V1")return {};
+        return stable;
+    }
+
+    static juce::File updateRootFor (const juce::File& folder)
+    {
+        const auto stable=portableRootFor(folder);
+        return stable==juce::File()?juce::File():stable.getChildFile(".ArSonMixUpdates");
+    }
+
     static juce::File dataRootFor (const juce::File& executableFolder)
     {
+        if(hasManagedPayloadShape(executableFolder)){
+            const auto stable=portableRootFor(executableFolder);
+            return stable==juce::File()?juce::File():stable.getChildFile ("Studio");
+        }
         return isPortableAt (executableFolder)
             ? executableFolder.getChildFile ("Studio")
             : installedDataRoot();
@@ -48,8 +91,10 @@ struct PortableWorkspace final
 
     static juce::File browserDataRootFor (const juce::File& executableFolder)
     {
-        if (isPortableAt (executableFolder))
-            return dataRootFor (executableFolder).getChildFile ("Cache/WebView2");
+        if (isPortableAt (executableFolder) || hasManagedPayloadShape(executableFolder)){
+            const auto data=dataRootFor(executableFolder);
+            return data==juce::File()?juce::File():data.getChildFile ("Cache/WebView2");
+        }
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
             .getChildFile ("AR-MIX-Studio-WebView2");
     }

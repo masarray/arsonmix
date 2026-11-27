@@ -13097,6 +13097,15 @@ public:
     void initialise (const juce::String& commandLine) override
     {
         const auto args=getCommandLineParameterArray();
+        const auto appFolder=armix::storage::PortableWorkspace::executableDirectory();
+        if(armix::storage::PortableWorkspace::hasManagedPayloadShape(appFolder) &&
+           armix::storage::PortableWorkspace::portableRootFor(appFolder)==juce::File()){
+            // Unqualified staged binaries must never start with an empty or
+            // unintended workspace. No audio, WebView or session IO yet.
+            setApplicationReturnValue(1);
+            quit();
+            return;
+        }
         if (armix::vst::ScanIsolation::isWorker(args)) {
             scanWorkerMode_=true;
 #if defined(_WIN32)
@@ -13376,8 +13385,9 @@ private:
                 response->setProperty("manualAllowed",false);
             }
         }
-        const auto folder=portable?installDir.getChildFile(".ArSonMixUpdates"):
+        const auto folder=portable?armix::storage::PortableWorkspace::updateRootFor(installDir):
             juce::File(local).getChildFile("ArSonMix").getChildFile("Updates");
+        if(folder==juce::File())return juce::var(response.get());
         const auto stateFile=folder.getChildFile("state.json");
         const auto approvalFile=folder.getChildFile("approved.json");
         const auto logFile=folder.getChildFile("last-result.txt");

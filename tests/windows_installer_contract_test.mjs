@@ -714,3 +714,15 @@ test('Portable preparation is post-exit, authenticated under a lease, isolated a
   assert.match(u,/Portable file\/directory collision/);
   assert.match(u,/ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS/);
 });
+
+
+test('cached portable payload cannot be reused without exact archive member revalidation',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(u,/Expand-PortablePayload \$lease \$target \$sha -VerifyOnly/);
+  assert.match(u,/Cached portable member hash mismatch/);
+  assert.match(u,/Unexpected portable file/);
+  assert.match(u,/Unexpected portable directory/);
+  assert.match(u,/Unsafe cached portable tree/);
+  assert.match(u,/Write-PortableReceipt \(Join-Path \$root 'prepared.json'\)/);
+  assert.match(u,/ARSONMIX_PORTABLE_CACHE_REVALIDATION_PASS/);
+});
