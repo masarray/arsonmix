@@ -557,7 +557,7 @@ jobs:
   operator-ux-fat:
     name: Operator UX real Chromium / native-assembled GUI (5 viewports)
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107' }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/approved-operator-ux-20261107' || github.head_ref == 'perf/wire-gain-readback-index-20261128') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -573,6 +573,11 @@ jobs:
         run: |
           python tests/approved_operator_ux_chromium_fat.py
           python tests/approved_operator_ux_native_identity_smoke.py
+      - name: Verify actual WIRE gain readback and public narrow-viewport gesture
+        if: ${{ github.head_ref == 'perf/wire-gain-readback-index-20261128' }}
+        run: |
+          python tests/approved_native_wire_gain_smoke.py
+          python tests/approved_operator_ux_chromium_fat.py --public
       - name: Retain rendered evidence across viewport sizes
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
