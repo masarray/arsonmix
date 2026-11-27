@@ -3517,7 +3517,8 @@
         const pinChoice=side==="output"?candidates.find(x=>x.left===pin.port||x.right===pin.port):null;
         const blocked=side==="output"&&!pinChoice;
         button.title=row.name+" / "+pin.label+" · "+(!row.editable?(row.state||"Read-only"):
-          blocked?"Unavailable pair · reserved, disabled or incomplete":busy?"Waiting for native readback":"Select, then Apply");
+          blocked?"Unavailable pair · reserved, disabled or incomplete":busy?"Waiting for native readback":
+          side==="output"&&!row.bus?"Select / clear pair, then Apply":"Select, then Apply");
         if(side==="output")button.dataset.unavailable=String(blocked||!row.editable);
         button.disabled=busy||!row.editable||blocked;
         button.onclick=()=>{
@@ -6077,6 +6078,7 @@
       extraInventoryRetryAt=performance.now()+5000;
       if(inventory.error)extraError=String(inventory.error);
       paintAdditionalOutput();
+      paintPhysicalOutputs(hardware);
     });
     backend.addEventListener("arMixSecondaryOutputAck",ack=>{
       if(!extraPending||ack?.requestId!==extraPending.requestId||ack.action!==extraPending.action)return;
@@ -6107,6 +6109,7 @@
         settleAdditionalOutput(extraLive);
       }
       paintAdditionalOutput();
+      paintPhysicalOutputs(hardware);
     });
     backend.addEventListener("arMixStatus", live=>{
       const previous=protocol.secondaryOutputView(hardware,extraLive);

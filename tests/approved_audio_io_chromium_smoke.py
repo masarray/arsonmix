@@ -277,9 +277,6 @@ def verify_bus_remap(page,out):
     main=rows.nth(0);monitor=rows.nth(1)
     assert main.get_by_label("MAIN assignment",exact=True).is_enabled()
     assert main.locator(".armix-patch-cell").nth(0).get_attribute("data-mark")=="L"
-    state["device"]["outputArmed"]=False
-    state["operatorOutputMuted"]=True
-    emit(page,"arMixConsoleSnapshot",state)
     select=main.get_by_label("MAIN assignment",exact=True)
     choices=select.locator("option").all_text_contents()
     assert len(choices)==2 and any(x.startswith("OUT 5/6") for x in choices),choices
@@ -294,13 +291,13 @@ def verify_bus_remap(page,out):
     dialog.get_by_role("button",name="Cancel",exact=True).click()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
     apply.click()
-    state["device"]["outputArmed"]=True
-    state["operatorOutputMuted"]=False
+    state["device"]["outputArmed"]=False
+    state["operatorOutputMuted"]=True
     emit(page,"arMixConsoleSnapshot",state)
     dialog.get_by_role("button",name="Remap output",exact=True).click()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
-    state["device"]["outputArmed"]=False
-    state["operatorOutputMuted"]=True
+    state["device"]["outputArmed"]=True
+    state["operatorOutputMuted"]=False
     emit(page,"arMixConsoleSnapshot",state)
     select=main.get_by_label("MAIN assignment",exact=True)
     select.select_option(label=next(x for x in select.locator("option").all_text_contents() if x.startswith("OUT 5/6")))

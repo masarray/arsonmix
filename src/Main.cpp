@@ -3008,6 +3008,9 @@ private:
         if(mapping.operation=="PANIC_MUTE") {
             // PANIC is explicit user intent, unlike device stop/restart.
             operatorOutputMuted_=true;
+            pendingVendorStream_.reset();
+            cancelSecondaryContinuity();
+            cancelStartupSecondaryPreparation();
             engine_.setMonitorEnabled(false);
             engine_.cancelAsioResetMonitorIntent();
             autoMainEpoch_=0;

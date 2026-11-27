@@ -241,3 +241,17 @@ test('nested device transaction permits explicit STOP but rejects ARM with nativ
  assert.match(monitor,/if \(fault.isEmpty\(\)\) \{\s*operatorOutputMuted_=!arm/);
  assert.match(monitor,/arMixAudioArmAck/);
 });
+
+test('smart bus remap uses native temporary stop and verified continuation, not an operator latch on success',()=>{
+ const p=main.split('if(action=="routingPhysicalBusOutput")')[1].split('if(action=="routingExternalOutput")')[0];
+ assert.match(p,/const bool resumeMain=engine_\.isMonitorEnabled\(\)&&!operatorOutputMuted_/);
+ assert.match(p,/engine_\.captureSecondaryResumeIntent\(\)/);
+ assert.ok(p.indexOf('engine_.setMonitorEnabled(false)')<p.indexOf('engine_.patchPhysicalBusOutput('));
+ assert.ok(p.indexOf('engine_.disarmSecondaryOutput()')<p.indexOf('engine_.patchPhysicalBusOutput('));
+ assert.match(p,/if\(resumeMain\)requestAutomaticMain\(false\)/);
+ assert.match(p,/if\(stream\)pendingVendorStream_=PendingVendorStream/);
+ assert.match(p,/operatorOutputMuted_=true;\s*diagnostics_\.record\("OUTPUT_MUTE","ON \| bus remap rejected"\)/);
+ const panic=main.split('if(mapping.operation=="PANIC_MUTE")')[1].split('// Existing control-thread guards')[0];
+ assert.match(panic,/pendingVendorStream_\.reset\(\)/);
+ assert.match(panic,/cancelStartupSecondaryPreparation\(\)/);
+});
