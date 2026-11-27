@@ -556,14 +556,28 @@ def verify_additional_output(page,out):
     assert page.locator('button[data-audio-tab="device"]').get_attribute("aria-selected")=="true"
     live["directRouteAuthorized"]=True
     emit(page,"arMixStatus",live)
+    # Owner field regression: a8b0ad3 opened the generic JUCE selector
+    # instead of the active driver's own control panel. A driver without
+    # panel capability must not expose or dispatch the action.
+    page.locator('button[data-audio-tab="device"]').click()
+    driver_panel=page.locator("[data-audio-driver-panel]")
+    inventory["active"]["hasControlPanel"]=False
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    assert driver_panel.is_hidden()
+    before=page.evaluate("()=>window.__actions.filter(a=>['audioDriverPanel','audioSetup','audioDeviceApply'].includes(a.action)).length")
+    driver_panel.evaluate("el=>el.click()") # stale queued DOM click, not a visible operator action
+    assert page.evaluate("()=>window.__actions.filter(a=>['audioDriverPanel','audioSetup','audioDeviceApply'].includes(a.action)).length")==before
     inventory["active"]["hasControlPanel"]=True
     emit(page,"arMixAudioDeviceInventory",inventory)
-    page.locator('button[data-audio-tab="device"]').click()
-    page.locator("[data-audio-driver-panel]").click()
-    req=page.evaluate("()=>window.__actions.filter(a=>a.action==='audioDriverPanel').at(-1)")
-    assert req["driver"]==inventory["active"]["playbackDevice"]
-    assert req["deviceGeneration"]==inventory["active"]["deviceGeneration"]
-    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='audioSetup').length")==0
+    assert driver_panel.is_visible() and driver_panel.is_enabled()
+    driver_panel.click()
+    dispatched=page.evaluate("()=>window.__actions.filter(a=>['audioDriverPanel','audioSetup','audioDeviceApply'].includes(a.action))")
+    assert len(dispatched)==before+1,dispatched
+    assert dispatched[-1]=={"action":"audioDriverPanel","driver":inventory["active"]["playbackDevice"],
+        "deviceGeneration":inventory["active"]["deviceGeneration"]},dispatched[-1]
+    assert driver_panel.is_visible(),"Vendor panel action must not close Audio I/O"
+    assert not page.evaluate("()=>window.__actions.some(a=>a.action==='audioSetup')"),"Never substitute JUCE Audio Device Selector"
+    print("ASIO_VENDOR_PANEL_DIRECT_DISPATCH_PASS (mock transport; physical driver HWND not tested)")
     assert not errors,errors
 
 
