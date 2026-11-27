@@ -84,6 +84,26 @@ inline void run(){
     const std::array<AutoDuckerSource,2> duplicate{{{7,{a.data(),nullptr}},{7,{a.data(),nullptr}}}};
     loss.processSources(x.data(),y.data(),sr,duplicate);
     check(!loss.active()&&loss.gain()>.99f,"duplicate rejected");
+    // Sparse 32-source roster must be PCM-identical to the one available
+    // source, including release and stable-ID state after removing a key.
+    AutoDuckerCore sparse,single;check(sparse.prepare(sr)&&single.prepare(sr),"sparse prepare");
+    std::array<AutoDuckerSource,32> sparseKeys{};
+    for(std::size_t k=0;k<sparseKeys.size();++k)sparseKeys[k].id=k+1;
+    sparseKeys[18].key={a.data(),nullptr};
+    const std::array<AutoDuckerSource,1> singleKey{{{19,{a.data(),nullptr}}}};
+    std::fill(x.begin(),x.end(),1.f);std::fill(y.begin(),y.end(),-.5f);
+    l=x;r=y;
+    sparse.processSources(x.data(),y.data(),sr,sparseKeys);
+    single.processSources(l.data(),r.data(),sr,singleKey);
+    check(x==l&&y==r,"sparse 32 key PCM parity");
+    sparse.processSources(x.data()+sr,y.data()+sr,2*sr,{});
+    single.processSources(l.data()+sr,r.data()+sr,2*sr,{});
+    check(x==l&&y==r&&sparse.gain()==1.f,"sparse release and idle unity parity");
+    // After reset and without any available trigger, untouched audio is the
+    // identity path, including signed zero.
+    sparse.reset();float u[2]={-.0f,.25f},v[2]={.125f,-.75f};
+    sparse.processSources(u,v,2,{});
+    check(std::signbit(u[0])&&u[1]==.25f&&v[0]==.125f&&v[1]==-.75f,"idle identity");
     AutoDuckerCore::Prepared p;AutoDuckerSettings invalid;
     invalid.depthDb=-1;
     check(!AutoDuckerCore::prepareSettings(48000,invalid,p),"negative depth rejected");

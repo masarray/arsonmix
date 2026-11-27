@@ -4,3 +4,6 @@ Auto Ducker: landscape two-layer LED frame + quantized fill, numeric LCD, shared
 
 ## Shared hardware chrome parity and UI budget
 Power and Close inherit only the common contextual button skin; power dimensions, glyph typography and state filters are normalized centrally. Owned FX Chromium verifies actual computed PEQ/GEQ31/Auto Ducker state styles, icon and geometry plus native popup open, close, power and rekey. Auto Ducker uses one ResizeObserver, updates only changed quantized LED steps, indexes channel names once per refresh and skips idle offline state polling. No PCM behavior is changed by this UI optimization.
+
+## Native callback budget
+No-key exact-unity path returns without touching PCM, but in-progress release always follows the original sample recurrence. Available detector indices are resolved once per callback, and detector reconciliation only scans current IDs. Seqlock telemetry uses an explicit zero sentinel; two selected sources now require 7 source-field atomic stores rather than 96, excluding the unchanged gain/phase/serial fields. The reader value-initializes the frame and never exposes stale tail cells. Added sparse 32-key PCM parity, idle identity and full/short/empty/full meter publication regression. These are source-level work reductions, not measured CPU benchmarks.

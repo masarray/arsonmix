@@ -100,11 +100,15 @@ public:
         meterSerial_.fetch_add(1,std::memory_order_acq_rel); // odd while writing
         meterGain_.store(core_.gain(),std::memory_order_relaxed);
         meterPhase_.store(core_.phase(),std::memory_order_relaxed);
-        for(std::size_t i=0;i<keys.size();++i){
-            meterIds_[i].store(i<count?keys[i].id:0,std::memory_order_relaxed);
-            meterPower_[i].store(i<count?core_.sourcePower(i):0.f,std::memory_order_relaxed);
-            meterAvailable_[i].store(i<count&&keys[i].key.valid(),std::memory_order_relaxed);
+        for(std::size_t i=0;i<count;++i){
+            meterIds_[i].store(keys[i].id,std::memory_order_relaxed);
+            meterPower_[i].store(core_.sourcePower(i),std::memory_order_relaxed);
+            meterAvailable_[i].store(keys[i].key.valid(),std::memory_order_relaxed);
         }
+        // The seqlock-protected zero sentinel terminates the current frame.
+        // Tail cells are deliberately not published or read; Meter value
+        // initialization guarantees a zero/false tail in every readback.
+        if(count<keys.size())meterIds_[count].store(0,std::memory_order_relaxed);
         meterSerial_.fetch_add(1,std::memory_order_release);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
@@ -152,6 +156,7 @@ public:
             frame.phase=meterPhase_.load(std::memory_order_relaxed);
             for(std::size_t i=0;i<frame.ids.size();++i){
                 frame.ids[i]=meterIds_[i].load(std::memory_order_relaxed);
+                if(!frame.ids[i])break;
                 frame.power[i]=meterPower_[i].load(std::memory_order_relaxed);
                 frame.available[i]=meterAvailable_[i].load(std::memory_order_relaxed);
             }

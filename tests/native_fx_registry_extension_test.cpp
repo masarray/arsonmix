@@ -575,6 +575,22 @@ static void verifyAutoDuckerProcessor() {
     D::Meter meter{};assert(other->readMeter(meter)&&meter.serial>0);
     assert(meter.ids[0]==7&&meter.available[0]&&meter.ids[1]==9007199254740993ULL&&!meter.available[1]);
     assert(meter.gain<=1.f&&meter.gain>=0.f&&other->stateSnapshotQuiescent());
+    // Exercise full -> short -> empty -> full publication without exposing
+    // stale tail IDs, powers or availability from an earlier graph lease.
+    std::array<std::uint64_t,32> full{};
+    for(std::size_t k=0;k<full.size();++k)full[k]=k+1;
+    const auto verifyFrame=[&](std::span<const std::uint64_t> ids){
+        armix::builtin_fx::AutoDuckerSelectionScope selection(ids);
+        armix::mixer::AutoDuckerKeyScope scope({},99,128,entries);
+        other->processBlock(pcm,midi);
+        assert(other->readMeter(meter));
+        for(std::size_t k=0;k<meter.ids.size();++k){
+            assert(meter.ids[k]==(k<ids.size()?ids[k]:0));
+            if(k>=ids.size())assert(meter.power[k]==0.f&&!meter.available[k]);
+        }
+    };
+    verifyFrame(full);verifyFrame(std::span<const std::uint64_t>(full).subspan(6,1));
+    verifyFrame({});verifyFrame(full);
 }
 int main() {
     verifyAutoDuckerProcessor();

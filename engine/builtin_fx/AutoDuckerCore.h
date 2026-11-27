@@ -60,14 +60,14 @@ public:
         // may enter this audio-owned method (control mailbox contract).
         p_=p;hold_=std::min(hold_,p_.hold);
     }
-    void clearKey() noexcept {detectors_={};hold_=0;active_=false;}
+    void clearKey() noexcept {detectors_={};detectorCount_=0;hold_=0;active_=false;}
     void reset() noexcept {clearKey();gain_=1;}
     float gain() const noexcept {return static_cast<float>(gain_);}
     bool active() const noexcept {return active_;}
     float sourcePower(std::size_t k) const noexcept {return k<detectors_.size()?detectors_[k].power:0.f;}
     int phase() const noexcept {
         if(!active_)return gain_<.99999?4:0; // release / ready
-        float maximum=0;for(const auto& d:detectors_)maximum=std::max(maximum,d.power);
+        float maximum=0;for(std::size_t k=0;k<detectorCount_;++k)maximum=std::max(maximum,detectors_[k].power);
         if(maximum<p_.offPower)return 3; // hold
         return std::abs(gain_-p_.floor)>1.e-4?1:2; // attack / duck
     }
@@ -86,29 +86,37 @@ public:
         }
         // Preserve detector state across source list changes by stable ID.
         // Reconciliation is only on changed identity, not every sample.
-        bool changed=false;
-        for(std::size_t k=0;k<maxSources;++k)
-            if(detectors_[k].id!=(k<keys.size()?keys[k].id:0)){changed=true;break;}
+        bool changed=detectorCount_!=keys.size();
+        for(std::size_t k=0;!changed&&k<keys.size();++k)
+            if(detectors_[k].id!=keys[k].id){changed=true;break;}
         if(changed){
             std::array<Detector,maxSources> next{};
             for(std::size_t k=0;k<keys.size();++k){
                 next[k].id=keys[k].id;
-                for(const auto& old:detectors_)if(old.id==next[k].id){next[k]=old;break;}
+                for(std::size_t j=0;j<detectorCount_;++j)
+                    if(detectors_[j].id==next[k].id){next[k]=detectors_[j];break;}
             }
-            detectors_=next;
+            detectors_=next;detectorCount_=keys.size();
         }
-        bool available=false;
+        // Resolve missing sources once per callback. A disconnected 32-key
+        // selection must not force 32 validity branches for every sample.
+        std::array<std::size_t,maxSources> availableIndices;
+        std::size_t availableCount=0;
         for(std::size_t k=0;k<keys.size();++k){
-            if(keys[k].key.valid())available=true;
+            if(keys[k].key.valid())availableIndices[availableCount++]=k;
             else {detectors_[k]={};detectors_[k].id=keys[k].id;}
         }
-        if(!available){hold_=0;active_=false;}
+        if(!availableCount){
+            hold_=0;active_=false;
+            // Exact unity is identity. Never short-circuit an audible release.
+            if(gain_==1.)return;
+        }
         for(int i=0;i<frames;++i){
             float maximum=0;
             bool finiteSource=false;
-            for(std::size_t k=0;k<keys.size();++k){
+            for(std::size_t j=0;j<availableCount;++j){
+                const auto k=availableIndices[j];
                 const auto& key=keys[k].key;
-                if(!key.valid())continue;
                 auto& d=detectors_[k];
                 const float rawL=key.left[i],rawR=key.right?key.right[i]:rawL;
                 const bool finiteL=std::isfinite(rawL),finiteR=std::isfinite(rawR);
@@ -153,6 +161,7 @@ private:
     }
     Prepared p_{};
     std::array<Detector,maxSources> detectors_{};
+    std::size_t detectorCount_=0;
     double gain_=1; // avoid float convergence stall at high rates/long release
     std::uint32_t hold_=0;
     bool ready_=false,active_=false;
