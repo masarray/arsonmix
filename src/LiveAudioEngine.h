@@ -162,8 +162,13 @@ public:
                                     : deviceManager_.getCurrentAudioDevice();
     }
 
-    juce::String start (const juce::XmlElement* savedSettings = nullptr)
+    juce::String start (const juce::XmlElement* savedSettings = nullptr,bool retrySavedAsio=false)
     {
+        if(!retrySavedAsio)startupAsioRetryIdentity_.reset();
+        else if(!startupAsioRetryIdentity_||!attached_||directRouteAuthorized()||
+                hasRetainedNativeSession()||dryRoutingLab_.ready()||
+                !savedSettings||savedSettings->getStringAttribute("deviceType")!="ASIO")
+            return "Saved ASIO cold-start retry is no longer admissible";
         // No saved physical INPUT PATCH is automatically trusted on launch.
         // A verified device starts with one native 10CH/4AUX SILENT topology;
         // the user must explicitly patch inputs and arm OUTPUT separately.
@@ -176,8 +181,10 @@ public:
         // AUDIO SETUP can still select a replacement and JUCE will call the
         // already-registered host's aboutToStart() on the new device.
         // No RT worker, no second callback registration on successful start.
-        deviceManager_.addAudioCallback (this);
-        attached_ = true;
+        if(!attached_) {
+            deviceManager_.addAudioCallback (this);
+            attached_ = true;
+        }
         const bool savedRoute = savedSettings != nullptr
             && savedSettings->hasTagName ("DEVICESETUP");
         const auto expectedBackend = savedRoute
@@ -196,6 +203,10 @@ public:
                 std::wstring (name.toWideCharPointer()));
             if (!identity.registration.ok())
             {
+                if(retrySavedAsio) {
+                    startupAsioRetryIdentity_.reset();
+                    return "Saved ASIO registration no longer verified; use AUDIO SETUP";
+                }
                 // JUCE requires initialise() to establish its default minimum
                 // channel requirements for AUDIO SETUP, even if this saved ASIO
                 // route must never be opened. Only initialise a transient
@@ -211,6 +222,10 @@ public:
                         identity.registration.error));
             }
             savedAsioPreflight = identity.registration.identity;
+            if(retrySavedAsio&&!startupAsioRetryIdentity_->sameDriverClass(*savedAsioPreflight)) {
+                startupAsioRetryIdentity_.reset();
+                return "Saved ASIO driver class changed; use AUDIO SETUP";
+            }
         }
         // Saved explicit device choice MUST NOT be silently replaced by
         // JUCE's selectDefaultDeviceOnFailure path (e.g. ASIO -> WASAPI).
@@ -264,7 +279,16 @@ public:
             } else if(outputError.isNotEmpty())
                 error+=" | Output-only startup: "+outputError;
         }
-        if (error.isNotEmpty()) return error;
+        if (error.isNotEmpty()) {
+            // Retry only a previously verified registration that failed to open.
+            // Rejected registrations and post-open identity mismatches are terminal.
+            if(savedAsioPreflight) {
+                startupAsioRetryIdentity_=*savedAsioPreflight;
+                deviceManager_.closeAudioDevice();
+            }
+            return error;
+        }
+        startupAsioRetryIdentity_.reset();
         const auto* active = deviceManager_.getCurrentAudioDevice();
         if (active == nullptr)
             return "Selected audio backend has no open device";
@@ -309,8 +333,10 @@ public:
         return {};
     }
 
+    bool savedAsioStartupRetryAvailable() const noexcept {return startupAsioRetryIdentity_.has_value();}
     void stop()
     {
+        startupAsioRetryIdentity_.reset();
         dryRoutingLab_.disable();
         directFence_.suspend();
         asioPinnedRegistration_ = {};
@@ -3827,6 +3853,7 @@ private:
     // Control-thread only; retain full class identity for exact comparison,
     // publish correlation HASH only. Never read registry in audio callback.
     armix::device::AsioRegistrationPolicy::Identity asioPinnedRegistration_;
+    std::optional<armix::device::AsioRegistrationPolicy::Identity> startupAsioRetryIdentity_;
     juce::String asioRegistrationScope_ {"NONE"};
     std::atomic<std::uint64_t> directSuppressedFrames_ {0};
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics

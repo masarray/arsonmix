@@ -138,3 +138,20 @@ test('cold MON preparation is separate from ARM and waits for verified restored 
  assert.match(main,/cancelSecondaryContinuity\(\);\s*cancelStartupSecondaryPreparation\(\)/);
  assert.match(main,/serviceSecondaryContinuity\(\);\s*serviceStartupSecondaryPreparation\(\)/);
 });
+
+test('saved ASIO cold-open retries are bounded, exact-registration and single-callback',()=>{
+ const s=main.split('void serviceStartupAsioRetry()')[1].split('// CONTROL only. A failed disk write')[0];
+ assert.match(s,/engine_\.start\(&settings,true\)/);
+ assert.match(s,/startupAsioRetry_\.attempts\(\)>=3/);
+ assert.match(s,/generation!=startupAsioRetry_\.generation\(\)/);
+ assert.match(s,/!engine_\.savedAsioStartupRetryAvailable\(\)/);
+ assert.match(engine,/if\(!attached_\)\s*\{\s*deviceManager_\.addAudioCallback \(this\)/);
+ assert.match(engine,/startupAsioRetryIdentity_->sameDriverClass\(\*savedAsioPreflight\)/);
+ assert.match(main,/!mixerSessionStartupInspected_ && !pendingStartupAsioSettings_/);
+});
+test('last saved MAIN mute and previous-generation recovery remain muted after restore',()=>{
+ const s=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
+ assert.match(s,/const bool holdMain=usedPrevious\|\|\(doc.resumeMain.has_value\(\)&&!doc.resumeMain.value\(\)\)/);
+ assert.match(s,/if\(holdMain\)\s*\{\s*operatorOutputMuted_=true;\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
+ assert.match(main,/retainedOfflineFxActive_ \|\| mixerSessionRecoveryPending_\)return/);
+});

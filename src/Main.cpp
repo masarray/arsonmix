@@ -955,6 +955,8 @@ private:
     std::uint64_t workspaceGeneration_=0; // message-thread committed workspace identity
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
     bool mixerSessionStartupInspected_=false;
+    std::unique_ptr<juce::XmlElement> pendingStartupAsioSettings_;
+    armix::device::AudioContinuityRetry startupAsioRetry_;
     bool sessionLifecycleShuttingDown_=false;
     bool mixerSessionRecoveryPending_=false;
     bool runtimeFxFaultNoticeSent_=false;
@@ -4058,7 +4060,7 @@ private:
     void serviceAutomaticMain() {
         if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
         if(engine_.hasRuntimeFxFault()){autoMainEpoch_=0;return;}
-        if(pendingRetainedFxCapture_ || retainedOfflineFxActive_)return; // never arm stale retained PCM
+        if(pendingRetainedFxCapture_ || retainedOfflineFxActive_ || mixerSessionRecoveryPending_)return; // never arm stale retained PCM
         if(operatorOutputMuted_){autoMainEpoch_=0;return;} // explicit emergency stop
         // Only an explicit, verified CONTROL transaction may schedule MAIN
         // recovery. A generic desired flag cannot prove output-pair continuity.
@@ -5984,6 +5986,9 @@ private:
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
             return "Live native mixer already edited; refusing to replace it";
         }
+        // A saved explicit MUTE or previous-generation recovery must not be
+        // undone by a later ordinary input/FX edit scheduling automatic MAIN.
+        const bool holdMain=usedPrevious||(doc.resumeMain.has_value()&&!doc.resumeMain.value());
         error=engine_.restoreNativeMixerSession(std::move(doc),states,
             plan.replacePristineStartup,nullptr,plan.bindingMode);
         if(error.isNotEmpty()) {
@@ -5995,6 +6000,11 @@ private:
         }
         mixerSessionRecoveryPending_=false;
         acceptSessionIdentity();
+        if(holdMain) {
+            operatorOutputMuted_=true;
+            autoMainEpoch_=0;
+            engine_.setMonitorEnabled(false);
+        }
         if(plan.resumeMain)
             requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
@@ -7238,6 +7248,10 @@ private:
             cancelSecondaryContinuity();
             cancelStartupSecondaryPreparation();
         }
+        if(action=="audioDeviceApply"||action=="audioSetup"||action=="audioDriverPanel"||
+           action=="nativeMixerNewLive"||action=="nativeMixerNewOffline"||
+           action=="nativeMixerFileOpen"||action=="nativeMixerOpenArchive")
+            cancelStartupAsioRetry();
         if(action=="nativeMixerNewLive"||action=="nativeMixerNewOffline"||
            action=="nativeMixerFileOpen"||action=="nativeMixerOpenArchive"||
            action=="routingDryStop"||action=="routingDryApply"||
@@ -11954,6 +11968,48 @@ private:
         }
     }
 
+    void cancelStartupAsioRetry() noexcept {
+        pendingStartupAsioSettings_.reset();
+        startupAsioRetry_.cancel();
+    }
+    // A cold-open retry is not a device switch. Preserve the exact XML and
+    // registered class verified on the initial failed attempt. No new
+    // callback registration, fallback backend, or graph mutation while waiting.
+    void serviceStartupAsioRetry() {
+        if(!pendingStartupAsioSettings_)return;
+        if(vendorSafeRecoveryActive()||engine_.hasRuntimeFxFault()||
+           !engine_.savedAsioStartupRetryAvailable()||engine_.directRouteAuthorized()||
+           engine_.hasRetainedNativeSession()) {cancelStartupAsioRetry();return;}
+        if(deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||
+           mixerSessionWorker_.busy()||logicalVendorEditor_||catalog_.busy())return;
+        const auto now=monotonicMilliseconds();
+        if(!startupAsioRetry_.due(now))return;
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
+        if(!lease)return;
+        const auto generation=startupAsioRetry_.generation();
+        // Keep a local copy across any nested vendor message-loop callback.
+        const auto settings=*pendingStartupAsioSettings_;
+        const auto error=engine_.start(&settings,true);
+        if(generation!=startupAsioRetry_.generation()) {
+            // No output was armed. Never let a superseded cold start resume.
+            engine_.beginManualAudioSetup();
+            return;
+        }
+        startupError_=error;
+        if(error.isEmpty()) {
+            deviceSettingsDirty_=true;
+            cancelStartupAsioRetry();
+            diagnostics_.record("SAVED_ASIO_STARTUP_RESTORED","Exact saved registration and device reopened");
+            return;
+        }
+        startupAsioRetry_.failed(now);
+        if(!engine_.savedAsioStartupRetryAvailable()||startupAsioRetry_.attempts()>=3) {
+            cancelStartupAsioRetry();
+            diagnostics_.record("SAVED_ASIO_STARTUP_WAIT_EXHAUSTED",error);
+            emitNotice("Saved ASIO not ready. Session preserved; check Audio I/O.",true);
+        }
+    }
+
     // CONTROL only. A failed disk write remains pending, with bounded retry;
     // never serialize an absent/temporary/unverified driver.
     void persistApprovedAudioSettings(bool shutdown) {
@@ -12081,6 +12137,11 @@ private:
             rememberSavedWasapiProfile(saved.get());
             startupError_ = engine_.start (saved.get());
             engine_.devices().addChangeListener (this);
+            if(saved&&startupError_.isNotEmpty()&&engine_.savedAsioStartupRetryAvailable()&&
+               !vendorSafeRecoveryActive()) {
+                pendingStartupAsioSettings_=std::make_unique<juce::XmlElement>(*saved);
+                startupAsioRetry_.fault(monotonicMilliseconds());
+            }
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
             // Only pristine Windows first runs are candidates. Saved sessions,
@@ -12094,7 +12155,10 @@ private:
         // Factory entries are published only after asynchronous manifest
         // verification. Restore once they are visible, never reject a saved
         // factory insert simply because the startup catalog is still busy.
-        if(!mixerSessionStartupInspected_ && !catalog_.busy()) {
+        serviceStartupAsioRetry();
+        if(!mixerSessionStartupInspected_ && !pendingStartupAsioSettings_ && !catalog_.busy() &&
+           !deviceApply_.busy()&&!mixerSessionWorker_.busy()&&!logicalVendorEditor_&&
+           !nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
             mixerSessionStartupInspected_=true;
             if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
                 mixerSessionRecoveryPending_=true;
