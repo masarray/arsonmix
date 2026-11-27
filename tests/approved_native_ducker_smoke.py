@@ -142,7 +142,7 @@ def main():
         assert edit_button.is_enabled()
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="PENDING"))
         assert edit_button.is_enabled()
-        assert editor.locator(".mx-ducker-phase").inner_text()!="Check edit"
+        assert editor.locator(".mx-ducker-phase").text_content()!="Check edit"
         page.mouse.wheel(0,-120)
         assert latest(page,"nativeDuckerSet")["requestId"]==req["requestId"]
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
@@ -168,9 +168,11 @@ def main():
         page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Edit delayed'",timeout=12000)
         busy_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="7",pending=True)
         assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
-        assert editor.locator(".mx-ducker-phase").inner_text()=="Edit delayed"
+        assert editor.locator(".mx-ducker-phase").text_content()=="Edit delayed"
+        assert editor.locator(".mx-ducker-phase").inner_text()=="EDIT DELAYED"
         readback(page,[SOURCE,MIC2],settings=final["settings"],serial="8",pending=False,after=busy_read)
         page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Check edit'",timeout=3000)
+        assert editor.locator(".mx-ducker-phase").inner_text()=="CHECK EDIT"
         assert abs(float(depth.input_value())-final["settings"]["depthDb"])<.001
         assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
         emit(page,"arMixBuiltinDuckerAck",packet(lost,status="APPLIED"))
