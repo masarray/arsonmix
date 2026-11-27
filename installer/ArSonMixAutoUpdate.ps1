@@ -78,12 +78,7 @@ function Read-Json([string]$path) {
     } finally {$jsonStream.Dispose()}
 }
 function Write-State([object]$value) {
-    $temp=$statePath+'.new'
-    $json=ConvertTo-Json -InputObject $value -Depth 8 -Compress
-    [IO.File]::WriteAllText($temp,$json,[Text.Encoding]::UTF8)
-    if(Test-Path -LiteralPath $statePath -PathType Leaf) {
-        [IO.File]::Replace($temp,$statePath,$null)
-    } else { [IO.File]::Move($temp,$statePath) }
+    Write-AtomicUpdateJson $statePath $value
 }
 function Version-Key([string]$tag) {
     $m=[regex]::Match($tag,'^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$')
@@ -818,20 +813,27 @@ function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourc
 }
 # Write an independently replaceable record; an interrupted write leaves the
 # old record or no record, never a partially written JSON selected for launch.
-function Write-PortableReceipt([string]$path,[object]$receipt){
+function Write-AtomicUpdateJson([string]$path,[object]$receipt){
     $parent=[IO.Path]::GetDirectoryName($path)
     if(-not (Test-Path -LiteralPath $parent -PathType Container) -or
        ((Get-Item -LiteralPath $parent -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'Unsafe portable receipt parent'}
     if((Test-Path -LiteralPath $path) -and -not (Test-RegularUpdateFile $path)){throw 'Unsafe portable receipt'}
     $temp=Join-Path $parent ('.receipt-'+[guid]::NewGuid().ToString('N'))
+    $backup=$temp+'.bak'
+    $committed=$false
     try{
-        $bytes=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $receipt -Depth 6 -Compress))
+        $bytes=[Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $receipt -Depth 8 -Compress))
         $stream=[IO.File]::Open($temp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
         try{$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)}finally{$stream.Dispose()}
-        if(Test-Path -LiteralPath $path){[IO.File]::Replace($temp,$path,$null)}
+        # Windows PowerShell 5.1 marshals $null to an invalid empty path for
+        # this .NET overload. A unique same-volume backup works on both 5.1
+        # and newer runtimes and is retained if replacement reports failure.
+        if(Test-Path -LiteralPath $path){[IO.File]::Replace($temp,$path,$backup)}
         else{[IO.File]::Move($temp,$path)}
+        $committed=$true
     }finally{
         if(Test-RegularUpdateFile $temp){Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue}
+        if($committed -and (Test-RegularUpdateFile $backup)){Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue}
     }
 }
 
@@ -877,7 +879,7 @@ function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
         # that the exact ZIP and payload were checked within this worker.
         $receipt=[pscustomobject]@{schema='arsonmix.portable-prepared.v1';tag=$tag;sourceCommit=$sha;
             digest=[string]$asset.digest;bytes=[long]$asset.size;previousSha=[string]$build.sourceCommit}
-        Write-PortableReceipt (Join-Path $root 'prepared.json') $receipt
+        Write-AtomicUpdateJson (Join-Path $root 'prepared.json') $receipt
         Log-Result ('PORTABLE_PAYLOAD_PREPARED '+$tag)
     }finally{
         $lease.Dispose()
@@ -1469,12 +1471,24 @@ if($PolicySelfTest) {
             if(($change -eq 'clean' -and $rejected) -or ($change -ne 'clean' -and -not $rejected)){throw "Portable cached payload validation failed: $change"}
         }
         $receiptPath=Join-Path $fixture 'prepared.json'
-        Write-PortableReceipt $receiptPath ([pscustomobject]@{sourceCommit=$sha;tag='v0.5.0-alpha.8'})
+        Write-AtomicUpdateJson $receiptPath ([pscustomobject]@{sourceCommit=$sha;tag='v0.5.0-alpha.8'})
         # Simulate an abandoned temp from a crash; only canonical name is read.
         [IO.File]::WriteAllText((Join-Path $fixture '.receipt-abandoned'),'partial')
         if((Read-Json $receiptPath).sourceCommit -cne $sha){throw 'Initial portable receipt mismatch'}
-        Write-PortableReceipt $receiptPath ([pscustomobject]@{sourceCommit=('b'*40);tag='v0.5.0-alpha.9'})
+        Write-AtomicUpdateJson $receiptPath ([pscustomobject]@{sourceCommit=('b'*40);tag='v0.5.0-alpha.9'})
         if((Read-Json $receiptPath).sourceCommit -cne ('b'*40)){throw 'Portable receipt replacement mismatch'}
+        # Exercise the real installed/portable transaction state writer too:
+        # initial write, repeated replace and abandoned temporary bytes.
+        $priorStatePath=$statePath
+        $statePath=Join-Path $fixture 'transaction-state.json'
+        try{
+            Write-State ([pscustomobject]@{phase='checking';previousSha=$sha})
+            Write-State ([pscustomobject]@{phase='downloading';previousSha=$sha})
+            [IO.File]::WriteAllText(($statePath+'.new'),'interrupted legacy temp')
+            Write-State ([pscustomobject]@{phase='staged';previousSha=$sha})
+            $actual=Read-Json $statePath
+            if($actual.phase -cne 'staged' -or $actual.previousSha -cne $sha){throw 'Updater state atomic replacement failed'}
+        }finally{$statePath=$priorStatePath}
         Write-Output 'ARSONMIX_PORTABLE_CACHE_REVALIDATION_PASS'
     }finally{Remove-Item -LiteralPath $fixture -Recurse -Force}
     Write-Output 'ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS'

@@ -723,6 +723,15 @@ test('cached portable payload cannot be reused without exact archive member reva
   assert.match(u,/Unexpected portable file/);
   assert.match(u,/Unexpected portable directory/);
   assert.match(u,/Unsafe cached portable tree/);
-  assert.match(u,/Write-PortableReceipt \(Join-Path \$root 'prepared.json'\)/);
+  assert.match(u,/Write-AtomicUpdateJson \(Join-Path \$root 'prepared.json'\)/);
   assert.match(u,/ARSONMIX_PORTABLE_CACHE_REVALIDATION_PASS/);
+});
+
+
+test('all updater state writes use a flushed atomic replacement with a real backup path',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(u,/function Write-State\(\[object\]\$value\) \{\s*Write-AtomicUpdateJson \$statePath \$value/);
+  assert.match(u,/\[IO.File\]::Replace\(\$temp,\$path,\$backup\)/);
+  assert.doesNotMatch(u,/\[IO.File\]::Replace\([^\r\n]*,\$null\)/);
+  assert.match(u,/Updater state atomic replacement failed/);
 });
