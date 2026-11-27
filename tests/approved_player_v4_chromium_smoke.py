@@ -99,8 +99,11 @@ def main():
             assert page.locator("#playerCueIn").is_enabled()
             assert "Metadata refresh queued" in page.locator("#playerFeedback").inner_text()
             publish(dict(mediaRefreshQueued=False,chooseOutput=True,error="Choose a verified MAIN output"))
+            page.evaluate("()=>window.__playerActions.length=0")
             page.locator("#playerChooseOutput").click()
-            assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerChooseOutput"}
+            # Playwright serializes the JS value:undefined as Python None;
+            # validate the actual native command and its absence of arguments.
+            assert page.evaluate("()=>window.__playerActions.length===1 && window.__playerActions[0].action==='playerChooseOutput' && window.__playerActions[0].value===undefined")
             publish(dict(chooseOutput=False,error=""))
             page.evaluate("()=>window.__playerActions.length=0")
             row.click(button="right")
