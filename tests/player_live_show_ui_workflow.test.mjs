@@ -288,3 +288,16 @@ assert.equal(songRows()[0].dataset.missing,"true");
 listeners.get("arMixPlayerMedia")({schema:"arsonmix.media.v1",rows:[{catalogId:4,title:"Song 0000",missing:false}]});
 assert.equal(songRows()[0].dataset.missing,"false");
 console.log("File disappearance/recovery readback PASS");
+
+// Smart I/O must not depend on toolbar DOM nesting or button placement.
+publish({chooseOutput:true,error:"Choose a verified MAIN output; player remains ready"});
+actions.length=0;$("playerChooseOutput").click();
+assert.equal(actions.at(-1).detail.action,"playerChooseOutput");
+publish({error:"",current:0,selected:0,pending:0,transport:{state:"PLAYING"}});
+assert.equal($("playerCueIn").disabled,true);
+actions.length=0;$("playerStop").click();
+assert.equal(actions.at(-1).detail.action,"playerStop","STOP is available during NEXT");
+publish({pending:-1,transport:{state:"STOPPED"}});
+assert.equal($("playerCueIn").disabled,false);
+assert.equal($("playerNext").disabled,false);
+console.log("Player output recovery, STOP during pending and cue re-enable PASS");

@@ -25,3 +25,14 @@ assert.match(timer,/if\(browser_\.loaded && timerTicks_%3==0\)emitPlayerState\(\
 assert.doesNotMatch(timer,/lastLoopAttemptGeneration_/,
   'same-generation A/B decks must never suppress second A-B loop');
 console.log('M4 PASS: transport, Loop A-B and NEXT survive WebView unload/reload');
+
+// Native cancellation without decoder failure (e.g. device reopen) must
+// release the UI NEXT latch. Failed or cancelled loops cannot retry-storm.
+assert.match(timer,/engine_\.playerTransitionFailed\(\) \|\|\s*!static_cast<bool>\(engine_\.playerStatus\(\)\.getProperty\("transitionPending",false\)\)/);
+assert.match(timer,/playerPendingIndex_=-1;playerAutomaticPending_=false;\s*playerLoopCurrent_=false;/);
+assert.match(timer,/playerPendingIndex_<0 && playerPendingQueueFile_!=juce::File\{\}/);
+assert.match(timer,/phase=="PLAYING" \|\| phase=="ENDED"\) \{\s*if\(armix::player::PlayerShowTransitionPolicy::commitQueuedFront/);
+const nextBody=source.slice(source.indexOf("void playNextMusic("),source.indexOf("void onAction ("));
+assert.doesNotMatch(nextBody,/commitQueuedFront/,"queue cannot be consumed before native PCM");
+assert.match(timer,/!playerAutoAdvanceGate_\.claimed\(\)/);
+console.log("Player cancellation, queue PCM commit, retry gate source contracts PASS");

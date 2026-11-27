@@ -100,7 +100,7 @@ public:
         return fading_.load(std::memory_order_acquire);
     }
     bool preload(const juce::File& file,int key,int tempo,
-                 double cueIn=0.,double cueOut=0.) {
+                 double cueIn=0.,double cueOut=0.,bool retryFailed=false) {
         if(file==juce::File{} || !file.existsAsFile() ||
            !PlayerPitchTempoProcessor::valid({key,tempo}) ||
            !std::isfinite(cueIn) || !std::isfinite(cueOut) ||
@@ -116,9 +116,13 @@ public:
         const auto epoch=deviceEpoch_.load(std::memory_order_acquire);
         if(preloadedFile_==file && preloadedEpoch_==epoch &&
            preloadedControls_==Controls{key,tempo} &&
-           preloadedIn_==cueIn && preloadedOut_==cueOut &&
-           decks_[static_cast<std::size_t>(inactive)].snapshot().state
-               !=NativePlayerDeck::State::error)return true;
+           preloadedIn_==cueIn && preloadedOut_==cueOut) {
+            const auto state=decks_[static_cast<std::size_t>(inactive)].snapshot().state;
+            if(state!=NativePlayerDeck::State::error)return true;
+            // Background warm-up must not reopen a corrupt file every timer
+            // tick. An explicit queueTransition can retry repaired media.
+            if(!retryFailed)return false;
+        }
         // Reuse a bounded standby decoder and SPSC FIFO. Repeated NEXT
         // changes supersede old read work through NativePlayerDeck generation.
         auto& standby=decks_[static_cast<std::size_t>(inactive)];
@@ -134,7 +138,7 @@ public:
                          int fadeMilliseconds=180,
                          double cueIn=0.,double cueOut=0.) {
         if(fading_.load(std::memory_order_acquire))return false;
-        if(!preload(file,key,tempo,cueIn,cueOut))return false;
+        if(!preload(file,key,tempo,cueIn,cueOut,true))return false;
         fadeMilliseconds_=std::clamp(fadeMilliseconds,0,3000);
         failed_.store(false,std::memory_order_release);
         // The caller's CONTROL timer owns the one authoritative ACK for

@@ -186,10 +186,9 @@
  $("playerTempoPlus").addEventListener("click",()=>send("playerTempoStep",1));
  $("playerPitchReset").addEventListener("click",()=>send("playerPitchTempoReset"));
  $("playerChooseOutput").addEventListener("click",()=>{
-   // Preserve canonical Smart I/O owner; never open the retired legacy panel.
-   const audioIO=document.querySelector?.(".command-bar > [data-native-io]");
-   if(audioIO){audioIO.click();showFeedback("Choose MAIN output in Audio I/O, then press Play.");}
-   else showFeedback("Audio I/O is unavailable. Reopen the mixer.",true);
+   // Native dispatcher opens the canonical Smart I/O panel by event.
+   // Do not depend on toolbar markup or a particular toolbar generation.
+   send("playerChooseOutput");
  });
  $("playerNext").addEventListener("click",()=>{if(model.pending<0)send("playerNext");});
  $("playerAutoNext").addEventListener("click",event=>{
@@ -383,7 +382,7 @@
    }
    selector.value=String(model.activeSetlist||0);
    if(!oldFocus)name.value=model.setlists?.[model.activeSetlist]?.name||"";
-   $("playerDeleteSetlist").disabled=(model.setlists?.length||0)<=1;
+   $("playerDeleteSetlist").disabled=!canSwitchSet()||(model.setlists?.length||0)<=1;
    $("playerUndoRemove").hidden=!model.canUndoRemove;
    const panel=$("playerQueuePanel"),queue=$("playerQueueList");
    const upcoming=model.queue||[];
@@ -644,8 +643,8 @@
    const outPoint=Number(currentSong?.cueOut)||0;
    $("playerCueSummary").textContent="IN "+duration(inPoint)+
      " · OUT "+(outPoint>0?duration(outPoint):"end");
-   const editable=native && model.current>=0 &&
-     model.selected===model.current && +t.durationSeconds>0;
+   const editable=native && model.current>=0 && model.pending<0 &&
+     !t.crossfading && model.selected===model.current && +t.durationSeconds>0;
    $("playerCueIn").disabled=!editable;
    $("playerCueOut").disabled=!editable;
    $("playerCueGoIn").disabled=!editable;

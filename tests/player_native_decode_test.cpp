@@ -253,6 +253,22 @@ int main() {
         deck.pull(left.data(),right.data(),256);
         assert(left[0]==0.f && right[0]==0.f);
     }
+    // Exercise wake-before-wait and idle/shutdown boundaries repeatedly.
+    // A lost notification used to leave a valid decoder in PREPARING.
+    for(int pass=0;pass<24;++pass) {
+        armix::player::NativePlayerDeck deck;
+        deck.deviceRate(48000.0);
+        deck.load(file,true);
+        for(int n=0;n<600&&!deck.isPlayingRequested();++n)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        assert(deck.isPlayingRequested());
+        deck.stop();
+        deck.play();
+        for(int n=0;n<600&&!deck.isPlayingRequested();++n)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        assert(deck.isPlayingRequested());
+        deck.stop();
+    }
     // M2 real JUCE media → sample-rate converter → independent stereo DSP
     // → prepared FIFO; this runs without a physical audio device.
     {
