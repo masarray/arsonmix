@@ -570,6 +570,38 @@
   };
   const nativeIdFor = t => nativeByUiId.get(t?.id) || null;
   const activeView=()=>logicalView||controller?.state()?.current;
+  // One exact handoff for retained FX actions. The selected operation is
+  // immutable while waiting for ACK and an independently accepted workspace.
+  function requestRetainedFxAction(t,slot,action,options={}){
+    const current=controller?.state()?.current,id=nativeIdFor(t);
+    const row=current?.graph?.channels?.find(ch=>ch.id===id);
+    if(logicalView||current?.retained!==true||!row||
+       !Number.isInteger(slot)||slot<0||slot>=8)return false;
+    const fx=row.inserts?.[slot],empty=slot===row.inserts?.length;
+    if(!fx?.id&&!empty)return false;
+    if(empty&&!["fxOn","insertFx"].includes(action))return false;
+    if(!empty&&action==="insertFx")return false;
+    if(pendingRetainedEditor){
+      status("Preparing offline mixer · previous FX request pending");return true;
+    }
+    const requestId="retained-editor-"+(++retainedEditorSerial);
+    pendingRetainedEditor={requestId,channelId:id,slot,
+      catalogId:fx?.catalogId||"",instanceId:fx?.id||"",empty,
+      epoch:current.device.epoch,revision:current.graph.revision,
+      recenter:options.recenter===true,acknowledged:false,action,
+      selectedCatalogId:options.selectedCatalogId};
+    status("Preparing offline mixer · audio output remains safe");
+    backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",
+      requestId,channelId:id,slot,instanceId:fx?.id||"",
+      deviceEpoch:current.device.epoch,graphRevision:current.graph.revision});
+    window.setTimeout(()=>{
+      if(pendingRetainedEditor?.requestId!==requestId)return;
+      pendingRetainedEditor=null;
+      status("Offline mixer preparation expired · retry");
+      controller?.subscribe();
+    },10000);
+    return true;
+  }
   // Dedicated logical transactions never advertise physical PCM admission.
   // Native commits to .smix BEFORE ACK; the NEXT subscribe proves readback.
   function logicalIntent(operation,channelId,payload={}) {
@@ -6485,9 +6517,7 @@
         if(current?.retained===true){
           // Reuse exact existing offline workspace handoff, then delete only
           // after verified document readback; never change the stale PCM rack.
-          nativeHooks.consumeAction(t,"openPlugin",btn);
-          if(pendingRetainedEditor?.channelId===id&&pendingRetainedEditor.slot===slot)
-            pendingRetainedEditor.action="removeFx";
+          requestRetainedFxAction(t,slot,"removeFx");
           return true;
         }
         editNativeFx(t,slot,null,0,token);return true;
@@ -6500,7 +6530,7 @@
         // projection readiness. The native dispatcher still fences busy I/O.
         if(!logicalView&&!deviceReady()&&editorView?.admitted!==true&&
            editorView?.retained!==true){
-          recommendAudioRepair("FX editor unavailable · audio processing unavailable");
+          status("FX editor waiting for the native mixer workspace");
           return true;
         }
         const slot=Number(btn?.dataset.slot),current=activeView();
@@ -6526,23 +6556,7 @@
               scope?.openFastPicker?.(t,slot,btn);
               return true;
             }
-            if(pendingRetainedEditor){
-              status("Finishing the previous offline editor request");
-              return true;
-            }
-            const requestId="retained-editor-"+(++retainedEditorSerial);
-            pendingRetainedEditor={requestId,channelId:id,slot,
-              catalogId:fx?.catalogId||"",instanceId:fx?.id||"",empty,
-              epoch:current.device.epoch,revision:current.graph.revision,
-              recenter,acknowledged:false};
-            backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",
-              requestId,channelId:id,slot,instanceId:fx?.id||"",
-              deviceEpoch:current.device.epoch,graphRevision:current.graph.revision});
-            window.setTimeout(()=>{
-              if(pendingRetainedEditor?.requestId!==requestId)return;
-              pendingRetainedEditor=null;
-              status("Offline FX recovery expired · refresh native mixer");
-            },10000);
+            requestRetainedFxAction(t,slot,"openPlugin",{recenter});
             return true;
           }
           const plan=fxRackVM.editorNavigationPlan(current,{channelId:id,slot,
@@ -6610,8 +6624,12 @@
         return true; // never fall through to demo or unsupported action
       }
       if(action==="slotPower"){
-        if(!logicalView&&!deviceReady()){
-          recommendAudioRepair("FX Power unavailable");
+        if(!logicalView&&controller?.state()?.current?.retained===true){
+          requestRetainedFxAction(t,Number(btn?.dataset.slot),"slotPower");
+          return true;
+        }
+        if(!logicalView&&!controller?.state()?.current?.admitted&&!deviceReady()){
+          status("FX Power unavailable · waiting for native workspace");
           return true;
         }
         if(logicalView){
@@ -6632,8 +6650,12 @@
         return true;
       }
       if(action==="fxOn"){
-        if(!logicalView&&!deviceReady()){
-          recommendAudioRepair("FX Rack unavailable");
+        if(!logicalView&&controller?.state()?.current?.retained===true){
+          requestRetainedFxAction(t,0,"fxOn");
+          return true;
+        }
+        if(!logicalView&&!controller?.state()?.current?.admitted&&!deviceReady()){
+          status("FX Rack unavailable · waiting for native workspace");
           return true;
         }
         if(logicalView){
@@ -6897,19 +6919,7 @@
         if(!plugin||!row||!Number.isInteger(slot)||slot<0||slot>=8||slot!==row.inserts?.length){
           nativeToast("Choose the next empty FX slot");return true;
         }
-        if(pendingRetainedEditor){status("Finishing the previous offline editor request");return true;}
-        const requestId="retained-editor-"+(++retainedEditorSerial);
-        pendingRetainedEditor={requestId,channelId:nativeId,slot,empty:true,
-          epoch:accepted.device.epoch,revision:accepted.graph.revision,
-          acknowledged:false,action:"insertFx",selectedCatalogId:id};
-        status("Preparing saved mixer workspace · audio output remains safe");
-        backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",requestId,
-          channelId:nativeId,slot,instanceId:"",deviceEpoch:accepted.device.epoch,
-          graphRevision:accepted.graph.revision});
-        window.setTimeout(()=>{
-          if(pendingRetainedEditor?.requestId!==requestId)return;
-          pendingRetainedEditor=null;status("Offline FX recovery expired · refresh native mixer");
-        },10000);
+        requestRetainedFxAction(track,slot,"insertFx",{selectedCatalogId:id});
         return true;
       }
       if(accepted?.admitted || mixerSession()?.authority==="CHANNEL_ID") {

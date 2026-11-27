@@ -150,3 +150,25 @@ test('offline recovery editor guard compiles with ImmerSIB feature disabled',()=
   assert.match(guard,feature);
   assert.doesNotMatch(guard.replace(feature,''),/immersibEditorWindow_/);
 });
+
+// The automatic detached workspace transition must precede operator FX edits,
+// but cannot grant hardware admission or run arbitrary vendor code unattended.
+test('retained workspace capture is bounded and independent of FX navigation',()=>{
+  const start=main.indexOf('void serviceDetachedMixerWorkspace()');
+  const end=main.indexOf('    // Once the logical',start);
+  assert.ok(start>=0&&end>start);
+  const service=main.slice(start,end);
+  assert.match(service,/engine_\.hasRetainedNativeSession\(\)/);
+  assert.match(service,/offlineCaptureAttemptEpoch_==epoch && offlineCaptureAttemptOwner_==owner/);
+  assert.match(service,/findNativeBuiltInFx/);
+  assert.match(service,/startRetainedWorkspaceCapture\(epoch,revision,\{\}\)/);
+  assert.match(main,/serviceWasapiDeviceContinuity\(\);\s*serviceDetachedMixerWorkspace\(\);/);
+  const capture=main.slice(main.indexOf('void serviceRetainedFxCapture()'),main.indexOf('void openRetainedFxOffline('));
+  assert.ok(capture.indexOf('pending.startedMs>=8000')<capture.indexOf('deviceApply_.tryBegin('));
+  assert.match(capture,/scheduleRetainedFxCaptureStep\(25\)/);
+  const join=main.slice(main.indexOf('void openRetainedFxOffline('),start);
+  assert.match(join,/pending.requestId.isVoid\(\) && pending.epoch==epoch/);
+  assert.match(join,/engine_\.setOutputMuted\(true\);\s*engine_\.disarmSecondaryOutput\(\);/);
+  assert.match(join,/engine_\.retainedCaptureAllowed\(\)/);
+  assert.doesNotMatch(join,/requestAutomaticMain|setOutputMuted\(false\)/);
+});

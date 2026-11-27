@@ -964,6 +964,8 @@ private:
         bool resumeMain=false;
     };
     std::optional<PendingRetainedFxCapture> pendingRetainedFxCapture_;
+    std::uint64_t offlineCaptureObservedEpoch_=0,offlineCaptureSinceMs_=0;
+    std::uint64_t offlineCaptureAttemptEpoch_=0,offlineCaptureAttemptOwner_=0;
     std::uint64_t retainedOfflineLastActivityMs_=0;
     std::uint64_t offlineReturnEpoch_=0,offlineReturnSinceMs_=0;
     std::uint64_t offlineReturnCallback_=0,offlineReturnProgressMs_=0;
@@ -2813,27 +2815,32 @@ private:
         ack->setProperty("ok",error.isEmpty());
         ack->setProperty("error",error);
         ack->setProperty("requestId",requestId);
-        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
+        if(browser_.loaded&&!requestId.isVoid())browser_.emitEventIfBrowserIsVisible(
             "arMixRetainedFxOfflineAck",juce::var(ack.release()));
         if(error.isEmpty())emitApprovedNativeSnapshot();
-        else emitNotice("Offline FX unavailable: "+error,true);
+        else if(!requestId.isVoid())emitNotice("Offline FX unavailable: "+error,true);
+        else diagnostics_.record("OFFLINE_WORKSPACE_CAPTURE_DEFERRED",error);
     }
-    void scheduleRetainedFxCaptureStep() {
-        juce::Timer::callAfterDelay(1,[safe=juce::Component::SafePointer<ConsoleWindow>(this)] {
+    void scheduleRetainedFxCaptureStep(int delayMs=1) {
+        juce::Timer::callAfterDelay(delayMs,[safe=juce::Component::SafePointer<ConsoleWindow>(this)] {
             if(safe!=nullptr)safe->serviceRetainedFxCapture();
         });
     }
     void serviceRetainedFxCapture() {
         if(!pendingRetainedFxCapture_)return;
+        auto& pending=*pendingRetainedFxCapture_;
+        // Deadline applies even if another transaction owns the lease.
+        if(monotonicMilliseconds()-pending.startedMs>=8000) {
+            const auto requestId=pending.requestId;
+            pendingRetainedFxCapture_.reset();
+            return emitRetainedFxOfflineAck(requestId,"Offline FX capture timed out; retry the rack");
+        }
         auto lease=deviceApply_.tryBegin(
             armix::device::NativeDeviceApplyCoordinator::Purpose::offlineFxCapture);
-        if(!lease){scheduleRetainedFxCaptureStep();return;}
-        auto& pending=*pendingRetainedFxCapture_;
+        if(!lease){scheduleRetainedFxCaptureStep(25);return;}
         bool done=false;
         juce::String error;
-        if(monotonicMilliseconds()-pending.startedMs>=8000)
-            error="Offline FX capture timed out; retry the rack";
-        else if(mixerSessionWorker_.busy() || nativeShowBusy_ || studioBackupBusy_)
+        if(mixerSessionWorker_.busy() || nativeShowBusy_ || studioBackupBusy_)
             error="Mixer transaction changed; retry offline FX";
         else error=engine_.stepRetainedMixerCapture(pending.capture,done);
         if(error.isEmpty()&&!done){scheduleRetainedFxCaptureStep();return;}
@@ -2870,9 +2877,6 @@ private:
     }
 
     void openRetainedFxOffline(const juce::var& request) {
-        if(pendingRetainedFxCapture_)
-            return emitRetainedFxOfflineAck(request.getProperty("requestId",{}),
-                "Offline FX workspace is already preparing");
         juce::String error;
         const auto source=approvedNativeSnapshot();
         const auto graph=source.getProperty("graph",{});
@@ -2919,36 +2923,91 @@ private:
                 (retainedOfflineOwnerEpoch_!=engine_.retainedNativeEpoch() ||
                  retainedOfflineEpoch_!=epoch || retainedOfflineRevision_!=revision)) {
             error="A different retained session is pending offline FX recovery";
-        } else if(!retainedOfflineFxActive_) {
-            const bool resumeMain=engine_.wantsMainContinuation() && !operatorOutputMuted_;
-            engine_.setOutputMuted(true);
-            if(!engine_.allOutputsDisarmed())
-                error="Disarm secondary output before editing retained FX";
-            else {
-                auto lease=deviceApply_.tryBegin(
-                    armix::device::NativeDeviceApplyCoordinator::Purpose::offlineFxCapture);
-                if(!lease)return emitRetainedFxOfflineAck(request.getProperty("requestId",{}),
-                    "Audio device transaction in progress");
-                closeAllPluginEditors();
-                PendingRetainedFxCapture pending;
+        } else if(pendingRetainedFxCapture_) {
+            auto& pending=*pendingRetainedFxCapture_;
+            if(pending.requestId.isVoid() && pending.epoch==epoch &&
+               pending.revision==revision && pending.ownerEpoch==engine_.retainedNativeEpoch()) {
                 pending.requestId=request.getProperty("requestId",{});
-                pending.epoch=epoch;pending.revision=revision;
-                pending.ownerEpoch=engine_.retainedNativeEpoch();
-                pending.resumeMain=resumeMain;
-                pending.startedMs=monotonicMilliseconds();
-                error=engine_.beginRetainedMixerCapture(pending.capture);
-                if(error.isEmpty() &&
-                   (pending.capture.observedEpoch!=epoch ||
-                    pending.capture.ownerEpoch!=pending.ownerEpoch))
-                    error="Audio connection changed; retry offline FX";
-                if(error.isEmpty()) {
-                    pendingRetainedFxCapture_.emplace(std::move(pending));
-                    scheduleRetainedFxCaptureStep();
-                    return; // ACK only after complete validated workspace
-                }
+                return; // join the same capture; ACK after validated state
             }
+            error="Offline mixer workspace is already preparing";
+        } else if(!retainedOfflineFxActive_) {
+            error=startRetainedWorkspaceCapture(epoch,revision,request.getProperty("requestId",{}));
+            if(error.isEmpty())return;
         }
         emitRetainedFxOfflineAck(request.getProperty("requestId",{}),error);
+    }
+
+    juce::String startRetainedWorkspaceCapture(std::uint64_t epoch,std::uint64_t revision,
+                                              const juce::var& requestId) {
+        if(pendingRetainedFxCapture_ || retainedOfflineFxActive_ ||
+           !engine_.hasRetainedNativeSession() || engine_.independentClockActive() ||
+           vendorSafeRecoveryActive() || engine_.hasRuntimeFxFault())
+            return "Retained mixer is not safely detached";
+        auto lease=deviceApply_.tryBegin(
+            armix::device::NativeDeviceApplyCoordinator::Purpose::offlineFxCapture);
+        if(!lease)return "Audio device transaction in progress";
+        const bool resumeMain=engine_.wantsMainContinuation() && !operatorOutputMuted_;
+        // A detached primary graph cannot supply authoritative secondary PCM.
+        engine_.setOutputMuted(true);
+        engine_.disarmSecondaryOutput();
+        if(!engine_.retainedCaptureAllowed())return "Retained mixer is not safely detached";
+        closeAllPluginEditors();
+        PendingRetainedFxCapture pending;
+        pending.requestId=requestId;
+        pending.epoch=epoch;pending.revision=revision;
+        pending.ownerEpoch=engine_.retainedNativeEpoch();
+        pending.resumeMain=resumeMain;
+        pending.startedMs=monotonicMilliseconds();
+        auto error=engine_.beginRetainedMixerCapture(pending.capture);
+        if(error.isEmpty() && (pending.capture.observedEpoch!=epoch ||
+            pending.capture.ownerEpoch!=pending.ownerEpoch || pending.capture.revision!=revision))
+            error="Audio connection changed; retry offline FX";
+        if(error.isEmpty()) {
+            pendingRetainedFxCapture_.emplace(std::move(pending));
+            scheduleRetainedFxCaptureStep();
+        }
+        return error;
+    }
+
+    // Device-loss lifecycle owns transition to editable workspace. A brief
+    // STOP/START can recover first. Arbitrary vendor state reads remain
+    // explicit operator actions, never unattended timer work.
+    void serviceDetachedMixerWorkspace() {
+        if(!engine_.hasRetainedNativeSession()) {
+            offlineCaptureObservedEpoch_=offlineCaptureSinceMs_=0;
+            return;
+        }
+        if(pendingRetainedFxCapture_ || retainedOfflineFxActive_ ||
+           deviceApply_.busy() || mixerSessionWorker_.busy() || nativeShowBusy_ ||
+           studioBackupBusy_ || logicalVendorEditor_ || engine_.isGraphSwitchPending() ||
+           engine_.independentClockActive() || vendorSafeRecoveryActive() ||
+           engine_.hasRuntimeFxFault() ||
+           engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
+        const auto epoch=engine_.dryRoutingLabEpoch(),owner=engine_.retainedNativeEpoch();
+        const auto now=monotonicMilliseconds();
+        if(offlineCaptureObservedEpoch_!=epoch || !offlineCaptureSinceMs_) {
+            offlineCaptureObservedEpoch_=epoch;offlineCaptureSinceMs_=now;
+            return;
+        }
+        if(now-offlineCaptureSinceMs_<750 ||
+           (offlineCaptureAttemptEpoch_==epoch && offlineCaptureAttemptOwner_==owner))return;
+        const auto snapshot=approvedNativeSnapshot();
+        const auto graph=snapshot.getProperty("graph",{});
+        const auto rows=graph.getProperty("channels",{});
+        std::uint64_t revision=0;
+        if(graph.getProperty("bindingState",{}).toString()!="NEEDS_REMAP" ||
+           !armix::console::approvedNativeId(graph.getProperty("revision",{}),revision) ||
+           !rows.isArray())return;
+        offlineCaptureAttemptEpoch_=epoch;offlineCaptureAttemptOwner_=owner;
+        for(const auto& row:*rows.getArray()) {
+            const auto inserts=row.getProperty("inserts",{});
+            if(const auto* list=inserts.getArray())for(const auto& fx:*list)
+                if(!armix::builtin_fx::findNativeBuiltInFx(fx.getProperty("catalogId",{}).toString()))
+                    return;
+        }
+        const auto error=startRetainedWorkspaceCapture(epoch,revision,{});
+        if(error.isNotEmpty())diagnostics_.record("OFFLINE_WORKSPACE_CAPTURE_DEFERRED",error);
     }
 
     // Once the logical .smix store has COMMITTED an exact popup Power intent,
@@ -11682,6 +11741,7 @@ private:
         serviceRetainedOfflineRecovery();
         serviceAsioMixerRestart();
         serviceWasapiDeviceContinuity();
+        serviceDetachedMixerWorkspace();
         rememberVerifiedWasapiSetup();
         // ONE actionable notice per unexpected DIRECT reroute. The audio
         // callback has already zero-filled output atomically; status, log and
