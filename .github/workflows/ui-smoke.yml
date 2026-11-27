@@ -511,7 +511,7 @@ jobs:
   auto-ducker-preview:
     name: Auto Ducker actual Chromium trigger picker and ACK FAT
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-') }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/auto-ducker-') || startsWith(github.head_ref, 'fix/p0-ducker-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
