@@ -328,6 +328,44 @@ def verify_bus_remap(page,out):
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='audioDeviceApply')")
     assert not errors,errors
 
+def verify_input_matrix_direct_patch(page,out):
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        enabledInputs=[0,1],inputEndpoints=[
+        {"id":"in:"+str(i),"port":i,"callback":i,"label":"Mic "+str(i+1),"active":True} for i in range(2)])
+    emit(page,"arMixConsoleSnapshot",state)
+    open_verified_audio_io(page,state,"inputs")
+    row=page.locator("[data-audio-input-grid] tbody tr").filter(has=page.get_by_label("CH03 assignment",exact=True))
+    cell=row.locator(".armix-patch-cell").first
+    cell.click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').at(-1)")
+    assert req and req["channelId"]==SOURCE and req["left"]==0,req
+    assert cell.get_attribute("data-mark")==""
+    emit(page,"arMixNativeSourceAck",{"requestId":req["requestId"],"channelId":SOURCE,"ok":True,"graphRevision":"3"})
+    state["graph"]["revision"]="3"
+    state["graph"]["channels"][0]["source"]={"sourceFormat":req["mode"],"portId":"in:0",**({"portIdRight":"in:1"} if req["mode"]=="STEREO" else {})}
+    state["mixerSession"].update(routeRevision="3",channels=copy.deepcopy(state["graph"]["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    assert cell.get_attribute("data-mark") in ("L","M")
+    cell.click()
+    clear=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').at(-1)")
+    assert clear["requestId"]!=req["requestId"] and clear["mode"]=="NONE",clear
+    assert cell.get_attribute("data-mark") in ("L","M")
+    emit(page,"arMixNativeSourceAck",{"requestId":clear["requestId"],"channelId":SOURCE,"ok":True,"graphRevision":"4"})
+    state["graph"]["revision"]="4"
+    state["graph"]["channels"][0].pop("source",None)
+    state["mixerSession"].update(routeRevision="4",channels=copy.deepcopy(state["graph"]["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    assert cell.get_attribute("data-mark")==""
+
 def verify_output_matrix_direct_patch(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
@@ -1029,6 +1067,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_output_matrix_direct_patch(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_input_matrix_direct_patch(page,out)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_logical_inputs(page,out)

@@ -4993,9 +4993,9 @@
       deviceVM.setupRoutingReady(deviceInventory,fresh,deviceState);
     const options=ready?deviceVM.setupPresentation(deviceInventory,fresh,deviceState).bufferOptions.filter(x=>Number(x)>0):[];
     const current=String(hardware?.device?.bufferFrames||"");
-    const values=options.includes(current)?options:current?[current]:[];
+    const values=options.includes(current)?options:[current];
     const sig=JSON.stringify(values);
-    if(select.dataset.signature!==sig){select.replaceChildren(...values.map(x=>new Option(x+" samples",x)));select.dataset.signature=sig;}
+    if(select.dataset.signature!==sig){select.replaceChildren(...values.map(x=>new Option(x?x+" samples":"—",x)));select.dataset.signature=sig;}
     select.value=current;
     select.disabled=!ready||deviceBusy()||matrixBusy()||!!(devicePanel&&!devicePanel.hidden)||values.length<2;
     select.title=deviceBusy()?"Applying buffer…":"Buffer samples · verified driver choices";

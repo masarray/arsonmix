@@ -235,6 +235,24 @@ def verify_inspector_rejected_gain(page, out):
       "()=>window.__nativeIntents.filter(x=>x.operation==='SET_WIRE_GAIN')"))==1, (
       "Exact accepted gain no-op must not resend a native PCM command")
     assert slider.evaluate("el=>document.activeElement===el")
+    # Left click toggles exactly one installed EdgeId; ACK alone is not UI truth.
+    route.click()
+    page.wait_for_function("()=>window.__nativeIntents.some(x=>x.operation==='APPLY_WIRE_TRANSACTION')")
+    remove=page.evaluate("()=>window.__nativeIntents.filter(x=>x.operation==='APPLY_WIRE_TRANSACTION').at(-1)")
+    assert remove["targetChannelId"]==SOURCE and remove["payload"]["changes"][0]["edgeId"]==SEND,remove
+    assert "is-linked" in route.get_attribute("class")
+    state["graph"]["revision"]="3"
+    state["graph"]["edges"]=[edge for edge in state["graph"]["edges"] if edge["edgeId"]!=SEND]
+    state["mixerSession"]["routeRevision"]="3"
+    ack(page,state,remove)
+    assert "is-linked" in route.get_attribute("class")
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("()=>!document.querySelector('[data-ws-crosspoint=\"1:2\"]')?.classList.contains('is-linked')")
+    route.click()
+    page.wait_for_function("()=>window.__nativeIntents.filter(x=>x.operation==='APPLY_WIRE_TRANSACTION').length===2")
+    connect=page.evaluate("()=>window.__nativeIntents.filter(x=>x.operation==='APPLY_WIRE_TRANSACTION').at(-1)")
+    assert connect["targetChannelId"]==SOURCE and connect["payload"]["changes"][0]["to"]==RECEIVER,connect
+    assert "is-linked" not in route.get_attribute("class")
     assert not errors,errors
 
 def select_ribbon_workflow(page, workflow):
