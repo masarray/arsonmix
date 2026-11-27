@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <algorithm>
+#include <array>
+#include <span>
+#include <cstddef>
 #include <cmath>
 #include <cstdint>
 
@@ -16,9 +19,12 @@ struct AutoDuckerKey final {
     const float* right=nullptr; // null means mono, left must be present
     bool valid() const noexcept {return left!=nullptr;}
 };
+// Bounded, independently filtered sources. A source is never PCM-summed.
+struct AutoDuckerSource final {std::uint64_t id=0;AutoDuckerKey key{};};
 class AutoDuckerCore final {
 public:
     static constexpr int addedLatencySamples=0;
+    static constexpr std::size_t maxSources=32;
     struct Prepared final {
         AutoDuckerSettings settings{};
         float onPower=0,offPower=0,floor=1,attack=0,release=0,
@@ -54,37 +60,82 @@ public:
         // may enter this audio-owned method (control mailbox contract).
         p_=p;hold_=std::min(hold_,p_.hold);
     }
-    void clearKey() noexcept {a_={};b_={};power_=0;hold_=0;active_=false;}
+    void clearKey() noexcept {detectors_={};hold_=0;active_=false;}
     void reset() noexcept {clearKey();gain_=1;}
     float gain() const noexcept {return static_cast<float>(gain_);}
     bool active() const noexcept {return active_;}
     void process(float* left,float* right,int frames,AutoDuckerKey key) noexcept {
+        const AutoDuckerSource source{1,key};
+        processSources(left,right,frames,std::span<const AutoDuckerSource>(&source,1));
+    }
+    void processSources(float* left,float* right,int frames,
+                        std::span<const AutoDuckerSource> keys) noexcept {
         if(!ready_||!left||!right||left==right||frames<=0)return;
-        if(!key.valid())clearKey();
-        for(int i=0;i<frames;++i){
-            if(key.valid()){
-                const float x=filtered(key.left[i],a_);
-                const float y=filtered(key.right?key.right[i]:key.left[i],b_);
-                const float peak=std::max(x*x,y*y); // anti-phase safe; no stereo sum
-                const float pole=peak>power_?p_.detectorAttack:p_.detectorRelease;
-                power_=peak+pole*(power_-peak);
-                if(power_<1.e-20f)power_=0;
-                if(active_){
-                    if(power_>=p_.offPower)hold_=p_.hold;
-                    else if(hold_>0)--hold_;
-                    else active_=false;
-                }else if(power_>=p_.onPower){active_=true;hold_=p_.hold;}
+        // Control sends a canonical sorted set. Defensively reject malformed
+        // packets without reading beyond the prepared detector array.
+        if(keys.size()>maxSources)keys={};
+        for(std::size_t k=0;k<keys.size();++k){
+            if(!keys[k].id||(k&&keys[k-1].id>=keys[k].id)){keys={};break;}
+        }
+        // Preserve detector state across source list changes by stable ID.
+        // Reconciliation is only on changed identity, not every sample.
+        bool changed=false;
+        for(std::size_t k=0;k<maxSources;++k)
+            if(detectors_[k].id!=(k<keys.size()?keys[k].id:0)){changed=true;break;}
+        if(changed){
+            std::array<Detector,maxSources> next{};
+            for(std::size_t k=0;k<keys.size();++k){
+                next[k].id=keys[k].id;
+                for(const auto& old:detectors_)if(old.id==next[k].id){next[k]=old;break;}
             }
+            detectors_=next;
+        }
+        bool available=false;
+        for(std::size_t k=0;k<keys.size();++k){
+            if(keys[k].key.valid())available=true;
+            else {detectors_[k]={};detectors_[k].id=keys[k].id;}
+        }
+        if(!available){hold_=0;active_=false;}
+        for(int i=0;i<frames;++i){
+            float maximum=0;
+            bool finiteSource=false;
+            for(std::size_t k=0;k<keys.size();++k){
+                const auto& key=keys[k].key;
+                if(!key.valid())continue;
+                auto& d=detectors_[k];
+                const float rawL=key.left[i],rawR=key.right?key.right[i]:rawL;
+                const bool finiteL=std::isfinite(rawL),finiteR=std::isfinite(rawR);
+                if(!finiteL&&!finiteR){
+                    d.a={};d.b={};d.power=0;continue;
+                }
+                finiteSource=true;
+                if(!finiteL)d.a={};
+                if(!finiteR)d.b={};
+                const float x=finiteL?filtered(rawL,d.a):0.f;
+                const float y=finiteR?filtered(rawR,d.b):0.f;
+                const float peak=std::max(x*x,y*y);
+                const float pole=peak>d.power?p_.detectorAttack:p_.detectorRelease;
+                d.power=peak+pole*(d.power-peak);
+                if(d.power<1.e-20f)d.power=0;
+                maximum=std::max(maximum,d.power);
+            }
+            if(!finiteSource){active_=false;hold_=0;}
+            else if(active_){
+                if(maximum>=p_.offPower)hold_=p_.hold;
+                else if(hold_>0)--hold_;
+                else active_=false;
+            }else if(maximum>=p_.onPower){active_=true;hold_=p_.hold;}
             const double target=active_?p_.floor:1.;
             const double pole=target<gain_?p_.attack:p_.release;
             gain_=target+pole*(gain_-target);
-            if(std::abs(gain_-target)<1.e-6f)gain_=target;
+            if(std::abs(gain_-target)<1.e-6)gain_=target;
             const float linkedGain=static_cast<float>(gain_);
             left[i]*=linkedGain;right[i]*=linkedGain;
         }
     }
 private:
     struct Filter final {float low=0,band=0;};
+    struct Detector final {std::uint64_t id=0;Filter a{},b{};float power=0;};
     float filtered(float x,Filter& f) const noexcept {
         x=std::isfinite(x)?std::clamp(x,-16.f,16.f):0.f;
         f.low+=p_.hp*(x-f.low);
@@ -94,8 +145,7 @@ private:
         return f.band;
     }
     Prepared p_{};
-    Filter a_{},b_{};
-    float power_=0;
+    std::array<Detector,maxSources> detectors_{};
     double gain_=1; // avoid float convergence stall at high rates/long release
     std::uint32_t hold_=0;
     bool ready_=false,active_=false;

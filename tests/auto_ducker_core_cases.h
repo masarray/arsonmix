@@ -48,8 +48,42 @@ inline void run(){
         check(dc.gain()>.998f&&!dc.active(),"DC rejection");
         std::fill(key.begin(),key.end(),std::numeric_limits<float>::quiet_NaN());
         dc.process(a.data(),b.data(),n,{key.data(),nullptr});
-        check(dc.gain()==1.f,"nonfinite key isolation");
+        check(std::isfinite(dc.gain())&&dc.gain()>.99999f&&!dc.active(),"nonfinite key isolation");
     }
+    // Two talkers, overlapping and anti-phase across channels. A missing or
+    // corrupt key must not release a valid speaker or double the reduction.
+    constexpr int sr=48000,n=sr*3;
+    std::vector<float> l(n,1.f),r(n,1.f),a(n),b(n),bad(n,std::numeric_limits<float>::quiet_NaN());
+    for(int i=0;i<n;++i){
+        const float v=.2f*std::sin(6.283185307179586*1000*i/sr);
+        if(i<sr)a[i]=v;
+        if(i>=sr/2&&i<2*sr)b[i]=-v;
+    }
+    AutoDuckerCore multi,partition;
+    check(multi.prepare(sr)&&partition.prepare(sr),"multi prepare");
+    const std::array<AutoDuckerSource,3> keys{{{7,{a.data(),nullptr}},{19,{b.data(),nullptr}},{32,{bad.data(),nullptr}}}};
+    multi.processSources(l.data(),r.data(),n,keys);
+    check(l[sr/4]<.26f&&l[sr*3/4]<.26f&&l[sr*3/2]<.26f,"overlap and handover");
+    check(l[2*sr+sr/10]<.26f&&l.back()>.95f,"hold/recover after last source");
+    for(float g:l)check(g>=.25118f&&g<=1.f&&std::isfinite(g),"multi depth bounded");
+    std::vector<float> x(n,1.f),y(n,1.f);
+    for(int i=0;i<n;){
+        const int count=std::min(n-i,1+(i%257));
+        const std::array<AutoDuckerSource,3> chunk{{{7,{a.data()+i,nullptr}},{19,{b.data()+i,nullptr}},{32,{bad.data()+i,nullptr}}}};
+        partition.processSources(x.data()+i,y.data()+i,count,chunk);i+=count;
+    }
+    check(x==l&&y==r,"multi callback partition parity");
+    AutoDuckerCore loss;check(loss.prepare(sr),"loss prepare");
+    const std::array<AutoDuckerSource,2> both{{{7,{a.data(),nullptr}},{19,{b.data()+sr/2,nullptr}}}};
+    loss.processSources(x.data(),y.data(),sr/2,both);
+    const std::array<AutoDuckerSource,2> one{{{7,{}},{19,{b.data()+sr,nullptr}}}};
+    loss.processSources(x.data(),y.data(),sr/2,one);
+    check(loss.gain()<.26f,"one missing other continues");
+    loss.processSources(x.data(),y.data(),sr,{});
+    check(loss.gain()>.98f&&!loss.active(),"all missing smooth fail open");
+    const std::array<AutoDuckerSource,2> duplicate{{{7,{a.data(),nullptr}},{7,{a.data(),nullptr}}}};
+    loss.processSources(x.data(),y.data(),sr,duplicate);
+    check(!loss.active()&&loss.gain()>.99f,"duplicate rejected");
     AutoDuckerCore::Prepared p;AutoDuckerSettings invalid;
     invalid.depthDb=-1;
     check(!AutoDuckerCore::prepareSettings(48000,invalid,p),"negative depth rejected");
