@@ -77,13 +77,51 @@ def main():
                     radius:coat.borderRadius,panelRadius:s.borderRadius,
                     overflow:s.overflowY};
             }""")
-            assert glass["gradients"]==4 and glass["shadows"]==8,glass
+            assert glass["gradients"]==1 and glass["shadows"]==8,glass
             assert glass["content"] not in ("none","normal") and glass["position"]=="absolute",glass
             assert glass["inset"]==["0px"]*4 and glass["pointer"]=="none",glass
             assert glass["layer"]>glass["menuLayer"]>glass["screenLayer"] and glass["isolation"]=="isolate",glass
             assert glass["filter"]==glass["backdrop"]==glass["animation"]=="none",glass
             assert glass["radius"]==glass["panelRadius"] and glass["overflow"]=="hidden",glass
             assert screen.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")
+            # Reference geometry: measure the actual glass on a uniform dark
+            # substrate, not the busy controls. The entire upper-left plane
+            # must be brighter, with ONE straight diagonal transition and no
+            # additional bright bands. Check multiple scanlines at every DPI.
+            probe_style=page.add_style_tag(content="#arsonPlayer{background:#202830!important} #playerScreen{visibility:hidden!important}")
+            try:
+                plane=panel.screenshot(scale="css",animations="disabled")
+                (evidence/f"glass-plane-{width}-{height}.png").write_bytes(plane)
+                profile=page.evaluate("""async s=>{
+                    const bmp=await createImageBitmap(new Blob([Uint8Array.from(atob(s),c=>c.charCodeAt(0))],{type:'image/png'}));
+                    const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
+                    const ctx=c.getContext('2d');ctx.drawImage(bmp,0,0);bmp.close();
+                    const {width:w,height:h}=c,d=ctx.getImageData(0,0,w,h).data;
+                    const sample=(x,y)=>{const i=(y*w+x)*4;return (d[i]+d[i+1]+d[i+2])/3;};
+                    const lines=[];
+                    for(const f of [.2,.4,.6,.8]){
+                        const x=Math.round(w*f),expected=.4*(w+h)-x;
+                        if(expected<26||expected>h-26)continue;
+                        const jumps=[];let otherMax=0;
+                        for(let y=20;y<h-21;y++){
+                            const jump=sample(x,y)-sample(x,y+1);
+                            if(jump>5)jumps.push({y,jump});
+                            if(Math.abs(y-expected)>4)otherMax=Math.max(otherMax,Math.abs(jump));
+                        }
+                        const bright=sample(x,Math.round(expected)-8),dark=sample(x,Math.round(expected)+8);
+                        const total=jumps.reduce((n,j)=>n+j.jump,0);
+                        lines.push({x,expected,jumps,otherMax,bright,dark,total});
+                    }
+                    return {w,h,lines};
+                }""",base64.b64encode(plane).decode("ascii"))
+                assert len(profile["lines"])>=2,profile
+                for line in profile["lines"]:
+                    assert line["bright"]-line["dark"]>18 and line["total"]>18,line
+                    assert 1<=len(line["jumps"])<=3 and all(abs(j["y"]-line["expected"])<=3 for j in line["jumps"]),line
+                    assert line["otherMax"]<=3,line
+                print("PLAYER_EPS_SINGLE_PLANE_PASS",width,profile,flush=True)
+            finally:
+                probe_style.evaluate("e=>e.remove()")
             def hit(control):
                 control.scroll_into_view_if_needed()
                 assert control.evaluate("""e=>{const r=e.getBoundingClientRect();
