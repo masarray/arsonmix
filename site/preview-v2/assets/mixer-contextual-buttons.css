@@ -467,8 +467,10 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
    The V28 hardware baseline hides More's WIRE TOOLS above 1250px. Once
    Routes/Matrix/WIRE Setup move off the topbar, expose their *original*
    More commands at every width; preserve V28's pinned artwork checksum. */
-.app .command-bar > :is(#wireNavigatorToggle,#wireMatrixToggle,
-  #wireConfigToggle,#mixContext){display:none!important}
+.app .command-bar > :is(#wireMatrixToggle,#wireConfigToggle){display:none!important}
+.app .command-bar>#mixContext{display:block!important;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px!important;font-weight:500;color:#aec4ce}
+.app .command-bar:has(#sofToggle[aria-pressed="true"])>#mixContext{color:#73ccdf!important}
+@media(max-width:1150px){.app .command-bar>#mixContext{max-width:80px}}
 .app .more-tools-panel .wire-overflow{display:block!important}
 .app .command-bar:not(:has(#sofToggle[aria-pressed="true"])) #sofTarget{
   display:none!important

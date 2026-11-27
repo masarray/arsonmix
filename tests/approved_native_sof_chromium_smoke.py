@@ -200,22 +200,30 @@ def exercise(browser, out, width, height):
     assert source.get_by_role("button",name="Assign PRE send").is_enabled()
     assert source.get_by_role("button",name="Assign POST send").is_enabled()
     before=len(page.evaluate("()=>window.__nativeIntents"))
-    assert source.locator(".fader").is_disabled()
+    assert source.locator(".fader").is_enabled()
+    travel=source.locator(".fader-travel").bounding_box()
+    page.mouse.move(travel["x"]+travel["width"]/2,travel["y"]+travel["height"]*.9)
+    page.mouse.down()
+    page.mouse.move(travel["x"]+travel["width"]/2,travel["y"]+travel["height"]*.45,steps=5)
+    page.mouse.up()
+    draft_db=float(source.locator(".fader").input_value())
+    assert draft_db>-60 and "DRAFT" in source.locator(".sof-info small").inner_text()
     assert len(page.evaluate("()=>window.__nativeIntents"))==before
     source.get_by_role("button",name="Assign PRE send").click()
     assignment=wait_for_intents(page,"APPLY_WIRE_TRANSACTION",2)
     assert assignment["targetChannelId"]==SOURCE
     change=assignment["payload"]["changes"][0]
-    assert change=={"op":"CONNECT","from":SOURCE,"to":RECEIVER,"tap":"PRE_FADER","gainLinear":0},change
-    assert source.locator(".fader").is_disabled(), "No speculative graph"
+    assert change["op"]=="CONNECT" and change["from"]==SOURCE and change["to"]==RECEIVER and change["tap"]=="PRE_FADER",change
+    assert abs(change["gainLinear"]-10**(draft_db/20))<1e-8
+    assert "NO SEND" in source.locator(".sof-badge").inner_text(), "No speculative graph"
     state["graph"].update(revision="5",rosterRevision="5")
     state["mixerSession"].update(routeRevision="5",rosterRevision="5")
     ack(page,state,assignment)
-    assert source.locator(".fader").is_disabled(), "ACK alone is not routing evidence"
-    state["graph"]["edges"].append({**removed_send,"edgeId":"9223372036854775899","tap":"PRE_FADER","gainLinear":0})
+    assert "NO SEND" in source.locator(".sof-badge").inner_text(), "ACK alone is not routing evidence"
+    state["graph"]["edges"].append({**removed_send,"edgeId":"9223372036854775899","tap":"PRE_FADER","gainLinear":change["gainLinear"]})
     emit(page,"arMixConsoleSnapshot",state)
     assert source.locator(".fader").is_enabled()
-    assert float(source.locator(".fader").input_value())==-60
+    assert abs(float(source.locator(".fader").input_value())-draft_db)<.051
     assert intent_list(page,"SET_FADER")==[]
 
     toggle.click()
@@ -274,7 +282,7 @@ def exercise_dmx(browser, out, width, height):
     assert abs(float(cue.locator(".fader").input_value())+3)<.01
     assert abs(float(wet.locator(".fader").input_value())-20*__import__("math").log10(.125))<.06
     source=page.locator('#tracks .strip[data-native-role="INPUT"]')
-    assert source.locator(".fader").is_disabled(), "no auto-patching missing monitor send"
+    assert source.locator(".fader").is_enabled(), "missing monitor send can be staged without auto-patching"
     fader=wet.locator(".fader")
     fader.evaluate("""el=>{
       el.value='-12';
@@ -400,6 +408,61 @@ def exercise_create_fx_return(browser,out):
     page.close()
 
 
+def exercise_offline_sof(browser,out):
+    from approved_native_offline_logical_smoke import snapshot as offline_snapshot
+    page=browser.new_page(viewport={"width":1366,"height":900})
+    errors=[]
+    page.on("pageerror",lambda error:errors.append(str(error)))
+    page.add_init_script(NATIVE_EVENTS + """window.__events=[];
+      window.__JUCE__={backend:{emitEvent(name,payload){window.__events.push({name,payload});},
+        ...window.__nativeListenerMethods}};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=offline_snapshot()
+    graph=state["logicalMixer"]["graph"]
+    graph["capabilities"]["supportedOps"].append("SET_WIRE_GAIN")
+    graph["edges"].append({"edgeId":"123456","from":"1","to":"11","signalKind":"AUDIO",
+        "enabled":True,"primaryOutput":False,"tap":"POST_FADER","tapStage":"POST_FADER",
+        "sendEnabled":True,"gainLinear":.5})
+    emit(page,"arMixConsoleSnapshot",state)
+    page.wait_for_function("()=>document.documentElement.dataset.armixNativeAuthority==='logical-editable'")
+    page.locator("#sofToggle").click()
+    page.locator("#sofTarget").select_option(label="AUX A")
+    source=page.locator('#tracks .strip[data-id="1"]')
+    fader=source.locator(".fader")
+    assert fader.is_enabled()
+    def release(db):
+        fader.evaluate("""(el,db)=>{el.value=String(db);
+          el.dispatchEvent(new Event('input',{bubbles:true}));
+          el.dispatchEvent(new Event('change',{bubbles:true}));}""",db)
+    def sent():
+        return page.evaluate("()=>window.__events.filter(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN').map(e=>e.payload)")
+    release(-12)
+    page.wait_for_function("()=>window.__events.some(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN')")
+    first=sent()[0]
+    assert first["channelId"]=="1" and first["payload"]["edgeId"]=="123456"
+    release(-3)
+    assert len(sent())==1, "durable commit remains serialized, pointer does not block"
+    assert abs(float(fader.input_value())+3)<.05
+    def accept(request,revision):
+        emit(page,"arMixLogicalAck",{"requestId":request["requestId"],"status":"ACCEPTED",
+            "errorCode":"NONE","revision":revision,"physicalOutputAdmitted":False})
+        graph.update(revision=revision,rosterRevision=revision)
+        state["logicalMixer"]["revision"]=revision
+        graph["edges"][-1]["gainLinear"]=request["payload"]["gainLinear"]
+        emit(page,"arMixConsoleSnapshot",state)
+    accept(first,"2")
+    page.wait_for_function("()=>window.__events.filter(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN').length===2")
+    second=sent()[-1]
+    assert second["baseRevision"]=="2" and abs(second["payload"]["gainLinear"]-10**(-3/20))<1e-8
+    accept(second,"3")
+    assert abs(float(fader.input_value())+3)<.05
+    assert page.evaluate("()=>window.__events.every(e=>e.name!=='arMixConsoleIntent')")
+    assert graph["channels"][0]["controls"]["faderDb"]==0
+    assert not errors,errors
+    page.close()
+
+
 def main():
     spec=importlib.util.spec_from_file_location(
         "native_bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -416,6 +479,7 @@ def main():
                     exercise_dmx(browser,out,width,height)
                 exercise_dmx_conversion(browser,out)
                 exercise_create_fx_return(browser,out)
+                exercise_offline_sof(browser,out)
             finally:
                 browser.close()
     print("PASS native SOF actual Chromium: exact EdgeId ON/OFF, PRE tap, gain, ACK/readback, no ghost patch or MAIN fader write; two viewports")

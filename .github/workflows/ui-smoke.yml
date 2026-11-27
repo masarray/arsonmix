@@ -405,7 +405,7 @@ jobs:
   studio-audio-io:
     name: Studio Audio I/O real Chromium routing interaction
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-')) }}
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -428,8 +428,14 @@ jobs:
           echo "AUDIO_IO_CHROMIUM_EXACT_HEAD=$EXPECTED_SOURCE_SHA"
           python tests/approved_audio_io_chromium_smoke.py
       - name: Unified routing actual held SOF gesture and assignment
-        if: ${{ startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') }}
+        if: ${{ (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') }}
         run: python tests/approved_native_sof_chromium_smoke.py
+      - name: Application menu layout and offline workspace integration
+        if: ${{ github.head_ref == 'fix/operator-menu-offline-sof-20261127' }}
+        run: |
+          python tests/native_header_toolbar_chromium_smoke.py
+          python tests/approved_native_offline_logical_smoke.py
+          python tests/sof_contextual_console_smoke.py
       - name: P0 live-ops exact assembled workspace restore
         if: ${{ !cancelled() && (github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'staging/io-reverb-integrated-global-20261125') }}
         env:
@@ -451,6 +457,7 @@ jobs:
           path: |
             audio-io-custom-stereo.png
             native-external-output-matrix.png
+            operator-ux-application-menu-*.png
           if-no-files-found: ignore
           retention-days: 7
 

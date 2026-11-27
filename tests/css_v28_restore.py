@@ -76,6 +76,14 @@ def reconstruct():
     # Owner V2 adds a native-ONLY toolbar after the original desktop caption.
     # Strip that uniquely anchored addition first, preserving the strict V28
     # byte-for-byte historical CSS migration and the old 1600-byte caption gate.
+    # Strip the independently qualified application menu extension only.
+    menu_marker="\n/* Single operator application menu:"
+    if menu_marker in chrome:
+        assert chrome.count(menu_marker)==1
+        menu_tail=chrome[chrome.index(menu_marker):]
+        assert ".command-bar>#moreTools" in menu_tail and ".reference-file-menu" in menu_tail
+        assert 1000<len(menu_tail)<6000
+        chrome=chrome[:chrome.index(menu_marker)].rstrip()+"\n"
     desktop_toolbar_css="\n/* Native desktop toolbar V2 — functional hardware keys stay 29px high."
     assert chrome.count(desktop_toolbar_css)==1,"Native toolbar CSS owner missing or duplicated"
     toolbar_tail=chrome[chrome.index(desktop_toolbar_css):]

@@ -355,13 +355,25 @@ def main():
                   const available=name=>buttons.find(b=>b.textContent===name)?.disabled===false;
                   return {recall:available('Recall Show'),recover:available('Recover Last Good')};
                 }""",[show_panel,value])
+            # File commands now live in the first application menu, not
+            # on the toolbar surface. Exercise the visible controls, including
+            # the original native action and icon, rather than bypassing them.
             toolbar=page.locator(".command-bar")
+            application_menu=toolbar.locator("#moreTools")
+            assert application_menu.evaluate("el=>el===el.parentElement.firstElementChild")
+            assert toolbar.locator(":scope > .mixer-file-tool").count()==0
+            was_open=application_menu.get_attribute("open") is not None
             for caption,icon in [("Save","mixer-save.svg"),("Open","mixer-open.svg")]:
-                button=toolbar.get_by_role("button",name=caption,exact=True)
+                if application_menu.get_attribute("open") is None:
+                    application_menu.locator(":scope > summary").click()
+                button=application_menu.locator(".mixer-file-tool").filter(has_text=caption)
+                assert button.count()==1 and button.is_visible()
                 assert button.locator("img").get_attribute("src")=="assets/"+icon
                 assert button.locator("img").evaluate("el=>el.complete && el.naturalWidth>0")
                 button.click()
                 assert page.evaluate("()=>window.__events.at(-1).payload.action")=="nativeMixerFile"+caption
+            if (application_menu.get_attribute("open") is not None)!=was_open:
+                application_menu.locator(":scope > summary").click()
             for name in ["Save Mixer Session","Restore Saved Mixer",
                          "Rebind Current Device…","Recover Previous Mixer"]:
                 assert page.get_by_role("button",name=name,exact=True).count()==0

@@ -115,13 +115,11 @@ def main():
             assert metrics["dividers"][0]["height"] in (0, 21), (
                 width, "divider layout changed", metrics)
             visible = metrics["visible"]
-            # Owner reference: one contiguous group aligned to the right edge.
-            assert metrics["tail"] == ["addTrack","audioIO","moreTools"], (width, metrics)
-            right = visible[-3:]
-            assert [x["id"] for x in right] == ["addTrack","Audio I/O","moreTools"], (width, right)
-            for a, b in zip(right,right[1:]):
-                assert abs(b["left"]-a["right"]-metrics["gap"]) <= 1.5, (width, right)
-            assert abs(metrics["bar"]["right"]-metrics["more"]["right"]-metrics["paddingRight"]) <= 2, (width, metrics)
+            # The application menu is the actual first DOM/focus item.
+            assert visible[0]["id"]=="moreTools", (width,metrics)
+            right=visible[-2:]
+            assert [x["id"] for x in right]==["addTrack","Audio I/O"], (width,right)
+            assert abs(right[1]["left"]-right[0]["right"]-metrics["gap"])<=1.5, (width,right)
             ids=[x["id"] for x in visible]
             assert ids.index("playerToggle") == ids.index("pluginsButton")+1, (width, ids)
             for a, b in zip(visible, visible[1:]):
@@ -132,11 +130,15 @@ def main():
                 assert item["left"] >= -1 and item["right"] <= width+1, (
                     width, "toolbar control outside viewport", item)
             # Real file group, not CSS visual reordering: tab order follows DOM.
-            file_group = page.locator(".command-bar > .mixer-file-tool")
+            menu=page.locator("#moreTools")
+            assert menu.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
+            assert page.locator(".command-bar > .mixer-file-tool").count()==0
+            menu.locator(":scope > summary").click()
+            file_group = menu.locator(".mixer-file-tool")
             assert file_group.all_text_contents() == ["New", "Save", "Open"], width
-            new = page.locator(".command-bar > [data-native-new-project]")
+            new = menu.locator("[data-native-new-project]")
             assert new.count() == 1 and new.is_visible(), width
-            assert new.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
+            page.screenshot(path=f"operator-ux-application-menu-{width}.png")
             assert new.get_by_role("img").count() == 0  # decorative icon
             image = new.locator("img")
             assert image.get_attribute("alt") == ""
@@ -150,6 +152,7 @@ def main():
                 button.click()
                 assert page.evaluate("()=>window.__events.at(-1).payload.action") == (
                     "nativeMixerFile"+caption), (width, "file action disconnected", caption)
+            menu.locator(":scope > summary").click()
             # Native-only status presenter must not expose internal FAT,
             # PCM graph revision counters, or simulation copy in the UI.
             operator_footer = page.evaluate("""async()=>{

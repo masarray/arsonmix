@@ -219,6 +219,17 @@ public:
                 edit.value=static_cast<float>(n);
             }
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_WIRE_GAIN") {
+            std::uint64_t edgeId=0;
+            const auto gain=payload.getProperty("gainLinear",{});
+            if(!armix::session::parseDecimal(payload.getProperty("edgeId",{}),edgeId)||!edgeId||
+               !(gain.isDouble()||gain.isInt()))return bad("INVALID_SEND_GAIN");
+            const auto linear=static_cast<double>(gain);
+            if(!std::isfinite(linear)||linear<0.||linear>2.)return bad("INVALID_SEND_GAIN");
+            edit.kind=ChannelEdit::Kind::setSendGain;
+            edit.sendEdgeId=edgeId;
+            edit.value=static_cast<float>(linear);
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_SEND_TAP") {
             const auto raw=payload.getProperty("edgeId",{});
             std::uint64_t edgeId=0;
@@ -337,6 +348,11 @@ public:
                     if(!(gain.isDouble()||gain.isInt()))
                         return bad("INVALID_SEND_GAIN");
                     wire.gain=static_cast<float>(static_cast<double>(gain));
+                    if(type=="CONNECT"&&change.getDynamicObject()->hasProperty("tap")) {
+                        const auto tap=change.getProperty("tap","").toString();
+                        if(tap!="PRE_FADER"&&tap!="POST_FADER")return bad("INVALID_SEND_TAP_STAGE");
+                        wire.preFader=tap=="PRE_FADER";
+                    }
                 }
                 result=editor_.wire(expected,std::span<const WireChange>{&wire,1});
             }
@@ -423,7 +439,7 @@ public:
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
             "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_INPUT_GAIN","SET_WIRE_SUM_GAIN","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
-            "SET_SEND_ENABLED","SET_SEND_TAP",
+            "SET_SEND_ENABLED","SET_SEND_TAP","SET_WIRE_GAIN",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
             "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
         set(cap,"supportedOps",juce::var(operations));
