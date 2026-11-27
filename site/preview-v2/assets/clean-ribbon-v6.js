@@ -31,7 +31,7 @@ function installCompactMenu(more){
  }
  let page='root';
  const channelIds=new Set(['addTrack','addBus','addFx','addGroupBus','addGroupSelected','convertSelectedReverb','copy','paste','group','ungroup']);
- const viewIds=new Set(['mode','viewFilter']);
+ const viewIds=new Set(['mode','viewFilter','ribbonFilterMenu']);
  const sceneIds=new Set(['sceneSafe','sceneSelect','saveScene','recallScene']);
  const headings=new Map([['PROJECT · MIXER SESSION','root'],['CHANNEL SETUP','channel'],['VIEW & SELECTION','channel'],['WIRE TOOLS','settings'],['REFERENCE TOOLS','diagnostics'],['AUDIO / SAFETY','settings'],['AUDIO HEALTH','diagnostics'],['STUDIO / VERIFIED SHOWS','scenes']]);
  function classify(){
@@ -92,6 +92,16 @@ function install(){
  summary.innerHTML=shape('menu',151,'armix-ribbon-menu-shape')+'<svg class="armix-ribbon-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>ArSon<span style="color:#51d4ef">Mix</span></span>';
  summary.setAttribute('aria-label','ArSonMix application menu');
  const compactMenu=installCompactMenu(more);
+ const filter=$('viewFilter');
+ if(filter){
+   const jump=document.createElement('button');jump.type='button';jump.id='ribbonFilterMenu';jump.className='tool';jump.textContent='Channel filter…';
+   jump.addEventListener('click',()=>{more.open=false;select('mixer');filter.focus();});
+   filter.before(jump);bar.append(filter);
+   delete filter.dataset.armixMenuActive;delete filter.dataset.armixMenuPage;
+ }
+ const navTools=document.createElement('div');navTools.className='armix-ribbon-nav-tools';
+ navTools.innerHTML='<span class="armix-ribbon-nav-status" id="ribbonPlayerStatus"></span>'+button('ribbonQuickPlayer','Open Player',icon('<path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/>'));
+ header.append(navTools);
  const player=document.createElement('div');player.className='armix-ribbon-player';player.hidden=true;player.setAttribute('role','group');player.setAttribute('aria-label','Player transport');
  player.innerHTML='<span class="armix-ribbon-track" id="ribbonTrack">No music loaded</span><input type="range" id="ribbonSeek" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span class="armix-ribbon-time" id="ribbonTime">00:00 / 00:00</span><div class="armix-ribbon-transport">'+button('ribbonPrevious','Previous',icon('<rect x="4" y="5" width="3.5" height="14" rx="1"/><path d="M19 5 8 12l11 7z"/>',true))+button('ribbonPlay','Play',play)+button('ribbonNext','Next',icon('<rect x="16.5" y="5" width="3.5" height="14" rx="1"/><path d="m5 5 11 7-11 7z"/>',true))+button('ribbonStop','Stop',icon('<rect x="5" y="5" width="14" height="14" rx="2"/>',true))+'</div><div class="armix-ribbon-options">'+button('ribbonLoop','Loop A–B',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/>'))+button('ribbonMode','Playback mode / repeat',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/><path d="M10 12h4"/>'))+button('ribbonQueue','Queue',icon('<path d="M3 5h17M3 10h17M3 15h10m3 0 5 3-5 3z"/>'))+'</div><label class="armix-ribbon-volume">'+icon('<path d="M3 9v6h4l5 4V5L7 9H3zm13 0a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/>')+'<input type="range" id="ribbonVolume" min="0" max="100" step="1" value="50" aria-label="Player level before channel FX"></label>';
  // Restore local V6 order with the same native action controls.
@@ -119,6 +129,33 @@ function install(){
  if($('sofToggle'))new MutationObserver(syncMix).observe($('sofToggle'),{attributes:true,attributeFilter:['aria-pressed','disabled']});
  syncMix();
  const openPlayer=()=>{if($('arsonPlayer')?.hidden)click('playerToggle');};
+ $('ribbonQuickPlayer').addEventListener('click',openPlayer);
+ function syncQuickPlayer(){
+   const status=$('ribbonPlayerStatus'),playing=source('playerPlay')?.dataset.playing==='true';
+   const value=playing?'Playing':'Player';
+   if(status.textContent!==value)status.textContent=value;
+   status.classList.toggle('is-playing',playing);
+   $('ribbonQuickPlayer').disabled=!source('playerToggle')||source('playerToggle').disabled;
+ }
+ const panicShortcut=document.createElement('button');panicShortcut.type='button';panicShortcut.id='ribbonEmergency';panicShortcut.className='tool';panicShortcut.disabled=true;
+ panicShortcut.innerHTML=icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>');
+ panicShortcut.title='Emergency stop audio';panicShortcut.setAttribute('aria-label',panicShortcut.title);
+ bar.append(panicShortcut);
+ const emergency=()=>more.querySelector('[data-native-emergency-output]');
+ function syncEmergency(){
+   const action=emergency(),mode=action?.dataset.emergencyMode;
+   panicShortcut.hidden=!native||!action;
+   panicShortcut.disabled=!action||action.disabled||mode!=='stop';
+   panicShortcut.title=mode==='resume'?'Output stopped · resume from ArSonMix menu':'Emergency stop audio';
+   panicShortcut.setAttribute('aria-label',panicShortcut.title);
+   panicShortcut.classList.toggle('is-stopped',mode==='resume');
+ }
+ panicShortcut.addEventListener('click',()=>{const action=emergency();if(action?.dataset.emergencyMode==='stop'&&!action.disabled)action.click();});
+ const emergencyObserver=new MutationObserver(syncEmergency);
+ let watchedEmergency=null;
+ function bindEmergency(){const action=emergency();if(action!==watchedEmergency){emergencyObserver.disconnect();watchedEmergency=action;if(action)emergencyObserver.observe(action,{attributes:true,attributeFilter:['disabled','data-emergency-mode']});}syncEmergency();}
+ new MutationObserver(bindEmergency).observe(more.querySelector('.more-tools-panel'),{childList:true});
+ bindEmergency();
  const mappings={ribbonPrevious:'playerPrevious',ribbonPlay:'playerPlay',ribbonNext:'playerNext',ribbonStop:'playerStop',ribbonLoop:'playerLoopAB'};
  Object.entries(mappings).forEach(([id,target])=>$(id).addEventListener('click',()=>click(target)));
  $('ribbonMode').addEventListener('click',()=>{openPlayer();click('playerAutoNext');});
@@ -159,30 +196,31 @@ function install(){
    setText($('ribbonTime'),(source('playerElapsed')?.textContent||'00:00')+' / '+(source('playerDuration')?.textContent||'00:00'));
    controls.forEach(c=>c.sync());
  }
- function schedule(){if(active!=='player'||queued)return;queued=true;queueMicrotask(()=>{queued=false;syncPlayer();});}
+ function schedule(){syncQuickPlayer();if(active!=='player'||queued)return;queued=true;queueMicrotask(()=>{queued=false;syncPlayer();});}
  const observed=['playerPlay','playerPrevious','playerNext','playerStop','playerLoopAB','playerAutoNext','playerAdd','playerQueueView','playerNow','playerElapsed','playerDuration','playerSeek','playerVolume'];
  const playerObserver=new MutationObserver(schedule);
  for(const id of observed){const el=source(id);if(el)playerObserver.observe(el,{attributes:true,attributeFilter:['disabled','aria-pressed','data-playing','style'],childList:true,characterData:true,subtree:true});}
  // Presentation follows the already accepted Player DOM; no second state stream.
  const group={
-   bankPrev:'mixer',bankSelect:'mixer',bankNext:'mixer',densitySelect:'mixer',
-   pluginsButton:'mixer fx',gainView:'mixer',fxView:'mixer fx',globalFxToggle:'mixer fx',
+   bankPrev:'mixer',bankSelect:'mixer',bankNext:'mixer',densitySelect:'mixer',viewFilter:'mixer',
+   pluginsButton:'mixer fx',gainView:'mixer',fxView:'mixer',globalFxToggle:'mixer fx',
    sofToggle:'mixer routing',sofTarget:'mixer routing',clearCue:'mixer routing',
    wireNavigatorToggle:'routing',wireMatrixToggle:'routing',wireConfigToggle:'routing',
    sceneSelect:'scenes',saveScene:'scenes',recallScene:'scenes',addTrack:'mixer routing',
-   playerMini:'mixer',playerToggle:'all',moreTools:'all',mixContext:'all'
+   playerMini:'mixer',playerToggle:'player',moreTools:'all',mixContext:'all',ribbonEmergency:'all'
  };
  function orderCommands(){
    // Maintain a single native command per action. DOM order also defines keyboard order.
    const io=bar.querySelector(':scope > [data-native-io]');
    const preferred=[more,$('bankPrev'),$('bankSelect'),$('bankNext'),$('densitySelect'),
      bar.querySelector(':scope > .strip-view-switch'),$('globalFxToggle'),$('wireNavigatorToggle'),
-     $('wireMatrixToggle'),$('wireConfigToggle'),$('sofToggle'),$('sofTarget'),$('clearCue'),
+     $('wireMatrixToggle'),$('wireConfigToggle'),$('sofToggle'),$('sofTarget'),$('clearCue'),$('viewFilter'),
      $('sceneSelect'),$('recallScene'),$('saveScene'),scene,$('addTrack'),$('pluginsButton'),
-     player,$('playerToggle'),$('playerMini'),io,$('ribbonMainMix')].filter(el=>el?.parentElement===bar);
-   const known=new Set(preferred),context=$('mixContext');
+     player,$('playerToggle'),$('playerMini'),bar.querySelector(':scope > [data-ribbon-audio-summary]'),io,$('ribbonMainMix')].filter(el=>el?.parentElement===bar);
+   const known=new Set([...preferred,panicShortcut]),context=$('mixContext');
    const wanted=[...preferred,...Array.from(bar.children).filter(el=>!known.has(el)&&el!==context)];
    if(context?.parentElement===bar)wanted.push(context);
+   wanted.push(panicShortcut);
    // Move only when needed; a second child-list callback is a no-op.
    let cursor=bar.firstElementChild;
    for(const el of wanted){if(el===cursor)cursor=cursor.nextElementSibling;else bar.insertBefore(el,cursor);}
@@ -191,11 +229,12 @@ function install(){
    orderCommands();
    for(const el of bar.children){
      if(el===player||el===scene)continue;
-     const scope=el.classList.contains('strip-view-switch')?'mixer fx':el.matches('[data-native-io]')?'mixer io':group[el.id]||'all';
+     const scope=el.classList.contains('strip-view-switch')?'mixer':el.matches('[data-native-io],[data-ribbon-audio-summary]')?'io':group[el.id]||'all';
      el.dataset.ribbonHidden=String(scope!=='all'&&!scope.split(' ').includes(active));
    }
    player.hidden=active!=='player';scene.hidden=active!=='scenes'||!native;
-   const trigger=$('playerToggle');if(trigger){const label=active==='player'?'Open Player':'♫ Player';if(trigger.dataset.ribbonLabel!==label){trigger.dataset.ribbonLabel=label;trigger.replaceChildren();if(active==='player'){trigger.insertAdjacentHTML('beforeend',icon('<path d="M14 3h7v7m0-7-11 11M21 14v7H3V3h7"/>'));trigger.firstElementChild.classList.add('armix-ribbon-open-icon');}trigger.append(document.createTextNode(label));}}
+   syncQuickPlayer();bindEmergency();
+   const trigger=$('playerToggle');if(trigger){const label='Open Player';if(trigger.dataset.ribbonLabel!==label){trigger.dataset.ribbonLabel=label;trigger.replaceChildren();{trigger.insertAdjacentHTML('beforeend',icon('<path d="M14 3h7v7m0-7-11 11M21 14v7H3V3h7"/>'));trigger.firstElementChild.classList.add('armix-ribbon-open-icon');}trigger.append(document.createTextNode(label));}}
    for(const [id,label] of [['ribbonShowSave','Save Show'],['ribbonShowBrowse','Browse Shows']]){const el=findShow(label);$(id).disabled=!el||el.disabled;}
  }
  function select(id,focus=false){

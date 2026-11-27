@@ -127,8 +127,13 @@ def main():
             assert page.locator('.armix-ribbon-nav .file-name').is_hidden()
             assert page.locator('.armix-ribbon-nav #trackCount').is_hidden()
             ids=[x["id"] for x in visible]
-            assert ids.index("bankPrev")<ids.index("bankSelect")<ids.index("bankNext")<ids.index("addTrack")<ids.index("pluginsButton")<ids.index("playerToggle"),(width,ids)
-            assert ids[-1]=="mixContext",(width,ids)
+            assert ids.index("bankPrev")<ids.index("bankSelect")<ids.index("bankNext")<ids.index("viewFilter")<ids.index("addTrack")<ids.index("pluginsButton"),(width,ids)
+            assert not page.locator("#playerToggle").is_visible()
+            assert page.locator("#ribbonQuickPlayer").is_visible()
+            assert page.locator("#viewFilter").count()==1
+            assert ids[-2:]==["mixContext","ribbonEmergency"],(width,ids)
+            assert page.locator("#ribbonEmergency").is_disabled()  # no hardware in this fixture
+            assert page.locator("[data-native-emergency-output]").get_attribute("data-emergency-mode")=="stop"
             assert page.locator("#pluginsButton").evaluate("el=>getComputedStyle(el,'::before').maskImage")!="none"
             if width==1366:
                 page.screenshot(path="operator-ux-toolbar-mixer-1366.png")
@@ -219,6 +224,10 @@ def main():
                 for workflow in ("fx","routing","scenes","io"):
                     page.locator("#ribbon-tab-"+workflow).click()
                     assert page.locator("#ribbon-tab-"+workflow).get_attribute("aria-selected")=="true"
+                    assert page.locator("#ribbonEmergency").is_visible()
+                    if workflow=="io":
+                        assert page.locator("[data-ribbon-audio-summary]").is_visible()
+                        assert page.locator("[data-ribbon-audio-summary] [data-audio-value]").all_text_contents()==["No device","—","—","—"]
                     page.screenshot(path=f"operator-ux-toolbar-{workflow}-1366.png")
             assert not errors, (width, "native JavaScript errors", errors)
             print("NATIVE_TOOLBAR", width, metrics["bar"], len(visible), flush=True)
