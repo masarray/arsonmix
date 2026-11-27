@@ -140,7 +140,7 @@ test('cold MON preparation is separate from ARM and waits for verified restored 
 });
 
 test('saved ASIO cold-open retries are bounded, exact-registration and single-callback',()=>{
- const s=main.split('void serviceStartupAsioRetry()')[1].split('// CONTROL only. A failed disk write')[0];
+ const s=main.split('void serviceStartupAsioRetry()')[1].split('void rememberSavedWasapiProfile(')[0];
  assert.match(s,/engine_\.start\(&settings,true\)/);
  assert.match(s,/startupAsioRetry_\.attempts\(\)>=3/);
  assert.match(s,/generation!=startupAsioRetry_\.generation\(\)/);

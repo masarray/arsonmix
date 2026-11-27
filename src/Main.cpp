@@ -11747,6 +11747,48 @@ private:
 
     // Load only the previously committed device XML, even when hardware
     // is absent at cold start. A JUCE default is never an approved profile.
+    void cancelStartupAsioRetry() noexcept {
+        pendingStartupAsioSettings_.reset();
+        startupAsioRetry_.cancel();
+    }
+    // A cold-open retry is not a device switch. Preserve the exact XML and
+    // registered class verified on the initial failed attempt. No new
+    // callback registration, fallback backend, or graph mutation while waiting.
+    void serviceStartupAsioRetry() {
+        if(!pendingStartupAsioSettings_)return;
+        if(vendorSafeRecoveryActive()||engine_.hasRuntimeFxFault()||
+           !engine_.savedAsioStartupRetryAvailable()||engine_.directRouteAuthorized()||
+           engine_.hasRetainedNativeSession()) {cancelStartupAsioRetry();return;}
+        if(deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||
+           mixerSessionWorker_.busy()||logicalVendorEditor_||catalog_.busy())return;
+        const auto now=monotonicMilliseconds();
+        if(!startupAsioRetry_.due(now))return;
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
+        if(!lease)return;
+        const auto generation=startupAsioRetry_.generation();
+        // Keep a local copy across any nested vendor message-loop callback.
+        const auto settings=*pendingStartupAsioSettings_;
+        const auto error=engine_.start(&settings,true);
+        if(generation!=startupAsioRetry_.generation()) {
+            // No output was armed. Never let a superseded cold start resume.
+            engine_.beginManualAudioSetup();
+            return;
+        }
+        startupError_=error;
+        if(error.isEmpty()) {
+            deviceSettingsDirty_=true;
+            cancelStartupAsioRetry();
+            diagnostics_.record("SAVED_ASIO_STARTUP_RESTORED","Exact saved registration and device reopened");
+            return;
+        }
+        startupAsioRetry_.failed(now);
+        if(!engine_.savedAsioStartupRetryAvailable()||startupAsioRetry_.attempts()>=3) {
+            cancelStartupAsioRetry();
+            diagnostics_.record("SAVED_ASIO_STARTUP_WAIT_EXHAUSTED",error);
+            emitNotice("Saved ASIO not ready. Session preserved; check Audio I/O.",true);
+        }
+    }
+
     void rememberSavedWasapiProfile(const juce::XmlElement* saved) {
         if(!saved || saved->getTagName()!="DEVICESETUP" ||
            saved->getStringAttribute("deviceType")!="Windows Audio")return;
@@ -11965,48 +12007,6 @@ private:
             diagnostics_.record("DYNAMIC_MIXER_REATTACHED",
                 "Verified WASAPI callback epoch; previous MAIN intent retained");
             emitApprovedNativeSnapshot();
-        }
-    }
-
-    void cancelStartupAsioRetry() noexcept {
-        pendingStartupAsioSettings_.reset();
-        startupAsioRetry_.cancel();
-    }
-    // A cold-open retry is not a device switch. Preserve the exact XML and
-    // registered class verified on the initial failed attempt. No new
-    // callback registration, fallback backend, or graph mutation while waiting.
-    void serviceStartupAsioRetry() {
-        if(!pendingStartupAsioSettings_)return;
-        if(vendorSafeRecoveryActive()||engine_.hasRuntimeFxFault()||
-           !engine_.savedAsioStartupRetryAvailable()||engine_.directRouteAuthorized()||
-           engine_.hasRetainedNativeSession()) {cancelStartupAsioRetry();return;}
-        if(deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||
-           mixerSessionWorker_.busy()||logicalVendorEditor_||catalog_.busy())return;
-        const auto now=monotonicMilliseconds();
-        if(!startupAsioRetry_.due(now))return;
-        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
-        if(!lease)return;
-        const auto generation=startupAsioRetry_.generation();
-        // Keep a local copy across any nested vendor message-loop callback.
-        const auto settings=*pendingStartupAsioSettings_;
-        const auto error=engine_.start(&settings,true);
-        if(generation!=startupAsioRetry_.generation()) {
-            // No output was armed. Never let a superseded cold start resume.
-            engine_.beginManualAudioSetup();
-            return;
-        }
-        startupError_=error;
-        if(error.isEmpty()) {
-            deviceSettingsDirty_=true;
-            cancelStartupAsioRetry();
-            diagnostics_.record("SAVED_ASIO_STARTUP_RESTORED","Exact saved registration and device reopened");
-            return;
-        }
-        startupAsioRetry_.failed(now);
-        if(!engine_.savedAsioStartupRetryAvailable()||startupAsioRetry_.attempts()>=3) {
-            cancelStartupAsioRetry();
-            diagnostics_.record("SAVED_ASIO_STARTUP_WAIT_EXHAUSTED",error);
-            emitNotice("Saved ASIO not ready. Session preserved; check Audio I/O.",true);
         }
     }
 
