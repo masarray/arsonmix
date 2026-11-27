@@ -3722,7 +3722,7 @@
     const names=extraInventory.filter(n=>n.toLowerCase()!==primary);
     const opts=[["","None"+(extraPending?" · applying":v.fault?" · fault":v.ready&&!active?" · muted":"")]];
     if(active&&v.name)opts.push([v.name,v.name+(v.recovering?" · reconnecting":"")]);
-    else if(!v.split&&extraInventoryKnown)
+    else if(!v.split&&mainMonitorAllowed()&&extraInventoryKnown&&!extraInventoryPending)
       for(const name of names)opts.push([name,name]);
     if(!active&&!v.split)opts.push(["__armix_refresh__","Refresh devices…"]);
     if(!active&&!v.split&&(v.fault||v.ready||v.name))
@@ -3738,7 +3738,7 @@
     if(select.value!==value)select.value=value;
     // Settings remains reachable in Separate mix and before a device is ready.
     // Actual routing still passes the existing native admission checks below.
-    select.disabled=Boolean(extraPending)||deviceBusy()||Boolean(extraInventoryPending);
+    select.disabled=Boolean(extraPending)||deviceBusy();
     select.dataset.status=extraPending?"PENDING":v.state;
     const title=extraError||(v.split?"Separate mix · choose MON settings to configure.":
       v.fault?"Secondary output fault · select endpoint to retry or Disconnect.":
@@ -3762,7 +3762,7 @@
         requestAdditionalOutput("secondaryOutputStop",null,true);
       return;
     }
-    if(!mainMonitorAllowed()||v.armed||v.recovering||!extraInventoryKnown||
+    if(!mainMonitorAllowed()||v.armed||v.recovering||extraInventoryPending||!extraInventoryKnown||
        !extraInventoryId||!extraInventory.includes(value)||
        value.toLowerCase()===String(hardware?.device?.playbackDevice||"").toLowerCase())return;
     extraSelected=value;

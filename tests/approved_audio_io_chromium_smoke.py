@@ -619,7 +619,9 @@ def verify_main_monitor_shortcut(page,out):
          "outputs":["CABLE Input","Speakers","USB DAC"]})
     assert mon.input_value()==""
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').length")==0
-    primary=page.locator(".strip.master select[data-field=output]").input_value()
+    primary_select=page.locator(".strip.master select[data-field=output]")
+    primary=primary_select.input_value()
+    assert primary_select.locator("option",has_text="Configure audio output…").count()==1
     mon.select_option("USB DAC")
     enable=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
     assert enable["value"]=="USB DAC" and enable["inventoryId"]==req["requestId"]
