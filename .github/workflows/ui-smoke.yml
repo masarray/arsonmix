@@ -464,6 +464,8 @@ jobs:
             audio-io-custom-stereo.png
             native-external-output-matrix.png
             operator-ux-application-menu-*.png
+            v6-direct-sof-*.png
+            v6-plugin-manager-*.png
           if-no-files-found: ignore
           retention-days: 7
 
