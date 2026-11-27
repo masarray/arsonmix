@@ -2331,7 +2331,7 @@
   function paintFaderReadback(t,visualDb,changed){
     if(scope?.activeFaderId===t.id)return;
     // SOF uses an EdgeId, not the ChannelId fader visual lease.
-    if(scope?.sofEnabled&&nativeSofSource(t))return;
+    if(scope?.sofEnabled&&scope.sofTargetId!==t.id&&nativeSofSource(t))return;
     const view=visualDb===null?t:{...t,level:visualDb};
     // Only repair a changed control or genuinely stale mounted DOM. Never
     // rewrite unrelated strips during a held drag or meter-only update.
@@ -6206,7 +6206,7 @@
         }
         return true;
       }
-      if(field==="level"&&scope?.sofEnabled&&nativeSofSource(t)){
+      if(field==="level"&&scope?.sofEnabled&&scope.sofTargetId!==t.id&&nativeSofSource(t)){
         if(!el.isConnected||el.disabled)return true;
         const edge=selectedNativeSofEdge(t),db=Number(el.value);
         const uiId=edge&&uiByWireId.get(edge.edgeId);
@@ -6898,7 +6898,7 @@
       // Reset the parameter the fader CURRENTLY owns. A SOF reset must not
       // write the main channel's SET_FADER or M4 faderDb by accident.
       if (event.target.closest?.(".fader-box")||event.target.classList.contains("fader")){
-        if(scope?.sofEnabled&&nativeSofSource(t)){
+        if(scope?.sofEnabled&&scope.sofTargetId!==t.id&&nativeSofSource(t)){
           const edge=selectedNativeSofEdge(t),id=edge&&uiByWireId.get(edge.edgeId);
           if(!edge||id===undefined||
              !requestWireGain({sourceId:t.id,edgeId:id,levelDb:0}))

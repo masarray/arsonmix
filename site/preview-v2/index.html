@@ -365,6 +365,7 @@ function sectionGain(t){
 /* DMX uses the existing SOF surface and native role readback. Pages demo
    keeps its original INPUT/BUS/FX roles; terminal outputs are never sends. */
 function isSofSource(t){
+ if(sofEnabled&&t?.id===sofTargetId)return false; // destination retains its own master fader
  return t?.nativeRole?['INPUT','GROUP','FX_RETURN'].includes(t.nativeRole):t?.kind==='audio';
 }
 function isSofTarget(t){
@@ -866,6 +867,7 @@ function bankCapacity(){
  return panel?Math.max(1,Math.min(10,Math.floor((usable+2)/minimum)-1)):10;
 }
 function render(pageOverride){
+ if(faderGesture)cancelCapturedFader(); // never replay a detached gesture in a new context
  // A bank/mode rebuild destroys the captured dial node. Cancel the preview
  // before detaching it; never turn a resize into a native GAIN commit.
  if(gainDialGesture)finishGainDialGesture({pointerId:gainDialGesture.id},true);
@@ -971,6 +973,13 @@ function updateSofTargets(){
  const el=document.getElementById('sofTarget');
  const choices=tracks.filter(isSofTarget);
  let target=selectedSofDestination();
+ if(!target&&sofEnabled&&sofTargetId!==null){
+  // A deleted/replaced destination must not silently flip the same gesture to another mix.
+  sofEnabled=false;
+  const btn=document.getElementById('sofToggle');btn?.classList.remove('active');btn?.setAttribute('aria-pressed','false');
+  document.querySelector('.console-body')?.classList.remove('sends-mode');
+  say('SEND destination unavailable · returned to MAIN MIX');
+ }
  if(!target){
   const named=choices.filter(t=>t.name===sofTarget);
   target=named.length===1?named[0]:choices[0]||null;
@@ -1027,6 +1036,7 @@ function setSnapshotSafe(){
 function findTrack(el){const strip=el.closest('.strip');if(!strip)return null;const id=Number(strip.dataset.id);return id===master.id?master:tracks.find(t=>t.id===id);}
 function refreshStrip(t){
  const old=document.querySelector('.strip[data-id="'+t.id+'"]');if(!old)return;
+ if(faderGesture?.input?.closest?.('.strip')===old)cancelCapturedFader();
  if(gainDialGesture?.input?.closest?.('.strip')===old)
   finishGainDialGesture({pointerId:gainDialGesture.id},true);
  const oldRack=old.querySelector('.fxslot-list'),scroll=oldRack?oldRack.scrollTop:0;
@@ -2188,6 +2198,12 @@ function handleField(event){
    One gesture, no rebuilding strips during drag, and source range remains keyboard-accessible.
    The 29x62 visual cap center is aligned to this same travel ruler. */
 let faderGesture=null;
+function cancelCapturedFader(){
+ const g=faderGesture;if(!g)return;
+ faderGesture=null;
+ if(g.box?.hasPointerCapture?.(g.pointerId))g.box.releasePointerCapture(g.pointerId);
+ const t=findTrack(g.input);if(t)syncFaderVisual(t);
+}
 const consoleBody=document.querySelector('.console-body');
 /* Hardware unity detent measures physical distance, never an arbitrary
    dB band: stable on tall/short rails. Alt bypasses the detent. Keyboard
@@ -2258,7 +2274,7 @@ consoleBody.addEventListener('pointerdown',ev=>{
  const box=ev.target.closest?.('.fader-box');
  if(!box)return;
  const input=box.querySelector('.fader'),travel=box.querySelector('.fader-travel');
- if(!input||!travel)return;
+ if(!input||!travel||input.disabled)return;
  ev.preventDefault?.();
  faderGesture={pointerId:ev.pointerId,box,input,travel};
  box.setPointerCapture?.(ev.pointerId);
@@ -2352,11 +2368,15 @@ function finishFaderPointer(ev){
 window.addEventListener('pointerup',finishFaderPointer);
 window.addEventListener('pointercancel',ev=>{
  if(wireGesture&&ev.pointerId===wireGesture.pointerId){const g=wireGesture;wireGesture=null;setWireSnapTarget(null);consoleBody.querySelector?.('.strip[data-id="'+g.originDestId+'"] .wire-node-in')?.classList.remove('is-replug-origin');consoleBody.classList.remove('wire-dragging');consoleBody.querySelectorAll?.('.wire-node-out.is-drag-origin').forEach(n=>n.classList.remove('is-drag-origin'));renderWireRouting();say('WIRE drag canceled · graph unchanged');}
- if(faderGesture&&ev.pointerId===faderGesture.pointerId)faderGesture=null;
+ if(faderGesture&&ev.pointerId===faderGesture.pointerId)cancelCapturedFader();
  for(const pan of consoleBody.querySelectorAll?.('.center-pan[data-pan-alt-pointer]')||[])
   delete pan.dataset.panAltPointer;
 });
 
+consoleBody.addEventListener('lostpointercapture',event=>{
+ if(faderGesture?.pointerId===event.pointerId)cancelCapturedFader();
+},true);
+window.addEventListener('blur',()=>cancelCapturedFader());
 consoleBody.addEventListener('keydown',event=>{
  const el=event.target.closest?.('.center-pan');
  if(el&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(event.key))
