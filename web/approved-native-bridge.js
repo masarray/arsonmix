@@ -35,17 +35,18 @@
     const selectors=Object.freeze({
       ArSonMixNativeEq:"#mxNativePeq",
       ArSonMixNativeCompressor:"#mxNativeComp",
+      ArSonMixNativeDucker:"#mxNativeDucker",
       ArSonMixGraphicEq31:"#mxNativeGeq31",
       ArSonMixNativeHarmony:"#mxNativeHarmony",
       ArSonMixNativeVocalThrow:"#mxNativeVocalThrow",
       ArSonMixNativeSonKu:"#mxNativeSonKu"
     });
     const roots=Object.values(selectors).join(",");
-    const headers=".mx-peq-title,.mx-comp-head,.mx-geq31-head,"+
+    const headers=".mx-peq-title,.mx-comp-head,.mx-ducker-head,.mx-geq31-head,"+
       ".mx-harm-head,.vt-face-header,.sk-head";
     const style=document.createElement("style");
     style.id="armix-native-inline-fx-clip";
-    style.textContent="html.armix-native-desktop,html.armix-native-desktop body{overflow-x:hidden!important}\nhtml.armix-native-desktop #mxNativeGeq31{width:1430px!important;min-width:1430px!important;max-width:none!important;height:280px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-body{grid-template-columns:38px minmax(0,1fr) 100px!important;padding:1px 32px 0 4px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-scale{width:38px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head{gap:8px!important;padding:0 20px!important;height:44px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-brand{font-size:17px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-meta,html.armix-native-desktop #mxNativeGeq31 .mx-geq31-channel{display:inline!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head select{flex:0 0 152px!important;width:152px!important;max-width:152px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-save{display:block!important;width:56px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-flat{width:44px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head .mx-geq31-close{margin-inline-start:90px!important}\nhtml.armix-native-desktop #mxNativePeq{width:795px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeComp{width:795px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeHarmony{width:800px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeVocalThrow{width:778px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeSonKu{width:790px!important;max-height:none!important}\nhtml.armix-native-desktop :is(.mx-peq-title,.mx-comp-head,.mx-geq31-head,.mx-harm-head,.vt-face-header,.sk-head){touch-action:none!important}";
+    style.textContent="html.armix-native-desktop,html.armix-native-desktop body{overflow-x:hidden!important}\nhtml.armix-native-desktop #mxNativeGeq31{width:1430px!important;min-width:1430px!important;max-width:none!important;height:280px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-body{grid-template-columns:38px minmax(0,1fr) 100px!important;padding:1px 32px 0 4px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-scale{width:38px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head{gap:8px!important;padding:0 20px!important;height:44px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-brand{font-size:17px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-meta,html.armix-native-desktop #mxNativeGeq31 .mx-geq31-channel{display:inline!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head select{flex:0 0 152px!important;width:152px!important;max-width:152px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-save{display:block!important;width:56px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-flat{width:44px!important}\nhtml.armix-native-desktop #mxNativeGeq31 .mx-geq31-head .mx-geq31-close{margin-inline-start:90px!important}\nhtml.armix-native-desktop #mxNativePeq{width:795px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeComp{width:795px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeHarmony{width:800px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeVocalThrow{width:778px!important;max-height:none!important}\nhtml.armix-native-desktop #mxNativeSonKu{width:790px!important;max-height:none!important}\nhtml.armix-native-desktop :is(.mx-peq-title,.mx-comp-head,.mx-ducker-head,.mx-geq31-head,.mx-harm-head,.vt-face-header,.sk-head){touch-action:none!important}";
     document.head.appendChild(style);
     // Preserve native FX authored desktop control grids; crop/pan at the
     // mixer viewport instead of running narrow-mobile module media queries.
@@ -4422,6 +4423,7 @@
         },15000);
         return true;
       }
+      if(id==="armix.builtin.auto-ducker.v1"){status("Auto Ducker requires native ChannelId routing");return true;}
       const plan=fxRackVM.m4InsertPlan(accepted,{
         catalogId:plugin?.id,channel,slot,verifiedM4:m4Verified(),
         offline:!!logicalView,pending:!!pendingFxInsert,
