@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
-from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN
+from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN, open_audio_io_command
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -163,7 +163,7 @@ def main():
             # Output-only playback is a REAL Audio I/O choice, not a hidden
             # capture prerequisite. Verify native intent/ACK on the approved
             # assembled Windows GUI at every supported viewport.
-            page.locator('.command-bar [data-native-io]').click()
+            open_audio_io_command(page)
             assert page.evaluate("""()=>Boolean(
                 window.ArSonApprovedChannelStripViewModel &&
                 window.ArSonApprovedFxRackViewModel &&
@@ -278,7 +278,7 @@ def main():
             assert page.locator('.armix-audio-shade').is_hidden()
             # Optional calibration is a native request with an explicit
             # consent boundary. Browser fixtures never emit real PCM.
-            page.locator('.command-bar [data-native-io]').click()
+            open_audio_io_command(page)
             asio='Studio ASIO'
             emit(page,'arMixAudioDeviceInventory',{
                 'types':[dict(name='ASIO',separate=False,inputs=[asio],outputs=[asio])],
@@ -536,7 +536,7 @@ def main():
             emit(page,'arMixConsoleSnapshot',state)
             assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.retained')
             # One explicit Apply accepts the verified replacement binding.
-            page.locator('[data-native-io]').click()
+            open_audio_io_command(page)
             backend='Windows Audio'
             active={'backend':backend,'captureDevice':'New Capture','playbackDevice':'New Playback',
                 'open':True,'authorized':True,'deviceGeneration':92,'rate':48000,'buffer':256,
@@ -601,7 +601,7 @@ def main():
             page.locator('#fastClose').click()
             # Apply again while MAIN is live. The native transaction owns
             # temporary mute and restoration without an extra browser command.
-            page.locator('[data-native-io]').click()
+            open_audio_io_command(page)
             emit(page,'arMixAudioDeviceInventory',{'active':applied,'types':[
                 {'name':backend,'inputs':['New Capture'],'outputs':['New Playback'],'separate':True}]})
             page.get_by_role('tab',name='Hardware Pins').click()

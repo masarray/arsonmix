@@ -237,10 +237,22 @@ def verify_inspector_rejected_gain(page, out):
     assert slider.evaluate("el=>document.activeElement===el")
     assert not errors,errors
 
+def select_ribbon_workflow(page, workflow):
+    """Use the real operator tab before interacting with contextual commands."""
+    tab=page.locator("#ribbon-tab-"+workflow)
+    tab.wait_for(state="visible")
+    if tab.get_attribute("aria-selected")!="true":
+        tab.click()
+    assert tab.get_attribute("aria-selected")=="true"
+
+def open_audio_io_command(page):
+    select_ribbon_workflow(page,"io")
+    page.locator("[data-native-io]:visible").click()
+
 def open_verified_audio_io(page, state, tab):
     """Driver inventory is independent of installed native graph readback."""
     d=state["device"]
-    page.locator("[data-native-io]").click()
+    open_audio_io_command(page)
     assert page.locator('button[data-audio-tab="inputs"]').is_disabled()
     assert page.locator('[data-audio-pins]').is_hidden()
     def names(side):

@@ -7,7 +7,7 @@ import sys
 import tempfile
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
-from approved_native_wire_gain_smoke import snapshot, emit, SOURCE, open_verified_audio_io, verify_external_output
+from approved_native_wire_gain_smoke import snapshot, emit, SOURCE, open_verified_audio_io, verify_external_output, select_ribbon_workflow
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/"scripts"))
@@ -779,6 +779,7 @@ def verify_independent_output(page,out,legacy_empty=False):
     # with no injected telemetry, timeout, or synthetic native action.
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
+    select_ribbon_workflow(page,"mixer")
     page.locator("#sofToggle").click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
@@ -868,6 +869,7 @@ def verify_custom_recovery_routes(page,out):
     page.wait_for_function("()=>document.querySelector('.command-bar > [data-native-io]')")
     assert page.get_by_text("Open JUCE driver recovery",exact=True).count()==0
     page.locator("#moreTools > summary").click()
+    page.locator('[data-menu-category="settings"]').click()
     page.locator(".arNativeAdvancedRecovery > summary").click()
     page.get_by_role("button",name="Open Audio I/O recovery").click()
     dialog=page.locator(".armix-audio-dialog")
@@ -875,6 +877,7 @@ def verify_custom_recovery_routes(page,out):
     assert dialog.count()==1
     page.locator("[data-audio-close]").click()
     assert not dialog.is_visible()
+    select_ribbon_workflow(page,"player")
     page.locator("#playerToggle").click()
     emit(page,"arMixPlayerState",{"schema":"arsonmix.player.v1",
         "chooseOutput":True,"error":"Choose a verified MAIN output"})
