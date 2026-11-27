@@ -251,7 +251,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
         script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
         block=HOST.split("class BuiltinFxDesktopWindow final :",1)[1].split(
-            "class AudioSetupWindow final",1)[0]
+            "class ConsoleWindow final",1)[0]
         self.assertIn("public juce::TopLevelWindow",block)
         self.assertIn("setUsingNativeTitleBar(false)",block)
         self.assertIn("addAndMakeVisible(browser_)",block)

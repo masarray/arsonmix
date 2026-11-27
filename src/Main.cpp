@@ -10813,6 +10813,12 @@ private:
             return true;
         }
         const bool bound=engine_.finishManualAudioSetup(bindingMode!=MixerBindingMode::verifiedMainPinApply);
+        if(!engine_.directRouteAuthorized()) {
+            engine_.setOutputMuted(true);
+            mixerSessionError_="No verified stereo playback device; audio remains gated";
+            diagnostics_.record("DIRECT_ROUTE_REJECTED",mixerSessionError_);
+            return false;
+        }
         const auto lab=engine_.status().getProperty("dryRoutingLab",{});
         const bool checkpoint=armix::session::NativeMixerSessionStore(settingsDirectory()).exists();
         using Coordinator=armix::device::NativeDeviceApplyCoordinator;
@@ -11350,6 +11356,10 @@ private:
             juce::Time::getMillisecondCounter() - webViewStartupTick_ > 25000u)
         {
             webViewStartupNoticeSent_ = true;
+            // The branded emergency notice is non-modal. Do not allow a
+            // delayed browser handshake to start audio behind it.
+            stopTimer();
+            setEnabled(false);
             diagnostics_.record ("WEBVIEW2_GUI_READY_TIMEOUT", "No native ArSonMix UI handshake");
             engine_.stop();
             if (onStartupStage_) onStartupStage_ (3); // dismiss splash before error dialog

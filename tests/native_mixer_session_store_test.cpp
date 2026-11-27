@@ -2337,7 +2337,8 @@ static void verifyDmxWetReturnSession(const armix::builtin_fx::NativeBuiltInFx& 
 static void verifyCreatedWetReturnPcmAndRecovery(){
     using namespace armix::mixer;
     FixtureDevice device(true);device.outputMask.clear();device.outputMask.setRange(0,2,true);
-    LiveDryRoutingLab mixer;mixer.prepareDevice(&device);
+    auto mixerStorage=std::make_unique<LiveDryRoutingLab>();
+    auto& mixer=*mixerStorage;mixer.prepareDevice(&device);
     armix::device::JuceActivePortSnapshot pins;
     armix::device::JuceActivePortSnapshot::Fault fault{};
     assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
@@ -2428,7 +2429,8 @@ static void verifyCreatedWetReturnPcmAndRecovery(){
         [&](const auto& e){return e.edgeId==edgeId;});
     assert(restoredEdge!=restoredVoice->sends.end()&&restoredEdge->destination==wet&&restoredEdge->gain==1.f);
     FixtureDevice replacement(true);replacement.outputMask.clear();replacement.outputMask.setRange(0,2,true);
-    LiveDryRoutingLab recovered;recovered.prepareDevice(&replacement);
+    auto recoveredStorage=std::make_unique<LiveDryRoutingLab>();
+    auto& recovered=*recoveredStorage;recovered.prepareDevice(&replacement);
     armix::device::JuceActivePortSnapshot newPins;
     assert(armix::device::JuceActivePortSnapshot::capture(&replacement,recovered.epoch(),newPins,fault));
     assert(NativeMixerSessionFxRestore::prepare(reopened,states,formats,48000.,480,newPins.epoch,

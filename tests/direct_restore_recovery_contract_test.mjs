@@ -49,7 +49,10 @@ test('output-only SAME-device WASAPI recovery never invents or requires micropho
   assert.ok(restore.includes('current.inputDeviceName == expected.inputDeviceName'));
   assert.ok(restore.includes('current.outputDeviceName == expected.outputDeviceName'));
   assert.match(engine,/resumeVerifiedDirectRoute\(\)/);
-  assert.match(main,/No verified stereo playback device; audio remains gated/);
+  const bind=main.slice(main.indexOf('bool finishAudioSetupAndRecoverMixer('),
+    main.indexOf('std::uint64_t asioRecoveryEpoch_'));
+  assert.match(bind,/if\(!engine_\.directRouteAuthorized\(\)\)\s*\{\s*engine_\.setOutputMuted\(true\);\s*mixerSessionError_="No verified stereo playback device; audio remains gated";[\s\S]*?return false;/);
+  assert.match(main,/arMixOpenAudioIO/);
 });
 test('restore retry is bounded and disabled on success, explicit direct and setup paths',()=>{
   assert.match(coordinator,/gate\.failed\(snapshot\.generation,nowMs\)/);
