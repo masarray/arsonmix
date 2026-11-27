@@ -124,14 +124,17 @@ test('approved machine profile remains pending on IO failure and flushes on norm
   assert.match(main,/mixerSessionWorker_\.finishForShutdown\(true\);\s*engine_\.stop\(\)/);
 });
 
-test('cold MON preparation is separate from ARM and waits for verified restored graph',()=>{
+test('cold MON resumes saved playback intent only after verified restored MAIN',()=>{
  const s=main.split('void serviceStartupSecondaryPreparation()')[1].split('// Same-session, same-graph recovery only')[0];
  assert.match(s,/mixerSessionRecoveryPending_\|\|startupFxGuard_/);
  assert.match(s,/!engine_\.secondaryResumeReady\(\)/);
  assert.match(s,/!engine_\.hasBoundMixerRoute\(\)/);
  assert.match(s,/current.selection.id!=wanted.id/);
  assert.match(s,/engine_\.connectSecondaryOutput\(wanted.name,wanted.id\)/);
- assert.doesNotMatch(s,/enableSecondaryOutput\(|armSecondaryOutput\(true\)|setMonitorEnabled/);
+ assert.match(s,/resume=wanted\.autoResume&&!operatorOutputMuted_/);
+ assert.match(s,/if\(resume&&!engine_\.isMonitorEnabled\(\)\)return/);
+ assert.match(s,/resume\?engine_\.enableSecondaryOutput\(wanted.name,wanted.id\)/);
+ assert.doesNotMatch(s,/setMonitorEnabled/);
  assert.match(s,/generation!=startupSecondaryRetry_\.generation\(\)/);
  assert.match(s,/epoch!=engine_\.dryRoutingLabEpoch\(\)/);
  assert.match(s,/startupSecondaryRetry_\.failed\(now\)/);
@@ -237,4 +240,45 @@ test('nested device transaction permits explicit STOP but rejects ARM with nativ
  assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
  assert.match(monitor,/if \(fault.isEmpty\(\)\) \{\s*operatorOutputMuted_=!arm/);
  assert.match(monitor,/arMixAudioArmAck/);
+});
+
+test('smart bus remap uses native temporary stop and verified continuation, not an operator latch on success',()=>{
+ const p=main.split('void handlePhysicalBusOutput(')[1].split('void serviceSecondaryContinuity()')[0];
+ assert.match(p,/const bool resumeMain=engine_\.isMonitorEnabled\(\)&&!operatorOutputMuted_/);
+ assert.match(p,/engine_\.captureSecondaryResumeIntent\(\)/);
+ assert.ok(p.indexOf('engine_.setMonitorEnabled(false)')<p.indexOf('engine_.patchPhysicalBusOutput('));
+ assert.ok(p.indexOf('engine_.disarmSecondaryOutput()')<p.indexOf('engine_.patchPhysicalBusOutput('));
+ assert.match(p,/if\(resumeMain&&!operatorOutputMuted_\) \{[\s\S]*?engine_\.retainMainIntentAfterBusPatch\(\);\s*requestAutomaticMain\(false\)/);
+ assert.match(engine,/void retainMainIntentAfterBusPatch\(\) noexcept \{mainOutputIntent_\.operatorRequested\(true\);\}/);
+ assert.match(p,/if\(stream\)pendingVendorStream_=PendingVendorStream/);
+ assert.match(p,/operatorOutputMuted_=true;\s*diagnostics_\.record\("OUTPUT_MUTE","ON \| bus remap rejected"\)/);
+ const panic=main.split('if(mapping.operation=="PANIC_MUTE")')[1].split('// Existing control-thread guards')[0];
+ assert.match(panic,/pendingVendorStream_\.reset\(\)/);
+ assert.match(panic,/cancelStartupSecondaryPreparation\(\)/);
+});
+
+test('physical bus remap waits for AUDIO fade receipt with bounded CONTROL lease',()=>{
+ const p=main.split('void servicePendingPhysicalBusPatch()')[1].split('void serviceSecondaryContinuity()')[0];
+ assert.match(p,/monotonicMilliseconds\(\)\)>=p.deadline/);
+ assert.match(p,/if\(!engine_\.physicalBusPatchFadeReady\(\)\)return/);
+ assert.match(p,/handlePhysicalBusOutput\(args,true\)/);
+ assert.match(p,/engine_\.beginPhysicalBusPatchFade\(\)/);
+ assert.match(p,/Purpose::busOutputPatch/);
+ assert.match(engine,/busPatchEnvelope_\.process\(outputs,outputChannels/);
+ assert.ok(engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels')<engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)'));
+ assert.ok(engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
+ assert.match(main,/servicePendingPhysicalBusPatch\(\);\s*if\(deviceApply_\.busy\(\)\)return/);
+});
+
+test('integrated FIELD serializes physical bus remap with FX rack file operations',()=>{
+ const rack=main.split('bool rackFileOperationBusy() const')[1].split('void chooseNamedIoProfile(')[0];
+ assert.match(rack,/deviceApply_\.busy\(\)/);
+ assert.match(rack,/if\(!current\(\)\)return finish\("FAILED"/);
+ assert.match(rack,/safe->engine_\.rackFileTargetAvailable\(ep,rev,roster,channel\)/);
+ const bus=main.split('void handlePhysicalBusOutput(')[1].split('void serviceSecondaryContinuity()')[0];
+ assert.match(bus,/Purpose::busOutputPatch/);
+ assert.match(bus,/!deviceApply_\.busy\(\)/);
+ const actions=main.split('void onAction (const juce::var& args)')[1];
+ assert.match(actions,/if\(action=="fxRackFileReadback"\)return readFxRackFileResult\(args\)/);
+ assert.match(actions,/cancelPendingPhysicalBusPatch\("BUS OUTPUT: superseded by operator action"\)/);
 });

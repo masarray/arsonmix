@@ -275,11 +275,8 @@ def verify_bus_remap(page,out):
     assert page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
     rows=page.locator("[data-audio-output-grid] tbody tr")
     main=rows.nth(0);monitor=rows.nth(1)
-    assert main.get_by_label("MAIN assignment",exact=True).count()==0
+    assert main.get_by_label("MAIN assignment",exact=True).is_enabled()
     assert main.locator(".armix-patch-cell").nth(0).get_attribute("data-mark")=="L"
-    state["device"]["outputArmed"]=False
-    state["operatorOutputMuted"]=True
-    emit(page,"arMixConsoleSnapshot",state)
     select=main.get_by_label("MAIN assignment",exact=True)
     choices=select.locator("option").all_text_contents()
     assert len(choices)==2 and any(x.startswith("OUT 5/6") for x in choices),choices
@@ -294,13 +291,13 @@ def verify_bus_remap(page,out):
     dialog.get_by_role("button",name="Cancel",exact=True).click()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
     apply.click()
-    state["device"]["outputArmed"]=True
-    state["operatorOutputMuted"]=False
+    state["device"]["outputArmed"]=False
+    state["operatorOutputMuted"]=True
     emit(page,"arMixConsoleSnapshot",state)
     dialog.get_by_role("button",name="Remap output",exact=True).click()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
-    state["device"]["outputArmed"]=False
-    state["operatorOutputMuted"]=True
+    state["device"]["outputArmed"]=True
+    state["operatorOutputMuted"]=False
     emit(page,"arMixConsoleSnapshot",state)
     select=main.get_by_label("MAIN assignment",exact=True)
     select.select_option(label=next(x for x in select.locator("option").all_text_contents() if x.startswith("OUT 5/6")))
@@ -329,6 +326,72 @@ def verify_bus_remap(page,out):
     assert any(x.startswith("OUT 1/2") for x in choices),choices
     assert not any(x.startswith(("OUT 5/6","OUT 7/8")) for x in choices),choices
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='audioDeviceApply')")
+    assert not errors,errors
+
+def verify_output_matrix_direct_patch(page,out):
+    errors=[]
+    page.on("pageerror",lambda e:errors.append(str(e)))
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        outputArmed=True,enabledOutputs=list(range(8)),
+        outputEndpoints=[{"id":"out:"+str(n),"port":n,"callback":n,
+                          "label":"ASIO "+str(n+1),"active":True} for n in range(8)])
+    state.update(physicalMainOutputs=[0,1],physicalMonitorOutputs=[],
+        externalOutputs=[],externalRevision="2",physicalBusPatchSupported=True,
+        physicalBusOutputObserved=True,physicalBusSecondaryArmed=False,operatorOutputMuted=False)
+    emit(page,"arMixConsoleSnapshot",state)
+    inventory=open_verified_audio_io(page,state,"routing")
+    grid=page.locator("[data-audio-output-grid]")
+    emit(page,"arMixStatus",{"secondaryOutputReady":True,"secondaryOutputArmed":True,
+        "secondaryOutputName":"Realtek HD Audio","secondaryOutputFault":False})
+    assert "Realtek HD Audio" in grid.locator("[data-secondary-endpoint]").inner_text()
+    row=grid.locator("tbody tr").filter(has=page.get_by_label("CH03 assignment",exact=True))
+    cells=row.locator(".armix-patch-cell")
+    assert cells.nth(0).is_disabled() and cells.nth(1).is_disabled()
+    assert cells.nth(2).is_enabled() and cells.nth(3).is_enabled()
+    cells.nth(2).click()
+    assert cells.nth(2).get_attribute("data-mark")=="L"
+    assert cells.nth(3).get_attribute("data-mark")=="R"
+    assert cells.nth(2).get_attribute("data-draft")=="true"
+    cells.nth(2).click()
+    assert row.get_by_label("CH03 assignment").input_value()=="None"
+    assert not row.get_by_role("button",name="Apply",exact=True).is_enabled()
+    cells.nth(3).click()
+    assert row.get_by_role("button",name="Apply",exact=True).is_enabled()
+    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingExternalOutput')")
+    # Independent preset metadata redraw must not lose a physical draft.
+    inventory["namedPatches"]={"revision":1,"readOnly":False,"entries":[]}
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    assert cells.nth(2).get_attribute("data-draft")=="true"
+    row.get_by_role("button",name="Apply",exact=True).click()
+    dialog=page.get_by_role("dialog",name="External output")
+    assert dialog.is_visible()
+    dialog.get_by_role("button",name="Enable output",exact=True).click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingExternalOutput').at(-1)")
+    assert req and req["channelId"]==SOURCE and (req["left"],req["right"])==(2,3),req
+    emit(page,"arMixExternalOutputAck",{"requestId":req["requestId"],"ok":True})
+    state["externalOutputs"]=[{"channelId":SOURCE,"physicalLeft":2,"physicalRight":3,"status":"LIVE"}]
+    emit(page,"arMixConsoleSnapshot",state)
+    assert cells.nth(2).get_attribute("data-mark")=="L"
+    assert cells.nth(2).get_attribute("data-draft")=="false"
+    cells.nth(3).click()
+    assert row.get_by_label("CH03 assignment").input_value()=="None"
+    row.get_by_role("button",name="Apply",exact=True).click()
+    remove=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingExternalOutput').at(-1)")
+    assert (remove["left"],remove["right"])==(-1,-1),remove
+    emit(page,"arMixExternalOutputAck",{"requestId":remove["requestId"],"ok":True})
+    state["externalOutputs"]=[]
+    emit(page,"arMixConsoleSnapshot",state)
+    assert cells.nth(2).get_attribute("data-mark")==""
+    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='audioDeviceApply'||(x.action==='monitor'&&x.value===true))")
     assert not errors,errors
 
 def verify_logical_outputs(page,out):
@@ -950,6 +1013,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_bus_remap(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_output_matrix_direct_patch(page,out)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_logical_inputs(page,out)

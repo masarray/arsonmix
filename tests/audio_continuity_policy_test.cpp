@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/device/AudioContinuityPolicy.h"
+#include "../engine/core/BusPatchEnvelope.h"
+#include <array>
 #include <cassert>
 #include <cstdint>
 
@@ -47,4 +49,87 @@ int main() {
     assert(retry.pending());
     retry.cancel();
     assert(!retry.pending());
+
+    using armix::mixer::BusPatchEnvelope;
+    BusPatchEnvelope fade;
+    std::array<float,32> left{},right{},tap{};
+    float* pcm[]={left.data(),right.data()};
+    auto block=[&](bool audible=true){
+        left.fill(1.f);right.fill(1.f);tap.fill(1.f);
+        return fade.process(pcm,2,tap.data(),nullptr,32,48000.,true,audible);
+    };
+    assert(fade.begin()&&!fade.begin());
+    float last=1.f;
+    BusPatchEnvelope::Block b;
+    for(int i=0;i<8;++i){
+        b=block();
+        for(float sample:left){assert(sample>=0.f&&sample<=last);last=sample;}
+        assert(left==right&&left==tap);
+        if(i<7){assert(!b.complete);fade.acknowledge(b);}
+    }
+    assert(b.complete&&!fade.ready()); // receipt is after PCM publication
+    fade.acknowledge(b);assert(fade.ready());
+    b=block();assert(left.back()==0.f&&tap.back()==0.f);
+    fade.finish(true);
+    b=block(false);assert(!b.complete&&left.back()==0.f);
+    last=0.f;
+    for(int i=0;i<8;++i){
+        b=block();
+        for(float sample:left){assert(sample>=last&&sample<=1.f);last=sample;}
+        fade.acknowledge(b);
+    }
+    assert(b.complete&&left.back()==1.f&&fade.begin());
+    b=block();fade.finish(true);fade.acknowledge(b);
+    b=block();assert(left.back()>left.front()); // cancellation restores old level
+    fade.reset();b=block();assert(b.phase==BusPatchEnvelope::idle&&left.front()==1.f);
+    // Delayed AUDIO receipts must not complete a later CONTROL transaction.
+    // Reset/restart can occur without an intervening idle audio block.
+    for(double rate : {44100.,48000.,96000.,192000.}) {
+        BusPatchEnvelope transaction;
+        auto nextBlock=[&](bool audible=true){
+            left.fill(1.f);right.fill(1.f);tap.fill(1.f);
+            return transaction.process(pcm,2,tap.data(),nullptr,32,rate,true,audible);
+        };
+        auto complete=[&](bool rising){
+            BusPatchEnvelope::Block receipt;
+            float previous=rising?0.f:1.f;
+            for(int n=0;n<100;++n){
+                receipt=nextBlock();
+                for(float sample:left){
+                    assert(sample>=0.f&&sample<=1.f);
+                    assert(rising?sample>=previous:sample<=previous);
+                    previous=sample;
+                }
+                assert(left==right&&left==tap);
+                if(receipt.complete)return receipt;
+                transaction.acknowledge(receipt);
+            }
+            assert(false);return receipt;
+        };
+        assert(transaction.begin());
+        const auto staleOut=complete(false);
+        transaction.reset();
+        assert(transaction.begin());
+        transaction.acknowledge(staleOut);
+        assert(!transaction.ready());
+        auto fresh=nextBlock();
+        assert(left.front()>.9f&&!fresh.complete);
+        transaction.acknowledge(complete(false));
+        assert(transaction.ready());
+        transaction.finish(true);
+        fresh=nextBlock(false);
+        assert(left.back()==0.f&&!fresh.complete);
+        const auto staleIn=complete(true);
+        transaction.reset();
+        assert(transaction.begin());
+        transaction.acknowledge(complete(false));
+        assert(transaction.ready());
+        transaction.finish(true);
+        transaction.acknowledge(staleIn);
+        assert(!transaction.begin());
+        fresh=nextBlock();
+        assert(fresh.phase==BusPatchEnvelope::fadeIn&&left.front()<.1f);
+        transaction.acknowledge(complete(true));
+        assert(transaction.begin());
+    }
 }

@@ -764,3 +764,12 @@ test('normal close receipt recovers vanished PID and interrupted updater without
   assert.match(u,/Stale or wrong normal exit receipt accepted/);
   assert.match(read('tests/portable_launcher_smoke.ps1'),/ARSONMIX_PORTABLE_BOOTSTRAP_LAUNCH_PASS/);
 });
+
+
+test('failed portable image is not offered again and launcher smoke exercises actual rollback',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const check=u.slice(u.indexOf('function Invoke-PortableUpdateCheck'),u.indexOf('function Expand-PortablePayload'));
+  assert.ok(check.indexOf('$selected.blockedDigest -ceq $asset.digest')<check.indexOf('Download-PortableVerified $candidate $asset $stageFile'));
+  assert.match(check,/PREVIOUS_FAILURE_BLOCKED/);
+  assert.match(read('tests/portable_launcher_smoke.ps1'),/ARSONMIX_PORTABLE_ROLLBACK_LAUNCH_PASS/);
+});

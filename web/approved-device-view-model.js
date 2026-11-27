@@ -137,23 +137,21 @@
         const logical=snapshot.raw?.logicalOutputRegistry;
         const ref=logical?.references?.find?.(r=>r.role===name);
         const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
-        const editable=!port&&busChoices.length>1&&snapshot.raw.operatorOutputMuted===true&&
-          snapshot.device.outputArmed===false&&snapshot.raw.physicalBusSecondaryArmed===false&&
-          snapshot.raw.physicalBusOutputObserved===true;
+        const editable=!port&&busChoices.length>1&&snapshot.raw.physicalBusOutputObserved===true;
         const pending=snapshot.raw.physicalBusPatchSupported===true&&
           snapshot.raw.physicalBusOutputObserved!==true;
         rows.push({id:key,name,bus:true,editable,pending,choices:busChoices,
           pair:pair.slice(),cells:map(pair[0],pair[1]),selected:busChoices[0]?.label||"",
-          state:port?port.name+" · Logical output":pending?"Awaiting callback":editable?"Muted · remap available":
+          state:port?port.name+" · Logical output":pending?"Awaiting callback":editable?"Remap available · verified pair":
             !pair.every(p=>pins.some(q=>q.port===p))?"Needs remap":
-            busChoices.length>1?"Mute MAIN and STREAM to remap":"Fixed bus"});
+            busChoices.length>1?"Awaiting verified routing":"Fixed bus"});
       }
     }
     if(!input&&live&&snapshot.raw.physicalBusPatchSupported===true&&
        Array.isArray(snapshot.raw.physicalMonitorOutputs)&&snapshot.raw.physicalMonitorOutputs.length===0)
       rows.push({id:"physicalMonitorOutputs",name:"MONITOR",bus:true,editable:false,pending:false,
         choices:[],pair:[],cells:pins.map(()=>""),selected:"",
-        state:"Not assigned · independent monitor setup required"});
+        state:"No separate ASIO MON bus · see MON / STREAM endpoint"});
     if(!input&&live&&snapshot.raw.secondaryMainOnly===true&&
        snapshot.raw.physicalMainOutputs?.length===0&&snapshot.raw.physicalMonitorOutputs?.length===2)
       rows.push({id:"secondaryMainOnly",name:"MAIN",bus:true,editable:false,pending:false,

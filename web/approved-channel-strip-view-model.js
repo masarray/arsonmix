@@ -153,8 +153,12 @@
                                currentLabel,choices=[],pending=false,
                                channelName=""}={}) {
     const unavailable={kind:"UNAVAILABLE"};
-    const safeCounter=x=>typeof x==="string"&&/^[1-9][0-9]*$/.test(x)&&
-      Number.isSafeInteger(Number(x))?x:null;
+    // ChannelId route tokens use exact decimal uint64 strings, not JS
+    // Number. The native token parser verifies these again on admission.
+    const safeCounter=x=>{
+      if(typeof x!=="string"||!/^[1-9][0-9]*$/.test(x))return null;
+      try{return BigInt(x)<=18446744073709551615n?x:null;}catch{return null;}
+    };
     const nativeId=x=>{
       if(typeof x!=="string"||!/^[1-9][0-9]*$/.test(x))return false;
       try{return BigInt(x)<=18446744073709551615n;}catch{return false;}

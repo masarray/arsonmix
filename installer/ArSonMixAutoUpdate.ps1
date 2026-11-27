@@ -676,6 +676,18 @@ function Invoke-PortableUpdateCheck {
         $state.phase='idle';$state.lastCheckUtc=$now.ToString('o');$state.candidateTag='';Write-State $state;Log-Result 'UP_TO_DATE';return
     }
     $candidate=$selection.candidate;$asset=Approved-Portable $candidate
+    if(Test-PortableLauncherRoot){
+        $selected=Get-PortableSelection (Get-PortableBootstrap)
+        # Only a different authenticated release may become ready after rollback.
+        if($selected.active.sourceCommit -cne $installedSha){return}
+        if($selected.blockedDigest -ceq $asset.digest){
+            $state.phase='portable-blocked';$state.lastCheckUtc=$now.ToString('o')
+            $state.candidateTag=[string]$candidate.tag_name;$state.candidateSha=[string]$candidate.target_commitish
+            $state.newAsset=$null;Write-State $state
+            Log-Result ('PREVIOUS_FAILURE_BLOCKED '+$candidate.tag_name)
+            return
+        }
+    }
     $state.phase='downloading';$state.candidateTag=[string]$candidate.tag_name;$state.candidateSha=[string]$candidate.target_commitish;Write-State $state
     Log-Result 'DOWNLOADING_VERIFIED_UPDATE'
     $destination=Join-Path (Join-Path $root 'downloads') ([string]$asset.name)
