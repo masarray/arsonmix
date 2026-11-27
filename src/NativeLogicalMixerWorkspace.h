@@ -258,9 +258,7 @@ public:
             if(armix::mixer::isWetReturnCatalog(row->insertCatalogIds[index])&&
                std::count_if(row->insertCatalogIds.begin(),row->insertCatalogIds.end(),
                              armix::mixer::isWetReturnCatalog)==1)
-                for(const auto& from:editor_.roster().channels())
-                    for(const auto& send:from.sends)
-                        if(send.destination==id)return bad("DISCONNECT_WET_RETURN_INPUTS_FIRST");
+                return bad("FX_RETURN_REQUIRES_WET_PROCESSOR");
             edit.kind=ChannelEdit::Kind::removeInsertReference;
             edit.position=index;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});

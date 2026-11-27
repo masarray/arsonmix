@@ -22,8 +22,8 @@ inline bool prepareNativeFxRackEdit(std::uint64_t epoch,std::uint64_t graphRevis
        (target.value&&(!to||to->role==ChannelRole::monitor||
                       to->insertCatalogIds.size()!=bank.insertCount(target))))return false;
     // Wet-only lease is a distinct operator contract, not an ordinary
-    // insert. Never expose dry on an already patched return when its final
-    // wet stage disappears. Disconnect its incoming WIREs or delete the bus.
+    // insert. A wet-only return must not become a dry bus after disconnecting
+    // its incoming WIREs. Delete the return or keep a wet processor.
     if((*lease)->silenceBypass){
         if(from->role!=ChannelRole::fxReturn||
            (to&&to->role!=ChannelRole::fxReturn))return false;
@@ -33,9 +33,7 @@ inline bool prepareNativeFxRackEdit(std::uint64_t epoch,std::uint64_t graphRevis
                 const auto* p=bank.ownerForControl(source,i);
                 if(i!=slot&&p&&*p&&(*p)->silenceBypass)another=true;
             }
-            if(!another)for(const auto& row:prior.channels())
-                for(const auto& send:row.sends)
-                    if(send.destination==source)return false;
+            if(!another)return false;
         }
     }
     DynamicChannelFxLeaseBank prepared;

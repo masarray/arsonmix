@@ -2311,7 +2311,120 @@ static void verifyDmxWetReturnSession(const armix::builtin_fx::NativeBuiltInFx& 
     assert(bank->ownerForControl({11},0));
     std::cout<<"DMX_RETURN_SMIX_ROUNDTRIP_PASS\n";
 }
+// Product path: create a fresh owned wet return on the actual native lab,
+// patch the exact EdgeId, measure dry vs wet PCM, save and reopen the real
+// .smix with a fresh processor bank and verify the same identities.
+static void verifyCreatedWetReturnPcmAndRecovery(){
+    using namespace armix::mixer;
+    FixtureDevice device(true);device.outputMask.clear();device.outputMask.setRange(0,2,true);
+    LiveDryRoutingLab mixer;mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto d=makeSession();
+    d.binding={"ASIO","Verified ASIO","Verified ASIO","3","3",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    d.request.maxFrames=480;d.rackBypassed.clear();
+    juce::AudioPluginFormatManager formats;
+    std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(d,{},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(mixer.restoreNativeMixerSession(d,std::move(bank),pins,true).isEmpty());
+    std::array<float,480> inL{},inR{},outL{},outR{};
+    const float* in[]={inL.data(),inR.data()};float* out[]={outL.data(),outR.data()};
+    auto render=[&](LiveDryRoutingLab& lab,bool muted=false){
+        assert(lab.process(in,2,out,2,480,1.f,muted));
+    };
+    auto revisions=[&](LiveDryRoutingLab& lab){
+        auto state=lab.nativeBusStatus();std::uint64_t rev=0,roster=0;
+        assert(parseDecimal(state.getProperty("graphRevision",{}),rev));
+        assert(parseDecimal(state.getProperty("rosterRevision",{}),roster));
+        return std::array<std::uint64_t,2>{rev,roster};
+    };
+    inL.fill(.1f);
+    render(mixer);render(mixer);
+    const float dry=outL.back();assert(dry>.01f);
+    auto rev=revisions(mixer);
+    assert(!mixer.editNativeBus(pins.epoch,rev[0],rev[1],ChannelRole::fxReturn,{},"Empty",0.f,{},true).accepted);
+    assert(revisions(mixer)==rev);
+    auto processor=armix::builtin_fx::prepareNativeVocalReverbReturn(48000.,480,nullptr,0);
+    assert(processor);
+    auto owner=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(processor),
+        armix::builtin_fx::VocalReverbProcessor::wetReturnIdentity,"Reverb-Sis Return",
+        LiveDryRoutingLab::Block::hardFrameLimit);
+    const auto token=owner->instanceId;
+    auto created=mixer.editNativeBus(pins.epoch,rev[0],rev[1],ChannelRole::fxReturn,
+        {},"New wet return",0.f,{},true,{},true,std::move(owner));
+    assert(created.accepted&&created.created.value);
+    const auto wet=created.created;
+    render(mixer);render(mixer);
+    assert(std::abs(outL.back()-dry)<1.e-5f);
+    rev=revisions(mixer);
+    // Never allow the last wet processor to disappear even before assignment.
+    assert(!mixer.editNativeFxRack(pins.epoch,rev[0],rev[1],wet,0,token,{},0).accepted);
+    assert(revisions(mixer)==rev);
+    WireChange send{WireChange::Kind::connect,{1},wet,0,0.f};
+    assert(mixer.applyNativeWireTransaction(pins.epoch,rev[0],rev[1],
+        std::span<const WireChange>{&send,1}).accepted);
+    render(mixer);render(mixer);
+    assert(std::abs(outL.back()-dry)<1.e-5f);
+    MixerSessionDocument saved;std::vector<BinaryState> blobs;
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    const auto* voice=saved.roster.find({1});assert(voice);
+    const auto edge=std::find_if(voice->sends.begin(),voice->sends.end(),
+        [&](const auto& e){return e.destination==wet;});
+    assert(edge!=voice->sends.end()&&edge->edgeId&&edge->gain==0.f&&!edge->primaryOutput);
+    const auto edgeId=edge->edgeId;
+    rev=revisions(mixer);
+    assert(mixer.setNativeWireGain(pins.epoch,rev[0],rev[1],{1},edgeId,1.f));
+    for(int i=0;i<30;++i)render(mixer);
+    inL.fill(0.f);
+    double wetEnergy=0.;
+    for(int b=0;b<100;++b){
+        render(mixer);
+        for(float v:outL){assert(std::isfinite(v));wetEnergy+=double(v)*v;}
+    }
+    assert(wetEnergy>1.e-8);
+    assert(mixer.bypassNativeInsert(pins.epoch,rev[0],wet,0,token,true));
+    inL.fill(.1f);
+    for(int b=0;b<8;++b)render(mixer);
+    assert(std::abs(outL.back()-dry)<1.e-5f);
+    render(mixer,true);
+    assert(mixer.captureNativeMixerSession(saved,blobs).isEmpty());
+    saved.id=d.id;saved.savedMs=d.savedMs;saved.binding=d.binding;
+    saved.masterMute=true;saved.resumeMain=false;
+    const auto folder=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("armix-created-wet-","",false);
+    assert(folder.createDirectory().wasOk());
+    const auto file=folder.getChildFile("wet.smix");
+    assert(NativeMixerSessionStore::writeFile(file,saved,blobs).isEmpty());
+    MixerSessionDocument reopened;std::vector<BinaryState> states;
+    assert(NativeMixerSessionStore::readFile(file,reopened,states).isEmpty());
+    const auto* row=reopened.roster.find(wet);
+    assert(row&&row->role==ChannelRole::fxReturn&&row->insertCatalogIds.size()==1&&
+        isWetReturnCatalog(row->insertCatalogIds.front()));
+    const auto* restoredVoice=reopened.roster.find({1});assert(restoredVoice);
+    const auto restoredEdge=std::find_if(restoredVoice->sends.begin(),restoredVoice->sends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;});
+    assert(restoredEdge!=restoredVoice->sends.end()&&restoredEdge->destination==wet&&restoredEdge->gain==1.f);
+    FixtureDevice replacement(true);replacement.outputMask.clear();replacement.outputMask.setRange(0,2,true);
+    LiveDryRoutingLab recovered;recovered.prepareDevice(&replacement);
+    armix::device::JuceActivePortSnapshot newPins;
+    assert(armix::device::JuceActivePortSnapshot::capture(&replacement,recovered.epoch(),newPins,fault));
+    assert(NativeMixerSessionFxRestore::prepare(reopened,states,formats,48000.,480,newPins.epoch,
+        recovered.nativeGraphRevisionForRestore(),bank).isEmpty());
+    const auto* lease=bank->ownerForControl(wet,0);
+    assert(lease&&*lease&&(*lease)->instanceId==token&&(*lease)->silenceBypass&&(*lease)->bypassRequested.load());
+    assert(recovered.restoreNativeMixerSession(reopened,std::move(bank),newPins,true).isEmpty());
+    render(recovered,true);assert(outL.back()==0.f&&outR.back()==0.f);
+    for(int i=0;i<8;++i)render(recovered);
+    assert(std::abs(outL.back()-dry)<1.e-5f);
+    assert(folder.deleteRecursively());
+    std::cout<<"UNIFIED_CREATED_WET_PCM_SMIX_RECOVERY_PASS\n";
+}
+
 int main(){
+    verifyCreatedWetReturnPcmAndRecovery();
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx)
         if(armix::mixer::isWetReturnCatalog(fx.id))verifyDmxWetReturnSession(fx);
     verifyIoDefaults();

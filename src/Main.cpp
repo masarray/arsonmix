@@ -492,48 +492,7 @@ private:
     bool hasMeasuredPanel_=false;
 };
 
-class AudioSetupWindow final : public juce::DocumentWindow
-{
-public:
-    explicit AudioSetupWindow (juce::AudioDeviceManager& manager,
-                               std::function<void()> onClosed,
-                               juce::Component& mixer)
-        : juce::DocumentWindow ("AR MIX — ASIO / WASAPI Setup",
-                                juce::Colour (0xff14212a), allButtons),
-          onClosed_ (std::move (onClosed))
-    {
-        setUsingNativeTitleBar (true);
-        setIcon (approvedAppIcon());
-        setResizable (true, true);
-        setResizeLimits (580, 430, 1300, 1000);
-        // Selector bounds are MAXIMUM enable-able device pins, not the two
-        // mixer output channels. A 2x2 limit hid additional ASIO/virtual
-        // MAONO capture pins and physical MONITOR 3/4. Actual enabled pin
-        // masks still come exclusively from the chosen JUCE audio device.
-        auto* selector = new juce::AudioDeviceSelectorComponent (
-            manager, 1, 64, 1, 64, false, false, false, false);
-        // The JUCE selector refreshes its own preferred height while devices
-        // enumerate. It must NOT drive the top-level peer's dimensions.
-        // Fixed window ownership avoids Windows DPI / first-show stretching.
-        selector->setSize (720, 550);
-        setContentOwned (selector, false);
-        centreWithSize (740, 590);
-        (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
-    }
-    void closeButtonPressed() override { setVisible (false); }
-    void visibilityChanged() override
-    {
-        if (isVisible()) wasVisible_ = true;
-        else if (wasVisible_)
-        {
-            wasVisible_ = false;
-            if (onClosed_) onClosed_();
-        }
-    }
-private:
-    std::function<void()> onClosed_;
-    bool wasVisible_ = false;
-};
+
 
 // A post-install GUI probe must not open the owner's last audio interface,
 // restore or overwrite the last .smix, or automatically resume live output.
@@ -811,10 +770,6 @@ public:
         // every subsequently reopened floating built-in FX window permanently
         // lose DSP ACK/readback. Do not unregister it until final teardown.
         browser_.onNativeEvent=nullptr;
-        // Tear down the modal transaction first. A closing window must not
-        // re-enter device rebind while ConsoleWindow is being destroyed.
-        audioSetupLease_.reset();
-        audioSetupWindow_.reset();
         engine_.devices().removeChangeListener (this);
         pendingRetainedFxCapture_.reset(); // cancel incomplete CONTROL capture before teardown
         // Drain any earlier file work before the final muted checkpoint.
@@ -1068,10 +1023,6 @@ private:
     std::vector<std::unique_ptr<FloatingBuiltinOwner>> floatingBuiltinFx_;
     std::uint64_t floatingFxRelayTick_=0;
     static constexpr std::size_t maxSimultaneousBuiltinWindows=16;
-    std::unique_ptr<AudioSetupWindow> audioSetupWindow_;
-    // Persistent modal lease: blocks an Apply/ASIO restart while JUCE's
-    // device selector is open, not merely during the initial show() call.
-    std::optional<armix::device::NativeDeviceApplyCoordinator::Lease> audioSetupLease_;
     juce::String startupError_, lastAudioXml_;
     bool initialStateSent_ = false;
     bool consoleSubscribed_ = false; // Real snapshot subscription; not FAT certification
@@ -1083,7 +1034,6 @@ private:
     juce::uint32 guiReadyTick_ = 0;
     bool audioEngineStarted_ = false;
     const bool updaterProbeMode_ = isAutoUpdateHealthProbe();
-    bool setupLaunching_ = false;
     unsigned int timerTicks_ = 0;
     // Opt-in and bounded: message-thread timing only, NEVER the audio callback.
     struct GuiPerfStats
@@ -2989,7 +2939,6 @@ private:
             !engine_.hasBoundMixerRoute() && !engine_.isGraphSwitchPending() &&
             !engine_.independentClockActive() && !engine_.hasTemporaryDiagnosticDevice() &&
             !engine_.hasPendingDirectRestore() && !sessionLifecycleShuttingDown_ &&
-            !(audioSetupWindow_ && audioSetupWindow_->isVisible()) &&
             !pendingRetainedFxCapture_ && !retainedOfflineFxActive_ &&
             !logicalVendorEditor_ && !logicalMixer_.readOnly() &&
             !mixerSessionWorker_.busy() && !deviceApply_.busy() && !nativeShowBusy_ &&
@@ -3006,7 +2955,6 @@ private:
             !engine_.isGraphSwitchPending() && !engine_.independentClockActive() &&
             !engine_.hasTemporaryDiagnosticDevice() && !engine_.hasPendingDirectRestore() &&
             !sessionLifecycleShuttingDown_ && !mixerSessionRecoveryPending_ &&
-            !(audioSetupWindow_ && audioSetupWindow_->isVisible()) &&
             !pendingRetainedFxCapture_ && !retainedOfflineFxActive_ &&
             !logicalVendorEditor_ && !logicalMixer_.readOnly() &&
             !mixerSessionWorker_.busy() && !deviceApply_.busy() && !nativeShowBusy_ &&
@@ -3906,7 +3854,7 @@ private:
         if(operatorOutputMuted_){autoMainEpoch_=0;return;} // explicit emergency stop
         // Only an explicit, verified CONTROL transaction may schedule MAIN
         // recovery. A generic desired flag cannot prove output-pair continuity.
-        if(deviceApply_.busy() || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
+        if(deviceApply_.busy() ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() ||
            directCallbackStalled_ || engine_.hasPendingDirectRestore() ||
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
@@ -4120,101 +4068,6 @@ private:
         }
         }
         emitApprovedNativeSnapshot();
-    }
-
-    void showDeviceSetup()
-    {
-        diagnostics_.record ("SETUP", "Open audio device setup");
-        if (setupLaunching_) return;
-        if(pendingRetainedFxCapture_) {
-            emitNotice("Finish preparing the offline mixer workspace first.",true);
-            return;
-        }
-        // Repeated clicks must not re-suspend output or discard a pending
-        // preserve-monitor intention. The selector itself is already active.
-        if (audioSetupWindow_ && audioSetupWindow_->isVisible()) {
-            audioSetupWindow_->toFront(true);
-            return;
-        }
-        auto modalLease=deviceApply_.tryBegin(
-            armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
-        if(!modalLease) {
-            emitNotice("Finish the active audio device change first.",true);
-            return;
-        }
-        audioSetupLease_.emplace(std::move(modalLease));
-        // Hold a lease for the WHOLE modal selection, including ASIO's
-        // nested dispatcher and the final accepted mixer rebind.
-        autoMainEpoch_=0;
-        engine_.beginManualAudioSetup(true);
-
-        // Reuse cached JUCE selector without creating another DeviceManager.
-        if (audioSetupWindow_ != nullptr)
-        {
-            audioSetupWindow_->setVisible (true);
-            audioSetupWindow_->toFront (true);
-            return;
-        }
-
-        setupLaunching_ = true;
-        juce::MessageManager::callAsync (
-            [safe = juce::Component::SafePointer<ConsoleWindow> (this)]
-        {
-            if (safe == nullptr) return;
-            safe->audioSetupWindow_ =
-                std::make_unique<AudioSetupWindow> (safe->engine_.devices(),
-                    [safe]
-                    {
-                        if (safe == nullptr || !safe->audioSetupLease_) return;
-                        // Keep the transaction reserved until the selector
-                        // close has completed rebind, native readback and ACK.
-                        auto closingLease=std::move(*safe->audioSetupLease_);
-                        safe->audioSetupLease_.reset();
-                        if (safe->finishAudioSetupAndRecoverMixer())
-                        {
-                            safe->requestAutomaticMain(!safe->engine_.takeAsioResetMonitorIntent());
-                            safe->deviceSettingsDirty_ = true;
-                            safe->startupError_.clear();
-                            safe->diagnostics_.record ("DIRECT_ROUTE_APPROVED",
-                                "User confirmed selected ASIO/WASAPI backend in AUDIO SETUP");
-                            // Refresh native physical port inventory after the user
-                            // finishes device selection; never require a restart.
-                            safe->emitApprovedNativeSnapshot();
-                            // Refresh the cached capabilities after the actual
-                            // JUCE/vendor control panel transaction closes.
-                            safe->emitDeviceInventory(false);
-                            // The operator already pressed Play AND chose a
-                            // physical output. Finish that exact pending Play
-                            // once; never autoplay on ordinary device setup.
-                            const int pending=safe->playerOutputPendingIndex_;
-                            safe->playerOutputPendingIndex_=-1;
-                            if(pending>=0 && pending==safe->playerSelected_ &&
-                               pending<static_cast<int>(safe->playerLibrary_.size()))
-                                safe->playSelectedMusic();
-                        }
-                        else
-                        {
-                            safe->playerOutputPendingIndex_=-1;
-                            safe->diagnostics_.record ("DIRECT_ROUTE_REJECTED",
-                                "No verified stereo playback device; audio remains gated");
-                            safe->emitNotice (
-                                safe->engine_.hasRetainedUnboundMixer()
-                                    ? "Playback unavailable. Mixer and plugin settings are saved."
-                                    : "Choose a working stereo output in Audio I/O. Input hardware is optional.", true);
-                            safe->emitApprovedNativeSnapshot();
-                            safe->emitDeviceInventory(false);
-                        }
-                    }, *safe);
-            safe->audioSetupWindow_->setVisible (true);
-            (void) armix::ui::attachOwnedFloatingWindow (
-                *safe->audioSetupWindow_, *safe);
-            safe->audioSetupWindow_->toFront (true);
-            // The peer now exists: perform one initial JUCE layout on the
-            // message thread, rather than relying on a manual window drag.
-            safe->audioSetupWindow_->resized();
-            safe->audioSetupWindow_->repaint();
-            safe->setupLaunching_ = false;
-        });
     }
 
     // A Windows native Explorer picker cannot select ordinary files AND folders in
@@ -4533,7 +4386,7 @@ private:
         const auto active=currentDeviceSnapshot();
         auto& manager=engine_.devices();
         auto* device=manager.getCurrentAudioDevice();
-        if(setupLaunching_ || nativeShowBusy_ || studioBackupBusy_ ||
+        if(nativeShowBusy_ || studioBackupBusy_ ||
            mixerSessionWorker_.busy() || pendingRetainedFxCapture_ || retainedOfflineFxActive_ ||
            engine_.independentClockActive() || engine_.hasTemporaryDiagnosticDevice() ||
            engine_.isGraphSwitchPending() || !device || !device->isOpen() ||
@@ -10400,7 +10253,6 @@ private:
             else if (selected == "CAPTURE_ONLY") route = Route::captureOnly;
             else if (selected == "DRY_THROUGH") route = Route::dryThrough;
             else if (selected != "NORMAL") return emitNotice ("Unsupported diagnostic mode", true);
-            if (audioSetupWindow_ != nullptr) audioSetupWindow_->setVisible (false);
             const auto error = engine_.setDiagnosticRoute (route);
             if (error.isNotEmpty())
             {
@@ -10914,7 +10766,6 @@ private:
            !engine_.hasRetainedNativeSession() ||
            engine_.retainedNativeEpoch()!=retainedOfflineOwnerEpoch_ ||
            !engine_.allOutputsDisarmed() || deviceApply_.busy() ||
-           (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
            mixerSessionWorker_.busy() || logicalVendorEditor_ ||
            nativeShowBusy_ || studioBackupBusy_ || catalog_.busy() ||
            engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
@@ -10994,7 +10845,7 @@ private:
         if((epoch==asioRecoveryEpoch_ && !missingDevice &&
             !directCallbackStalled_ && !engine_.mainInterruptedByDevice()) ||
            (!retained && !silent) ||
-           deviceApply_.busy() || (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
+           deviceApply_.busy() ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() || catalog_.busy() ||
            engine_.isGraphSwitchPending() || engine_.independentClockActive() ||
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
@@ -11243,7 +11094,6 @@ private:
         if(pendingRetainedFxCapture_ || retainedOfflineFxActive_)return;
         if(!audioEngineStarted_ || !verifiedWasapiSetup_ ||
            engine_.independentClockActive() || deviceApply_.busy() ||
-           (audioSetupWindow_ && audioSetupWindow_->isVisible()) ||
            nativeShowBusy_ || studioBackupBusy_ || mixerSessionWorker_.busy() ||
            catalog_.busy() || engine_.isGraphSwitchPending() ||
            engine_.diagnosticRoute()!=armix::diagnostics::Route::normal)return;
@@ -11347,7 +11197,7 @@ private:
         // the last verified audio-devices.xml selection.
         // The retention gate closes only on an actual epoch/owner change.
         diagnostics_.record ("DEVICE_CHANGE", "Device manager event");
-        if(!pendingRetainedFxCapture_ && !retainedOfflineFxActive_ && (audioSetupWindow_==nullptr || !audioSetupWindow_->isVisible()) &&
+        if(!pendingRetainedFxCapture_ && !retainedOfflineFxActive_ && !deviceApply_.busy() &&
            engine_.recoverSameWasapiMixer()) {
             mixerSessionStatus_="RESTORED_MUTED";
             mixerSessionError_.clear();
@@ -11645,7 +11495,7 @@ private:
             auto* activeDevice=engine_.devices().getCurrentAudioDevice();
             if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
                 engine_.directRouteAuthorized() && !engine_.hasRetainedUnboundMixer() &&
-                (audioSetupWindow_ == nullptr || !audioSetupWindow_->isVisible()) &&
+                !deviceApply_.busy() &&
                 activeDevice != nullptr && activeDevice->isOpen())
             if (auto xml = engine_.devices().createStateXml())
             {

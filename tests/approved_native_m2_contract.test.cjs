@@ -7749,7 +7749,7 @@ test("U3 Stop supersedes native opens and approved output selection pins invento
 
 test("U3 same-device Apply suspends and restores the verified stream without manual Stop",()=>{
  const n=read("src/Main.cpp");
- const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void chooseImport ("));
  assert.doesNotMatch(a,/Stop STREAM and finish/);
  assert.match(a,/captureSecondaryResumeIntent\(\)/);
  assert.match(a,/requested.playback==prepared.before.outputDeviceName/);
@@ -7772,7 +7772,7 @@ test("U4 independent headphone mix uses admitted two-pin native scope and correl
  const split={...s,raw:{...s.raw,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1]}};
  assert.equal(protocol.secondaryMixMode(split,live).value.enabled,false);
  const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js");
- const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void showDeviceSetup()"));
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void chooseImport ("));
  assert.doesNotMatch(a,/getCurrentAudioDevice\(/);
  assert.match(n,/engine_.disarmSecondaryOutput\(\);\s*error=engine_.patchDmxSplitOutput/);
  assert.match(b,/protocol.secondaryOutputSettlement\(p,hardware,live,extraStatusSerial\)/);
@@ -8011,4 +8011,12 @@ test("routing diagnosis uses current callback meter evidence and preserves PRE s
  assert.match(wireVM.routeDiagnostic(snapshot,"1"),/minimum fader/);
  graph.edges[0].sendEnabled=false;
  assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+});
+
+test("no stock JUCE device selector survives in the production host",()=>{
+ const host=read("src/Main.cpp");
+ assert.doesNotMatch(host,/AudioDeviceSelectorComponent|AudioSetupWindow|showDeviceSetup\(/);
+ const a=host.slice(host.indexOf('else if (action == "audioSetup")'),host.indexOf('else if (action == "diagnosticRoute")'));
+ assert.match(a,/arMixOpenAudioIO/);
+ assert.match(host,/deviceApply_\.busy\(\)/);
 });
