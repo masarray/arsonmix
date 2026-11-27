@@ -194,11 +194,18 @@ def exercise(browser, out, width, height):
     state["graph"]["edges"].pop(1)
     emit(page,"arMixConsoleSnapshot",state)
     assert "NO SEND" in source.locator(".sof-badge").inner_text()
-    assert source.locator('[data-action="sofOn"]').is_disabled()
-    assert source.locator('[data-action="sofTap"]').is_disabled()
+    assert source.get_by_role("button",name="Assign PRE send").is_enabled()
+    assert source.get_by_role("button",name="Assign POST send").is_enabled()
     before=len(page.evaluate("()=>window.__nativeIntents"))
     assert source.locator(".fader").is_disabled()
     assert len(page.evaluate("()=>window.__nativeIntents"))==before
+    source.get_by_role("button",name="Assign PRE send").click()
+    assignment=wait_for_intents(page,"APPLY_WIRE_TRANSACTION",2)
+    assert assignment["targetChannelId"]==SOURCE
+    change=assignment["payload"]["changes"][0]
+    assert change=={"op":"CONNECT","from":SOURCE,"to":RECEIVER,"tap":"PRE_FADER","gainLinear":0},change
+    assert source.locator(".fader").is_disabled(), "No speculative graph"
+    assert intent_list(page,"SET_FADER")==[]
 
     toggle.click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"

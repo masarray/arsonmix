@@ -400,7 +400,26 @@
     return {kind:"ROLLBACK"};
   }
 
-  return Object.freeze({gainDb,edgePresentation,parallelEdge,
+  function routeDiagnostic(snapshot,sourceId){
+    if(!snapshot?.admitted||snapshot.retained)return "Audio unavailable · check Audio I/O";
+    const graph=snapshot.graph, source=graph.channels.find(ch=>ch.id===sourceId);
+    if(!source)return "Channel unavailable · select an admitted channel";
+    if(source.controls?.mute===true)return source.name+" · channel muted";
+    if(source.controls?.faderDb<=-60)return source.name+" · channel fader at minimum (PRE sends may remain active)";
+    const main=graph.mainChannelId, rows=new Map(graph.channels.map(ch=>[ch.id,ch]));
+    const visited=new Set(), queue=[sourceId];
+    while(queue.length){
+      const id=queue.shift();if(visited.has(id))continue;visited.add(id);
+      if(id===main)return source.name+" · active route to MAIN; check native meters and physical output";
+      for(const edge of graph.edges){
+        if(edge.from!==id||!edge.enabled||edge.sendEnabled===false||!(edge.gainLinear>0))continue;
+        const target=rows.get(edge.to);
+        if(target&&target.controls?.mute!==true)queue.push(edge.to);
+      }
+    }
+    return source.name+" · no enabled unmuted route to MAIN; inspect OUT, WIRE and send levels (independent outputs may still work)";
+  }
+  return Object.freeze({routeDiagnostic,gainDb,edgePresentation,parallelEdge,
     acceptedParallelEdge,primaryChannelLevelPlan,channelSumLevelPlan,gainReadback,canEditTap,gestureTap,sofAvailable,
     compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,sofSourceRole,sofTargetRole,
     channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,

@@ -796,6 +796,20 @@
     return wireVM.sofSendEdge(current,{sourceId:nativeIdFor(t),
       destinationId:nativeIdFor(matches[0])});
   }
+  function sofAssignmentPlan(t){
+    const current=controller?.state()?.current;
+    const target=scope?.tracks?.find(x=>x.id===scope.sofTargetId);
+    if(!scope?.sofEnabled||!flags.acceptedGraphConnected||!current?.admitted||
+       current.retained||!nativeSofSource(t)||!target||
+       !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION"))return null;
+    const from=nativeIdFor(t),to=nativeIdFor(target);
+    if(!from||!to||from===to)return null;
+    const source=current.graph.channels.find(ch=>ch.id===from);
+    const destination=current.graph.channels.find(ch=>ch.id===to);
+    if(!wireVM.sofSourceRole(source?.role)||!wireVM.sofTargetRole(destination?.role)||
+       current.graph.edges.some(e=>e.from===from&&e.to===to))return null;
+    return {from,to};
+  }
   function syncNativeSofAvailability(next=controller?.state()?.current) {
     const admitted=wireVM.sofAvailable(next,!!scope?.toggleSof);
     const toggle=document.getElementById("sofToggle"),target=document.getElementById("sofTarget");
@@ -1780,9 +1794,13 @@
     }
   }
   function requestNativeBusCreate(track=false,fxBus=false){
+    return requestNativeReceivingStrip(track,fxBus?"FX":"AUX");
+  }
+  function requestNativeReceivingStrip(track,purpose){
+    const prefix=purpose==="FX"?"FX Bus ":purpose==="GROUP"?"Group Bus ":"Aux Bus ";
     if(logicalView)
       return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,
-        track?{}:{name:(fxBus?"FX Bus ":"Aux Bus ")+(logicalView.graph.channels.length+1)}).ok;
+        track?{}:{name:prefix+(logicalView.graph.channels.length+1)}).ok;
     const accepted=controller?.state()?.current,operation=
       track?"CREATE_CHANNEL":"CREATE_GROUP";
     const plan=stripVM.rosterMutationPlan(accepted,{
@@ -1794,7 +1812,7 @@
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
     pendingBusCreate={requestId,track,...plan.pending};
     syncAddTrack(accepted);
-    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose:fxBus?"FX":"AUX"});
+    backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose});
     const label=track?"Audio Track":"BUS";
     status("Adding "+label+" → MAIN · native PCM pending");
     window.setTimeout(()=>{
@@ -4881,6 +4899,15 @@
     // Windows RAM/process paging context from the existing 1 Hz control
     // timer. No sampling or file I/O happens in the ASIO callback.
     const healthTitle=item("span","more-tools-caption","AUDIO HEALTH");
+    const inspect=item("button","tool","Inspect selected routing");
+    inspect.addEventListener("click",()=>{
+      const tracks=[...(scope?.tracks||[]),scope?.master];
+      const selected=tracks.filter(t=>t?.selected);
+      if(selected.length!==1){nativeToast("Select one mixer channel to inspect routing");return;}
+      nativeToast(wireVM.routeDiagnostic(controller?.state()?.current,nativeIdFor(selected[0])));
+      const routes=document.getElementById("wireNavigatorToggle");
+      if(routes?.getAttribute("aria-expanded")!=="true")routes?.click();
+    });
     const tone=item("button","tool","Test MAIN output");
     tone.title="Start or stop a quiet tone on the verified MAIN pair without reopening the driver";
     tone.addEventListener("click",()=>{
@@ -5101,7 +5128,7 @@
           workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
     });
     menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
-      healthTitle,tone,mark,report,advanced,
+      healthTitle,inspect,tone,mark,report,advanced,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
@@ -5404,7 +5431,7 @@
           status("Retained FX slot changed before offline editor could open");
         }
       }
-      for(const id of ["addBus","addFx"]){
+      for(const id of ["addBus","addFx","addGroupBus"]){
         const addBus=document.getElementById(id);if(!addBus)continue;
         addBus.hidden=false;
         addBus.disabled=!!pendingLogical||staged.readOnly||!staged.graph.capabilities.supportedOps.includes("CREATE_GROUP");
@@ -5469,7 +5496,7 @@
     syncAddTrack(next);
     if(pendingTrackDelete && pendingTrackDelete.epoch!==next?.device?.epoch)
       pendingTrackDelete=null;
-    for(const id of ["addBus","addFx"]){
+    for(const id of ["addBus","addFx","addGroupBus"]){
       const addBus=document.getElementById(id);if(!addBus)continue;
       addBus.hidden=false;
       addBus.disabled=!nativeAdmitted||!caps?.supportedOps?.includes("CREATE_GROUP")||!!pendingBusCreate||!!pendingTrackDelete;
@@ -5966,6 +5993,7 @@
         "Scanning real VST3… "+(progress.done||0)+"/"+(progress.total||"…"):
         "Native VST3 scan finished; results from JUCE catalog";
     });
+    backend.addEventListener("arMixOpenAudioIO",()=>openNativeAudioIO());
     backend.addEventListener("arMixNotice",notice=>{
       // ConsoleWindow::emitNotice publishes {text,error}, never {message}.
       // The mismatched field hid native VST3 layout/latency, driver and
@@ -6279,8 +6307,19 @@
       status("NATIVE: "+field+" awaits accepted control/readback");
       return true;
     },
+    canAssignSof:t=>!!sofAssignmentPlan(t),
     consumeAction(t,action,btn) {
       if (!connected)return false;
+      if(action==="sofAssignPre"||action==="sofAssignPost"){
+        const plan=sofAssignmentPlan(t);
+        if(!plan||controller?.state()?.pending){nativeToast("SEND assignment unavailable · wait for accepted routing");return true;}
+        const {from,to}=plan;
+        const tap=action==="sofAssignPre"?"PRE_FADER":"POST_FADER";
+        const result=controller.intent("APPLY_WIRE_TRANSACTION",from,{changes:[{op:"CONNECT",from,to,tap,gainLinear:0}]});
+        if(result.ok){status("Assigning silent SEND · native readback pending");window.setTimeout(()=>controller?.expire(result.requestId),8000);}
+        else nativeToast("SEND assignment rejected · "+result.error);
+        return true;
+      }
       // PRE/POST is an exact EdgeId structural graph transaction, not a
       // cosmetic browser mode nor a channel-wide batch change.
       if(action==="tapMode"||action==="sofTap"){
@@ -6875,7 +6914,7 @@
   // Reference-only buttons outside strips must not mutate fake Show/FX state.
   document.addEventListener("click",event=>{
     const target=event.target.closest?.(
-      "#preview,#addTrack,#addBus,#addFx,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
+      #preview,#addTrack,#addBus,#addFx,#addGroupBus,#reset,#saveScene,#recallScene,#sceneSafe,#group,#ungroup,#copy,#paste,#clearCue,#pluginScan,#pluginImport,#pluginAddPath");
     if(!target)return;
     event.preventDefault();event.stopImmediatePropagation();
     const action=target.id==="pluginScan"?"scanVst3":
@@ -6886,6 +6925,7 @@
       status("PLUGIN MANAGER · "+action+" requested from native JUCE");
       return;
     }
+    if(target.id==="addGroupBus"){requestNativeReceivingStrip(false,"GROUP");return;}
     if(target.id==="addBus"||target.id==="addTrack"||target.id==="addFx"){
       requestNativeBusCreate(target.id==="addTrack",target.id==="addFx");return;
     }
@@ -6957,7 +6997,11 @@
     reset:"Demo reset must not erase a live mixer"
   });
   function presentNativeOnlyTools(){
-    for(const [id,label] of [["addBus","+ AUX / BUS"],["addFx","+ FX Bus"]]){
+    const aux=document.getElementById("addBus");
+    if(aux&&!document.getElementById("addGroupBus")){
+      const group=aux.cloneNode(false);group.id="addGroupBus";aux.after(group);
+    }
+    for(const [id,label] of [["addBus","+ AUX"],["addGroupBus","+ Group BUS"],["addFx","+ FX Bus"]]){
       const el=document.getElementById(id);if(el){el.textContent=label;el.hidden=false;el.disabled=true;
         el.title="Create a receiving GROUP with independent routing and insert rack";}
     }

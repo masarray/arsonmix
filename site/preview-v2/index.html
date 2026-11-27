@@ -383,7 +383,8 @@ function sectionSof(t){
  const visual=!send?'idle':tap==='preFader'||tap==='preFx'?'pre':'post';
  const badge=!edge?'NO SEND':edge.kind!=='send'?'PRIMARY OUT':
    tap==='preFader'?'PRE-FADER':tap==='preFx'?'PRE-FX':'POST-FADER';
- const status=!dest?'Select a BUS/FX':!edge?'Patch with WIRE':
+ const assignable=native&&!edge&&!!window.__ARMIX_NATIVE_M2__?.canAssignSof?.(t);
+ const status=!dest?'Select a BUS/FX':!edge?(assignable?'Assign a silent send':'Patch with WIRE'):
    !send?'PRIMARY ROUTE · no send level':
    send.sendEnabled===false?'OFF · saved '+wireDbText(send.levelDb):
    'LEVEL '+wireDbText(send.levelDb);
@@ -394,14 +395,14 @@ function sectionSof(t){
   '<div class="subhead"><span class="sym">↗</span><span class="hint">SEND TO '+escapeHtml(sofTarget||'—')+'</span></div>'+
   '<div class="sof-view-body"><div class="sof-info"><span class="sof-badge">'+badge+'</span>'+
   '<small>'+escapeHtml(status)+'</small></div>'+
-  '<div class="sof-actions"><button type="button" class="mx-sof-on-key" data-action="sofOn"'+
+  '<div class="sof-actions">'+(assignable?'<button type="button" class="mx-sof-on-key" data-action="sofAssignPre" title="Assign PRE-fader send at zero gain" aria-label="Assign PRE send">+ PRE</button><button type="button" class="mx-sof-tap-key" data-action="sofAssignPost" title="Assign POST-fader send at zero gain" aria-label="Assign POST send">+ POST</button>':'<button type="button" class="mx-sof-on-key" data-action="sofOn"'+
   ' aria-label="'+escapeHtml(t.name+' send '+(enabled?'on':'off')+' to '+sofTarget)+'"'+
   ' title="'+escapeHtml('Send '+(enabled?'ON':'OFF')+' · '+sofTarget)+'" aria-pressed="'+enabled+'"'+
   (onEditable?'':' disabled')+'>'+(enabled?'ON':'OFF')+'</button>'+
   '<button type="button" class="mx-sof-tap-key" data-action="sofTap" data-tap-visual="'+visual+'"'+
   (editable?'':' disabled')+' aria-label="'+escapeHtml(t.name+' '+(edge?'tap mode '+badge:'no WIRE send'))+'"'+
   ' title="'+escapeHtml('Tap '+t.name+' → '+(sofTarget||'Bus')+' · '+badge)+'"><span>'+
-  (tap==='preFader'||tap==='preFx'?'PRE':'POST')+'</span></button></div></div></div>';
+  (tap==='preFader'||tap==='preFx'?'PRE':'POST')+'</span></button>')+'</div></div></div>';
 }
 function sectionFx(t){
  if(sofEnabled&&isSofSource(t))return sectionSof(t);

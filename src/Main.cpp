@@ -6896,8 +6896,9 @@ private:
             // Reuse EXACTLY the existing native AUDIO SETUP dispatcher, with
             // all of its independent-stream/restore/feedback protections.
             // This is an explicit user-selected endpoint, never a fallback.
-            playerOutputPendingIndex_=playerSelected_;
-            action="audioSetup";
+            playerOutputPendingIndex_=-1;
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixOpenAudioIO",juce::var(true));
+            return emitPlayerState();
         }
         if(action=="playerSubscribe")return emitPlayerState(true);
         if(action=="playerVolume") {
@@ -8932,7 +8933,8 @@ private:
                         return engine_.editNativeBus(ep,rev,roster,
                             armix::mixer::ChannelRole::group,
                             std::span<const armix::mixer::ChannelId>{},
-                            (args.getProperty("purpose","").toString()=="FX"?"FX Bus ":"Aux Bus ")+std::to_string(count+1),1.f);
+                            (args.getProperty("purpose","").toString()=="FX"?"FX Bus ":
+                             args.getProperty("purpose","").toString()=="GROUP"?"Group Bus ":"Aux Bus ")+std::to_string(count+1),1.f);
                     });
                 }
             }
