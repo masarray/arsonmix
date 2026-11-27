@@ -341,6 +341,42 @@ try {
     Stop-Process -Id $fixtureProcess.Id -Force -ErrorAction Stop # TEST-ONLY synthetic fixture teardown
     $fixtureProcess.Dispose();$fixtureProcess=$null
 
+    # Independent second version: actual Inno upgrade then downgrade, with
+    # the old setup file held read-only for the entire transaction. Test-only
+    # rotated verifier receipt represents replacement; no production trust
+    # is inferred from these unsigned WinForms fixtures.
+    $nextOut=Join-Path $work 'next-setup'
+    New-Item -ItemType Directory -Force -Path $nextOut|Out-Null
+    $nextSource=Join-Path $work 'next-fixture.cs'
+    $source=Get-Content -LiteralPath (Join-Path $root 'tests/fixtures/installer_graceful_close.cs') -Raw
+    $source=$source.Replace('ArSonMix Upgrade Graceful-Close FAT Fixture','ArSonMix Second Version FAT Fixture')
+    [IO.File]::WriteAllText($nextSource,$source)
+    & $csc "/nologo" "/target:winexe" "/reference:System.Windows.Forms.dll" "/out:$(Join-Path $stage 'verified-gui.exe')" $nextSource
+    Assert-Condition ($LASTEXITCODE -eq 0) "Second version fixture failed to compile"
+    $nextHash=(Get-FileHash -LiteralPath (Join-Path $stage 'verified-gui.exe') -Algorithm SHA256).Hash
+    Assert-Condition ($nextHash -cne $fixtureHash) "Two fixtures unexpectedly have identical executable hashes"
+    $verifierReceipt=Join-Path $stage 'UpdateVerifier\verifier.json'
+    $oldReceiptHash=(Get-FileHash -LiteralPath $verifierReceipt -Algorithm SHA256).Hash
+    '{"testOnly":"rotated verifier receipt"}'|Set-Content -LiteralPath $verifierReceipt
+    '{"sourceCommit":"TEST_FIXTURE_SECOND_VERSION","fatStatus":"NOT_A_PRODUCT"}'|Set-Content -LiteralPath (Join-Path $stage 'BUILD_PROVENANCE.json')
+    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$nextOut" "/DSourceAppVersion=0.5.1" "/DVBCableSha256=$('0'*64)" (Join-Path $root "installer/ArSonMix.iss")
+    Assert-Condition ($LASTEXITCODE -eq 0) "Cannot compile distinct second Inno fixture"
+    $nextSetup=Join-Path $nextOut 'ArSonMix-Windows-x64-Setup-Preview.exe'
+    $oldSetupLease=[IO.File]::Open($setup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $nextInstall=Start-Process -FilePath $nextSetup -ArgumentList ($setupArgs+@('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+        Assert-Condition ($nextInstall.ExitCode -eq 0) "Second fixture installation failed"
+        Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -ceq $nextHash) "Second version not installed"
+        Assert-Condition ((Get-FileHash -LiteralPath (Join-Path $install 'UpdateVerifier\verifier.json') -Algorithm SHA256).Hash -cne $oldReceiptHash) "Verifier receipt was not rotated"
+        $rollback=Start-Process -FilePath $setup -ArgumentList ($setupArgs+@('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+        Assert-Condition ($rollback.ExitCode -eq 0) "Previous fixture installer rejected rollback"
+        Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -ceq $fixtureHash) "Rollback failed to restore old EXE bytes"
+        Assert-Condition ((Get-FileHash -LiteralPath (Join-Path $install 'UpdateVerifier\verifier.json') -Algorithm SHA256).Hash -ceq $oldReceiptHash) "Rollback failed to restore old verifier receipt"
+        Assert-Condition ((Get-Content -LiteralPath $userFile -Raw).Trim() -ceq 'user-file-must-survive') "Rollback changed private local file"
+        Assert-Condition ((Get-Content -LiteralPath $privateSentinel -Raw).Trim() -ceq 'private-user-data') "Rollback changed Studio sentinel"
+        Write-Host 'INNO_DISTINCT_VERSION_ROLLBACK_PASS: two different EXEs and verifier receipts, old setup lease, private data retained'
+    } finally {$oldSetupLease.Dispose()}
+
     $uninstaller=Join-Path $install "unins000.exe"
     Assert-Condition (Test-Path -LiteralPath $uninstaller) "Uninstaller missing"
     $uninstall=Start-Process -FilePath $uninstaller -ArgumentList @("/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART") -Wait -PassThru

@@ -13397,7 +13397,7 @@ private:
         juce::String status="IDLE";
         if(log.startsWith("UP_TO_DATE"))status="UP_TO_DATE";
         else if(log.startsWith("CHECKING_FOR_UPDATES"))status="CHECKING";
-        else if(log.startsWith("DOWNLOADING_VERIFIED_UPDATE")||log.startsWith("STAGING_VERIFIED_SAME_VERSION_REPAIR"))status="DOWNLOADING";
+        else if(log.startsWith("DOWNLOADING_VERIFIED_UPDATE")||log.startsWith("RESUMING_VERIFIED_DOWNLOAD")||log.startsWith("STAGING_VERIFIED_SAME_VERSION_REPAIR"))status="DOWNLOADING";
         else if(log.startsWith("NO_MATCHING_PUBLISHED_BASELINE"))status="BASELINE_UNAVAILABLE";
         else if(log.startsWith("ROLLED_BACK"))status="ROLLED_BACK";
         else if(log.startsWith("HEALTHY")||log.startsWith("REPAIRED"))status="HEALTHY";

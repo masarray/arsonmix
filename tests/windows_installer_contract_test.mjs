@@ -371,6 +371,7 @@ test('updater script has one coherent main try/finally and no duplicated tail', 
   const script = read('installer/ArSonMixAutoUpdate.ps1').replace(/\r\n/g, '\n');
   const tail = [
     '} finally {',
+    '    if($null -ne $rollbackGuard){$rollbackGuard.Dispose()}',
     '    if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}',
     '    if($null -ne $mutex){$mutex.Dispose()}',
     '}',
