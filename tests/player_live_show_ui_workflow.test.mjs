@@ -63,7 +63,7 @@ const queueRows=()=> $('playerQueueList').children.filter(x=>x.className==='ap-q
 assert.ok(songRows().length>0 && songRows().length<=80,
   '2,000-song library must never allocate 2,000 WebView rows');
 assert.equal($('playerList').children.at(-1).style.height,
-  ((2000-songRows().length)*38)+'px',
+  ((2000-songRows().length)*34)+'px',
   'full virtual scrollbar must cover every native song');
 assert.equal(queueRows().length,128,'all 128 queued entries are accessible');
 assert.equal($('playerQueueCount').textContent,'128');
@@ -74,7 +74,7 @@ assert.equal(queueRows()[0].children[1].children[0].disabled,true,
   'first queue entry cannot move above zero');
 
 const list=$('playerList');
-list.scrollTop=38*1400;
+list.scrollTop=34*1400;
 list.fire('scroll');
 assert.ok(songRows().length<=80);
 const visibleIds=songRows().map(row=>row.children[0].children[0].textContent);
@@ -102,6 +102,12 @@ $('playerSongMenu').children[2].click();
 assert.equal(actions.at(-1).detail.action,'playerQueueAppend');
 assert.equal(actions.at(-1).detail.value,1400);
 assert.equal($('playerSongMenu').hidden,true);
+actions.length=0;selectedRow.fire('contextmenu',{clientX:100,clientY:200,preventDefault(){},stopPropagation(){}});
+assert.equal($('playerSongMenu').hidden,false);assert.equal(actions.length,0,'right click does not select or play');
+$('playerSongMenu').fire('keydown',{key:'End',preventDefault(){},stopPropagation(){}});
+assert.equal(document.activeElement.textContent,'Prepare / edit key & tempo');
+$('playerSongMenu').fire('keydown',{key:'Escape',preventDefault(){},stopPropagation(){}});
+assert.equal($('playerSongMenu').hidden,true);assert.equal(document.activeElement,selectedRow.children[1]);
 $('playerQueueView').click();assert.equal($('playerList').hidden,true);assert.equal($('playerQueuePanel').hidden,false);
 $('playerSetlistView').click();assert.equal($('playerList').hidden,false);assert.equal($('playerQueuePanel').hidden,true);
 const rename=$('playerSetlistName');rename.tagName='INPUT';
@@ -138,12 +144,14 @@ assert.equal(queueRows().length,128);
 actions.length=0;
 queueRows()[8].fire('dragstart',{dataTransfer:data,preventDefault:prevent});
 const staleRow=queueRows()[0];const staleQueueRemove=staleRow.children[1].children[2];
+staleRow.fire('contextmenu',{preventDefault(){},stopPropagation(){}});
+assert.equal($('playerSongMenu').children[4].textContent,'Remove from queue');const staleQueueMenu=$('playerSongMenu').children[4];
 publish({queue,queueRevision:8,setlists:initial.setlists,pending:-1,
          activeSetlist:0,current:0,selected:0});
 staleRow.fire('drop',{dataTransfer:data,preventDefault:prevent});
 assert.equal(actions.length,0,
   'native queue revision change invalidates pending old browser drag');
-staleQueueRemove.click();assert.equal(actions.length,0,'stale queue button cannot remove a different entry');
+staleQueueRemove.click();staleQueueMenu.click();assert.equal(actions.length,0,'stale queue button/menu cannot remove a different entry');
 queueRows()[2].children[1].children[2].click();
 assert.deepEqual(
   JSON.parse(JSON.stringify(actions.at(-1).detail)),
@@ -172,4 +180,11 @@ assert.equal($('playerRemaining').textContent,'−04:00');
 publish({queue:[],current:0,selected:0,pending:-1});assert.equal($('playerUpNext').textContent,'Song 0001');
 publish({queue:[],current:1999,selected:1999,pending:-1});assert.equal($('playerUpNext').textContent,'End of setlist');
 publish({queue:[],current:0,selected:1,pending:2});assert.equal($('playerNextLabel').textContent,'PREPARING');assert.equal($('playerUpNext').textContent,'Song 0002');
-console.log('V4 PASS: virtual list, queue epochs, contextual actions, explicit NEXT editing, safe typing and native-only playback');
+publish({queue:[],current:0,selected:0,pending:-1,transport:{state:'PLAYING',title:'Song 0000',currentSeconds:102,durationSeconds:240}});
+$('playerClose').click();assert.equal($('playerMini').hidden,false);
+assert.match($('playerMiniTime').textContent,/01:42 \/ 04:00/);
+actions.length=0;$('playerMiniPlay').click();assert.equal(actions.at(-1).detail.action,'playerPause');
+$('playerMiniExpand').click();assert.equal($('arsonPlayer').hidden,false);assert.equal($('playerMini').hidden,true);
+$('playerLibraryView').click();assert.equal($('playerLibraryNote').hidden,false);assert.ok(songRows().every(row=>!row.draggable));
+$('playerSetlistView').click();assert.equal($('playerLibraryNote').hidden,true);
+console.log('V4.2 PASS: right click, keyboard menu, virtual rows, queue epochs, native MiniPlayer and library view');
