@@ -1928,20 +1928,23 @@
   }
   function selectedNativeGroup(){
     const view=activeView(),graph=view?.graph;
-    if(!graph||view?.retained===true||view?.readOnly||pendingLogical||pendingBusCreate||pendingTrackDelete)return null;
+    if(!graph||view?.retained===true||view?.readOnly||controller?.state()?.pending||pendingLogical||pendingBusCreate||pendingTrackDelete)return null;
     const selected=(scope?.tracks||[]).filter(t=>t.selected);
     const ids=selected.map(nativeIdFor);
     if(!ids.length||ids.some(id=>!id))return null;
-    const group=ids.length===1&&graph.channels.find(ch=>ch.id===ids[0]&&ch.role==="GROUP"&&ch.busPurpose==="GROUP")||
-      graph.channels.find(ch=>ch.role==="GROUP"&&ch.busPurpose==="GROUP"&&
-        ids.every(id=>graph.channels.find(c=>c.id===id)?.primaryOutId===ch.id)&&
-        graph.channels.filter(c=>c.primaryOutId===ch.id).every(c=>ids.includes(c.id)));
+    const members=ch=>graph.channels.filter(c=>c.primaryOutId===ch.id);
+    const isGroup=ch=>ch.role==="GROUP"&&ch.primaryOutId===graph.mainChannelId&&members(ch).length>0;
+    const group=ids.length===1&&graph.channels.find(ch=>ch.id===ids[0]&&isGroup(ch))||
+      graph.channels.find(ch=>isGroup(ch)&&
+        ids.every(id=>members(ch).some(c=>c.id===id))&&
+        members(ch).every(c=>ids.includes(c.id)));
     if(!group)return null;
     return (scope?.tracks||[]).find(t=>nativeIdFor(t)===group.id)||null;
   }
   function canGroupSelected(){
     const view=activeView(),selected=(scope?.tracks||[]).filter(t=>t.selected);
-    return selected.length>=2&&!!view?.graph&&
+    return selected.length>=2&&!!view?.graph&&!view.retained&&!view.readOnly&&
+      !controller?.state()?.pending&&
       view.graph.capabilities.supportedOps.includes("CREATE_GROUP")&&
       selected.every(t=>wireVM.sofSourceRole(view.graph.channels.find(c=>c.id===nativeIdFor(t))?.role))&&
       !pendingLogical&&!pendingBusCreate&&!pendingTrackDelete;
@@ -4116,7 +4119,7 @@
     extraLive?.diagnosticRoute==="NORMAL";
   let extraAutoInventoryStarted=false;
   function paintMainMonitor(){
-    const selects=document.querySelectorAll("[data-main-monitor]");
+    const selects=document.querySelectorAll?.("[data-main-monitor]")??[document.querySelector?.("[data-main-monitor]")].filter(Boolean);
     if(!selects.length)return;
     const v=protocol.secondaryOutputView(hardware,extraLive);
     const active=v.armed||v.recovering;

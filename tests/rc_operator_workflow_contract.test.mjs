@@ -167,7 +167,7 @@ test('matrix click toggles accepted exact mono/stereo pair, not a draft or manda
 });
 test('operator workflow stays on native authority: direct matrix, MON mirror, grouping and buffer',()=>{
  assert.match(bridge,/applyMatrixRow\(side,row.id,choice.label,lease,choice,true\)/);
- assert.match(bridge,/selects=document.querySelectorAll\("\[data-main-monitor\]"\)/);
+ assert.match(bridge,/selects=document.querySelectorAll\?\.\("\[data-main-monitor\]"\)/);
  assert.match(bridge,/endpoint.dataset.mainMonitor="true"/);
  assert.match(bridge,/requestRibbonBuffer\(value\)[\s\S]*?sendDeviceApply\(\)/);
  assert.match(bridge,/requestUngroupSelected\(\)[\s\S]*?requestNativeBusDelete\(fresh\)/);

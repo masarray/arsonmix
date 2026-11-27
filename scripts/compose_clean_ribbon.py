@@ -15,6 +15,8 @@ def apply_clean_ribbon(html: str, assets: Path) -> str:
     matrix_rewrites = (
         ("const targets=all.filter(wireWsMatches);",
          "const targets=[...all,master].filter(wireWsMatches);"),
+        ("permitted=!self&&wireWsCanJoin(src.id,dst.id),",
+         "permitted=!self&&(dst.kind==='master'||wireWsCanJoin(src.id,dst.id)),"),
         ("action=info?'data-ws-inspect':'data-ws-join',",
          "action='data-ws-crosspoint',"),
         ("(info?'Inspect ':'Connect ')+wireWsLabel(src.id)",
@@ -24,7 +26,7 @@ def apply_clean_ribbon(html: str, assets: Path) -> str:
  if(crosspoint){
   const parts=crosspoint.dataset.wsCrosspoint.split(':').map(Number);
   if(parts.length!==2||parts.some(x=>!Number.isInteger(x)))return;
-  const [from,to]=parts,src=wireSourceTrack(from),dst=wireSourceTrack(to);
+  const [from,to]=parts,src=wireSourceTrack(from),dst=to===master.id?master:wireSourceTrack(to);
   if(!src||!dst||from===to)return;
   const info=wireWsRouteKind(from,to,wireWsRoutes());
   const before=wireWsSnapshot();
@@ -32,7 +34,7 @@ def apply_clean_ribbon(html: str, assets: Path) -> str:
    const edges=wireEdges.filter(x=>x.enabled&&x.sourceId===from&&x.destId===to);
    if(edges.length!==1){wireWsInspect={src:from,dst:to};renderWireWsInspector();return;}
    if(replugWireEdge(from,to,null))wireWsRecord(before);
-  }else if(!info&&wireWsCanJoin(from,to)){
+  }else if(!info&&(dst.kind==='master'||wireWsCanJoin(from,to))){
    const op={type:'CONNECT',sourceId:from,destId:to,...(dst.kind==='master'?{}:{mode:'send'})};
    if(wireGraphCommit([op])){wireWsRecord(before);render();}
   }else if(info){wireWsInspect={src:from,dst:to};renderWireWsInspector();}

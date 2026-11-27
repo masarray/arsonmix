@@ -4581,7 +4581,7 @@ test("Output matrix external route preserves uint64 epoch and revision without N
  assert.equal(plan.kind,"READY");
  assert.equal(plan.epoch,epoch);assert.equal(plan.revision,revision);
  const bridge=read("web/approved-native-bridge.js");
- assert.ok(bridge.includes("await requestExternalOutput(null,label,null,id)"));
+ assert.ok(bridge.includes("await requestExternalOutput(null,label,null,id,directClick)"));
  assert.ok(bridge.includes("for(const [id,pending] of pendingExternal)"));
 });
 test("GUI-1 external OUT pending waits for matching ACK and later readback",()=>{

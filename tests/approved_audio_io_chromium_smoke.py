@@ -353,6 +353,8 @@ def verify_output_matrix_direct_patch(page,out):
     emit(page,"arMixStatus",{"secondaryOutputReady":True,"secondaryOutputArmed":True,
         "secondaryOutputName":"Realtek HD Audio","secondaryOutputFault":False})
     assert "Realtek HD Audio" in grid.locator("[data-secondary-endpoint]").inner_text()
+    assert grid.get_by_label("MON / STREAM device").input_value()=="Realtek HD Audio"
+    assert page.get_by_label("MAIN secondary monitor output").input_value()=="Realtek HD Audio"
     row=grid.locator("tbody tr").filter(has=page.get_by_label("CH03 assignment",exact=True))
     cells=row.locator(".armix-patch-cell")
     assert cells.nth(0).is_disabled() and cells.nth(1).is_disabled()
