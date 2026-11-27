@@ -63,7 +63,25 @@ def main():
             for full,ribbon in [("playerPlay","ribbonPlay"),("playerStop","ribbonStop"),
                                 ("playerPrevious","ribbonPrevious"),("playerNext","ribbonNext")]:
                 assert face(full)==face(ribbon),(full,face(full),face(ribbon))
-            assert panel.evaluate("e=>getComputedStyle(e).backgroundImage.includes('linear-gradient')")
+            # Thick polished glass is a single static CSS material, not a
+            # compositing overlay: no extra nodes, layout expansion or live blur.
+            glass=panel.evaluate("""e=>{
+                const s=getComputedStyle(e),header=getComputedStyle(e.querySelector('.ap-top'));
+                return {gradients:(s.backgroundImage.match(/(?:linear|radial)-gradient\\(/g)||[]).length,
+                    rim:s.backgroundClip,shadows:(s.boxShadow.match(/inset/g)||[]).length,
+                    border:s.borderTopWidth,filter:s.filter,backdrop:s.backdropFilter,
+                    animation:s.animationName,header:header.backgroundImage,
+                    over:getComputedStyle(e,'::after').content};
+            }""")
+            assert glass["gradients"]==5 and glass["shadows"]==8,glass
+            assert glass["rim"].endswith("border-box") and glass["border"]=="1px",glass
+            assert glass["filter"]==glass["backdrop"]==glass["animation"]=="none",glass
+            assert glass["over"] in ("none","normal") and glass["header"].count("linear-gradient")==2,glass
+            # Glass should not intercept the real button hit target.
+            play.scroll_into_view_if_needed()
+            assert play.evaluate("""e=>{const r=e.getBoundingClientRect();
+                return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));}""")
+            panel.evaluate("e=>e.scrollTop=0")
             assert panel.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")
             listbox=page.locator("#playerList")
             assert listbox.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")

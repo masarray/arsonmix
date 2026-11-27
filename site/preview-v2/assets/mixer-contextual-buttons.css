@@ -268,7 +268,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #playerToggle[aria-expanded="true"]{color:#8cf0d0;border-color:#358c78}
 /* ArSon Player V4.2: approved local visual master, one scoped owner. */
 #arsonPlayer[hidden],#arsonPlayer [hidden],#playerMini[hidden]{display:none!important}
-#arsonPlayer{--ap-bg:#151b20;--ap-header:#20272d;--ap-recess:#10161a;--ap-border:#303a43;--ap-ink:#e4e9ee;--ap-muted:#9badb8;--ap-mint:#67d7c1;--ap-blue:#a5bed2;position:fixed;z-index:90;top:75px;right:12px;bottom:52px;width:min(410px,calc(100vw - 24px));display:flex;flex-direction:column;background:linear-gradient(128deg,#e3f6ff10 0%,#e3f6ff04 25%,transparent 25.3%,transparent 47%,#a1d6ed06 47.3%,transparent 65%),linear-gradient(180deg,#26353e 0%,#19252d 18%,#131c23 55%,#10171d 100%);border:1px solid #50616b;border-radius:12px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;box-shadow:inset 0 1px #effaff39,inset 1px 0 #c9ecff19,inset 0 -1px #02080d,inset -1px 0 #02080d,0 2px 0 #070c10,0 18px 55px #0009;font:400 13px/1.4 "ArSonMix Inter",Inter,"Segoe UI",Arial,sans-serif;color:var(--ap-ink);color-scheme:dark}
+#arsonPlayer{--ap-bg:#151b20;--ap-header:#20272d;--ap-recess:#10161a;--ap-border:#303a43;--ap-ink:#e4e9ee;--ap-muted:#9badb8;--ap-mint:#67d7c1;--ap-blue:#a5bed2;position:fixed;z-index:90;top:75px;right:12px;bottom:52px;width:min(410px,calc(100vw - 24px));display:flex;flex-direction:column;/* Optical slab: sharp softbox reflection, broad clear coat, dark substrate, polished rim. */background:linear-gradient(132deg,transparent 0%,transparent 17%,#f0fcff1a 17.2%,#e2f6ff30 18%,#d3eeff12 19.5%,transparent 28%,transparent 45%,#badcf512 45.2%,#eefaff1f 45.7%,transparent 47.4%) padding-box,radial-gradient(ellipse 120% 36% at 8% 0%,#d6f2ff26 0%,#c2e6fb0d 45%,transparent 100%) padding-box,linear-gradient(115deg,#b9e4fa16 0%,#b9e4fa05 24%,transparent 24.2%,transparent 72%,#92b7cf07 100%) padding-box,linear-gradient(180deg,#2b3b46 0%,#1d2b35 18%,#141f27 56%,#10171d 100%) padding-box,linear-gradient(145deg,#e4f7ff 0%,#9cb8c7 12%,#3d505d 38%,#6c8999 66%,#182630 84%,#97b7c6 100%) border-box;border:1px solid transparent;border-radius:12px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;box-shadow:inset 0 1px 0 #f4fcffb8,inset 1px 0 0 #dbf6ff80,inset 0 3px 0 #c9efff38,inset 3px 0 0 #a3d2ed30,inset -1px -1px 0 #7eafca66,inset -3px -3px 0 #030b12b3,inset 0 0 0 5px #a9d1e517,inset 0 0 0 6px #020a1170,0 2px 0 #536d7b,0 4px 0 #0b151d,0 6px 0 #050b10,0 18px 55px #0009;font:400 13px/1.4 "ArSonMix Inter",Inter,"Segoe UI",Arial,sans-serif;color:var(--ap-ink);color-scheme:dark}
 #arsonPlayer *{box-sizing:border-box}
 #arsonPlayer > *{flex-shrink:0}
 #arsonPlayer button,#arsonPlayer input,#arsonPlayer select{font:inherit;color:inherit}
@@ -279,7 +279,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer svg{width:16px;height:16px;flex:none}
 #arsonPlayer .ap-icon{width:28px;height:28px;border-radius:5px;color:var(--ap-muted)}
 #arsonPlayer .ap-icon:hover{background:#2a343b;color:var(--ap-ink)}
-#arsonPlayer .ap-top{height:44px;display:flex;align-items:center;gap:9px;padding:0 12px;background:linear-gradient(180deg,#42525d 0%,#2c3b45 38%,#22313b 42%,#1b2831 100%);box-shadow:inset 0 1px #e9f8ff24,0 1px #9cbfce24;cursor:grab;position:sticky;top:0;z-index:2}
+#arsonPlayer .ap-top{height:44px;display:flex;align-items:center;gap:9px;padding:0 12px;background:linear-gradient(132deg,#f4fbff26 0%,#deefff12 25%,transparent 25.5%,transparent 57%,#d0efff12 57.5%,transparent 76%),linear-gradient(180deg,#526571 0%,#354651 38%,#263741 41%,#1b2831 100%);box-shadow:inset 0 1px #f2fbff8c,inset 0 3px #c4e6fa22,inset 3px 0 #b7dcf02b,inset -3px 0 #07131c90,0 1px #a6c6d34a;cursor:grab;position:sticky;top:0;z-index:2}
 #arsonPlayer .ap-top>svg{color:var(--ap-mint);width:17px;height:17px}
 #arsonPlayer .ap-brand{font-size:13px;font-weight:450;flex:1}
 #arsonPlayer .ap-chrome{display:flex;align-items:center;gap:1px}
@@ -531,6 +531,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-songrow[data-favorite="true"][data-done="false"][data-current="false"][data-selected="false"] .ap-index{font-size:0;color:#d7c49c}
 #arsonPlayer .ap-songrow[data-favorite="true"][data-done="false"][data-current="false"][data-selected="false"] .ap-index::after{content:"★";font-size:11px}
 
-/* Tempered-glass chassis: static material only, no overlay stealing clicks,
-   no blur/filter/animation on the panel, keep all native scrolling semantics. */
+/* Tempered-glass chassis: static layered gradients and inset/outset rim only.
+   Inspired by dielectric Fresnel/clear-coat optics, not a physical shader.
+   No overlay stealing clicks, no blur/filter/animation; scroll stays native. */
 #arsonPlayer::-webkit-scrollbar,#arsonPlayer :is(#playerList,.ap-queue,.ap-song-menu)::-webkit-scrollbar{display:none;width:0;height:0}
