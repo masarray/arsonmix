@@ -328,6 +328,44 @@ def verify_bus_remap(page,out):
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='audioDeviceApply')")
     assert not errors,errors
 
+def verify_input_matrix_direct_patch(page,out):
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state=snapshot()
+    state["productionCallbackLive"]=True
+    state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
+        enabledInputs=[0,1],inputEndpoints=[
+        {"id":"in:"+str(i),"port":i,"callback":i,"label":"Mic "+str(i+1),"active":True} for i in range(2)])
+    emit(page,"arMixConsoleSnapshot",state)
+    open_verified_audio_io(page,state,"inputs")
+    row=page.locator("[data-audio-input-grid] tbody tr").filter(has=page.get_by_label("CH03 assignment",exact=True))
+    cell=row.locator(".armix-patch-cell").first
+    cell.click()
+    req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').at(-1)")
+    assert req and req["channelId"]==SOURCE and req["left"]==0,req
+    assert cell.get_attribute("data-mark")==""
+    emit(page,"arMixNativeSourceAck",{"requestId":req["requestId"],"channelId":SOURCE,"ok":True,"graphRevision":"3"})
+    state["graph"]["revision"]="3"
+    state["graph"]["channels"][0]["source"]={"sourceFormat":req["mode"],"portId":"in:0",**({"portIdRight":"in:1"} if req["mode"]=="STEREO" else {})}
+    state["mixerSession"].update(routeRevision="3",channels=copy.deepcopy(state["graph"]["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    assert cell.get_attribute("data-mark") in ("L","M")
+    cell.click()
+    clear=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').at(-1)")
+    assert clear["requestId"]!=req["requestId"] and clear["mode"]=="NONE",clear
+    assert cell.get_attribute("data-mark") in ("L","M")
+    emit(page,"arMixNativeSourceAck",{"requestId":clear["requestId"],"channelId":SOURCE,"ok":True,"graphRevision":"4"})
+    state["graph"]["revision"]="4"
+    state["graph"]["channels"][0].pop("source",None)
+    state["mixerSession"].update(routeRevision="4",channels=copy.deepcopy(state["graph"]["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    assert cell.get_attribute("data-mark")==""
+
 def verify_output_matrix_direct_patch(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
@@ -353,28 +391,16 @@ def verify_output_matrix_direct_patch(page,out):
     emit(page,"arMixStatus",{"secondaryOutputReady":True,"secondaryOutputArmed":True,
         "secondaryOutputName":"Realtek HD Audio","secondaryOutputFault":False})
     assert "Realtek HD Audio" in grid.locator("[data-secondary-endpoint]").inner_text()
+    assert grid.get_by_label("MON / STREAM device").input_value()=="Realtek HD Audio"
+    assert page.get_by_label("MAIN secondary monitor output").input_value()=="Realtek HD Audio"
     row=grid.locator("tbody tr").filter(has=page.get_by_label("CH03 assignment",exact=True))
     cells=row.locator(".armix-patch-cell")
     assert cells.nth(0).is_disabled() and cells.nth(1).is_disabled()
     assert cells.nth(2).is_enabled() and cells.nth(3).is_enabled()
+    # Direct matrix click dispatches once, no Apply or speculative mark.
     cells.nth(2).click()
-    assert cells.nth(2).get_attribute("data-mark")=="L"
-    assert cells.nth(3).get_attribute("data-mark")=="R"
-    assert cells.nth(2).get_attribute("data-draft")=="true"
-    cells.nth(2).click()
-    assert row.get_by_label("CH03 assignment").input_value()=="None"
-    assert not row.get_by_role("button",name="Apply",exact=True).is_enabled()
-    cells.nth(3).click()
-    assert row.get_by_role("button",name="Apply",exact=True).is_enabled()
-    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingExternalOutput')")
-    # Independent preset metadata redraw must not lose a physical draft.
-    inventory["namedPatches"]={"revision":1,"readOnly":False,"entries":[]}
-    emit(page,"arMixAudioDeviceInventory",inventory)
-    assert cells.nth(2).get_attribute("data-draft")=="true"
-    row.get_by_role("button",name="Apply",exact=True).click()
-    dialog=page.get_by_role("dialog",name="External output")
-    assert dialog.is_visible()
-    dialog.get_by_role("button",name="Enable output",exact=True).click()
+    assert cells.nth(2).get_attribute("data-mark")==""
+    assert not page.get_by_role("dialog",name="External output").is_visible()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingExternalOutput').at(-1)")
     assert req and req["channelId"]==SOURCE and (req["left"],req["right"])==(2,3),req
     emit(page,"arMixExternalOutputAck",{"requestId":req["requestId"],"ok":True})
@@ -383,8 +409,7 @@ def verify_output_matrix_direct_patch(page,out):
     assert cells.nth(2).get_attribute("data-mark")=="L"
     assert cells.nth(2).get_attribute("data-draft")=="false"
     cells.nth(3).click()
-    assert row.get_by_label("CH03 assignment").input_value()=="None"
-    row.get_by_role("button",name="Apply",exact=True).click()
+    assert cells.nth(2).get_attribute("data-mark")=="L","unassign must await native readback"
     remove=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingExternalOutput').at(-1)")
     assert (remove["left"],remove["right"])==(-1,-1),remove
     emit(page,"arMixExternalOutputAck",{"requestId":remove["requestId"],"ok":True})
@@ -739,14 +764,46 @@ def verify_main_monitor_shortcut(page,out):
         assert mon.is_enabled() and mon.input_value()=="USB DAC"
         assert page.locator(".strip.master select[data-field=output]").input_value()==primary
         assert page.evaluate("()=>window.__actions.length")==before
-    mon.select_option("")
+    inventory=open_verified_audio_io(page,state,"routing")
+    # Opening the I/O surface requests a fresh Windows endpoint inventory.
+    # Respond to that exact native request, not a stale pre-open receipt.
+    latest=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputInventory').at(-1)")
+    if latest and latest["requestId"]!=req["requestId"]:
+        emit(page,"arMixSecondaryOutputInventory",{"requestId":latest["requestId"],
+             "outputs":["CABLE Input","Speakers","USB DAC"]})
+    matrix_mon=page.get_by_label("MON / STREAM device",exact=True)
+    assert matrix_mon.input_value()=="USB DAC"
+    matrix_mon.select_option("")
     stop=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputStop').at(-1)")
     assert stop["requestId"] and mon.input_value()=="USB DAC"
     emit(page,"arMixSecondaryOutputAck",{"requestId":stop["requestId"],"action":stop["action"],"ok":True})
     live.update(secondaryOutputReady=False,secondaryOutputArmed=False,secondaryOutputName="")
     emit(page,"arMixStatus",live)
-    assert mon.input_value()==""
+    assert mon.input_value()=="" and matrix_mon.input_value()==""
+    matrix_mon.select_option("Speakers")
+    second=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
+    assert second["requestId"]!=enable["requestId"] and second["value"]=="Speakers"
+    assert matrix_mon.input_value()=="" and mon.input_value()==""
+    emit(page,"arMixSecondaryOutputAck",{"requestId":second["requestId"],"action":second["action"],"ok":True})
+    live.update(secondaryOutputReady=True,secondaryOutputArmed=True,secondaryOutputName="Speakers")
+    emit(page,"arMixStatus",live)
+    assert matrix_mon.input_value()=="Speakers" and mon.input_value()=="Speakers"
     assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm','audioDeviceApply'].includes(a.action)).length")==0
+    # A separate buffer change reuses the existing verified device transaction.
+    inventory["active"]["buffers"]=[128,256,512,state["device"]["bufferFrames"]]
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    page.locator("[data-audio-close]").click()
+    select_ribbon_workflow(page,"io")
+    buffer=page.locator("select[data-audio-value=buffer]")
+    old=state["device"]["bufferFrames"]
+    target=256 if old!=256 else 512
+    assert buffer.is_enabled() and buffer.input_value()==str(old)
+    buffer.select_option(str(target))
+    page.wait_for_function("()=>window.__actions.some(a=>a.action==='audioDeviceApply')")
+    apply=page.evaluate("()=>window.__actions.filter(a=>a.action==='audioDeviceApply').at(-1)")
+    assert apply["config"]["bufferSize"]==target,apply
+    assert buffer.is_disabled() and buffer.input_value()==str(old)
+    assert page.locator(".armix-audio-dialog").is_hidden()
 
 def verify_independent_output(page,out,legacy_empty=False):
     """Two-pin native fixture: one mode action, no manual mute/arm ritual."""
@@ -1016,6 +1073,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_output_matrix_direct_patch(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":900})
+        verify_input_matrix_direct_patch(page,out)
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_logical_inputs(page,out)
