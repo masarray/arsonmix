@@ -448,6 +448,11 @@
    else if(popup.matches('.mx-fxp-menu,#mxHPresetMenu'))popup.hidden=true;
    event.preventDefault();event.stopImmediatePropagation();return;
   }
+  // The capture-phase window manager must yield to an actively edited
+  // BPM field's existing target-level Escape handler. It restores the
+  // accepted value and blurs without issuing an audio setting change.
+  const local=event.target?.closest?.('.vt-clock-screen[data-editing="true"] #vtBpm');
+  if(local&&panel.contains(local))return;
   if(closeActive()){event.preventDefault();event.stopImmediatePropagation();}
  },true);
  const center=el=>{

@@ -175,10 +175,15 @@ def main():
             editor.locator("#vtDisplayBpm").click()
             assert editor.locator("#vtBpm").is_visible()
             assert editor.locator("#vtBpm").input_value()=="120"
+            writes=page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeThrowSet').length")
             editor.locator("#vtBpm").fill("133")
             editor.locator("#vtBpm").press("Escape")
+            assert editor.is_visible(),"Escape must cancel the BPM edit, not close the FX editor"
             assert editor.locator("#vtBpm").is_hidden()
+            assert editor.locator("#vtBpm").input_value()=="120"
             assert editor.locator("#vtDisplayBpm").inner_text()=="120"
+            assert page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeThrowSet').length")==writes,\
+                "Cancelling an edit must not send a DSP setting"
             assert editor.locator("#vtBeatRail i[data-on='true']").count()==3
             assert editor.locator(".vt-encoder-bank .vt-encoder-face").count()==6
             assert editor.locator("#vtWetDial[role='slider']").count()==1

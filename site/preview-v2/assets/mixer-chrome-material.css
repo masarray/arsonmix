@@ -1553,7 +1553,13 @@ html.armix-native-desktop .app .command-bar>.toolbar-label{
 }
 @media(max-width:1150px){
  html.armix-native-desktop .app .command-bar{
-  column-gap:4px!important;padding-inline:5px!important;
+  column-gap:2px!important;padding-inline:4px!important;
+ }
+ /* The added Output and New Project commands need room at 1100px.
+    Keep all commands visible, the 43px bar and 29px key height unchanged. */
+ html.armix-native-desktop .app .command-bar>.tool:not(.bank-arrow),
+ html.armix-native-desktop .app .command-bar>.more-tools>summary.tool{
+  padding-inline:4px!important;
  }
 }
 

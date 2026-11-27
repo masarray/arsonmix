@@ -34,8 +34,12 @@ def run() -> None:
         assert 'id="gainView"' in source and 'id="fxView"' in source
         assert 'id="mixContext"' in source
         assert "Never auto-patch or remove a WIRE at minimum send level." in source
-        assert "const send=sofEnabled&&t.kind==='audio';" in source, (
+        assert "const send=sofEnabled&&isSofSource(t);" in source, (
             "Fader reset must inspect active SEND context instead of overwriting MAIN")
+        assert "['INPUT','GROUP','FX_RETURN'].includes(t.nativeRole)" in source, (
+            "Native group and FX returns are valid SEND sources; terminal outputs are not")
+        assert "if(send&&!getSofEdge(t))" in source, (
+            "Fader reset must not create a missing SEND")
         assert "nativeGainAvailable===true" in source, (
             "Native input gain should be available only with installed capability")
         assert "window.__ARMIX_GAIN_UNITY_DETENT__=gainUnityDetent;" in source
