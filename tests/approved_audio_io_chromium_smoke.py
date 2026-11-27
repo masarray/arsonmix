@@ -765,6 +765,12 @@ def verify_main_monitor_shortcut(page,out):
         assert page.locator(".strip.master select[data-field=output]").input_value()==primary
         assert page.evaluate("()=>window.__actions.length")==before
     inventory=open_verified_audio_io(page,state,"routing")
+    # Opening the I/O surface requests a fresh Windows endpoint inventory.
+    # Respond to that exact native request, not a stale pre-open receipt.
+    latest=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputInventory').at(-1)")
+    if latest and latest["requestId"]!=req["requestId"]:
+        emit(page,"arMixSecondaryOutputInventory",{"requestId":latest["requestId"],
+             "outputs":["CABLE Input","Speakers","USB DAC"]})
     matrix_mon=page.get_by_label("MON / STREAM device",exact=True)
     assert matrix_mon.input_value()=="USB DAC"
     matrix_mon.select_option("")
