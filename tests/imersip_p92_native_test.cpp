@@ -7,6 +7,8 @@
 #endif
 #include "../engine/builtin_fx/ImerSipP92Processor.h"
 #include "../src/SonKuNativeBridgeContract.h"
+#include "../src/NativeOwnedFloatingWindow.h"
+#include "../engine/core/LiveChannelFxGraph.h"
 #include <cassert>
 #include <limits>
 #include <cmath>
@@ -467,8 +469,208 @@ static void editorReopenStress(int rate) {
                 "PCM_owner=retained,ACK=verified,IMRS=verified,"
                 "pending_close_reopen=verified\n",rate);
 }
+// Two real native FX leases, one silent, one playing; compare first wake
+// against an always-running processor with identical input history.
+// Do not use a timing threshold on CI hardware. Count actual skipped calls.
+static void verifyImmerSIBIdleLease(int rate,int frames) {
+    using Owner=armix::mixer::LiveChannelFxGraph::FxInstance;
+    auto make=[&]{
+        auto p=std::make_unique<ImerSipP92Processor>();
+        p->setRateAndBufferSizeDetails(double(rate),frames);
+        p->prepareToPlay(double(rate),frames);
+        assert(p->isReady());
+        return p;
+    };
+    auto idle=make(),active=make(),reference=make();
+    auto* idleProcessor=idle.get();
+    Owner a(std::move(idle),ImerSipP92Processor::catalogIdentity,"ImmerSIB",frames);
+    Owner b(std::move(active),ImerSipP92Processor::catalogIdentity,"ImmerSIB",frames);
+    assert(a.immerseIdleAdmitted && b.immerseIdleAdmitted);
+    juce::AudioBuffer<float> silent(2,frames),music(2,frames),ref(2,frames);
+    juce::MidiBuffer midi;
+    const auto render=[&](Owner& owner,juce::AudioBuffer<float>& pcm){
+        owner.render(pcm.getWritePointer(0),pcm.getWritePointer(1),frames);
+    };
+    // Start with audible audio (real history / reflections), then silence.
+    for(int k=0;k<8;++k) {
+        for(int i=0;i<frames;++i) {
+            const float x=.1f*std::sin(float(2*pi*337*(k*frames+i)/rate));
+            silent.setSample(0,i,x);silent.setSample(1,i,x*.75f);
+        }
+        ref.makeCopyOf(silent,true);render(a,silent);reference->processBlock(ref,midi);
+        for(int ch=0;ch<2;++ch)for(int i=0;i<frames;++i)
+            assert(silent.getSample(ch,i)==ref.getSample(ch,i));
+    }
+    bool slept=false;
+    for(int k=0;k<(rate*10)/frames;++k) {
+        silent.clear();ref.clear();
+        render(a,silent);reference->processBlock(ref,midi);
+        for(int i=0;i<frames;++i) {
+            const float x=.1f*std::sin(float(2*pi*599*(k*frames+i)/rate));
+            music.setSample(0,i,x);music.setSample(1,i,x*.7f);
+        }
+        render(b,music);
+        assert(!b.dspSleeping.load());
+        for(int ch=0;ch<2;++ch)for(int i=0;i<frames;++i)
+            assert(std::abs(silent.getSample(ch,i)-ref.getSample(ch,i))<=1.e-8f);
+        if(a.dspSleeping.load()) {slept=true;break;}
+    }
+    assert(slept && a.dspSleepBlocks.load()>0);
+    // Continue silent while the other instance runs independently.
+    const auto calls=a.dspProcessedBlocks.load();
+    const auto processedFrames=a.dspProcessedFrames.load();
+    const auto sleepingFrames=a.dspSleepFrames.load();
+    const auto totalUs=a.dspTotalUs.load();
+    for(int k=0;k<8;++k) {
+        silent.clear();ref.clear();render(a,silent);reference->processBlock(ref,midi);
+        assert(a.dspSleeping.load());
+    }
+    assert(a.dspProcessedBlocks.load()==calls);
+    assert(a.dspProcessedFrames.load()==processedFrames);
+    assert(a.dspSleepFrames.load()==sleepingFrames+8u*static_cast<unsigned>(frames));
+    assert(a.dspTotalUs.load()==totalUs);
+    // Wake on the very first nonzero sample, even a tiny onset.
+    silent.clear();silent.setSample(0,0,1.e-12f);silent.setSample(1,1,.1f);
+    ref.makeCopyOf(silent,true);render(a,silent);reference->processBlock(ref,midi);
+    assert(!a.dspSleeping.load() && a.dspProcessedBlocks.load()==calls+1);
+    assert(a.dspProcessedFrames.load()==processedFrames+static_cast<unsigned>(frames));
+    assert(a.dspTotalUs.load()>=totalUs && a.dspTotalUs.load()>=a.dspLastUs.load());
+    for(int ch=0;ch<2;++ch)for(int i=0;i<frames;++i)
+        assert(std::abs(silent.getSample(ch,i)-ref.getSample(ch,i))<=2.e-6f);
+    // Explicit parameter request must be processed and acknowledged even
+    // while idle; policy resets on control transaction.
+    for(int k=0;k<(rate*10)/frames && !a.dspSleeping.load();++k) {
+        silent.clear();render(a,silent);
+    }
+    assert(a.dspSleeping.load());
+    assert(idleProcessor->queueSettings(imersipP92Factory(3),9001));
+    silent.clear();render(a,silent);
+    assert(!a.dspSleeping.load());
+    armix::builtin_fx::SonKuSpatialProcessor::Completion ack{};
+    assert(idleProcessor->pollCompletion(ack) && ack.applied && ack.requestId==9001);
+    assert(!a.bypassRequested.load() && !b.bypassRequested.load());
+    // Exercise the same optimized host path: settle the ordinary 8 ms
+    // crossfade, then prove zero-latency bypass publishes exact fresh PCM
+    // without calling the plugin or copying stale scratch.
+    a.bypassRequested.store(true);
+    for(int k=0;k<8;++k) {
+        silent.clear();render(a,silent);
+    }
+    const auto bypassCalls=a.dspProcessedBlocks.load();
+    for(int k=0;k<4;++k) {
+        for(int i=0;i<frames;++i) {
+            const float x=.02f*float(i+1)/float(frames);
+            silent.setSample(0,i,x);silent.setSample(1,i,-x);
+        }
+        ref.makeCopyOf(silent,true);render(a,silent);
+        for(int ch=0;ch<2;++ch)for(int i=0;i<frames;++i)
+            assert(silent.getSample(ch,i)==ref.getSample(ch,i));
+    }
+    assert(a.dspProcessedBlocks.load()==bypassCalls);
+    std::printf("IMMERSIB_IDLE_LEASE rate=%d frames=%d sleepBlocks=%llu activeBlocks=%llu wake=verified ACK=verified\\n",
+        rate,frames,static_cast<unsigned long long>(a.dspSleepBlocks.load()),
+        static_cast<unsigned long long>(b.dspProcessedBlocks.load()));
+}
+static void verifyIdlePolicyEdges() {
+    using P=armix::dsp::ImmerSIBIdlePolicy;
+    P p;
+    std::array<float,480> l{},r{};
+    const auto drain=[&] {
+        for(unsigned i=0;i<P::drainFrames/480;++i) {
+            assert(!p.shouldSleep(l.data(),r.data(),480,true));
+            p.rendered(l.data(),r.data(),480,true);
+        }
+        assert(p.shouldSleep(l.data(),r.data(),480,true));
+    };
+    drain();
+    assert(!p.shouldSleep(l.data(),r.data(),480,false));
+    drain();
+    r[0]=std::bit_cast<float>(1u);
+    {
+        juce::ScopedNoDenormals noDenormals;
+        assert(!p.shouldSleep(l.data(),r.data(),480,true));
+    }
+    r[0]=-0.f;
+    drain();
+    l[479]=std::numeric_limits<float>::quiet_NaN();
+    assert(!p.shouldSleep(l.data(),r.data(),480,true));
+    l[479]=0.f;
+    for(unsigned i=0;i<P::drainFrames/480;++i) {
+        assert(!p.shouldSleep(l.data(),r.data(),480,true));
+        l[1]=.0001f;
+        p.rendered(l.data(),r.data(),480,true);
+        l[1]=0.f;
+    }
+    assert(!p.eligible());
+    for(unsigned i=0;i<P::quietFrames/480;++i) {
+        assert(!p.shouldSleep(l.data(),r.data(),480,true));
+        p.rendered(l.data(),r.data(),480,true);
+    }
+    assert(p.eligible());
+}
+#if defined(_WIN32)
+static void verifyOwnedImmerSIBPresentation() {
+    // Actual JUCE registered-editor lifecycle, not a mock editor or PCM.
+    // Second real processor models another independent editor owner (not a
+    // third-party VST3 binary). Both remain alive and prepared.
+    auto a=std::make_unique<ImerSipP92Processor>();
+    auto b=std::make_unique<ImerSipP92Processor>();
+    a->prepareToPlay(48000.,128);b->prepareToPlay(48000.,128);
+    juce::DocumentWindow mixer("P0 mixer",juce::Colours::black,0);
+    mixer.centreWithSize(1100,720);mixer.setVisible(true);
+    juce::DocumentWindow primary("ImmerSIB",juce::Colours::black,0);
+    juce::DocumentWindow other("Other FX owner",juce::Colours::black,0);
+    auto firstOwner=armix::ui::createHostedAudioEditor(*a);
+    auto secondOwner=armix::ui::createHostedAudioEditor(*b);
+    auto* first=firstOwner.get();
+    auto* second=secondOwner.get();
+    assert(first&&second&&first!=second);
+    assert(!armix::ui::createHostedAudioEditor(*a)); // no duplicate active editor
+    primary.setContentNonOwned(first,true);other.setContentNonOwned(second,true);
+    primary.centreWithSize(first->getWidth(),first->getHeight());
+    other.centreWithSize(second->getWidth(),second->getHeight());
+    for(int i=0;i<100;++i){
+        primary.setVisible(false);
+        other.setVisible(true);
+        assert(armix::ui::verifyOwnedFloatingPresentation(other,mixer));
+        primary.setVisible(true);
+        primary.toFront(true);
+        assert(armix::ui::verifyOwnedFloatingPresentation(primary,mixer));
+        assert(a->getActiveEditor()==first&&b->getActiveEditor()==second);
+        assert(primary.getContentComponent()==first&&other.getContentComponent()==second);
+    }
+    primary.clearContentComponent();other.clearContentComponent();
+    firstOwner.reset();secondOwner.reset();
+    assert(a->getActiveEditor()==nullptr&&b->getActiveEditor()==nullptr);
+    // Reproduce the real failure mode: retire one editor but KEEP processor
+    // and another editor alive. JUCE must allow creating it again.
+    for(int i=0;i<10;++i){
+        auto survivor=armix::ui::createHostedAudioEditor(*b);
+        assert(survivor&&b->getActiveEditor()==survivor.get());
+        {
+            auto fresh=armix::ui::createHostedAudioEditor(*a);
+            assert(fresh&&a->getActiveEditor()==fresh.get());
+            primary.setContentNonOwned(fresh.get(),true);
+            primary.setVisible(true);
+            assert(armix::ui::verifyOwnedFloatingPresentation(primary,mixer));
+            primary.clearContentComponent();
+        }
+        assert(a->getActiveEditor()==nullptr);
+        assert(b->getActiveEditor()==survivor.get());
+    }
+    assert(a->getActiveEditor()==nullptr&&b->getActiveEditor()==nullptr);
+    a->releaseResources();b->releaseResources();
+    std::puts("P0_IMMERSIB_ACTUAL_JUCE_OWNED_REOPEN_PASS cycles=100 owners=2 recreated=10");
+}
+#endif
 int main() {
     juce::ScopedJuceInitialiser_GUI gui;
+#if defined(_WIN32)
+    verifyOwnedImmerSIBPresentation();
+#endif
+    verifyIdlePolicyEdges();
+    verifyImmerSIBIdleLease(48000,480);
+    verifyImmerSIBIdleLease(44100,128);
     auto editorFx=std::make_unique<ImerSipP92Processor>();
     editorFx->prepareToPlay(48000.,128);
     std::unique_ptr<juce::AudioProcessorEditor> editor(editorFx->createEditor());

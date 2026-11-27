@@ -3,6 +3,7 @@
 from pathlib import Path
 import math,re,subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config
 from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -76,7 +77,7 @@ def main():
     # WIRE-first default CH→MAIN is real. Disconnect this particular OUT
     # using the operator UI so legacy neutral-pin physics remain testable.
     page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
-    page.locator("#wireConfigToggle").click()
+    open_wire_config(page)
     assert page.locator("#wireMaster").get_attribute("aria-pressed")=="true"
     page.locator("#wireMaster").click()
     page.locator("#wireConfigClose").click()
@@ -165,9 +166,13 @@ def main():
     bus=page.locator('#tracks .strip[data-id="11"] .wire-node-out')
     assert bus.is_visible(),"Bus A source must be on next bank"
     bus.click()
-    # V50: same real cross-bank selector, now inside Config.
-    page.locator('#wireConfigToggle').click()
+    assert "wire-intent" in (body.get_attribute("class") or ""), "OUT did not arm"
+    # Opening More must preserve the pinned OUT; only an unrelated action
+    # may clear it. Exercise the actual operator path, not a hidden toggle.
+    open_wire_config(page)
+    assert "wire-intent" in (body.get_attribute("class") or ""), "More cancelled the armed OUT"
     picker=page.locator('#wireConfigWindow #wireLegend [data-wire-destination]')
+    assert picker.is_visible(), "Cross-bank destination selector disappeared"
     picker.select_option("3")
     page.locator('#wireConfigClose').click()
     page.locator("#bankPrev").click()

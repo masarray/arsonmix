@@ -118,13 +118,14 @@ int main(){
   assert(product->isReady());
   Settings forbidden=initial;forbidden.moving=true;
   assert(!product->queueSettings(forbidden,1801));
-  Settings legal=initial;legal.sourceDistanceMeters=3.0f;
+  Settings legal=initial;legal.sourceDistanceMeters=3.0f;legal.spatialMix=.42f;
   assert(product->queueSettings(legal,1802));
   SonKuSpatialProcessor::Completion ack{};
   assert(!product->pollCompletion(ack));
   product->consumeRealtimeEdits();
   assert(product->pollCompletion(ack) && ack.applied && ack.requestId==1802);
   assert(product->acceptedSettings().sourceDistanceMeters==3.0f);
+  assert(product->acceptedSettings().spatialMix==.42f);
   assert(product->stateSnapshotQuiescent());
   legal.sourceDistanceMeters=2.4f;
   assert(product->adopt(legal));
@@ -259,10 +260,105 @@ int main(){
  assert(std::abs(fused-reference)>0.0002);
  const double relativeDb=10.*std::log10(fused/reference);
  assert(std::abs(relativeDb)<8.0);
+ // Verify actual P90 audio changes with yaw, not only the accepted scalar.
+ {
+  auto left=std::make_unique<SonKuSpatialProcessor>();
+  auto right=std::make_unique<SonKuSpatialProcessor>();
+  auto base=s;base.headYawDegrees=0.f;base.spatialMix=1.f;
+  for(auto* p:{left.get(),right.get()}){
+   p->prepareToPlay(48000.,128);
+   assert(p->queueSettings(base,812));
+   p->consumeRealtimeEdits();
+   assert(p->pollCompletion(ack)&&ack.applied);
+   p->sealForRealtime();
+  }
+  juce::AudioBuffer<float> l(2,128),r(2,128);
+  juce::MidiBuffer midi;
+  auto block=[&](int n){
+   for(int i=0;i<128;++i){
+    const float t=float(n*128+i)/48000.f;
+    const float x=.1f*std::sin(2*pi*311*t);
+    const float y=.04f*std::sin(2*pi*1703*t);
+    l.setSample(0,i,x+y);l.setSample(1,i,x-y);
+    r.setSample(0,i,x+y);r.setSample(1,i,x-y);
+   }
+   left->processBlock(l,midi);right->processBlock(r,midi);
+   double diff=0.;
+   for(int c=0;c<2;++c)for(int i=0;i<128;++i){
+    assert(std::isfinite(l.getSample(c,i))&&std::isfinite(r.getSample(c,i)));
+    const double d=double(l.getSample(c,i))-r.getSample(c,i);
+    diff+=d*d;
+   }
+   return diff;
+  };
+  for(int n=0;n<64;++n)assert(block(n)==0.);
+  base.headYawDegrees=60.f;
+  assert(right->queueSettings(base,813));
+  double diff=block(64);
+  assert(right->pollCompletion(ack)&&ack.requestId==813&&ack.applied);
+  for(int n=65;n<128;++n)diff+=block(n);
+  assert(diff>1.e-6 && "Head yaw must audibly alter native PCM");
+ }
+ // Audio-owned transport captures actual nonzero phase; explicit seek stays explicit.
+ {
+  auto orbit=std::make_unique<SonKuSpatialProcessor>();
+  orbit->prepareToPlay(48000.,128);
+  auto motion=s;motion.moving=true;motion.startAzimuthDegrees=71.f;
+  motion.revolutionSeconds=.5f;motion.clockwise=true;
+  assert(orbit->queueSettings(motion,820));
+  orbit->consumeRealtimeEdits();assert(orbit->pollCompletion(ack)&&ack.applied);
+  orbit->sealForRealtime();
+  for(int i=0;i<43;++i)render(*orbit,i*128);
+  const float phase=orbit->observedAzimuthDegrees();
+  assert(std::abs(phase-motion.startAzimuthDegrees)>20.f);
+  motion.moving=false;motion.outputTrim=.1f; // stale field must not apply
+  assert(orbit->queueSettings(motion,821,true));
+  assert(!orbit->pollCompletion(ack));
+  render(*orbit,43*128);
+  assert(orbit->pollCompletion(ack)&&ack.requestId==821&&ack.applied);
+  assert(!ack.settings.moving&&std::abs(ack.settings.startAzimuthDegrees-phase)<.001f);
+  assert(ack.settings.outputTrim!=motion.outputTrim);
+  for(int i=0;i<16;++i)render(*orbit,(44+i)*128);
+  assert(std::abs(orbit->observedAzimuthDegrees()-phase)<.001f);
+  juce::MemoryBlock saved;orbit->getStateInformation(saved);
+  auto restored=std::make_unique<SonKuSpatialProcessor>();
+  restored->prepareToPlay(48000.,128);
+  assert(restored->restoreUnpublishedState(saved.getData(),static_cast<int>(saved.getSize())));
+  assert(std::abs(restored->observedAzimuthDegrees()-phase)<.001f);
+  restored->sealForRealtime();
+  render(*restored,0);
+  assert(std::abs(restored->observedAzimuthDegrees()-phase)<.001f);
+  motion=orbit->acceptedSettings();motion.moving=true;
+  motion.startAzimuthDegrees=0.f;
+  assert(orbit->queueSettings(motion,822,true));
+  render(*orbit,60*128);
+  assert(orbit->pollCompletion(ack)&&ack.requestId==822&&ack.applied);
+  assert(std::abs(ack.settings.startAzimuthDegrees-phase)<.001f);
+  assert(std::abs(orbit->observedAzimuthDegrees()-phase-1.92f)<.01f);
+  motion=orbit->acceptedSettings();motion.moving=false;motion.startAzimuthDegrees=0.f;
+  assert(orbit->queueSettings(motion,823)); // explicit preset/position
+  render(*orbit,61*128);
+  assert(orbit->pollCompletion(ack)&&ack.applied&&ack.settings.startAzimuthDegrees==0.f);
+  assert(orbit->observedAzimuthDegrees()==0.f);
+ }
  // Audio-thread head-yaw change is a separate accepted v10 transaction.
  s.headYawDegrees=60.f;
+ s.spatialMix=.3f;
  assert(fx->queueSettings(s,802));
- complete(*fx,802,400);
+ assert(!fx->pollCompletion(ack));
+ assert(render(*fx,400*128)>0.);
+ assert(fx->pollCompletion(ack)&&ack.applied&&ack.requestId==802);
+ assert(ack.settings.spatialMix==1.f&&fx->acceptedSettings().spatialMix==1.f);
+ assert(fx->stateSnapshotQuiescent());
+ s.spatialMix=1.f;
+ s.headYawDegrees=-45.f;
+ assert(fx->queueSettings(s,804));
+ fx->consumeRealtimeEdits();
+ assert(fx->pollCompletion(ack)&&ack.applied&&ack.requestId==804);
+ assert(ack.settings.headYawDegrees==-45.f);
+ s.headYawDegrees=60.f;
+ assert(fx->queueSettings(s,805));
+ complete(*fx,805,420);
  assert(fx->acceptedSettings().renderMode==9);
  assert(fx->acceptedSettings().headYawDegrees==60.f);
  s.renderMode=0;s.headYawDegrees=0.f;

@@ -3,6 +3,7 @@
 #include "PlayerSetlistArchive.h"
 #include <juce_core/juce_core.h>
 #include <memory>
+#include <map>
 #include <vector>
 
 // N-MOD-18: one read-only Player projection, CONTROL/UI thread only.
@@ -29,6 +30,8 @@ public:
         bool autoNext=false;
         bool loopAB=false;
         bool libraryBusy=false;
+        const std::map<juce::File,int>* catalogueIds=nullptr;
+        bool mediaRefreshQueued=false;
     };
     static juce::var build(const Source& s,bool includeLibrary,
                            bool includeTracks) {
@@ -50,6 +53,7 @@ public:
             PlayerSetlistArchive::canUndoRemove(
                 s.active,s.undoSet,s.undoIndex,s.files.size(),s.controls.size()));
         obj->setProperty("libraryBusy",s.libraryBusy);
+        obj->setProperty("mediaRefreshQueued",s.mediaRefreshQueued);
         obj->setProperty("error",s.error);
         obj->setProperty("chooseOutput",
             s.error.containsIgnoreCase("Choose a verified MAIN output") ||
@@ -79,11 +83,13 @@ public:
                 for(std::size_t i=0;i<s.files.size();++i) {
                     auto item=std::make_unique<juce::DynamicObject>();
                     item->setProperty("id",static_cast<int>(i));
+                    if(s.catalogueIds){const auto it=s.catalogueIds->find(s.files[i]);if(it!=s.catalogueIds->end())item->setProperty("catalogId",it->second);}
                     item->setProperty("title",
                         s.files[i].getFileNameWithoutExtension());
                     item->setProperty("missing",!s.files[i].existsAsFile());
                     item->setProperty("keySemitones",s.controls[i].key);
                     item->setProperty("tempoPercent",s.controls[i].tempo);
+                    item->setProperty("autoAfter",s.controls[i].autoAfter);
                     item->setProperty("cueIn",s.controls[i].cueIn);
                     item->setProperty("cueOut",s.controls[i].cueOut);
                     rows.add(juce::var(item.release()));

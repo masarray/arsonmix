@@ -25,6 +25,8 @@ jobs:
           from immersib_p102_geometry_cache_probe import MACROS
           subprocess.run(['g++','-std=c++20','-O2','-ffp-contract=off','-Wall','-Wextra','-Werror',*['-D'+m+'=1' for m in MACROS],'tests/sonku_p106_rt_musical_candidate.cpp','-o','/tmp/sonku-p106'],check=True)
           PY
+          python3 scripts/verify_immersib_approved_pcm_sources.py
+          python3 -m unittest scripts/tests/test_immersib_approved_pcm_sources.py
           /tmp/sonku-p106
       - name: Historical main versus candidate — ImmerSIB full PCM isolation
         run: python3 tools/sonku_p106_immersib_isolation.py

@@ -48,7 +48,7 @@ def verify(exe: Path, bundle: Path, manifest_path: Path) -> int:
             if (
                 rel in seen or posix.is_absolute() or "\\" in rel
                 or any(part in (".", "..") for part in rel.split("/"))
-                or not (rel in ("index.html", "fx-window.html") or rel.startswith("assets/"))
+                or not (rel in ("index.html", "fx-window.html", "player-window.html") or rel.startswith("assets/"))
                 or not re.fullmatch(r"[0-9a-f]{64}", digest)
             ):
                 raise EmbeddedGuiError(f"Unsafe/duplicate approved GUI resource: {rel}")
@@ -70,6 +70,12 @@ def verify(exe: Path, bundle: Path, manifest_path: Path) -> int:
                 )
                 if any(marker not in raw for marker in required):
                     raise EmbeddedGuiError("Unsafe native-only FX editor frame")
+            if rel == "player-window.html":
+                required = (b'data-armix-player-window="true"',
+                            b"assets/mixer-contextual-buttons.js",
+                            b"assets/arsonmix-approved-runtime.css")
+                if any(marker not in raw for marker in required):
+                    raise EmbeddedGuiError("Unsafe native-only Player frame")
             if image.find(raw) < 0:
                 raise EmbeddedGuiError(
                     f"APPROVED GUI BYTE RESOURCE NOT IN WINDOWS EXE: {rel}"
@@ -79,6 +85,8 @@ def verify(exe: Path, bundle: Path, manifest_path: Path) -> int:
         raise EmbeddedGuiError("Approved GUI index.html not in manifest")
     if "fx-window.html" in seen and "assets/approved-floating-fx-bridge.js" not in seen:
         raise EmbeddedGuiError("Native-only FX frame is missing its approved control bridge")
+    if "player-window.html" in seen and not {"assets/arson-player.js","assets/mixer-contextual-buttons.js"}.issubset(seen):
+        raise EmbeddedGuiError("Native-only Player frame is missing approved Player assets")
     return len(seen)
 
 

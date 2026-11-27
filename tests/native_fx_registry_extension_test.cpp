@@ -4,6 +4,8 @@
 #endif
 #include "../src/NativeBuiltInFx.h"
 #include "../src/NativeFxControlRequest.h"
+#include "../src/DeEzzerNativeBridgeContract.h"
+#include "../engine/core/LiveChannelFxGraph.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -541,7 +543,175 @@ static void verifyGraphicEq31Processor() {
         static_cast<int>(adjusted.getSize())));
 }
 
+static void verifyDeEzzerNativeInsert() {
+    using namespace armix::builtin_fx;
+    using namespace armix::builtin_fx::de_ezzer;
+    const auto* descriptor=findNativeBuiltInFx(DeEzzerProcessor::catalogIdentity);
+    assert(descriptor&&descriptor->showInPicker);
+    assert(!descriptor->prepare(32000.,128,nullptr,0));
+    assert(!descriptor->prepare(192000.,128,nullptr,0));
+    assert(!descriptor->prepare(48000.,4097,nullptr,0));
+    for(double rate:{44100.,48000.,88200.,96000.}) {
+        auto processor=descriptor->prepare(rate,128,nullptr,0);
+        assert(processor&&processor->getLatencySamples()==0&&processor->getSampleRate()==rate);
+        auto* typed=dynamic_cast<DeEzzerProcessor*>(processor.get());
+        assert(typed&&typed->isReady());
+        armix::mixer::LiveChannelFxGraph::FxInstance fx(std::move(processor),
+            descriptor->id,descriptor->name,128);
+        assert(fx.nativeControl&&fx.continuousBypassProcessing);
+        Core reference;assert(reference.prepare(rate,2));
+        std::array<float,128> l{},r{},a{},b{};
+        for(int block=0;block<80;++block) {
+            for(int j=0;j<128;++j) {
+                const double t=(block*128+j)/rate;
+                l[j]=static_cast<float>(.12*std::sin(2*std::numbers::pi*800*t)+.25*std::sin(2*std::numbers::pi*7200*t));
+                r[j]=-l[j];
+            }
+            a=l;b=r;reference.process(a.data(),b.data(),128);
+            fx.render(l.data(),r.data(),128);
+            assert(l==a&&r==b);
+        }
+        const auto initial=typed->readback();
+        assert(initial.frames>0&&initial.id.instance!=0);
+        Settings settings=initial.settings;settings.amount=.25f;settings.shape=Shape::Focused;
+        auto obj=std::make_unique<juce::DynamicObject>();
+        obj->setProperty("id",bridge::encode(initial.id));
+        obj->setProperty("sequence","9007199254740993");
+        obj->setProperty("settings",bridge::encode(settings));
+        obj->setProperty("audition","Normal");
+        const juce::var packet(obj.release());
+        Command command;
+        assert(bridge::decode(juce::JSON::parse(juce::JSON::toString(packet)),command));
+        assert(command.sequence==9007199254740993ULL&&command.id==initial.id);
+        packet.getDynamicObject()->setProperty("audition","Delta");
+        Command invalid;assert(!bridge::decode(packet,invalid));
+        packet.getDynamicObject()->setProperty("audition","Normal");
+        packet.getDynamicObject()->setProperty("sequence","18446744073709551616");
+        assert(!bridge::decode(packet,invalid));
+        assert(typed->queue(command));
+        juce::MemoryBlock captured;
+        assert(!fx.tryCaptureState(captured)); // pending command blocks Show capture
+        fx.bypassFade.prepare(true,rate,0);
+        fx.bypassRequested.store(true,std::memory_order_relaxed);
+        l.fill(.125f);r.fill(-.125f);a=l;b=r;
+        fx.render(l.data(),r.data(),128);
+        assert(l==a&&r==b); // audience dry even with continuous detector processing
+        assert(!fx.tryCaptureState(captured)); // pending ACK still blocks capture
+        Ack ack;assert(typed->pollAck(ack)&&ack.code==AckCode::Applied&&ack.sequence==command.sequence);
+        assert(!typed->pollAck(ack)); // bypass hook and processBlock never double-consume
+        assert(fx.tryCaptureState(captured)&&captured.getSize()==StateCodec::Bytes{}.size());
+        auto restored=descriptor->prepare(rate,128,captured.getData(),static_cast<int>(captured.getSize()));
+        assert(restored);
+        juce::MemoryBlock roundtrip;restored->getStateInformation(roundtrip);
+        assert(captured==roundtrip);
+        assert(!typed->restoreUnpublishedState(captured.getData(),static_cast<int>(captured.getSize())));
+    }
+}
+
+static void verifyVocalDelayNativeInsert() {
+    namespace vd=armix::builtin_fx::vocal_delay;
+    using armix::builtin_fx::findNativeBuiltInFx;
+    const auto* descriptor=findNativeBuiltInFx(vd::JuceVocalDelayProcessor::catalogIdentity);
+    const auto* legacy=findNativeBuiltInFx(armix::builtin_fx::VocalThrowProcessor::catalogIdentity);
+    assert(descriptor&&descriptor->showInPicker&&legacy&&!legacy->showInPicker);
+    assert(!descriptor->prepare(384000.,128,nullptr,0));
+    assert(!descriptor->prepare(48000.,15,nullptr,0));
+    vd::State old{};old.kind=vd::State::Kind::legacyThrow;
+    vd::StateCodec::Bytes oldBytes{};assert(vd::StateCodec::encode(old,oldBytes));
+    assert(legacy->prepare(48000.,128,oldBytes.data(),48));
+    assert(!descriptor->prepare(48000.,128,oldBytes.data(),48));
+    vd::State state{};auto& p=state.continuous;p.timeMs=20;p.feedback=0;
+    p.echo=.5f;p.duck=0;p.highPassHz=p.lowPassHz=0;
+    vd::StateCodec::Bytes bytes{};assert(vd::StateCodec::encode(state,bytes));
+    assert(!legacy->prepare(48000.,128,bytes.data(),48));
+    auto processor=descriptor->prepare(48000.,128,bytes.data(),48);
+    auto* typed=dynamic_cast<vd::JuceVocalDelayProcessor*>(processor.get());
+    assert(typed&&typed->isReady()&&typed->getSampleRate()==48000.&&typed->isDetached());
+    armix::mixer::LiveChannelFxGraph::FxInstance fx(std::move(processor),descriptor->id,descriptor->name,128);
+    assert(fx.nativeControl&&!typed->isDetached()&&fx.latencySamples==0);
+    juce::MemoryBlock captured;assert(fx.tryCaptureState(captured)&&captured.getSize()==48);
+    std::array<float,128> l{},r{};float echo=0;
+    for(int block=0;block<9;++block){
+        l.fill(0);r.fill(0);if(block==0)l[0]=r[0]=.8f;
+        fx.render(l.data(),r.data(),128);
+        if(block==0)assert(l[0]==.8f&&r[0]==.8f);
+        if(block==7)echo=l[64];
+    }
+    assert(std::abs(echo-.4f)<1.e-6f);
+    assert(typed->beginSingerEditor());auto next=typed->singerDisplay();next.echo=.33f;
+    assert(typed->offerSinger(next));typed->serviceSingerControl();
+    assert(!fx.tryCaptureState(captured));
+    fx.bypassFade.prepare(true,48000.,0);fx.bypassRequested.store(true);
+    l.fill(.1f);r.fill(-.1f);fx.render(l.data(),r.data(),128);
+    assert(l[0]==.1f&&r[0]==-.1f&&!fx.tryCaptureState(captured));
+    typed->serviceSingerControl();typed->endSingerEditor();
+    assert(fx.tryCaptureState(captured)&&captured.getSize()==48);
+    auto detached=descriptor->prepare(48000.,128,captured.getData(),48);
+    auto* editorOwner=dynamic_cast<vd::JuceVocalDelayProcessor*>(detached.get());
+    assert(editorOwner&&editorOwner->isDetached()&&editorOwner->beginSingerEditor());
+    auto offline=editorOwner->singerDisplay();offline.echo=.21f;
+    assert(editorOwner->offerSinger(offline)&&!editorOwner->singerPending());
+    editorOwner->endSingerEditor();juce::MemoryBlock offlineBytes;
+    detached->getStateInformation(offlineBytes);vd::State restored{};
+    assert(vd::StateCodec::decode(offlineBytes.getData(),offlineBytes.getSize(),restored)&&restored.continuous.echo==.21f);
+}
+
+static void verifyAutoDuckerProcessor() {
+    using D=armix::builtin_fx::AutoDuckerProcessor;
+    const auto* fx=armix::builtin_fx::findNativeBuiltInFx(D::catalogIdentity);
+    assert(fx&&juce::String(fx->name)=="Auto Ducker"&&fx->showInPicker);
+    auto p=fx->prepare(48000.,128,nullptr,0);
+    auto* d=dynamic_cast<D*>(p.get());assert(d&&d->getLatencySamples()==0);
+    D::Settings s{};s.sources[0]=7;s.sources[1]=9007199254740993ULL;s.count=2;
+    assert(d->setUnpublishedSettings(s));
+    juce::MemoryBlock bytes;d->getStateInformation(bytes);
+    auto restored=fx->prepare(48000.,128,bytes.getData(),static_cast<int>(bytes.getSize()));
+    auto* other=dynamic_cast<D*>(restored.get());assert(other);
+    assert(other->acceptedSettings().sources==s.sources&&other->acceptedSettings().count==2);
+    juce::MemoryBlock again;other->getStateInformation(again);assert(again==bytes);
+    assert(!fx->prepare(48000.,128,bytes.getData(),static_cast<int>(bytes.getSize()-1)));
+    auto invalid=s;invalid.sources[1]=7;assert(!other->setUnpublishedSettings(invalid));
+    juce::MemoryBlock v1;
+    {juce::MemoryOutputStream old(v1,false);
+     old.writeInt(0x41445543);old.writeInt(1);old.writeInt64(19);
+     for(float v:{-34.f,12.f,18.f,220.f,480.f,5.f,120.f,5000.f})old.writeFloat(v);}
+    auto migrated=fx->prepare(48000.,128,v1.getData(),static_cast<int>(v1.getSize()));
+    auto* legacy=dynamic_cast<D*>(migrated.get());
+    assert(legacy&&legacy->acceptedSettings().count==1&&legacy->acceptedSettings().sources[0]==19);
+    other->sealForRealtime();assert(!other->setUnpublishedSettings(s));
+    auto newRoute=s;newRoute.sources[0]=8;assert(!other->queueSettings(newRoute,9));
+    auto tweak=s;tweak.dynamics.depthDb=6;assert(other->queueSettings(tweak,10));
+    std::array<float,128> key{};key.fill(.1f);
+    std::array<armix::mixer::AutoDuckerKeyEntry,1> entries{{{7,0,{key.data(),nullptr}}}};
+    juce::AudioBuffer<float> pcm(2,128);pcm.clear();juce::MidiBuffer midi;
+    {armix::mixer::AutoDuckerKeyScope scope({},99,128,entries);other->processBlock(pcm,midi);}
+    D::Completion ack{};assert(other->pollCompletion(ack)&&ack.applied&&ack.requestId==10);
+    assert(other->acceptedSettings().dynamics.depthDb==6.f&&other->observedKeyValid());
+    D::Meter meter{};assert(other->readMeter(meter)&&meter.serial>0);
+    assert(meter.ids[0]==7&&meter.available[0]&&meter.ids[1]==9007199254740993ULL&&!meter.available[1]);
+    assert(meter.gain<=1.f&&meter.gain>=0.f&&other->stateSnapshotQuiescent());
+    // Exercise full -> short -> empty -> full publication without exposing
+    // stale tail IDs, powers or availability from an earlier graph lease.
+    std::array<std::uint64_t,32> full{};
+    for(std::size_t k=0;k<full.size();++k)full[k]=k+1;
+    const auto verifyFrame=[&](std::span<const std::uint64_t> ids){
+        armix::builtin_fx::AutoDuckerSelectionScope selection(ids);
+        armix::mixer::AutoDuckerKeyScope scope({},99,128,entries);
+        other->processBlock(pcm,midi);
+        assert(other->readMeter(meter));
+        for(std::size_t k=0;k<meter.ids.size();++k){
+            assert(meter.ids[k]==(k<ids.size()?ids[k]:0));
+            if(k>=ids.size())assert(meter.power[k]==0.f&&!meter.available[k]);
+        }
+    };
+    verifyFrame(full);verifyFrame(std::span<const std::uint64_t>(full).subspan(6,1));
+    verifyFrame({});verifyFrame(full);
+}
 int main() {
+    juce::ScopedJuceInitialiser_GUI init;
+    verifyAutoDuckerProcessor();
+    verifyVocalDelayNativeInsert();
+    verifyDeEzzerNativeInsert();
     verifyGraphicEq31Processor();
     verifySharedNativeFxControlRequest(); 
     verifyFirstSoundGuitarProcessor();

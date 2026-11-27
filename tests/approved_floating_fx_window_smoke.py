@@ -1,4 +1,4 @@
-"""FUX-1: actual Chromium smoke of SIX separately hosted original native FX UIs.
+"""FUX-1: actual Chromium smoke of SEVEN separately hosted original native FX UIs.
 
 The tested URL is the native-only fx-window.html embedded in the same approved
 /preview/ resource bundle. Browser backend is an explicit CONTROL-only fake:
@@ -14,11 +14,13 @@ import json
 import tempfile
 from playwright.sync_api import sync_playwright
 
+from approved_native_wire_gain_smoke import snapshot
 ROOT=Path(__file__).resolve().parents[1]
 CASES=(
  ("armix.builtin.channel-eq.v1","#mxNativePeq"),
  ("armix.builtin.channel-compressor.v1","#mxNativeComp"),
  ("armix.builtin.graphic-eq31.v1","#mxNativeGeq31"),
+ ("armix.builtin.auto-ducker.v1","#mxNativeDucker"),
  ("armix.builtin.arson-harmony.v1","#mxNativeHarmony"),
  ("armix.builtin.vocal-throw.v1","#mxNativeVocalThrow"),
  ("armix.builtin.8d-sonku.v1","#mxNativeSonKu"),
@@ -65,6 +67,57 @@ INIT="""(() => {
 })()"""
 
 
+def physical_power_transaction(browser,url):
+    page=browser.new_page(viewport={"width":1366,"height":768})
+    errors=[]
+    page.on("pageerror",lambda error:errors.append(str(error)))
+    try:
+        page.add_init_script(INIT)
+        page.goto(url)
+        page.wait_for_function("()=>window.__fxOutbound?.some(x=>x.name==='arMixFloatingReady')")
+        catalog="armix.builtin.auto-ducker.v1"
+        state=snapshot()
+        instance="physical-ducker-one"
+        for channel in state["graph"]["channels"]:
+            channel["fxRackBypassed"]=False
+        state["graph"]["channels"][0]["inserts"]=[{"id":instance,"catalogId":catalog,"name":"Auto Ducker","bypassed":False}]
+        state["mixerSession"]["channels"]=json.loads(json.dumps(state["graph"]["channels"]))
+        payload={"snapshot":state,"channelId":CHANNEL,"slot":0,"catalogId":catalog,"instanceId":instance}
+        page.evaluate("(p)=>window.__fxDispatch('arMixFloatingOpen',p)",payload)
+        page.locator("#mxNativeDucker").wait_for(state="visible")
+        def click():
+            return page.evaluate("""channel=>{
+                const list=()=>window.__fxOutbound.filter(x=>x.name==='arMixFloatingPower');
+                const before=list().length;
+                window.__ARMIX_NATIVE_M2__.consumeAction({nativeId:channel},"slotPower",{dataset:{slot:"0"}});
+                return {count:list().length-before,payload:list().at(-1)?.payload};
+            }""",CHANNEL)
+        def ack(request):
+            page.evaluate("(a)=>window.__fxDispatch('arMixNativeFxPowerAck',a)",
+                {"requestId":request["requestId"],"ok":True,"channelId":CHANNEL,"bypassed":request["value"]})
+        def publish(value):
+            state["graph"]["channels"][0]["inserts"][0]["bypassed"]=value
+            state["mixerSession"]["channels"]=json.loads(json.dumps(state["graph"]["channels"]))
+            page.evaluate("(s)=>window.__fxDispatch('arMixConsoleSnapshot',s)",state)
+        first=click();assert first["count"]==1 and first["payload"]["value"] is True
+        ack(first["payload"])
+        assert click()["count"]==0,"ACK alone released physical power fence"
+        publish(True)
+        second=click();assert second["count"]==1 and second["payload"]["value"] is False
+        publish(False)
+        assert click()["count"]==0,"snapshot alone released physical power fence"
+        ack(second["payload"])
+        third=click();assert third["count"]==1 and third["payload"]["value"] is True
+        ack(first["payload"])
+        assert click()["count"]==0,"late ACK released newer transaction"
+        ack(third["payload"]);publish(True)
+        assert click()["count"]==1
+        assert not errors,errors
+        print("PASS physical floating FX power ACK/readback order and late receipt fence")
+    finally:
+        page.close()
+
+
 def main():
     spec=importlib.util.spec_from_file_location(
         "approved_bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -86,6 +139,8 @@ def main():
                 browser=pw.chromium.launch(headless=True)
                 try:
                     url=f"http://127.0.0.1:{server.server_address[1]}/fx-window.html"
+                    chrome_reference=None
+                    physical_power_transaction(browser,url)
                     for catalog,selector in CASES:
                         page=browser.new_page(viewport={"width":1580,"height":900},
                                                reduced_motion="reduce")
@@ -114,7 +169,7 @@ def main():
                             # Native HWND resizes from original panel content.
                             page.wait_for_function("""()=>
                                 window.__fxOutbound.some(x=>x.name==='arMixFloatingSize')""")
-                            # Six originals are painted edge-to-edge. The only
+                            # Seven originals are painted edge-to-edge. The only
                             # visible Close is the original hardware editor,
                             # never a second JUCE caption or fallback key.
                             assert page.locator("#fxWindowAbort").is_hidden(),catalog
@@ -147,6 +202,34 @@ def main():
                                 page.wait_for_function("""()=>window.__fxOutbound
                                   .filter(e=>e.name==='arMixFloatingSize').at(-1)
                                   ?.payload.width>=1428""")
+                            # Exact shared chrome: compare actual rendered CSS and
+                            # physical hit boxes, not class names or a mockup.
+                            if catalog in ("armix.builtin.channel-eq.v1",
+                                "armix.builtin.graphic-eq31.v1","armix.builtin.auto-ducker.v1"):
+                                chrome=root.evaluate("""root=>{
+                                  const power=root.querySelector('.armix-builtin-fx-power');
+                                  const close=root.querySelector('.armix-builtin-fx-close');
+                                  const props=['width','height','minWidth','maxWidth','minHeight','maxHeight',
+                                    'borderRadius','borderTopColor','borderTopWidth','backgroundImage',
+                                    'boxShadow','color','fontSize','lineHeight','filter','opacity'];
+                                  const read=el=>Object.fromEntries(props.map(k=>[k,getComputedStyle(el)[k]]));
+                                  const before=power.dataset.fxState,disabled=power.disabled;
+                                  const result={close:read(close),icon:getComputedStyle(close,'::after').backgroundImage};
+                                  for(const state of ['on','off','rack-off','unknown']){
+                                    power.dataset.fxState=state;power.disabled=['rack-off','unknown'].includes(state);
+                                    result[state]={...read(power),fontFamily:getComputedStyle(power).fontFamily,
+                                      fontWeight:getComputedStyle(power).fontWeight};
+                                  }
+                                  power.dataset.fxState=before;power.disabled=disabled;
+                                  return result;
+                                }""")
+                                if chrome_reference is None: chrome_reference=chrome
+                                else: assert chrome==chrome_reference,(catalog,chrome,chrome_reference)
+                                if "auto-ducker" in catalog:
+                                    assert root.locator(".armix-builtin-fx-power").get_attribute("data-fx-state")=="on"
+                                    root.locator(".armix-builtin-fx-power").click()
+                                    assert root.locator(".armix-builtin-fx-power").get_attribute("data-fx-state")=="on"
+                                    root.screenshot(path=str(ROOT/"auto-ducker-native-owned.png"))
                             # A popup has no independent PCM. Power goes to
                             # exactly the native ChannelId/slot/instance and
                             # requires later ACK/readback to change appearance.
@@ -171,12 +254,15 @@ def main():
                                 const key={
                                   "armix.builtin.channel-eq.v1":"ArSonMixNativeEq",
                                   "armix.builtin.channel-compressor.v1":"ArSonMixNativeCompressor",
+                                  "armix.builtin.auto-ducker.v1":"ArSonMixNativeDucker",
                                   "armix.builtin.graphic-eq31.v1":"ArSonMixGraphicEq31",
                                   "armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony",
                                   "armix.builtin.vocal-throw.v1":"ArSonMixNativeVocalThrow",
                                   "armix.builtin.8d-sonku.v1":"ArSonMixNativeSonKu"
                                 }[catalog];
-                                window[key].close();
+                                if(catalog==="armix.builtin.auto-ducker.v1")
+                                  document.querySelector("#mxNativeDucker .armix-builtin-fx-close").click();
+                                else window[key].close();
                                 return key;
                             }""",catalog)
                             root.wait_for(state="hidden")
@@ -211,6 +297,23 @@ def main():
                             root.wait_for(state="visible")
                             assert page.evaluate("""()=>window.__ARMIX_NATIVE_M2__
                               .fxEditorState()?.graph?.channels?.[0]?.inserts?.[0]?.id""")==revised_id
+                            # Host commits the rekey before emitting the correlated
+                            # durable arMixLogicalAck. An unrelated receipt must
+                            # not release the one-in-flight power fence.
+                            page.evaluate("""()=>window.__fxDispatch('arMixLogicalAck',
+                              {requestId:'logical-unrelated',status:'ACCEPTED'})""")
+                            blocked=page.evaluate("""(channel)=>{
+                                const count=()=>window.__fxOutbound.filter(
+                                  x=>x.name==='arMixFloatingPower').length;
+                                const before=count();
+                                window.__ARMIX_NATIVE_M2__.consumeAction(
+                                  {nativeId:channel},"slotPower",{dataset:{slot:"0"}});
+                                return count()===before;
+                            }""",CHANNEL)
+                            assert blocked
+                            page.evaluate("""(id)=>window.__fxDispatch('arMixLogicalAck',
+                              {requestId:'logical-'+id,status:'ACCEPTED',revision:'13'})""",
+                              power["requestId"])
                             next_power=page.evaluate("""(channel)=>{
                                 window.__ARMIX_NATIVE_M2__.consumeAction(
                                   {nativeId:channel},"slotPower",
@@ -218,9 +321,12 @@ def main():
                                 return window.__fxOutbound.filter(
                                   x=>x.name==='arMixFloatingPower').at(-1)?.payload;
                             }""",CHANNEL)
+                            assert next_power["requestId"]!=power["requestId"]
                             assert next_power["instanceId"]==revised_id
                             assert next_power["graphRevision"]=="13"
                             assert next_power["value"] is False
+                            if "auto-ducker" in catalog:
+                                assert root.locator(".armix-builtin-fx-power").get_attribute("data-fx-state")=="off"
                             if "graphic-eq31" in catalog:
                                 assert root.locator(".mx-geq31-power").get_attribute(
                                     "data-fx-state")=="off"
@@ -232,7 +338,7 @@ def main():
                     browser.close()
         finally:
             server.shutdown()
-    print("PASS six original /preview/ FX editors loaded in separate native-only browser surface; no hardware certification")
+    print("PASS seven original /preview/ FX editors loaded in separate native-only browser surface; no hardware certification")
 
 
 if __name__=="__main__":

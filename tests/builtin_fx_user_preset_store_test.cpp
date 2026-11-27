@@ -45,6 +45,29 @@ static BuiltInFxUserPreset graphicEq31() {
     return {{}, "armix.builtin.graphic-eq31.v1","Voice Curve","My Presets",
         object({{"bands",bands},{"levelDb",-4.5}})};
 }
+static BuiltInFxUserPreset reverb() {
+    juce::var values(juce::Array<juce::var>{});
+    for(double v:{.137,32.,2.45,.89,.94,10400.,150.,15500.,.2,.28,1.15,.36,.18})
+        values.append(v);
+    return {{},"armix.builtin.vocal-reverb.v1","My Vocal Space","My Presets",
+        object({{"algorithm",1},{"values",values}})};
+}
+static BuiltInFxUserPreset deEzzer() {
+    return {{}, "armix.builtin.de-ezzer.v1","Natural Sibilance","My Presets",
+        object({{"amount",.42},{"sensitivity",.5},{"rangeDb",8.0},
+            {"mode","Voice"},{"shape","Focused"}})};
+}
+static BuiltInFxUserPreset antiNoiz() {
+    return {{},"armix.builtin.anti-noiz.v1","Musical Clean","My Presets",
+        object({{"mode","Singing"},{"cleanDb",9.5},{"silenceDb",21.0},
+                {"musicProtect",.75},{"enabled",true}})};
+}
+static BuiltInFxUserPreset delay(){
+    namespace vd=armix::builtin_fx::vocal_delay;
+    vd::Parameters p{};p.style=vd::EchoStyle::multitap;p.adaptiveFocus=true;p.spillover=true;
+    REQUIRE(vd::setTempo(p,120,2));p.enabled=false;p.hit=true;
+    return {{},"armix.builtin.vocal-delay.v2","Dream Pop","My Presets",vd::PortablePreset::encode(p)};
+}
 static BuiltInFxUserPreset eq() {
     auto bands=juce::var(juce::Array<juce::var>{});
     for(int i=0;i<8;++i)
@@ -61,7 +84,7 @@ int main() {
     REQUIRE(!testRoot.exists());
     struct Cleanup { juce::File folder;~Cleanup(){folder.deleteRecursively();} } cleanup{testRoot};
     BuiltInFxUserPresetStore store(testRoot);
-    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31()};
+    auto items=std::array{comp(),harmony(),throwSettings(),eq(),graphicEq31(),reverb(),deEzzer(),antiNoiz(),delay()};
     for(auto& item:items) {
         REQUIRE(BuiltInFxUserPresetStore::validateSettings(item.catalogId,item.settings));
         REQUIRE(store.saveNew(item).isEmpty());
@@ -82,6 +105,35 @@ int main() {
              BuiltInFxUserPreset wrong;
              REQUIRE(reopened.read(other.catalogId,item.id,wrong).isNotEmpty());
           }
+    }
+    {
+        namespace vd=armix::builtin_fx::vocal_delay;
+        const auto good=delay();
+        vd::Parameters p{};p.enabled=false;p.hit=true;
+        REQUIRE(vd::PortablePreset::decode(good.settings,p)&&!p.enabled&&!p.hit&&p.bpmQuarter==480&&p.timeMs==375.f&&!p.smartStage);
+        auto modern=delay();modern.settings.getDynamicObject()->setProperty("smartStage",true);
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(modern.catalogId,modern.settings));
+        REQUIRE(vd::PortablePreset::decode(modern.settings,p)&&p.smartStage);
+        REQUIRE(vd::PortablePreset::decode(vd::PortablePreset::encode(p),p)&&p.smartStage);
+        auto concert=delay();concert.settings.getDynamicObject()->setProperty("smartStage",true);
+        concert.settings.getDynamicObject()->setProperty("throwMode",1);
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(concert.catalogId,concert.settings));
+        REQUIRE(vd::PortablePreset::decode(concert.settings,p)&&p.throwMode==vd::ThrowMode::concert);
+        REQUIRE(vd::PortablePreset::decode(vd::PortablePreset::encode(p),p)&&p.throwMode==vd::ThrowMode::concert);
+        concert.settings.getDynamicObject()->setProperty("throwMode",9);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(concert.catalogId,concert.settings));
+        modern.settings.getDynamicObject()->setProperty("smartStage",false);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(modern.catalogId,modern.settings));
+        for(const char* key:{"enabled","hit","sourceChannelId","rackBypassed"}){
+            auto bad=delay();bad.settings.getDynamicObject()->setProperty(key,true);
+            REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        }
+        auto bad=delay();bad.settings.getDynamicObject()->setProperty("timeMs",380.);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=delay();bad.settings.getDynamicObject()->setProperty("style",9);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=delay();bad.settings.getDynamicObject()->setProperty("echo",std::numeric_limits<double>::quiet_NaN());
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
     }
     // Factory and user data must remain conceptually distinct; disk-only
     // user presets cannot silently be replaced by same category/name.
@@ -126,6 +178,87 @@ int main() {
     REQUIRE(store.saveNew(bad).isNotEmpty());
     bad=eq();bad.settings.getDynamicObject()->setProperty("liveInput",2);
     REQUIRE(store.saveNew(bad).isNotEmpty());
+    for(const auto& invalid:std::array<std::pair<const char*,juce::var>,7>{{
+        {"mode",juce::var("NoiseOnly")},{"cleanDb",juce::var(24.1)},
+        {"silenceDb",juce::var(-1)},{"musicProtect",juce::var("1")},
+        {"enabled",juce::var(1)},{"profile",juce::var(true)},
+        {"deviceEpoch",juce::var("12")}}}) {
+        auto rejected=antiNoiz();
+        rejected.settings.getDynamicObject()->setProperty(invalid.first,invalid.second);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(rejected.catalogId,rejected.settings));
+        REQUIRE(store.saveNew(rejected).isNotEmpty());
+    }
+    {
+        using Codec=armix::builtin_fx::AntiNoizPortableSettings;
+        Codec::Core::Settings s;s.cleanDb=40;s.spectralManual=true;s.manual.enabled=true;
+        s.manual.smartVoice=true;s.manual.gate=true;s.manual.rangeDb=96;s.artifactControl=.72f;
+        const auto full=Codec::settings(s);
+        for(int count:{18,21,24}){
+            auto item=antiNoiz();item.name="Pro schema "+juce::String(count);
+            item.settings=Codec::settings(s);
+            auto* o=item.settings.getDynamicObject();
+            if(count<24)for(const char* k:{"smartVoice","smartMarginDb","smartMaxLiftDb"})o->removeProperty(k);
+            if(count<21)for(const char* k:{"spectralEnabled","artifactControl","vocalProtection"})o->removeProperty(k);
+            REQUIRE(store.saveNew(item).isEmpty());
+            BuiltInFxUserPreset cold;
+            REQUIRE(BuiltInFxUserPresetStore(testRoot).read(item.catalogId,item.id,cold).isEmpty());
+            Codec::Core::Settings decoded;
+            REQUIRE(Codec::parseSettings(cold.settings,decoded)&&decoded.cleanDb==40&&decoded.manual.rangeDb==96);
+            REQUIRE(decoded.manual.smartVoice==(count==24));
+            REQUIRE(decoded.artifactControl==(count>=21?.72f:.5f));
+            REQUIRE(store.remove(item.catalogId,item.id).isEmpty());
+        }
+        for(const char* k:{"profile","audition","sidechainReference","deviceEpoch","sourceRole"}){
+            auto bad=Codec::settings(s);bad.getDynamicObject()->setProperty(k,true);
+            REQUIRE(!BuiltInFxUserPresetStore::validateSettings("armix.builtin.anti-noiz.v1",bad));
+        }
+        auto invalid=Codec::settings(s);invalid.getDynamicObject()->setProperty("smartMarginDb",19);
+        REQUIRE(!Codec::parseSettings(invalid,s)&&s.manual.smartVoice&&s.cleanDb==40);
+        for(const char* key:{"mode","thresholdDb","artifactControl","smartVoice"}){
+            auto missing=Codec::settings(s);missing.getDynamicObject()->removeProperty(key);
+            REQUIRE(!Codec::parseSettings(missing,s));
+        }
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings("armix.builtin.anti-noiz.v1",full));
+    }
+    auto album=reverb();album.settings.getDynamicObject()->setProperty("voicing",1);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",2);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",3);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",4);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",5);
+    REQUIRE(BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    album.settings.getDynamicObject()->setProperty("voicing",6);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(album.catalogId,album.settings));
+    // Cold disk roundtrip: preserve the six versioned musical identities.
+    // The old file has no field (original), explicit 1 is historical Album,
+    // 2 is Signature, and 3 is Vocal Anchor. Readback uses the same store as live/detached editor.
+    for(int profile:{0,1,2,3,4,5}) {
+        auto saved=reverb();
+        saved.name="Versioned Reverb "+juce::String(profile);
+        if(profile!=0)saved.settings.getDynamicObject()->setProperty("voicing",profile);
+        REQUIRE(store.saveNew(saved).isEmpty());
+        BuiltInFxUserPreset restored;
+        REQUIRE(BuiltInFxUserPresetStore(testRoot).read(saved.catalogId,saved.id,restored).isEmpty());
+        REQUIRE(static_cast<int>(restored.settings.getProperty("voicing",0))==profile);
+        REQUIRE(juce::JSON::toString(restored.settings,false)==juce::JSON::toString(saved.settings,false));
+        REQUIRE(store.remove(saved.catalogId,saved.id).isEmpty());
+    }
+    for(const auto& invalid:std::array<juce::var,4>{juce::var(-1),juce::var(6),juce::var("2"),juce::var(1.5)}) {
+        auto badProfile=reverb();
+        badProfile.settings.getDynamicObject()->setProperty("voicing",invalid);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badProfile.catalogId,badProfile.settings));
+        REQUIRE(store.saveNew(badProfile).isNotEmpty());
+    }
+    auto badReverb=reverb();
+    badReverb.settings.getProperty("values",{}).getArray()->set(0,1.5);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
+    badReverb=reverb();badReverb.settings.getProperty("values",{}).getArray()->removeLast();
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
+    badReverb=reverb();badReverb.settings.getDynamicObject()->setProperty("algorithm",4);
+    REQUIRE(!BuiltInFxUserPresetStore::validateSettings(badReverb.catalogId,badReverb.settings));
     // 31-band portable schema: exact width, strict bounds, no hidden gain,
     // no NaN and no cross-effect injection. File remains persistent after
     // a cold library reopen and has the shared checksummed .armixfx schema.
@@ -168,6 +301,22 @@ int main() {
         REQUIRE(readback.settings.getProperty("bands",{}).getArray()->size()==31);
         REQUIRE(static_cast<double>(
             readback.settings.getProperty("levelDb",{}))==-4.5);
+    }
+    {
+        auto good=deEzzer();
+        REQUIRE(BuiltInFxUserPresetStore::validateSettings(good.catalogId,good.settings));
+        for(const auto* forbidden:{"enabled","audition","channelId","gainReductionDb"}){
+            auto bad=deEzzer();bad.settings.getDynamicObject()->setProperty(forbidden,true);
+            REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        }
+        auto bad=deEzzer();bad.settings.getDynamicObject()->setProperty("amount",1.1);
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=deEzzer();bad.settings.getDynamicObject()->setProperty("sensitivity",std::numeric_limits<double>::quiet_NaN());
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=deEzzer();bad.settings.getDynamicObject()->setProperty("mode","Music");
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
+        bad=deEzzer();bad.settings.getDynamicObject()->removeProperty("shape");
+        REQUIRE(!BuiltInFxUserPresetStore::validateSettings(bad.catalogId,bad.settings));
     }
     REQUIRE(BuiltInFxUserPresetStore::safeId(
         "12345678-1234-AbCd-ABCD-0123456789Ab"));

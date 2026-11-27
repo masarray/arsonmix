@@ -1,0 +1,276 @@
+name: P0 production Main.cpp MSVC compile preflight
+on:
+  push:
+    branches:
+      - staging/p0-arsonmix-reliability-20261124
+      - feature/io-studio-workflow-20261125
+      - feature/io-atomic-output-20261125
+      - feat/reverb-sis-signature-20261125
+      - staging/io-reverb-integrated-20261125
+      - staging/io-reverb-integrated-p10-p11-20261125
+      - staging/io-reverb-integrated-p12-20261125
+      - staging/io-reverb-integrated-global-20261125
+    # Integrated branch pushes are development FIELD previews, never RC FAT.
+  workflow_dispatch:
+    inputs:
+      release_candidate:
+        type: boolean
+        required: true
+        default: false
+        description: 'Explicit owner RC request (full native CTest and installer)'
+      expected_sha:
+        type: string
+        required: true
+        description: 'Exact integrated branch HEAD SHA approved for RC'
+permissions:
+  contents: read
+concurrency:
+  group: p0-console-compile-preflight-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'rc' || 'development' }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+jobs:
+  actual-console-translation-unit:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner && inputs.release_candidate == true && inputs.expected_sha == github.sha && (github.ref_name == 'staging/io-reverb-integrated-global-20261125' || github.ref_name == 'staging/io-reverb-integrated-p12-20261125'))
+    env:
+      FIELD_PREVIEW: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'staging/io-reverb-integrated-') }}
+      RC_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.release_candidate == true }}
+    runs-on: windows-2022
+    timeout-minutes: 85
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: P11 offline reliability profile and timing contracts
+        if: github.ref_name == 'staging/io-reverb-integrated-p10-p11-20261125' || (github.ref_name == 'staging/io-reverb-integrated-p12-20261125' || github.ref_name == 'staging/io-reverb-integrated-global-20261125')
+        run: node --test tests/smart_audio_diagnostic_contract_test.mjs
+      - name: Pinned WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile actual production Main.cpp and SDK adapter with branded FAT flags
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($actual -ne $env:GITHUB_SHA) { throw 'P0_PREFLIGHT_SOURCE_MISMATCH' }
+          $tests=if($env:FIELD_PREVIEW -eq 'true'){'OFF'}else{'ON'}
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" "-DBUILD_TESTING=$tests" -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREFLIGHT_CONFIGURE_FAILED' }
+          $targets = (& ninja -C build -t targets all)
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PREFLIGHT_TARGETS_FAILED' }
+          $objects = @('CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj','CMakeFiles/ARMixConsole.dir/src/NativeFxWin32Owner.cpp.obj')
+          foreach ($object in $objects) {
+            if (!($targets | Where-Object { $_.StartsWith("${object}:") })) { throw "P0_PREFLIGHT_MISSING_OBJECT: $object" }
+          }
+          # The stacked Audio I/O PR cannot use the main-only FAT dispatcher.
+          # Test the actual JUCE disk store with assertions enabled before
+          # compiling the production translation unit. This is not FAT or a
+          # protected nativeFull gate and does not publish an executable.
+          if ($env:FIELD_PREVIEW -ne 'true' -and $env:GITHUB_REF_NAME -in @('feature/io-studio-workflow-20261125','feature/io-atomic-output-20261125','staging/io-reverb-integrated-20261125','staging/io-reverb-integrated-p10-p11-20261125','staging/io-reverb-integrated-p12-20261125','staging/io-reverb-integrated-global-20261125')) {
+            cmake --build build --parallel 2 --target ARMixChannelAppearanceTests
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_COMPILE_FAILED' }
+            $catalog = (& ctest --test-dir build --show-only=json-v1 | Out-String | ConvertFrom-Json)
+            if ($LASTEXITCODE -ne 0 -or !($catalog.tests | Where-Object { $_.name -eq 'NativeChannelIdentityDiskAckAndExactId' })) {
+              throw 'AUDIO_IO_NATIVE_STORE_CTEST_MISSING'
+            }
+            ctest --test-dir build --output-on-failure -R '^NativeChannelIdentityDiskAckAndExactId$'
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_NATIVE_STORE_CTEST_FAILED' }
+            Write-Host "AUDIO_IO_NATIVE_STORE_CTEST_PASS exact=$actual"
+            cmake --build build --parallel 2 --target ARMixDurableMixerSessionTests
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_SESSION_COMPILE_FAILED' }
+            if (!($catalog.tests | Where-Object { $_.name -eq 'P0DynamicMixerSessionDocumentAndCrashSafeRecovery' })) {
+              throw 'AUDIO_IO_SESSION_CTEST_MISSING'
+            }
+            ctest --test-dir build --output-on-failure -R '^P0DynamicMixerSessionDocumentAndCrashSafeRecovery$'
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_SESSION_CTEST_FAILED' }
+            Write-Host "AUDIO_IO_SESSION_CTEST_PASS exact=$actual"
+            cmake --build build --parallel 2 --target ARMixPhysicalExternalOutputTests
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_EXTERNAL_PCM_COMPILE_FAILED' }
+            if (!($catalog.tests | Where-Object { $_.name -eq 'O1PhysicalExternalOutputNativePcmAndFailClosedRouting' })) {
+              throw 'AUDIO_IO_EXTERNAL_PCM_CTEST_MISSING'
+            }
+            ctest --test-dir build --output-on-failure -R '^O1PhysicalExternalOutputNativePcmAndFailClosedRouting$'
+            if ($LASTEXITCODE -ne 0) { throw 'AUDIO_IO_EXTERNAL_PCM_CTEST_FAILED' }
+            Write-Host "AUDIO_IO_EXTERNAL_PCM_CTEST_PASS exact=$actual"
+          }
+          # Fast object gate remains common to all qualification branches.
+          # Only the integrated candidate proceeds to full product build below.
+          cmake --build build --parallel 2 --target $objects
+          if ($LASTEXITCODE -ne 0) { throw 'P0_PRODUCTION_TRANSLATION_UNIT_FAILED' }
+          Write-Host "P0_PRODUCTION_MAIN_COMPILE_PASS exact=$actual (object only, NOT full FAT)"
+      - name: Integrated product link (Release x64)
+        if: startsWith(github.ref_name, 'staging/io-reverb-integrated-')
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA) { throw 'INTEGRATED_SOURCE_MISMATCH' }
+          cmake --build build --parallel 2 --target ARMixConsole
+          if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_CONSOLE_LINK_FAILED' }
+          Write-Host "INTEGRATED_CONSOLE_LINK_PASS exact=$actual"
+      # Development ends after the verified portable upload. Full native tests
+      # and the installer are reserved for the explicit owner RC event.
+      - name: Verify early Windows FIELD portable preview
+        if: env.FIELD_PREVIEW == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA){throw 'FIELD_PREVIEW_SOURCE_MISMATCH'}
+          node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
+          if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_APPROVED_GUI_FAILED'}
+          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir field-preview-dist
+          if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_PACKAGE_FAILED'}
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output field-preview-dist --best-effort
+          if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_FACTORY_FX_FAILED'}
+          $path='field-preview-dist/BUILD_PROVENANCE.json'
+          $manifest=Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+          if($manifest.sourceCommit -ne $actual){throw 'FIELD_PREVIEW_PROVENANCE_MISMATCH'}
+          $manifest.fatStatus='FIELD_PREVIEW_FULL_CTEST_NOT_RUN'
+          $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
+          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir field-preview-dist
+          if($LASTEXITCODE -ne 0){throw 'FIELD_PREVIEW_DISTRIBUTION_FAILED'}
+          Write-Host "EARLY_FIELD_PREVIEW_VERIFIED exact=$actual"
+      - name: Upload early portable FIELD preview (full CTest not run)
+        if: env.FIELD_PREVIEW == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ArSonMix-Windows-Field-Preview-${{ github.sha }}
+          path: field-preview-dist/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Integrated full native CTest (no packaging)
+        if: env.RC_REQUESTED == 'true'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA) { throw 'INTEGRATED_SOURCE_MISMATCH' }
+          cmake --build build --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_FULL_BUILD_FAILED' }
+          ctest --test-dir build --output-on-failure --no-tests=error --output-junit integrated-ctest.xml
+          if ($LASTEXITCODE -ne 0) { throw 'INTEGRATED_FULL_CTEST_FAILED' }
+          Write-Host "INTEGRATED_FULL_CTEST_PASS exact=$actual (no hardware or installer FAT)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always() && env.RC_REQUESTED == 'true'
+        with:
+          name: integrated-native-ctest-${{ github.sha }}
+          path: build/integrated-ctest.xml
+          if-no-files-found: ignore
+          retention-days: 7
+      # Explicit owner RC qualification only. No release, Pages or tag here.
+      # Full CTest must succeed; never package an object-only or FIELD run.
+      - name: P12 exact-source Windows installer qualification
+        if: env.RC_REQUESTED == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $actual=(& git rev-parse HEAD).Trim()
+          if($LASTEXITCODE -ne 0 -or $actual -ne $env:GITHUB_SHA){throw 'P12_SOURCE_MISMATCH'}
+          [xml]$results=Get-Content -LiteralPath 'build/integrated-ctest.xml' -Raw
+          $cases=@($results.SelectNodes('//testcase'))
+          if($cases.Count -lt 123 -or $results.SelectNodes('//failure|//error|//skipped').Count -ne 0){
+            throw 'P12_NATIVE_TEST_EVIDENCE_INCOMPLETE'
+          }
+          if($env:GITHUB_REF_NAME -eq 'staging/io-reverb-integrated-global-20261125'){
+            foreach($name in @('M4NativeFxCatalogExtensionAndStatePreparation','VocalDelayV2RealJuceAdapter','BuiltInFxUserPresetNativePortableSaveAndRecovery')){
+              if(@($cases | Where-Object { $_.name -eq $name }).Count -ne 1){throw "VD6_REQUIRED_NATIVE_TEST_MISSING: $name"}
+            }
+          }
+          node scripts/check_approved_native_gui_release.mjs --source-only --bundle build/approved_gui
+          if($LASTEXITCODE -ne 0){throw 'P12_APPROVED_GUI_FAILED'}
+          & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
+          if($LASTEXITCODE -ne 0){throw 'P12_PACKAGE_FAILED'}
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
+          if($LASTEXITCODE -ne 0){throw 'P12_FACTORY_FX_FAILED'}
+          & ./scripts/verify_native_windows_artifact.ps1 -OutputDir dist
+          if($LASTEXITCODE -ne 0){throw 'P12_DISTRIBUTION_FAILED'}
+          if(-not (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and
+             -not (Test-Path -LiteralPath 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')){
+            choco install innosetup --yes --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'P12_INNO_COMPILER_FAILED'}
+          }
+          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output
+          if($LASTEXITCODE -ne 0){throw 'P12_INSTALLER_FAT_FAILED'}
+          $setup='installer-output/ArSonMix-Windows-x64-Setup-Preview.exe'
+          $manifest=Get-Content -LiteralPath 'dist/BUILD_PROVENANCE.json' -Raw | ConvertFrom-Json
+          if($manifest.sourceCommit -ne $actual -or $manifest.fatStatus -ne 'SOFTWARE_VERIFIED_PREVIEW_CANDIDATE' -or
+             -not (Test-Path -LiteralPath $setup -PathType Leaf)){
+            throw 'P12_INSTALLER_PROVENANCE_FAILED'
+          }
+          $out=New-Item -ItemType Directory -Force -Path 'p12-internal'
+          Copy-Item -LiteralPath $setup,'dist/BUILD_PROVENANCE.json','build/integrated-ctest.xml','scripts/audio_reliability_profile.mjs','docs/INT1B_AUDIO_RELIABILITY_PROFILING_20261120.md','docs/P12_INTERNAL_ACCEPTANCE_20261125.md' -Destination $out.FullName
+          $qa=New-Item -ItemType Directory -Force -Path 'p12-internal/reverb-qa'
+          foreach($name in @('ArSonMix_Vocal_Reverb_Native_MIX_100.png','ArSonMix_Vocal_Reverb_Native_BYPASSED_100.png','ArSonMix_Vocal_Reverb_Native_MOTION_150.png')){
+            $png=Join-Path 'build' $name
+            if(!(Test-Path -LiteralPath $png -PathType Leaf) -or (Get-Item -LiteralPath $png).Length -lt 10000){throw "P12_REVERB_QA_INVALID: $name"}
+            Copy-Item -LiteralPath $png -Destination $qa.FullName
+          }
+          if($env:GITHUB_REF_NAME -eq 'staging/io-reverb-integrated-global-20261125'){
+            $vdqa=New-Item -ItemType Directory -Force -Path 'p12-internal/vocal-delay-qa'
+            foreach($name in @('vocal-delay-singer.png','vocal-delay-expert.png')){
+              $png=Join-Path 'build' $name
+              if(!(Test-Path -LiteralPath $png -PathType Leaf) -or (Get-Item -LiteralPath $png).Length -lt 10000){throw "VD6_QA_INVALID: $name"}
+              Copy-Item -LiteralPath $png -Destination $vdqa.FullName
+            }
+            # Same previously verified distribution, no rebuild or second release lane.
+            # Verify every archived payload hash, not just the outer ZIP name.
+            if(Test-Path -LiteralPath 'dist/Studio'){throw 'VD6_PRIVATE_STUDIO_IN_PACKAGE'}
+            $distRoot=(Resolve-Path -LiteralPath 'dist').Path
+            $portable=Join-Path $out.FullName 'ArSonMix-Windows-x64-Portable-Preview.zip'
+            Compress-Archive -Path (Join-Path $distRoot '*') -DestinationPath $portable -CompressionLevel Optimal -Force
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip=[System.IO.Compression.ZipFile]::OpenRead($portable)
+            try{
+              $expected=@(Get-ChildItem -LiteralPath $distRoot -Recurse -File | ForEach-Object {
+                $_.FullName.Substring($distRoot.Length+1).Replace('\','/')
+              })
+              $actualNames=@($zip.Entries | Where-Object { !$_.FullName.EndsWith('/') } | ForEach-Object { $_.FullName.Replace('\','/') })
+              if(@(Compare-Object -ReferenceObject $expected -DifferenceObject $actualNames).Count -ne 0){throw 'VD6_PORTABLE_FILE_SET_MISMATCH'}
+              foreach($entry in $zip.Entries){
+                if($entry.FullName.EndsWith('/')){continue}
+                $relative=$entry.FullName.Replace('\','/')
+                $stream=$entry.Open();$hasher=[System.Security.Cryptography.SHA256]::Create()
+                try{$inside=[BitConverter]::ToString($hasher.ComputeHash($stream)).Replace('-','').ToLowerInvariant()}
+                finally{$stream.Dispose();$hasher.Dispose()}
+                $outside=(Get-FileHash -LiteralPath (Join-Path $distRoot $relative) -Algorithm SHA256).Hash.ToLowerInvariant()
+                if($inside -ne $outside){throw "VD6_PORTABLE_HASH_MISMATCH: $relative"}
+              }
+            }finally{$zip.Dispose()}
+            Write-Host "VD6_PORTABLE_EXACT_DISTRIBUTION_PASS exact=$actual"
+          }
+          $files=@(Get-ChildItem -LiteralPath $out.FullName -Recurse -File | Sort-Object FullName | ForEach-Object {
+            [ordered]@{path=$_.FullName.Substring($out.FullName.Length+1).Replace('\','/');bytes=$_.Length;sha256=(Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+          })
+          [ordered]@{schema='arsonmix.p12.internal-qualification.v1';sourceSha=$actual;nativeTests=$cases.Count;installerSoftwareFat='PASS';physicalAsioFat='NOT_RUN';publicRelease='NOT_AUTHORIZED';files=$files} |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath 'p12-internal/P12_QUALIFICATION.json' -Encoding utf8
+          Write-Host "P12_INTERNAL_INSTALLER_SOFTWARE_FAT_PASS exact=$actual"
+      - name: Upload exact-SHA internal installer (never a public release)
+        if: env.RC_REQUESTED == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ArSonMix-P12-Internal-Installer-${{ github.sha }}
+          path: p12-internal/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

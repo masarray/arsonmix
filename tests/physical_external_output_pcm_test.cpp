@@ -6,6 +6,7 @@
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/core/NativeOutputTransition.h"
+#include "../engine/device/LogicalOutputRegistry.h"
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -87,6 +88,20 @@ struct Harness {
             outputPointers.data(),activePorts);
     }
 };
+static void verifyDisconnectedZeroDelayTapThenWake() {
+    Harness h;
+    for(int i=0;i<32;++i){
+        assert(h.render());assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==-1);
+        assert(near(h.output[2][63],0.f)&&near(h.output[3][63],0.f));
+        assert(near(h.output[0][63],.71f));
+    }
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.render()&&h.callsA==33&&h.callsB==33);
+    assert(near(h.output[2][63],.50f)&&near(h.output[3][63],.20f));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,-1,-1,8));
+    assert(h.render()&&h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==-1);
+    assert(near(h.output[2][63],0.f));
+}
 static void verifyIndependentBusPcmAndOncePerFx() {
     Harness h;
     assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
@@ -324,8 +339,67 @@ static void verifyLiveFaderMuteAnd2PortBounds() {
     assert(near(h.output[0][63],.21f));
     assert(near(h.output[1][63],.12f));
 }
+static void verifyAtomicInitialExternalPlan() {
+    using P=DynamicNativeSessionPublisher;
+    Harness h;
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.render());
+    const std::array<int,2> reserved{0,1};
+    const std::array<P::InitialExternalTarget,2> targets{{{h.busA,6,7},{h.busB,6,7}}};
+    P::InitialExternalPlan plan{8,reserved,targets};
+    auto commit=[&](const P::InitialExternalPlan& candidate,bool muted=true){
+        return h.publisher.commit(h.roster,h.request,1,h.epoch,h.epoch,muted,
+            {},false,false,nullptr,&candidate);
+    };
+    auto bad=targets;
+    bad[1]={h.busB,0,1};
+    assert(!commit({8,reserved,bad}).ok());
+    bad[1]={h.busB,5,6};
+    assert(!commit({8,reserved,bad}).ok());
+    bad[1]={h.busA,4,5};
+    assert(!commit({8,reserved,bad}).ok());
+    bad[1]={h.main,4,5};
+    assert(!commit({8,reserved,bad}).ok());
+    assert(!commit(plan,false).ok());
+    assert(h.publisher.acceptedRevision()==1);
+    assert(h.render()&&near(h.output[2][63],.50f));
+    const auto accepted=commit(plan);
+    assert(accepted.ok()&&accepted.revision==2);
+    // Both targets already exist on the first accepted graph readback;
+    // callback APPLIED remains separate until the actual render.
+    assert(h.publisher.externalOutput(h.epoch,2,h.busA)==std::make_pair(6,7));
+    assert(h.publisher.externalOutput(h.epoch,2,h.busB)==std::make_pair(6,7));
+    assert(h.publisher.appliedExternalOutput(h.epoch,2,h.busA).first==-1);
+    assert(h.render());
+    assert(near(h.output[6][63],.71f)&&near(h.output[7][63],.32f));
+    assert(near(h.output[2][63],0.f)&&near(h.output[3][63],0.f));
+    assert(h.publisher.appliedExternalOutput(h.epoch,2,h.busA)==std::make_pair(6,7));
+    assert(h.publisher.appliedExternalOutput(h.epoch,2,h.busB)==std::make_pair(6,7));
+}
+static void verifyLogicalPairReservations() {
+    using Registry=armix::device::LogicalOutputRegistry;
+    Registry registry;
+    const Registry::Device device{"ASIO","Maono"};
+    assert(registry.add(1,"Broadcast"));
+    assert(registry.add(2,"Other output"));
+    const Registry::Binding binding{device,4,5,"VC L","VC R"};
+    assert(registry.restoreIntent(1,binding));
+    assert(registry.reservesPair(device,4,5)); // even unused aliases reserve pins
+    assert(registry.reservesPair(device,5,6)); // overlaps rejected
+    assert(!registry.reservesPair(device,6,7));
+    assert(!registry.reservesPair({"ASIO","Other driver"},4,5));
+    assert(!registry.reservesPair(device,4,5,1));
+    assert(!registry.restoreIntent(2,binding));
+    assert(registry.restoreIntent(1,binding)); // idempotent own binding
+    assert(registry.unbind(1));
+    assert(!registry.reservesPair(device,4,5));
+    assert(registry.restoreIntent(2,binding));
+}
 int main() {
+    verifyLogicalPairReservations();
+    verifyAtomicInitialExternalPlan();
     verifyIndependentBusPcmAndOncePerFx();
+    verifyDisconnectedZeroDelayTapThenWake();
     verifyEightPinIsolationAndAppliedReadback();
     verifyFourPinMainAndOneBus();
     verifyFailClosedAllPhysicalOutputBuffers();

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/DeviceIndependentMixerSession.h"
+#include "../engine/core/FxRackCatalogReplacement.h"
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -17,6 +18,26 @@ int main() {
     valid(logical.mainId()==id(15));
     valid(logical.roster().size()==15);
     valid(logical.revision()==1);
+
+    {
+        DeviceIndependentMixerSession mixes;
+        const auto aux=mixes.createBus(mixes.revision(),"Headphones",ChannelRole::group,false);
+        valid(aux.accepted()&&aux.createdIds.size()==1);
+        const auto* auxRow=mixes.roster().find(aux.createdIds.front());
+        valid(auxRow&&auxRow->sends.empty());
+        const ChannelId selected[]={id(1),id(2)};
+        const auto group=mixes.createGroupForSelected(mixes.revision(),selected,"Vocals");
+        valid(group.accepted()&&group.createdIds.size()==1);
+        for(auto source:selected){
+            const auto* row=mixes.roster().find(source);
+            valid(row&&row->sends.size()==1&&row->sends.front().primaryOutput&&
+                  row->sends.front().destination==group.createdIds.front());
+        }
+        const auto revision=mixes.revision();
+        const ChannelId invalid[]={id(1),mixes.mainId()};
+        valid(!mixes.createGroupForSelected(revision,invalid,"Invalid").accepted());
+        valid(mixes.revision()==revision);
+    }
 
     // 1) A genuine session document needs NO ASIO, WASAPI, fake pin,
     // callback, graph publisher or monitor before a normal track edit.
@@ -38,6 +59,18 @@ int main() {
           newTrack->sends.front().destination==logical.mainId() &&
           newTrack->sends.front().primaryOutput);
     const auto stableMain=logical.mainId();
+    {
+        DynamicChannelRoster replaced,cleared;
+        const auto& prior=logical.roster();
+        valid(prepareRackCatalogReplacement(prior,prior.revision(),backing,{"eq","comp","verb"},replaced));
+        valid(replaced.revision()==prior.revision()+1&&replaced.find(backing)->insertCatalogIds.size()==3);
+        valid(prior.find(backing)->insertCatalogIds.empty());
+        valid(replaced.find(backing)->sends.front().destination==stableMain);
+        valid(!prepareRackCatalogReplacement(replaced,prior.revision(),backing,{},cleared));
+        valid(!prepareRackCatalogReplacement(replaced,replaced.revision(),backing,{"valid",""},cleared));
+        valid(prepareRackCatalogReplacement(replaced,replaced.revision(),backing,{},cleared));
+        valid(cleared.find(backing)->insertCatalogIds.empty()&&cleared.find(backing)->sends.size()==1);
+    }
 
     // 2) Optimistic stale writes are rejected without changing the
     // authoritative native descriptor. No browser-only edits.
@@ -80,6 +113,24 @@ int main() {
     valid(track->sends.back().destination==stableMain &&
           !track->sends.back().primaryOutput);
 
+    // Device-independent send level changes only its exact parallel EdgeId.
+    {
+        DeviceIndependentMixerSession trial;
+        valid(trial.restore(logical.roster()));
+        const auto sendId=track->sends.back().edgeId;
+        const auto revision=trial.revision();
+        ChannelEdit gain;gain.kind=ChannelEdit::Kind::setSendGain;
+        gain.id=backing;gain.sendEdgeId=sendId;gain.value=.625f;
+        valid(trial.edit(revision,std::span<const ChannelEdit>{&gain,1}).accepted());
+        const auto* row=trial.roster().find(backing);
+        valid(row->sends.back().edgeId==sendId&&row->sends.back().gain==.625f);
+        valid(row->sends.front().edgeId==serialEdge&&row->sends.front().gain==1.f);
+        gain.sendEdgeId=serialEdge;
+        valid(!trial.edit(trial.revision(),std::span<const ChannelEdit>{&gain,1}).accepted());
+        gain.sendEdgeId=sendId;gain.value=0.f;
+        valid(trial.edit(trial.revision(),std::span<const ChannelEdit>{&gain,1}).accepted());
+        valid(trial.roster().find(backing)->sends.back().gain==0.f);
+    }
     // SEND ON/OFF is a state of the exact parallel EdgeId, NOT removal.
     // Primary OUT and a different edge may not be touched accidentally.
     const auto sendEdge=track->sends.back().edgeId;
@@ -212,5 +263,19 @@ int main() {
     valid(restored.removeInput(restored.revision(),backing).accepted());
     valid(!restored.roster().find(backing));
     valid(restored.mainId()==stableMain);
-    std::cout<<"Device-independent logical mixer: 8 scenarios PASS\n";
+    // New FX Return is one logical transaction, not an empty dry bus.
+    const auto beforeReturn=restored.revision();
+    auto fxReturn=restored.createReverbReturn(beforeReturn,"Room Return");
+    valid(fxReturn.accepted() && fxReturn.createdIds.size()==1);
+    const auto returnId=fxReturn.createdIds.front();
+    const auto* wet=restored.roster().find(returnId);
+    valid(wet&&wet->role==ChannelRole::fxReturn&&wet->insertCatalogIds.size()==1&&
+          wet->insertCatalogIds[0]=="armix.builtin.vocal-reverb-return.v1"&&
+          wet->sends.size()==1&&wet->sends.front().destination==stableMain&&wet->sends.front().primaryOutput);
+    const auto afterReturn=restored.revision();
+    valid(!restored.createReverbReturn(beforeReturn,"Stale").accepted()&&restored.revision()==afterReturn);
+    DeviceIndependentMixerSession recovered;
+    valid(recovered.restore(restored.roster()));
+    valid(recovered.roster().find(returnId)->insertCatalogIds==wet->insertCatalogIds);
+    std::cout<<"Device-independent logical mixer: 9 scenarios PASS\n";
 }

@@ -144,7 +144,7 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn("syncPower();",self.ui)
         self.assertIn('power.dataset.fxState=fxState;',self.ui)
         self.assertIn('fxState==="unknown"||fxState==="rack-off"',self.ui)
-        self.assertIn('ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on"',self.ui)
+        self.assertIn('(ch.fxRackBypassed||n?.raw?.globalFxBypassed===true)?"rack-off":insert.bypassed?"off":"on"',self.ui)
         self.assertIn("if(power.dataset.fxState===fxState)return;",self.ui)
         self.assertIn(".mx-peq-close,.mx-comp-close,.mx-harm-close",chrome)
         self.assertIn(".mx-peq-global,.mx-comp-power,.mx-harm-power",chrome)
@@ -161,6 +161,17 @@ class NativeHarmonyAssemblyTest(unittest.TestCase):
         self.assertIn('data-voice-mode="1"',self.ui)
         self.assertIn("doubleLight:{voiceMode:1",self.ui)
         self.assertIn("doubleWide:{voiceMode:1",self.ui)
+        self.assertIn("input.setPointerCapture(e.pointerId)",self.ui)
+        self.assertIn("requestAnimationFrame(flush)",self.ui)
+        self.assertIn("move(e);flush();cancel();",self.ui)
+        # Factory IDs remain stable; runtime parameter and ACK coverage lives
+        # in approved_native_harmony_smoke.py, not brittle old value strings.
+        for preset_id in ("doubleLight","doubleWide","duo","trio","quartet",
+                          "quintet","choir","closeBlend","warmBallad",
+                          "popChorus","gospelEnsemble"):
+            self.assertIn(f'<option value="{preset_id}">',self.ui)
+            self.assertIn(f'{preset_id}:{{voiceMode:',self.ui)
+        self.assertIn("current?.instanceId===gesture.instance",self.ui)
         self.assertIn("Number.isInteger(s.voiceMode)",self.ui)
         self.assertIn("settings->setProperty(\"voiceMode\",s.voiceMode)",(ROOT/"src/Main.cpp").read_text("utf-8"))
         self.assertIn("stream.writeInt(3);",(ROOT/"engine/builtin_fx/ChannelHarmonyProcessor.h").read_text("utf-8"))

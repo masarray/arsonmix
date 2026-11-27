@@ -2,6 +2,7 @@
 """V49 operator interaction: real Chromium Pages DOM, simulated GUI, no PCM claims."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config, toggle_wire_routes
 
 ROOT=Path(__file__).resolve().parents[1]
 PAGE=ROOT/"site/preview-v2/index.html"
@@ -24,7 +25,7 @@ def run():
             # WIRE-first sessions start connected to MAIN. Explicitly unplug
             # CH05 to exercise a *truly* empty original V49 OUT jack.
             page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
-            page.locator("#wireConfigToggle").click()
+            open_wire_config(page)
             assert page.locator("#wireMaster").get_attribute("aria-pressed")=="true"
             page.locator("#wireMaster").click()
             page.locator("#wireConfigClose").click()
@@ -90,7 +91,7 @@ def run():
             assert new_gain.count()==1,(width,"unarmed receiver replug failed")
             assert abs(float(new_gain.input_value())-new)<.11,(width,"replug lost send gain")
             # Undo belongs to routing only, not channel fader/PAN.
-            page.locator('#wireNavigatorToggle').click()
+            toggle_wire_routes(page)
             undo=page.locator('#wireWsUndo')
             assert undo.is_enabled(),(width,"routing undo not recorded")
             undo.click()
@@ -98,7 +99,7 @@ def run():
             assert page.locator('#tracks .strip[data-id="6"] .wire-gain').count()==0,(width,"undo left ghost route")
             # A selected cable owns its gain even while an unrelated OUT
             # remains armed. No editing the first/armed route by accident.
-            page.locator('#wireNavigatorToggle').click()
+            toggle_wire_routes(page)
             page.locator('#tracks .strip[data-id="7"] .wire-node-out').click()
             destination.click()
             cable_b=page.locator('#wireLayer path.wire-interaction-hit[data-cable-key="7-3"]')

@@ -120,6 +120,11 @@ assert.equal(element.dataset.fxState,"off");assert.equal(element.disabled,false)
 state.graph.channels[0].fxRackBypassed=true;power();
 assert.equal(element.dataset.fxState,"rack-off");assert.equal(element.disabled,true);
 state.graph.channels[0].fxRackBypassed=false;
+state.graph.channels[0].inserts[0].bypassed=false;
+state.raw={globalFxBypassed:true};power();
+assert.equal(element.dataset.fxState,"rack-off");assert.equal(element.disabled,true);
+state.raw.globalFxBypassed=false;power();
+assert.equal(element.dataset.fxState,"on");assert.equal(element.disabled,false);
 state.graph.channels[0].inserts[0].catalogId="unrelated-fx";power();
 assert.equal(element.dataset.fxState,"unknown");assert.equal(element.disabled,true);
 assert.match(source,/consumeAction\?\.\(\s*current\.track,"slotPower"/);

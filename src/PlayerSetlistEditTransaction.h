@@ -19,6 +19,7 @@ public:
         juce::String error;
         std::vector<PlayerSavedSet> sets;
         int active = -1;
+        std::vector<juce::File> catalogue;
         bool committed() const noexcept {
             return status == SaveStatus::saved;
         }
@@ -30,7 +31,7 @@ public:
                         const std::vector<juce::File>& liveFiles,
                         const std::vector<PlayerTrackSettings>& liveControls,
                         bool autoNext, int fadeMs, Command command,
-                        int index = -1, const juce::String& proposedName = {}) {
+                        int index = -1, const juce::String& proposedName = {},const std::vector<juce::File>& catalogue={}) {
         if(original.empty() || active < 0 ||
            active >= static_cast<int>(original.size()) ||
            liveFiles.size() != liveControls.size())
@@ -79,7 +80,7 @@ public:
         }
         }
 
-        return persist(archive,std::move(candidate),destination,autoNext,fadeMs);
+        return persist(archive,std::move(candidate),destination,autoNext,fadeMs,catalogue,original);
     }
 
     // Any validated active-song edit uses the same durable-before-adopt gate.
@@ -90,7 +91,7 @@ public:
             const std::vector<PlayerSavedSet>& original,int active,
             const std::vector<juce::File>& files,
             const std::vector<PlayerTrackSettings>& controls,
-            bool autoNext,int fadeMs) {
+            bool autoNext,int fadeMs,const std::vector<juce::File>& catalogue={}) {
         if(original.empty() || active < 0 ||
            active >= static_cast<int>(original.size()) ||
            files.size() != controls.size())
@@ -100,22 +101,27 @@ public:
         auto& set=candidate[static_cast<std::size_t>(active)];
         set.files=files;
         set.controls=controls;
-        return persist(archive,std::move(candidate),active,autoNext,fadeMs);
+        return persist(archive,std::move(candidate),active,autoNext,fadeMs,catalogue,original);
     }
 private:
     static Result persist(const juce::File& archive,
                           std::vector<PlayerSavedSet> candidate,int active,
-                          bool autoNext,int fadeMs) {
+                          bool autoNext,int fadeMs,const std::vector<juce::File>& catalogue,
+                          const std::vector<PlayerSavedSet>& original) {
+        auto previous=PlayerSetlistArchive::mergeCatalogue(catalogue,original);
+        if(!previous)return reject(SaveStatus::invalidState,"Music library capacity exceeded");
+        auto merged=PlayerSetlistArchive::mergeCatalogue(*previous,candidate);
+        if(!merged)return reject(SaveStatus::invalidState,"Music library capacity exceeded");
         const auto stored=PlayerSetlistRepository::save(
-            archive,candidate,active,autoNext,fadeMs);
+            archive,candidate,active,autoNext,fadeMs,*merged);
         if(stored==SaveStatus::invalidState)
             return reject(stored,"Unable to save setlists; invalid setlist state");
         if(stored==SaveStatus::ioError)
             return reject(stored,"Unable to save setlists; check folder permissions");
-        return {SaveStatus::saved,{},std::move(candidate),active};
+        return {SaveStatus::saved,{},std::move(candidate),active,std::move(*merged)};
     }
     static Result reject(SaveStatus status,juce::String error) {
-        return {status,std::move(error),{},-1};
+        return {status,std::move(error),{},-1,{}};
     }
 };
 } // namespace armix::player

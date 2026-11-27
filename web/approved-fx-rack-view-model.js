@@ -32,7 +32,8 @@
         index,insertId:insert.id,bypassed:insert.bypassed,effective,
         latencyTitle,
         pressed:String(effective),
-        title:action+" only insert "+(index+1),
+        title:action+" only insert "+(index+1)+
+          (!globalEnabled?" · Global FX is bypassed":!enabled?" · Rack is bypassed":""),
         label:action+" only FX insert "+(index+1)+" in "+name
       });
     }
@@ -338,6 +339,30 @@
       Object.keys(lease).length===Object.keys(now.lease).length;
   }
 
+  // A newer graph revision may authorize navigation only for the same
+  // exact insert, slot, authority and hardware/workspace identity.
+  function refreshEditorNavigationLease(view,lease,{hardwareConfiguration}={}){
+    if(!lease)return null;
+    const current=editorNavigationPlan(view,{channelId:lease.channelId,
+      slot:lease.slot,hardwareConfiguration});
+    if(current.kind!=="OPEN")return null;
+    const stable=["authority","channelId","slot","instanceId","catalogId",
+      "workspaceToken","deviceEpoch","hardwareConfiguration"];
+    return stable.every(key=>current.lease[key]===lease[key])?current.lease:null;
+  }
+  function editorBypassPresentation(view,lease,{hardwareConfiguration}={}){
+    const fresh=refreshEditorNavigationLease(view,lease,{hardwareConfiguration});
+    if(!fresh)return "UNAVAILABLE";
+    const row=view.graph.channels.find(ch=>ch.id===fresh.channelId);
+    const insert=row?.inserts?.[fresh.slot];
+    if(typeof insert?.bypassed!=="boolean"||typeof row?.fxRackBypassed!=="boolean")
+      return "UNAVAILABLE";
+    if(fresh.authority==="CHANNEL_ID"&&typeof view.raw?.globalFxBypassed!=="boolean")
+      return "UNAVAILABLE";
+    if(view.raw?.globalFxBypassed===true&&fresh.authority==="CHANNEL_ID")return "GLOBAL";
+    return row.fxRackBypassed?"RACK":insert.bypassed?"SLOT":"ON";
+  }
+
   // G-MV38: a single allowlisted editor surface policy. The native FX catalog
   // is *not* permission to create a browser HWND; only these five approved
   // built-in controls have a dedicated /preview/ WebView editor. Other installed
@@ -348,14 +373,18 @@
     "armix.builtin.channel-eq.v1":"ArSonMixNativeEq",
     "armix.builtin.graphic-eq31.v1":"ArSonMixGraphicEq31",
     "armix.builtin.channel-compressor.v1":"ArSonMixNativeCompressor",
+    "armix.builtin.auto-ducker.v1":"ArSonMixNativeDucker",
+    "armix.builtin.anti-noiz.v1":"ArSonMixNativeAntiNoiz",
     "armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony",
     "armix.builtin.vocal-throw.v1":"ArSonMixNativeVocalThrow",
-    "armix.builtin.8d-sonku.v1":"ArSonMixNativeSonKu"
+    "armix.builtin.8d-sonku.v1":"ArSonMixNativeSonKu",
+    "armix.builtin.de-ezzer.v1":"ArSonMixNativeDeEzzer"
   });
   function editorSurfacePlan(snapshot,lease,{hardwareConfiguration}={}){
     if(!editorNavigationLeaseMatches(snapshot,lease,{hardwareConfiguration}))
       return {kind:"UNAVAILABLE"};
     const key=lease.catalogId;
+    if(key==="armix.builtin.de-ezzer.v1"&&lease.authority!=="CHANNEL_ID")return {kind:"UNAVAILABLE"};
     if(Object.prototype.hasOwnProperty.call(BROWSER_EDITOR_HANDLES,key))
       return {kind:"BROWSER",windowKey:BROWSER_EDITOR_HANDLES[key]};
     if(lease.authority==="LOGICAL")return {kind:"LOGICAL_VENDOR"};
@@ -538,7 +567,7 @@
     return {kind:"CONFIRMED",channelId:pending.channelId,
       slot:pending.slot,catalogId:fx.catalogId,instanceId:fx.id,name:fx.name};
   }
-  function nativePowerPlan(snapshot,{channelId:id,action,slot,
+  function nativePowerPlan(snapshot,{channelId:id,action,slot,insertId,
     pending=false,hardwareConfiguration}={}){
     const graph=snapshot?.graph;
     if(pending||snapshot?.admitted!==true||snapshot?.retained===true||
@@ -554,6 +583,7 @@
     if(rack?typeof ch.fxRackBypassed!=="boolean":
        !Number.isInteger(slot)||slot<0||slot>=8||
        typeof insert?.id!=="string"||!insert.id||
+       (insertId!==undefined&&insert.id!==insertId)||
        typeof insert.bypassed!=="boolean")return {kind:"UNAVAILABLE"};
     const bypassed=rack?!ch.fxRackBypassed:!insert.bypassed;
     return {kind:"READY",action:rack?"routingNativeFxRackBypass":
@@ -660,7 +690,8 @@
     m4RackSettlement,m4EditorDispatchPlan,m4EditorDispatchLeaseMatches,
     nativeEditorDispatchPlan,nativeEditorAckResult,
     m4InsertPlan,m4InsertAckResult,m4InsertReadbackSettlement,
-    editorNavigationPlan,editorNavigationLeaseMatches,editorSurfacePlan,m4EditorPlan,
+    editorNavigationPlan,editorNavigationLeaseMatches,refreshEditorNavigationLease,
+    editorBypassPresentation,editorSurfacePlan,m4EditorPlan,
     nativeInsertPlan,nativeEditPlan,nativeInsertSettlement,
     nativePowerPlan,nativePowerAckResult,
     globalPowerContext,globalPowerPlan,globalPowerAckResult,

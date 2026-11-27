@@ -8,7 +8,7 @@ import tarfile
 import io
 import sys
 from immersib_p102_geometry_cache_probe import MACROS, ROOT
-BASE="379e867985bb6bab8e07297ba7a8c44925b22b2d"
+BASE="a61749fbcfa3f11a3268528af4c7cf9fd780e740"
 MSVC=sys.argv[1:]==["--msvc"]
 if sys.argv[1:] and not MSVC: raise SystemExit("unsupported option")
 def run(root,out):

@@ -45,6 +45,15 @@
   const operatorMessage = message => {
     const raw=String(message??"").trim();
     if(!raw)return "";
+    // File-operation receipts are already truthful, operator-facing text.
+    // Never infer success from a rack filename, native identity or "FX".
+    if(/^FX rack file:|^FX rack request invalid|^FX rack unchanged:|^FX saved; deactivation rejected:/i.test(raw))return raw;
+    if(raw.includes("DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"))
+      return "Delete not applied · Mute outputs before changing this routing";
+    if(raw.includes("DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED"))
+      return "Delete not applied · Fade not confirmed; retry with outputs muted";
+    if(raw.includes("COMPRESSOR_INSERT_REQUIRES_STABLE_LIVE_GRAPH"))
+      return "Compressor not added · Finish current edits or mute outputs, then retry";
     // A product never advertises unfinished internal QA/FAT certification to
     // operators. This is a display-only adapter, not an audio-state override.
     if(/\b(?:HARDWARE\s+)?FAT\s+(?:PENDING|PASSED|FAILED)\b|\b(?:NATIVE\s+)?PCM\s+(?:GRAPH|HARDWARE|FAT)\b|\b(?:PENDING_ACCEPTED_SNAPSHOT|HARDWARE_FAT_PENDING)\b/i.test(raw)){
@@ -52,7 +61,17 @@
       if(/\b(?:monitor on|output enabled|output active)\b/i.test(raw))return "Output enabled";
       return "Mixer ready";
     }
+    // U1: native output validation already emits operator-actionable reasons.
+    // Do not normalize those into a generic success/failure toast.
+    if(/^EXTERNAL OUT:|^BUS OUTPUT:|^DMX:|^Secondary output requires|^MUTE hardware OUTPUT/i.test(raw))return raw;
     const failure=/\b(reject(?:ed|ion)?|fail(?:ed|ure)?|error|timed out|not applied|unavailable|invalid)\b|(?:^|[^A-Z0-9])(FAILED|ERROR|REJECTED|STALE|INVALID|TIMEOUT|MISSING|UNSUPPORTED|UNKNOWN|MISMATCH|CONFLICTING)(?:\b|_)/i.test(raw);
+    // Editor navigation cannot be reported as a successful FX edit.
+    if(/\b(?:FX|VST3|plugin|effect|built-in)\b.*\beditor\b|\beditor\b.*\b(?:FX|VST3|plugin|effect|built-in)\b/i.test(raw)){
+      if(failure||/\b(refresh|changed|expired|retry|close|finish|needs|could not|no native|does not|held|disconnected)\b/i.test(raw))
+        return "FX editor unavailable · Reopen from FX Rack";
+      if(/\b(opened|visible|focused)\b/i.test(raw))return "FX editor opened";
+      return "Opening FX editor…";
+    }
     const internalCode=/\b[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b/.test(raw);
     if(internalCode ||
        /\b(FAT|PCM|ACK|readback|admission|admitted|graph|roster|epoch|revision|M[0-9]|JUCE|callback|worker|fixture|reference|mockup|simulated|demo|legacy|native|authoritative)\b/i.test(raw)){
@@ -85,6 +104,7 @@
   function normalizeSnapshot(raw) {
     if (!fields(raw, ["schemaVersion","productionCallbackLive","device","graph","telemetry"]) ||
         raw.schemaVersion !== 6 || !isBool(raw.productionCallbackLive)) return null;
+    if(raw.workspaceGeneration!==undefined && decimal(raw.workspaceGeneration)===null)return null;
     const d = raw.device, g = raw.graph, t = raw.telemetry;
     if (!fields(d, ["epoch","backend","captureDevice","playbackDevice","inputEndpoints",
                      "outputEndpoints","enabledInputs","enabledOutputs","sampleRate","bufferFrames","outputArmed"]) ||
@@ -122,6 +142,7 @@
           (!object(ch.controls) ||
             (ch.controls.faderDb !== undefined && !Number.isFinite(ch.controls.faderDb)) ||
             (ch.controls.inputGainDb !== undefined && !Number.isFinite(ch.controls.inputGainDb)) ||
+          (ch.controls.wireSumGainDb !== undefined && (!Number.isFinite(ch.controls.wireSumGainDb)||ch.controls.wireSumGainDb< -60||ch.controls.wireSumGainDb>6.03)) ||
             (ch.controls.pan !== undefined && !Number.isFinite(ch.controls.pan)) ||
             (ch.controls.mute !== undefined && !isBool(ch.controls.mute)) ||
             (ch.controls.solo !== undefined && !isBool(ch.controls.solo)))) return null;
@@ -251,6 +272,149 @@
 
   // Read-only physical OUTPUTS projection from the authoritative JUCE snapshot.
   // No guessed ports, UI-owned routing, monitor activation or audible claims.
+  // Strict native timing projection. No inferred monitor from UI labels.
+  function monitorTimingView(snapshot) {
+    const raw=snapshot?.raw,p=raw?.monitorTiming,d=snapshot?.device;
+    if(!snapshot?.admitted||snapshot.retained||!p||d?.backend!=="ASIO"||
+       !["GLOBAL_ALIGNED","INDEPENDENT_MONITOR"].includes(p.policy)||
+       ![p.mainSamples,p.monitorSamples,p.potentialSaving].every(n=>Number.isInteger(n)&&n>=0)||
+       p.monitorSamples>p.mainSamples||p.potentialSaving>p.mainSamples||
+       (p.policy==="GLOBAL_ALIGNED"&&p.monitorSamples!==p.mainSamples)||
+       (p.policy==="INDEPENDENT_MONITOR"&&p.mainSamples-p.monitorSamples!==p.potentialSaving))return null;
+    const main=raw.physicalMainOutputs,monitor=raw.physicalMonitorOutputs;
+    if(!Array.isArray(main)||!Array.isArray(monitor)||main.length!==2||monitor.length!==2||
+       new Set([...main,...monitor]).size!==4||
+       ![...main,...monitor].every(pin=>Number.isInteger(pin)&&d.enabledOutputs.includes(pin)&&
+          d.outputEndpoints.some(e=>e.port===pin&&e.active&&e.label&&
+              d.outputEndpoints.filter(x=>x.label===e.label).length===1)))return null;
+    return {policy:p.policy,mainSamples:p.mainSamples,monitorSamples:p.monitorSamples,
+      potentialSaving:p.potentialSaving,main:[...main],monitor:[...monitor],
+      observed:raw.physicalBusOutputObserved===true,
+      editable:raw.physicalBusOutputObserved===true&&raw.operatorOutputMuted===true&&
+        raw.physicalBusSecondaryArmed===false&&d.outputArmed===false,
+      epoch:d.epoch,revision:snapshot.graph.revision,rosterRevision:snapshot.graph.rosterRevision};
+  }
+  // One secondary destination projection for the quick output controller and
+  // unified workspace. No ACK, friendly name or browser draft proves PCM.
+  function secondaryMixMode(snapshot,live) {
+    const raw=snapshot?.raw,d=snapshot?.device,g=snapshot?.graph;
+    const output=secondaryOutputView(snapshot,live);
+    const split=output.split;
+    if(!snapshot?.admitted||snapshot.retained||d?.backend!=="ASIO"||
+       d.enabledOutputs?.length!==2||raw?.physicalBusOutputObserved!==true||
+       [d.epoch,g?.revision,g?.rosterRevision].some(v=>decimal(v)===null)||
+       !Array.isArray(raw.physicalMainOutputs)||!Array.isArray(raw.physicalMonitorOutputs))
+      return {available:false,split,reason:"Independent mix requires a verified two-output ASIO route."};
+    if(split!==(raw.secondaryMainOnly===true))
+      return {available:false,split,reason:"Waiting for the installed output mode."};
+    if(split&&(raw.physicalMainOutputs.length!==0||raw.physicalMonitorOutputs.length!==2))
+      return {available:false,split,reason:"Waiting for the verified headphone pair."};
+    if(raw.externalOutputs?.length||raw.logicalOutputRegistry?.references?.length||
+       raw.logicalOutputRegistry?.ports?.some(p=>p.bound===true))
+      return {available:false,split,reason:"Existing output assignments are preserved."};
+    if(!split&&(raw.physicalMainOutputs.length!==2||raw.physicalMonitorOutputs.length!==0))
+      return {available:false,split,reason:"Existing monitor mapping is preserved."};
+    // Returning to Same mix unbinds the physical MONITOR sink but preserves
+    // the authored native graph/FX. It is not a destructive channel edit.
+    if(!output.armed||output.recovering)
+      return {available:false,split,reason:"Enable the additional output first."};
+    return {available:true,split,reason:split?"Secondary playback receives MAIN. Your headphone routing and effects are preserved when you select Same mix.":"Separate mix creates a quiet PRE-fader starter on first use; existing headphone settings are preserved.",
+      value:{enabled:!split,smart:true,deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision}};
+  }
+  function secondaryMonitorStarter(snapshot,live) {
+    const output=secondaryOutputView(snapshot,live),d=snapshot?.device,g=snapshot?.graph;
+    if(!snapshot?.admitted||snapshot.retained||!output.split||!output.armed||
+       snapshot.raw?.physicalBusOutputObserved!==true||!g||!d||
+       [d.epoch,g.revision,g.rosterRevision].some(v=>decimal(v)===null))return null;
+    const monitor=g.channels?.find(ch=>ch.role==="MONITOR");
+    if(!monitor||!g.mainChannelId||!Array.isArray(g.edges)||
+       g.edges.some(e=>e.to===monitor.id||e.from===monitor.id))return null;
+    if(!g.edges.some(e=>e.to===g.mainChannelId&&e.primaryOutput===true&&e.enabled===true))return null;
+    return {deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision};
+  }
+  // One settlement rule for the output workspace. Neither ACK nor an
+  // old status alone proves the requested native graph or an armed sink.
+  // Status serial is local observation order, not a native graph identity.
+  function secondaryOutputSettlement(p,snapshot,live,statusSerial) {
+    if(p?.workspaceGeneration!==undefined&&snapshot?.raw?.workspaceGeneration!==p.workspaceGeneration)
+      return "STALE";
+    if(!p?.acked||!live||statusSerial<=p.statusSerial)return "WAIT";
+    const route=live.dryRoutingLab,epoch=snapshot?.device?.epoch;
+    const reportedEpoch=route?.dmxDeviceEpoch??(route?.epoch==null?null:String(route.epoch));
+    if(p.action!=="secondaryOutputStop"&&p.epoch&&epoch!==p.epoch)return "STALE";
+    if(reportedEpoch!=null&&epoch!=null&&reportedEpoch!==epoch)return "WAIT";
+    const ready=live.secondaryOutputReady===true&&live.secondaryOutputFault!==true;
+    const armed=ready&&live.secondaryOutputArmed===true&&!!live.secondaryOutputName&&
+      live.secondaryOutputRecovering!==true;
+    if(p.action==="secondaryOutputSplit"||p.action==="secondaryMonitorStarter"){
+      if(!snapshot?.admitted||snapshot.retained||!p.value||
+         snapshot.hardwareConfiguration!==p.config)return "STALE";
+      if(decimal(p.ackRevision)===null||decimal(p.value.graphRevision)===null||
+         cmp(p.ackRevision,p.value.graphRevision)<=0)return "STALE";
+      if(cmp(snapshot.graph.revision,p.ackRevision)>0)return "STALE";
+      if(reportedEpoch!==p.epoch||snapshot.graph.revision!==p.ackRevision||
+         route?.nativeBus?.graphRevision!==p.ackRevision||
+         route?.busOutputObserved!==true||!armed||live.secondaryOutputName!==p.endpoint)
+        return "WAIT";
+      if(p.action==="secondaryMonitorStarter"){
+        const monitor=snapshot.graph.channels.find(c=>c.role==="MONITOR");
+        return snapshot.raw?.secondaryMainOnly===true&&route.secondaryMainOnly===true&&monitor&&
+          snapshot.graph.edges.some(e=>e.to===monitor.id&&!e.primaryOutput)?"SETTLED":"WAIT";
+      }
+      const split=p.value.enabled===true,raw=snapshot.raw;
+      const active=split?raw?.physicalMonitorOutputs:raw?.physicalMainOutputs;
+      const other=split?raw?.physicalMainOutputs:raw?.physicalMonitorOutputs;
+      return raw?.secondaryMainOnly===split&&route.secondaryMainOnly===split&&
+        Array.isArray(active)&&Array.isArray(other)&&other.length===0&&
+        Array.isArray(p.pair)&&active.length===2&&active.every((port,i)=>port===p.pair[i])?
+        "SETTLED":"WAIT";
+    }
+    if(p.action==="secondaryOutputEnable")return armed&&live.secondaryOutputName===p.value?"SETTLED":"WAIT";
+    if(p.action==="secondaryOutputArm")return ready&&live.secondaryOutputArmed===p.value?"SETTLED":"WAIT";
+    if(p.action==="secondaryOutputStop")return live.secondaryOutputReady===false&&
+      live.secondaryOutputArmed===false&&!live.secondaryOutputName&&!live.secondaryOutputFault&&
+      !live.secondaryOutputRecovering?"SETTLED":"WAIT";
+    return "WAIT";
+  }
+  function secondaryOutputSelection(options,{active="",selected="",preferred="",hasSaved=false}={}) {
+    if(options.includes(active))return active;
+    if(options.includes(selected))return selected;
+    if(options.includes(preferred))return preferred;
+    if(hasSaved)return ""; // never replace a lost verified destination with a guess
+    const cables=options.filter(n=>/^CABLE Input(?:\s|\(|$)/i.test(n));
+    return cables.length===1?cables[0]:"";
+  }
+  // A saved endpoint is a selection, never proof of PCM or permission to ARM.
+  function mainMonitorPreference(names,preferred,hasSaved,prepared=false) {
+    if(typeof preferred==="string"&&preferred&&names.includes(preferred))
+      return {value:"__armix_saved__",label:preferred+(prepared?" · ready / off":" · saved / off"),endpoint:preferred};
+    if(hasSaved)return {value:"__armix_saved_missing__",label:"Saved device unavailable · off",endpoint:""};
+    return {value:"",label:"None",endpoint:""};
+  }
+  function secondaryOutputView(snapshot,live) {
+    const raw=snapshot?.raw;
+    const liveEpoch=live?.dryRoutingLab?.epoch, snapshotEpoch=snapshot?.device?.epoch;
+    const current=live&&typeof live.secondaryOutputReady==="boolean"&&
+      typeof live.secondaryOutputArmed==="boolean"&&
+      (liveEpoch==null||snapshotEpoch==null||String(liveEpoch)===String(snapshotEpoch));
+    const split=current&&typeof live?.dryRoutingLab?.secondaryMainOnly==="boolean"?
+      live.dryRoutingLab.secondaryMainOnly:raw?.secondaryMainOnly===true;
+    const fault=current?live.secondaryOutputFault===true:raw?.secondaryOutputFault===true;
+    const name=current?String(live.secondaryOutputName||""):String(raw?.secondaryOutputName||raw?.secondaryMainEndpoint||"");
+    const ready=current?live.secondaryOutputReady===true:raw?.secondaryMainReady===true;
+    const armed=current?live.secondaryOutputArmed===true:raw?.physicalBusSecondaryArmed===true;
+    const recovering= current?live.secondaryOutputRecovering===true:raw?.secondaryOutputRecovering===true;
+    const recoveryName=String((current?live.secondaryOutputRecoveryName:raw?.secondaryOutputRecoveryName)||"");
+    const state=recovering&&!armed?"RECOVERING":fault?"FAULT":!ready||!name?(split?"NEEDS_REMAP":"DISCONNECTED"):
+      armed?"ENABLED":"MUTED";
+    return {split,name:name||recoveryName,ready:ready&&!fault,armed:ready&&!fault&&!!name&&armed,fault:!!fault,recovering:recovering&&!armed,state};
+  }
+  function secondaryOutputRow(snapshot,live) {
+    const v=secondaryOutputView(snapshot,live);
+    if(!v.split&&v.state==="DISCONNECTED")return null;
+    return {pair:"STREAM",pins:v.name||"Windows playback endpoint disconnected",
+      role:v.split?"MAIN":"MAIN MIRROR",owners:"MAIN",status:v.state,shared:0};
+  }
   function physicalOutputOverview(snapshot) {
     const d=snapshot?.device,raw=snapshot?.raw;
     if(d?.backend!=="ASIO" || !Array.isArray(d.enabledOutputs) ||
@@ -284,6 +448,15 @@
       }else rows.push({pair:pair(left,right),pins:"Saved pins unavailable",
         role,owners:role,status:"NEEDS_REMAP",shared:0});
     }
+    if(raw.secondaryMainOnly===true&&raw.physicalMainOutputs?.length===0&&
+       raw.physicalMonitorOutputs?.length===2&&good(...raw.physicalMonitorOutputs)){
+      const ready=raw.secondaryMainReady===true&&typeof raw.secondaryMainEndpoint==="string"&&!!raw.secondaryMainEndpoint;
+      rows.push({pair:"STREAM",pins:ready?raw.secondaryMainEndpoint:"WASAPI endpoint disconnected",role:"MAIN",
+        owners:"MAIN",status:!ready?"NEEDS_REMAP":raw.physicalBusSecondaryArmed===true?"ENABLED":"MUTED",shared:0});
+    }
+    const logicalPorts=(Array.isArray(raw.logicalOutputRegistry?.ports)?
+      raw.logicalOutputRegistry.ports:[]).filter(p=>p.bound===true&&
+      p.playback===d.playbackDevice&&(!p.backend||p.backend===d.backend));
     const activeExternal=new Set();
     for(const left of [...ports.keys()].sort((a,b)=>a-b)){
       const right=left+1;
@@ -293,12 +466,13 @@
       const items=assigned.filter(p=>p.physicalLeft===left&&p.physicalRight===right);
       activeExternal.add(left+":"+right);
       const applied=items.filter(p=>snapshot.admitted===true&&p.status==="LIVE");
+      const logical=logicalPorts.find(p=>[p.left,p.right].some(pin=>pin===left||pin===right));
       const state=applied.length?(d.outputArmed?"LIVE":"MUTED"):
         items.some(p=>p.status==="PENDING")?"PENDING":
-        items.length?"NEEDS_REMAP":"FREE";
+        items.length?"NEEDS_REMAP":logical?"RESERVED":"FREE";
       rows.push({pair:pair(left,right),pins:pins(left,right),
-        role:items.length?"EXTERNAL":"AVAILABLE",
-        owners:items.length?owners(items):"Unassigned",status:state,
+        role:items.length?"EXTERNAL":logical?"LOGICAL":"AVAILABLE",
+        owners:items.length?owners(items):logical?logical.name:"Unassigned",status:state,
         shared:applied.length});
     }
     for(const port of [...ports.keys()].sort((a,b)=>a-b)){
@@ -335,6 +509,10 @@
       return ch.role==="INPUT" && Number.isFinite(payload.valueDb) &&
         Number.isFinite(ch.controls?.inputGainDb) &&
         Math.abs(ch.controls.inputGainDb-payload.valueDb)<=0.12;
+    if (operation === "SET_WIRE_SUM_GAIN")
+      return ["INPUT","GROUP","FX_RETURN"].includes(ch.role) && Number.isFinite(payload.valueDb) &&
+        Number.isFinite(ch.controls?.wireSumGainDb) &&
+        Math.abs(ch.controls.wireSumGainDb-payload.valueDb)<=0.12;
     if (operation === "SET_FADER")
       return Number.isFinite(payload.valueDb) &&
         Math.abs(ch.controls.faderDb-payload.valueDb)<=0.11;
@@ -360,6 +538,20 @@
         ch.inserts[payload.slot].id.length>0 &&
         !ch.inserts.slice(0,payload.slot).some(insert=>
           insert.id===ch.inserts[payload.slot].id);
+    if(operation==="CONVERT_REVERB_RETURN"){
+      const expected=pending.fxExpected;
+      if(!expected||cmp(next.graph.revision,pending.baseGraphRevision)<=0||
+         cmp(next.graph.rosterRevision,pending.baseRosterRevision)<=0)return false;
+      const ids=ch.inserts.map(x=>x.id);
+      if(ids.length!==expected.source.length||ids.some((x,i)=>x!==expected.source[i]))return false;
+      const created=next.graph.channels.filter(c=>!expected.previous.includes(c.id)&&
+        c.role==="FX_RETURN"&&c.inserts?.length===1&&
+        c.inserts[0].catalogId==="armix.builtin.vocal-reverb-return.v1");
+      if(created.length!==1||created[0].primaryOutId!==next.graph.mainChannelId)return false;
+      return next.graph.edges.some(e=>e.enabled&&e.from===targetChannelId&&e.to===created[0].id&&
+        e.primaryOutput===false&&e.tap==="POST_FADER") &&
+        !next.graph.channels.some(c=>c.inserts.some(x=>x.id===payload.instanceId));
+    }
     if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
       const expected=pending.fxExpected;
       if(!expected||cmp(next.graph.revision,pending.baseGraphRevision)<=0||
@@ -468,6 +660,27 @@
   }
   // Read-only operator diagnosis from verified Windows callback evidence.
   // UI-only: this routine cannot patch, ARM, create PCM or certify speakers.
+  // A novice shortcut is offered only for an empty physical input graph.
+  // Do not take over a saved logical input, PLAYER, or authored source.
+  function firstSoundPlan(snapshot) {
+    const d=snapshot?.device,g=snapshot?.graph,raw=snapshot?.raw;
+    if(!snapshot?.admitted||snapshot.retained||raw?.mixerSession?.authority!=="CHANNEL_ID"||
+       raw.mixerSession.deviceEpoch!==d?.epoch||!snapshot.hardwareConfiguration||
+       raw.operatorOutputMuted===true||raw.secondaryMainOnly===true||
+       raw.waitingAsioInputs>0||raw.logicalInputRegistry?.references?.length||
+       !Array.isArray(g?.channels)||!Array.isArray(g.edges))return null;
+    const inputs=g.channels.filter(ch=>ch.role==="INPUT");
+    if(inputs.some(ch=>ch.source!=null))return null;
+    const directMain=new Set(g.edges.filter(e=>e.to===g.mainChannelId&&
+      e.primaryOutput===true&&e.enabled===true).map(e=>e.from));
+    const target=inputs.find(ch=>ch.controls?.mute===false&&directMain.has(ch.id));
+    const pins=(d.inputEndpoints||[]).filter(p=>p.active===true&&d.enabledInputs?.includes(p.port)&&
+      Number.isInteger(p.port)&&typeof p.label==="string"&&p.label.length>0);
+    if(!target||!pins.length)return null;
+    return {channelId:target.id,channelName:target.name,epoch:d.epoch,revision:g.revision,
+      config:snapshot.hardwareConfiguration,pins:pins.map(p=>({port:p.port,label:p.label}))};
+  }
+
   function diagnoseFirstSound(snapshot, selectedPhysicalPort=null) {
     const d=snapshot?.device, t=snapshot?.telemetry, m4=snapshot?.raw?.legacyM4;
     const opened=Boolean(d && d.sampleRate>0 && Array.isArray(d.enabledOutputs) &&
@@ -493,7 +706,9 @@
     else if(pin && raw===0)nextAction="Selected input is silent; check physical source and input gain.";
     else if(raw===null)nextAction="Capture peak unavailable; do not assume an active source.";
     else if(m4.routeAccepted!==true)nextAction="PATCH CH1 to the selected hardware input.";
-    else if(d.outputArmed!==true)nextAction="Patch accepted; lower volume then ARM output.";
+    else if(d.outputArmed!==true)nextAction=snapshot?.raw?.operatorOutputMuted===true?
+      "Emergency stop active; use More > Resume after emergency stop.":
+      "Output recovering automatically; if unavailable, check Audio I/O and MAIN route.";
     else if(!mainObserved)nextAction="No MAIN PCM measurement; check routing and output state.";
     else if(main===0)nextAction="MAIN PCM silent; check CH1 fader/MUTE and MASTER MUTE.";
     else nextAction="MAIN PCM measured; verify headphone/speaker sound physically.";
@@ -522,7 +737,11 @@
       case "CREATE_CHANNEL":
       case "CREATE_GROUP":
         return validId(p.createdId) && graph.channels.some(ch=>
-          ch.id===p.createdId && ch.role===(p.operation==="CREATE_CHANNEL"?"INPUT":"GROUP"));
+          ch.id===p.createdId && ch.role===(p.operation==="CREATE_CHANNEL"?"INPUT":v.purpose==="FX"?"FX_RETURN":"GROUP") &&
+          (v.purpose!=="FX"||(ch.inserts?.length===1&&ch.inserts[0].catalogId==="armix.builtin.vocal-reverb-return.v1"&&ch.primaryOutId===graph.mainChannelId))) &&
+          (v.connectMain!==false||graph.channels.some(ch=>ch.id===p.createdId&&!ch.primaryOutId)) &&
+          (v.selection===undefined||(Array.isArray(v.selection)&&v.selection.length>0&&v.selection.every(id=>
+            graph.channels.some(ch=>ch.id===id&&ch.primaryOutId===p.createdId))));
       case "DELETE_CHANNEL":
       case "REMOVE_BUS":
         return validId(p.channelId) && p.beforeChannelExists===true && !row;
@@ -535,6 +754,10 @@
         return !!row && row.role==="INPUT" && Number.isFinite(v.valueDb) &&
           Number.isFinite(row.controls?.inputGainDb) &&
           Math.abs(row.controls.inputGainDb-v.valueDb)<0.12;
+      case "SET_WIRE_SUM_GAIN":
+        return !!row && ["INPUT","GROUP","FX_RETURN"].includes(row.role) && Number.isFinite(v.valueDb) &&
+          Number.isFinite(row.controls?.wireSumGainDb) &&
+          Math.abs(row.controls.wireSumGainDb-v.valueDb)<0.12;
       case "SET_FADER":
         return !!row && Number.isFinite(v.valueDb) &&
           Number.isFinite(row.controls?.faderDb) &&
@@ -566,6 +789,7 @@
       case "SET_FX_SLOT_BYPASS":
         return !!row && Number.isInteger(v.slot) && v.slot>=0 &&
           isBool(v.enabled) && row.inserts?.[v.slot]?.bypassed===v.enabled;
+      case "SET_WIRE_GAIN":
       case "SET_SEND_TAP":
       case "SET_SEND_ENABLED": {
         // Both are exact EdgeId edits to an existing PARALLEL send.
@@ -579,6 +803,7 @@
           e.from===p.channelId && e.primaryOutput===false && e.enabled!==false);
         if(old.length!==1 || updated.length!==1 ||
            old[0].to!==updated[0].to)return false;
+        if(p.operation==="SET_WIRE_GAIN")return Number.isFinite(v.gainLinear)&&Number.isFinite(updated[0].gainLinear)&&Math.abs(updated[0].gainLinear-v.gainLinear)<=0.0001;
         if(p.operation==="SET_SEND_TAP")
           return ["PRE_FADER","POST_FADER"].includes(v.tap) &&
             (old[0].tapStage||old[0].tap)!==v.tap &&
@@ -611,7 +836,7 @@
           return validId(change.to) && edges.some(e=>
             e.to===change.to && e.primaryOutput===false &&
             validId(e.edgeId) && !present(e.edgeId) &&
-            (change.tap===undefined || change.tap===e.tap) &&
+            (change.tap===undefined || change.tap===(e.tapStage||e.tap)) &&
             (change.gainLinear===undefined ||
               (Number.isFinite(change.gainLinear) &&
                Number.isFinite(e.gainLinear) &&
@@ -641,6 +866,12 @@
       const next = normalizeSnapshot(raw);
       if (!next) { lastError="INVALID_NATIVE_SNAPSHOT";notify();return false; }
       if (current) {
+        const beforeWorkspace=current.raw.workspaceGeneration;
+        const afterWorkspace=next.raw.workspaceGeneration;
+        // A delayed snapshot from a replaced workspace must not repaint or cancel new edits.
+        if(beforeWorkspace!==undefined && (afterWorkspace===undefined ||
+           cmp(afterWorkspace,beforeWorkspace)<0))return false;
+        const workspaceChanged=afterWorkspace!==undefined && afterWorkspace!==beforeWorkspace;
         const epochCompare = cmp(next.device.epoch,current.device.epoch);
         if (epochCompare < 0) {lastError="OLD_DEVICE_EPOCH";notify();return false;}
         if (epochCompare === 0 &&
@@ -665,12 +896,12 @@
             current.raw?.mixerSession?.authority;
         const physicalStale=epochCompare!==0||next.retained||
           next.hardwareConfiguration!==current.hardwareConfiguration;
-        if (pending && (physicalStale||authorityChanged)) {
+        if (pending && (workspaceChanged||physicalStale||authorityChanged)) {
           pending=null;
           // Preserve existing NEEDS_REMAP/physical-error contracts even if
           // their PCM authority also changes. Distinguish only a pure
           // same-device ChannelId → M4/UNADMITTED owner switch.
-          lastError=physicalStale?"STALE_DEVICE":"STALE_NATIVE_AUTHORITY";
+          lastError=physicalStale?"STALE_DEVICE":authorityChanged?"STALE_NATIVE_AUTHORITY":"STALE_WORKSPACE";
         }
       }
       if (pending && !pending.ack) {
@@ -726,6 +957,17 @@
       }
       if (!object(payload)) return refuseIntent("INVALID_PAYLOAD");
       let fxExpected=null;
+      if(operation==="CONVERT_REVERB_RETURN"){
+        const source=current.graph.channels.find(c=>c.id===targetChannelId);
+        const slot=payload.slot,token=payload.instanceId;
+        if(source?.role!=="INPUT"||source.primaryOutId!==current.graph.mainChannelId||
+           !Number.isInteger(slot)||slot<0||slot+1!==source.inserts?.length||
+           source.inserts[slot]?.id!==token||
+           source.inserts[slot]?.catalogId!=="armix.builtin.vocal-reverb.v1")
+          return refuseIntent("DMX_CONVERSION_REQUIRES_LAST_REVERB_DIRECT_MAIN_INPUT");
+        fxExpected={source:source.inserts.slice(0,slot).map(x=>x.id),
+          previous:current.graph.channels.map(c=>c.id)};
+      }
       if(operation==="REMOVE_INSERT"||operation==="MOVE_INSERT") {
         const source=current.graph.channels.find(c=>c.id===targetChannelId);
         const slot=payload.slot,token=payload.instanceId;
@@ -845,6 +1087,9 @@
       sequence:live.footerHealthSequence,
       deviceGeneration:whole(live.deviceGeneration)===null?
         null:String(live.deviceGeneration),
+      // Device starts and accepted routing epochs diverge after STOP.
+      routingEpoch:whole(live.dryRoutingLab?.epoch)===null?
+        null:String(live.dryRoutingLab.epoch),
       latency,performance:cpuLabel+" · "+rtLabel+" · "+ramLabel,
       // The presentation colors classify *only* the observable signals:
       // CPU App = process CPU on all logical cores; RT = last callback
@@ -859,9 +1104,147 @@
       provenance:"DRIVER_HINT_NOT_LOOPBACK__PROCESS_CPU_ALL_CORES__LAST_CALLBACK_BUDGET__PROCESS_WORKING_SET"
     });
   }
-  return Object.freeze({footerHealthFromLive,decimal,cmp,normalizeSnapshot,
+
+  // M4 Smart Performance Assistant. CONTROL/JS presentation only. The 13
+  // histogram buckets are cumulative, so calculate an *epoch-fenced* 1 Hz
+  // difference, never describe a lifetime peak as current DSP usage.
+  // This is host-render evidence, NEVER an ASIO/driver xrun measurement.
+  function smartPerformanceView(live,accepted,prior=null) {
+    const integer=n=>Number.isSafeInteger(n)&&n>=0?n:null;
+    const finite=n=>typeof n==="number"&&Number.isFinite(n)?n:null;
+    const unavailable=reason=>Object.freeze({
+      state:"UNAVAILABLE",reason,headroom:null,callbacks:null,over:null,
+      latency:null,fxPeak:null,reviews:[],recommendations:[],cursor:null,
+      correlation:null
+    });
+    if(!accepted?.admitted||accepted.retained||!accepted.device ||
+       !live||live.connected!==true||live.directRouteAuthorized!==true||
+       live.adaptiveClockActive!==false||
+       integer(live.dryRoutingLab?.epoch)===null||
+       accepted.device.epoch!==String(live.dryRoutingLab.epoch)||
+       accepted.device.sampleRate!==live.rate ||
+       accepted.device.bufferFrames!==live.buffer ||
+       !accepted.graph?.revision ||
+       accepted.graph.revision!==live.dryRoutingLab?.nativeBus?.graphRevision ||
+       !(finite(live.periodUs)>0))
+      return unavailable("No matching verified native render / device epoch");
+    const seq=integer(live.footerHealthSequence);
+    const counts=live.callbackBudgetBuckets;
+    if(!seq||!Array.isArray(counts)||counts.length!==13||
+       !counts.every(n=>integer(n)!==null))
+      return unavailable("Waiting for the native 1 Hz callback histogram");
+    const epoch=accepted.device.epoch,graphRevision=accepted.graph.revision;
+    const armed=accepted.device.outputArmed===true;
+    const token=armed&&decimal(live.performanceRenderToken)!==null&&
+      live.performanceRenderToken!=="0"&&live.performanceRenderEpoch===epoch&&
+      live.performanceRenderRevision===graphRevision?live.performanceRenderToken:null;
+    const cursor=Object.freeze({epoch,graphRevision,seq,token,armed,buckets:Object.freeze([...counts])});
+    const same=token!==null&&prior?.token===token&&prior.armed===true&&
+      prior.epoch===epoch&&prior.graphRevision===graphRevision&&
+      integer(prior.seq)!==null&&prior.seq+1===seq&&
+      Array.isArray(prior.buckets)&&prior.buckets.length===13&&
+      prior.buckets.every(n=>integer(n)!==null);
+    const delta=same?counts.map((n,i)=>n-prior.buckets[i]):null;
+    const valid=delta!==null&&delta.every(n=>integer(n)!==null);
+    const total=valid?delta.reduce((sum,n)=>sum+n,0):null;
+    const callbacks=integer(total);
+    const enough=callbacks!==null&&callbacks>=64;
+    const buckets=Object.freeze([1,2,4,8,12,20,30,40,55,70,85,100,null]);
+    const pct=(percentage)=>percentage===null?">100%":percentage+"%";
+    const p99=()=>{
+      if(!enough)return null;
+      const target=Math.ceil(callbacks*.99);
+      let scanned=0;
+      for(let i=0;i<delta.length;i++){
+        scanned+=delta[i];
+        if(scanned>=target)return buckets[i];
+      }
+      return null;
+    };
+    const ceiling=p99();
+    const over=callbacks!==null?delta[12]:null;
+    const headroom=enough?Object.freeze({
+      p99:pct(ceiling),margin:ceiling===null?"none verified":(100-ceiling)+"%",
+      confidence:"CONTINUOUS_ARMED_NATIVE_RENDER_NOMINAL_1HZ_DELTA_P99_BUCKET_CEILING_NOT_XRUN"
+    }):null;
+    const pairCounts=["renderPressureWithinThenLate","renderPressureOverThenLate",
+       "renderPressureWithinThenOnTime","renderPressureOverThenOnTime"].map(k=>integer(live[k]));
+    const correlation=token!==null&&live.renderPressureWindowValid===true&&
+      pairCounts.every(n=>n!==null&&n<=64)&&pairCounts.reduce((a,b)=>a+b,0)===64?
+      Object.freeze({withinLate:live.renderPressureWithinThenLate,
+        overLate:live.renderPressureOverThenLate,
+        provenance:"LAST_COMPLETE_64_PAIRS_MAY_BE_OLD_NOT_CAUSAL"}):null;
+    const peakRatio=finite(live.nativeFxWorkloadWorstPermille);
+    const fxName=typeof live.nativeFxWorkloadWorstName==="string"?
+      live.nativeFxWorkloadWorstName.trim().slice(0,90):"";
+    const fxPeak=peakRatio!==null&&peakRatio>=0&&fxName?Object.freeze({
+      name:fxName,percent:(peakRatio/10).toFixed(1)+"%",
+      sampled:live.nativeFxWorkloadWorstSampledOnly===true,
+      provenance:"MAX_OBSERVED_INVOCATION_RATIO_LIFETIME_NOT_CURRENT_LOAD"
+    }):null;
+    const actionText=Object.freeze({
+      REBUILD_LATENCY_WHILE_DISARMED:"Latency changed; inspect with outputs disarmed",
+      REVIEW_LATENT_BYPASS:"Bypassed insert still retains alignment latency",
+      REVIEW_SAMPLED_SILENT_COST:"Review cost during measured silence",
+      REVIEW_BLOCK_BUDGET:"Review processor workload and preset"
+    });
+    const reviews=Array.isArray(live.nativeFxWorkloadReviews)?
+      live.nativeFxWorkloadReviews.filter(r=>r&&
+        typeof r.name==="string"&&typeof r.recommendation==="string"&&
+        Object.hasOwn(actionText,r.recommendation)).slice(0,3).map(r=>Object.freeze({
+          name:r.name.slice(0,90),channel:String(r.channel??"").slice(0,30),
+          action:actionText[r.recommendation],
+          window:r.windowValid===true&&finite(r.windowMeanPermille)!==null?
+            (r.windowMeanPermille/10).toFixed(1)+"%":"—",
+          sampled:r.sampledOnly===true
+        })):[];
+
+    const rate=finite(live.rate);
+    const ms=samples=>integer(samples)!==null&&rate>0?
+      (1000*samples/rate).toFixed(2)+" ms":null;
+    const latency=live.nativeLatencyPlanValid===true?Object.freeze({
+      main:ms(live.nativeLatencyPlanAlignedSamples),
+      monitor:live.nativeLatencyPlanHasMonitor===true?
+        ms(live.nativeLatencyPlanMonitorOutputSamples):null,
+      policy:live.nativeLatencyPlanMonitorPolicy==="INDEPENDENT_MONITOR"?
+        "Independent singer monitor":"Globally aligned",
+      largest:ms(live.nativeMaxInsertLatencySamples),
+      largestName:typeof live.nativeMaxInsertLatencyName==="string"?
+        live.nativeMaxInsertLatencyName.slice(0,90):"",
+      provenance:"DECLARED_FX_GRAPH_SAMPLES_NOT_DRIVER_OR_ACOUSTIC_ROUNDTRIP"
+    }):null;
+    const recommendations=[];
+    let state=armed?"COLLECTING":"MUTED";
+    if(!armed)recommendations.push("Outputs disarmed. Inspect routing before enabling monitoring.");
+    else if(!enough)recommendations.push("Collect at least 64 render callbacks within one uninterrupted nominal 1-second interval.");
+    else if(over>0)recommendations.push("Render deadline exceeded in "+over+
+      "/"+callbacks+" measured blocks. Review FX workload before any operator-approved change.");
+    else if(ceiling===null||ceiling>=85)
+      recommendations.push("Limited measured render headroom. Review FX workload and device scheduling.");
+    else recommendations.push("No over-budget render in this observed interval; continue monitoring.");
+
+    if(enough&&correlation?.withinLate>0)
+      recommendations.push("Late callback starts also followed in-budget processing; investigate driver / OS scheduling (not a confirmed cause).");
+    else if(enough&&correlation?.overLate>0)
+      recommendations.push("Some late starts followed an over-budget render; investigate DSP pressure (not a confirmed xrun).");
+    if(integer(live.nativeLatentBypassRequestedCount)>0)
+      recommendations.push("Bypassing latent FX retains PDC. To remove latency, save then deactivate explicitly while outputs are disarmed.");
+    else if(latency?.largest&&latency.largestName)
+      recommendations.push("Largest declared insert latency: "+latency.largestName+
+        " ("+latency.largest+"); only a disarmed graph edit can remove its PDC.");
+    if(fxPeak&&enough&&peakRatio>=700)
+      recommendations.push("Inspect "+fxPeak.name+"; peak workload is historical"+
+        (fxPeak.sampled?" and sampled":"")+", not proof of present crackle.");
+    if(armed&&enough)state=over>0||ceiling===null?"PRESSURE":
+      ceiling>=85?"TIGHT":"OBSERVED_MARGIN";
+    return Object.freeze({state,reason:armed?"Native render evidence":"Outputs disarmed",
+      headroom,callbacks,over,latency,fxPeak,reviews,correlation,
+      recommendations:recommendations.slice(0,5),cursor});
+  }
+
+  return Object.freeze({smartPerformanceView,footerHealthFromLive,decimal,cmp,normalizeSnapshot,
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
-    logicalReadbackProves,diagnoseFirstSound,createController,
+    logicalReadbackProves,firstSoundPlan,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview});
+    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,mainMonitorPreference,secondaryOutputView,secondaryOutputRow,secondaryOutputSettlement,monitorTimingView});
 });

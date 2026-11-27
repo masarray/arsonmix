@@ -1,0 +1,45 @@
+name: P0 ImmerSIB focused MSVC active DSP qualification
+# No JUCE, mixer build, installer, or release. Same exact source A/B.
+on:
+  push:
+    branches:
+      - perf/immersib-p0-active-fir-20261124
+    paths:
+      - tools/immersib_p0_active_fir_gate.py
+      - tools/immersib_p102_cpu_profile.cpp
+      - .github/workflows/immersib-p0-active-msvc.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: immersib-p0-active-msvc
+  cancel-in-progress: true
+jobs:
+  active-dsp-msvc:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify 29 untouched DSP files and one exact optimized source pin
+        shell: pwsh
+        run: |
+          python scripts/verify_immersib_approved_pcm_sources.py
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_SOURCE_LOCK_REJECTED' }
+          python -m unittest scripts/tests/test_immersib_approved_pcm_sources.py
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_SOURCE_LOCK_NEGATIVE_TESTS_FAILED' }
+      - name: MSVC three-way PCM and paired active multi-instance A/B
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw 'MSVC_VSWHERE_MISSING' }
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path -LiteralPath $vcvars)) { throw 'MSVC_VCVARS_MISSING' }
+          $cmdline = 'call "' + $vcvars + '" >nul && python tools/immersib_p0_active_fir_gate.py --msvc'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'IMMERSIB_P0_MSVC_ACTIVE_GATE_FAILED' }

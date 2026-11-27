@@ -2,6 +2,7 @@
 """M3 operator console: geometry, overlays, FX, clip and multi-wire browser contract."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config
 
 ROOT=Path(__file__).resolve().parents[1]
 HTML=ROOT/"site/preview-v2/index.html"
@@ -50,7 +51,7 @@ def interactions(page):
     assert abs(title.bounding_box()["height"]-27)<=2,("V50 status title height",page.viewport_size)
     assert page.locator("#mixerTitleToggle").count()==0
     config_button=page.locator("#wireConfigToggle")
-    config_button.click()
+    open_wire_config(page)
     config=page.locator("#wireConfigWindow")
     assert config.is_visible() and config_button.get_attribute("aria-expanded")=="true"
     assert config.locator("#wireMode").count()==1
@@ -62,14 +63,14 @@ def interactions(page):
     assert config.is_hidden() and config_button.get_attribute("aria-expanded")=="false"
 
     menu=page.locator("#moreTools")
-    menu.locator("summary").click()
+    menu.locator(":scope > summary").click()
     assert menu.evaluate("e=>e.open")
     page.locator(".mixer-title .panel-name").click()
     assert not menu.evaluate("e=>e.open")
-    menu.locator("summary").click()
+    menu.locator(":scope > summary").click()
     page.keyboard.press("Escape")
     assert not menu.evaluate("e=>e.open")
-    menu.locator("summary").click()
+    menu.locator(":scope > summary").click()
     page.locator("#densitySelect").focus()
     assert not menu.evaluate("e=>e.open")
 
@@ -87,7 +88,7 @@ def interactions(page):
     fader.evaluate("""e => {e.value='10';e.dispatchEvent(new Event('input',{bubbles:true}));
                          e.dispatchEvent(new Event('change',{bubbles:true}));}""")
     if not page.evaluate("window.ArSonMixMeterCalibration.readDemo().running"):
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary").click()
         page.locator("#preview").click()
     peak=page.locator('#tracks .strip[data-id="1"] .peak')
     page.wait_for_function("""() => document.querySelector(
@@ -95,7 +96,7 @@ def interactions(page):
       timeout=10000)
     assert 'clipping' in peak.get_attribute("class")
     if not page.locator("#moreTools").evaluate("e=>e.open"):
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary").click()
     page.locator("#preview").click()  # stop re-latching before reset
     page.locator('#tracks .strip[data-id="1"] button[data-action="resetClip"]').click()
     assert 'clipping' not in page.locator('#tracks .strip[data-id="1"] .peak').get_attribute("class")

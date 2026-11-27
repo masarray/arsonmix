@@ -141,7 +141,28 @@ public:
         } else if(operation=="CREATE_GROUP") {
             const auto name=text.isNotEmpty()?text.toStdString():
                 ("Bus "+std::to_string(editor_.roster().size()));
-            result=editor_.createBus(expected,name,Role::group);
+            const auto rawSelection=payload.getProperty("selection",{});
+            const auto connectMain=payload.getProperty("connectMain",juce::var(true));
+            if(!connectMain.isBool())return bad("INVALID_GROUP_OUTPUT");
+            const auto purpose=payload.getProperty("purpose","").toString();
+            if(purpose=="FX"){
+                if(!rawSelection.isVoid()||!static_cast<bool>(connectMain))return bad("INVALID_FX_RETURN_REQUEST");
+                result=editor_.createReverbReturn(expected,name);
+            } else if(rawSelection.isVoid())result=editor_.createBus(expected,name,Role::group,static_cast<bool>(connectMain));
+            else {
+                const auto* ids=rawSelection.getArray();
+                if(!static_cast<bool>(connectMain)||!ids||ids->isEmpty()||static_cast<std::size_t>(ids->size())>editor_.roster().size())
+                    return bad("INVALID_GROUP_SELECTION");
+                std::vector<ChannelId> selected;
+                for(const auto& raw:*ids){
+                    std::uint64_t id=0;
+                    if(!armix::session::parseDecimal(raw,id)||!id||
+                       std::find(selected.begin(),selected.end(),ChannelId{id})!=selected.end())
+                        return bad("INVALID_GROUP_SELECTION");
+                    selected.push_back({id});
+                }
+                result=editor_.createGroupForSelected(expected,std::span<const ChannelId>{selected},name);
+            }
         } else if(operation=="REMOVE_BUS") {
             result=editor_.removeBus(expected,id);
         } else if(operation=="DELETE_CHANNEL") {
@@ -173,6 +194,16 @@ public:
             edit.kind=ChannelEdit::Kind::setInputGain;
             edit.value=static_cast<float>(std::pow(10.,n/20.));
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_WIRE_SUM_GAIN") {
+            if(!(number.isDouble() || number.isInt() || number.isInt64()))
+                return bad("INVALID_WIRE_SUM_GAIN");
+            const auto n=static_cast<double>(number);
+            const auto* owner=editor_.roster().find(id);
+            if(!owner || (owner->role!=Role::input && owner->role!=Role::group && owner->role!=Role::fxReturn) || !std::isfinite(n) ||
+               n< -60. || n>6.)return bad("INVALID_WIRE_SUM_GAIN");
+            edit.kind=ChannelEdit::Kind::setWireSumGain;
+            edit.value=static_cast<float>(n<=-60.?0.:std::pow(10.,n/20.));
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FADER" || operation=="SET_PAN") {
             if(!(number.isDouble() || number.isInt() || number.isInt64()))
                 return bad("INVALID_CONTROL_VALUE");
@@ -187,6 +218,17 @@ public:
                 edit.kind=ChannelEdit::Kind::setPan;
                 edit.value=static_cast<float>(n);
             }
+            result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
+        } else if(operation=="SET_WIRE_GAIN") {
+            std::uint64_t edgeId=0;
+            const auto gain=payload.getProperty("gainLinear",{});
+            if(!armix::session::parseDecimal(payload.getProperty("edgeId",{}),edgeId)||!edgeId||
+               !(gain.isDouble()||gain.isInt()))return bad("INVALID_SEND_GAIN");
+            const auto linear=static_cast<double>(gain);
+            if(!std::isfinite(linear)||linear<0.||linear>2.)return bad("INVALID_SEND_GAIN");
+            edit.kind=ChannelEdit::Kind::setSendGain;
+            edit.sendEdgeId=edgeId;
+            edit.value=static_cast<float>(linear);
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_SEND_TAP") {
             const auto raw=payload.getProperty("edgeId",{});
@@ -223,8 +265,13 @@ public:
             if(!v.isInt() || !row || static_cast<int>(v)<0 ||
                static_cast<std::size_t>(static_cast<int>(v))>=row->insertCatalogIds.size())
                 return bad("INVALID_LOGICAL_FX_SLOT");
+            const auto index=static_cast<std::size_t>(static_cast<int>(v));
+            if(armix::mixer::isWetReturnCatalog(row->insertCatalogIds[index])&&
+               std::count_if(row->insertCatalogIds.begin(),row->insertCatalogIds.end(),
+                             armix::mixer::isWetReturnCatalog)==1)
+                return bad("FX_RETURN_REQUIRES_WET_PROCESSOR");
             edit.kind=ChannelEdit::Kind::removeInsertReference;
-            edit.position=static_cast<std::size_t>(static_cast<int>(v));
+            edit.position=index;
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
         } else if(operation=="SET_FX_SLOT_BYPASS") {
             const auto* row=editor_.roster().find(id);
@@ -249,6 +296,10 @@ public:
             if(catalog.isEmpty() || catalog.getNumBytesAsUTF8()>256 ||
                catalog.containsChar('\n') || catalog.containsChar('\r'))
                 return bad("INVALID_OFFLINE_FX_CATALOG");
+            const auto* row=editor_.roster().find(id);
+            if(armix::mixer::isWetReturnCatalog(catalog.toStdString())&&
+               (!row||row->role!=ChannelRole::fxReturn))
+                return bad("WET_RETURN_REQUIRES_FX_RETURN_CHANNEL");
             edit.kind=ChannelEdit::Kind::addInsertReference;
             edit.text=catalog.toStdString();
             result=editor_.edit(expected,std::span<const ChannelEdit>{&edit,1});
@@ -297,6 +348,11 @@ public:
                     if(!(gain.isDouble()||gain.isInt()))
                         return bad("INVALID_SEND_GAIN");
                     wire.gain=static_cast<float>(static_cast<double>(gain));
+                    if(type=="CONNECT"&&change.getDynamicObject()->hasProperty("tap")) {
+                        const auto tap=change.getProperty("tap","").toString();
+                        if(tap!="PRE_FADER"&&tap!="POST_FADER")return bad("INVALID_SEND_TAP_STAGE");
+                        wire.preFader=tap=="PRE_FADER";
+                    }
                 }
                 result=editor_.wire(expected,std::span<const WireChange>{&wire,1});
             }
@@ -345,6 +401,9 @@ public:
         if(operation=="DELETE_CHANNEL" || operation=="REMOVE_BUS") {
             std::erase_if(document_.request.sources,
                 [&](const auto& source){return source.id==id;});
+            (void)document_.logicalInputs.assign(id.value,0);
+            (void)document_.logicalOutputs.clear(id.value);
+            std::erase_if(document_.externalOutputs,[&](const auto& patch){return patch.channel==id;});
             std::erase_if(document_.waitingAsioInputs,
                 [&](const auto& source){return source.id==id;});
             document_.inserts.erase(std::remove_if(
@@ -378,9 +437,9 @@ public:
         set(cap,"callbackOwnsChannelIds",false);
         juce::Array<juce::var> operations;
         for(const char* op:{"CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
-            "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_INPUT_GAIN","SET_PAN","SET_MUTE",
+            "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_INPUT_GAIN","SET_WIRE_SUM_GAIN","SET_PAN","SET_MUTE",
             "SET_SOLO","SET_PROCESSING_FORMAT","WIRE_TRANSACTION",
-            "SET_SEND_ENABLED","SET_SEND_TAP",
+            "SET_SEND_ENABLED","SET_SEND_TAP","SET_WIRE_GAIN",
             "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
             "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"})operations.add(juce::String(op));
         set(cap,"supportedOps",juce::var(operations));
@@ -400,6 +459,8 @@ public:
                 "STEREO":"MONO");
             if(row.role==Role::input)set(controls,"inputGainDb",row.inputGainLinear>0.f?
                 20.*std::log10(static_cast<double>(row.inputGainLinear)):-144.);
+            if(!(row.role!=Role::input && row.role!=Role::group && row.role!=Role::fxReturn))set(controls,"wireSumGainDb",row.wireSumGainLinear>0.f?
+                std::max(-60.,20.*std::log10(static_cast<double>(row.wireSumGainLinear))):-60.);
             set(controls,"faderDb",row.faderLinear>0.f?
                 std::max(-60.,20.*std::log10(static_cast<double>(row.faderLinear))):-60.);
             set(controls,"pan",static_cast<double>(row.pan));
@@ -422,6 +483,7 @@ public:
                 const auto label=id=="armix.builtin.arson-harmony.v1"?"Harmonice":
                     stored!=document_.inserts.end() && stored->name.isNotEmpty()?stored->name:
                     id=="armix.builtin.channel-compressor.v1"?"Compressor":
+                    id=="armix.builtin.auto-ducker.v1"?"Auto Ducker":
                     id=="armix.builtin.channel-eq.v1"?"Parametric EQ":id;
                 set(fx,"name",label);
                 set(fx,"bypassed",(stored!=document_.inserts.end() && stored->bypass) ||

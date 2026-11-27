@@ -398,7 +398,28 @@ def main():
                 old_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
                 ratio_arc=ratio_dial.locator(".mx-comp-arc-progress")
                 old_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
-                ratio.press("ArrowRight")
+                page.bring_to_front()
+                ratio.hover()
+                box=ratio.bounding_box()
+                assert box and box["width"]>0 and box["height"]>0
+                x,y=box["x"]+box["width"]/2,box["y"]+box["height"]/2
+                assert page.evaluate("""p=>document.elementFromPoint(p.x,p.y)?.closest('.mx-comp-control')?.dataset.key""",{"x":x,"y":y})=="ratio"
+                page.evaluate("""()=>{window.__compWheelProbe=[];
+                    document.addEventListener('wheel',e=>window.__compWheelProbe.push({
+                       x:e.deltaX,y:e.deltaY,shift:e.shiftKey,target:e.target.className}),true);
+                }""")
+                cdp=page.context.new_cdp_session(page)
+                try:
+                    cdp.send("Input.dispatchMouseEvent",{"type":"mouseMoved","x":x,"y":y})
+                    cdp.send("Input.dispatchMouseEvent",{"type":"mouseWheel","x":x,"y":y,
+                        "deltaX":0,"deltaY":-120,"modifiers":8})
+                    page.wait_for_function("""()=>window.__actions.some(a=>a.action==='nativeCompSet' && Math.abs(a.settings.ratio-3.1)<.0001)""",timeout=3000)
+                except Exception as exc:
+                    raise AssertionError(("Compressor Shift wheel",page.evaluate("()=>window.__compWheelProbe"),
+                        page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeCompSet').slice(-3)"))) from exc
+                finally:
+                    cdp.detach()
+                assert page.evaluate("()=>window.__compWheelProbe.some(e=>e.shift)"),"trusted Shift wheel never reached control"
                 new_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
                 new_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
                 assert ratio_body.evaluate("el=>getComputedStyle(el).transform")==old_body=="none",\

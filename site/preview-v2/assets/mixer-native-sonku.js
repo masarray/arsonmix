@@ -219,13 +219,11 @@ root.innerHTML=[
 
  '</div><aside class="sk-controls">',
  '<button type="button" id="skUpgrade" class="sk-upgrade" hidden title="Switch the saved legacy sound to the current engine. Audio will change only after native acceptance.">Use current spatial sound</button>',
- '<label class="sk-space-slider sk-yaw" id="skYawRow" for="skHeadYaw" hidden>HEAD YAW <output id="skYawValue">0°</output>',
- '<input id="skHeadYaw" type="range" min="-180" max="180" step="5" value="0"/></label>',
  '<div class="sk-buttons"><button type="button" id="skMotion">ORBIT</button><button type="button" id="skDirection">CLOCKWISE</button></div>',
  '<div class="sk-rotary-grid">',
  '<label class="sk-rotary"><span class="sk-param-name">REVOLUTION</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpeed" type="range" min="0.5" max="30" step="0.1" value="12" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpeedValue">12.0 s</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">SPREAD</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skSpread" type="range" min="0" max="180" step="1" value="60" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skSpreadValue">60°</output></label>',
- '<label class="sk-rotary"><span class="sk-param-name">SPATIAL MIX</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skMix" type="range" min="0" max="100" step="1" value="100" title="Drag up/down, arrow keys or double-click to reset"/></span><output id="skMixValue">100%</output></label>',
+ '<label class="sk-rotary"><span class="sk-param-name">HEAD YAW</span><span class="sk-dial sk-dial-bipolar"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skHeadYaw" type="range" min="-180" max="180" step="1" value="0" title="Turn listener left/right; double-click to center" aria-label="Head yaw"/></span><output id="skYawValue">0°</output></label>',
  '<label class="sk-rotary"><span class="sk-param-name">OUTPUT GAIN</span><span class="sk-dial"><span class="sk-dial-track"></span><span class="sk-dial-cap"><span class="sk-dial-needle"></span></span><input id="skTrim" type="range" min="-24" max="12" step="0.5" value="-2.5" title="Gain in dB (-24 to +12). Double-click for unity 0 dB."/></span><output id="skTrimValue">-2.5 dB</output></label>',
  '</div><div class="sk-space-panel" aria-label="Room simulation controls">',
  '<div class="sk-space-head"><span>SPACE</span><output id="skSpaceText">DIRECT ONLY</output></div>',
@@ -283,7 +281,7 @@ function syncPower(){
  const n=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=n?.graph?.channels?.find(x=>x.id===id);
  const insert=lane?.inserts?.[current.slot];
- const globalOff=document.querySelector(".console-body")?.classList.contains("global-fx-bypassed")===true;
+ const globalOff=n?.raw?.globalFxBypassed===true;
  const state=!native()?
   (current.track?.slotBypass?.[current.slot]?"off":"on"):
   (!lane||typeof lane.fxRackBypassed!=="boolean"||
@@ -326,8 +324,9 @@ function render(){
  // Never replay it or let another control write race it. Keep Close/Power
  // reachable so the user can recover an unavailable device.
  const recovering=Boolean(pending?.timedOut);
- root.querySelector(".sk-stage").inert=recovering;
- root.querySelector(".sk-controls").inert=recovering;
+ const transportPending=Boolean(pending?.holdOrbitPhase);
+ root.querySelector(".sk-stage").inert=recovering||transportPending;
+ root.querySelector(".sk-controls").inert=recovering||transportPending;
  root.dataset.recovering=String(recovering);
  // Header identity is always authoritative, including v2 native, reconnect
  // and logical sessions. A missing capability must never unlock presets.
@@ -346,11 +345,12 @@ function render(){
  // on a capable host. Never silently change saved audio or expose test menus.
  $("skUpgrade").hidden=!(p90Capable&&s.renderMode!==9);
  $("skUpgrade").disabled=Boolean(pending)||!context();
- $("skYawRow").hidden=!(p83Capable||p84Capable||p90Capable);
- if(!$("skYawRow").hidden){
-  $("skHeadYaw").value=String(s.headYawDegrees);
-  $("skYawValue").textContent=Math.round(s.headYawDegrees)+"°";
- }
+ // Mode 0 has no world/head transform.
+ $("skHeadYaw").disabled=native() && (!(p83Capable||p84Capable||p90Capable)||s.renderMode===0);
+ $("skHeadYaw").title=$("skHeadYaw").disabled?
+  "Head yaw requires the current spatial renderer":"Turn listener left/right; double-click to center";
+ const rawYaw=s.headYawDegrees??0;
+ const yaw=rawYaw>=-180&&rawYaw<=180?rawYaw:((rawYaw+540)%360)-180;
  speakerNodes[1].style.display=p83Capable&&s.renderMode===1?"none":"";
  $("skMotion").textContent=s.moving?"ORBIT":"STATIC";
  $("skMotion").setAttribute("aria-pressed",String(s.moving));
@@ -358,15 +358,22 @@ function render(){
  $("skDirection").setAttribute("aria-pressed",String(s.clockwise));
  const vals=[["skSpeed",s.revolutionSeconds,"skSpeedValue",s.revolutionSeconds.toFixed(1)+" s"],
   ["skSpread",s.stereoSpreadDegrees,"skSpreadValue",Math.round(s.stereoSpreadDegrees)+"°"],
-  ["skMix",s.spatialMix*100,"skMixValue",Math.round(s.spatialMix*100)+"%"],
+  ["skHeadYaw",yaw,"skYawValue",Math.round(yaw)+"°"],
   ["skTrim",toDb(s.outputTrim),"skTrimValue",dbLabel(toDb(s.outputTrim))]];
  for(const [input,value,out,label] of vals){
   const el=$(input);el.value=String(value);$(out).textContent=label;
   const min=Number(el.min),max=Number(el.max);
   const p=Math.max(0,Math.min(1,(value-min)/(max-min)));
   const dial=el.closest(".sk-dial");
-  dial.style.setProperty("--sk-sweep",(p*270).toFixed(2)+"deg");
-  dial.style.setProperty("--sk-needle",(-135+p*270).toFixed(2)+"deg");
+  const sweep=p*270;
+  dial.style.setProperty("--sk-sweep",sweep.toFixed(2)+"deg");
+  dial.style.setProperty("--sk-needle",(sweep-135).toFixed(2)+"deg");
+  // Same angular coordinate for both pointer and bipolar arc. Zero is
+  // twelve o'clock, not the counter-clockwise end of a unipolar knob.
+  if(input==="skHeadYaw"){
+   dial.style.setProperty("--sk-arc-start",Math.min(135,sweep).toFixed(2)+"deg");
+   dial.style.setProperty("--sk-arc-end",Math.max(135,sweep).toFixed(2)+"deg");
+  }
  }
  // ROOM is one typed native scene, never a browser audio simulator.
  root.querySelectorAll("[data-sk-room]").forEach(el=>{
@@ -594,11 +601,17 @@ const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
  (!(p83Capable||p84Capable) || (a.renderMode===b.renderMode &&
    a.musicCompatibleLowFrequency===b.musicCompatibleLowFrequency &&
    a.headYawDegrees===b.headYawDegrees));
-function send(next,continuous=false){
- if(pending?.timedOut){render();return false;}
+function send(next,continuous=false,holdOrbitPhase=false){
+ next={...next,spatialMix:1};
+ if(pending?.timedOut||pending?.holdOrbitPhase||
+    (holdOrbitPhase&&(pending||liveTimer!==null||latest||drag||dialDrag||rangeEdits.size))){render();return false;}
  if(!valid(next))return false;
- draft={...next};
- if(!native()){accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");render();return true;}
+ if(!native()){
+  if(holdOrbitPhase){next.startAzimuthDegrees=angle(draft.moving?visualPhase:draft.startAzimuthDegrees);visualPhase=next.startAzimuthDegrees;}
+  draft={...next};accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");render();return true;
+ }
+ // Motion stays unchanged on screen until native phase is accepted.
+ if(!holdOrbitPhase)draft={...next};
  const c=context();
  if(!c){draft={...accepted};hint("NATIVE INSERT NOT ACCEPTED");render();return false;}
  if(pending){
@@ -608,20 +621,21 @@ function send(next,continuous=false){
  }
  if(sameSettings(next,accepted)){render();return true;}
  const id="sonku-"+String(Date.now()*1000+(++seq%1000));
- pending={requestId:id,settings:{...next},context:c,ack:false,sentAt:performance.now(),timedOut:false};
+ pending={requestId:id,settings:{...next},context:c,ack:false,sentAt:performance.now(),timedOut:false,holdOrbitPhase};
  hint(continuous?"DSP LIVE · AWAITING AUDIO ACK":"DSP QUEUED · AWAITING AUDIO ACK");
  // Render after recording pending so preset controls cannot appear
  // unlocked while a transaction is already in flight. Before emit also
  // prevents a synchronous native readback from being painted as pending.
  render();
- backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next});
+ backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next,...(holdOrbitPhase?{holdOrbitPhase:true}:{})});
  return true;
 }
 function cancelLiveTimer(){
  if(liveTimer!==null){clearTimeout(liveTimer);liveTimer=null;}
 }
 function liveInput(next){
- if(pending?.timedOut){render();return false;}
+ next={...next,spatialMix:1};
+ if(pending?.timedOut||pending?.holdOrbitPhase){render();return false;}
  if(!valid(next))return false;
  const now=performance.now(),wait=LIVE_INTERVAL_MS-(now-lastLiveAt);
  if(wait<=0){
@@ -697,9 +711,10 @@ function acceptSettingsReadback(incoming,appliedRequestId,c){
      String(sent.deviceEpoch)!==String(c.deviceEpoch)||
      String(sent.graphRevision)!==String(c.graphRevision)||
      sent.workspaceToken!==c.workspaceToken)return false;
-  const recovered=pending.timedOut;
+  const recovered=pending.timedOut,transport=pending.holdOrbitPhase;
   accepted={...incoming};pending=null;
-  if(recovered||!ownsDraft)draft={...incoming};
+  if(recovered||transport||!ownsDraft)draft={...incoming};
+  if(transport){visualPhase=angle(incoming.startAzimuthDegrees);observedAt=0;visualAt=0;}
   hint("DSP APPLIED · ACCEPTED");
   if(!recovered)flushLatest();
  }else{
@@ -859,11 +874,7 @@ $("skUpgrade").addEventListener("click",()=>{
    outputTrim:1,spacePreset:3,sourceDistanceMeters:1.6,roomAmount:.78,ambience:.33});
  if(!send(scene))render();
 });
-$("skHeadYaw").addEventListener("change",()=>{
- if(!(p83Capable||p84Capable||p90Capable))return;
- if(!send({...draft,headYawDegrees:Number($("skHeadYaw").value)}))render();
-});
-$("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
+$("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving},false,true));
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
 root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click",()=>{
  const preset=Number(btn.dataset.skRoom),max=roomMaxDistance[preset];
@@ -912,24 +923,25 @@ for(const [id,key,convert] of [
 for(const [id,key,convert] of [
  ["skSpeed","revolutionSeconds",v=>v],
  ["skSpread","stereoSpreadDegrees",v=>v],
- ["skMix","spatialMix",v=>v/100],
+ ["skHeadYaw","headYawDegrees",v=>v],
  ["skTrim","outputTrim",v=>fromDb(v)]]) {
  const input=$(id);
- input.addEventListener("input",()=>{const v=Number(input.value);
+ input.addEventListener("input",()=>{if(input.disabled)return;const v=Number(input.value);
   if(Number.isFinite(v))liveInput({...draft,[key]:convert(v)});
  });
  input.addEventListener("change",()=>{
+  if(input.disabled)return;
   const value=Number(input.value);
   if(Number.isFinite(value))commitInput({...draft,[key]:convert(value)});
  });
 }
 // Tactile dials use the SAME bounded live gesture publisher as acoustic
 // sliders. Keyboard, mouse and touch all have one native PCM authority.
-for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim",0]]){
+for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skHeadYaw",0],["skTrim",0]]){
  const input=$(id),dial=input.closest(".sk-dial");
  const min=Number(input.min),max=Number(input.max),step=Number(input.step)||1;
  dial.addEventListener("pointerdown",e=>{
-  if(e.button!==0)return;
+  if(e.button!==0||input.disabled)return;
   e.preventDefault();input.focus({preventScroll:true});
   dialDrag={id,pointer:e.pointerId,startY:e.clientY,origin:Number(input.value),moved:false};
   dial.setPointerCapture(e.pointerId);
@@ -939,7 +951,7 @@ for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim
   const delta=dialDrag.startY-e.clientY;
   if(Math.abs(delta)>2)dialDrag.moved=true;
   if(!dialDrag.moved)return;
-  const raw=dialDrag.origin+delta*(max-min)/135;
+  const raw=dialDrag.origin+delta*(max-min)/135*(e.shiftKey?.1:1);
   const bounded=Math.min(max,Math.max(min,raw));
   const next=Math.min(max,Math.max(min,min+Math.round((bounded-min)/step)*step));
   if(Number(input.value)!==next){input.value=String(next);input.dispatchEvent(new Event("input",{bubbles:true}));}
@@ -959,11 +971,14 @@ for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim
   input.dispatchEvent(new Event("change",{bubbles:true}));
  });
  dial.addEventListener("dblclick",e=>{
+  if(input.disabled)return;
   e.preventDefault();input.value=String(initial);
   input.dispatchEvent(new Event("input",{bubbles:true}));
   input.dispatchEvent(new Event("change",{bubbles:true}));
  });
 }
+for(const input of root.querySelectorAll('input[type="range"]'))
+ window.ArMixFxGesture.bindRange(input,{target:input.closest(".sk-dial")||input,enabled:()=>!!current&&(!native()||!!context())});
 const map=$("skMap");
 function toAzimuth(e) {
  // SVG user-space is authoritative despite CSS borders/DPI/letterboxing.

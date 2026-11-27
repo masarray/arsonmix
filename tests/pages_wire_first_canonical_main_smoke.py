@@ -2,6 +2,7 @@
 """WIRE-first A: native-execution NOT claimed. Real Chromium control-plane integration."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config, toggle_wire_routes
 
 import subprocess,sys,tempfile
 from approved_publication_fixture import published_console
@@ -18,7 +19,7 @@ def edge(page, channel, endpoint):
 def main_button(page, channel):
     # Selection establishes the MAIN context; an armed OUT is not required.
     page.locator(f'#tracks .strip[data-id="{channel}"] .strip-identity-top').click()
-    page.locator("#wireConfigToggle").click()
+    open_wire_config(page)
     control=page.locator("#wireMaster")
     assert control.is_enabled(), ("MAIN button disabled",channel)
     return control
@@ -33,7 +34,7 @@ def click_main(page, control):
     """
     setup=page.locator("#wireConfigWindow")
     if setup.is_hidden():
-        page.locator("#wireConfigToggle").click()
+        open_wire_config(page)
     assert setup.is_visible(), "Wire Setup failed to reopen after mixer interaction"
     assert control.is_visible() and control.is_enabled(), "MAIN control not operable"
     control.click()
@@ -82,9 +83,9 @@ def physical_main_plug(page):
     drag_to(blank)
     assert source.get_attribute("data-wire-main-edge") is None,"MAIN plug drag failed to unplug CH5"
     assert page.locator('#tracks .strip[data-id="6"] .wire-node-out').get_attribute("data-wire-main-edge"),"MAIN drag disconnected neighbor"
-    page.locator("#wireNavigatorToggle").click()
+    toggle_wire_routes(page)
     page.locator("#wireWsUndo").click()
-    page.locator("#wireNavigatorToggle").click()
+    toggle_wire_routes(page)
     assert source.get_attribute("data-wire-main-edge")==original,"Undo did not restore same MAIN edge"
     # Direct MAIN->CH3 replug preserves the edgeId and updates receiving socket.
     dest=page.locator('#tracks .strip[data-id="3"] .wire-node-in').bounding_box()
@@ -94,7 +95,7 @@ def physical_main_plug(page):
     recv=page.locator('#tracks .strip[data-id="3"] .wire-gain')
     assert recv.count()==1,"Retargeted exact MAIN edge not reflected at receiving jack"
     assert recv.get_attribute("data-wire-id")==original,"Replug lost stable edge identity"
-    page.locator("#wireNavigatorToggle").click()
+    toggle_wire_routes(page)
     page.locator("#wireWsUndo").click()
     assert source.get_attribute("data-wire-main-edge")==original,"Retarget Undo did not restore MAIN"
 
@@ -192,10 +193,10 @@ def run():
             assert edge(page,5,"out") is None,(width,"MAIN disconnect not real")
             assert edge(page,6,"out"),(width,"neighbor MAIN edge removed")
             assert page.locator('#master .wire-node-in').get_attribute("data-wire-main-edge") is None
-            page.locator("#wireNavigatorToggle").click()
+            toggle_wire_routes(page)
             page.locator("#wireWsUndo").click()
             assert edge(page,5,"out")==initial,(width,"Undo changed identity")
-            page.locator("#wireNavigatorToggle").click()
+            toggle_wire_routes(page)
             # Navigator closes Wire Setup automatically; no hidden close click.
             # The accepted WIRE to another channel must preserve the MAIN route.
             if "collapsed-send" in (page.locator(".console-body").get_attribute("class") or ""):
@@ -243,10 +244,10 @@ def run():
                     "master-highlight",page.locator('#master .wire-node-in').get_attribute("class"),
                     "event-probe",page.evaluate("window.__wirePointerProbe"))
                 assert edge(page,6,"out"),"MAIN drag unplugged other source"
-                page.locator("#wireNavigatorToggle").click()
+                toggle_wire_routes(page)
                 page.locator("#wireWsUndo").click()
                 assert edge(page,5,"out")==initial,"MAIN pointer undo changed edge identity"
-                page.locator("#wireNavigatorToggle").click()
+                toggle_wire_routes(page)
                 page.screenshot(path=str(ROOT/"pages-wire-main-1680.png"))
             page.locator('#tracks .strip[data-id="5"] .wire-node-out').click()
             page.locator('#tracks .strip[data-id="3"] .wire-node-in').click()
@@ -280,9 +281,9 @@ def run():
         click_main(page, control)
         page.locator("#saveScene").click()
         click_main(page, control)
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary").click()
         page.locator("#sceneSafe").click()
-        page.locator("#moreTools summary").click()
+        page.locator("#moreTools > summary").click()
         page.locator("#sceneSelect").select_option("1")
         page.locator("#recallScene").click()
         assert edge(page,5,"out") is None,"Snapshot SAFE overwrote live MAIN route"

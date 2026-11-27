@@ -1,0 +1,69 @@
+name: FX specialist change scope
+# Not a product gate. A long-lived PR's cumulative path filter is only
+# a coarse trigger; on synchronize inspect the entire actual push delta.
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: Newline-separated FX-owned Git glob pathspecs
+        required: true
+        type: string
+    outputs:
+      run:
+        description: Whether specialist tests are relevant to this update
+        value: ${{ jobs.detect.outputs.run }}
+permissions:
+  contents: read
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+        continue-on-error: true
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Classify actual update; unknown scope runs tests
+        id: scope
+        shell: bash
+        env:
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+          OWNED_PATHS: ${{ inputs.paths }}
+        run: |
+          set -euo pipefail
+          emit() { echo "run=$1" >> "$GITHUB_OUTPUT"; echo "$2"; }
+          if [[ "$ACTION" != synchronize ]]; then
+            emit true 'Initial or explicit qualification: run specialist tests'
+            exit 0
+          fi
+          if [[ ! "$BEFORE" =~ ^[0-9a-f]{40}$ || ! "$EXPECTED" =~ ^[0-9a-f]{40}$ ]] ||
+             [[ "$(git rev-parse HEAD 2>/dev/null || true)" != "$EXPECTED" ]]; then
+            emit true 'Unknown source delta: run specialist tests'
+            exit 0
+          fi
+          if ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BEFORE" || {
+              emit true 'Previous head unavailable: run specialist tests'
+              exit 0
+            }
+          fi
+          specs=()
+          while IFS= read -r path; do
+            [[ -n "$path" ]] && specs+=(":(glob)$path")
+          done <<< "$OWNED_PATHS"
+          if (( ${#specs[@]} == 0 )); then
+            emit true 'Empty scope: run specialist tests'
+            exit 0
+          fi
+          if git diff --quiet --no-ext-diff "$BEFORE" "$EXPECTED" -- "${specs[@]}"; then
+            emit false 'No FX-owned changes in this push; archived specialist lane skipped'
+          else
+            emit true 'FX-owned changes or uncertain diff: run specialist tests'
+          fi

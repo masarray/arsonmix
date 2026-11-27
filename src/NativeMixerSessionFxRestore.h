@@ -100,6 +100,9 @@ public:
                     std::unique_ptr<juce::AudioProcessor> processor;
                     if(const auto error=prepareProcessor(insert,&state,formats,
                             sampleRate,frames,processor);error.isNotEmpty())return error;
+                    if(auto* native=dynamic_cast<armix::mixer::RealtimeNativeFxControl*>(processor.get());
+                       native&&native->bypassToSilence()&&ch.role!=armix::mixer::ChannelRole::fxReturn)
+                        return "Saved wet-only processor requires FX Return channel";
                     const int latency=processor->getLatencySamples();
                     if(latency<0||
                        latency>armix::dsp::StereoLatencyDelay::maximumSamples)

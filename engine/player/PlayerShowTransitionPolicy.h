@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <utility>
 #include <vector>
+#include <set>
 
 // Show transport decisions only; deterministic and allocation-free on
 // inspection paths. Never owns JUCE, an audio device, or a DSP callback.
@@ -40,7 +41,48 @@ public:
 private:
     int revision_=1; // CONTROL only; never used on realtime callback
 };
+// Native control-thread activity, keyed by append-only catalogue identity.
+class PlayerSessionActivity final {
+public:
+    bool observe(int id,bool playing,bool ended) {
+        if(id<0){last_=-1;playing_=false;return false;}
+        bool changed=false;
+        if(playing && (last_!=id || !playing_)){
+            recent_.erase(std::remove(recent_.begin(),recent_.end(),id),recent_.end());
+            recent_.insert(recent_.begin(),id);
+            if(recent_.size()>256)recent_.pop_back();
+            done_.erase(id);changed=true;
+        }
+        if(ended && last_==id)changed=done_.insert(id).second||changed;
+        if(playing)last_=id;
+        playing_=playing;
+        return changed;
+    }
+    bool complete(int id){return id>=0&&last_==id&&done_.insert(id).second;}
+    void resetSet(){done_.clear();last_=-1;playing_=false;}
+    bool started(int id){playing_=false;return observe(id,true,false);}
+    void clear(){done_.clear();recent_.clear();}
+    const std::vector<int>& recent()const noexcept{return recent_;}
+    const std::set<int>& done()const noexcept{return done_;}
+private:
+    std::vector<int> recent_;
+    std::set<int> done_;
+    int last_=-1;
+    bool playing_=false;
+};
 struct PlayerShowTransitionPolicy final {
+    // -1 inherit, 0 stop, 1 continue. Repeat is explicit session intent.
+    static bool automatic(bool global,int perSong,int repeat) noexcept {
+        return perSong==0?false:perSong==1?true:global||repeat!=0;
+    }
+    static int automaticIndex(int current,int selected,int count,int queued,int repeat) noexcept {
+        if(count<=0)return -1;
+        if(queued>=0&&queued<count)return queued;
+        if(selected>=0&&selected<count&&selected!=current)return selected;
+        if(repeat==1&&current>=0&&current<count)return current;
+        const int next=nextIndex(current,selected,count,queued);
+        return next<0&&repeat==2?0:next;
+    }
     // Manual selection/explicit queue always wins over sequential Auto Next.
     // queuedIndex=-1 when there is no valid queued song.
     static int nextIndex(int current,int selected,int count,
@@ -74,6 +116,12 @@ struct PlayerShowTransitionPolicy final {
         const double early=(static_cast<double>(fadeMilliseconds)/1000.+
                             tickSeconds)*speed;
         return remaining<=early && remaining>=-tickSeconds*speed;
+    }
+    // An armed loop may recover a late control tick at EOF, never from pause/stop.
+    static bool loopDue(bool playing,bool ended,double seconds,double duration,
+                        int fadeMilliseconds,double tickSeconds,int tempoPercent) noexcept {
+        return ended || (playing && armBeforeEnd(seconds,duration,fadeMilliseconds,
+                                                  tickSeconds,tempoPercent));
     }
     // Loop A-B is a rehearsal-only opt-in. Never attempt microscopic
     // segments or a fade longer than the segment: require a real period of

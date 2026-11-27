@@ -70,6 +70,11 @@ Source: "ArSonMixWebView2Prerequisite.ps1"; DestDir: "{app}"; Flags: ignoreversi
 Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
 ; The updater runs outside JUCE, never in the realtime audio callback.
 Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; First-party updater uses the pinned, independently staged upstream verifier.
+Source: "{#SourceRoot}\UpdateVerifier\gh.exe"; DestDir: "{app}\UpdateVerifier"; Flags: ignoreversion
+Source: "{#SourceRoot}\UpdateVerifier\verifier.json"; DestDir: "{app}\UpdateVerifier"; Flags: ignoreversion
+Source: "{#SourceRoot}\UpdateVerifier\LICENSE.txt"; DestDir: "{app}\UpdateVerifier"; Flags: ignoreversion
+Source: "{#SourceRoot}\UpdateVerifier\THIRD-PARTY-LICENSES.txt"; DestDir: "{app}\UpdateVerifier"; Flags: ignoreversion
 Source: "ArSonMixStartupDiagnostics.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion
@@ -91,6 +96,11 @@ Name: "{autoprograms}\ArSonMix"; Filename: "{app}\ArSonMix.exe"; WorkingDir: "{a
 Name: "{autoprograms}\Repair ArSonMix"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixAutoUpdate.ps1"" -RecoveryMode"; WorkingDir: "{app}"
 Name: "{autoprograms}\Diagnose ArSonMix Startup"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\ArSonMixStartupDiagnostics.ps1"" -ShowReport"; WorkingDir: "{app}"
 Name: "{autoprograms}\Start ArSonMix with Recovery Profile"; Filename: "{app}\ArSonMix.exe"; Parameters: "--safe-webview-profile"; WorkingDir: "{app}"
+Name: "{autoprograms}\Archive ArSonMix Mixer Session"; Filename: "{app}\ArSonMix.exe"; Parameters: "--archive-mixer-session"; WorkingDir: "{app}"
+; VB-CABLE is optional. Its signed vendor setup requires an Administrator
+; approval and an explicit Install Driver click. Offer a discoverable action
+; instead of blocking installation or launching driver UI without consent.
+Name: "{autoprograms}\Install optional VB-CABLE (Administrator approval required)"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"""; WorkingDir: "{app}"
 ; Do not create a second copy of an already running mixer. Restart Manager
 ; preflight closes the prior verified app before [Files]; [Run] launches exactly
 ; one new executable only after a successful interactive install/update.
@@ -99,11 +109,9 @@ Name: "{autoprograms}\Start ArSonMix with Recovery Profile"; Filename: "{app}\Ar
 ; WebView2 is a real GUI prerequisite. Check/install only when missing;
 ; silent/enterprise/auto-update installs never fetch or alter OS components.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ArSonMixWebView2Prerequisite.ps1"""; WorkingDir: "{app}"; StatusMsg: "Checking Microsoft WebView2 for ArSonMix..."; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden
-; Interactive Setup automatically checks installed and pending VB-CABLE devices.
-; Only a missing driver can reach the verified vendor installer and Windows UAC.
-; The next entry opens ArSonMix even if the driver needs a restart or is declined.
-; Silent updates and enterprise installs retain their noninteractive behavior.
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\ThirdParty\VB-Audio\ArSonMixVBCableInstall.ps1"" -Archive ""{app}\ThirdParty\VB-Audio\VBCABLE_Driver_Pack45.zip"" -ExpectedSha256 ""{#VBCableSha256}"""; WorkingDir: "{app}"; StatusMsg: "Checking VB-Audio VB-CABLE for automatic audio setup..."; Flags: runasoriginaluser skipifsilent waituntilterminated runhidden
+; VB-CABLE is NOT required for the mixer to start. Do not auto-run the vendor
+; GUI from [Run] and do not wait for its Install Driver button or descendants.
+; The verified, explicit, optional Start Menu action above remains available.
 Filename: "{app}\ArSonMix.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser skipifsilent
 
 ; Never delete private Studio data on install/update/uninstall; never install

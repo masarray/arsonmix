@@ -2,6 +2,7 @@
 """Public ArSonMix V42: original OUT pin fill, drag follower and magnetic IN."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config
 PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
 WIRE_STYLE=PAGE.with_name("assets")/"mixer-wire-dots.css"
 assert 'assets/mixer-wire-dots.css?v=v59-selected-wire-quiet' in PAGE.read_text(encoding="utf-8")
@@ -25,7 +26,7 @@ def main():
    # source and the later idle-control channel to verify TRUE dark graphite.
    for channel in (5,6):
     p.locator(f'#tracks .strip[data-id="{channel}"] .strip-identity-top').click()
-    p.locator("#wireConfigToggle").click()
+    open_wire_config(p)
     assert p.locator("#wireMaster").get_attribute("aria-pressed")=="true"
     p.locator("#wireMaster").click()
     p.locator("#wireConfigClose").click()

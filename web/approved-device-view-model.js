@@ -33,20 +33,185 @@
     return d.inputEndpoints.filter(p=>p?.active===true &&
       Number.isInteger(p.port) && d.enabledInputs.includes(p.port));
   }
+  // Canonical single physical selection; never materialize all N*(N-1)
+  // stereo permutations. The custom editor and installed source projection
+  // both use this helper; actual native epoch and PCM authority stay separate.
+  function physicalInputChoice(snapshot,mode,left,right){
+    if(mode==="NONE"&&left===-1&&right===-1)return {label:"None",mode,left,right};
+    if(!Number.isInteger(left)||!Number.isInteger(right))return null;
+    const pins=activeInputPins(snapshot),a=pins.find(p=>p.port===left),
+      b=pins.find(p=>p.port===right);
+    if(!a)return null;
+    if(mode==="MONO"&&right===-1)return {
+      label:"Mono · "+a.label+" [IN "+(left+1)+"]",mode,left,right};
+    if(mode!=="STEREO"||!b||left===right)return null;
+    const generic=p=>new RegExp("^\\s*(?:in|input)\\s*"+(p.port+1)+"\\s*$","i")
+      .test(String(p.label||""));
+    const pair="Stereo · IN "+(left+1)+" + "+(right+1);
+    return {label:generic(a)&&generic(b)?pair:pair+" · "+a.label+" / "+b.label,
+      mode,left,right};
+  }
   function inputChoices(snapshot) {
-    const pins=activeInputPins(snapshot);
+    const pins=activeInputPins(snapshot).slice().sort((a,b)=>a.port-b.port);
     const entries=[{label:"None",mode:"NONE",left:-1,right:-1}];
-    for(const p of pins)entries.push({
-      label:"Mono · "+p.label+" [IN "+(p.port+1)+"]",
-      mode:"MONO",left:p.port,right:-1});
-    // Preserve existing physical adjacency semantics, never pair packed
-    // callback ordinals or guess unavailable driver pins.
+    const keys=new Set(["NONE:-1:-1"]);
+    const add=(mode,left,right)=>{
+      const key=mode+":"+left+":"+right;
+      if(keys.has(key))return;
+      const choice=physicalInputChoice(snapshot,mode,left,right);
+      if(choice){entries.push(choice);keys.add(key);}
+    };
+    for(const p of pins)add("MONO",p.port,-1);
     for(let i=0;i+1<pins.length;++i)
-      if(pins[i+1].port===pins[i].port+1)
-        entries.push({label:"Stereo · IN "+(pins[i].port+1)+
-          " + "+(pins[i+1].port+1),mode:"STEREO",
-          left:pins[i].port,right:pins[i+1].port});
+      if(pins[i+1].port===pins[i].port+1)add("STEREO",pins[i].port,pins[i+1].port);
+    // Keep custom installed pairs selectable and correctly labelled after
+    // ACK, restart or mixer projection; no phantom option on missing pins.
+    if(snapshot?.retained!==true&&snapshot?.admitted===true)
+      for(const ch of snapshot.graph?.channels||[]){
+        const src=ch.source;
+        if(src?.sourceFormat!=="STEREO"||src.bindingState==="NEEDS_REMAP")continue;
+        const l=/^in:(\d+)$/.exec(src.portId||""),r=/^in:(\d+)$/.exec(src.portIdRight||"");
+        if(l&&r)add("STEREO",Number(l[1]),Number(r[1]));
+      }
+    if(snapshot?.retained!==true&&snapshot?.raw?.mixerSession?.authority==="M4")
+      for(const ch of snapshot.raw.mixerSession.channels||[]){
+        const src=ch.source;
+        if(src?.mode==="STEREO")add("STEREO",src.left,src.right);
+      }
     return entries;
+  }
+  // Physical crosspoints are a projection of installed ChannelId PCM only.
+  // The existing source and external-output planners remain command authority.
+  function busOutputChoices(snapshot,key){
+    const d=snapshot?.device,raw=snapshot?.raw;
+    if(!snapshot?.admitted||snapshot.retained||d?.backend!=="ASIO"||
+       raw?.physicalBusPatchSupported!==true||
+       !["physicalMainOutputs","physicalMonitorOutputs"].includes(key)||
+       !Array.isArray(raw.physicalMainOutputs)||raw.physicalMainOutputs.length!==2||
+       !Array.isArray(raw.physicalMonitorOutputs)||!Array.isArray(raw.externalOutputs))return [];
+    const own=raw[key],other=raw[key==="physicalMainOutputs"?"physicalMonitorOutputs":"physicalMainOutputs"];
+    if(own.length!==2)return [];
+    const pins=new Map(d.outputEndpoints.filter(p=>p.active===true&&d.enabledOutputs.includes(p.port)&&p.label).map(p=>[p.port,p.label]));
+    const reserved=new Set([...other,...raw.externalOutputs.flatMap(p=>[p.physicalLeft,p.physicalRight]),
+      ...logicalReservedPins(snapshot)]);
+    const make=(left,right)=>({label:"OUT "+(left+1)+"/"+(right+1)+" · "+pins.get(left)+" + "+pins.get(right),left,right});
+    if(!own.every(p=>pins.has(p))||own[0]===own[1])return [];
+    const result=[make(own[0],own[1])];
+    for(const [left] of pins){
+      const right=left+1;
+      if(left%2||!pins.has(right)||reserved.has(left)||reserved.has(right)||
+         (left===own[0]&&right===own[1]))continue;
+      result.push(make(left,right));
+    }
+    return result;
+  }
+  function matrixCrosspointChoice(row,candidates,port,side){
+    if(!row?.editable||!Array.isArray(candidates)||!Number.isInteger(port))return null;
+    const installed=candidates.find(x=>x.label===row.selected);
+    const hits=x=>x.left===port||x.right===port;
+    if(installed&&hits(installed)){
+      if(row.bus)return null; // MAIN / admitted physical monitor cannot be removed here
+      return candidates.find(x=>x.left===-1&&x.right===-1)||null;
+    }
+    const stereo=side==="output"||installed?.mode==="STEREO"||
+      ((!installed||installed.mode==="NONE")&&row.format==="STEREO");
+    return candidates.find(x=>(side==="output"||x.mode===(stereo?"STEREO":"MONO"))&&hits(x))||null;
+  }
+  function patchMatrix(snapshot,side) {
+    const input=side==="input", d=snapshot?.device;
+    const names=input?d?.inputEndpoints:d?.outputEndpoints;
+    const enabled=input?d?.enabledInputs:d?.enabledOutputs;
+    const pins=Array.isArray(names)&&validPinMask(enabled)?
+      names.filter(p=>p?.active===true&&enabled.includes(p.port))
+        .map(p=>({port:p.port,label:String(p.label||"")})).sort((a,b)=>a.port-b.port):[];
+    const live=snapshot?.admitted===true&&snapshot?.retained!==true&&
+      snapshot?.raw?.mixerSession?.authority==="CHANNEL_ID"&&
+      snapshot.raw.mixerSession.deviceEpoch===d?.epoch&&
+      typeof snapshot.hardwareConfiguration==="string"&&!!snapshot.hardwareConfiguration;
+    const session=snapshot?.raw?.mixerSession,m4=snapshot?.raw?.legacyM4;
+    const legacy=input&&snapshot?.admitted===false&&snapshot?.retained!==true&&
+      !!snapshot.hardwareConfiguration&&typeof d?.epoch==="string"&&
+      /^[1-9][0-9]*$/.test(d.epoch)&&Number.isSafeInteger(Number(d.epoch))&&
+      m4?.active===true&&Number.isSafeInteger(Number(m4.routingRevision))&&
+      Number(m4.routingRevision)>0&&
+      ((session?.authority==="NONE"&&m4.routeAccepted===false)||
+       (session?.authority==="M4"&&session.deviceEpoch===d.epoch&&
+        m4.routeAccepted===true&&session.routeRevision===m4.routingRevision&&
+        Array.isArray(session.channels)&&session.channels.length===10));
+    const choices=input?inputChoices(snapshot):outputChoices(snapshot);
+    const installedChoices=input?choices:outputChoices(snapshot,true);
+    const rows=[];
+    const map=(left,right,mono=false)=>pins.map(p=>p.port===left?(mono?"M":"L"):p.port===right?"R":"");
+    if(!input)for(const [key,name] of [["physicalMainOutputs","MAIN"],["physicalMonitorOutputs","MONITOR"]]){
+      const pair=snapshot?.raw?.[key];
+      if(Array.isArray(pair)&&pair.length===2){
+        const busChoices=busOutputChoices(snapshot,key);
+        const logical=snapshot.raw?.logicalOutputRegistry;
+        const ref=logical?.references?.find?.(r=>r.role===name);
+        const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
+        const editable=!port&&busChoices.length>1&&snapshot.raw.physicalBusOutputObserved===true;
+        const pending=snapshot.raw.physicalBusPatchSupported===true&&
+          snapshot.raw.physicalBusOutputObserved!==true;
+        rows.push({id:key,name,bus:true,editable,pending,choices:busChoices,
+          pair:pair.slice(),cells:map(pair[0],pair[1]),selected:busChoices[0]?.label||"",
+          state:port?port.name+" · Logical output":pending?"Awaiting callback":editable?"Remap available · verified pair":
+            !pair.every(p=>pins.some(q=>q.port===p))?"Needs remap":
+            busChoices.length>1?"Awaiting verified routing":"Fixed bus"});
+      }
+    }
+    if(!input&&live&&snapshot.raw.physicalBusPatchSupported===true&&
+       Array.isArray(snapshot.raw.physicalMonitorOutputs)&&snapshot.raw.physicalMonitorOutputs.length===0)
+      rows.push({id:"physicalMonitorOutputs",name:"MONITOR",bus:true,editable:false,pending:false,
+        choices:[],pair:[],cells:pins.map(()=>""),selected:"",
+        state:"No separate ASIO MON bus · see MON / STREAM endpoint"});
+    if(!input&&live&&snapshot.raw.secondaryMainOnly===true&&
+       snapshot.raw.physicalMainOutputs?.length===0&&snapshot.raw.physicalMonitorOutputs?.length===2)
+      rows.push({id:"secondaryMainOnly",name:"MAIN",bus:true,editable:false,pending:false,
+        choices:[],pair:[],cells:pins.map(()=>""),selected:"",
+        state:snapshot.raw.physicalBusSecondaryArmed===true?"WASAPI STREAM · armed":"WASAPI STREAM · disarmed"});
+    for(const ch of live&&Array.isArray(snapshot.graph?.channels)?snapshot.graph.channels:[]){
+      if(input?ch.role!=="INPUT":!["INPUT","GROUP","FX_RETURN"].includes(ch.role))continue;
+      if(input){
+        const src=ch.source;
+        const choice=!src?choices[0]:src.bindingState==="NEEDS_REMAP"?null:
+          choices.find(x=>x.mode===src.sourceFormat&&src.portId==="in:"+x.left&&
+            (x.mode==="MONO"?src.portIdRight===undefined:src.portIdRight==="in:"+x.right));
+        const logical=snapshot.raw?.logicalInputRegistry;
+        const ref=logical?.references?.find?.(r=>r.channelId===ch.id);
+        const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
+        const state=port?port.name+(ref.state==="NEEDS_REMAP"?" · Needs remap":""):
+          src?.bindingState==="NEEDS_REMAP"?"Needs remap":
+          src?.sourceFormat==="PLAYER"?"Music Player":choice?"":"Other source";
+        rows.push({id:ch.id,name:ch.name,editable:true,
+          format:ch.processingFormat,selected:choice?.label||null,
+          cells:choice?map(choice.left,choice.right,choice.mode==="MONO"):map(-1,-1),state});
+      }else{
+        const src=snapshot.raw.externalOutputs?.find?.(p=>p.channelId===ch.id);
+        const choice=src?installedChoices.find(x=>x.left===src.physicalLeft&&x.right===src.physicalRight):choices[0];
+        const logical=snapshot.raw?.logicalOutputRegistry;
+        const ref=logical?.references?.find?.(r=>r.channelId===ch.id);
+        const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
+        rows.push({id:ch.id,name:ch.name,editable:d.backend==="ASIO"&&!port,
+          selected:choice?.label||null,cells:choice&&src?.status!=="NEEDS_REMAP"?map(choice.left,choice.right):map(-1,-1),
+          state:port?port.name+(ref.state==="NEEDS_REMAP"?" · Needs remap":ref.state==="PENDING"?" · Pending":""):src&&!choice?"Needs remap":src?.status||""});
+      }
+    }
+    if(legacy)for(let index=0;index<10;++index){
+      const ch=session.authority==="M4"?session.channels[index]:null;
+      if(ch&&ch.role!=="INPUT")continue;
+      const src=ch?.source;
+      const choice=!src?choices[0]:choices.find(x=>x.mode===src.mode&&
+        x.left===src.left&&x.right===src.right);
+      rows.push({id:"m4:"+index,name:ch?.name||"CH "+(index+1),
+        editable:true,format:src?.channelFormat||"MONO",
+        selected:choice?.label||null,
+        cells:choice?map(choice.left,choice.right,choice.mode==="MONO"):map(-1,-1),
+        state:choice?"":"Needs remap"});
+    }
+    return {live:live||legacy,authority:live?"CHANNEL_ID":legacy?"M4":"NONE",
+      revision:live?snapshot.graph?.revision:legacy?String(m4.routingRevision):"",
+      roster:live?snapshot.graph?.rosterRevision:"",
+      pins,rows,choices};
   }
   function inputLabel(snapshot,row) {
     if(!row||row.mode==="NONE")return "None";
@@ -55,7 +220,16 @@
       x.left===row.left && x.right===row.right);
     return found?.label||"None";
   }
-  function outputChoices(snapshot) {
+  // The installed route and new assignment are different views of the
+  // same physical inventory; reserved ports must remain visible in readback.
+  function logicalReservedPins(snapshot) {
+    const d=snapshot?.device;
+    return (Array.isArray(snapshot?.raw?.logicalOutputRegistry?.ports)?
+      snapshot.raw.logicalOutputRegistry.ports:[]).filter(p=>p.bound===true&&
+      p.playback===d?.playbackDevice&&(!p.backend||p.backend===d.backend))
+      .flatMap(p=>[p.left,p.right]);
+  }
+  function outputChoices(snapshot,includeReserved=false) {
     const d=snapshot?.device,choices=[{...NONE}];
     if(d?.backend!=="ASIO"||!Array.isArray(d.outputEndpoints)||
        !Array.isArray(d.enabledOutputs))return choices;
@@ -67,8 +241,10 @@
       snapshot.raw.physicalMainOutputs:[];
     const monitor=Array.isArray(snapshot?.raw?.physicalMonitorOutputs)?
       snapshot.raw.physicalMonitorOutputs:[];
+    const reserved=new Set(logicalReservedPins(snapshot));
     for(const [left,a] of map) {
-      if(left%2!==0||!map.has(left+1))continue;
+      if(left%2!==0||!map.has(left+1)||
+         (!includeReserved&&(reserved.has(left)||reserved.has(left+1))))continue;
       const b=map.get(left+1);
       if(main.includes(left)||main.includes(left+1)||
          monitor.includes(left)||monitor.includes(left+1))continue;
@@ -85,7 +261,7 @@
   // Project one installed row for the existing DOM. ACK-only and logical
   // assignments never promote output status to LIVE; that still requires
   // matching verified pins AND accepted native graph AND armed output.
-  function externalPresentation(snapshot,row,choices=outputChoices(snapshot)) {
+  function externalPresentation(snapshot,row,choices=outputChoices(snapshot,true)) {
     const match=row&&choices.find(p=>p.left===row.physicalLeft &&
       p.right===row.physicalRight);
     const installed=row?.status==="LIVE"&&match;
@@ -110,6 +286,40 @@
     return active?.open===true&&active.backend===draft?.backend&&
       active.captureDevice===draft.capture&&active.playbackDevice===draft.playback;
   }
+  // Pin discovery belongs to the accepted driver, never a candidate endpoint.
+  // A new rate/buffer also needs driver negotiation before routing.
+  function setupRoutingReady(inventory,draft,state=setupInitial()) {
+    const a=inventory?.active;
+    return !state.pending && !["RECOVERY_REQUIRED","STALE"].includes(state.phase) &&
+      setupSameEndpoint(a,draft) &&
+      draft.rate===a.rate && draft.buffer===a.buffer &&
+      pinInventory(a,"input")!==null && pinInventory(a,"output")!==null;
+  }
+  // Compare fresh JUCE inventory with independent installed device snapshot.
+  // Generation and route epoch need not be identical (STOP/START advances epoch).
+  function setupMatrixDeviceMatches(inventory,snapshot){
+    const a=inventory?.active,d=snapshot?.device;
+    return a?.open===true&&a.authorized===true&&snapshot?.retained!==true&&
+      Number.isSafeInteger(a.deviceGeneration)&&a.deviceGeneration>=0&&
+      typeof d?.epoch==="string"&&/^[1-9][0-9]*$/.test(d.epoch)&&
+      BigInt(d.epoch)>=BigInt(a.deviceGeneration)&&
+      d.backend===a.backend&&d.captureDevice===a.captureDevice&&
+      d.playbackDevice===a.playbackDevice&&d.sampleRate===a.rate&&
+      d.bufferFrames===a.buffer&&samePinMask(d.enabledInputs,a.enabledInputs)&&
+      samePinMask(d.enabledOutputs,a.enabledOutputs)&&
+      ["input","output"].every(side=>{
+        const input=side==="input",names=a[input?"inputNames":"outputNames"],
+          enabled=d[input?"enabledInputs":"enabledOutputs"],
+          endpoints=d[input?"inputEndpoints":"outputEndpoints"];
+        return Array.isArray(names)&&Array.isArray(endpoints)&&enabled.every(port=>
+          endpoints.some(p=>p.port===port&&p.active===true&&p.label===names[port]));
+      });
+  }
+  function setupPinsApplied(inventory,draft){
+    const a=inventory?.active;
+    return setupSameEndpoint(a,draft)&&samePinMask(a.enabledInputs,draft.inputPins)&&
+      samePinMask(a.enabledOutputs,draft.outputPins);
+  }
   function setupDraft(inventory) {
     if(!inventory?.active||!Array.isArray(inventory.types))return null;
     const active=inventory.active,types=inventory.types;
@@ -122,7 +332,34 @@
         (type?.separate?type?.outputs?.[0]:capture)||"",
       inputPins:Array.isArray(active.enabledInputs)?active.enabledInputs.slice():null,
       outputPins:Array.isArray(active.enabledOutputs)?active.enabledOutputs.slice():null,
-      rate:0,buffer:0};
+      rate:active.open&&validRate(active.rate)?active.rate:0,
+      buffer:active.open&&validBuffer(active.buffer)?active.buffer:0};
+  }
+  const validRate=v=>Number.isFinite(v)&&v>=8000&&v<=384000;
+  const validBuffer=v=>Number.isSafeInteger(v)&&v>=16&&v<=8192;
+  function formatOptions(reported,current,valid) {
+    // Current negotiated value may be absent from advertised alternatives.
+    const values=Array.isArray(reported)?reported.filter(valid):[];
+    if(valid(current))values.push(current);
+    return ["0",...[...new Set(values)].sort((a,b)=>a-b).map(String)];
+  }
+  function setupBufferPeriod(rate,buffer) {
+    return validRate(rate)&&validBuffer(buffer)?1000*buffer/rate:null;
+  }
+  function setupHealthReadback(active) {
+    if(active?.open!==true||active.authorized!==true)return null;
+    const count=v=>Number.isSafeInteger(v)&&v>=0?v:null;
+    const samples=count(active.callbackBudgetSamples);
+    const p99=Number.isFinite(active.callbackP99BudgetUpperPct)&&
+      active.callbackP99BudgetUpperPct>=0?active.callbackP99BudgetUpperPct:null;
+    const budget=samples>0?(active.callbackP99BeyondDeadline===true?
+      "over deadline":p99===null?"N/A":"≤"+p99.toFixed(0)+"%"):"N/A";
+    const xruns=active.backendXrunMeaning==="DRIVER_DEFINED"?
+      count(active.backendXrunCount):null;
+    const discontinuities=active.backendXrunMeaning==="WASAPI_CAPTURE_DISCONTINUITIES_ONLY"?
+      count(active.backendXrunCount):null;
+    return {budget,overBudget:count(active.overBudgetCount),
+      gaps:count(active.callbackGapCount),xruns,discontinuities,samples};
   }
   // DAW-style read-only latency from the ACTUAL active JUCE device.
   // Driver input/output hints are not an electrical loopback measurement.
@@ -152,14 +389,40 @@
       provenance:active.latencyProvenance||"UNKNOWN"
     });
   }
+  // Capability inventory is a driver observation, not installed PCM.
+  // Never synthesize pins from a product name, Windows endpoint or count.
+  function pinInventory(active,side) {
+    const input=side==="input";
+    const names=active?.[input?"inputNames":"outputNames"];
+    const enabled=active?.[input?"enabledInputs":"enabledOutputs"];
+    const count=active?.[input?"reportedInputCount":"reportedOutputCount"];
+    if(active?.open!==true||!Array.isArray(names)||!validPinMask(enabled,names))
+      return null;
+    const total=count===undefined?names.length:count;
+    if(!Number.isSafeInteger(total)||total<names.length||names.length>64||
+       !names.every(n=>typeof n==="string"))return null;
+    return {total,active:enabled.length,selectable:names.length,
+      complete:total===names.length,
+      all:names.map((_,i)=>i)};
+  }
+  function setupSelectAllPins(draft,inventory,side) {
+    if(!["input","output"].includes(side)||
+       !setupSameEndpoint(inventory?.active,draft)||draft.backend!=="ASIO")return draft;
+    const pins=pinInventory(inventory.active,side);
+    if(!pins?.complete||!pins.all.length||side==="output"&&pins.all.length<2)
+      return draft;
+    return {...draft,[side==="input"?"inputPins":"outputPins"]:pins.all};
+  }
   function setupPresentation(inventory,draft,state=setupInitial()) {
     const active=inventory?.active||{},types=inventory?.types||[];
     const type=types.find(t=>t?.name===draft?.backend);
     const same=setupSameEndpoint(active,draft);
     const inputOptions=type?.separate?["",...(type.inputs||[])]:type?.inputs||[];
     const outputOptions=type?.outputs||[];
-    const rates=same?active.rates||[]:[];
-    const buffers=same?active.buffers||[]:[];
+    const rateOptions=same?formatOptions(active.rates,active.rate,validRate):["0"];
+    const bufferOptions=same?formatOptions(active.buffers,active.buffer,validBuffer):["0"];
+    const rateValid=rateOptions.includes(String(draft?.rate??0));
+    const bufferValid=bufferOptions.includes(String(draft?.buffer??0));
     const mainPins=Array.isArray(active.mainOutputs)?active.mainOutputs
       .map(pin=>active.outputNames?.[pin]).filter(Boolean):[];
     const noInput=type?.separate===true&&draft?.capture==="";
@@ -176,14 +439,17 @@
        (!noInput||selectedInputPins.length===0));
     const canApply=Boolean(type && draft?.backend && inputValid&&outputValid&&
       (type.separate===true||draft.capture===draft.playback)&&
-      validSelection);
+      validSelection&&rateValid&&bufferValid);
     const selectedPins=(key,enabled)=>Array.isArray(draft?.[key])?
       draft[key]:Array.isArray(enabled)?enabled:[];
     return {type,same,backendOptions:types.map(t=>t.name),
-      inputOptions,outputOptions,rateOptions:["0",...rates.map(String)],
-      bufferOptions:["0",...buffers.map(String)],
+      inputOptions,outputOptions,rateOptions,bufferOptions,
+      draftPeriodMs:same?setupBufferPeriod(draft.rate,draft.buffer):null,
+      driverPanelAvailable:same&&active.backend==="ASIO"&&active.hasControlPanel===true,
       inputPins:selectedPins("inputPins",active.enabledInputs),
       outputPins:selectedPins("outputPins",active.enabledOutputs),
+      inputInventory:same?pinInventory(active,"input"):null,
+      outputInventory:same?pinInventory(active,"output"):null,
       canApply,canAssignMain:same&&validSelection&&
         selectedOutputPins.length===2,
       canReusePins:same&&state.remapGeneration===active.deviceGeneration,
@@ -192,6 +458,36 @@
         "ACTIVE · "+active.backend+" · "+active.rate+" Hz / "+active.buffer+" samples"+
         (mainPins.length===2?" · MAIN "+mainPins.join(" / "):""):
         "No verified audio device. Select a supported input and output.")};
+  }
+  // P0: propose verified Windows capture pins, never installed PCM.
+  function captureRecoveryDraft(inventory,draft,state=setupInitial()) {
+    const a=inventory?.active;
+    if(!a||a.authorized!==true||!setupRoutingReady(inventory,draft,state)||
+       !String(a.backend).startsWith("Windows Audio")||!a.captureDevice||
+       !inventory.types?.some(t=>t.name===a.backend&&t.separate===true)||
+       !Array.isArray(a.enabledInputs)||a.enabledInputs.length!==0||
+       !Array.isArray(a.inputNames)||!a.inputNames.length||
+       !Array.isArray(draft.inputPins)||draft.inputPins.length!==0||
+       !Array.isArray(a.outputNames)||!validPinMask(draft.outputPins,a.outputNames)||
+       draft.outputPins.length<2||!samePinMask(draft.outputPins,a.enabledOutputs))
+      return null;
+    const proposed={...draft,inputPins:a.inputNames.slice(0,2).map((_,i)=>i)};
+    return setupPresentation(inventory,proposed,state).canApply?proposed:null;
+  }
+  function signalPathHint(a) {
+    if(!a?.open)return "No open audio device.";
+    if(a.authorized!==true)return "Device route not authorized. Copy Audio Report.";
+    if(a.captureDevice&&Array.isArray(a.enabledInputs)&&!a.enabledInputs.length)
+      return a.inputNames?.length?
+        "Capture selected, but ZERO input pins enabled. Review capture pins.":
+        "Capture selected, but driver reports no input pins. Copy Audio Report.";
+    return ({NATIVE_ROUTE_UNBOUND:"Mixer route not bound. Check routing or copy report.",
+      OUTPUT_PINS_MISSING:"Playback pins unavailable. Copy Audio Report.",
+      OPERATOR_OUTPUT_MUTED:"Output explicitly muted.",
+      OUTPUT_NOT_ARMED:"Output not armed. Check channel input and route.",
+      MASTER_MUTED:"Master mute is active.",
+      CAPTURE_CALLBACK_NO_INPUT:"Driver pins exist, callback reports no input. Copy Audio Report."
+    })[a.audioPathCode]||"Device readback only; actual audio is not certified.";
   }
   function setupEditDraft(draft,inventory,change) {
     if(!draft||!inventory?.active||!change||
@@ -212,18 +508,22 @@
     const {field,value}=change;
     if(typeof value!=="string")return draft;
     if(field==="backend") {
+      if(value===draft.backend)return draft;
       const type=inventory.types?.find(t=>t.name===value);
       if(!type)return draft;
       const capture=type.inputs?.[0]||"";
-      return {...draft,backend:value,capture,
+      const next={...draft,backend:value,capture,
         playback:type.separate?type.outputs?.[0]||"":capture,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="capture") {
       if(!view.inputOptions.includes(value))return draft;
-      return {...draft,capture:value,
+      if(value===draft.capture)return draft;
+      const next={...draft,capture:value,
         playback:view.type?.separate?draft.playback:value,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="playback") {
       if(!view.outputOptions.includes(value)||
@@ -231,9 +531,11 @@
         return draft;
       // A JUCE non-separate backend has one duplex endpoint identity.
       // Never present an input/output mismatch that native must reject.
-      return {...draft,playback:value,
+      if(value===draft.playback)return draft;
+      const next={...draft,playback:value,
         capture:view.type?.separate?draft.capture:value,
         inputPins:null,outputPins:null,rate:0,buffer:0};
+      return setupSameEndpoint(inventory.active,next)?setupDraft(inventory):next;
     }
     if(field==="rate"||field==="buffer") {
       const options=field==="rate"?view.rateOptions:view.bufferOptions;
@@ -374,7 +676,10 @@
     const live=state.pending.ack.outputMuted===false&&
       snapshot.admitted===true&&snapshot.productLive===true&&
       d.outputArmed===true;
+    const inspectNewAsio=expected.backend==="ASIO"&&
+      state.pending.expected.requestedPins===null;
     return {phase:"ACCEPTED",pending:null,remapGeneration:null,
+      ...(inspectNewAsio?{inspectNewAsio:true}:{}),
       message:live?"Mixer ready · Output live":
         mixerVerified?"Mixer ready · Output muted":
           "Audio device ready · Mixer route not yet verified"};
@@ -450,8 +755,40 @@
       return Object.freeze({kind:"AUTHORITY_CHANGED",expirePending:true});
     return Object.freeze({kind:"SAME",expirePending:false});
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
-    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,
+  // Named shortcuts are presentation of native disk inventory, not source
+  // bindings. Resolve the current exact physical choice before dispatch.
+  function namedPatchChoices(inventory,snapshot,side){
+    const data=inventory?.namedPatches;
+    if(!Array.isArray(data?.entries)||data.readOnly===true||
+       !Number.isSafeInteger(data.revision)||data.revision<0||
+       !setupMatrixDeviceMatches(inventory,snapshot)||
+       (side!=="input"&&side!=="output"))return [];
+    const d=snapshot.device;
+    const pins=side==="input"?activeInputPins(snapshot):
+      d.outputEndpoints.filter(p=>p.active===true&&d.enabledOutputs.includes(p.port));
+    const physical=side==="output"?outputChoices(snapshot):[];
+    const pinMatches=(port,label)=>typeof label==="string"&&label.length>0&&
+      pins.some(p=>p.port===port&&p.label===label);
+    const result=[];
+    for(const p of data.entries){
+      if(!p||p.side!==side||p.available!==true||typeof p.id!=="string"||!p.id||
+         typeof p.name!=="string"||!p.name.trim()||
+         !pinMatches(p.left,p.leftName)||
+         (p.right!==-1&&!pinMatches(p.right,p.rightName)))continue;
+      const choice=side==="input"?physicalInputChoice(snapshot,p.mode,p.left,p.right):
+        p.mode==="STEREO"?physical.find(x=>x.left===p.left&&x.right===p.right):null;
+      if(!choice||choice.left<0)continue;
+      result.push({id:p.id,name:p.name,choice,label:"Preset · "+p.name+" · "+choice.label});
+    }
+    const ids=new Map(),labels=new Map();
+    for(const p of result){
+      ids.set(p.id,(ids.get(p.id)||0)+1);labels.set(p.label,(labels.get(p.label)||0)+1);
+    }
+    return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
+  }
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
+    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
+    pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
     nativeTransientReadbackPolicy});

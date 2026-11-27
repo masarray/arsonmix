@@ -4,6 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const host=read('src/Main.cpp');
 const preset=read('site/preview-v2/assets/mixer-builtin-fx-preset-bar.js');
@@ -84,7 +86,9 @@ test('FX picker closes and opens an actual editor only after accepted native or 
 test('Vocal Throw wheel does not flicker performance button and presets have dark dropdown',()=>{
   assert.doesNotMatch(throwFx,/vtThrow"\)\.disabled=value!=="on"\|\|!!pending/);
   assert.match(throwFx,/vtThrow"\)\.disabled=value!=="on"\|\|pending\?\.command==="nativeThrowTrigger"/);
-  assert.match(throwFx,/wheelFlush=setTimeout\(\(\)=>\{/);
+  assert.match(throwFx,/if\(remaining<=0\)flushRotary\(\)/);
+  assert.match(throwFx,/if\(pending\)return;[\s\S]*?wheelFlush=setTimeout\(flushRotary,remaining\)/);
+  assert.match(throwFx,/if\(!rotaryDirty\)draft=\{\.\.\.accepted\}/);
   assert.match(rackCss,/\.mx-vthrow \.vt-preset select\{[\s\S]*?color-scheme:dark/);
   assert.match(rackCss,/\.mx-vthrow \.vt-preset :is\(option,optgroup\)\{background-color:#272b34;color:#e8eaf1/);
 });
@@ -94,10 +98,81 @@ test('modeless utility windows are centered/dismissible without dismissing FX ed
   assert.match(controller,/function centerFirst\(panel\)/);
   assert.match(controller,/function dismissOutside\(target\)/);
   assert.match(controller,/close\.click\(\)/);
-  assert.match(controller,/\.mx-comp-slider,\.mx-harm-slider input\[type="range"\]/);
-  assert.match(controller,/input\.dispatchEvent\(new Event\('input'/);
+  assert.doesNotMatch(controller,/\.mx-comp-slider,\.mx-harm-slider input\[type="range"\]/);
+  const gesture=read("site/preview-v2/assets/mixer-builtin-fx-gesture.js");
+  assert.match(gesture,/input\.dispatchEvent\(new Event\("input"/);
+  assert.match(gesture,/e\.stopPropagation\(\)/);
   assert.match(closeCss,/--armix-floating-close-icon:url\("data:image\/svg\+xml/);
   assert.match(closeCss,/M6\.4,19L5,17\.6L10\.6,12L5,6\.4/);
   assert.match(closeCss,/margin-inline-start:auto!important/);
   assert.doesNotMatch(closeCss,/content:"×"!important/);
+});
+
+test('shared FX wheel helper clamps, preserves fine steps, ignores zoom and disabled controls',()=>{
+ const code=read("site/preview-v2/assets/mixer-builtin-fx-gesture.js");
+ const win={};new Function("window",code)(win);
+ const handlers={};let edits=[];
+ const input={min:"0",max:"10",step:".5",value:"5",disabled:false,isConnected:true,
+  closest:()=>null,addEventListener:(name,fn)=>{handlers[name]=fn;}};
+ win.ArMixFxGesture.bindRange(input,{onChange:v=>edits.push(v)});
+ const fire=(deltaY,extra={})=>{const e={deltaY,deltaX:0,preventDefault(){this.defaultPrevented=true;},stopPropagation(){this.stopped=true;},...extra};handlers.wheel(e);return e;};
+ assert.equal(fire(-120).stopped,true);assert.equal(edits.at(-1),6.5);
+ fire(120,{shiftKey:true});assert.equal(edits.at(-1),6);
+ fire(0,{deltaX:-120,shiftKey:true});assert.equal(edits.at(-1),6.5);
+ fire(0,{deltaX:120,shiftKey:true});assert.equal(edits.at(-1),6);
+ const count=edits.length;
+ assert.equal(fire(-120,{ctrlKey:true}).defaultPrevented,undefined);
+ assert.equal(fire(-120,{deltaX:200}).defaultPrevented,undefined);
+ input.disabled=true;fire(-120);assert.equal(edits.length,count);
+ input.disabled=false;input.value="9.5";fire(-120);assert.equal(edits.at(-1),10);
+ fire(-120);assert.equal(edits.at(-1),10);
+});
+
+test('Harmonice wheel keeps V6 detents on precision ranges and accumulates held drafts',()=>{
+ const code=read("site/preview-v2/assets/mixer-builtin-fx-gesture.js");
+ const harmony=read("site/preview-v2/assets/mixer-native-harmony.js");
+ const win={};new Function("window",code)(win);
+ const normal=harmony.match(/normalSteps:key==="gainDb"\?(\d+):(\d+)/);
+ const fine=harmony.match(/fineSteps:key==="gainDb"\?(\d+):(\d+)/);
+ assert.ok(normal&&fine,"Harmonice must declare its wheel detents");
+ for(const [index,min,max,start,coarse,small] of [[2,0,100,45,3,1],[1,-24,12,0,1.5,.5]]){
+  let draft=start,handler,edits=0;
+  const input={min:String(min),max:String(max),step:".1",value:String(start),
+   disabled:false,isConnected:true,closest:()=>null,
+   addEventListener:(name,fn)=>{if(name==="wheel")handler=fn;}};
+  win.ArMixFxGesture.bindRange(input,{normalSteps:Number(normal[index]),
+   fineSteps:Number(fine[index]),get:()=>draft,onChange:v=>{draft=v;edits++;}});
+  const fire=(deltaY,shiftKey=false)=>handler({deltaY,deltaX:0,shiftKey,
+   preventDefault(){this.defaultPrevented=true;},stopPropagation(){}});
+  for(let i=1;i<=4;i++){input.value=String(start);fire(-120);
+   assert.equal(draft,Math.min(max,start+i*coarse));}
+  fire(120,true);assert.equal(draft,start+4*coarse-small);
+  fire(-120,true);assert.equal(draft,start+4*coarse);
+  assert.equal(edits,6);
+ }
+});
+
+
+test('matrix click toggles accepted exact mono/stereo pair, not a draft or mandatory bus',()=>{
+ const vm=require('../web/approved-device-view-model.js');
+ const none={label:'None',mode:'NONE',left:-1,right:-1},a={label:'A',mode:'STEREO',left:0,right:1},
+ b={label:'B',mode:'STEREO',left:1,right:2},m={label:'Mic',mode:'MONO',left:2,right:-1};
+ const choices=[none,a,b,m];
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'None',format:'STEREO'},choices,1,'input'),a);
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'B',format:'STEREO'},choices,1,'input'),none);
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'B',format:'STEREO'},choices,2,'input'),none);
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'Mic',format:'MONO'},choices,2,'input'),none);
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'A',bus:true},choices,0,'output'),null);
+ assert.equal(vm.matrixCrosspointChoice({editable:false,selected:'None'},choices,0,'output'),null);
+});
+test('operator workflow stays on native authority: direct matrix, MON mirror, grouping and buffer',()=>{
+ assert.match(bridge,/applyMatrixRow\(side,row.id,choice.label,lease,choice,true\)/);
+ assert.match(bridge,/selects=document.querySelectorAll\?\.\("\[data-main-monitor\]"\)/);
+ assert.match(bridge,/endpoint.dataset.mainMonitor="true"/);
+ assert.match(bridge,/requestRibbonBuffer\(value\)[\s\S]*?sendDeviceApply\(\)/);
+ assert.match(bridge,/requestUngroupSelected\(\)[\s\S]*?requestNativeBusDelete\(fresh\)/);
+ assert.doesNotMatch(bridge,/Verified Shows only · full dynamic-session autosave/);
+ const engine=read('src/LiveAudioEngine.h');
+ assert.match(engine,/DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"[\s\S]*?return editNativeInputTopology\(epoch/);
+ assert.match(read('scripts/clean_ribbon_v6.css'),/aria-selected=true\]\{[^}]*color:#071b24!important/);
 });

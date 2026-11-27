@@ -2,6 +2,8 @@
 #pragma once
 #include "PortableWorkspace.h"
 #include "BoundedDataInput.h"
+#include "AntiNoizPortableSettings.h"
+#include "../engine/builtin_fx/vocal_delay/PortablePreset.h"
 #include <juce_core/juce_core.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include <algorithm>
@@ -32,8 +34,12 @@ public:
         if(catalog=="armix.builtin.channel-eq.v1")return "eq";
         if(catalog=="armix.builtin.graphic-eq31.v1")return "graphic-eq31";
         if(catalog=="armix.builtin.channel-compressor.v1")return "compressor";
+        if(catalog=="armix.builtin.anti-noiz.v1")return "anti-noiz";
         if(catalog=="armix.builtin.arson-harmony.v1")return "harmonice";
         if(catalog=="armix.builtin.vocal-throw.v1")return "vocal-throw";
+        if(catalog=="armix.builtin.vocal-delay.v2")return "vocal-delay";
+        if(catalog=="armix.builtin.de-ezzer.v1")return "de-ezzer";
+        if(catalog=="armix.builtin.vocal-reverb.v1")return "reverb-sis";
         return {};
     }
     static bool safeText(const juce::String& value,int maxLen) {
@@ -77,6 +83,44 @@ public:
 
     static bool validateSettings(const juce::String& catalog,const juce::var& settings) {
         if(!settings.isObject()||effectFolder(catalog).isEmpty())return false;
+        if(catalog=="armix.builtin.vocal-delay.v2") {
+            armix::builtin_fx::vocal_delay::Parameters p{};
+            return armix::builtin_fx::vocal_delay::PortablePreset::decode(settings,p);
+        }
+        if(catalog=="armix.builtin.vocal-reverb.v1") {
+            // Stable v1 portable parameter order; do not persist factory
+            // index, mixer identity, bypass or a vendor-specific blob.
+            if(!containsOnly(settings,{"algorithm","values","voicing"})||
+               !integer(settings,"algorithm",0,3)||
+               (settings.getDynamicObject()->hasProperty("voicing")&&
+                !integer(settings,"voicing",0,5)))return false;
+            const auto values=settings.getProperty("values",{});
+            constexpr std::array<float,13> lo{{0,0,.15f,.65f,0,800,30,1000,0,.05f,0,0,0}};
+            constexpr std::array<float,13> hi{{1,250,12,2,1,18000,1200,20000,1.2f,2,1.6f,1,1}};
+            if(!values.isArray()||values.getArray()->size()!=static_cast<int>(lo.size()))return false;
+            for(std::size_t i=0;i<lo.size();++i) {
+                const auto& item=(*values.getArray())[static_cast<int>(i)];
+                if(!(item.isInt()||item.isDouble()))return false;
+                const double x=static_cast<double>(item);
+                if(!std::isfinite(x)||x < -1.e6||x > 1.e6)return false;
+                const float f=static_cast<float>(x);
+                if(f<lo[i]||f>hi[i])return false;
+            }
+            return true;
+        }
+        if(catalog=="armix.builtin.de-ezzer.v1"){
+            // Portable sound only; Power, rack bypass and audition stay with the live instance.
+            if(!containsOnly(settings,{"amount","sensitivity","rangeDb","mode","shape"}))return false;
+            const auto mode=settings.getProperty("mode",{}),shape=settings.getProperty("shape",{});
+            return number(settings,"amount",0,1)&&number(settings,"sensitivity",0,1)&&
+                number(settings,"rangeDb",0,18)&&mode.isString()&&shape.isString()&&
+                (mode==juce::var("Auto")||mode==juce::var("Voice"))&&
+                (shape==juce::var("Shelf")||shape==juce::var("Focused"));
+        }
+        if(catalog=="armix.builtin.anti-noiz.v1"){
+            armix::builtin_fx::AntiNoizPortableSettings::Core::Settings decoded;
+            return armix::builtin_fx::AntiNoizPortableSettings::parseSettings(settings,decoded);
+        }
         if(catalog=="armix.builtin.channel-compressor.v1"){
             if(!containsOnly(settings,{"thresholdDb","ratio","attackMs","releaseMs",
                     "kneeDb","makeupDb","mix"}))return false;

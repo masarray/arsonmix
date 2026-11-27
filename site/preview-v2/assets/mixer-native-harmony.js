@@ -22,6 +22,8 @@ root.innerHTML=`
     <option value="doubleLight">Double Light</option><option value="doubleWide">Double Wide</option>
     <option value="duo">Natural Duo</option><option value="trio">Soft Trio</option>
     <option value="quartet">Wide Quartet</option><option value="quintet">Lush Five</option><option value="choir">Tight Choir</option>
+    <option value="closeBlend">Close Blend</option><option value="warmBallad">Warm Ballad</option>
+    <option value="popChorus">Pop Chorus</option><option value="gospelEnsemble">Gospel Ensemble</option>
    </select>
    <button type="button" id="mxHSaveAs" class="mx-harm-preset-tool"
      title="Save As · My Presets" aria-label="Save As user preset" disabled>＋ Save As</button>
@@ -109,24 +111,31 @@ for(let i=0;i<12;++i){
  b.style.left=x+"%";b.style.top=y+"%";
  el("mxHWheel").append(b);
 }
-const sliderDefs=[["color","COLOR",0,100,1],["space","SPACE",0,100,1],
-                  ["wet","WET",0,100,1],["gainDb","GAIN",-24,12,0.5]];
+const sliderDefs=[["color","COLOR",0,100,.1],["space","SPACE",0,100,.1],
+                  ["wet","WET",0,100,.1],["gainDb","GAIN",-24,12,.1]];
 for(const [key,label,min,max,step] of sliderDefs){
  const box=document.createElement("label");box.className="mx-harm-slider";
- box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag horizontally or use arrow keys">`;
+ box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag or hover + wheel · Shift for fine control · Arrow keys">`;
  el("mxHSliders").append(box);
 }
 const fresh=()=>({key:0,scale:0,voices:3,voiceMode:0,correction:false,
                    guideMode:0,guideChannelId:"0",
                    color:0.5,space:0.6,wet:0.45,gainDb:0});
+// H32: lead-first factory voicings. Wet is additive backing level, not a
+// dry/wet crossfade. Soft Trio is the owner's field-selected reference.
+// Key/scale, guide binding and Pitch Tune remain explicit operator choices.
 const presets={
- doubleLight:{voiceMode:1,space:.35,color:.57,wet:.38,gainDb:0},
- doubleWide:{voiceMode:1,space:.82,color:.48,wet:.52,gainDb:-1},
- duo:{voiceMode:0,voices:2,color:.45,space:.35,wet:.31,gainDb:0},
- trio:{voiceMode:0,voices:3,color:.50,space:.56,wet:.40,gainDb:0},
- quartet:{voiceMode:0,voices:4,color:.66,space:.95,wet:.52,gainDb:-2},
- quintet:{voiceMode:0,voices:5,color:.61,space:.88,wet:.45,gainDb:-3},
- choir:{voiceMode:0,voices:4,color:.24,space:.30,wet:.58,gainDb:-3}
+ doubleLight:{voiceMode:1,space:.48,color:.74,wet:.36,gainDb:0},
+ doubleWide:{voiceMode:1,space:.82,color:.8,wet:.52,gainDb:0},
+ duo:{voiceMode:0,voices:2,color:.75,space:.68,wet:.52,gainDb:0},
+ trio:{voiceMode:0,voices:3,color:.75,space:.77,wet:.65,gainDb:.6},
+ quartet:{voiceMode:0,voices:4,color:.78,space:.85,wet:.6,gainDb:-.5},
+ quintet:{voiceMode:0,voices:5,color:.76,space:.88,wet:.66,gainDb:-1},
+ choir:{voiceMode:0,voices:4,color:.68,space:.58,wet:.56,gainDb:-.5},
+ closeBlend:{voiceMode:0,voices:2,color:.68,space:.44,wet:.34,gainDb:0},
+ warmBallad:{voiceMode:0,voices:3,color:.66,space:.68,wet:.48,gainDb:0},
+ popChorus:{voiceMode:0,voices:3,color:.82,space:.85,wet:.58,gainDb:0},
+ gospelEnsemble:{voiceMode:0,voices:5,color:.73,space:.88,wet:.69,gainDb:-1}
 };
 const native=()=>Boolean(window.__JUCE__?.backend?.emitEvent);
 const backend=()=>window.__JUCE__?.backend;
@@ -263,7 +272,7 @@ function syncPower(){
    (current?.track?.slotBypass?.[current?.slot]?"off":"on"):
    (!ch||typeof ch.fxRackBypassed!=="boolean"||!insert||
     typeof insert.bypassed!=="boolean"?"unknown":
-    ch.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+    (ch.fxRackBypassed||n?.raw?.globalFxBypassed===true)?"rack-off":insert.bypassed?"off":"on");
  const power=el("mxHPower");
  if(power.dataset.fxState===fxState)return;
  power.dataset.fxState=fxState;
@@ -356,7 +365,7 @@ function paint(){
  for(const {key,input,output} of sliders){
   const value=key==="gainDb"?v[key]:v[key]*100;
   const setting=String(value);
-  if(input.value!==setting)input.value=setting;
+  if(Math.abs(Number(input.value)-value)>.00001)input.value=setting;
   const ratio=Math.max(0,Math.min(1,(value-Number(input.min))/(Number(input.max)-Number(input.min))));
   // One numeric source drives the pointer AND the 270-degree illuminated
   // groove. Only touch CSS variables when the value changes: no extra
@@ -448,10 +457,64 @@ el("mxHCorrection").addEventListener("click",()=>{
  const desired=latest||pending?.settings||settings;
  edit({correction:!desired.correction});
 });
-sliders.forEach(({input})=>input.addEventListener("input",()=>{
- const k=input.dataset.field,x=Number(input.value);
- edit({[k]:k==="gainDb"?x:x/100});
-}));
+// Relative rotary gesture instead of browser range-track jumping. A
+// single pending animation frame coalesces pointer events; the native
+// one-in-flight ACK/readback contract still owns accepted DSP state.
+// Pointer-up flushes the last value even if the frame has not run.
+sliders.forEach(({input})=>{
+ const key=input.dataset.field;
+ const apply=x=>edit({[key]:key==="gainDb"?x:x/100});
+ // Wheel must accumulate from the latest intended setting, not from a
+ // range element that Chromium may normalize during a fractional drag.
+ window.ArMixFxGesture.bindRange(input,{
+   // Preserve V6 wheel increments independently of the integrated 0.1
+   // range resolution used for precision drag/keyboard interaction.
+   normalSteps:key==="gainDb"?15:30,
+   fineSteps:key==="gainDb"?5:10,
+   enabled:()=>!!current&&(!native()||mode==="NATIVE"),
+   get:()=>{
+     const v=latest||pending?.settings||(heldPatch?{...settings,...heldPatch}:settings);
+     return key==="gainDb"?v[key]:v[key]*100;
+   },onChange:apply
+ });
+ let gesture=null,frame=0;
+ const cancel=()=>{if(frame)cancelAnimationFrame(frame);frame=0;gesture=null;};
+ const live=()=>gesture&&!root.hidden&&current===gesture.owner&&
+    current?.instanceId===gesture.instance&&current?.boundEpoch===gesture.epoch;
+ const flush=()=>{
+   if(frame)cancelAnimationFrame(frame);frame=0;
+   if(!live()){cancel();return;}
+   const x=gesture.value;
+   if(x!==gesture.sent){gesture.sent=x;apply(x);}
+ };
+ const move=e=>{
+   if(!gesture||e.pointerId!==gesture.pointer)return;
+   if(!live()){cancel();return;}
+   const delta=(e.clientX-gesture.x)-(e.clientY-gesture.y);
+   const span=Number(input.max)-Number(input.min);
+   const raw=gesture.value+delta*span/(e.shiftKey?1200:180);
+   gesture.x=e.clientX;gesture.y=e.clientY;
+   gesture.value=Math.max(Number(input.min),Math.min(Number(input.max),raw));
+   if(!frame)frame=requestAnimationFrame(flush);
+ };
+ input.addEventListener("pointerdown",e=>{
+   if(e.button!==0||!e.isPrimary||!current||root.hidden)return;
+   e.preventDefault();input.focus({preventScroll:true});cancel();
+   const value=Number(input.value);
+   gesture={owner:current,instance:current.instanceId,epoch:current.boundEpoch,
+      pointer:e.pointerId,x:e.clientX,y:e.clientY,value,sent:value};
+   input.setPointerCapture(e.pointerId);
+ });
+ input.addEventListener("pointermove",move);
+ input.addEventListener("pointerup",e=>{
+   if(!gesture||e.pointerId!==gesture.pointer)return;
+   move(e);flush();cancel();
+   if(input.hasPointerCapture(e.pointerId))input.releasePointerCapture(e.pointerId);
+ });
+ input.addEventListener("pointercancel",cancel);
+ input.addEventListener("lostpointercapture",cancel);
+ input.addEventListener("input",()=>{if(!gesture)apply(Number(input.value));});
+});
 
  // Disk-only preset actions accept either a verified physical lease or an
  // exact committed logical FX identity; never require AUDIO SETUP for save.
@@ -617,6 +680,9 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 else mount();
 window.ArSonMixNativeHarmony=Object.freeze({
  id:ID,
+ // Shared bypass renderer may follow the exact same accepted channel/slot
+ // binding as this editor. This is read-only graph identity, not DSP ACK.
+ bypassBinding(){return root.hidden?null:acceptedLocation();},
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   pending=null;latest=null;heldPatch=null;verified=false;

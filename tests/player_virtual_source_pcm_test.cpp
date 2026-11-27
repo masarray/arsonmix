@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // ArSon Player M0: actual ChannelId/PCM source proof; NOT browser sound.
 #include "../engine/core/DynamicAcceptedSession.h"
+#include "../engine/player/PlayerOutputTrim.h"
 #ifdef NDEBUG
 #undef NDEBUG // Ensure assertions run under Release CTest.
 #endif
@@ -185,7 +186,24 @@ static void verifyPhysicalAndVirtualSharedDeckWithNoPhysicalPinSpoofing() {
     invalid.sources[1].kind=DynamicSourceKind::physical;
     assert(!DynamicPreparedMixerBlock::compile(roster,invalid,rejected,err));
 }
+static void verifyPlayerOutputTrim() {
+    armix::player::PlayerOutputTrim trim;
+    std::array<float,64> l{},r{};
+    l.fill(1.f);r.fill(-1.f);
+    const auto before=allocations;
+    trim.process(l.data(),r.data(),64);
+    assert(allocations==before && trim.percent()==50 && near(l[0],.5f) && near(r[63],-.5f));
+    trim.setPercent(100);l.fill(1.f);r.fill(-1.f);
+    trim.process(l.data(),r.data(),64);
+    assert(l[0]>.5f && l[0]<1.f && near(l[63],1.f));
+    trim.setPercent(0);l.fill(1.f);r.fill(-1.f);
+    trim.process(l.data(),r.data(),64);
+    assert(l[0]>0.f && near(l[63],0.f) && near(r[63],0.f));
+    trim.setPercent(-1);trim.setPercent(101);trim.setPercent(std::nan(""));
+    assert(trim.percent()==0 && allocations==before);
+}
 int main() {
+    verifyPlayerOutputTrim();
     verifyFirstSoundOwnedRouteAndIdempotence();
     verifyPhysicalAndVirtualSharedDeckWithNoPhysicalPinSpoofing();
 }

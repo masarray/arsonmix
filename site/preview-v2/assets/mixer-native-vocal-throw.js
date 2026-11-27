@@ -81,7 +81,7 @@ const context=()=>{
 const hint=text=>{$("vtHint").textContent=text;};
 const presetBar=window.ArSonMixBuiltinFxPresetBar?.create({
  host:panel,select:$("vtPreset"),label:"Vocal Delay",catalogId:ID,
- context,stable:()=>!pending&&!tempoPending,
+ context,stable:()=>!pending&&!tempoPending&&!rotaryDirty,
  readAccepted:()=>({...accepted}),validate:valid,
  factoryValue:settings=>Object.entries(presets)
    .find(([,v])=>same(v,settings))?.[0]||"Custom",
@@ -129,7 +129,7 @@ function renderMusicStatus(tempo){
 function syncPower(){
  const state=snapshot(),id=current&&window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(current.track);
  const lane=state?.graph?.channels?.find(ch=>ch.id===id),fx=lane?.inserts?.[current?.slot];
- const value=!context()?"unknown":lane.fxRackBypassed?"rack-off":fx.bypassed?"off":"on";
+ const value=!context()?"unknown":(lane.fxRackBypassed||state?.raw?.globalFxBypassed===true)?"rack-off":fx.bypassed?"off":"on";
  panel.dataset.fxState=value;
  const btn=$("vtPower");btn.dataset.fxState=value;
  btn.disabled=value==="unknown"||value==="rack-off";
@@ -200,7 +200,7 @@ function send(command){
  if(pending){hint("Waiting for DSP ACK");return false;}
  if(command==="nativeThrowSet"&&(!valid(draft)||same(draft,accepted)))return false;
  const requestId="throw-"+String(Date.now()*1000+(++seq%1000));
- pending={requestId,command,ack:false,created:Date.now()};
+ pending={requestId,command,ack:false,created:Date.now(),settings:command==="nativeThrowSet"?{...draft}:null};
  const payload={action:command,requestId,...ctx};
  if(command==="nativeThrowSet")payload.settings={...draft};
  backend().emitEvent("arMixAction",payload);
@@ -229,26 +229,39 @@ $("vtBpm").addEventListener("blur",()=>{bpmScreen.dataset.editing="false";});
 for(const [key,id] of [["mode","vtMode"],["bpm","vtBpm"],
  ["division","vtDivision"],["repeats","vtRepeats"]]){
  $(id).addEventListener("change",()=>{
-  draft={...draft,[key]:Number($(id).value)};paint();send("nativeThrowSet");
+  draft={...draft,[key]:Number($(id).value)};paint();streamRotary();
  });
 }
 // Physical rotary control: vertical pointer drag, mouse wheel and keyboard.
-let wheelFlush=null; // one timer for all Vocal Delay encoders, never PCM
-// Update visual locally during movement; issue exactly ONE accepted native
-// settings intent at drag release. No DOM/audio DSP loops are introduced.
+let wheelFlush=null; // bounded control-plane stream, never PCM
+let lastRotarySend=0,rotaryDirty=false;
+function flushRotary(){
+ clearTimeout(wheelFlush);wheelFlush=null;
+ if(!rotaryDirty||pending||panel.hidden||!context())return;
+ if(same(draft,accepted)){rotaryDirty=false;return;}
+ if(send("nativeThrowSet")){rotaryDirty=false;lastRotarySend=Date.now();}
+}
+function streamRotary(){
+ rotaryDirty=true;
+ if(pending)return;
+ const remaining=90-(Date.now()-lastRotarySend);
+ if(remaining<=0)flushRotary();
+ else if(!wheelFlush)wheelFlush=setTimeout(flushRotary,remaining);
+}
+// Stream during drag/wheel, one native edit in flight; retain latest draft.
 function bindRotary(face,key,step){
  const [min,max]=ranges[key];
- const quantize=v=>clamp(Math.round(v/step)*step,min,max);
+ const quantize=v=>clamp(Number((min+Math.round((v-min)/step)*step).toFixed(8)),min,max);
  let gesture=null;
- const update=v=>{if(pending)return;draft={...draft,[key]:quantize(v)};paint();};
+ const update=v=>{if(!context())return;const next=quantize(v);if(next===draft[key])return;draft={...draft,[key]:next};paint();streamRotary();};
  face.addEventListener("pointerdown",e=>{
-  if(e.button!==0||pending)return;
+  if(e.button!==0||!context())return;
   gesture={id:e.pointerId,y:e.clientY,initial:draft[key],changed:false};
   face.setPointerCapture(e.pointerId);e.preventDefault();
  });
  face.addEventListener("pointermove",e=>{
   if(!gesture||gesture.id!==e.pointerId)return;
-  const next=quantize(gesture.initial+(gesture.y-e.clientY)*(max-min)/168);
+  const next=quantize(gesture.initial+(gesture.y-e.clientY)*(max-min)/168*(e.shiftKey?.1:1));
   if(next!==draft[key]){gesture.changed=true;update(next);}
   e.preventDefault();
  });
@@ -256,29 +269,24 @@ function bindRotary(face,key,step){
   if(!gesture||e.pointerId!==gesture.id)return;
   const changed=gesture.changed;gesture=null;
   if(face.hasPointerCapture?.(e.pointerId))face.releasePointerCapture(e.pointerId);
-  if(changed)send("nativeThrowSet");
+  if(changed)flushRotary();
  };
  face.addEventListener("pointerup",finish);
  face.addEventListener("pointercancel",()=>{gesture=null;paint();});
  face.addEventListener("wheel",e=>{
-  if(e.ctrlKey||!Number.isFinite(e.deltaY)||e.deltaY===0)return;
-  e.preventDefault();
-  if(pending)return; // at most one native DSP edit in flight
-  update(draft[key]+(e.deltaY<0?step:-step));
-  // Batch rapid mouse-wheel and high-resolution trackpad changes.
-  clearTimeout(wheelFlush);
-  wheelFlush=setTimeout(()=>{wheelFlush=null;send("nativeThrowSet");},95);
+  const dir=window.ArMixFxGesture.direction(e);if(!dir||!context())return;
+  e.preventDefault();e.stopPropagation();
+  update(draft[key]+dir*step*(e.shiftKey?1:2));
  },{passive:false});
  face.addEventListener("keydown",e=>{
   const delta={ArrowUp:1,ArrowRight:1,ArrowDown:-1,ArrowLeft:-1,PageUp:5,PageDown:-5}[e.key];
   if(delta===undefined&&e.key!=="Home"&&e.key!=="End")return;
   e.preventDefault();
   update(e.key==="Home"?min:e.key==="End"?max:draft[key]+delta*step);
-  send("nativeThrowSet");
+  flushRotary();
  });
  face.addEventListener("dblclick",()=>{
-  if(pending)return;
-  update(defaults()[key]);send("nativeThrowSet");
+  update(defaults()[key]);flushRotary();
  });
 }
 for(const [key,[,,step]] of Object.entries(encoderMeta))
@@ -330,11 +338,11 @@ $("vtPower").addEventListener("click",()=>{
   current.track,"slotPower",{dataset:{slot:String(current.slot)}});
 });
 $("vtClose").addEventListener("click",()=>{
- clearTimeout(wheelFlush);wheelFlush=null;
+ clearTimeout(wheelFlush);wheelFlush=null;rotaryDirty=false;
  panel.hidden=true;pending=null;tempoPending=null;readId="";presetBar.close();
 });
 window.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&!panel.hidden){
+ if(!window.ArSonMixFxWorkspace&&e.key==="Escape"&&!panel.hidden){
  if(e.target.closest?.(".mx-fxp-form"))return;
  panel.hidden=true;pending=null;readId="";presetBar.close();
 }
@@ -357,7 +365,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
  insert(target){return Boolean(window.__ARMIX_NATIVE_M2__?.insertPlugin?.(ID,target));},
  open(track,slot){
   current={track,slot,instanceId:null};pending=null;tempoPending=null;musicSource="0";musicReadback=null;readId="";
-  clearTimeout(wheelFlush);wheelFlush=null;
+  clearTimeout(wheelFlush);wheelFlush=null;rotaryDirty=false;lastRotarySend=0;
   presetBar.reset();
   const state=snapshot(),id=window.__ARMIX_NATIVE_M2__?.nativeIdFor?.(track);
   const insert=state?.graph?.channels?.find(ch=>ch.id===id)?.inserts?.[slot];
@@ -371,7 +379,7 @@ window.ArSonMixNativeVocalThrow=Object.freeze({
   panel.dataset.fxTrackId=String(track.id);panel.dataset.fxSlot=String(slot);
   panel.hidden=false;paint();refreshMusicChannels();requestSnapshot(true);
  },
- close(){panel.hidden=true;presetBar.close();}
+ close(){panel.hidden=true;pending=null;readId="";presetBar.close();}
 });
 backend()?.addEventListener?.("arMixBuiltinThrowTempoAck",reply=>{
  if(!tempoPending||reply?.requestId!==tempoPending.requestId)return;
@@ -385,12 +393,12 @@ backend()?.addEventListener?.("arMixBuiltinThrowTempoAck",reply=>{
 backend()?.addEventListener?.("arMixBuiltinThrowQueue",reply=>{
  if(!pending||reply?.requestId!==pending.requestId)return;
  if(reply.status==="REJECTED"){hint("DSP rejected · "+(reply.errorCode||"STALE"));
-  pending=null;requestSnapshot(true);syncPower();}
+  pending=null;rotaryDirty=false;requestSnapshot(true);syncPower();}
 });
 backend()?.addEventListener?.("arMixBuiltinThrowAck",reply=>{
  if(!pending||reply?.requestId!==pending.requestId)return;
  if(reply.status!=="APPLIED"){hint("DSP rejected · "+(reply.errorCode||"UNKNOWN"));
-  pending=null;requestSnapshot(true);syncPower();return;}
+  pending=null;rotaryDirty=false;requestSnapshot(true);syncPower();return;}
  if(pending.command==="nativeThrowTrigger"){hint("");
   pending=null;requestSnapshot(true);syncPower();}
  else{pending.ack=true;requestSnapshot(true);}
@@ -416,16 +424,16 @@ backend()?.addEventListener?.("arMixBuiltinThrowSnapshot",reply=>{
  const confirmedSettingsId=pending?.command==="nativeThrowSet"?pending.requestId:"";
  if(pending){
   if(!pending.ack||reply.appliedRequestId!==pending.requestId)return;
-  accepted={...reply.settings};draft={...accepted};pending=null;
+  accepted={...reply.settings};if(!rotaryDirty)draft={...accepted};pending=null;
   hint("");
- }else{accepted={...reply.settings};draft={...accepted};}
+ }else{accepted={...reply.settings};if(!rotaryDirty)draft={...accepted};}
  presetBar.onAccepted(accepted,confirmedSettingsId);
- paint();
+ paint();if(rotaryDirty)streamRotary();
 });
 backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
  if(panel.hidden)return;
  if(native()&&!context()){
-  pending=null;tempoPending=null;
+  pending=null;tempoPending=null;rotaryDirty=false;clearTimeout(wheelFlush);wheelFlush=null;
   hint("FX graph changed · reopen");
  }
  refreshMusicChannels();syncPower();
@@ -433,10 +441,11 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
 window.setInterval(()=>{
  if(panel.hidden)return;
  presetBar.tick();
- if(pending&&Date.now()-pending.created>3500){hint("DSP ACK timeout");pending=null;}
+ if(pending&&Date.now()-pending.created>3500){hint("DSP ACK timeout");pending=null;rotaryDirty=false;requestSnapshot(true);}
  if(tempoPending&&Date.now()-tempoPending.created>3500){
   hint("Tempo source ACK timeout");tempoPending=null;refreshMusicChannels();
  }
+ if(rotaryDirty&&!pending)streamRotary();
  if(native()&&!snapshot()?.logical)requestSnapshot();
  syncPower();
 },250);

@@ -5,13 +5,42 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 HOST=(ROOT/"src/Main.cpp").read_text(encoding="utf-8")
 OWNER=(ROOT/"src/NativeOwnedFloatingWindow.h").read_text(encoding="utf-8")
-WIN32=(ROOT/"src/NativeFxWin32Owner.h").read_text(encoding="utf-8")
+WIN32_HEADER=(ROOT/"src/NativeFxWin32Owner.h").read_text(encoding="utf-8")
+WIN32=(ROOT/"src/NativeFxWin32Owner.cpp").read_text(encoding="utf-8")
 
 class NativeFxWindowLifecycle(unittest.TestCase):
+    def test_juce_active_editor_registration_released_before_deletion(self):
+        self.assertIn("editor->processor.editorBeingDeleted(editor);",OWNER)
+        self.assertLess(OWNER.index("editor->processor.editorBeingDeleted(editor);"),
+                        OWNER.index("delete editor;"))
+        self.assertIn("processor.createEditorAndMakeActive()",OWNER)
+        self.assertIn("if(processor.getActiveEditor()!=nullptr)return {};",OWNER)
+        self.assertEqual(HOST.count("armix::ui::createHostedAudioEditor("),3)
+        self.assertNotIn("createEditorIfNeeded()",HOST)
+        self.assertIn("setContentNonOwned (editor, true);",HOST)
+        self.assertIn("ownedEditor_.reset();",HOST)
+        self.assertIn("std::move(ownedEditor),*this",HOST)
+
+    def test_win32_sdk_isolation_and_real_build_wiring(self):
+        self.assertNotIn("#include",WIN32_HEADER)
+        self.assertNotIn("#undef",WIN32_HEADER)
+        self.assertNotIn("static_cast<HWND>",OWNER)
+        self.assertIn("#include <windows.h>",WIN32)
+        self.assertNotIn("#undef",WIN32)
+        cmake=(ROOT/"CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertEqual(cmake.count("src/NativeFxWin32Owner.cpp"),2)
+        isolated=(ROOT/"tests/native_fx_window_owner/CMakeLists.txt").read_text(encoding="utf-8")
+        self.assertIn("../../src/NativeFxWin32Owner.cpp",isolated)
+        self.assertIn("../native_fx_win32_sdk_order_test.cpp",isolated)
+
     def test_mixer_owned_not_global_topmost(self):
         self.assertIn("attachOwnedFloatingWindow (*this, mixer)",HOST)
         self.assertIn("attachOwnedFloatingWindow",OWNER)
         self.assertIn("win32::attachOwnedPopup",OWNER)
+        self.assertIn("win32::raiseOwnedPopup",OWNER)
+        self.assertIn("SWP_NOACTIVATE|SWP_NOOWNERZORDER",WIN32)
+        self.assertIn("SWP_NOMOVE|SWP_NOSIZE",WIN32)
+        self.assertIn("GetAncestor(foreground,GA_ROOTOWNER)!=mixer",WIN32)
         self.assertIn("GWLP_HWNDPARENT",WIN32)
         self.assertIn("GW_OWNER",WIN32)
         self.assertIn("WS_CHILD",WIN32)
@@ -54,7 +83,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertNotIn('closeAllPluginEditors();',opened)
 
     def test_native_recenter_and_unplugged_monitor_recovery(self):
-        self.assertIn("placeFloatingEditor (*this, mixer_, centreOnMixer)",HOST)
+        self.assertIn("centreOnMixer && !everPresented_",HOST)
         self.assertIn('args.getProperty("recenter",false)',HOST)
         self.assertIn('request.getProperty("recenter",false)',HOST)
         self.assertIn("getDisplayForRect(current)",OWNER)
@@ -88,6 +117,51 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('FX slot or stored state changed:',HOST)
         self.assertIn("shownWindow->present(true); // new HWND",HOST)
         self.assertIn("prepared.window->present(true); // first-open",HOST)
+
+    def test_primary_out_wire_preserves_unity_and_independent_sum(self):
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        vm=(ROOT/"web/approved-wire-view-model.js").read_text(encoding="utf-8")
+        self.assertIn('const fixed=edge.primaryOutput===true',bridge)
+        self.assertIn('const disabled=!!next.retained||fixed',bridge)
+        self.assertIn('label.textContent=fixed?"UNITY":"LVL"',bridge)
+        self.assertNotIn('controller.intent("SET_FADER",primary.source,{valueDb:db})',bridge)
+        self.assertIn('primaryChannelLevelPlan(snapshot,projected,sourceId,edgeId)',vm)
+        self.assertIn('edge.primaryOutput!==true||edge.gainLinear!==1',vm)
+        self.assertIn('Parallel SEND level · editable via native EdgeId ACK/readback',bridge)
+        assembler=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
+        self.assertIn("wireDisplayDb=",assembler)
+        self.assertIn("if(edge.kind!='primary')",assembler.replace("!==","!="))
+        self.assertIn("nativePrimaryDb",assembler)
+        self.assertIn("edge.kind==='primary')return; // commit once on change",assembler)
+
+    def test_geq_repeat_rack_click_and_f11_preserve_position(self):
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertIn("const identities=new WeakMap()",bridge)
+        self.assertIn("identities.get(root)!==identity",bridge)
+        self.assertIn("host,surface.windowKey,t,slot,editor.instanceId",bridge)
+        self.assertIn("if(!offsets.has(root))center(root)",bridge)
+        self.assertIn("else keepReachable(root)",bridge)
+        self.assertIn("requestAnimationFrame(()=>keepReachable(root))",bridge)
+        self.assertNotIn("if(recenter||!offsets.has(root))center(root)",bridge)
+        self.assertIn("bool everPresented_=false",HOST)
+        self.assertIn("centreOnMixer && !everPresented_",HOST)
+        self.assertIn("placeFloatingEditor(*this,mixer_,false)",HOST)
+
+    def test_f11_uses_reversible_juce_fullscreen(self):
+        bridge=(ROOT/"web/approved-native-bridge.js").read_text(encoding="utf-8")
+        self.assertIn('window.addEventListener("keydown",event=>{',bridge)
+        self.assertIn('event.key==="F11"||event.code==="F11"||event.keyCode===122',bridge)
+        self.assertIn('event.repeat||event.altKey||event.ctrlKey',bridge)
+        self.assertIn('backend.emitEvent("arMixWindowFullscreen",{operation:"TOGGLE"})',bridge)
+        self.assertIn('withEventListener ("arMixWindowFullscreen"',HOST)
+        self.assertIn('toggleOperatorFullscreen();',HOST)
+        self.assertIn('maximisedBeforeOperatorFullscreen_=isFullScreen()',HOST)
+        self.assertIn('setTitleBarHeight(0);',HOST)
+        self.assertIn('setFullScreen(true);',HOST)
+        self.assertIn('setFullScreen(false);',HOST)
+        self.assertIn('setTitleBarHeight(31);',HOST)
+        self.assertIn('browser_.resized();',HOST)
+        self.assertNotIn('requestFullscreen(',bridge)
 
     def test_multiple_exact_native_vendor_windows_and_retired_lease_cleanup(self):
         self.assertIn("struct AdditionalFxEditor final",HOST)
@@ -177,7 +251,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         builder=(ROOT/"scripts/build_approved_native_gui.py").read_text(encoding="utf-8")
         script=(ROOT/"web/approved-floating-fx-bridge.js").read_text(encoding="utf-8")
         block=HOST.split("class BuiltinFxDesktopWindow final :",1)[1].split(
-            "class AudioSetupWindow final",1)[0]
+            "class ConsoleWindow final",1)[0]
         self.assertIn("public juce::TopLevelWindow",block)
         self.assertIn("setUsingNativeTitleBar(false)",block)
         self.assertIn("addAndMakeVisible(browser_)",block)
@@ -235,9 +309,10 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('change.op==="DISCONNECT"',bridge)
         self.assertIn("scope?.animateAcceptedWireRetract?.(held.uiSource,held.point)",bridge)
         self.assertIn("return false; // Native ACK+readback, NEVER the browser reducer",bridge)
-        import subprocess
+        import os, subprocess
         # Execute the real bridge method in bounded Node, not just strings.
-        done=subprocess.run(["node",str(ROOT/"tests/native_wire_replug_identity_node_test.js")],
+        node=os.environ.get("ARMIX_WIRE_TEST_NODE", "node")
+        done=subprocess.run([node,str(ROOT/"tests/native_wire_replug_identity_node_test.js")],
                             capture_output=True,text=True,timeout=15)
         self.assertEqual(done.returncode,0,done.stdout+"\n"+done.stderr)
 
@@ -250,7 +325,7 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("getResourceProviderRoot()+",HOST)
         self.assertIn('"fx-window.html"',HOST)
         self.assertIn("attachOwnedFloatingWindow(*this,mixer_)",HOST)
-        self.assertIn("placeFloatingEditor(*this,mixer_,recenter)",HOST)
+        self.assertIn("placeFloatingEditor(*this,mixer_,false)",HOST)
         self.assertIn("std::make_unique<BuiltinFxDesktopWindow>",HOST)
         self.assertIn("maxSimultaneousBuiltinWindows=16",HOST)
         self.assertIn("floatingBuiltinFx_.clear();",HOST)
@@ -302,13 +377,25 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("event.stopImmediatePropagation(); // prevent old viewport-clamped",bridge)
         self.assertIn("event.altKey",bridge)
         self.assertIn("event.shiftKey",bridge)
-        self.assertIn("root.style.zIndex=String(++layer)",bridge)
+        # The old unbounded per-open layer was the field defect. Verify
+        # the shared manager, including pointer/focus refocus and bounded order.
+        self.assertNotIn("root.style.zIndex=String(++layer)",bridge)
+        self.assertIn("window.ArSonMixFxWorkspace?.raise(root)",bridge)
+        shared=(ROOT/"site/preview-v2/assets/mixer-contextual-buttons.js").read_text(encoding="utf-8")
+        self.assertIn("const layerBase=9000",shared)
+        self.assertIn("String(layerBase+i)",shared)
+        self.assertIn("document.addEventListener('pointerdown'",shared)
+        self.assertIn("document.addEventListener('focusin'",shared)
+        self.assertIn("if(!root.hidden&&sameBinding)",bridge)
 
     def test_all_editor_paths_use_one_host(self):
         self.assertEqual(HOST.count("std::make_unique<PluginEditorWindow>"),4)
-        self.assertIn("prepared.processor->getName(),editor,*this)",HOST)
-        self.assertIn("owner->processor->getName(),editor,*this)",HOST)
-        self.assertIn("processor->getName(), editor, *this",HOST)
-        self.assertIn("std::make_unique<AudioSetupWindow>",HOST)
-        self.assertIn("}, *safe);",HOST)
+        self.assertIn("prepared.processor->getName(),std::move(editor),*this)",HOST)
+        self.assertIn("owner->processor->getName(),std::move(ownedEditor),*this)",HOST)
+        self.assertIn("processor->getName(), std::move(editor), *this",HOST)
+        self.assertNotIn("std::make_unique<AudioSetupWindow>",HOST)
+        self.assertNotIn("AudioDeviceSelectorComponent",HOST)
+        self.assertIn('emitEventIfBrowserIsVisible("arMixOpenAudioIO"',HOST)
+        self.assertIn("device->showControlPanel()",HOST)
 if __name__=="__main__":unittest.main()
+

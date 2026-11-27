@@ -41,6 +41,43 @@ int main() {
     assert(Input::text(file,1024,text)&&Input::jsonStructure(text));
     assert(!Input::jsonStructure("["+text+"]"));
     assert(!Input::jsonStructure("{]"));
+    // Reproduce the actual UBSan failure without invoking the unsafe parser.
+    for(const auto* invalidNumber:{"[444444444444444444444444444]",
+         "[9223372036854775808]","[-9223372036854775808]",
+         "[9223372036854775808.0]","[1e40666666666]","[1e-2147483648]",
+         "[1e+]","[- 1]","[01]","[1.]"}) {
+        assert(!Input::jsonStructure(invalidNumber));
+    }
+    for(const auto* validNumber:{"[9223372036854775807]","[-9223372036854775807]",
+         "[0,-0,0.5,-1.25e-4,1e+308,5e-324]",
+         "{\"id\":\"18446744073709551615\",\"label\":\"1e40666666666\"}"}) {
+        assert(Input::jsonStructure(validNumber));
+        assert(!juce::JSON::parse(validNumber).isVoid());
+    }
+    // Reproducer from UBSan on JUCE parseNumber, plus the exponent path.
+    for(const auto* bad:{"{\"n\":[444444444444444444444444444]}",
+                         "{\"n\":9223372036854775808}",
+                         "{\"n\":-9223372036854775808}",
+                         "{\"n\":9223372036854775808.0}",
+                         "{\"n\":1e2147483648}",
+                         "{\"n\":1e-9999999999999999999}",
+                         "{\"n\":- 444444444444444444444444444}",
+                         "{\"n\":1e+}", "{\"n\":1.}"})
+        assert(!Input::jsonStructure(bad));
+    for(const auto* good:{"{\"n\":9223372036854775807}",
+                          "{\"n\":-9223372036854775807}",
+                          "{\"n\":0.12345678901234567890123456789}",
+                          "{\"n\":1.25e-120}",
+                          "{\"n\":0e+000000000000000000001}",
+                          "{\"id\":\"18446744073709551615\"}"}) {
+        assert(Input::jsonStructure(good));
+        assert(juce::JSON::parse(good).isObject());
+    }
+    assert(!Input::jsonStructure("[1e1000]"));
+    assert(!Input::jsonStructure("[1e-1000]"));
+    assert(!Input::jsonStructure("{'n':1}"));
+    assert(!Input::jsonStructure("[1true]"));
+    assert(Input::jsonStructure("{\"label\":\"it's safe\"}"));
     assert(!Input::jsonStructure("{\"a\":\"unterminated}"));
     assert(Input::jsonStructure("{\"a\":\"[{}]\\\"\"}"));
     for(const auto* path:{"../escape","a/../escape","a//b","/a","a/",

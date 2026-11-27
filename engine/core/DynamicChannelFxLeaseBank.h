@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicChannelRoster.h"
+#include "DynamicPreparedMixerBlock.h"
+#include "../builtin_fx/AutoDuckerProcessor.h"
 #include "LiveChannelFxGraph.h"
 #include "../builtin_fx/ChannelHarmonyProcessor.h"
 #include <algorithm>
@@ -142,6 +144,8 @@ public:
                         return Fault::duplicateInstance;
                 row.owners[i]=owner; // owner reference acquired OFF realtime
                 row.raw[i]=owner.get();
+                if(auto* d=dynamic_cast<armix::builtin_fx::AutoDuckerProcessor*>(owner->processor.get()))
+                    row.duckerRoutes.push_back({i,d->acceptedSettings()});
                 // Discover each music-guide listener OFF realtime. A lease
                 // owns its processor through the same PCM snapshot lifetime.
                 if(auto* harmony=dynamic_cast<armix::builtin_fx::ChannelHarmonyProcessor*>(
@@ -188,6 +192,26 @@ public:
     }
     const Lease* ownerForControl(ChannelId id,std::size_t slot) const noexcept {
         const auto* p=find(id);return p&&slot<p->count?&p->owners[slot]:nullptr;
+    }
+    // An editor owns an exact FxInstance, NOT its original rack ordinal.
+    // Resolve the CURRENT accepted location after MOVE, including a transfer
+    // to another ChannelId. No catalog-name or same-slot substitution.
+    // CONTROL/message thread only; never search a graph in the audio callback.
+    struct EditorLocation final {
+        ChannelId channel{};
+        std::size_t slot=0;
+        explicit operator bool() const noexcept { return channel.value!=0; }
+    };
+    EditorLocation findEditorLocation(const Lease& held,
+                                      const juce::String& token) const noexcept {
+        if(!held || !held->processor || token.isEmpty() ||
+           held->instanceId!=token)return {};
+        for(const auto& row:rows_)
+            for(std::size_t index=0;index<row.count;++index)
+                if(row.owners[index].get()==held.get() &&
+                   row.owners[index]->instanceId==token)
+                    return {row.id,index};
+        return {};
     }
 
     // E2: stable ChannelId VST3 control plane. Requests are serialized by
@@ -382,6 +406,31 @@ public:
         return prepare(epoch,revision,retained,destination,prior.external_);
     }
 
+    // A stopped, explicitly requested insert-to-return conversion replaces
+    // exactly one lease and adds one new lane. All unrelated leases survive.
+    static Fault replaceOwnedOnNewChannel(std::uint64_t epoch,std::uint64_t revision,
+            const DynamicChannelFxLeaseBank& prior,ChannelId source,std::size_t slot,
+            const juce::String& token,ChannelId target,Lease replacement,
+            DynamicChannelFxLeaseBank& destination) {
+        if(!epoch||epoch!=prior.epoch_||revision<=prior.revision_)return Fault::invalidEpoch;
+        if(!target.value||target==source||prior.find(target)||prior.external_.id==source)
+            return Fault::invalidExternalLease;
+        const auto* old=prior.ownerForControl(source,slot);
+        if(!old||!*old||(*old)->instanceId!=token||!replacement||
+           replacement->instanceId==token||!replacement->silenceBypass)
+            return Fault::staleInstance;
+        std::vector<Assignment> list;list.reserve(prior.rows_.size()+1);
+        for(const auto& row:prior.rows_){
+            Assignment a;a.id=row.id;a.format=row.format;a.rackBypassed=row.rackBypassed;
+            for(std::size_t i=0;i<row.count;++i)
+                if(row.id!=source||i!=slot)a.inserts.push_back(row.owners[i]);
+            list.push_back(std::move(a));
+        }
+        Assignment a;a.id=target;a.format=ProcessingFormat::stereo;
+        a.inserts.push_back(std::move(replacement));list.push_back(std::move(a));
+        return prepare(epoch,revision,list,destination,prior.external_);
+    }
+
     // CONTROL thread: publish a newly instantiated vendor insert on an
     // independently owned ChannelId, retaining old leases/state/tails.
     // This does NOT call a vendor or allocate from the audio callback.
@@ -417,6 +466,72 @@ public:
         return prepare(epoch,revision,list,destination,prior.external_);
     }
 
+    // Replace just one rack. All unrelated leases and gates retain identity;
+    // target gate is new so a failed publication cannot mutate old bypass.
+    static Fault replaceOwnedRack(std::uint64_t epoch,std::uint64_t revision,
+            const DynamicChannelFxLeaseBank& prior,ChannelId target,
+            ProcessingFormat format,std::vector<Lease> inserts,bool rackBypassed,
+            DynamicChannelFxLeaseBank& destination) {
+        if(!epoch||epoch!=prior.epoch_||revision<=prior.revision_)return Fault::invalidEpoch;
+        if(!target.value||prior.external_.id==target)return Fault::invalidExternalLease;
+        std::vector<Assignment> list;
+        list.reserve(prior.rows_.size()+1);
+        bool found=false;
+        for(const auto& row:prior.rows_){
+            Assignment a;a.id=row.id;a.format=row.format;
+            if(row.id==target){
+                if(row.format!=format)return Fault::invalidBusLayout;
+                a.inserts=std::move(inserts);
+                a.rackBypassed=std::make_shared<std::atomic<bool>>(rackBypassed);
+                found=true;
+            }else{
+                a.rackBypassed=row.rackBypassed;
+                for(std::size_t i=0;i<row.count;++i)a.inserts.push_back(row.owners[i]);
+            }
+            list.push_back(std::move(a));
+        }
+        if(!found){
+            Assignment a;a.id=target;a.format=format;a.inserts=std::move(inserts);
+            a.rackBypassed=std::make_shared<std::atomic<bool>>(rackBypassed);
+            list.push_back(std::move(a));
+        }
+        return prepare(epoch,revision,list,destination,prior.external_);
+    }
+
+    // CONTROL-only extraction from exact FX leases. Deduplicate the union.
+    void collectPostFaderSidechains(std::vector<DynamicSidechainDependency>& out) const {
+        for(const auto& row:rows_)
+            for(const auto& route:row.duckerRoutes)
+                for(std::size_t k=0;k<route.settings.count;++k)
+                    out.push_back({ChannelId{route.settings.sources[k]},row.id});
+        std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){
+            return a.target.value==b.target.value?a.source.value<b.source.value:a.target.value<b.target.value;
+        });
+        out.erase(std::unique(out.begin(),out.end(),[](const auto& a,const auto& b){
+            return a.target==b.target&&a.source==b.source;
+        }),out.end());
+    }
+
+    // Stage a source edit without resetting DSP, recreating an editor or
+    // mutating any published row. Both old and new graphs retain same lease.
+    static bool stageDuckerSources(const DynamicChannelFxLeaseBank& prior,
+            std::uint64_t nextRevision,ChannelId target,std::size_t slot,
+            const Lease& held,const armix::builtin_fx::AutoDuckerProcessor::Settings& settings,
+            DynamicChannelFxLeaseBank& out) {
+        if(nextRevision<=prior.revision_||!settings.validSources()||!held)return false;
+        const auto* old=prior.ownerForControl(target,slot);
+        if(!old||*old!=held)return false;
+        DynamicChannelFxLeaseBank candidate;
+        candidate.epoch_=prior.epoch_;candidate.revision_=nextRevision;
+        candidate.rows_=prior.rows_;candidate.musicGuides_=prior.musicGuides_;
+        candidate.external_=prior.external_;candidate.globalRackOverride_=prior.globalRackOverride_;
+        for(auto& row:candidate.rows_)if(row.id==target)
+            for(auto& route:row.duckerRoutes)if(route.slot==slot){
+                route.settings=settings;out=std::move(candidate);return true;
+            }
+        return false;
+    }
+
     // Process each M4 VST exactly once at its target ChannelId. CPU work is
     // proportional to that node's FX rack, not every Channel in the session.
     // Call only on the native audio thread after epoch/revision graph admission.
@@ -430,8 +545,14 @@ public:
                 globalRackOverride_->load(std::memory_order_acquire)) ||
                 (row->rackBypassed &&
                  row->rackBypassed->load(std::memory_order_acquire));
-            for(std::size_t i=0;i<row->count;++i)
-                row->raw[i]->render(left,right,frames,rackOff);
+            std::size_t route=0;
+            for(std::size_t i=0;i<row->count;++i){
+                if(route<row->duckerRoutes.size()&&row->duckerRoutes[route].slot==i){
+                    const auto& s=row->duckerRoutes[route++].settings;
+                    const armix::builtin_fx::AutoDuckerSelectionScope selection({s.sources.data(),s.count});
+                    row->raw[i]->render(left,right,frames,rackOff);
+                }else row->raw[i]->render(left,right,frames,rackOff);
+            }
         }
         // Post-FX / pre-fader PCM tap of the selected OTHER ChannelId.
         // The guide is read-only: it NEVER creates a WIRE or audible send.
@@ -450,12 +571,14 @@ private:
         ChannelId target{};
         armix::builtin_fx::ChannelHarmonyProcessor* processor=nullptr;
     };
+    struct DuckerRoute final {std::size_t slot=0;armix::builtin_fx::AutoDuckerProcessor::Settings settings{};};
     struct Row final {
         ChannelId id{};
         ProcessingFormat format=ProcessingFormat::stereo;
         std::uint8_t count=0;
         std::shared_ptr<std::atomic<bool>> rackBypassed; // persists across revisions
         std::array<Lease,maxInserts> owners{};
+        std::vector<DuckerRoute> duckerRoutes; // only allocated for actual duckers
         std::array<FxGraph::FxInstance*,maxInserts> raw{};
     };
     const Row* find(ChannelId id) const noexcept {

@@ -327,7 +327,7 @@ test('portable Windows preview metadata is written before release ZIP verificati
 });
 
 
-test('Vocal Harmony DSP workflow is STRICTLY plugin-only, never player/mixer/CMake/CI-maintenance', () => {
+test('Vocal Harmony DSP workflow is STRICTLY plugin-owned, including qualification, never unrelated CI', () => {
   const harmony = read('.github/workflows/harmony-fast-dsp.yml');
   const start = harmony.indexOf('    paths:\n');
   const end = harmony.indexOf('\npermissions:', start);
@@ -339,6 +339,9 @@ test('Vocal Harmony DSP workflow is STRICTLY plugin-only, never player/mixer/CMa
     'engine/builtin_fx/ChannelHarmonyProcessor.h',
     'tests/harmony*.cpp',
     'tools/harmony_offline_ab.cpp',
+    'scripts/harmony_vocalset_qualification.py',
+    'scripts/vocal_harmony_ci_scope.mjs',
+    '.github/workflows/harmony-fast-dsp.yml',
     'site/preview-v2/assets/mixer-native-harmony.js',
     'tests/native_harmony_assembly_test.py',
     'tests/approved_native_harmony_smoke.py'
@@ -360,7 +363,9 @@ test('Vocal Harmony DSP workflow is STRICTLY plugin-only, never player/mixer/CMa
     'engine/builtin_fx/ChannelCompressorProcessor.h',
     'engine/builtin_fx/ChannelEqProcessor.h',
     'engine/builtin_fx/VocalThrowProcessor.h',
-    '.github/workflows/harmony-fast-dsp.yml',
+    'scripts/chat_ci_dispatch.mjs',
+    'scripts/windows_feature_scope.mjs',
+    '.github/workflows/chat-ci-milestone.yml',
     '.github/workflows/p1-windows.yml',
     '.github/workflows/ui-smoke.yml',
     'docs/ARSON_HARMONY_ENGINE_AUDIT_20261108.md'
@@ -374,7 +379,10 @@ test('Vocal Harmony DSP workflow is STRICTLY plugin-only, never player/mixer/CMa
     'engine/builtin_fx/HarmonyDsp.h',
     'engine/builtin_fx/ChannelHarmonyProcessor.h',
     'tests/harmony_dsp_test.cpp',
-    'tools/harmony_offline_ab.cpp'
+    'tools/harmony_offline_ab.cpp',
+    'scripts/harmony_vocalset_qualification.py',
+    'scripts/vocal_harmony_ci_scope.mjs',
+    '.github/workflows/harmony-fast-dsp.yml'
   ]) {
     assert.ok(selected(file), file + ' must trigger the Vocal Harmony lane');
     assert.deepEqual(classifyVocalHarmonyChanges([file]),

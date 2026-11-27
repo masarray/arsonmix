@@ -11,6 +11,8 @@
       ["mixer-native-peq.js","ArSonMixNativeEq","#mxNativePeq"],
     "armix.builtin.channel-compressor.v1":
       ["mixer-native-compressor.js","ArSonMixNativeCompressor","#mxNativeComp"],
+    "armix.builtin.auto-ducker.v1":
+      ["mixer-native-ducker.js","ArSonMixNativeDucker","#mxNativeDucker"],
     "armix.builtin.graphic-eq31.v1":
       ["mixer-native-geq31.js","ArSonMixGraphicEq31","#mxNativeGeq31"],
     "armix.builtin.arson-harmony.v1":
@@ -20,7 +22,25 @@
     "armix.builtin.8d-sonku.v1":
       ["mixer-native-sonku.js","ArSonMixNativeSonKu","#mxNativeSonKu"]
   });
-  let current=null,identity=null,busyLoad=null,pending=null;
+  let current=null,identity=null,busyLoad=null,mountedCatalog=null;
+  let acceptedWorkspace=""; // retained exact workspace, even between snapshots
+  let powerSequence=0,pendingPower=null;
+  // Physical power has two independent proofs. An ACK is not a fresh rack
+  // snapshot, especially when child WebView snapshot relay is throttled.
+  const physicalPowerValue=(p,next)=>p.gate==="global"?next?.view.raw?.globalFxBypassed:
+    p.gate==="rack"?next?.channel.fxRackBypassed:next?.insert.bypassed;
+  function settlePhysicalPower(){
+    const p=pendingPower;
+    if(!p||p.logical)return;
+    if(!current||current.kind!=="CHANNEL_ID"||
+       current.view.device.epoch!==p.epoch||
+       protocol.nativeHardwareConfiguration(current.view.device)!==p.hardware||
+       identity?.instanceId!==p.instance){
+      pendingPower=null;
+      return;
+    }
+    if(p.acked&&physicalPowerValue(p,current)===p.value)pendingPower=null;
+  }
   const banner=document.getElementById("fxWindowStatus");
   const inform=message=>{
     if(banner){banner.textContent=message;banner.hidden=false;}
@@ -34,8 +54,17 @@
   // header grabs the REAL HWND through Windows system-move, never an inner
   // CSS card. Preserve every original preset, Power, S/M/L and Close click.
   // Document capture beats each original editor's DOM drag listener.
-  const dragHeaders=".mx-peq-title,.mx-comp-head,.mx-geq31-head,"+
+  const dragHeaders=".mx-peq-title,.mx-comp-head,.mx-ducker-head,.mx-geq31-head,"+
     ".mx-harm-head,.vt-face-header,.sk-head";
+  // Forward real editor interaction before child controls can stop bubbling.
+  document.addEventListener("pointerdown",event=>{
+    if(event.isTrusted&&event.button===0&&identity&&current)
+      backend.emitEvent("arMixFloatingActivate",{});
+  },true);
+  document.addEventListener("focusin",event=>{
+    if(event.isTrusted&&document.hasFocus()&&identity&&current)
+      backend.emitEvent("arMixFloatingActivate",{});
+  },true);
   document.addEventListener("pointerdown",event=>{
     if(event.button!==0||!event.isTrusted)return;
     const head=event.target.closest?.(dragHeaders);
@@ -43,6 +72,16 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     backend.emitEvent("arMixFloatingDrag",{});
+  },true);
+  window.addEventListener("keydown",event=>{
+    if(event.key!=="Escape"||event.repeat||event.defaultPrevented||!identity||
+       event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||
+       event.target.closest?.(".mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu"))return;
+    const entry=registry[identity.catalogId],root=document.querySelector(entry[2]);
+    if(!root||root.hidden||Array.from(root.querySelectorAll(".mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu"))
+       .some(el=>!el.hidden&&el.getClientRects().length))return;
+    window[entry[1]]?.close?.();
+    if(root.hidden){event.preventDefault();event.stopImmediatePropagation();}
   },true);
   const same=(a,b)=>String(a)===String(b);
   function project(snapshot,expected) {
@@ -75,21 +114,44 @@
     nativeIdFor:track=>track && identity &&
       same(track.nativeId,identity.channelId)?identity.channelId:null,
     consumeAction(track,action,btn) {
-      if(action!=="slotPower"||!identity||!current)return false;
+      if(!["slotPower","fxOn","globalFxOn"].includes(action)||
+         !identity||!current)return false;
       const slot=Number(btn?.dataset?.slot);
       if(!Number.isInteger(slot)||slot!==identity.slot ||
          !track||!same(track.nativeId,identity.channelId))return true;
       const verified=project(current.view.raw,identity);
       if(!verified)return true;
-      const requestId="fx-window-"+crypto.randomUUID();
+      const gate=action==="fxOn"?"rack":action==="globalFxOn"?"global":"slot";
+      // Rack/global buttons explicitly clear only an accepted upstream gate.
+      // Never silently enable every processor when an operator toggles a slot.
+      if(gate!=="slot"&&(verified.kind!=="CHANNEL_ID"||
+         (gate==="rack"&&verified.channel.fxRackBypassed!==true)||
+         (gate==="global"&&verified.view.raw?.globalFxBypassed!==true)))
+        return true;
+      settlePhysicalPower();
+      if(pendingPower)return true;
+      // No crypto.randomUUID dependency: JUCE WebView2 origins can restrict
+      // Web Crypto. Native still verifies exact channel/slot/instance/epoch.
+      const requestId="fx-window-"+Date.now().toString(36)+"-"+(++powerSequence);
+      const value=gate==="slot"?!verified.insert.bypassed:false;
+      pendingPower={id:requestId,gate,value,acked:false,
+        logical:verified.kind!=="CHANNEL_ID",epoch:verified.view.device.epoch,
+        hardware:protocol.nativeHardwareConfiguration(verified.view.device),
+        instance:identity.instanceId};
       backend.emitEvent("arMixFloatingPower",{
         requestId,channelId:identity.channelId,slot:identity.slot,
-        instanceId:identity.instanceId,catalogId:identity.catalogId,
+        instanceId:identity.instanceId,catalogId:identity.catalogId,gate,
         deviceEpoch:verified.view.device.epoch,
         graphRevision:verified.view.graph.revision,
         workspaceToken:verified.view.workspaceToken||"",
-        value:!verified.insert.bypassed,logical:verified.kind!=="CHANNEL_ID"
+        value,
+        logical:verified.kind!=="CHANNEL_ID"
       });
+      window.setTimeout(()=>{
+        if(pendingPower?.id!==requestId)return;
+        pendingPower=null;
+        inform("FX Power timed out · check native FX Rack readback");
+      },8000);
       return true;
     },
     insertPlugin:()=>false
@@ -102,11 +164,21 @@
     const loader=new Promise((resolve,reject)=>{
       const script=document.createElement("script");
       script.src="assets/"+entry[0]; // ONLY allowlisted, no user-controlled URLs.
-      script.onload=()=>resolve(window[entry[1]]);
-      script.onerror=()=>reject(Error("Approved FX asset unavailable"));
+      const fail=()=>{
+        script.remove();
+        reject(Error("Approved FX asset unavailable · reopen from FX Rack"));
+      };
+      script.onload=()=>{
+        const host=window[entry[1]];
+        if(typeof host?.open!=="function")fail();
+        else resolve(host);
+      };
+      script.onerror=fail;
       document.head.append(script);
     });
     scriptCache.set(catalog,loader);
+    // Cache successful modules, not a transient load failure.
+    loader.catch(()=>{if(scriptCache.get(catalog)===loader)scriptCache.delete(catalog);});
     return loader;
   }
   function mount(payload) {
@@ -129,18 +201,27 @@
         payload.rekeyFrom===identity.instanceId &&
         typeof payload.workspaceToken==="string" &&
         payload.workspaceToken.length>0 &&
-        current?.view?.workspaceToken===payload.workspaceToken &&
+        acceptedWorkspace===payload.workspaceToken &&
         next.kind!=="CHANNEL_ID" &&
         next.view.workspaceToken===payload.workspaceToken;
       if(!safeRekey){inform("FX identity changed · reopen from FX Rack");return;}
     }
-    identity=proposed;current=next;
-    if(pending===proposed.catalogId) {
+    // Duplicate opens preserve object identity for the existing mounted
+    // panel. A trusted rekey updates the current token, not its HWND.
+    if(!identity||Object.keys(proposed).some(key=>identity[key]!==proposed[key]))
+      identity=proposed;
+    current=next;
+    settlePhysicalPower();
+    acceptedWorkspace=next.view.workspaceToken||"";
+    if(mountedCatalog===proposed.catalogId) {
       // A repeated rack double-click must re-show the SAME exact editor
       // after its original Close button hid the DOM/owned HWND. Merely
       // raising the HWND would show an empty dark panel.
       const host=window[registry[proposed.catalogId][1]];
-      if(host?.open) {
+      const root=document.querySelector(registry[proposed.catalogId][2]);
+      // Repeated rack focus must not reset an already visible module.
+      // A logical rekey or hidden panel still needs the original open.
+      if(host?.open && (!root||root.hidden||payload.rekeyFrom)) {
         host.open({id:proposed.channelId,nativeId:proposed.channelId,
           name:next.channel.name||"Channel",slotBypass:[]},proposed.slot);
         if(banner)banner.hidden=true;
@@ -149,11 +230,16 @@
       }
       return;
     }
-    pending=proposed.catalogId;
-    const request=proposed;
-    importEditor(proposed.catalogId).then(host=>{
-      if(identity!==request || !host?.open) {
-        inform("Approved FX editor unavailable");return;
+    if(busyLoad)return; // repeated opens coalesce while the script is loading
+    const catalog=proposed.catalogId;
+    const load=importEditor(catalog);
+    busyLoad=load;
+    load.then(host=>{
+      // Use the latest validated identity, including a trusted logical
+      // rekey received while loading. Never open a disconnected owner.
+      const request=identity;
+      if(!current||request?.catalogId!==catalog||!host?.open) {
+        inform("FX session changed · reopen from FX Rack");return;
       }
       const track={id:request.channelId,nativeId:request.channelId,
         name:current.channel.name||"Channel",slotBypass:[]};
@@ -167,7 +253,11 @@
       // generic oversized mixer card. GEQ31 S/M/L updates the same HWND.
       let lastGeometry="";
       const measure=()=>{
-        if(identity!==request||root.hidden)return;
+        // Same catalog/channel/slot across a durable logical rekey.
+        // Do not retain the obsolete revision-scoped insert ID.
+        if(!identity||identity.catalogId!==request.catalogId||
+           identity.channelId!==request.channelId||
+           identity.slot!==request.slot||root.hidden)return;
         const rect=root.getBoundingClientRect();
         if(rect.width<200||rect.height<100)return;
         const width=Math.ceil(rect.width),height=Math.ceil(rect.height);
@@ -190,24 +280,53 @@
       // window. DOM controls remain alive and can be re-presented safely.
       const observer=new MutationObserver(()=>{
         if(root.hidden)backend.emitEvent("arMixFloatingHide",{
-          channelId:request.channelId,instanceId:request.instanceId,
-          slot:request.slot,catalogId:request.catalogId});
+          channelId:identity.channelId,instanceId:identity.instanceId,
+          slot:identity.slot,catalogId:identity.catalogId});
       });
       observer.observe(root,{attributes:true,attributeFilter:["hidden"]});
+      mountedCatalog=catalog;
       backend.emitEvent("arMixFloatingMounted",{
         catalogId:request.catalogId,channelId:request.channelId,
         instanceId:request.instanceId,slot:request.slot});
-    }).catch(error=>inform(String(error.message||error)));
+    }).catch(error=>inform(String(error.message||error))).finally(()=>{
+      if(busyLoad===load)busyLoad=null;
+    });
   }
   backend.addEventListener("arMixFloatingOpen",mount);
   backend.addEventListener("arMixConsoleSnapshot",snapshot=>{
     if(!identity)return;
     const next=project(snapshot,identity);
     current=next;
+    settlePhysicalPower();
     if(!next)inform("FX disconnected · waiting for a matching saved editor");
   });
-  backend.addEventListener("arMixNativeFxPowerAck",ack=>{
-    if(ack?.ok!==true)inform("FX power unchanged · refresh native FX Rack");
+  const powerReceipt=ack=>{
+    if(!pendingPower||!ack)return;
+    if(pendingPower.logical)return; // logical durable ACK has its own schema
+    const matches=ack.requestId===pendingPower.id||
+      (pendingPower.gate==="global"&&
+       ack.requestId==="global-fx-"+pendingPower.id);
+    if(!matches)return; // another editor's ACK is not this window's ACK
+    if(ack.ok!==true||ack.bypassed!==pendingPower.value||
+       (pendingPower.gate!=="global"&&ack.channelId!==identity?.channelId)){
+      pendingPower=null;
+      inform("FX power rejected · refresh accepted native FX Rack");
+      return;
+    }
+    pendingPower.acked=true;
+    settlePhysicalPower(); // handles snapshot-before-ACK as well as ACK-before-snapshot
+  };
+  backend.addEventListener("arMixNativeFxPowerAck",powerReceipt);
+  backend.addEventListener("arMixGlobalFxAck",powerReceipt);
+  // CONTROL emits the trusted rekey/open BEFORE its durable logical ACK.
+  // Only the correlated receipt releases the in-flight Power fence; neither
+  // an unrelated ACK nor a new snapshot alone is a successful transaction.
+  backend.addEventListener("arMixLogicalAck",ack=>{
+    if(!pendingPower?.logical||!ack||
+       ack.requestId!=="logical-"+pendingPower.id)return;
+    pendingPower=null;
+    if(ack.status!=="ACCEPTED")
+      inform("FX power rejected · refresh accepted native FX Rack");
   });
   backend.emitEvent("arMixFloatingReady",{gui:"APPROVED_PAGES_NATIVE_FX_WINDOW_V1"});
 })();

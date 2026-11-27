@@ -56,14 +56,84 @@
     return parallelEdge(snapshot.graph,sourceId,edgeId);
   }
 
-  function gainReadback(edges,uiByEdgeId,pendingGains) {
+  // PRIMARY OUT remains a unity serial wire. Its CH LEVEL control is an
+  // honest alias for the source's native post-insert fader, never a second
+  // EdgeId gain or an implicit parallel MAIN SEND (which would double audio).
+  function primaryChannelLevelPlan(snapshot,projected,sourceId,edgeId) {
+    const graph=snapshot?.graph;
+    if(projected!==true||snapshot?.admitted!==true||snapshot.retained===true||
+       !Array.isArray(graph?.capabilities?.supportedOps)||
+       !graph.capabilities.supportedOps.includes("SET_FADER")||
+       !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
+       typeof sourceId!=="string"||typeof edgeId!=="string")return {kind:"UNAVAILABLE"};
+    const rows=graph.channels.filter(ch=>ch.id===sourceId);
+    const edges=graph.edges.filter(e=>e.edgeId===edgeId&&e.enabled===true);
+    if(rows.length!==1||edges.length!==1)return {kind:"UNAVAILABLE"};
+    const ch=rows[0],edge=edges[0];
+    if(!["INPUT","GROUP","FX_RETURN"].includes(ch.role)||
+       !Number.isFinite(ch.controls?.faderDb)||
+       edge.primaryOutput!==true||edge.gainLinear!==1||
+       edge.from!==sourceId||edge.to!==ch.primaryOutId)
+      return {kind:"UNAVAILABLE"};
+    return {kind:"READY",source:sourceId,levelDb:ch.controls.faderDb};
+  }
+
+  // An incoming WIRE pot represents the receiver's independent incoming WIRE sum gain,
+  // not a randomly selected sender's EdgeId. One or many incoming routes
+  // must behave identically; each send remains separately adjustable in
+  // WIRE Inspector / Sends on Faders.
+  function channelSumLevelPlan(snapshot,projected,channelId,levelDb) {
+    const graph=snapshot?.graph;
+    if(projected!==true||snapshot?.admitted!==true||snapshot.retained===true||
+       !Array.isArray(graph?.capabilities?.supportedOps)||
+       !graph.capabilities.supportedOps.includes("SET_WIRE_SUM_GAIN")||
+       !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
+       typeof channelId!=="string"||!/^\d+$/.test(channelId)||
+       !Number.isFinite(levelDb)||levelDb< -60||levelDb>6)
+      return {kind:"UNAVAILABLE"};
+    const rows=graph.channels.filter(row=>row.id===channelId);
+    if(rows.length!==1||!["INPUT","GROUP","FX_RETURN"].includes(rows[0].role)||
+       !Number.isFinite(rows[0].controls?.wireSumGainDb))return {kind:"UNAVAILABLE"};
+    const inbound=graph.edges.filter(e=>e.to===channelId&&e.enabled===true);
+    if(inbound.length<1)return {kind:"UNAVAILABLE"};
+    return {kind:"READY",source:channelId,levelDb,wireCount:inbound.length};
+  }
+
+  function gainReadback(edges,uiByEdgeId,pendingGains,channels=[]) {
     if(!Array.isArray(edges))return [];
-    return edges.filter(e=>e.enabled===true&&e.primaryOutput===false)
-      .flatMap(e=>{
-        const id=uiByEdgeId.get(e.edgeId),levelDb=gainDb(e.gainLinear);
-        if(id===undefined||levelDb===null)return [];
-        return [{id,pending:pendingGains.has(e.edgeId),levelDb}];
-      });
+    let byChannelId=null;
+    const result=[];
+    for(let i=0;i<edges.length;i++){
+      if(!(i in edges))continue;
+      const e=edges[i];
+      if(e.enabled!==true)continue;
+      const id=uiByEdgeId.get(e.edgeId);
+      if(id===undefined)continue;
+      if(e.primaryOutput===true){
+        if(e.gainLinear!==1)continue;
+        if(!byChannelId){
+          byChannelId=new Map();
+          channels.forEach(ch=>{
+            const key=ch.id;
+            byChannelId.set(key,byChannelId.has(key)?null:ch);
+          });
+        }
+        let row=byChannelId.get(e.from);
+        // Preserve exact source/destination match cardinality for ambiguous
+        // IDs; never silently pick one of multiple matching native rows.
+        if(row===null){
+          const rows=channels.filter(ch=>ch.id===e.from&&ch.primaryOutId===e.to);
+          row=rows.length===1?rows[0]:undefined;
+        }
+        if(!row||row.id!==e.from||row.primaryOutId!==e.to||
+           !Number.isFinite(row.controls?.faderDb))continue;
+        result.push({id,pending:false,levelDb:0});
+      }else{
+        const levelDb=gainDb(e.gainLinear);
+        if(levelDb!==null)result.push({id,pending:pendingGains.has(e.edgeId),levelDb});
+      }
+    }
+    return result;
   }
 
   function canEditTap(edge,{pending=false,readOnly=false,
@@ -78,8 +148,10 @@
   }
 
   function sofAvailable(snapshot,canToggle) {
-    return snapshot?.admitted===true&&snapshot.retained!==true&&
-      canToggle===true&&SOF_OPS.every(op=>
+    const ops=snapshot?.logical===true&&!snapshot.readOnly?
+      ["SET_WIRE_GAIN","SET_SEND_ENABLED","SET_SEND_TAP","WIRE_TRANSACTION"]:SOF_OPS;
+    return (snapshot?.admitted===true||snapshot?.logical===true&&!snapshot.readOnly)&&
+      snapshot.retained!==true&&canToggle===true&&ops.every(op=>
         snapshot.graph?.capabilities?.supportedOps?.includes(op));
   }
 
@@ -135,17 +207,23 @@
       payload:{changes:[{op:"SET_TAP",from:sourceId,edgeId,tap:targetTap}]}};
   }
 
-  // Only one parallel SEND can own a selected SOF destination. It must be
-  // an actual GROUP/FX_RETURN ChannelId, never MAIN/primary, an ordinal or
-  // an ambiguous duplicate. SOF gain, PRE/POST, and enable share this edge.
+  // DMX: a return or group can feed a terminal MONITOR without rerendering
+  // its DSP. All gestures still resolve one installed parallel EdgeId.
+  function sofSourceRole(role) {
+    return ["INPUT","GROUP","FX_RETURN"].includes(role);
+  }
+  function sofTargetRole(role) {
+    return ["GROUP","FX_RETURN","MONITOR"].includes(role);
+  }
+  // Never MAIN/primary, self, ordinal, stale or ambiguous duplicate.
   function sofSendEdge(snapshot,{sourceId,destinationId}={}) {
-    if(snapshot?.admitted!==true||snapshot.retained===true||
+    if((snapshot?.admitted!==true&&!(snapshot?.logical===true&&!snapshot.readOnly))||snapshot.retained===true||
        !nativeId(sourceId)||!nativeId(destinationId))return null;
     const graph=snapshot.graph;
     const source=graph?.channels?.filter(ch=>ch.id===sourceId);
     const target=graph?.channels?.filter(ch=>ch.id===destinationId);
-    if(source?.length!==1||source[0].role!=="INPUT"||
-       target?.length!==1||!["GROUP","FX_RETURN"].includes(target[0].role))
+    if(sourceId===destinationId||source?.length!==1||!sofSourceRole(source[0].role)||
+       target?.length!==1||!sofTargetRole(target[0].role))
       return null;
     const matches=graph.edges?.filter(e=>e.enabled===true&&
       e.from===sourceId&&e.to===destinationId&&
@@ -342,9 +420,65 @@
     return {kind:"ROLLBACK"};
   }
 
-  return Object.freeze({gainDb,edgePresentation,parallelEdge,
-    acceptedParallelEdge,gainReadback,canEditTap,gestureTap,sofAvailable,
-    compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,
+  function routeDiagnostic(snapshot,sourceId){
+    if(!snapshot?.admitted||snapshot.retained)return "Audio unavailable · check Audio I/O";
+    const graph=snapshot.graph,source=graph.channels.find(ch=>ch.id===sourceId);
+    if(!source)return "Channel unavailable · select an admitted channel";
+    if(source.controls?.mute===true)return source.name+" · channel muted";
+    const main=graph.mainChannelId, rows=new Map(graph.channels.map(ch=>[ch.id,ch]));
+    const outgoing=new Map();
+    for(const edge of graph.edges){
+      if(!edge.enabled||edge.sendEnabled===false||!(edge.gainLinear>0))continue;
+      if(!outgoing.has(edge.from))outgoing.set(edge.from,[]);
+      outgoing.get(edge.from).push(edge);
+    }
+    const visited=new Set([sourceId]),queue=[{id:sourceId,path:[sourceId]}];
+    let path=null,monitor=false,atMinimum=false;
+    for(let i=0;i<queue.length;i++){
+      const {id,path:route}=queue[i],row=rows.get(id);
+      if(id===main){path=route;break;}
+      if(row?.role==="MONITOR")monitor=true;
+      for(const edge of outgoing.get(id)||[]){
+        const target=rows.get(edge.to);
+        if(!target||target.controls?.mute===true||visited.has(edge.to))continue;
+        // Native PRE is post-insert/pre-fader; do not suppress it on a
+        // minimum fader. The -60 display is not proof of exactly zero PCM.
+        const pre=!edge.primaryOutput&&(edge.tapStage||edge.tap)==="PRE_FADER";
+        if(!pre&&row?.controls?.faderDb<=-60)atMinimum=true;
+        visited.add(edge.to);queue.push({id:edge.to,path:[...route,edge.to]});
+      }
+    }
+    const t=snapshot.telemetry,meters=t?.channelMeterRmsPeak;
+    const measured=typeof graph.revision==="string"&&t?.channelMeterGraphRevision===graph.revision;
+    const peak=id=>{
+      const m=meters?.[id];
+      if(!measured||!m||![m.peakL,m.peakR].every(v=>Number.isFinite(v)&&v>=0))return "N/A";
+      const value=Math.max(m.peakL,m.peakR);
+      return value===0?"silent":(20*Math.log10(value)).toFixed(1)+" dBFS";
+    };
+    const capture=()=>{
+      const pins=[source.source?.portId,source.source?.portIdRight].filter(Boolean);
+      if(!pins.length||t?.captureObserved!==true)return "N/A";
+      const values=pins.map(id=>{
+        const endpoint=snapshot.device?.inputEndpoints?.find(p=>p.id===id&&p.active);
+        return endpoint?t.captureCallbackPeaks?.[endpoint.callback]:null;
+      });
+      if(!values.every(v=>Number.isFinite(v)&&v>=0))return "N/A";
+      const value=Math.max(...values);return value===0?"silent":(20*Math.log10(value)).toFixed(1)+" dBFS";
+    };
+    const evidence=(source.role==="INPUT"?" · IN "+capture():"")+
+      " · POST "+peak(sourceId)+" · MAIN "+peak(main);
+    if(!path)return source.name+" · no enabled unmuted route to MAIN"+
+      (monitor?"; MONITOR route available":"; inspect OUT, WIRE and send levels")+evidence;
+    const chain=path.map(id=>rows.get(id)?.name||id).join(" → ");
+    return chain+" · active route to MAIN"+(atMinimum?" · check minimum fader (PRE may remain active)":"")+
+      evidence+(snapshot.device?.outputArmed===false?" · outputs disarmed":"")+
+      (graph.channels.some(ch=>ch.controls?.solo===true)?" · SOLO active":"")+
+      " · physical sound unverified";
+  }
+  return Object.freeze({routeDiagnostic,gainDb,edgePresentation,parallelEdge,
+    acceptedParallelEdge,primaryChannelLevelPlan,channelSumLevelPlan,gainReadback,canEditTap,gestureTap,sofAvailable,
+    compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,sofSourceRole,sofTargetRole,
     channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,
     gainDispatchPlan,nativeRecoveryPlan});
 });

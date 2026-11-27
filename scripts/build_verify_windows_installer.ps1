@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Independent FAT-only GUI installer build AND real per-user install/uninstall.
-param([string]$OutputDir="dist",[string]$InstallerOutput="installer-output")
+param([string]$OutputDir="dist",[string]$InstallerOutput="installer-output",[switch]$IncludePortableUpdater)
 Set-StrictMode -Version Latest
 $ErrorActionPreference="Stop"
 $dist=(Resolve-Path -LiteralPath $OutputDir).Path
@@ -57,6 +57,7 @@ try {
     # Official standard VB-CABLE archive must be downloaded, exact-SHA
     # verified and staged BEFORE compiling Setup. Fatal if it changed.
     & ./scripts/prepare_vbcable_package.ps1 -StageDirectory $stage
+    & ./scripts/prepare_update_verifier.ps1 -StageDirectory $stage
     $vendor=Get-Content -LiteralPath "config/vbcable-official-package.json" -Raw -Encoding UTF8 | ConvertFrom-Json
     & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=$appVersion" "/DVBCableSha256=$($vendor.sha256)" "installer/ArSonMix.iss"
     $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
@@ -74,6 +75,11 @@ try {
     }
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
+    foreach($item in @("gh.exe","verifier.json","LICENSE.txt","THIRD-PARTY-LICENSES.txt")){
+        $staged=Join-Path (Join-Path $stage "UpdateVerifier") $item
+        $actual=Join-Path (Join-Path $install "UpdateVerifier") $item
+        if((Get-FileHash -LiteralPath $staged).Hash -cne (Get-FileHash -LiteralPath $actual).Hash){throw "Installed update verifier payload differs: $item"}
+    }
     $diagnosticHelper=Join-Path $install "ArSonMixStartupDiagnostics.ps1"
     if ((Get-FileHash -LiteralPath $diagnosticHelper -Algorithm SHA256).Hash.ToLowerInvariant() -ne
         $manifest.startupDiagnosticsSha256) {
@@ -198,6 +204,14 @@ try {
         guiStartup="NATIVE_WEBVIEW_READY_NO_AUDIO"
         guiStartupRunnerBuild=[Environment]::OSVersion.Version.Build
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
+    if($IncludePortableUpdater){
+        $portableVerifier=Join-Path $dist 'UpdateVerifier'
+        if(Test-Path -LiteralPath $portableVerifier){throw 'Portable verifier destination already exists'}
+        Copy-Item -LiteralPath (Join-Path $stage 'UpdateVerifier') -Destination $portableVerifier -Recurse
+        Copy-Item -LiteralPath 'installer/ArSonMixAutoUpdate.ps1' -Destination $dist
+        'ARSONMIX_PORTABLE_LAUNCHER_V2' | Set-Content -LiteralPath (Join-Path $dist 'portable_launcher_v2.txt') -Encoding utf8
+        Write-Host 'PORTABLE_RELEASE_UPDATE_DOWNLOADER_STAGED'
+    }
     Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app graceful update, SHA-matched PE, uninstall, private Studio intact"
     Write-Host "OWNER_FIELD_AUDIO_LISTENING_REPORTED__PER_BUILD_HARDWARE_REPORT_SEPARATE"
 }

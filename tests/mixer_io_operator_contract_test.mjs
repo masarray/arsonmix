@@ -200,7 +200,8 @@ test('PATCH1 operator-first mono and nonadjacent stereo stage into ONE native tr
 test('DEVICE1 existing matrix drives real JUCE manager with gated native readback, no selector popup',()=>{
  const io=read('web/mixer-io.js'),native=read('src/Main.cpp'),cm=read('CMakeLists.txt');
  for(const flag of ['JUCE_ASIO=1','JUCE_WASAPI=1','JUCE_DIRECTSOUND=1'])assert.ok(cm.includes(flag));
- assert.match(native,/manager, 1, 64, 1, 64, false, false, false, false/); // hidden fallback only
+ assert.doesNotMatch(native,/AudioDeviceSelectorComponent|AudioSetupWindow|showDeviceSetup\(/);
+ assert.match(native,/arMixOpenAudioIO/);
  assert.match(native,/action == "audioDeviceApply"/);
  const open=native.slice(native.indexOf('juce::String openSelectedAudioDevice('),
    native.indexOf('void applyCustomAudioDevice('));
@@ -230,7 +231,7 @@ test('DEVICE1 existing matrix drives real JUCE manager with gated native readbac
 
 test('explicit device Apply restores the authored mixer after driver readback and can roll back',()=>{
  const main=read('src/Main.cpp');
- const apply=main.slice(main.indexOf('void applyCustomAudioDevice('),main.indexOf('void showDeviceSetup()'));
+ const apply=main.slice(main.indexOf('void applyCustomAudioDevice('),main.indexOf('// A Windows native Explorer picker'));
  const owner=read('src/NativeDeviceApplyCoordinator.h');
  assert.match(apply,/finishAudioSetupAndRecoverMixer\(mode\)/);
  assert.match(apply,/mode!=MixerBindingMode::exact && !previousMixerBound &&\s*engine_\.directRouteAuthorized\(\)/);
@@ -241,7 +242,9 @@ test('explicit device Apply restores the authored mixer after driver readback an
  assert.match(owner,/if\(refreshAsio4All\) \{[\s\S]*?openSelected\(manager,r.backend,candidate,true,phase\)/);
  assert.match(owner,/matchesRollback\(plan.before,[\s\S]*?inspectRollback\(manager\)\) &&\s*hooks.bind\(BindingMode::exact\)/);
  assert.match(main,/epoch==asioRecoveryEpoch_/);
- assert.match(main,/authorizeRetainedAsioRestart\(\)[\s\S]*?restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+ assert.match(main,/authorizeRetainedAsioRestart\(\)[\s\S]*?reattachRetainedAsioMixer\(\)/);
+ const auto=main.slice(main.indexOf('void serviceAsioMixerRestart()'),main.indexOf('void rememberSavedWasapiProfile('));
+ assert.doesNotMatch(auto,/restoreSavedMixerSession\(/);
 });
 
 test('SETUP1 honest bus patch has real AUX/MAIN/MONITOR navigation, no fake GROUP DCA',()=>{
@@ -277,7 +280,9 @@ test('P0 FIRST SOUND raw capture has per-pin native callback truth BEFORE route 
   const css=read('web/mixer-io.css');
   const start=native.indexOf('// P0: SILENT output must not mean blind capture diagnostics.');
   assert.ok(start>0,'unpatched native callback must retain actual PCM observation');
-  const end=native.indexOf('const std::uint64_t beginUs',start);
+  // Callback entry timing now includes preflight; budget calculation still
+  // begins AFTER the fail-silent unpatched branch and is the correct boundary.
+  const end=native.indexOf('const double periodUs =',start);
   assert.ok(end>start,'early mute-only callback path must precede full DSP renderer');
   const early=native.slice(start,end);
   assert.match(early,/captureBoundary_\.observe\(inputs/);
@@ -364,7 +369,7 @@ test('DEVICE2 native device list is cached on overlay open; explicit scan is fai
  assert.match(gui,/rescan\?'audioDeviceRefresh':'audioDeviceInventory'/);
  assert.match(gui,/SCAN_ERROR|BLOCKED_ARMED/);
  const apply=native.slice(native.indexOf('void applyCustomAudioDevice('),
-                          native.indexOf('void showDeviceSetup()',native.indexOf('void applyCustomAudioDevice(')));
+                          native.indexOf('// A Windows native Explorer picker',native.indexOf('void applyCustomAudioDevice(')));
  assert.match(apply,/deviceApply_\.execute/);
  assert.match(applyOwner,/!matchesApplied\(r,candidate,inspectApplied\(manager\)\)/);
  assert.match(applyOwner,/evidence\.activeInputs=device->getActiveInputChannels\(\)/);
@@ -628,11 +633,14 @@ test('ASIO4ALL automatic rebind has bounded retries, succeeds only after verifie
   assert.match(service,/asioRecoveryGate_\.driverTransaction\(now\)/);
   assert.match(service,/asioRecoveryGate_\.carryInternalEpoch\(engine_\.dryRoutingLabEpoch\(\)\)/);
   assert.match(service,/asioRecoveryGate_\.bindFailed\(now\)/);
-  assert.match(service,/audioSetupWindow_->isVisible\(\)/);
-  assert.match(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+  assert.match(service,/deviceApply_\.busy\(\)/);
+  assert.match(service,/deviceApply_\.tryBegin\([\s\S]*?Purpose::asioRecovery/);
+  assert.doesNotMatch(service,/restoreSavedMixerSession\(false,MixerBindingMode::verifiedAsioRestart\)/);
+  assert.match(service,/engine_\.reattachRetainedAsioMixer\(\)/);
+  assert.match(service,/if\(retained && \(missingDevice \|\| directCallbackStalled_\)\)return/);
   assert.match(service,/asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
   assert.match(service,/setup\.useDefaultInputChannels=refreshWdm && !setup\.inputChannels\.isZero\(\)/);
-  const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('void showDeviceSetup()'));
+  const apply=src.slice(src.indexOf('void applyCustomAudioDevice('),src.indexOf('// A Windows native Explorer picker'));
   assert.match(apply,/case Apply::Outcome::topologyChanged:[\s\S]*?return send\(false,"RECOVERY_REQUIRED",result.error\);/);
   assert.match(apply,/if\(restored\)asioRecoveryEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
 });
@@ -704,24 +712,28 @@ test('offline checkpoints stay protected until verified native restore',()=>{
   assert.match(save,/Recovery::planSave\(save\)[\s\S]*?SaveAction::reject[\s\S]*?captureNativeMixerSession/);
 });
 
-// Exact control-thread serialization source contract for nested JUCE modal loops.
-test('M2b native AUDIO SETUP holds one lease through visible selection and rebind',()=>{
+// Custom I/O drafts do not open/mute a driver. The actual Apply and explicit
+// vendor panel are serialized across their complete transaction and recovery.
+test('M2b custom AUDIO I/O has one device lease and vendor-only modal recovery',()=>{
  const cpp=read('src/Main.cpp');
  const owner=read('src/NativeDeviceApplyCoordinator.h');
- const setup=cpp.slice(cpp.indexOf('void showDeviceSetup()'),
-                       cpp.indexOf('// A Windows native Explorer picker',cpp.indexOf('void showDeviceSetup()')));
- assert.match(setup,/audioSetupWindow_ && audioSetupWindow_->isVisible\(\)/);
- assert.match(setup,/deviceApply_\.tryBegin\([\s\S]*?Purpose::setupDialog/);
- assert.match(setup,/audioSetupLease_\.emplace\(std::move\(modalLease\)\)/);
- assert.match(setup,/engine_\.beginManualAudioSetup\(true\)/);
- assert.match(setup,/auto closingLease=std::move\(\*safe->audioSetupLease_\)/);
- assert.match(setup,/safe->finishAudioSetupAndRecoverMixer\(\)/);
+ const setup=cpp.slice(cpp.indexOf('else if (action == "audioSetup")'),cpp.indexOf('else if (action == "diagnosticRoute")'));
+ const apply=cpp.slice(cpp.indexOf('void applyCustomAudioDevice('),cpp.indexOf('// A Windows native Explorer picker'));
+ const vendor=cpp.slice(cpp.indexOf('void showAsioControlPanel('),cpp.indexOf('void chooseStudioBackup()'));
+ assert.match(setup,/arMixOpenAudioIO/);
+ assert.doesNotMatch(setup,/showDeviceSetup|AudioDeviceSelectorComponent|\.closeAudioDevice\(/);
+ assert.match(apply,/deviceApply_\.tryBegin\([\s\S]*?Purpose::explicitApply/);
+ assert.match(apply,/deviceApply_\.execute\(engine_\.devices\(\),prepared/);
+ assert.match(apply,/finishAudioSetupAndRecoverMixer\(mode\)/);
+ assert.match(vendor,/deviceApply_\.tryBegin\([\s\S]*?Purpose::setupDialog/);
+ assert.ok(vendor.indexOf("auto lease=deviceApply_.tryBegin")<vendor.indexOf("device->showControlPanel()"));
+ assert.match(vendor,/engine_\.beginManualAudioSetup\(true\)/);
+ assert.match(vendor,/finishAudioSetupAndRecoverMixer\(\)/);
  assert.match(owner,/enum class Purpose : std::uint8_t/);
  assert.match(cpp,/Purpose::asioRecovery/);
  assert.match(cpp,/Purpose::explicitApply/);
- assert.doesNotMatch(setup,/\.closeAudioDevice\(/);
+ assert.doesNotMatch(cpp,/AudioDeviceSelectorComponent|AudioSetupWindow/);
 });
-
 
 test('P0 Audio Setup reports native driver latency ms, never fake measured loopback',()=>{
   assert.match(main,/setProperty\("driverInputLatencyFrames",latencyReady/);

@@ -3,6 +3,7 @@
 from pathlib import Path
 import subprocess,sys,tempfile
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config
 from approved_publication_fixture import published_console
 from pages_wire_incoming_v43_smoke import center, impact_peak
 
@@ -40,7 +41,7 @@ def main():
     # WIRE-first default CH→MAIN is real. Disconnect this particular OUT
     # using the operator UI so legacy neutral-pin physics remain testable.
     page.locator('#tracks .strip[data-id="5"] .strip-identity-top').click()
-    page.locator("#wireConfigToggle").click()
+    open_wire_config(page)
     assert page.locator("#wireMaster").get_attribute("aria-pressed")=="true"
     page.locator("#wireMaster").click()
     page.locator("#wireConfigClose").click()

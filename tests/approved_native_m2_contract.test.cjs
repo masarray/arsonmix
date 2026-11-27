@@ -29,6 +29,51 @@ function gmv20AcceptedGraph() {
  return fixture;
 }
 
+test("P0 Music Player is an explicit ChannelId INPUT source with exact deck PCM ACK/readback",()=>{
+  const player={label:"Music Player",mode:"PLAYER",left:-1,right:-1,deckId:"1"};
+  const options=[{label:"None",mode:"NONE",left:-1,right:-1},player];
+  assert.deepEqual(stripVM.inputChoices({kind:"audio",input:"None"},
+    options,false,false,"Internal BUS"),["None","Music Player"]);
+  assert.equal(stripVM.sourceChoiceMatches(player,options),true);
+  assert.equal(stripVM.sourceChoiceMatches({...player,deckId:"2"},options),false);
+  const chosen=stripVM.sourceQueueSelection({choice:player,choices:options,
+    epoch:"7",acceptedLabel:"None",hardwareConfiguration:"dev-A"});
+  assert.equal(chosen.kind,"QUEUE");
+  const hardware={device:{epoch:"7"},hardwareConfiguration:"dev-A",
+    raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"7"}}};
+  const native={admitted:true,retained:false,device:{epoch:"7"},
+    hardwareConfiguration:"dev-A",graph:{revision:"10",rosterRevision:"20",
+      channels:[{id:"8",role:"INPUT",source:null}]}};
+  const dispatched=stripVM.sourceDispatchPlan({authority:"CHANNEL_ID",
+    entry:chosen.entry,hardware,native,channelId:"8",choices:options,
+    deviceReady:true});
+  assert.equal(dispatched.kind,"READY");
+  assert.equal(dispatched.action,"routingNativeSourcePatch");
+  assert.deepEqual({mode:dispatched.payload.mode,deckId:dispatched.payload.deckId},
+    {mode:"PLAYER",deckId:"1"});
+  assert.equal(stripVM.sourceDispatchPlan({authority:"M4",entry:chosen.entry,
+    hardware,native,channel:7,choices:options,deviceReady:true}).kind,
+    "UNAVAILABLE","legacy M4 must never receive an invented physical pin");
+  const now={...native,graph:{...native.graph,revision:"11",
+    channels:[{id:"8",role:"INPUT",
+      source:{sourceFormat:"PLAYER",playerDeckId:"1"}}]},
+    raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"7"}}};
+  const pending={id:"8",epoch:"7",requestId:"source-native-1",
+    choice:chosen.entry.choice,beforeRevision:"10",acked:true,
+    ackRevision:"11",hardwareConfiguration:"dev-A"};
+  assert.equal(stripVM.sourceQueueReadback({authority:"CHANNEL_ID",
+    pending,snapshot:now}),"CONFIRMED");
+  assert.equal(stripVM.sourceQueueReadback({authority:"CHANNEL_ID",
+    pending,snapshot:{...now,graph:{...now.graph,
+      channels:[{id:"8",role:"INPUT",source:{
+        sourceFormat:"STEREO",portId:"in:1",portIdRight:"in:2"}}]}}}),
+    "PENDING","physical PCM must not satisfy a virtual music intent");
+  const label=stripVM.readbackBindings({native:now,
+    channel:now.graph.channels[0],channels:now.graph.channels,
+    targets:[],inputLabel:()=>""});
+  assert.equal(label.input,"Music Player");
+});
+
 test("G-MV25 schema-v6 owner switch cancels no-ACK/ACKed ChannelId without stale PCM repaint",()=>{
  const base=gmv20AcceptedGraph();
  base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,
@@ -1637,7 +1682,13 @@ test("First Sound evidence maps sparse physical pins to actual callback ordinals
   // A mistaken output claim never becomes a loudspeaker certification.
   g0.device.outputArmed=false;
   const muted=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
-  assert.match(muted.nextAction,/ARM output/);
+  assert.match(muted.nextAction,/Output recovering automatically/);
+  assert.doesNotMatch(muted.nextAction,/ARM output|Resume after emergency stop/);
+  g0.operatorOutputMuted=true;
+  const panic=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
+  assert.match(panic.nextAction,/Emergency stop active; use More > Resume after emergency stop/);
+  assert.doesNotMatch(panic.nextAction,/recovering automatically/);
+  g0.operatorOutputMuted=false;
   g0.device.outputArmed=true;
   g0.legacyM4.routeAccepted=false;
   const unpatched=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
@@ -1676,7 +1727,9 @@ test("P0 DAW approved Windows GUI directly binds every IN to current JUCE ports,
   // Reordering /preview/ strips must NOT change the real hardware lane.
   assert.match(bridge,/const channel=m4Index\(t\)/);
   assert.match(bridge,/const m4TrackIds=Array\.isArray\(scope\?\.tracks\)/);
-  assert.match(bridge,/const savedId = uiByNativeId\.get\(ch\.id\) \?\? m4Id/);
+  assert.match(bridge,/const heldId=uiByNativeId\.get\(ch\.id\)/);
+  assert.match(bridge,/!reserved\.has\(m4Id\)&&!nextNativeByUi\.has\(m4Id\)/);
+  assert.match(bridge,/if\(nextNativeByUi\.has\(t\.id\)\)return false/);
   assert.match(bridge,/action:"routingSourceSwitch"/);
   assert.match(read("web/approved-channel-strip-view-model.js"),
     /row\?\.left===pending\.choice\.left/);
@@ -1712,7 +1765,8 @@ test("DAW G0 native M4 controls, source clear, OUT & monitoring are real",()=>{
  assert.ok(bridge.includes("stripVM.m4ChannelPatchPlan("));
  assert.ok(read("web/approved-channel-strip-view-model.js").includes('action:"routingChannelPatch"'));
  assert.match(bridge,/const channel=m4Index\(t\)/);
- assert.match(bridge,/data-native-monitor/);
+ assert.doesNotMatch(bridge,/data-native-monitor|dataset\.nativeMonitor/);
+ assert.match(bridge,/dataset\.nativeEmergencyOutput/);
  assert.match(native,/void serviceAutomaticMain\(\)/);
  assert.match(native,/if\(action=="routingM4Control"\)/);
  assert.match(native,/engine_\.setDryRoutingLabParameter\(channel,/);
@@ -1767,11 +1821,22 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
  assert.match(contract,/ch\.inserts\[payload\.slot\]\?\.catalogId===payload\.catalogId/);
  assert.match(lab,/epoch\(\),false,std::move\(fx\),false,true\)/);
  assert.match(pub,/verifiedInternalFxOnly/);
- const install=engine.slice(engine.indexOf("installNativeVst3("),
-                            engine.indexOf("bool bypassNativeVst3(",engine.indexOf("installNativeVst3(")));
- assert.doesNotMatch(install,/!allOutputsDisarmed\(\)/);
- assert.match(install,/secondaryOutput_\.armed\(\)/);
- assert.match(install,/getLatencySamples\(\)>armix::dsp::StereoLatencyDelay::maximumSamples/);
+ for(const [start,end] of [
+   ["installNativeBuiltInFx(","bool selectNativeMusicTempoSource("],
+   ["installNativeVst3(","bool rackFileAllowed("]
+ ]){
+   const install=engine.slice(engine.indexOf(start),engine.indexOf(end,engine.indexOf(start)));
+   assert.ok(install.length>500);
+   assert.doesNotMatch(install,/secondaryOutput_\.armed\(\)|!allOutputsDisarmed\(\)/,
+     "secondary MAIN copy must not block live insert");
+   assert.match(install,/independent_\.active\(\)/);
+   assert.match(install,/!directFence_\.permitted\(\)/);
+   assert.match(install,/routeReconfiguring_/);
+   assert.match(install,/getLatencySamples\(\)>armix::dsp::StereoLatencyDelay::maximumSamples/);
+   assert.match(install,/attachNativeInsert\([\s\S]*allOutputsDisarmed\(\)/);
+ }
+ assert.match(pub,/independentMonitorPublished_ \|\|/);
+ assert.match(main,/NATIVE_FX_INSERT/);
 });
 test("Native VST3 insert ACK + readback distinguishes vendor catalog key from live instance token",()=>{
   const base=acceptedFixture();
@@ -1975,7 +2040,7 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  assert.doesNotMatch(bridge,/routingSourceSwitch[^;]+monitor\(false\)/);
 });
 
-test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
+test("P0 post-BUS native IN routes NONE MONO STEREO and PLAYER through one PCM owner",()=>{
  const bridge=read("web/approved-native-bridge.js");
  const host=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
@@ -1988,7 +2053,8 @@ test("P0 post-BUS native IN routes NONE MONO STEREO via one PCM owner",()=>{
  assert.match(bridge,/pendingNativeSources.set\(id,decision.entry\)/);
  assert.match(host,/if\(action=="routingNativeSourcePatch"\)/);
  assert.match(host,/engine_\.patchNativeInputSource\(ep,rev,roster,/);
- assert.match(lab,/const bool disconnect=!stereo&&physicalLeft==-1&&physicalRight==-1/);
+ assert.match(lab,/const bool disconnect=!musicPlayer&&!stereo&&\s*physicalLeft==-1&&physicalRight==-1/);
+ assert.match(lab,/if\(musicPlayer\) \{\s*inputs\.push_back\(\{channel,-1,-1,true,/);
  assert.match(lab,/nativeStructureLive_=true; \/\/ M4 source roster no longer authoritative/);
  assert.match(engine,/NATIVE_SOURCE_PUBLICATION_EXCEPTION/);
 });
@@ -2006,7 +2072,15 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/e\.preventDefault\(\)/);
  assert.match(menu,/\.strip-identity-top/);
  assert.match(menu,/\.fxslot-row:not\(\.is-empty\)/);
- assert.match(menu,/Confirm Delete Track/);
+ assert.doesNotMatch(menu,/Confirm Delete Track/);
+ assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
+ assert.match(menu,/Confirm Delete AUX/);
+ assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
+ assert.match(bridge,/if\(value==="__armix_settings__"\)\{openAdditionalOutput\(\);return;\}/);
+ assert.doesNotMatch(bridge,/nativeExtraOutput|nativeFirstSound/);
+ assert.match(bridge,/if\(page==="routing"\)mountInlineAdditionalOutput\(\)/);
+ assert.match(bridge,/host\.append\(extraControls\)/);
+ assert.doesNotMatch(bridge,/__arMixOpenAdditionalOutput/);
  assert.match(menu,/requestDeleteTrack\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
@@ -2022,6 +2096,10 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(host,/engine_\.leaseNativeVst3Editor\(/);
  assert.match(host,/nativeOrbitLease_/);
  assert.match(host,/arMixNativeOrbitState/);
+ assert.match(host,/if\(!replay&&translated\.ok\(\)\)[\s\S]*?closeEditorsForNativeRackEdit\(command\);\s*applied=armix::console::executeApprovedNativeControl/);
+ assert.match(host,/op!="NATIVE_MOVE_INSERT" && op!="NATIVE_REMOVE_INSERT"/);
+ assert.match(host,/item->channelId==from/);
+ assert.match(host,/routedEditorOwner_->instanceId==token/);
  assert.match(lab,/removeNativeInputChannel/);
  assert.match(lab,/request\.sources/);
  assert.match(roster,/removeInputAndDisconnect/);
@@ -2072,13 +2150,13 @@ test("P0 actual Add BUS reaches the live ChannelId graph",()=>{
  const engine=read("src/LiveAudioEngine.h");
  const lab=read("src/LiveDryRoutingLab.h");
  const projection=read("integration/ApprovedNativeRuntimeSnapshot.h");
- assert.match(bridge,/function requestNativeBusCreate\(track=false\)/);
+ assert.match(bridge,/function requestNativeBusCreate\(track=false,fxBus=false\)/);
  assert.ok(bridge.includes('backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload})'));
  assert.ok(read("web/approved-channel-strip-view-model.js").includes(
    'action:"routingNativeBusCreate"'));
  assert.match(bridge,/target.id==="addBus"/);
  assert.match(bridge,/arMixNativeBusAck/);
- assert.match(bridge,/addBus.hidden=!nativeAdmitted/);
+ assert.match(bridge,/addBus.disabled=!nativeAdmitted/);
  assert.match(host,/if\(action=="routingNativeBusCreate" \|\| action=="routingNativeTrackCreate"\)/);
  assert.match(host,/engine_\.editNativeBus\(ep,rev,roster,/);
  assert.match(engine,/topologyPublicationMute_\.store\(/);
@@ -2915,7 +2993,7 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
  assert.match(restore,/if\(!isNativeMixerActive\(\)\)acceptSessionIdentity\(\);/);
  assert.match(restore,/restoreNativeMixerSession\(std::move\(doc\),states,[\s\S]*?return error;\s*\}\s*mixerSessionRecoveryPending_=false;\s*acceptSessionIdentity\(\);/);
  assert.match(recovery,/context.nativeAlreadyActive && fromDisk &&/);
- assert.match(recovery,/Source::head && doc.resumeMain.value_or\(true\)/);
+ assert.match(recovery,/Source::head && !doc.outputs.secondaryMain\(\) && doc.resumeMain.value_or\(true\)/);
  assert.match(engine,/dryRoutingLab_\.canReplacePristineStartupMixer\(\)/);
  assert.match(route,/bool canReplacePristineStartupMixer\(\) const noexcept/);
  assert.match(route,/!nativeControlDirty_ && nativeAccepted_\.fxOwners/);
@@ -2924,7 +3002,7 @@ test("P0 automatic cold-start Show replaces only pristine SOURCE NONE ChannelId"
 test("P0 startup banner never demands legacy Patch CH1 / Arm wizard",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK/);
- assert.match(bridge,/next.admitted\?"CHOOSE AN INPUT"/);
+ assert.match(bridge,/next.admitted\?"NO ACTIVE CAPTURE PINS · AUDIO I\/O"/);
  assert.doesNotMatch(bridge,/FAT PENDING/);
  assert.doesNotMatch(bridge,/hardware\.device\.enabledInputs\.length>0/);
  assert.match(bridge,/NO VERIFIED INPUT ROUTE · OPEN AUDIO I\/O/);
@@ -3343,8 +3421,16 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
   "unpatched G0 must not masquerade as ChannelId PCM");
  assert.ok(renderedChoices.length>0,
   "first real JUCE pin readback must refresh the previously empty selector");
- assert.deepEqual(renderedChoices.at(-1),["None","Mono · IN 1 [IN 1]"],
-  "the only offered input is the native enabled physical pin");
+ assert.deepEqual(renderedChoices.at(-1),["None","Mono · IN 1 [IN 1]","Music Player"],
+  "the verified physical pin and virtual Player are discoverable before admission");
+ // Showing a virtual source must not imply that the unadmitted M4 producer
+ // can patch it; no synthetic browser PCM or MAIN arm is permitted.
+ const rejectPlayer=win.__ARMIX_NATIVE_M2__.consumeField({
+  type:"change",target:{dataset:{field:"input"},value:"Music Player",track:tracks[4]}
+ });
+ assert.equal(rejectPlayer,true);
+ assert.equal(sent.some(x=>x.name==="arMixAction"&&
+   x.payload.action==="routingSourceSwitch"),false);
  const choose=(label)=>win.__ARMIX_NATIVE_M2__.consumeField({
   type:"change",target:{dataset:{field:"input"},value:label,track:tracks[4]}
  });
@@ -3382,7 +3468,8 @@ test("P0 FIRST SOUND G0 offers verified input and leaves automatic MAIN to nativ
  const none=clone(boot);
  none.device.enabledInputs=[];none.device.inputEndpoints=[];
  listeners.get("arMixConsoleSnapshot")(none);
- assert.deepEqual([...win.__ARMIX_NATIVE_M2__.inputChoices(tracks[0])],["None"]);
+ assert.deepEqual([...win.__ARMIX_NATIVE_M2__.inputChoices(tracks[0])],["None","Music Player"],
+  "Player remains discoverable even when capture pins disappear; admission still rejects it");
  const commandsBefore=sent.filter(x=>x.name==="arMixAction"&&
   x.payload.action==="routingSourceSwitch").length;
  assert.equal(choose("Mono · IN 1 [IN 1]"),true);
@@ -3500,7 +3587,9 @@ test("M3/V60 Windows bundle dispatches exactly one fader release through native 
    "Both visual surfaces must use one Pages taper, not another native renderer");
  assert.ok(builder.includes("function fxNativeTransactionRequired"));
  assert.ok(builder.includes("__ARMIX_NATIVE_SCOPE__"));
- assert.ok(bridge.includes("scope.installGraph(nextTracks,nextMaster,edges)"));
+ assert.ok(bridge.includes("scope.installGraph(nextTracks.map(commitTrack),commitTrack(nextMaster),edges)"));
+ assert.ok(bridge.indexOf("validateCandidateGraph(nextTracks,nextMaster.id,edges)")<bridge.indexOf("const commitTrack="),
+   "validate the complete graph before mutating the previously installed strip models");
  assert.ok(bridge.includes("scope?.findTrack?.(el)"));
  assert.ok(!bridge.includes('window.addEventListener("pointerup"'));
 });
@@ -3650,7 +3739,7 @@ test("native vendor editor retention follows current PCM ownership, not inactive
    'same FX instance must be focused instead of recreated');
  const fresh=editor.slice(editor.indexOf('} else try {'));
  assert.ok(fresh.includes('closePluginEditor();') &&
-   fresh.indexOf('closePluginEditor();')<fresh.indexOf('createEditorIfNeeded()'),
+   fresh.indexOf('closePluginEditor();')<fresh.indexOf('createHostedAudioEditor(*owner->processor)'),
    'DIFFERENT instance must destroy old window before asking for new editor');
  const change=main.slice(main.indexOf('void changeListenerCallback'),main.indexOf('void timerCallback()',main.indexOf('void changeListenerCallback')));
  assert.doesNotMatch(change,/if\(routedEditorOwner_\)closePluginEditor/);
@@ -3834,7 +3923,7 @@ test("O2 independent per-track external ASIO transactions and clear rejected ACK
  assert.match(src,/pendingExternal\.set\(id,/);
  assert.match(src,/pendingExternal\.delete\(id\)/);
  assert.match(src,/select\?\.removeAttribute\("aria-busy"\)/);
- assert.match(src,/if\(!pendingExternal\.has\(id\)\)select\.removeAttribute/);
+ assert.match(src,/if\(!pendingExternal\.has\(id\)&&select\.hasAttribute\?\.\("aria-busy"\)!==false\)\s*select\.removeAttribute\("aria-busy"\)/);
  const vm=read("web/approved-channel-strip-view-model.js");
  assert.match(vm,/SHARED with /);
  assert.match(vm,/signals SUM/);
@@ -3994,7 +4083,7 @@ test("SOF double-click and target selection never commandeer MAIN fader",()=>{
   const bundle=read("scripts/build_approved_native_gui.py");
   assert.match(html,/function selectedSofDestination\(\)/);
   assert.match(html,/sofTargetId=target\?\.id\?\?null/);
-  assert.match(html,/const send=sofEnabled&&t\.kind==='audio'/);
+  assert.match(html,/const send=sofEnabled&&isSofSource\(t\)/);
   assert.match(html,/fader\.dispatchEvent\(new Event\('change'/);
   assert.match(bundle,/get sofTargetId\(\)\{return sofTargetId;\}/);
   assert.match(bridge,/x\.id===scope\.sofTargetId/);
@@ -4024,7 +4113,7 @@ test("MVVM device selector projects only the verified native physical input pins
   assert.equal(deviceVM.inputLabel(hardware,{mode:"MONO",left:3,right:-1}),
     "Mono · Mic 4 [IN 4]");
   assert.equal(deviceVM.inputLabel(hardware,{mode:"STEREO",left:0,right:1}),
-    "Stereo · IN 1 + 2");
+    "Stereo · IN 1 + 2 · Mic 1 / Mic 2");
   assert.equal(deviceVM.inputLabel(hardware,{mode:"STEREO",left:1,right:2}),"None");
   assert.equal(deviceVM.inputLabel(hardware,{mode:"BUS"}),"Internal BUS (read-only)");
   assert.equal(JSON.stringify(hardware),original,"view must not mutate native readback");
@@ -4481,6 +4570,20 @@ test("MV-5 EXTERNAL OUT preflight fails closed on stale, ambiguous or prohibited
  ])assert.equal(plan(invalid).kind,"UNAVAILABLE",JSON.stringify(invalid));
 });
 
+test("Output matrix external route preserves uint64 epoch and revision without Number conversion",()=>{
+ const id="9007199254740993",epoch="9007199254740997",revision="18446744073709551615";
+ const native={admitted:true,device:{epoch},graph:{revision,channels:[{id,role:"INPUT"}]}};
+ const hardware={device:{epoch,backend:"ASIO",enabledOutputs:[2,3],
+   outputEndpoints:[{port:2,active:true},{port:3,active:true}]},
+   raw:{externalRevision:revision,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],externalOutputs:[]}};
+ const plan=stripVM.externalOutputPlan({native,hardware,channelId:id,selectedLabel:"OUT 3/4",
+   currentLabel:"None",choices:[{label:"OUT 3/4",left:2,right:3}]});
+ assert.equal(plan.kind,"READY");
+ assert.equal(plan.epoch,epoch);assert.equal(plan.revision,revision);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.ok(bridge.includes("await requestExternalOutput(null,label,null,id,directClick)"));
+ assert.ok(bridge.includes("for(const [id,pending] of pendingExternal)"));
+});
 test("GUI-1 external OUT pending waits for matching ACK and later readback",()=>{
   const p={requestId:"ext-1",epoch:"19",left:2,right:3,acked:false};
   const row={physicalLeft:2,physicalRight:3};
@@ -4986,9 +5089,10 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
    "globalPowerSettlement","m4SlotPowerAckResult","m4SlotPowerSettlement"])
    assert.match(bridge,new RegExp("fxRackVM\\."+name+"\\("));
  assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
- assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);/);
+ assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{[\s\S]*?onNativeReadback\(next,confirmed\);/);
  assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,null,accepted,/);
- assert.match(bridge,/pendingFxEditorAck=null;\s*syncGlobalFxReadback\(\);/);
+ assert.match(bridge,/if\(fresh\)p\.lease=fresh;/);
+ assert.match(bridge,/pendingFxEditorAck=null;\s*nativeToast\("FX editor unavailable · accepted instance changed"\);/);
  assert.match(bridge,/const apply=\(\)=>controller\.onSnapshot\(snapshot\);/);
  assert.doesNotMatch(bridge,/controller\.onSnapshot\(snapshot\);syncGlobalFxReadback/);
  assert.doesNotMatch(bridge,/const actual=snapshot\?\.globalFxBypassed;/);
@@ -4999,7 +5103,7 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
 });
 
 test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value race",()=>{
- const vm=require("node:vm"),listeners=new Map(),sent=[];
+ const vm=require("node:vm"),listeners=new Map(),sent=[],timers=[];
  let seq=101,wire=300,viewCalls=0;
  const scope={
    tracks:[],master:{id:1,name:"Master"},colors:["#456789"],
@@ -5024,7 +5128,7 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
    ArSonApprovedFxRackViewModel:fxRackVM,
    ArSonApprovedWireViewModel:wireVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
-   setTimeout(){return 0},clearTimeout(){},
+   setTimeout(fn,ms){timers.push({fn,ms});return timers.length},clearTimeout(){},
    queueMicrotask(fn){fn();},
    __ARMIX_SET_GLOBAL_FX_VIEW__(){viewCalls++;}
  };
@@ -5032,10 +5136,37 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
    {window:win,document:doc,performance:{now:()=>0},console},{timeout:1500});
  const initial=acceptedFixture();
  initial.globalFxBypassed=false;
+ initial.graph.channels[0].inserts=[{id:"geq-live",catalogId:"armix.builtin.graphic-eq31.v1",
+   name:"Graphic EQ 31",bypassed:false},
+   {id:"reverb-legacy",catalogId:"armix.builtin.vocal-reverb.v1",
+    name:"Vocal Reverb",bypassed:false},
+   {id:"imersib-exact",catalogId:"armix.builtin.imersip.v1",
+    name:"ImmerSIB",bypassed:true}];
  initial.mixerSession={authority:"CHANNEL_ID",deviceEpoch:initial.device.epoch,
    routeRevision:initial.graph.revision,rosterRevision:initial.graph.rosterRevision,
    channels:initial.graph.channels,main:{db:0,mute:false}};
  listeners.get("arMixConsoleSnapshot")(initial);
+ assert.equal(scope.tracks[0].fx[1],"Reverb-Sis","old saved rack label follows stable catalog identity");
+ assert.equal(scope.tracks[0].fxInsertIds[1].id,"reverb-legacy");
+ // Real bridge consumeAction: a BYPASSED ImmerSIB is navigation, not a mutation.
+ const editorRequests=()=>sent.filter(x=>x.payload?.action==="routingFxEditor");
+ assert.equal(win.__ARMIX_NATIVE_M2__.consumeAction(scope.tracks[0],"openPlugin",
+   {dataset:{slot:"2"}}),true);
+ assert.equal(editorRequests().length,1);
+ const opened=editorRequests()[0].payload;
+ assert.equal(opened.instanceId,"imersib-exact");
+ assert.equal(opened.channelId,initial.graph.channels[0].id);
+ assert.equal(opened.slot,2);
+ listeners.get("arMixRoutingFxEditorAck")({requestId:opened.requestId,
+   instanceId:opened.instanceId,ok:true});
+ assert.equal(win.__ARMIX_NATIVE_M2__.consumeAction(scope.tracks[0],"openPlugin",
+   {dataset:{slot:"2"}}),true);
+ assert.equal(editorRequests().length,2);
+ const reopened=editorRequests()[1].payload;
+ assert.equal(reopened.instanceId,opened.instanceId);
+ assert.notEqual(reopened.requestId,opened.requestId);
+ listeners.get("arMixRoutingFxEditorAck")({requestId:reopened.requestId,
+   instanceId:reopened.instanceId,ok:true});
  assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
  const dispatched=sent.findLast(x=>x.payload?.action==="routingGlobalFxBypass");
  assert.ok(dispatched);
@@ -5059,6 +5190,50 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
  assert.equal(button.getAttribute("aria-busy"),"false");
  assert.equal(button.disabled,false);
  assert.ok(viewCalls>beforeInvalid);
+ // Embedded GEQ recovery uses the exact same global transaction, with no
+ // local slot/rack mutation, and cannot invert an already enabled global gate.
+ const hooks=win.__ARMIX_NATIVE_M2__,track=scope.tracks[0];
+ const action={dataset:{slot:"0"}};
+ const requests=()=>sent.filter(x=>x.payload?.action==="routingGlobalFxBypass");
+ assert.equal(hooks.consumeAction(track,"globalFxOn",{dataset:{slot:"7"}}),true);
+ assert.equal(requests().length,1);
+ assert.equal(hooks.consumeAction(track,"globalFxOn",action),true);
+ assert.equal(requests().length,2);
+ const enable=requests().at(-1).payload;
+ assert.equal(enable.value,false);
+ assert.equal(enable.deviceEpoch,initial.device.epoch);
+ assert.equal(enable.revision,initial.graph.revision);
+ hooks.consumeAction(track,"globalFxOn",action);
+ assert.equal(requests().length,2,"duplicate click cannot race pending global ACK");
+ listeners.get("arMixGlobalFxAck")({requestId:enable.requestId,ok:true,bypassed:false});
+ assert.equal(button.getAttribute("aria-busy"),"true");
+ listeners.get("arMixConsoleSnapshot")(clone(initial));
+ assert.equal(button.getAttribute("aria-busy"),"false");
+ hooks.consumeAction(track,"globalFxOn",action);
+ assert.equal(requests().length,2,"stale enable click must not bypass FX again");
+ // Transport failure must release only this transaction without waiting for
+ // another snapshot or replaying a toggle against an unconfirmed state.
+ assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
+ const rejected=requests().at(-1).payload;
+ listeners.get("arMixGlobalFxAck")({requestId:rejected.requestId,ok:false,error:"busy"});
+ assert.equal(button.disabled,false,"rejection must immediately unlock the control");
+ assert.equal(button.getAttribute("aria-busy"),"false");
+ assert.equal(requests().length,3,"never replay rejected intent");
+ assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
+ const timeout=requests().at(-1).payload;
+ const expire=timers.filter(x=>x.ms===8000).at(-1).fn;
+ expire();
+ assert.equal(button.disabled,false,"timeout must not depend on another snapshot");
+ assert.equal(button.getAttribute("aria-busy"),"false");
+ assert.equal(requests().length,4);
+ assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
+ const retry=requests().at(-1).payload;
+ assert.notEqual(retry.requestId,timeout.requestId);
+ expire();
+ listeners.get("arMixGlobalFxAck")({requestId:timeout.requestId,ok:false});
+ assert.equal(button.disabled,true,"obsolete timeout/ACK must not unlock newer request");
+ listeners.get("arMixGlobalFxAck")({requestId:retry.requestId,ok:false});
+ assert.equal(button.disabled,false);
 });
 
 test("MV-11 channel appearance projection rejects partial, stale and forged identities",()=>{
@@ -5576,6 +5751,9 @@ test("G-MV30 native roster ACK, concurrent lanes and exact later graph+roster pr
    raw:{mixerSession:{...session,routeRevision:revision,rosterRevision}}
  });
  assert.equal(settle(pCreate,advanced()),"CONFIRMED");
+ const grouped={...pCreate,selection:[src]};
+ assert.equal(settle(grouped,advanced()),"WAIT","Created bus alone cannot prove reroute");
+ assert.equal(settle(grouped,advanced(newlyCreated.map(ch=>ch.id===src?{...ch,primaryOutId:newId}:ch))),"CONFIRMED");
  assert.equal(settle(create,advanced()),"WAIT","readback-before-ACK does not finish");
  assert.equal(settle(pCreate,advanced(newlyCreated,"6","7")),"WAIT",
    "roster revision must advance beyond request baseline");
@@ -5642,7 +5820,7 @@ test("G-MV30 first native ChannelId projection enables Add Track without a secon
  assert.ok(after.includes("syncAddTrack(next);"),
    "native button should re-evaluate only AFTER successful graph projection");
  assert.ok(after.indexOf("syncAddTrack(next);")<
-   after.indexOf("syncMonitorButton(next.device);"));
+   after.indexOf("syncEmergencyOutputControl(next.device);"));
  const before=bridge.indexOf("if (!projectNativeGraphWithoutFocusLoss(next))",success-500);
  assert.ok(before>=0&&before<success,
    "never enable a native Add before the authoritative ChannelId graph projects");
@@ -6289,7 +6467,7 @@ test("G-MV34 native/global positive FX ACK wins across duplicate negative ACK",(
  const source=read("web/approved-fx-rack-view-model.js"),
    bridge=read("web/approved-native-bridge.js");
  assert.equal((source.match(/function nativePhysicalFxReady\(/g)||[]).length,1);
- assert.match(bridge,/fxRackVM\.nativePowerSettlement\(pendingNativeFxPower,next,/);
+ assert.match(bridge,/fxRackVM\.nativePowerSettlement\(pending,next,hardwareConfiguration\)/);
  assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed,/);
  assert.match(bridge,/const hardwareConfiguration=protocol\.nativeHardwareConfiguration\(accepted\?\.device\)/);
  assert.match(bridge,/pendingGlobalFx=\{requestId,bypassed:plan\.bypassed,acked:false,\.\.\.ctx\}/);
@@ -6531,8 +6709,8 @@ test("G-MV36 one correlated native editor transport and JUCE echo, no duplicate 
    main=read("src/Main.cpp"),viewmodel=read("web/approved-fx-rack-view-model.js");
  assert.match(main,/if \(action == "routingFxEditor"\) \{/);
  assert.match(main,/ack->setProperty\("requestId",args\.getProperty\("requestId",juce::var\(\)\)\);/);
- assert.match(main,/ack->setProperty\("instanceId",token\);/);
- assert.match(bridge,/function dispatchPhysicalFxEditor\(plan,lease,authority\)/);
+ assert.match(main,/ack->setProperty\("instanceId",args\.getProperty\("instanceId",\{\}\)\);/);
+ assert.match(bridge,/function dispatchPhysicalFxEditor\(plan,lease,authority,retried=false\)/);
  assert.match(bridge,/backend\.emitEvent\("arMixAction",\{action:plan\.action,requestId,\.\.\.plan\.payload\}\);/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"M4"\)/);
  assert.match(bridge,/dispatchPhysicalFxEditor\(plan,lease,"CHANNEL_ID"\)/);
@@ -6669,7 +6847,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
     assert.deepEqual(result,{kind:"BROWSER",windowKey});
   }
   for(const id of ["vendor.vst3",
-                   "armix.builtin.immersib.v1","__proto__"]){
+                   "armix.builtin.immersib.v1","armix.builtin.vocal-delay.v2","__proto__"]){
     assert.deepEqual(project(id).result,{kind:"NATIVE_HOST"},
       "non-allowlisted catalogs cannot choose an arbitrary browser host");
   }
@@ -6687,6 +6865,10 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
     channelId,slot:0}).lease;
   assert.deepEqual(fxRackVM.editorSurfacePlan(offline,logicalLease),
     {kind:"LOGICAL_VENDOR"});
+  offline.graph.channels[0].inserts[0].catalogId="armix.builtin.vocal-delay.v2";
+  const delayLogical=fxRackVM.editorNavigationPlan(offline,{channelId,slot:0}).lease;
+  assert.deepEqual(fxRackVM.editorSurfacePlan(offline,delayLogical),{kind:"LOGICAL_VENDOR"});
+  assert.equal(fxRackVM.nativeEditorDispatchPlan(offline,delayLogical,{offline:true}).kind,"UNAVAILABLE");
   offline.graph.channels[0].inserts[0].catalogId="armix.builtin.arson-harmony.v1";
   const builtInLogical=fxRackVM.editorNavigationPlan(offline,{
     channelId,slot:0}).lease;
@@ -6705,7 +6887,7 @@ test("G-MV38 editor surface routing has one allowlisted browser owner; future FX
 
 test("UX-1 footer live metrics: exact driver hints, CPU App, last RT and process RAM",()=>{
   const input={
-    footerHealthSequence:17,deviceGeneration:4,
+    footerHealthSequence:17,deviceGeneration:4,dryRoutingLab:{epoch:7},
     connected:true,directRouteAuthorized:true,adaptiveClockActive:false,
     rate:48000,periodUs:5000,driverReportedInputLatencyFrames:240,
     driverReportedOutputLatencyFrames:480,latencySamples:240,
@@ -6717,6 +6899,8 @@ test("UX-1 footer live metrics: exact driver hints, CPU App, last RT and process
     "do not add the separate 240-frame buffer twice");
   assert.equal(projected.performance,"CPU App 4.2% · RT last 8% · RAM 318 MiB");
   assert.equal(projected.deviceGeneration,"4");
+  assert.equal(projected.routingEpoch,"7");
+  assert.equal(protocol.footerHealthFromLive({...input,dryRoutingLab:null}).routingEpoch,null);
   assert.equal(projected.sequence,17);
   assert.match(projected.provenance,/NOT_LOOPBACK/);
   assert.equal(protocol.footerHealthFromLive({...input,footerHealthSequence:undefined}),null);
@@ -6746,7 +6930,7 @@ test("UX-1 health strip uses only already-available 1 Hz host samples and existi
   assert.match(bridge,/backend\.addEventListener\("arMixStatus", live=>/);
   assert.match(bridge,/protocol\.footerHealthFromLive\(live\)/);
   assert.match(bridge,/paintAudioHealthFooter\(hardware\)/);
-  assert.match(bridge,/lastFooterHealth\.deviceGeneration===String\(d\?\.epoch\)/);
+  assert.match(bridge,/lastFooterHealth\.routingEpoch===String\(d\?\.epoch\)/);
   assert.match(bridge,/warningText==="OUTPUT ENABLED"/);
   assert.doesNotMatch(bridge,/setInterval\([^)]*footer|setTimeout\([^)]*footer/i);
   assert.match(page,/html\.armix-native-desktop \.status-bar \.warning\[data-telemetry="true"\]/);
@@ -6800,4 +6984,1402 @@ test("UX-1 calm status colors use genuine app/process and callback budget eviden
   const geometry=require("node:fs").readFileSync(
     "site/preview-v2/assets/mixer-chrome-material.css","utf8");
   assert.match(geometry,/\.status-bar\{height:20px!important;min-height:20px!important/);
+});
+
+
+test("P0 PRIMARY WIRE remains unity, never aliases channel fader",()=>{
+  const primary={edgeId:"92",from:"8",to:"100",enabled:true,
+    primaryOutput:true,gainLinear:1};
+  const parallel={edgeId:"93",from:"8",to:"100",enabled:true,
+    primaryOutput:false,gainLinear:0.5};
+  const channel={id:"8",role:"INPUT",primaryOutId:"100",
+    controls:{faderDb:-11.5}};
+  const accepted={admitted:true,retained:false,graph:{
+    capabilities:{supportedOps:["SET_FADER","SET_WIRE_GAIN"]},
+    channels:[channel],edges:[primary,parallel]}};
+  const plan=wireVM.primaryChannelLevelPlan(accepted,true,"8","92");
+  assert.deepEqual(plan,{kind:"READY",source:"8",levelDb:-11.5});
+  assert.deepEqual(wireVM.primaryChannelLevelPlan(accepted,true,"8","93"),
+    {kind:"UNAVAILABLE"},"parallel send cannot become a channel fader");
+  assert.deepEqual(wireVM.primaryChannelLevelPlan(accepted,false,"8","92"),
+    {kind:"UNAVAILABLE"},"unprojected graph cannot authorize PRIMARY control");
+  assert.deepEqual(wireVM.primaryChannelLevelPlan({...accepted,retained:true},
+    true,"8","92"),{kind:"UNAVAILABLE"});
+  assert.deepEqual(wireVM.primaryChannelLevelPlan({
+    ...accepted,graph:{...accepted.graph,
+      edges:[{...primary,gainLinear:.5},parallel]}
+    },true,"8","92"),{kind:"UNAVAILABLE"},"native PRIMARY must stay unity");
+  const readback=wireVM.gainReadback(accepted.graph.edges,
+    new Map([["92",8],["93",9]]),new Map(),accepted.graph.channels);
+  assert.deepEqual(readback,[{id:8,pending:false,levelDb:0},
+    {id:9,pending:false,levelDb:-6}],
+    "PRIMARY stays unity, SEND has independent gain");
+  const bridge=read("web/approved-native-bridge.js");
+  assert.doesNotMatch(bridge,/primaryChannelLevelPlan\(current,/);
+  assert.doesNotMatch(bridge,/controller.intent\("SET_FADER",primary.source,/);
+  assert.match(bridge,/PRIMARY OUT · fixed unity/);
+});
+test("P0 native player INPUT advertised before pin admission; F11 window command survives VM boot",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/return physical.some\(p=>p\?\.mode==="PLAYER"\)\?physical:/);
+  assert.match(bridge,/if\(choice\?\.mode==="PLAYER"&&!nativeOwner\)/);
+  assert.match(bridge,/window.addEventListener\("keydown"/);
+  assert.match(bridge,/backend.emitEvent\("arMixWindowFullscreen",\{operation:"TOGGLE"\}\)/);
+  const popup=read("web/approved-floating-fx-bridge.js");
+  assert.match(popup,/gate==="rack"/);
+  assert.match(popup,/gate==="global"/);
+  assert.doesNotMatch(popup,/crypto.randomUUID\(/);
+  const geq=read("site/preview-v2/assets/mixer-native-geq31.js");
+  assert.match(geq,/GLOBAL FX BYPASSED/);
+  assert.match(geq,/ENABLE FX RACK/);
+  const host=read("src/Main.cpp");
+  assert.match(host,/event=="arMixGlobalFxAck"/);
+  assert.match(host,/if\(gate=="rack"\|\|gate=="global"\)/);
+});
+
+
+test("P0 WIRE LVL uses independent incoming sum scalar regardless of selected wire",()=>{
+  const receiver={id:"8",role:"INPUT",controls:{faderDb:-8.1,wireSumGainDb:0},primaryOutId:"100"};
+  const ch=[receiver,{id:"3",role:"INPUT",controls:{faderDb:-4}},
+    {id:"7",role:"INPUT",controls:{faderDb:-6}}];
+  const e1={edgeId:"301",from:"3",to:"8",enabled:true,primaryOutput:false};
+  const e2={edgeId:"302",from:"7",to:"8",enabled:true,primaryOutput:false};
+  const graph={capabilities:{supportedOps:["SET_FADER","SET_WIRE_GAIN","SET_WIRE_SUM_GAIN"]},
+    channels:ch,edges:[e1,e2]};
+  const snapshot={admitted:true,retained:false,graph};
+  assert.deepEqual(wireVM.channelSumLevelPlan(snapshot,true,"8",-12),
+    {kind:"READY",source:"8",levelDb:-12,wireCount:2});
+  assert.deepEqual(wireVM.channelSumLevelPlan({
+    ...snapshot,graph:{...graph,edges:[e2]}},true,"8",-12),
+    {kind:"READY",source:"8",levelDb:-12,wireCount:1});
+  for(const bad of [
+    {...snapshot,retained:true},{...snapshot,admitted:false},
+    {...snapshot,graph:{...graph,edges:[]}}
+  ])assert.equal(wireVM.channelSumLevelPlan(bad,true,"8",-12).kind,"UNAVAILABLE");
+  assert.equal(wireVM.channelSumLevelPlan(snapshot,true,"7",3).kind,"UNAVAILABLE");
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/field==="wireChannelLevel"/);
+  assert.match(bridge,/requestLiveWireSumGain\(t,db,event.type==="change"\)/);
+  const assembled=read("scripts/build_approved_native_gui.py");
+  assert.match(assembled,/if\(!isMain&&connected\)/);
+  assert.match(assembled,/data-field=\\"wireChannelLevel\\"/);
+  assert.match(assembled,/incoming WIRE sum level/);
+});
+
+test("P0 input GAIN sends bounded latest native intents during pointermove",()=>{
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/latestInputGainDrafts=new Map\(\)/);
+  assert.match(bridge,/requestLiveInputGain\(t,n,false\)/);
+  assert.match(bridge,/requestLiveInputGain\(t,n,true\)/);
+  assert.match(bridge,/controller\.state\(\)\?\.pending\|\|pendingLogical/);
+  assert.match(bridge,/latestInputGainDrafts\.clear\(\)/);
+  assert.match(bridge,/__ARMIX_NATIVE_GAIN_CANCEL__/);
+  const host=read("src/Main.cpp");
+  assert.match(host,/setKioskModeComponent\(this,false\)/);
+  assert.match(host,/setKioskModeComponent\(nullptr,false\)/);
+});
+
+
+test("P0 Audio I/O help reacts to explicit failed operator intent without auto-ARM",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/function recommendAudioRepair\(context\)/);
+ assert.match(bridge,/if\(!deviceReady\(\)\)recommendAudioRepair\("INPUT unavailable"\)/);
+ const editor=bridge.slice(bridge.indexOf('if(action==="openPlugin"){'),bridge.indexOf('if(action==="globalFxOn"){'));
+ assert.match(editor,/status\("FX editor waiting for the native mixer workspace"\)/);
+ assert.doesNotMatch(editor,/recommendAudioRepair|openNativeAudioIO/);
+ assert.match(editor,/requestRetainedFxAction\(t,slot,"openPlugin",\{recenter\}\)/);
+ assert.match(bridge,/requestRetainedFxAction\(t,Number\(btn\?\.dataset\.slot\),"slotPower"\)/);
+ assert.match(bridge,/requestRetainedFxAction\(t,0,"fxOn"\)/);
+ assert.match(bridge,/window\.setTimeout\(\(\)=>\{/);
+ assert.match(bridge,/openNativeAudioIO\(\); \/\/ explicit repair prompt/);
+ assert.match(bridge,/if\(now-lastAudioRepairAt<1600\)return true/);
+ assert.match(bridge,/data-audio-tab="routing"/);
+ assert.match(bridge,/selectAudioSetupPage\(tab\.dataset\.audioTab\)/);
+ assert.match(bridge,/if\(!tab\|\|!dialog\|\|deviceBusy\(\)\|\|tab\.disabled\|\|loopbackPending\)return/);
+ assert.match(bridge,/deviceVM\.setupRoutingReady\(deviceInventory,deviceChoice,deviceState\)/);
+ assert.match(bridge,/Windows Audio uses the selected stereo playback endpoint/);
+ assert.doesNotMatch(bridge,/recommendAudioRepair\([^)]*\)\s*;\s*backend\.emitEvent\("arMixAction",\{action:"monitor"/);
+ const css=read("site/preview-v2/assets/mixer-contextual-buttons.css");
+ assert.match(css,/#wireNavigatorToggle,#wireMatrixToggle/);
+ assert.match(css,/#mixContext/);
+ assert.match(css,/inset:-3px;pointer-events:auto/);
+});
+
+
+test("P0 real-time gain pointer cancellation compensates native PCM through one owner",()=>{
+ const page=read("site/preview-v2/index.html");
+ assert.match(page,/__ARMIX_NATIVE_GAIN_CANCEL__\?\.\(g\.input,g\.start\)/);
+ assert.match(page,/__ARMIX_NATIVE_GAIN_RESTORE__\?\.\(\)/);
+ assert.match(page,/wireChannelLevel','trim','sendLevel'/);
+});
+
+
+test("P0 Audio I/O repair never steals retained offline FX editor recovery",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/if\(field==="input"&&event.type==="change"\)\s*recommendAudioRepair\("INPUT audio device disconnected"\)/);
+ assert.match(bridge,/editorView\?\.admitted!==true&&\s*editorView\?\.retained!==true\)\{/);
+ assert.match(bridge,/retainedFxOfflineOpen/);
+ assert.match(bridge,/pendingRetainedEditor=\{/);
+});
+
+
+test("P0 receiver SUM WIRE disables on retained epoch, then reenables on accepted PCM",()=>{
+ const vm=read("web/approved-native-bridge.js");
+ const asm=read("scripts/build_approved_native_gui.py");
+ assert.match(vm,/canWireChannelLevel\(uiChannelId\)/);
+ assert.match(vm,/function syncReceiverSumLevelAdmission\(next\)/);
+ assert.match(vm,/const ready=Number\.isSafeInteger\(ui\)&&plan\.kind==="READY"/);
+ assert.match(vm,/if\(input\.disabled===ready\)input\.disabled=!ready/);
+ assert.match(asm,/wireEditable=window\.__ARMIX_NATIVE_M2__\?\.canWireChannelLevel\?\.\(t\.id\)===true/);
+ assert.match(asm,/wireEditable\?'':' disabled'/);
+});
+
+
+test("P0 native receiver LVL re-admits only after projected device recovery",()=>{
+ const bridge=read("web/approved-native-bridge.js");
+ const cold=read("tests/approved_native_cold_start_smoke.py");
+ assert.match(bridge,/function syncReceiverSumLevelAdmission\(next\)/);
+ assert.match(bridge,/flags\.productionCallbackLive=next\.productLive;flags\.acceptedGraphConnected=true;\s*syncReceiverSumLevelAdmission\(next\)/);
+ assert.match(bridge,/if\s*\(transientPlan\.discardRetained\)/);
+ assert.match(bridge,/syncReceiverSumLevelAdmission\(next\);\s*stopDemo\(\)/);
+ assert.match(bridge,/channelSumLevelPlan\(next,flags\.acceptedGraphConnected,/);
+ assert.match(cold,/['"]CREATE_CHANNEL['"], ['"]SET_FADER['"], ['"]SET_WIRE_SUM_GAIN['"]/);
+ assert.match(cold,/\.wire-gain'\)\.is_disabled\(\)/);
+ assert.match(cold,/\.wire-gain'\)\.is_enabled\(\)/);
+});
+
+test("P0 routing commands remain usable in More at all desktop widths",()=>{
+ const base=read("site/preview-v2/assets/mixer-chrome-material.css");
+ const ux=read("site/preview-v2/assets/mixer-contextual-buttons.css");
+ const page=read("site/preview-v2/index.html");
+ // Immutable hardware baseline is preserved; the UX owner controls the move.
+ assert.match(base,/\.more-tools-panel \.wire-overflow\{display:none!important\}/);
+ assert.match(ux,/\.app \.more-tools-panel \.wire-overflow\{display:block!important\}/);
+ assert.match(ux,/#wireNavigatorToggle,#wireMatrixToggle/);
+ assert.match(page,/data-wire-open="routes"/);
+ assert.match(page,/data-wire-open="matrix"/);
+ assert.match(page,/data-wire-open="config"/);
+});
+
+
+test("P0 offline picker is presentation-only until selection and Apply restores edited graph before MAIN",()=>{
+ const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp"),engine=read("src/LiveAudioEngine.h");
+ assert.match(bridge,/if\(empty\)\{\s*scope\?\.openFastPicker\?\.\(t,slot,btn\);\s*return true;/);
+ assert.match(bridge,/requestRetainedFxAction\(track,slot,"insertFx",\{selectedCatalogId:id\}\)/);
+ const handoff=bridge.slice(bridge.indexOf("function requestRetainedFxAction("),bridge.indexOf("function logicalIntent("));
+ assert.match(handoff,/current\?\.retained!==true/);
+ assert.match(handoff,/if\(pendingRetainedEditor\)\{/);
+ assert.match(handoff,/deviceEpoch:current\.device\.epoch,graphRevision:current\.graph\.revision/);
+ assert.match(handoff,/selectedCatalogId:options\.selectedCatalogId/);
+ assert.doesNotMatch(handoff,/arMixLogicalIntent|arMixConsoleIntent|openNativeAudioIO/);
+ assert.match(bridge,/nativeHooks\.insertPlugin\(held\.selectedCatalogId/);
+ assert.match(native,/if\(pendingRetainedFxCapture_ \|\| retainedOfflineFxActive_\)return; \/\/ never arm stale retained PCM/);
+ assert.match(native,/engine_\.finishManualAudioSetup\(false,true\)/);
+ assert.match(native,/OFFLINE_MIXER_REBIND_ACCEPTED/);
+ assert.match(engine,/if\(deferRetainedRebind\)return true/);
+});
+
+
+test("P2 offline GAIN coalesces released values until durable ACK and exact readback",()=>{
+ const vm=require("node:vm"),sent=[],listeners=new Map(),microtasks=[];
+ let nextId=100,nextEdgeId=200;
+ const scope={tracks:[],master:{id:1,name:"Master"},colors:["#568ead"],
+   wireGraph:{validateCandidateGraph:()=>({ok:true})},
+   make:(name,kind,color)=>({id:nextId++,name,kind,color}),
+   render(){},findTrack(){return this.tracks[0];},displayMeterDbfs(){},
+   allocateWireId:()=>nextEdgeId++,installGraph(tracks,master,edges){
+     this.tracks=tracks;this.master=master;this.edges=edges;
+   },stopDemo(){}};
+ const backend={emitEvent:(name,payload)=>sent.push({name,payload}),
+   addEventListener:(name,fn)=>listeners.set(name,fn)};
+ const doc={readyState:"complete",documentElement:{dataset:{}},
+   getElementById:()=>null,querySelector:()=>null,addEventListener(){}};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:protocol,
+   ArSonApprovedDeviceViewModel:deviceVM,ArSonApprovedChannelStripViewModel:stripVM,
+   ArSonApprovedFxRackViewModel:fxRackVM,ArSonApprovedWireViewModel:wireVM,
+   __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},setTimeout(){return 0;},
+   clearTimeout(){},queueMicrotask(fn){microtasks.push(fn);}};
+ vm.runInNewContext(read("web/approved-native-bridge.js"),{window:win,document:doc,
+   performance:{now:()=>0},console},{timeout:1500});
+ const graph=acceptedFixture().graph;
+ graph.capabilities.callbackOwnsChannelIds=false;
+ graph.capabilities.supportedOps=["SET_INPUT_GAIN","SET_FADER"];
+ graph.channels[0].controls.inputGainDb=0;
+ graph.edges[0].primaryOutput=true;
+ const snapshot=(revision,db,workspaceToken="offline-gain")=>{
+   const s=clone(fixtures.g0),g=clone(graph);
+   g.revision=revision;g.rosterRevision=revision;g.channels[0].controls.inputGainDb=db;
+   s.mixerSession={authority:"NONE",deviceEpoch:s.device.epoch};
+   s.logicalMixer={schema:"arsonmix.native.logical-mixer.v1",authority:"LOGICAL_ONLY",
+     workspaceToken,readOnly:false,revision,physicalOutputAdmitted:false,outputArmed:false,graph:g};
+   return s;
+ };
+ const emit=(name,payload)=>{listeners.get(name)(payload);while(microtasks.length)microtasks.shift()();};
+ const commands=()=>sent.filter(x=>x.name==="arMixLogicalIntent").map(x=>x.payload);
+ const gain=(db,type)=>win.__ARMIX_NATIVE_M2__.consumeField({type,target:{
+   dataset:{field:"trim"},value:String(db),closest:()=>null}});
+ const ack=(cmd,revision)=>emit("arMixLogicalAck",{requestId:cmd.requestId,
+   status:"ACCEPTED",errorCode:"NONE",revision});
+ emit("arMixConsoleSnapshot",snapshot("10",0));
+ assert.equal(scope.tracks[0].nativeGainAvailable,true);
+ for(const value of [1,2,3])gain(value,"input");
+ assert.equal(commands().length,0,"no disk writes while offline dragging");
+ gain(3,"change");
+ const first=commands()[0];assert.equal(first.payload.valueDb,3);
+ for(const value of [4,5,6])gain(value,"input");
+ gain(6,"change");gain(9,"change");
+ assert.equal(commands().length,1);
+ ack(first,"11");
+ assert.equal(commands().length,1,"ACK without independent readback cannot drain");
+ emit("arMixConsoleSnapshot",snapshot("11",3));
+ assert.equal(commands().length,2);
+ const last=commands()[1];
+ assert.equal(last.baseRevision,"11");assert.equal(last.payload.valueDb,9);
+ assert.equal(scope.tracks[0].nativeGainAvailable,true,"offline readback keeps knob usable");
+ assert.equal(scope.tracks[0].trim,3,"pending target never commits model optimistically");
+ // Cancel while a prior released edit is pending: restore the pointer-down value.
+ win.__ARMIX_NATIVE_GAIN_CANCEL__({},3);
+ ack(last,"12");emit("arMixConsoleSnapshot",snapshot("12",9));
+ assert.equal(commands().length,3);const cancel=commands()[2];
+ assert.equal(cancel.payload.valueDb,3);assert.equal(cancel.baseRevision,"12");
+ ack(cancel,"13");emit("arMixConsoleSnapshot",snapshot("13",3));
+ assert.equal(scope.tracks[0].trim,3);
+ gain(7,"change");const old=commands().at(-1);gain(10,"change");
+ emit("arMixConsoleSnapshot",snapshot("1",0,"another-workspace"));
+ ack(old,"14");
+ assert.equal(commands().length,4,"queued GAIN must never follow replacement workspace");
+ assert.equal(scope.tracks[0].trim,0);
+});
+
+test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop is separate",()=>{
+ const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp");
+ assert.doesNotMatch(bridge,/dataset\.nativeMonitor|data-native-monitor|toolbar\.insertBefore\(monitor/);
+ assert.match(bridge,/menu\.append\(caption,setup,muteBtn,\.\.\.newSessionButtons,archiveButton/);
+ assert.match(bridge,/audioDiagnosticTools\.append\(hardwareNote,inspect,tone,mark,report,advanced\)/);
+ assert.match(bridge,/querySelector\("\.armix-audio-diagnostics"\)\.append\(audioDiagnosticTools\)/);
+ assert.doesNotMatch(bridge,/menu\.append\([^;]*(?:hardwareNote|healthTitle|tone,mark,report|advanced)/);
+ assert.match(bridge,/Resume after emergency stop/);
+ assert.match(bridge,/EMERGENCY STOP · MORE → RESUME/);
+ const start=native.indexOf("void serviceAutomaticMain()"),end=native.indexOf("void requestAutomaticMain",start);
+ const control=native.slice(start,end);
+ assert.match(control,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
+ assert.match(control,/deviceApply_\.busy\(\)/);
+ assert.match(control,/directCallbackStalled_/);
+ assert.match(control,/if\(autoMainEpoch_==0\)return/);
+ assert.doesNotMatch(control,/autoMainEpoch_=engine_\.dryRoutingLabEpoch\(\)/);
+ assert.match(control,/!engine_\.directRouteAuthorized\(\)/);
+ assert.match(control,/!engine_\.hasBoundMixerRoute\(\)/);
+ assert.match(control,/engine_\.hasRetainedUnboundMixer\(\)/);
+ assert.match(control,/engine_\.liveOutputArmFault\(requireInput\)/);
+ assert.match(native,/if\(error\.isEmpty\(\)&&!sameOutputs\)\s*engine\.setMonitorEnabled\(false\)/);
+ const audio=read("src/LiveAudioEngine.h");
+ const begin=audio.indexOf("if(wanted==Route::mainOutputTone)"),finish=audio.indexOf("if(currentRoute==Route::mainOutputTone)",begin);
+ assert.ok(begin>=0&&finish>begin);
+ const tone=audio.slice(begin,finish);
+ assert.match(tone,/setOutputMuted\(false\)/);
+ assert.doesNotMatch(tone,/setMonitorEnabled\(true\)/);
+ assert.doesNotMatch(control,/setMasterMuted\(false\)|openSelectedAudioDevice|setAudioDeviceSetup/);
+});
+
+// P0: navigation cannot be mistaken for a parameter ACK; overlay is accepted-state only.
+test("P0 editor refresh and bypass projection preserve exact owner and gate hierarchy",()=>{
+ const id="9007199254740993",device={epoch:"51",sampleRate:48000,bufferFrames:256,
+  enabledInputs:[0,1],enabledOutputs:[0,1]};
+ const hardwareConfiguration=protocol.nativeHardwareConfiguration(device);
+ const view={admitted:true,retained:false,device,raw:{globalFxBypassed:false,
+  mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"51"}},graph:{
+   revision:"46",rosterRevision:"19",capabilities:{callbackOwnsChannelIds:true},
+   channels:[{id,role:"INPUT",fxRackBypassed:false,inserts:[
+    {id:"fx-one",catalogId:"armix.builtin.8d-sonku.v1",bypassed:false}]}]}};
+ const options={hardwareConfiguration};
+ const lease=fxRackVM.editorNavigationPlan(view,{channelId:id,slot:0,...options}).lease;
+ const state=()=>fxRackVM.editorBypassPresentation(view,lease,options);
+ assert.equal(state(),"ON");
+ view.graph.revision="47";
+ assert.equal(fxRackVM.refreshEditorNavigationLease(view,lease,options).graphRevision,"47");
+ view.graph.channels[0].inserts[0].bypassed=true;assert.equal(state(),"SLOT");
+ view.graph.channels[0].fxRackBypassed=true;assert.equal(state(),"RACK");
+ view.raw.globalFxBypassed=true;assert.equal(state(),"GLOBAL");
+ view.raw.globalFxBypassed=false;assert.equal(state(),"RACK");
+ view.graph.channels[0].fxRackBypassed=false;assert.equal(state(),"SLOT");
+ view.graph.channels[0].inserts[0].id="replacement";assert.equal(state(),"UNAVAILABLE");
+ assert.equal(fxRackVM.refreshEditorNavigationLease(view,lease,options),null);
+ assert.equal(protocol.operatorMessage("VST3 editor · refresh native device and FX instance"),
+  "FX editor unavailable · Reopen from FX Rack");
+ assert.equal(protocol.operatorMessage("Native FX editor opened"),"FX editor opened");
+ assert.notEqual(protocol.operatorMessage("Native FX editor pending"),"Effect settings updated");
+});
+
+test("P0 bounded editor retry stays on same owner and native failure class",()=>{
+ const b=read("web/approved-native-bridge.js"),m=read("src/Main.cpp");
+ assert.match(b,/pending\.retried\|\|pending\.retryScheduled/);
+ assert.match(b,/if\(pendingFxEditorAck!==pending\)return/);
+ assert.match(b,/ack\?\.retryable===true&&retryPhysicalFxEditor\(pending\)/);
+ assert.match(b,/fresh,"CHANNEL_ID",true\);/);
+ assert.match(m,/retryable=false; \/\/ plugin\/window failures/);
+ assert.match(m,/ack->setProperty\("retryable",!opened&&retryable\)/);
+});
+
+test("P0 native busy guard and all physical presentations produce explicit receipts",()=>{
+ const m=read("src/Main.cpp"),w=read("src/NativeOwnedFloatingWindow.h");
+ assert.match(m,/const bool outputIntent=action=="monitor"&&args\.getProperty\("value",\{\}\)\.isBool\(\)/);
+ assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply" && !outputIntent\)\{/);
+ const monitor=m.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
+ assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
+ assert.match(monitor,/operatorOutputMuted_=!arm/);
+ assert.match(monitor,/arMixAudioArmAck/);
+ assert.match(m,/emitRoutingFxEditorReceipt\(args,false,true,"FX editor unavailable: Audio I\/O is applying"\)/);
+ assert.match(m,/opened=shownWindow->presentationConfirmed\(\)/);
+ assert.match(m,/opened=\(\*extra\)->window->presentationConfirmed\(\)/);
+ assert.match(m,/opened=createdWindow&&createdWindow->presentationConfirmed\(\)/);
+ assert.match(w,/win32::ensureOwnedPopupVisible/);
+ assert.equal(protocol.operatorMessage("This VST3 has no native editor"),
+  "FX editor unavailable · Reopen from FX Rack");
+});
+
+// DMX native source/target roles: no terminal sends, no guessed IDs.
+test("DMX SOF selects exact independent FX return to monitor edge",()=>{
+ const fx="9007199254740993",mon="9007199254740994",main="18446744073709551615";
+ const edge={edgeId:"9223372036854775809",from:fx,to:mon,enabled:true,
+   primaryOutput:false,tap:"PRE_FADER",sendEnabled:true,gainLinear:.125};
+ const graph={channels:[{id:fx,role:"FX_RETURN"},{id:mon,role:"MONITOR"},
+   {id:main,role:"MAIN"}],mainChannelId:main,edges:[edge],
+   capabilities:{supportedOps:["SET_WIRE_GAIN","SET_SEND_ENABLED","APPLY_WIRE_TRANSACTION"]}};
+ const snap={admitted:true,graph};
+ const find=(sourceId,destinationId,state=snap)=>wireVM.sofSendEdge(state,{sourceId,destinationId});
+ assert.equal(find(fx,mon),edge);
+ assert.equal(find(fx,mon,{...snap,retained:true}),null);
+ assert.equal(find(fx,mon,{...snap,graph:{...graph,edges:[edge,edge]}}),null);
+ assert.equal(find(fx,mon,{...snap,graph:{...graph,edges:[{...edge,primaryOutput:true}]}}),null);
+ assert.equal(find(fx,main),null);
+ assert.equal(find(mon,fx,{...snap,graph:{...graph,edges:[{...edge,from:mon,to:fx}]}}),null);
+ assert.equal(find(fx,fx),null);
+ assert.equal(wireVM.sofSourceRole("MONITOR"),false);
+ assert.equal(wireVM.sofTargetRole("MONITOR"),true);
+ assert.equal(wireVM.sofTargetRole("MAIN"),false);
+});
+
+test("DMX conversion ACK needs a new actual wet return and preserved source identity",()=>{
+ const setup=()=>{
+  const base=acceptedFixture(),source=base.graph.channels.find(c=>c.role==="INPUT");
+  const main=base.graph.channels.find(c=>c.role==="MAIN");
+  base.graph.mainChannelId=main.id;source.primaryOutId=main.id;
+  source.inserts=[{id:"fx-existing",catalogId:"test.eq",name:"EQ"},
+    {id:"fx-reverb",catalogId:"armix.builtin.vocal-reverb.v1",name:"Reverb-Sis"}];
+  base.graph.capabilities.supportedOps.push("CONVERT_REVERB_RETURN");
+  const c=protocol.createController({emit(){}});
+  assert.ok(c.onSnapshot(base));return {base,source,main,c};
+ };
+ const run=(corrupt)=>{
+  const {base,source,main,c}=setup();
+  assert.equal(c.intent("CONVERT_REVERB_RETURN",source.id,{slot:0,instanceId:"fx-existing"}).ok,false);
+  assert.equal(c.intent("CONVERT_REVERB_RETURN",source.id,{slot:1,instanceId:"stale"}).ok,false);
+  const r=c.intent("CONVERT_REVERB_RETURN",source.id,{slot:1,instanceId:"fx-reverb"});
+  assert.ok(r.ok);
+  c.onAck({requestId:r.requestId,status:"ACCEPTED",errorCode:"NONE",
+    deviceEpoch:base.device.epoch,graphRevision:"6",rosterRevision:"8"});
+  assert.equal(c.state().current.graph.channels.find(x=>x.id===source.id).inserts.length,2);
+  const next=clone(base);
+  next.graph.revision="6";next.graph.rosterRevision="8";
+  next.graph.channels.find(x=>x.id===source.id).inserts.pop();
+  const wet=clone(source);wet.id="9007199254740999";wet.role="FX_RETURN";
+  wet.name="Reverb-Sis Return";wet.inserts=[{id:"fx-wet",catalogId:"armix.builtin.vocal-reverb-return.v1",name:"Reverb-Sis Return"}];
+  next.graph.channels.push(wet);
+  next.graph.edges.push({edgeId:"9223372036854775991",from:source.id,to:wet.id,
+    signalKind:"AUDIO",enabled:true,primaryOutput:false,gainLinear:1,tap:"POST_FADER"});
+  if(corrupt)corrupt(next,wet);
+  return {ok:c.onSnapshot(next),c,wet};
+ };
+ assert.ok(run(null).ok);
+ assert.equal(run((n,w)=>{w.inserts[0].catalogId="armix.builtin.vocal-reverb.v1";}).ok,false);
+ assert.equal(run(n=>{n.graph.edges.pop();}).ok,false);
+});
+
+
+test("RTR closes affected inline FX editors before rack mutation",()=>{
+ const b=read("web/approved-native-bridge.js");
+ const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
+ assert.ok(edit.indexOf('decision.kind!=="READY"')<edit.indexOf("inlineFxClip?.closeRackEditors("));
+ assert.ok(edit.indexOf("inlineFxClip?.closeRackEditors(")<edit.indexOf("controller.intent("));
+ assert.match(b,/editorOwners\.set\(root,\{key,lease\}\)/);
+ assert.match(b,/affected\.has\(String\(owner\.lease\.channelId\)\)/);
+ assert.match(b,/bypassOwners\.delete\(root\)/);
+});
+
+
+test("RTR live New Project requires verified archive before native replacement",()=>{
+ const m=read("src/Main.cpp"),w=read("src/NativeMixerSessionSaveWorker.h"),b=read("web/approved-native-bridge.js");
+ const reset=m.slice(m.indexOf("void createLiveSession("),m.indexOf("void createOfflineSession("));
+ assert.match(reset,/liveNewSessionLeaseMatches\(args\)/);
+ assert.ok(reset.indexOf("mixerSessionWorker_.save(")<reset.indexOf("restoreNativeMixerSession("));
+ assert.match(reset,/Codec::encode\(current\)!=expected/);
+ assert.match(reset,/setMonitorEnabled\(false\)/);
+ assert.doesNotMatch(reset,/setMonitorEnabled\(true\)/);
+ assert.match(w,/verifyExportArchive_/);
+ assert.match(w,/Session archive readback mismatch/);
+ assert.match(b,/action:"nativeMixerNewLive",confirmed:true/);
+});
+
+
+test("M3 MONITOR timing requires admitted physical pairs, disarm and observed revision",()=>{
+  const raw=gmv20AcceptedGraph();
+  raw.device.backend="ASIO";raw.device.outputArmed=false;
+  raw.device.enabledOutputs=[0,1,4,5];
+  raw.device.outputEndpoints=[0,1,4,5].map((port,callback)=>({port,callback,id:"out:"+port,label:"Out "+port,active:true}));
+  raw.physicalMainOutputs=[0,1];raw.physicalMonitorOutputs=[4,5];
+  raw.physicalBusOutputObserved=true;raw.operatorOutputMuted=true;raw.physicalBusSecondaryArmed=false;
+  raw.monitorTiming={policy:"GLOBAL_ALIGNED",mainSamples:1456,monitorSamples:1456,potentialSaving:1152};
+  const read=()=>protocol.monitorTimingView(protocol.normalizeSnapshot(raw));
+  assert.equal(read()?.editable,true);
+  raw.physicalBusSecondaryArmed=true;assert.equal(read()?.editable,false);
+  raw.physicalBusSecondaryArmed=false;raw.physicalBusOutputObserved=false;assert.equal(read()?.editable,false);
+  raw.physicalBusOutputObserved=true;
+  raw.monitorTiming.policy="INDEPENDENT_MONITOR";raw.monitorTiming.monitorSamples=304;
+  assert.equal(read()?.monitorSamples,304);
+  raw.monitorTiming.monitorSamples=305;assert.equal(read(),null);
+  raw.monitorTiming.monitorSamples=304;raw.physicalMonitorOutputs=[1,5];assert.equal(read(),null);
+});
+
+
+// RTR M4 read-only Smart Performance Assistant: exact device/epoch, 1 Hz
+// cumulative bucket deltas, provenance, and no automated DSP/device changes.
+const m4Accepted=(armed=true)=>({
+  admitted:true,retained:false,
+  device:{epoch:"42",sampleRate:48000,bufferFrames:128,outputArmed:armed},
+  graph:{revision:"9"}
+});
+const m4Live=(sequence,buckets,extra={})=>({
+  connected:true,directRouteAuthorized:true,deviceGeneration:42,adaptiveClockActive:false,
+  performanceRenderToken:"11",performanceRenderEpoch:"42",performanceRenderRevision:"9",
+  dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"9"}},
+  rate:48000,buffer:128,periodUs:2666.667,nativeFxGraphRevision:"9",
+  footerHealthSequence:sequence,callbackBudgetBuckets:buckets,...extra
+});
+const m4Buckets=(values={})=>Array.from({length:13},(_,i)=>values[i]||0);
+test("M4 first 1 Hz sample cannot manufacture green status or inferred xrun",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({9:100})),m4Accepted());
+  assert.equal(first.state,"COLLECTING");
+  assert.equal(first.headroom,null);
+  assert.equal(first.callbacks,null);
+  assert.equal(first.over,null);
+  assert.equal(first.cursor.epoch,"42");
+  assert.equal(first.recommendations.some(x=>/at least 64/.test(x)),true);
+});
+test("M4 computes per-second histogram delta and conservative bucket-ceiling headroom",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({9:500})),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({9:500,10:100})),m4Accepted(),first.cursor);
+  assert.equal(next.state,"TIGHT"); // index 10 is <=85% budget
+  assert.equal(next.headroom.p99,"85%");
+  assert.equal(next.headroom.margin,"15%");
+  assert.equal(next.over,0);
+  assert.equal(next.callbacks,100);
+  assert.equal(next.recommendations[0].includes("Limited"),true);
+});
+test("M4 labels current over-budget host renders as pressure, not confirmed crackle",()=>{
+  const first=protocol.smartPerformanceView(m4Live(5,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(
+    m4Live(6,m4Buckets({8:90,12:10})),m4Accepted(),first.cursor);
+  assert.equal(next.state,"PRESSURE");
+  assert.equal(next.headroom.p99,">100%");
+  assert.equal(next.over,10);
+  assert.equal(next.callbacks,100);
+  assert.match(next.recommendations[0],/Render deadline exceeded/);
+  assert.equal(next.headroom.confidence.includes("NOT_XRUN"),true);
+});
+test("M4 rejects stale device, retained graph, broken interval and counter reset",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets({6:64})),m4Accepted());
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),device:{...m4Accepted().device,epoch:"43"}},first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),retained:true},first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:63})),
+    m4Accepted(),first.cursor).state,"COLLECTING");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,[1,2]),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128}),
+    {dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"10"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({6:128})),
+    {...m4Accepted(),graph:{revision:"10"}},first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(1,m4Buckets({6:128})),
+    m4Accepted(),first.cursor).state,"COLLECTING");
+});
+test("M4 distinguishes scheduling suspicion and a historic sampled FX peak",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:80}),{
+    renderPressureWindowValid:true,renderPressureWithinThenOnTime:52,
+    renderPressureWithinThenLate:12,renderPressureOverThenOnTime:0,
+    renderPressureOverThenLate:0,nativeFxWorkloadWorstPermille:913,
+    nativeFxWorkloadWorstName:"dearVR",nativeFxWorkloadWorstSampledOnly:true,
+    nativeFxWorkloadReviews:[{name:"dearVR",channel:"CH1_EXTERNAL",
+      recommendation:"REVIEW_BLOCK_BUDGET",sampledOnly:true,
+      windowValid:true,windowMeanPermille:290}]
+  }),m4Accepted(),first.cursor);
+  assert.equal(next.state,"OBSERVED_MARGIN");
+  assert.equal(next.fxPeak.percent,"91.3%");
+  assert.equal(next.fxPeak.sampled,true);
+  assert.equal(next.reviews[0].window,"29.0%");
+  assert.match(next.recommendations.join(" "),/driver \/ OS scheduling/);
+  assert.match(next.recommendations.join(" "),/historical and sampled/);
+});
+test("M4 reports signed-off graph PDC with no implied zero device latency",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:64}),{
+    nativeLatencyPlanValid:true,nativeLatencyPlanAlignedSamples:1456,
+    nativeLatencyPlanHasMonitor:true,nativeLatencyPlanMonitorOutputSamples:0,
+    nativeLatencyPlanMonitorPolicy:"INDEPENDENT_MONITOR",
+    nativeMaxInsertLatencySamples:1152,nativeMaxInsertLatencyName:"Harmonice",
+    nativeLatentBypassRequestedCount:1
+  }),m4Accepted(),first.cursor);
+  assert.equal(next.latency.main,"30.33 ms");
+  assert.equal(next.latency.monitor,"0.00 ms");
+  assert.equal(next.latency.policy,"Independent singer monitor");
+  assert.match(next.recommendations.join(" "),/save then deactivate explicitly/);
+});
+test("M4 refuses green while disarmed, discards invalid FX fields and uses a single native status transport",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted(false));
+  const next=protocol.smartPerformanceView(m4Live(2,m4Buckets({5:100}),{
+    nativeFxWorkloadReviews:[{name:"<img src=x onerror=alert(1)>",recommendation:"BAD"}]
+  }),m4Accepted(false),first.cursor);
+  assert.equal(next.state,"MUTED");
+  assert.equal(next.reviews.length,0);
+  assert.equal(next.recommendations[0].startsWith("Outputs disarmed"),true);
+  const bridge=read("web/approved-native-bridge.js");
+  assert.match(bridge,/protocol.smartPerformanceView\(live,hardware,lastM4Performance\?\.cursor\)/);
+  assert.match(bridge,/row.textContent=value; \/\/ Plugin names are data/);
+  assert.match(bridge,/data-audio-tab="performance"/);
+  assert.doesNotMatch(bridge,/action:"autoBypassForM4"|action:"autoBufferIncreaseForM4"/);
+});
+
+test("M6 continuous live evidence excludes skipped samples, mute cycles, diagnostic callbacks and wrong scope",()=>{
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets()),m4Accepted());
+  const next=(seq,extra={},accepted=m4Accepted(),prior=first.cursor)=>
+    protocol.smartPerformanceView(m4Live(seq,m4Buckets({7:100}),extra),accepted,prior);
+  assert.equal(next(2).state,"OBSERVED_MARGIN");
+  for(const extra of [{performanceRenderToken:"12"},{performanceRenderToken:null},
+    {performanceRenderEpoch:"43"},{performanceRenderRevision:"10"}])
+    assert.equal(next(2,extra).headroom,null);
+  assert.equal(next(3).headroom,null);
+  assert.equal(next(2,{adaptiveClockActive:true}).state,"UNAVAILABLE");
+  const muted=next(2,{},m4Accepted(false));
+  assert.equal(muted.state,"MUTED");assert.equal(muted.headroom,null);
+  assert.equal(next(3,{},m4Accepted(),muted.cursor).headroom,null);
+  assert.equal(next(2,{renderPressureWindowValid:true,renderPressureWithinThenLate:65,
+    renderPressureWithinThenOnTime:0,renderPressureOverThenLate:0,renderPressureOverThenOnTime:0}).correlation,null);
+});
+
+test("M6 uses actual routing epoch and installed native graph, not device-start or legacy revision counters",()=>{
+  const extra={deviceGeneration:21,nativeFxGraphRevision:"81"};
+  const first=protocol.smartPerformanceView(m4Live(1,m4Buckets(),extra),m4Accepted());
+  const second=protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),extra),m4Accepted(),first.cursor);
+  assert.equal(second.state,"OBSERVED_MARGIN");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),{
+    dryRoutingLab:{epoch:21,nativeBus:{graphRevision:"9"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+  assert.equal(protocol.smartPerformanceView(m4Live(2,m4Buckets({7:100}),{
+    dryRoutingLab:{epoch:42,nativeBus:{graphRevision:"81"}}}),m4Accepted(),first.cursor).state,"UNAVAILABLE");
+});
+
+
+test("RTR integration preserves monitor timing, Additional Output, performance and rack editor lifetime",()=>{
+  const b=read("web/approved-native-bridge.js"),m=read("src/Main.cpp");
+  assert.match(b,/data-monitor-timing-toggle/);
+  assert.match(b,/data-audio-extra-output/);
+  assert.match(b,/data-audio-tab="performance"/);
+  const rack=b.slice(b.indexOf("function requestRackFile("),b.indexOf("const nativeHooks="));
+  assert.doesNotMatch(rack,/closeRackEditors|retirePendingRackEditor/);
+  const receipt=b.slice(b.indexOf('backend.addEventListener("arMixFxRackFileResult"'),b.indexOf('backend.addEventListener("arMixNotice"'));
+  assert.ok(receipt.indexOf('inlineFxClip?.closeRackEditors([pending.channelId])')>receipt.indexOf('receipt.phase==="COMPLETED"'));
+  assert.match(receipt,/receipt\?\.requestId!==pending\.requestId/);
+  assert.match(receipt,/receipt\.channelId!==pending\.channelId/);
+  const live=m.slice(m.indexOf("bool canCreateLiveSession("),m.indexOf("bool liveNewSessionLeaseMatches("));
+  assert.match(live,/!fxRackFileChooser_/);
+});
+
+
+test("intentional rack edits retire only affected pending native HWND feedback",()=>{
+ const b=read("web/approved-native-bridge.js");
+ const f=b.slice(b.indexOf("function retirePendingRackEditor("),b.indexOf("function reconcileM4FxInsertReadback("));
+ assert.match(f,/pending.authority==="CHANNEL_ID"/);
+ assert.match(f,/channelIds.some\(id=>String\(id\)===String\(pending.lease\?\.channelId\)\)/);
+ assert.match(f,/pendingFxEditorAck=null/);
+ const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
+ assert.ok(edit.indexOf("retirePendingRackEditor(")>edit.indexOf('decision.kind!=="READY"'));
+ assert.ok(edit.indexOf("retirePendingRackEditor(")<edit.indexOf("controller.intent("));
+ assert.match(b,/retirePendingRackEditor\(\[pending.channelId\]\)/);
+ assert.match(b,/retirePendingRackEditor\(\);\s*inlineFxClip\?\.closeRackEditors\(\)/);
+});
+
+test("DMX sole ASIO pair belongs to MONITOR; MAIN readback names only the secondary sink",()=>{
+  const raw=gmv20AcceptedGraph();
+  raw.device.backend="ASIO";raw.device.outputArmed=false;
+  raw.device.enabledOutputs=[4,5];
+  raw.device.outputEndpoints=[4,5].map((port,callback)=>({port,callback,id:"out:"+port,label:"Out "+port,active:true}));
+  raw.physicalMainOutputs=[];raw.physicalMonitorOutputs=[4,5];
+  raw.secondaryMainOnly=true;raw.secondaryMainReady=true;
+  raw.secondaryMainEndpoint="CABLE Input";raw.physicalBusSecondaryArmed=true;
+  const read=()=>protocol.physicalOutputOverview(protocol.normalizeSnapshot(raw));
+  assert.deepEqual(read().map(x=>[x.pair,x.role,x.status]),
+    [["OUT 5/6","MONITOR","MUTED"],["STREAM","MAIN","ENABLED"]]);
+  assert.equal(read()[1].pins,"CABLE Input");
+  raw.secondaryMainReady=false;
+  assert.equal(read()[1].status,"NEEDS_REMAP");
+  assert.equal(read()[1].pins,"WASAPI endpoint disconnected");
+  raw.secondaryMainOnly=false;
+  assert.equal(read().some(x=>x.pair==="STREAM"),false);
+});
+
+test("DMX split topology creates native ChannelId and preserves authored MONITOR on return",()=>{
+  const source=read("src/LiveDryRoutingLab.h");
+  const start=source.indexOf("juce::String patchDmxSplitOutput(");
+  const end=source.indexOf("// CONTROL only, explicit operator MUTE",start);
+  assert.ok(start>=0&&end>start);
+  const body=source.slice(start,end);
+  assert.match(body,/armix::mixer::ChannelEdit edit;edit.kind=armix::mixer::ChannelEdit::Kind::add;/);
+  assert.doesNotMatch(body,/ChannelEdit::Kind::remove/);
+  assert.equal((body.match(/std::span<const armix::mixer::ChannelEdit>/g)||[]).length,1);
+  assert.doesNotMatch(body,/(?<!::)\bChannelEdit\b/);
+  assert.match(body,/next=\{2,old.monitorL,old.monitorR,-1,-1,false\}/);
+  assert.match(body,/nativeAccepted_\.graph\.ids\.monitor=monitor/);
+  assert.match(body,/DynamicChannelFxLeaseBank::reuseRevision/);
+  assert.match(body,/nativePublisher_\.commit\(roster,request/);
+  const publisher=read("engine/core/DynamicNativeSessionPublisher.h");
+  const graph=read("engine/core/DynamicPreparedMixerBlock.h");
+  assert.match(publisher,/bool allowUnmappedMonitor=false/);
+  assert.match(publisher,/snap->prepared->monitor && !monitorL && !allowUnmappedMonitor/);
+  assert.match(graph,/monitor_!=notScheduled && !monitorL && !allowUnmappedMonitor/);
+});
+
+
+test("U1 output rejects preserve actionable native reasons without weakening generic QA filtering",()=>{
+ const reasons=["EXTERNAL OUT: stale ASIO device, epoch or PCM revision",
+  "EXTERNAL OUT: native graph rejected; previous sound retained",
+  "EXTERNAL OUT: physical pair reserved by logical output",
+  "EXTERNAL OUT: wait for native bus mapping callback readback",
+  "BUS OUTPUT: explicitly MUTE MAIN and STREAM first"];
+ for(const reason of reasons)assert.equal(protocol.operatorMessage(reason),reason);
+ assert.equal(protocol.operatorMessage("INVALID_NATIVE_SNAPSHOT"),"Change not applied · Previous mixer settings kept");
+ const b=read("web/approved-native-bridge.js"),host=read("src/Main.cpp");
+ assert.match(b,/ack\?\.requestId!==extraPending\.requestId\|\|ack\.action!==extraPending\.action/);
+ assert.match(host,/EXTERNAL_OUTPUT_REJECTED/);
+});
+
+
+test("U1 reserved logical pairs are not offered as direct outputs but installed readback stays visible",()=>{
+ const id="123",device={epoch:"31",backend:"ASIO",playbackDevice:"Maono",outputArmed:true,
+  enabledOutputs:[0,1,2,3,4,5,6,7],
+  outputEndpoints:Array.from({length:8},(_,port)=>({port,active:true,label:"Maono "+port}))};
+ const raw={externalRevision:"9",physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
+  logicalOutputRegistry:{ports:[{bound:true,playback:"Maono",left:4,right:5}],references:[]}};
+ const hardware={device,raw};
+ assert.deepEqual(deviceVM.outputChoices(hardware).map(p=>p.left),[-1,2,6]);
+ const installed=deviceVM.externalPresentation(hardware,{physicalLeft:4,physicalRight:5,status:"LIVE"});
+ assert.equal(installed.state,"LIVE");
+ const choice=deviceVM.outputChoices(hardware,true).find(p=>p.left===4);
+ const native={admitted:true,device:{epoch:"31"},graph:{revision:"9",channels:[{id,role:"INPUT"}]}};
+ const input={native,hardware,channelId:id,choices:[choice],selectedLabel:choice.label,currentLabel:"None"};
+ assert.equal(stripVM.externalOutputPlan(input).kind,"UNAVAILABLE");
+ assert.equal(stripVM.externalOutputPlan({...input,hardware:{device,raw:{...raw,logicalOutputRegistry:{ports:[],references:[]}}}}).kind,"READY");
+ assert.equal(stripVM.externalOutputPlan({...input,hardware:{device,raw:{...raw,logicalOutputRegistry:{ports:[],references:[]}}},native:{...native,graph:{...native.graph,revision:"10"}}}).kind,"UNAVAILABLE");
+});
+
+
+test("FAST workflow directly opens active ASIO vendor panel and one native secondary enable",()=>{
+ const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp"),
+  e=read("src/LiveAudioEngine.h"),s=read("engine/device/LiveSecondaryOutputDevice.h");
+ const panel=b.slice(b.indexOf('querySelector("[data-audio-driver-panel]").onclick'),b.indexOf('const readHealth=devicePanel'));
+ assert.match(panel,/action:"audioDriverPanel"/);
+ assert.doesNotMatch(panel,/action:"audioSetup"/);
+ const vendor=n.slice(n.indexOf("void showAsioControlPanel("),n.indexOf("void chooseStudioBackup()",n.indexOf("void showAsioControlPanel(")));
+ assert.match(vendor,/deviceApply_\.tryBegin/);assert.match(vendor,/device->showControlPanel\(\)/);
+ assert.match(vendor,/finishAudioSetupAndRecoverMixer\(\)/);
+ assert.doesNotMatch(vendor,/AudioSetupWindow|setMonitorEnabled\(true\)/);
+ const enable=e.slice(e.indexOf("juce::String enableSecondaryOutput("),e.indexOf("juce::String armSecondaryOutput("));
+ assert.match(enable,/connectSecondaryOutput\(selected,expectedEndpointId\)/);assert.match(enable,/armSecondaryOutput\(true\)/);
+ assert.doesNotMatch(enable,/setMonitorEnabled|setOutputMuted/);
+ assert.match(s,/createAudioIODeviceType_WASAPI\(juce::WASAPIDeviceMode::shared\)/);
+ assert.match(s,/createDevice\(target,\{\}\)/);assert.doesNotMatch(s,/manager_\.initialise/);
+});
+
+
+test("FAST-U1 vendor restart restores only captured full endpoint identity once",()=>{
+ const n=read("src/Main.cpp"),e=read("src/LiveAudioEngine.h"),s=read("engine/device/LiveSecondaryOutputDevice.h");
+ assert.match(n,/captureSecondaryResumeIntent\(\)/);
+ assert.match(n,/serviceAutomaticMain\(\);\s*serviceVendorStreamRecovery\(\)/);
+ const r=n.slice(n.indexOf("void serviceVendorStreamRecovery()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(r,/dryRoutingLabEpoch\(\)!=p.epoch/);
+ assert.match(r,/outputArmRevision\(\)!=p.revision/);
+ assert.match(r,/p.waitForMain&&!engine_.isMonitorEnabled\(\)/);
+ assert.match(r,/pendingVendorStream_\.reset\(\);\s*const auto error=engine_.restoreSecondaryOutput/);
+ assert.match(e,/connectSecondaryOutput\(intent.name,intent.endpointId\)/);
+ assert.match(s,/selected.selection.id!=expectedEndpointId/);
+ assert.match(s,/endpointId_=selected.selection.id/);
+ assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
+});
+
+
+test("U2 physical bus candidates and overview respect existing logical reservations",()=>{
+ const device={backend:"ASIO",playbackDevice:"Maono",epoch:"31",outputArmed:false,
+  enabledOutputs:[0,1,2,3,4,5,6,7],outputEndpoints:Array.from({length:8},(_,port)=>({port,active:true,label:"Maono "+port}))};
+ const raw={physicalBusPatchSupported:true,physicalBusOutputObserved:true,operatorOutputMuted:true,
+  physicalBusSecondaryArmed:false,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
+  externalOutputs:[],logicalOutputRegistry:{ports:[{id:"8",name:"Broadcast",bound:true,backend:"ASIO",playback:"Maono",left:4,right:5}],references:[]},
+  mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"31"}};
+ const snapshot={device,raw,admitted:true,hardwareConfiguration:"verified",graph:{revision:"9",channels:[{id:"23",name:"Vocal",role:"INPUT"}]}};
+ assert.deepEqual(deviceVM.busOutputChoices(snapshot,"physicalMainOutputs").map(x=>x.left),[0,2,6]);
+ assert.deepEqual(deviceVM.outputChoices(snapshot).map(x=>x.left),[-1,2,6]);
+ assert.equal(protocol.physicalOutputOverview(snapshot).find(x=>x.pair==="OUT 5/6").status,"RESERVED");
+ const monitor=deviceVM.patchMatrix(snapshot,"output").rows.find(r=>r.name==="MONITOR");
+ assert.equal(monitor.editable,false);assert.deepEqual(monitor.pair,[]);
+ const installed={...snapshot,raw:{...raw,externalOutputs:[{channelId:"23",physicalLeft:4,physicalRight:5,status:"LIVE"}],
+  logicalOutputRegistry:{...raw.logicalOutputRegistry,references:[{channelId:"23",portId:"8",role:"EXTERNAL",state:"RESOLVED"}]}}};
+ const row=deviceVM.patchMatrix(installed,"output").rows.find(r=>r.id==="23");
+ assert.equal(row.editable,false);assert.deepEqual(row.cells,["","","","","L","R","",""]);
+ assert.match(row.state,/Broadcast/);
+ assert.equal(protocol.physicalOutputOverview(installed).find(x=>x.pair==="OUT 5/6").status,"MUTED");
+ const unrelated={...snapshot,raw:{...raw,logicalOutputRegistry:{ports:[{...raw.logicalOutputRegistry.ports[0],playback:"Other driver"}],references:[]}}};
+ assert.deepEqual(deviceVM.busOutputChoices(unrelated,"physicalMainOutputs").map(x=>x.left),[0,2,4,6]);
+});
+
+
+test("U2-B one secondary readback represents mirror, split, fault and disconnected without inventing PCM",()=>{
+ const snapshot={raw:{secondaryMainOnly:false,secondaryMainReady:false,physicalBusSecondaryArmed:false}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.equal(protocol.secondaryOutputView(snapshot,live).state,"ENABLED");
+ assert.deepEqual(protocol.secondaryOutputRow(snapshot,live),{pair:"STREAM",pins:"CABLE Input",role:"MAIN MIRROR",owners:"MAIN",status:"ENABLED",shared:0});
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...live,secondaryOutputArmed:false}).status,"MUTED");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...live,secondaryOutputFault:true}).status,"FAULT");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{secondaryOutputReady:false,secondaryOutputArmed:false}),null);
+ const split={...live,dryRoutingLab:{secondaryMainOnly:true}};
+ assert.equal(protocol.secondaryOutputRow(snapshot,split).role,"MAIN");
+ assert.equal(protocol.secondaryOutputRow(snapshot,{...split,secondaryOutputReady:false,secondaryOutputName:""}).status,"NEEDS_REMAP");
+ assert.equal(protocol.secondaryOutputView(snapshot,{secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:""}).armed,false);
+ assert.equal(protocol.secondaryOutputView({...snapshot,device:{epoch:"19"}},{...live,dryRoutingLab:{epoch:18}}).state,"DISCONNECTED");
+ assert.equal(protocol.secondaryOutputView({raw:{secondaryOutputFault:true,secondaryOutputName:"CABLE Input"}},null).state,"FAULT");
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/host\.append\(extraControls\)/);
+ assert.match(bridge,/extraPanel\.append\(extraControls\)/);
+ assert.match(bridge,/protocol\.secondaryOutputView\(hardware,live\)/);
+});
+
+
+test("U2-C/U3 secondary continuity is identity-pinned and preference is not ARM permission",()=>{
+ const n=read("src/Main.cpp"), bridge=read("web/approved-native-bridge.js");
+ const r=n.slice(n.indexOf("void serviceSecondaryContinuity()"),n.indexOf("void serviceVendorStreamRecovery()"));
+ assert.match(r,/secondaryContinuity_->epoch!=epoch/);
+ assert.match(r,/secondaryContinuity_->revision!=revision/);
+ assert.match(r,/current.selection.id!=intent.endpointId/);
+ assert.match(r,/secondaryRetry_\.failed\(now\)/);
+ assert.doesNotMatch(r,/SECONDARY_HOTPLUG_PAUSED/);
+ assert.match(r,/generation!=secondaryRetry_\.generation\(\)/);
+ assert.match(r,/engine_\.disconnectSecondaryOutput\(\)/);
+ assert.match(r,/deviceApply_\.tryBegin/);
+ assert.doesNotMatch(r,/setMonitorEnabled|setOutputMuted/);
+ assert.match(n,/secondary-output\.json/);
+ assert.match(n,/ep.id==secondaryPreference_->id/);
+ assert.match(bridge,/protocol.secondaryOutputSelection\(options/);
+ const live={secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputFault:true,
+   secondaryOutputRecovering:true,secondaryOutputRecoveryName:"CABLE Input"};
+ const v=protocol.secondaryOutputView({},live);
+ assert.equal(v.state,"RECOVERING");assert.equal(v.name,"CABLE Input");assert.equal(v.armed,false);
+ assert.equal(protocol.secondaryOutputRow({},live).status,"RECOVERING");
+ assert.equal(protocol.secondaryOutputView({},{...live,secondaryOutputRecovering:false}).state,"FAULT");
+});
+
+
+test("U3 canonical output discovery is single-flight and selection never guesses after saved identity loss",()=>{
+ const n=read("src/Main.cpp"),g=read("engine/device/WasapiEndpointIdentityGuard.h");
+ const worker=n.slice(n.indexOf("void requestSecondaryInventory("),n.indexOf("void serviceSecondaryInventory("));
+ assert.match(worker,/secondaryInventoryFlight_\.valid\(\)/);
+ assert.match(worker,/std::async\(std::launch::async,\[\]/);
+ assert.match(worker,/renderInventory\(\)/);
+ assert.doesNotMatch(worker,/createDevice|scanForDevices|engine_/);
+ assert.match(n,/wait_for\(std::chrono::seconds\(0\)\)/);
+ assert.match(g,/static RenderInventory renderInventory\(\)/);
+ const pick=protocol.secondaryOutputSelection, choices=["CABLE Input","Speakers","Broadcast"];
+ assert.equal(pick(choices),"CABLE Input");
+ assert.equal(pick(choices,{preferred:"Broadcast",hasSaved:true}),"Broadcast");
+ assert.equal(pick(choices,{hasSaved:true}),"");
+ assert.equal(pick(choices,{hasSaved:true,selected:"Speakers"}),"Speakers");
+ assert.equal(pick(choices,{active:"Broadcast",selected:"Speakers"}),"Broadcast");
+ assert.equal(pick(["CABLE Input A","CABLE Input B"]),"");
+ assert.equal(pick(["Speakers"]),"");
+});
+
+
+test("U3 Stop supersedes native opens and approved output selection pins inventory identity",()=>{
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js"),e=read("src/LiveAudioEngine.h");
+ assert.match(n,/secondaryPublishedIds_\.emplace\(label,ep.id\)/);
+ assert.match(n,/token!=secondaryPublishedInventory_/);
+ assert.match(n,/engine_\.enableSecondaryOutput\(value.toString\(\),expected\)/);
+ assert.match(n,/engine_\.disarmSecondaryOutput\(\);\s*pendingSecondaryStop_=args/);
+ assert.match(n,/generation!=secondaryRetry_\.generation\(\)/);
+ assert.match(e,/secondaryOutput_\.endpointId\(\)==expectedEndpointId/);
+ assert.match(b,/inventoryId:extraInventoryId/);
+ assert.match(b,/selectAudioSetupPage\("device"\)/);
+});
+
+
+test("U3 same-device Apply suspends and restores the verified stream without manual Stop",()=>{
+ const n=read("src/Main.cpp");
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void chooseImport ("));
+ assert.doesNotMatch(a,/Stop STREAM and finish/);
+ assert.match(a,/captureSecondaryResumeIntent\(\)/);
+ assert.match(a,/requested.playback==prepared.before.outputDeviceName/);
+ assert.match(a,/resumeStream\(false\)/);
+ assert.match(a,/if\(restored\)resumeStream\(true\)/);
+ assert.match(a,/streamGeneration!=secondaryRetry_\.generation\(\)/);
+ assert.match(a,/engine_\.beginManualAudioSetup\(\)/);
+ assert.match(a,/pendingVendorStream_=PendingVendorStream/);
+});
+
+
+test("U4 independent headphone mix uses admitted two-pin native scope and correlated mode readback",()=>{
+ const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[0,1]},graph:{revision:"19",rosterRevision:"23"},raw:{physicalBusOutputObserved:true,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],externalOutputs:[]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ const mode=protocol.secondaryMixMode(s,live);
+ assert.equal(mode.available,true);assert.deepEqual(mode.value,{enabled:true,smart:true,deviceEpoch:"17",graphRevision:"19",rosterRevision:"23"});
+ assert.equal(protocol.secondaryMixMode({...s,device:{...s.device,enabledOutputs:[0,1,2,3]}},live).available,false);
+ assert.equal(protocol.secondaryMixMode({...s,raw:{...s.raw,externalOutputs:[{}]}},live).available,false);
+ assert.equal(protocol.secondaryMixMode(s,{...live,secondaryOutputArmed:false}).available,false);
+ const split={...s,raw:{...s.raw,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1]}};
+ assert.equal(protocol.secondaryMixMode(split,live).value.enabled,false);
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js");
+ const a=n.slice(n.indexOf("void applyCustomAudioDevice("),n.indexOf("void chooseImport ("));
+ assert.doesNotMatch(a,/getCurrentAudioDevice\(/);
+ assert.match(n,/engine_.disarmSecondaryOutput\(\);\s*error=engine_.patchDmxSplitOutput/);
+ assert.match(b,/protocol.secondaryOutputSettlement\(p,hardware,live,extraStatusSerial\)/);
+ assert.match(n,/ack->setProperty\("graphRevision",route.getProperty\("nativeBus"/);
+});
+
+
+test("U4 preserves authored monitor WIREs and reuses healthy prepared render after graph-only mode change",()=>{
+ const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[0,1]},graph:{revision:"19",rosterRevision:"23",channels:[{id:"8",role:"MONITOR",inserts:[]}],edges:[{from:"3",to:"8"}]},raw:{physicalBusOutputObserved:true,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1],externalOutputs:[]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.equal(protocol.secondaryMixMode(s,live).available,true);
+ assert.equal(protocol.secondaryMixMode(s,live).value.enabled,false);
+ assert.match(protocol.secondaryMixMode(s,live).reason,/preserved/);
+ assert.equal(protocol.secondaryMixMode({...s,graph:{...s.graph,edges:[]}},live).available,true);
+ const e=read("src/LiveAudioEngine.h");const f=e.slice(e.indexOf("juce::String restoreSecondaryOutput("),e.indexOf("void disarmSecondaryOutput()"));
+ assert.match(f,/secondaryOutput_\.ready\(\)&&!secondaryOutput_\.faulted\(\)/);
+ assert.match(f,/current.selection.id!=intent.endpointId/);
+ assert.ok(f.indexOf("return armSecondaryOutput(true);")<f.indexOf("connectSecondaryOutput(intent.name,intent.endpointId)"));
+});
+
+
+test("U4 starter mix is an atomic native WIRE transaction, no overwrite of authored sends",()=>{
+ const s={admitted:true,device:{epoch:"17"},graph:{revision:"19",rosterRevision:"23",mainChannelId:"5",channels:[{id:"8",role:"MONITOR"}],edges:[{from:"3",to:"5",primaryOutput:true,enabled:true}]},raw:{secondaryMainOnly:true,physicalBusOutputObserved:true}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.deepEqual(protocol.secondaryMonitorStarter(s,live),{deviceEpoch:"17",graphRevision:"19",rosterRevision:"23"});
+ assert.equal(protocol.secondaryMonitorStarter({...s,graph:{...s.graph,edges:[...s.graph.edges,{from:"3",to:"8"}]}},live),null);
+ assert.equal(protocol.secondaryMonitorStarter(s,{...live,secondaryOutputArmed:false}),null);
+ const l=read("src/LiveDryRoutingLab.h");const f=l.slice(l.indexOf("NativeBusResult seedIndependentMonitor("),l.indexOf("NativeBusResult applyNativeWireTransaction("));
+ const core=read("engine/core/DynamicChannelRoster.h");
+ const planner=core.slice(core.indexOf("inline std::vector<WireChange> planHeadphoneStarter("));
+ assert.match(planner,/send.destination==monitor/);
+ assert.match(planner,/send.destination==main&&send.primaryOutput&&send.enabled/);
+ assert.match(planner,/std::min\(0.25f,1.f\/static_cast<float>\(changes.size\(\)\)\)/);
+ assert.match(planner,/change.preFader=true/);
+ assert.match(f,/planHeadphoneStarter\(graph.roster,graph.ids.main,graph.ids.monitor\)/);
+ assert.match(f,/return applyNativeWireTransaction\(ep,rev,rosterRev,changes\)/);
+ const split=l.slice(l.indexOf("juce::String patchDmxSplitOutput("),l.indexOf("juce::String patchNativeBusOutput("));
+ assert.match(split,/roster.wireTransaction\(roster.revision\(\),changes\)/);
+ assert.doesNotMatch(split,/ChannelEdit::Kind::remove/);
+ assert.match(l,/nativeDormantMonitorBit/);
+});
+
+
+test("U5 first sound uses the ordinary verified ChannelId input selector",()=>{
+ const s={admitted:true,hardwareConfiguration:"lease",device:{epoch:"17",enabledInputs:[2],inputEndpoints:[{port:2,label:"Mic",active:true}]},graph:{revision:"19",mainChannelId:"5",channels:[{id:"3",role:"INPUT",name:"Vocal",controls:{mute:false}}],edges:[{from:"3",to:"5",primaryOutput:true,enabled:true}]},raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"17"}}};
+ assert.deepEqual(protocol.firstSoundPlan(s),{channelId:"3",channelName:"Vocal",epoch:"17",revision:"19",config:"lease",pins:[{port:2,label:"Mic"}]});
+ assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,operatorOutputMuted:true}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,logicalInputRegistry:{references:[{}]}}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,graph:{...s.graph,channels:[{...s.graph.channels[0],source:{sourceFormat:"PLAYER"}}]}}),null);
+ assert.equal(protocol.firstSoundPlan({...s,device:{...s.device,enabledInputs:[]}}),null);
+ const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp");
+ const f=b.slice(b.indexOf('if(field==="input"){\n        // Input selection'),b.indexOf('if(field==="external"){\n        if(event.type!=="change")return true;',b.indexOf('// Input selection is independent')));
+ assert.ok(f.length>0);
+ assert.match(f,/pendingNativeSources.set/);assert.match(f,/dispatchNativeSource/);assert.doesNotMatch(f,/emitEvent/);
+ const h=n.slice(n.indexOf('if(action=="routingNativeSourcePatch"){',n.indexOf('if(action=="routingNativeSourcePatch"){')+1),n.indexOf('if(action=="routingNativeBusCreate"'));
+ assert.match(h,/withNativeTopologyContinuity/);assert.match(h,/engine_.patchNativeInputSource/);
+ const gate=n.slice(n.indexOf("NativeBusResult withNativeTopologyContinuity("),n.indexOf("void serviceSecondaryContinuity()"));
+ assert.match(gate,/engine_.disarmSecondaryOutput/);
+ assert.match(gate,/pendingVendorStream_=PendingVendorStream/);assert.match(gate,/requestAutomaticMain/);
+});
+
+
+test("U5 ordinary topology edits share one secondary continuity owner, no duplicated gate",()=>{
+ const n=read("src/Main.cpp");const h=n.slice(n.indexOf("NativeBusResult withNativeTopologyContinuity("),n.indexOf("void serviceSecondaryContinuity()"));
+ assert.match(h,/deviceApply_\.tryBegin/);
+ assert.match(h,/!engine_\.nativeTopologyMatches\(ep,rev\)/);
+ assert.match(h,/beforeControlRevision=engine_\.outputArmRevision\(\)/);
+ assert.match(h,/generation==secondaryRetry_\.generation\(\)/);
+ assert.match(h,/acceptedRevision==beforeControlRevision&&engine_\.nativeTopologyMatches\(ep,rev\)/);
+ assert.match(h,/engine_\.secondarySourceMatches/);
+ assert.match(h,/pendingSecondaryStop_/);
+ assert.equal((n.match(/result=withNativeTopologyContinuity\(ep,rev,/g)||[]).length,5);
+ for(const action of ["routingNativeBusCreate","routingNativeTrackDelete","routingNativeBusDelete"]){
+   const start=n.lastIndexOf('if(action=="'+action+'"');
+   assert.ok(start>=0);assert.match(n.slice(start,start+8500),/withNativeTopologyContinuity/);
+ }
+});
+
+
+test("U5 pristine ChannelId topology uses native graph identity instead of M4 control revision",()=>{
+ const e=read("src/LiveAudioEngine.h"),l=read("src/LiveDryRoutingLab.h"),n=read("src/Main.cpp");
+ assert.match(e,/return dryRoutingLab_\.nativeTopologyMatches\(ep,rev\)/);
+ assert.match(l,/bool nativeTopologyMatches[\s\S]*?nativeAccepted_\.matches\(nativePublisher_,ep,rev\)/);
+ const r=n.slice(n.indexOf("void serviceVendorStreamRecovery()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(r,/monotonicMilliseconds\(\)>=p.deadline[\s\S]*?secondaryRetry_\.fault/);
+});
+
+
+test("U6 output completion needs fresh exact installed graph, physical pair, endpoint and status in either order",()=>{
+ const pending={action:"secondaryOutputSplit",acked:true,statusSerial:8,epoch:"17",config:"hw",endpoint:"CABLE Input",pair:[4,5],
+   value:{enabled:true,graphRevision:"19"},ackRevision:"20"};
+ const s={admitted:true,device:{epoch:"17"},hardwareConfiguration:"hw",graph:{revision:"20"},raw:{secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[4,5]}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input",
+   dryRoutingLab:{dmxDeviceEpoch:"17",nativeBus:{graphRevision:"20"},secondaryMainOnly:true,busOutputObserved:true}};
+ const settle=(p=pending,h=s,l=live,serial=9)=>protocol.secondaryOutputSettlement(p,h,l,serial);
+ assert.equal(settle(),"SETTLED");
+ assert.equal(settle({...pending,acked:false}),"WAIT");
+ assert.equal(settle(pending,s,live,8),"WAIT");
+ assert.equal(settle(pending,{...s,graph:{revision:"19"}}),"WAIT");
+ assert.equal(settle(pending,s,{...live,dryRoutingLab:{...live.dryRoutingLab,nativeBus:{graphRevision:"19"}}}),"WAIT");
+ assert.equal(settle(pending,s,{...live,secondaryOutputName:"Other output"}),"WAIT");
+ assert.equal(settle(pending,s,{...live,secondaryOutputRecovering:true}),"WAIT");
+ assert.equal(settle(pending,{...s,raw:{...s.raw,physicalMonitorOutputs:[5,4]}}),"WAIT");
+ assert.equal(settle(pending,{...s,device:{epoch:"18"}}),"STALE");
+ assert.equal(settle(pending,{...s,graph:{revision:"21"}}),"STALE");
+ assert.equal(settle({...pending,ackRevision:"19"}),"STALE");
+ assert.equal(settle({...pending,action:"secondaryOutputStop"},s,{secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputRecovering:true}),"WAIT");
+ const n=read("src/Main.cpp");
+ const retry=n.slice(n.indexOf("void serviceSecondaryContinuity()"),n.indexOf("void showAsioControlPanel("));
+ assert.match(retry,/secondaryContinuity_->waitForMain&&!engine_\.isMonitorEnabled\(\)/);
+ assert.match(retry,/SecondaryContinuity\{p.intent,p.epoch,p.revision,p.waitForMain\}/);
+ assert.match(retry,/SecondaryContinuity\{intent,epoch,revision,waitForMain\}/);
+});
+
+
+test("LIVE-OPS committed workspace supersedes an outstanding fader lease",()=>{
+ const base=gmv20AcceptedGraph();
+ base.mixerSession={authority:"CHANNEL_ID",deviceEpoch:base.device.epoch,
+   routeRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision};
+ base.device.outputArmed=false;base.workspaceGeneration="1";
+ const seen=[],c=protocol.createController({emit:()=>{},onAccepted:s=>seen.push(s)});
+ assert.equal(c.onSnapshot(clone(base)),true);
+ const old=c.intent("SET_FADER","7",{valueDb:-5});assert.equal(old.ok,true);
+ const restored=clone(base);restored.workspaceGeneration="2";
+ assert.equal(c.onSnapshot(restored),true);
+ assert.equal(c.state().pending,null);
+ assert.equal(c.state().current.raw.workspaceGeneration,"2");
+ assert.equal(seen.length,2);
+ assert.equal(c.onSnapshot(base),false);
+ assert.equal(c.state().current.raw.workspaceGeneration,"2");
+ const fresh=c.intent("SET_FADER","7",{valueDb:-17});assert.equal(fresh.ok,true);
+ assert.equal(c.onAck({requestId:old.requestId,status:"ACCEPTED",errorCode:"NONE",
+   deviceEpoch:base.device.epoch,graphRevision:base.graph.revision,rosterRevision:base.graph.rosterRevision}),false);
+ assert.equal(c.state().pending.requestId,fresh.requestId);
+ assert.equal(protocol.normalizeSnapshot({...restored,workspaceGeneration:"invalid"}),null);
+});
+
+
+test("LIVE-OPS accepted fader repaints a stale range, cap and readout without emitting an intent",()=>{
+ const html=read("site/preview-v2/index.html");
+ const start=html.indexOf("function syncFaderVisual("),end=html.indexOf("\nfunction setDensity",start);
+ assert.ok(start>=0&&end>start);
+ const range={value:"-60"},lcd={textContent:""},db={textContent:""},css=new Map();
+ const box={style:{setProperty:(k,v)=>css.set(k,v)}};
+ const root={querySelector:s=>({"input.fader":range,".fader-readout":lcd,".fader-box":box,".db-value":db})[s]};
+ const vm=require("node:vm");
+ const context={document:{querySelector:()=>root},sofEnabled:false,formatDb:v=>String(v),faderPercent:v=>v+60};
+ vm.runInNewContext(html.slice(start,end)+"\nsyncFaderVisual({id:1,level:-9});",context);
+ assert.equal(range.value,"-9");assert.equal(lcd.textContent,"-9 dB");
+ assert.equal(db.textContent,"-9");assert.equal(css.get("--fader-y"),"49%");
+});
+
+test("P0-B unsafe live topology requests explain the explicit safe fallback",()=>{
+ assert.equal(protocol.operatorMessage("Delete rejected · DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"),
+   "Delete not applied · Mute outputs before changing this routing");
+ assert.match(protocol.operatorMessage("DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED"),/outputs muted/);
+ assert.match(protocol.operatorMessage("COMPRESSOR_INSERT_REQUIRES_STABLE_LIVE_GRAPH"),/not added/);
+});
+
+
+test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction even on same hardware",()=>{
+ const p={action:"secondaryOutputEnable",value:"CABLE Input",epoch:"41",workspaceGeneration:"1",statusSerial:3,acked:false};
+ const same={device:{epoch:"41"},raw:{workspaceGeneration:"1"}};
+ const restored={device:{epoch:"41"},raw:{workspaceGeneration:"2"}};
+ const live={secondaryOutputReady:true,secondaryOutputArmed:true,secondaryOutputName:"CABLE Input"};
+ assert.equal(protocol.secondaryOutputSettlement(p,same,live,4),"WAIT");
+ assert.equal(protocol.secondaryOutputSettlement({...p,acked:true},same,live,4),"SETTLED");
+ assert.equal(protocol.secondaryOutputSettlement(p,restored,live,4),"STALE");
+ assert.equal(protocol.secondaryOutputSettlement({...p,acked:true},restored,live,4),"STALE");
+ const b=read("web/approved-native-bridge.js");
+ assert.match(b,/workspaceGeneration:hardware\?\.raw\?\.workspaceGeneration/);
+ assert.match(b,/scope\?\.cancelNativeSessionGestures\?\.\(\);[\s\S]*?extraPending=null;extraError="";/);
+});
+
+ test("unified route diagnostics report accepted topology, not physical audibility",()=>{
+ const ch=(id,name,mute=false)=>({id,name,controls:{mute,faderDb:0}});
+ const snapshot={admitted:true,graph:{mainChannelId:"3",channels:[ch("1","Vocal"),ch("2","AUX"),ch("3","MAIN")],edges:[{from:"1",to:"2",enabled:true,gainLinear:1},{from:"2",to:"3",enabled:true,gainLinear:0}]}};
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+ snapshot.graph.edges[1].gainLinear=1;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/active route to MAIN/);
+ snapshot.graph.channels[1].controls.mute=true;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+ assert.match(wireVM.routeDiagnostic({...snapshot,retained:true},"1"),/Audio unavailable/);
+ });
+
+ test("legacy recovery routes to approved custom Audio I/O, not native selector",()=>{
+ const host=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ const block=host.slice(host.indexOf('else if (action == "audioSetup")'),host.indexOf('else if (action == "diagnosticRoute")'));
+ assert.match(block,/arMixOpenAudioIO/);assert.doesNotMatch(block,/showDeviceSetup\(/);
+ assert.match(bridge,/backend.addEventListener\("arMixOpenAudioIO",\(\)=>openNativeAudioIO\(\)\)/);
+ });
+
+ test("custom Audio I/O confirmation is asynchronous and fenced against stale native authority",()=>{
+ const b=read("web/approved-native-bridge.js");
+ assert.doesNotMatch(b,/window\.confirm\s*\(/);
+ const f=b.slice(b.indexOf("function ioConfirmationLease()"),b.indexOf("let arsonConfirmation=null;"));
+ assert.match(f,/workspaceGeneration/);assert.match(f,/operatorOutputMuted/);
+ assert.match(f,/const lease=ioConfirmationLease\(\)/);
+ assert.match(f,/await confirmArson/);assert.match(f,/lease!==ioConfirmationLease\(\)/);
+ assert.equal((b.match(/await confirmIo\(/g)||[]).length,7);
+ assert.match(b,/await confirmIo\("Remap bus output"/);
+ });
+
+test("FX Return creation requires prepared wet processor and exact independent readback",()=>{
+ const lab=read("src/LiveDryRoutingLab.h"),engine=read("src/LiveAudioEngine.h");
+ const f=lab.slice(lab.indexOf("NativeBusResult editNativeBus("),lab.indexOf("NativeBusResult editNativeProcessingFormat("));
+ assert.match(f,/!wetReturn->silenceBypass/);assert.match(f,/next\.createReverbReturn/);
+ assert.match(f,/DynamicChannelFxLeaseBank::appendOwned/);
+ assert.ok(f.indexOf("DynamicChannelFxLeaseBank::appendOwned")<f.indexOf("nativePublisher_.commit"));
+ assert.match(engine,/prepareNativeVocalReverbReturn\(rate,frames,nullptr,0\)/);
+ const main="8",id="9",epoch="17";
+ const p={operation:"CREATE_GROUP",purpose:"FX",epoch,baseGraphRevision:"19",baseRosterRevision:"20",acked:true,ackRevision:"21",createdId:id,beforeIds:[main]};
+ const row={id,role:"FX_RETURN",primaryOutId:main,inserts:[{catalogId:"armix.builtin.vocal-reverb-return.v1"}]};
+ const snap={admitted:true,device:{epoch},graph:{revision:"21",rosterRevision:"22",mainChannelId:main,channels:[row]},raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch,routeRevision:"21",rosterRevision:"22"}}};
+ assert.equal(stripVM.rosterReadbackSettlement(p,snap),"CONFIRMED");
+ for(const ch of [{...row,role:"GROUP"},{...row,inserts:[]},{...row,primaryOutId:"7"}])
+   assert.equal(stripVM.rosterReadbackSettlement(p,{...snap,graph:{...snap.graph,channels:[ch]}}),"WAIT");
+});
+
+test("routing diagnosis uses current callback meter evidence and preserves PRE semantics",()=>{
+ const src={id:"1",name:"Vocal",role:"INPUT",source:{portId:"in:2"},controls:{mute:false,faderDb:-60}};
+ const bus={id:"2",name:"AUX",role:"GROUP",controls:{mute:false,faderDb:0}};
+ const main={id:"3",name:"MAIN",role:"MAIN",controls:{mute:false,faderDb:0}};
+ const graph={revision:"7",mainChannelId:"3",channels:[src,bus,main],edges:[
+ {from:"1",to:"2",enabled:true,gainLinear:1,primaryOutput:false,tapStage:"PRE_FADER"},
+ {from:"2",to:"3",enabled:true,gainLinear:1,primaryOutput:true,tapStage:"POST_FADER"}]};
+ const telemetry={channelMeterGraphRevision:"7",channelMeterRmsPeak:{"1":{peakL:0,peakR:0},"3":{peakL:.1,peakR:.1}},
+ captureObserved:true,captureCallbackPeaks:[.5]};
+ const snapshot={admitted:true,graph,telemetry,device:{outputArmed:false,inputEndpoints:[{id:"in:2",active:true,callback:0}]}};
+ const msg=wireVM.routeDiagnostic(snapshot,"1");
+ assert.match(msg,/Vocal → AUX → MAIN/);assert.match(msg,/IN -6.0 dBFS/);
+ assert.match(msg,/POST silent/);assert.match(msg,/MAIN -20.0 dBFS/);
+ assert.match(msg,/outputs disarmed/);assert.match(msg,/physical sound unverified/);
+ assert.doesNotMatch(msg,/minimum fader/);
+ assert.match(wireVM.routeDiagnostic({...snapshot,telemetry:{...telemetry,channelMeterGraphRevision:"6"}},"1"),/POST N\/A · MAIN N\/A/);
+ graph.edges[0].tapStage="POST_FADER";
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/minimum fader/);
+ graph.edges[0].sendEnabled=false;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+});
+
+test("no stock JUCE device selector survives in the production host",()=>{
+ const host=read("src/Main.cpp");
+ assert.doesNotMatch(host,/AudioDeviceSelectorComponent|AudioSetupWindow|showDeviceSetup\(/);
+ const a=host.slice(host.indexOf('else if (action == "audioSetup")'),host.indexOf('else if (action == "diagnosticRoute")'));
+ assert.match(a,/arMixOpenAudioIO/);
+ assert.match(host,/deviceApply_\.busy\(\)/);
+});
+
+test("startup recovery and update use branded non-modal native notice, not stock JUCE",()=>{
+ const host=read("src/Main.cpp");
+ assert.doesNotMatch(host,/juce::NativeMessageBox::showAsync|juce::AlertWindow/);
+ const recovery=host.slice(host.indexOf("class ArSonRecoveryNotice"),host.indexOf("class Browser final"));
+ assert.match(recovery,/MixerCaptionLookAndFeel/);assert.match(recovery,/ArSonNoticeButton/);
+ assert.match(recovery,/clearContentComponent\(\)/);assert.match(recovery,/MessageManager::callAsync/);
+ assert.match(recovery,/if\(accepted\)juce::URL/);
+ const archive=host.slice(host.indexOf('if(commandLine.trim()=="--archive-mixer-session"'),host.indexOf("// Paint the approved dark native splash"));
+ assert.match(archive,/if\(!accepted\)\{systemRequestedQuit\(\);return;\}/);
+ assert.match(archive,/quarantineForStartupRecovery/);
+ const update=host.slice(host.indexOf("class ArSonMixUpdateNotice"),host.indexOf("class ConsoleApp"));
+ assert.match(update,/MixerCaptionLookAndFeel/);assert.match(update,/ArSonNoticeButton/);
+ assert.match(update,/onAccept_ && onAccept_\(\)/);
+});
+
+test("P0 owned floating FX retries an asset failure, coalesces opens and fences disconnected load",async()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[],scripts=[];
+ const catalog="armix.builtin.auto-ducker.v1",channelId="1",instanceId="fx-one";
+ const banner={hidden:true},abort={hidden:true,addEventListener(){}};
+ let root=null,opens=0,observerCount=0;
+ const makeSnapshot=(instance=instanceId)=>({admitted:true,retained:false,device:{epoch:"1"},
+   graph:{channels:[{id:channelId,name:"Voice",inserts:[{id:instance,catalogId:catalog,bypassed:false}]}]},
+   raw:{globalFxBypassed:false}});
+ const payload={snapshot:makeSnapshot(),channelId,instanceId,catalogId:catalog,slot:0};
+ const backend={addEventListener:(name,fn)=>listeners.set(name,fn),emitEvent:(name,payload)=>sent.push({name,payload})};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:{
+   normalizeSnapshot:s=>s,selectNativeReadModel:s=>({kind:"CHANNEL_ID",view:s}),
+   nativeHardwareConfiguration:()=>"hardware-A"},addEventListener(){}};
+ const doc={getElementById:id=>id==="fxWindowStatus"?banner:abort,addEventListener(){},
+   querySelector:()=>root,createElement:()=>({remove(){this.removed=true;}}),
+   head:{append:s=>scripts.push(s)}};
+ vm.runInNewContext(read("web/approved-floating-fx-bridge.js"),{
+   window:win,document:doc,MutationObserver:class{observe(){observerCount++;}},
+   requestAnimationFrame:()=>0,console},{timeout:1500});
+ const open=()=>listeners.get("arMixFloatingOpen")(payload);
+ const flush=()=>new Promise(resolve=>setImmediate(resolve));
+ open();open();assert.equal(scripts.length,1);
+ scripts[0].onerror();await flush();
+ assert.equal(scripts[0].removed,true);
+ assert.match(banner.textContent,/unavailable/);
+ open();open();assert.equal(scripts.length,2,"explicit retry creates one fresh request");
+ win.ArSonMixNativeDucker={open(){opens++;root={hidden:false,addEventListener(){},
+   getBoundingClientRect:()=>({width:400,height:300})};}};
+ listeners.get("arMixConsoleSnapshot")(makeSnapshot("replaced"));
+ scripts[1].onload();await flush();
+ assert.equal(opens,0,"must not open disconnected instance");
+ open();await flush();
+ assert.equal(scripts.length,2,"reuse successfully loaded allowlisted module");
+ assert.equal(opens,1);
+ assert.equal(observerCount,1);
+ assert.equal(sent.filter(x=>x.name==="arMixFloatingMounted").length,1);
+ open();await flush();assert.equal(opens,1,"duplicate focus does not recreate the editor");
+});
+
+test("Session MON retains verified preference without implying output ARM",()=>{
+ const pick=protocol.mainMonitorPreference;
+ assert.deepEqual(pick(["Speakers"],"Speakers",true),{value:"__armix_saved__",label:"Speakers · saved / off",endpoint:"Speakers"});
+ assert.deepEqual(pick(["Other"],"Speakers",true),{value:"__armix_saved_missing__",label:"Saved device unavailable · off",endpoint:""});
+ assert.equal(pick(["CABLE Input"],"",false).value,"");
+ const n=read("src/Main.cpp"), b=read("web/approved-native-bridge.js");
+ assert.match(n,/preferenceSaved=rememberSecondaryPreference\(name,engine_\.secondarySelectedEndpointId\(\),true,engine_\.secondaryArmed\(\)\)/);
+ assert.match(b,/active&&v\.name\?v\.name:saved\.value/);
+ assert.match(b,/value==="__armix_saved__"\|\|value==="__armix_saved_missing__"\)return/);
+});
+test("Channel context menu exposes non-destructive FX save and real native receipts",()=>{
+ const menu=read("web/approved-native-context-menu.js"), b=read("web/approved-native-bridge.js"), n=read("src/Main.cpp");
+ assert.match(menu,/"rack-save-single":"SAVE_SINGLE"/);
+ assert.match(b,/const single=operation==="DEACTIVATE"\|\|operation==="SAVE_SINGLE"/);
+ assert.match(b,/receipt\.phase==="COMPLETED"&&!\["SAVE","SAVE_SINGLE"\]\.includes\(pending\.operation\)/);
+ assert.match(b,/arMixFxRackFileResult/);
+ assert.match(n,/emitFxRackFileResult\(args,"CHOOSER"/);
+ assert.match(n,/fxRackActiveReceipt_,fxRackLastReceipt_/);
+ const replay=n.slice(n.indexOf("void readFxRackFileResult("),n.indexOf("bool rackFileOperationBusy()"));
+ assert.match(replay,/matchesFxRackFileReceipt\(fxRackActiveReceipt_,args\)\)return/);
+ assert.match(replay,/publishFxRackFileReceipt\(fxRackLastReceipt_\)/);
+ assert.match(replay,/setProperty\("phase","UNKNOWN"\)/);
+ assert.doesNotMatch(replay,/chooseFxRackFile|applyRackFile|captureRackFile|NativeFxRackArchive::save/);
+ assert.match(n,/if\(action=="fxRackFileReadback"\)return readFxRackFileResult\(args\)/);
+ assert.match(b,/action:"fxRackFileReadback",\.\.\.rackFilePending/);
+ assert.match(b,/window\.clearTimeout\(rackFileReadbackTimer\)/);
+ assert.match(n,/rackFileTargetAvailable\(ep,rev,roster,channel\)/);
+ assert.match(n,/fxRackConsent_=std::make_unique<ArSonRecoveryNotice>/);
+ assert.match(n,/if\(accepted\)perform\(true\)/);
+ assert.equal(protocol.operatorMessage("FX rack file: Disarm MAIN and STREAM; use a current native rack"),"FX rack file: Disarm MAIN and STREAM; use a current native rack");
+ assert.equal(protocol.operatorMessage("FX rack file: Opening file dialog…"),"FX rack file: Opening file dialog…");
+ assert.match(n,/if\(archived&&deactivate\)/);
+ assert.match(n,/file=file\.withFileExtension\("\.arfx"\)/);
+ assert.match(b,/notice\?\.error===true\|\|rackReceipt/);
+});
+
+test("Cold restart MON projects actual prepared muted endpoint, not invented ARM",()=>{
+ const pick=protocol.mainMonitorPreference;
+ assert.equal(pick(["Broadcast"],"Broadcast",true,true).label,"Broadcast · ready / off");
+ assert.equal(pick(["Other"],"Broadcast",true,true).endpoint,"");
+ assert.equal(pick(["Broadcast"],"",false,true).value,"");
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js");
+ assert.match(n,/prepareOnStartup/);
+ assert.match(n,/preferenceSaved=forgetSecondaryStartupSelection\(\)/);
+ assert.match(b,/ack.action==="secondaryOutputStop"&&ack.preferenceSaved===true/);
+ assert.match(b,/v.ready&&!v.fault&&!active&&v.name===extraPreferred/);
+});
+
+
+test("V6 native window resize keeps WebView out of the eight-direction grip",()=>{
+ const native=read("src/Main.cpp"),geometry=read("src/ArSonWindowResizeGeometry.h"),chrome=read("src/ArSonWindowChrome.h");
+ assert.match(native,/getBorderThickness\(\) const override/);
+ assert.match(native,/return juce::BorderSize<int> \(armix::windowchrome::resizeEdge\)/);
+ assert.match(native,/isResizable\(\) && !isUsingNativeTitleBar\(\) && !isFullScreen\(\) && !isKioskMode\(\)/);
+ assert.match(native,/findControlAtPoint \(juce::Point<float> point\) const override/);
+ for(const edge of ["Left","Right","Top","Bottom","TopLeft","TopRight","BottomLeft","BottomRight"])assert.ok(native.includes("WindowControlKind::size"+edge+";"),edge);
+ assert.match(native,/return juce::DocumentWindow::findControlAtPoint\(point\)/);
+ assert.match(geometry,/resizeEdge = 8/);assert.match(geometry,/resizeCorner = 16/);
+ assert.equal((geometry.match(/static_assert\(/g)||[]).length,14);
+ assert.match(chrome,/drawResizableWindowBorder[\s\S]*g\.drawRect \(0, 0, w, h, 1\)/);
+});
+
+
+test("V6 Player window owns only desktop presentation, never another player engine",()=>{
+ const native=read("src/Main.cpp"),js=read("site/preview-v2/assets/arson-player.js"),bundle=read("scripts/build_approved_native_gui.py");
+ const start=native.indexOf("class PlayerDesktopWindow final"),end=native.indexOf("// A post-install GUI probe",start);
+ const window=native.slice(start,end);
+ assert.match(window,/public juce::TopLevelWindow/);
+ assert.match(window,/attachOwnedFloatingWindow\(\*this,mixer_\)/);
+ assert.match(window,/placeFloatingEditor\(\*this,mixer_,!everPresented_\)/);
+ assert.match(window,/WM_SYSCOMMAND,SC_MOVE\|HTCAPTION/);
+ assert.match(window,/arMixPlayerWindowHide/);
+ assert.doesNotMatch(window,/activeWindowStatusChanged|focusLost|setAlwaysOnTop|LiveAudioEngine|AudioDeviceManager|playerStop|playerPause/);
+ assert.match(native,/std::unique_ptr<PlayerDesktopWindow> playerWindow_/);
+ assert.match(native,/if\(playerWindow_\)playerWindow_->emit\(event,payload\)/);
+ assert.match(js,/if\(desktopAvailable&&!desktopChild\)\{if\(visible\)windowCommand\("OPEN"\);return;\}/);
+ assert.match(bundle,/player-window\.html/);
+});
+
+
+test("WIRE telemetry projects only mounted controls and never rewrites unchanged accessibility state",()=>{
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("  function paintNativeMeters(next) {");
+ const end=source.indexOf("    if (!scope?.displayMeterDbfs)return;",start);
+ assert.ok(start>=0&&end>start);
+ 
+function profile(source,count=48,visible=12,ticks=120){
+ const ops={queries:0,ariaWrites:0,classToggles:0};
+ const uiByWireId=new Map(Array.from({length:count},(_,i)=>[String(i),i+1]));
+ const graph={edges:Array.from({length:count},(_,i)=>({edgeId:String(i),primaryOutput:i%2===0})),channels:[]};
+ const controls=Array.from({length:visible},(_,i)=>{
+   const id=String(i+1);let aria=null,primary=false;
+   const label={textContent:""};
+   return {disabled:false,title:"",parentElement:{querySelector:()=>label,classList:{
+     contains:()=>primary,toggle:(k,v)=>{ops.classToggles++;primary=v}}},
+     getAttribute:k=>k==="data-wire-id"?id:k==="aria-label"?aria:null,
+     setAttribute:(k,v)=>{ops.ariaWrites++;aria=v}};
+ });
+ const document={querySelectorAll(s){ops.queries++;const m=s.match(/="([^"]+)"/);return m?controls.filter(c=>c.getAttribute("data-wire-id")===m[1]):controls;}};
+ const scope=null;
+ const paint=new Function("scope","document","uiByWireId",source+"\nreturn paintNativeMeters")(scope,document,uiByWireId);
+ paint({graph,retained:false});const cold={...ops};Object.keys(ops).forEach(k=>ops[k]=0);
+ for(let i=0;i<ticks;i++)paint({graph,retained:false});
+ const steady={...ops};
+ paint({graph,retained:true});
+ const retained=controls.map(c=>[c.disabled,c.title,c.getAttribute("aria-label"),c.parentElement.querySelector().textContent,c.parentElement.classList.contains()]);
+ paint({graph,retained:false});
+ const live=controls.map(c=>[c.disabled,c.title,c.getAttribute("aria-label"),c.parentElement.querySelector().textContent,c.parentElement.classList.contains()]);
+ return {cold,steady,retained,live};
+}
+ const fragment=source.slice(start,end)+"    if (!scope?.displayMeterDbfs)return;\n  }";
+ const result=profile(fragment);
+ assert.deepEqual(result.steady,{queries:120,ariaWrites:0,classToggles:0});
+ for(let i=0;i<12;i++){
+   const fixed=i%2===0;
+   assert.equal(result.live[i][0],fixed);
+   assert.equal(result.retained[i][0],true);
+   assert.equal(result.live[i][1],result.live[i][2]);
+   assert.equal(result.retained[i][1],result.retained[i][2]);
+   assert.equal(result.live[i][3],fixed?"UNITY":"LVL");
+   assert.equal(result.live[i][4],fixed);
+ }
+ const hidden=profile(fragment,48,0,120);
+ assert.deepEqual(hidden.steady,{queries:120,ariaWrites:0,classToggles:0});
+});
+
+
+// Execute actual production fragment with real device/strip VMs. Counters
+// measure source work, not browser wall time or audio CPU.
+function profileExternalProjection(fragment,deviceVM,stripVM){
+ const ops={rowIdReads:0,domWrites:0}, tracks=Array.from({length:24},(_,i)=>({id:i+1}));
+ const idFor=t=>String(9007199254740993n+BigInt(t.id));
+ const rows=tracks.map((t,i)=>({get channelId(){ops.rowIdReads++;return idFor(t)},
+   physicalLeft:i%2?6:4,physicalRight:i%2?7:5,status:"LIVE"}));
+ const next={device:{epoch:"17",backend:"ASIO",outputArmed:true,
+   enabledOutputs:[0,1,2,3,4,5,6,7],outputEndpoints:Array.from({length:8},(_,i)=>({port:i,label:"Pin "+i,active:true}))},
+   raw:{externalOutputs:rows,physicalMainOutputs:[0,1],physicalMonitorOutputs:[2,3]},
+   graph:{channels:tracks.map(t=>({id:idFor(t),name:"CH "+t.id}))}};
+ const pendingExternal=new Map(), messages=[];
+ const dataset=()=>new Proxy({}, {set(o,k,v){ops.domWrites++;o[k]=v;return true}});
+ const selectFor=()=>{let text="",title="",value="",busy=false,options=[];
+   const marker={dataset:dataset(),get textContent(){return text},set textContent(v){ops.domWrites++;text=v}};
+   return {dataset:dataset(),parentElement:{querySelector:()=>marker},marker,
+     get value(){return value},set value(v){ops.domWrites++;value=v},
+     get title(){return title},set title(v){ops.domWrites++;title=v},
+     replaceChildren(...nodes){ops.domWrites++;options=nodes.map(n=>n.value)},
+     hasAttribute(k){return busy},removeAttribute(k){ops.domWrites++;busy=false},
+     armBusy(){busy=true},snapshot(){return [value,title,{...this.dataset},text,{...marker.dataset},options,busy]}};
+ };
+ let nodes=new Map(tracks.slice(0,12).map(t=>[t.id,selectFor()]));
+ const document={querySelector:s=>nodes.get(Number(s.match(/data-id="(\d+)"/)[1])),createElement:()=>({})};
+ const scope={tracks};
+ const paint=new Function("deviceVM","stripVM","hardwareOutputPairs","stripNamedChoices","pendingExternal","scope","nativeIdFor","document","status",fragment+"\nreturn paintExternalReadback")(
+   deviceVM,stripVM,()=>deviceVM.outputChoices(next),()=>[{label:"Preset · A"}],pendingExternal,scope,idFor,document,m=>messages.push(m));
+ const snapshot=()=>({tracks:tracks.map(t=>t.externalOutput),nodes:[...nodes].map(([id,n])=>[id,n.snapshot()]),pending:[...pendingExternal.keys()],messages:[...messages]});
+ paint(next);const live=snapshot();ops.rowIdReads=ops.domWrites=0;
+ for(let n=0;n<120;n++)paint(next);
+ const steady={...ops};
+ next.device.outputArmed=false;paint(next);const muted=snapshot();
+ const unseen=idFor(tracks[23]);pendingExternal.set(unseen,{epoch:"17",acked:true,left:6,right:7});
+ const stale=idFor(tracks[22]);pendingExternal.set(stale,{epoch:"16",acked:true,left:4,right:5});
+ const waiting=idFor(tracks[0]);pendingExternal.set(waiting,{epoch:"17",acked:false,left:4,right:5});
+ nodes.get(1).armBusy();paint(next);const waitingState=snapshot();
+ pendingExternal.delete(waiting);paint(next);const settled=snapshot();
+ // Rebuild a different bank and remove one physical assignment.
+ nodes=new Map(tracks.slice(12).map(t=>[t.id,selectFor()]));
+ next.raw.externalOutputs=rows.slice(0,23);paint(next);const rebuilt=snapshot();
+ next.device.outputArmed=true;paint(next);const restored=snapshot();
+ return {steady,live,muted,waitingState,settled,rebuilt,restored};
+}
+
+test("External OUT steady readback indexes exact ChannelId and avoids unchanged DOM writes",()=>{
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("  const paintExternalReadback=(next)=>{"),end=source.indexOf("  const inputChoicesFor=",start);
+ assert.ok(start>=0&&end>start);
+ const p=profileExternalProjection(source.slice(start,end),deviceVM,stripVM);
+ assert.deepEqual(p.steady,{rowIdReads:2880,domWrites:0});
+ assert.equal(p.live.nodes[0][1][2].status,"LIVE");
+ assert.equal(p.muted.nodes[0][1][2].status,"MUTED");
+ assert.equal(p.waitingState.nodes[0][1][6],true,"unacknowledged request must stay busy");
+ assert.equal(p.waitingState.pending.length,1);
+ assert.deepEqual(p.settled.pending,[]);
+ assert.equal(p.settled.messages.length,1);
+ assert.equal(p.settled.nodes[0][1][6],false);
+ assert.equal(p.rebuilt.tracks[23],"None");
+ assert.equal(p.rebuilt.nodes[11][1][2].status,"NONE");
+ assert.equal(p.restored.nodes[0][1][2].status,"LIVE");
+});
+
+
+test("WIRE gain readback indexes accepted primary sources once per snapshot",()=>{
+  const main="18446744073709551615";
+  for(const n of [12,24,64,128]){
+    let reads=0;
+    const channels=Array.from({length:n},(_,i)=>{
+      const id=String(9007199254740993n+BigInt(i));
+      return {get id(){reads++;return id;},primaryOutId:main,controls:{faderDb:-3}};
+    });
+    const edges=channels.flatMap((ch,i)=>[
+      {edgeId:"p"+i,from:ch.id,to:main,enabled:true,primaryOutput:true,gainLinear:1},
+      {edgeId:"s"+i,from:ch.id,to:main,enabled:true,primaryOutput:false,gainLinear:.5}
+    ]);
+    const ids=new Map(edges.map((e,i)=>[e.edgeId,i]));
+    const pending=new Map([["s1",true],["p1",true]]);
+    const expected=edges.map((e,id)=>({id,pending:e.edgeId==="s1",
+      levelDb:e.primaryOutput?0:-6}));
+    reads=0;
+    for(let i=0;i<120;i++)assert.deepEqual(wireVM.gainReadback(edges,ids,pending,channels),expected);
+    assert.equal(reads,2*n*120,"one index build and one exact identity check per primary");
+  }
+});
+test("WIRE indexed gain readback preserves rejection, exact pair cardinality and fresh snapshots",()=>{
+  const source="9007199254740993",other="9007199254740994",main="18446744073709551615";
+  const ch={id:source,primaryOutId:main,controls:{faderDb:-60}};
+  const edge={edgeId:"11",from:source,to:main,enabled:true,primaryOutput:true,gainLinear:1};
+  const ids=new Map([["11",0],["12",1]]),pending=new Map([["11",true],["12",true]]);
+  const primary=[{id:0,pending:false,levelDb:0}];
+  const readback=(channels,e=edge)=>wireVM.gainReadback([e],ids,pending,channels);
+  assert.deepEqual(readback([ch]),primary);
+  assert.deepEqual(readback([ch,{...ch}]),[]);
+  assert.deepEqual(readback([ch,{...ch,primaryOutId:other}]),primary);
+  assert.deepEqual(readback([{...ch,id:other}]),[]);
+  assert.deepEqual(readback([{...ch,id:Number(source)}]),[]);
+  assert.deepEqual(readback([{...ch,controls:{faderDb:NaN}}]),[]);
+  assert.deepEqual(readback([{...ch,primaryOutId:other}]),[]);
+  assert.deepEqual(readback([ch],{...edge,gainLinear:.99}),[]);
+  assert.deepEqual(readback([ch],{...edge,enabled:false}),[]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"unmapped"}),[]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"12",primaryOutput:false,gainLinear:0}),
+    [{id:1,pending:true,levelDb:-60}]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"12",primaryOutput:false,gainLinear:-1}),[]);
+  const changed=[ch];
+  assert.deepEqual(readback(changed),primary);
+  changed[0]={...ch,primaryOutId:other};
+  assert.deepEqual(readback(changed),[],"no stale cross-snapshot index");
+  assert.deepEqual(readback([,ch]),primary);
 });

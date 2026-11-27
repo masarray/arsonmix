@@ -259,7 +259,29 @@ static void testNoHeapAndVariableQuantum() {
               std::isfinite(r[count-1]),"variable quantum finite stereo");
     }
 }
+static void testExactIdentityAdmission(){
+    ChannelEq eq;check(eq.prepare(48000),"prepare exact identity");
+    check(eq.exactIdentity(),"flat EQ identity");
+    onBand(eq,0,1000.f);check(!eq.exactIdentity(),"active filter not identity");
+    runUntilSettled(eq);check(!eq.exactIdentity(),"settled active filter");
+    std::array<float,64> l{},r{};
+    check(eq.tryExactIdle(l.data(),r.data(),64),"drained active EQ may idle");
+    l[0]=std::numeric_limits<float>::denorm_min();
+    check(!eq.tryExactIdle(l.data(),r.data(),64),"tiny sample wakes");
+    l[0]=1.f;check(!eq.tryExactIdle(l.data(),r.data(),64),"first impulse wakes");
+    eq.processStereo(l.data(),r.data(),1);
+    l.fill(0);r.fill(0);
+    check(!eq.tryExactIdle(l.data(),r.data(),64),"filter history must drain");
+    for(int i=0;i<1000&&!eq.tryExactIdle(l.data(),r.data(),64);++i){
+        l.fill(0);r.fill(0);eq.processStereo(l.data(),r.data(),64);
+        l.fill(0);r.fill(0);
+    }
+    check(eq.tryExactIdle(l.data(),r.data(),64),"existing guard drained history");
+    check(eq.resetToFlat(),"reset flat");check(!eq.exactIdentity(),"fade must finish");
+    runUntilSettled(eq);check(eq.exactIdentity(),"settled flat identity");
+}
 int main() {
+    testExactIdentityAdmission();
     testCatalogAndDefault();
     testResponse();
     testValidationAndReset();

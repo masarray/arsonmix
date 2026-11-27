@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <functional>
 #if defined(ARMIX_GFX_EMBED_PNG_SKINS)
 #include "BinaryData.h"
 #endif
@@ -135,6 +136,8 @@ public:
             sliders_[i].setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
             sliders_[i].setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
             sliders_[i].setRange(0.,1.,0.005);
+            sliders_[i].setScrollWheelEnabled(true);
+            sliders_[i].setChangeNotificationOnlyOnRelease(false);
             sliders_[i].setLookAndFeel(&knobsLook_);
             sliders_[i].onValueChange=[this,i] {
                 if(refreshing_ || focus_>=draft_.count)return;
@@ -293,6 +296,24 @@ public:
                          juce::Colour::fromRGB(108,113,119));
         g.fillEllipse(static_cast<float>(getWidth()-17),
                       static_cast<float>(getHeight()-23),9.f,9.f);
+    }
+    enum class HostOverlay { none, slot, rack, global, unavailable };
+    void bindHostBypassReadback(std::function<HostOverlay()> readback) {
+        hostBypassReadback_=std::move(readback);
+        repaint();
+    }
+    void paintOverChildren(juce::Graphics& g) override {
+        if(!hostBypassReadback_)return;
+        const auto state=hostBypassReadback_();
+        if(state==HostOverlay::none)return;
+        const auto bounds=getLocalBounds().withTrimmedTop(64);
+        g.setColour(juce::Colour(0xb803060a));g.fillRect(bounds);
+        g.setColour(juce::Colour(0xeeffa53c));
+        g.setFont(juce::Font(juce::FontOptions(51.f,juce::Font::bold)));
+        const auto label=state==HostOverlay::global?"GLOBAL FX BYPASSED":
+            state==HostOverlay::rack?"FX RACK BYPASSED":
+            state==HostOverlay::unavailable?"FX UNAVAILABLE":"BYPASSED";
+        g.drawFittedText(label,bounds.reduced(12),juce::Justification::centred,1);
     }
     void resized() override {
         preset_.setBounds(getWidth()-280,16,258,33);
@@ -479,6 +500,7 @@ private:
         dirty_=true;
         refreshWidgets();repaint();
     }
+    std::function<HostOverlay()> hostBypassReadback_;
     GuitarRigProcessor& processor_;
     HardwareKnobs knobsLook_{};
     SkinButtons buttonLook_{},switchLook_{},stompLook_{};

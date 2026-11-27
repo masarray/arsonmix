@@ -49,6 +49,8 @@ int main(){
     assert(!armix::sonku::valid8DSonKuInsertSettings(rejectedNear));
     assert(!decodeSettings(acceptedSettings(rejectedNear),decoded));
     assert(!live->queueSettings(rejectedNear,41));
+    scene.spatialMix=.35f;
+    assert(decodeSettings(acceptedSettings(scene),decoded)&&decoded.spatialMix==1.f);
     assert(live->queueSettings(scene,42));
     // Queued does NOT mean accepted; only the actual PCM callback may apply.
     assert(live->acceptedSettings().spacePreset==0);
@@ -61,6 +63,7 @@ int main(){
     SonKuSpatialProcessor::Completion ack{};
     assert(live->pollCompletion(ack) && ack.applied && ack.requestId==42);
     assert(live->acceptedSettings().spacePreset==2);
+    assert(ack.settings.spatialMix==1.f&&live->acceptedSettings().spatialMix==1.f);
     assert(live->acceptedSettings().sourceDistanceMeters==5.f);
     for(int c=0;c<2;++c)
         for(int i=0;i<128;++i)assert(std::isfinite(audio.getSample(c,i)));
@@ -97,7 +100,7 @@ int main(){
     {juce::MemoryOutputStream out(legacy,false);
      out.writeInt(0x534F4E4B);out.writeInt(1);
      out.writeFloat(0.f);out.writeFloat(12.f);out.writeFloat(60.f);
-     out.writeFloat(1.f);out.writeFloat(.75f);
+     out.writeFloat(.25f);out.writeFloat(.75f);
      out.writeByte(1);out.writeByte(1);}
     assert(legacy.getSize()==30);
     // The processor owns large reverb/room buffers. Multiple native FX
@@ -106,6 +109,7 @@ int main(){
     older->prepareToPlay(48000.,128);
     assert(older->restoreUnpublishedState(legacy.getData(),30));
     assert(older->acceptedSettings().spacePreset==0);
+    assert(older->acceptedSettings().spatialMix==1.f);
     assert(!older->restoreUnpublishedState(legacy.getData(),29));
     juce::MemoryBlock invalid=bytes;
     auto* data=static_cast<std::uint8_t*>(invalid.getData());

@@ -436,6 +436,21 @@ public:
                         r=(sr[0]+sr[1])+(sr[2]+sr[3]);
                     }else
 #endif
+#if defined(SONKU_P71_DIRECT_XYZ_RESEARCH) && SONKU_P71_DIRECT_XYZ_RESEARCH && defined(ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH) && ARMIX_IMMERSIB_MUSICAL_EQ_RESEARCH && defined(_MSC_VER) && !defined(__clang__)
+                    // Stationary, non-fused, contiguous FIR: hoist dispatch
+                    // out of the tap loop, preserve ordered sums and bounds.
+                    if(p.kernelStationary && !fused &&
+                       fastContiguousHrir_ && idx>=hrir::taps){
+                        const float* first=signal.data()+idx;
+                        const float* hL=p.kernel[0].data();
+                        const float* hR=p.kernel[1].data();
+                        const float invFrac=1.f-frac;
+                        for(int k=0;k<freshTaps;++k){
+                            const float v=invFrac*first[-k]+frac*first[-k-1];
+                            l+=v*hL[k];r+=v*hR[k];
+                        }
+                    }else
+#endif
                     if(fastContiguousHrir_ && idx>=hrir::taps){
                         // For 8052/8192 ring positions the entire 140-tap
                         // window is continuous; no wrap mask inside FIR.

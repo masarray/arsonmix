@@ -1,0 +1,6 @@
+# VD8 — stage robustness and efficiency
+Baseline 546236d390c7e6dc05b4a7994a0488748c518bd2 fully green scoped Windows/GCC/Clang/Node (45726936594). Keep the canonical RC unchanged.
+- Linked wet-only peak budget for Smart Stage: protects normalized output when dry within full scale, never reduces dry, preserves existing hot dry, does not claim whole-mixer clipping protection. No lookahead; instantaneous wet peak protection and 65 ms recovery. Legacy state untouched; during stage policy crossfade protection blends with previous policy.
+- Control clock tolerates +/- 1 BPM around stable candidate and prevents division hopping for near ties (20 ms hysteresis), holds timing on stale observations; manual rhythmic division edit disarms follow. No new tempo analyzer or source guessing.
+- Off fast path and exact settled coefficient early-out; cache input clamp. Benchmark must be measured, not assume CPU improvement.
+- Real PCM tests: positive/negative near-full-scale input, already-hot dry, linked stereo, 72 live factory transitions across independent block partitions, no heap, bypass finite dry, jitter/stale/relock. Native test covers division override. No physical listening, visual acceptance or installer claim.

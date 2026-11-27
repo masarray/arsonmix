@@ -110,6 +110,9 @@ test("G-MV21 only verified device readback refreshes Audio I/O inventory",()=>{
  assert.match(finish,/verifiedSnapshot\?\.device/);
  assert.match(finish,/active\?\.sampleRate/);
  assert.doesNotMatch(finish,/deviceInventory\?\.active/);
+ assert.match(finish,/closeAfterVerifiedPinApply && deviceState\.phase==="ACCEPTED" &&\s*!!verifiedSnapshot\?\.device/);
+ assert.match(finish,/if\(closePins\)\{[\s\S]*?closeNativeAudioIO\(\);/);
+ assert.match(bridge,/closeAfterVerifiedPinApply=!confirmRetainedPinMapping &&[\s\S]*?dataset\.audioTab==="pins" &&[\s\S]*?requestedPins!==null/);
 });
 test("G-MV21 NEEDS_REMAP native inventory refresh restores reuse-pins recovery",()=>{
  const f=fixture(),begin=f.begin("needs-remap");
@@ -480,12 +483,12 @@ test("G-MV24 readback policy quarantines retained PCM without starving first M4 
    "retained ChannelId name/color/icon edits must finish on native ACK/readback");
  assert.match(expiration,/discardTransientNativeUi\(\)/,
    "real authority or physical device change still cancels cosmetic edit");
- assert.doesNotMatch(retained,/pendingNativeSources\.clear|pendingNativeFxPower=null|pendingWireGains\.clear|activeNativeSource=null/,
+ assert.doesNotMatch(retained,/pendingNativeSources\.clear|pendingNativeFxPowers\.clear|pendingWireGains\.clear|activeNativeSource=null/,
    "there must be no second partial cleanup list to drift from reconnect");
  for(const token of ["pendingNativeSources.clear()","pendingSourceQueue.clear()",
    "pendingM4RackPowers.clear()","pendingExternal.clear()",
    "pendingSlotPowers.clear()","pendingGlobalFx=null",
-   "pendingNativeFxPower=null","pendingWireGains.clear()",
+   "pendingNativeFxPowers.clear()","pendingWireGains.clear()",
    "pendingTrackDelete=null","pendingFxInsert=null","pendingIdentity"]){
    assert.ok(discard.includes(token),"retained cleanup must cover "+token);
  }
@@ -515,7 +518,7 @@ test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE st
     "pendingNativeControl.clear()","liveFaderVisualTargets.clear()",
     "lastNativeControlSent.clear()","pendingWireGains.clear()",
     "pendingM4Controls.clear()","pendingM4RackPowers.clear()",
-    "pendingNativeFxPower=null","pendingGlobalFx=null",
+    "pendingNativeFxPowers.clear()","pendingGlobalFx=null",
     "pendingExternal.clear()","pendingSlotPowers.clear()",
     "activeNativeSource=null","pendingIdentity"] )
     assert.ok(cleanup.includes(token),"missing old transaction cancellation: "+token);
@@ -575,4 +578,256 @@ test("P0 approved Audio I/O latency shows real driver frames, never a fake loopb
   for(const key of ["driverInputLatencyFrames","driverOutputLatencyFrames",
                     "hostFxLatencyFrames","latencyClockScope","latencyProvenance"])
     assert.ok(host.includes("setProperty(\""+key+"\""));
+});
+
+test("Single ASIO full inventory: 8 reported pins remain visible independently of 2 active",()=>{
+  const f=fixture(), names=["MIC 1","MIC 2","VC 1","VC 2","VC 3","VC 4","Loopback 1","Loopback 2"];
+  const active={...f.active,inputNames:names,outputNames:names,
+    reportedInputCount:8,reportedOutputCount:8};
+  const inv={...f.inventory,active},draft=vm.setupDraft(inv);
+  const original=JSON.stringify(inv);
+  const v=vm.setupPresentation(inv,draft);
+  assert.equal(v.inputInventory.total,8);
+  assert.equal(v.inputInventory.active,2);
+  assert.equal(v.outputInventory.total,8);
+  const allIn=vm.setupSelectAllPins(draft,inv,"input");
+  assert.deepEqual(allIn.inputPins,[0,1,2,3,4,5,6,7]);
+  assert.deepEqual(allIn.outputPins,[0,1]);
+  const all=vm.setupSelectAllPins(allIn,inv,"output");
+  const begun=vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:all,requestId:"full"});
+  assert.deepEqual(begun.request.config.enabledInputs,[0,1,2,3,4,5,6,7]);
+  assert.deepEqual(begun.request.config.enabledOutputs,[0,1,2,3,4,5,6,7]);
+  assert.equal(begun.request.config.assignSelectedPlaybackPinsToMain,undefined);
+  assert.equal(JSON.stringify(inv),original);
+  assert.equal(vm.setupSelectAllPins({...draft,capture:"Other ASIO"},inv,"input").inputPins,draft.inputPins);
+  const truncated={...inv,active:{...active,reportedInputCount:80}};
+  assert.equal(vm.pinInventory(truncated.active,"input").complete,false);
+  assert.equal(vm.setupSelectAllPins(draft,truncated,"input"),draft);
+  const malformed={...active,reportedInputCount:2};
+  assert.equal(vm.pinInventory(malformed,"input"),null);
+});
+
+test("Single ASIO SOURCE names preserve driver VC and loopback identity; inactive pairs are not offered",()=>{
+  const names=["MIC 1","MIC 2","VC 1","VC 2","VC 3","VC 4","Loopback 1","Loopback 2"];
+  const snapshot={device:{backend:"ASIO",enabledInputs:[0,2,3,6,7],
+    inputEndpoints:names.map((label,port)=>({label,port,active:true}))}};
+  const options=vm.inputChoices(snapshot);
+  assert.ok(options.some(x=>x.mode==="STEREO"&&x.left===2&&x.right===3&&x.label.includes("VC 1 / VC 2")));
+  assert.ok(options.some(x=>x.mode==="STEREO"&&x.left===6&&x.right===7&&x.label.includes("Loopback 1 / Loopback 2")));
+  assert.ok(!options.some(x=>x.mode==="STEREO"&&x.left===4));
+  assert.ok(!options.some(x=>x.left===1));
+});
+
+test("Professional I/O pin-only edits preserve negotiated rate and buffer, including omitted advertised values",()=>{
+  const f=fixture(),active={...f.active,rates:[96000,48000,48000,0,NaN],
+    buffers:[128,512,128,0,65536],hasControlPanel:true};
+  const inv={...f.inventory,active},draft=vm.setupDraft(inv);
+  assert.equal(draft.rate,48000);
+  assert.equal(draft.buffer,256);
+  const view=vm.setupPresentation(inv,draft);
+  assert.deepEqual(view.rateOptions,["0","48000","96000"]);
+  assert.deepEqual(view.bufferOptions,["0","128","256","512"]);
+  assert.equal(view.driverPanelAvailable,true);
+  const edited=vm.setupEditDraft(draft,inv,{side:"input",index:2,checked:true});
+  const req=vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:edited,requestId:"pin-only"}).request;
+  assert.equal(req.config.sampleRate,48000);
+  assert.equal(req.config.bufferSize,256);
+  assert.equal(vm.setupBufferPeriod(48000,128),128/48);
+  assert.equal(vm.setupBufferPeriod(0,128),null);
+  assert.equal(vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:{...draft,buffer:999},requestId:"bad"}),null);
+  const auto=vm.setupEditDraft(draft,inv,{field:"buffer",value:"0"});
+  assert.equal(vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:auto,requestId:"auto"}).request.config.bufferSize,0);
+});
+
+test("Professional I/O health evidence never fabricates zero XRUNs or a current P99",()=>{
+  const active={open:true,authorized:true,callbackBudgetSamples:200,
+    callbackP99BudgetUpperPct:75,overBudgetCount:3,callbackGapCount:2,
+    backendXrunMeaning:"UNAVAILABLE",backendXrunCount:null};
+  assert.deepEqual(vm.setupHealthReadback(active),{budget:"≤75%",overBudget:3,
+    gaps:2,xruns:null,discontinuities:null,samples:200});
+  assert.equal(vm.setupHealthReadback({...active,callbackBudgetSamples:0}).budget,"N/A");
+  assert.equal(vm.setupHealthReadback({...active,callbackP99BeyondDeadline:true}).budget,"over deadline");
+  assert.equal(vm.setupHealthReadback({...active,backendXrunMeaning:"DRIVER_DEFINED",backendXrunCount:0}).xruns,0);
+  const wasapi=vm.setupHealthReadback({...active,backendXrunMeaning:"WASAPI_CAPTURE_DISCONTINUITIES_ONLY",backendXrunCount:7});
+  assert.equal(wasapi.xruns,null);
+  assert.equal(wasapi.discontinuities,7);
+  assert.equal(vm.setupHealthReadback({...active,authorized:false}),null);
+});
+
+test("Final single-ASIO: initial driver Apply stays in inventory workflow only after installed readback",()=>{
+  const f=fixture(),draft=vm.setupEditDraft(vm.setupDraft(f.inventory),f.inventory,
+    {field:"playback",value:"Other ASIO"});
+  const begun=f.begin("discover",draft);
+  assert.equal(begun.state.pending.expected.requestedPins,null);
+  const active={...f.active,deviceGeneration:41,captureDevice:"Other ASIO",
+    playbackDevice:"Other ASIO",enabledInputs:[0,1],enabledOutputs:[0,1]};
+  const verifying=vm.setupAck(begun.state,f.ack("discover",{active}));
+  assert.equal(verifying.phase,"VERIFYING");
+  assert.equal(verifying.inspectNewAsio,undefined);
+  const installed={...f.readback,device:{...f.readback.device,
+    captureDevice:"Other ASIO",playbackDevice:"Other ASIO",
+    enabledInputs:[0,1],enabledOutputs:[0,1]}};
+  assert.equal(vm.setupReadback(verifying,installed).inspectNewAsio,true);
+  const same=f.begin("same");
+  assert.equal(vm.setupReadback(vm.setupAck(same.state,f.ack("same")),f.readback).inspectNewAsio,undefined);
+  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+  assert.match(bridge,/if\(deviceState\.phase==="ACCEPTED"\)/);
+  assert.match(bridge,/devicePanel\.dataset\.openPinsAfterInventory="true"/);
+  assert.match(bridge,/deviceInventory=null;[\s\S]*?Waiting for the new driver inventory/);
+});
+
+test("Final single-ASIO: reselecting or returning to installed endpoint never silently resets format",()=>{
+  const f=fixture(),draft=vm.setupDraft(f.inventory);
+  for(const [field,value] of [["backend","ASIO"],["capture","Studio ASIO"],["playback","Studio ASIO"]])
+    assert.strictEqual(vm.setupEditDraft(draft,f.inventory,{field,value}),draft);
+  const away=vm.setupEditDraft(draft,f.inventory,{field:"playback",value:"Other ASIO"});
+  const back=vm.setupEditDraft(away,f.inventory,{field:"playback",value:"Studio ASIO"});
+  assert.deepEqual(back,draft);
+});
+
+test("Final single-ASIO restore passes named live device snapshot to external output admission",()=>{
+  const source=readFileSync("src/LiveAudioEngine.h","utf8");
+  const region=source.slice(source.indexOf("juce::String inspectNativeMixerSessionBinding("),
+    source.indexOf("juce::String prepareUnboundMixerFx("));
+  assert.match(region,/JuceActivePortSnapshot::capture\(\s*device,candidate\.epoch,candidate\.pins,pinFault\)/);
+  assert.match(region,/candidate\.pins\.outputNames/);
+  assert.match(region,/candidate\.pins\.deviceName!=candidate\.live\.playback/);
+  assert.doesNotMatch(region,/JuceActivePortSnapshot::fromMasks/);
+});
+
+test("Studio workflow: pin pages only unlock on an observed matching driver and negotiated format",()=>{
+  const {inventory}=fixture();
+  const draft=vm.setupDraft(inventory),state=vm.setupInitial();
+  assert.equal(vm.setupRoutingReady(inventory,draft,state),true);
+  assert.equal(vm.setupRoutingReady(inventory,{...draft,capture:"Other ASIO"},state),false);
+  assert.equal(vm.setupRoutingReady(inventory,{...draft,rate:44100},state),false);
+  assert.equal(vm.setupRoutingReady(inventory,{...draft,buffer:512},state),false);
+  assert.equal(vm.setupRoutingReady(inventory,draft,{...state,pending:{}}),false);
+  assert.equal(vm.setupRoutingReady(inventory,draft,{...state,phase:"RECOVERY_REQUIRED"}),false);
+  assert.equal(vm.setupRoutingReady({...inventory,active:{...inventory.active,open:false}},draft,state),false);
+  assert.equal(vm.setupRoutingReady({...inventory,active:{...inventory.active,enabledInputs:[99]}},draft,state),false);
+});
+
+test("Native patch matrix projects enabled physical pins and exact accepted ChannelId crosspoints",()=>{
+ const snapshot={admitted:true,hardwareConfiguration:"exact",device:{epoch:"40",backend:"ASIO",
+   enabledInputs:[0,2,3],enabledOutputs:[0,1,2,3],
+   inputEndpoints:[0,1,2,3].map(port=>({port,label:"Input "+(port+1),active:true})),
+   outputEndpoints:[0,1,2,3].map(port=>({port,label:"Out "+(port+1),active:true}))},
+   raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"40"},physicalMainOutputs:[0,1],
+   externalOutputs:[{channelId:"7",physicalLeft:2,physicalRight:3,status:"LIVE"}]},
+   graph:{channels:[{id:"7",name:"Voice",role:"INPUT",processingFormat:"STEREO",
+     source:{sourceFormat:"STEREO",portId:"in:2",portIdRight:"in:3"}},
+     {id:"8",name:"Player",role:"INPUT",source:{sourceFormat:"PLAYER",playerDeckId:"1"}}]}};
+ const input=vm.patchMatrix(snapshot,"input"),out=vm.patchMatrix(snapshot,"output");
+ assert.deepEqual(input.pins.map(p=>p.port),[0,2,3]);
+ assert.deepEqual(input.rows[0].cells,["","L","R"]);
+ assert.equal(input.rows[1].state,"Music Player");
+ assert.equal(out.rows[0].editable,false);
+ assert.deepEqual(out.rows[1].cells,["","","L","R"]);
+ assert.equal(out.choices.some(c=>c.left===0),false);
+ assert.equal(vm.patchMatrix({...snapshot,retained:true},"input").rows.length,0);
+ assert.equal(vm.patchMatrix({...snapshot,hardwareConfiguration:""},"input").live,false);
+});
+
+test("Matrix admits M4 bootstrap and accepted routes without pretending ChannelId",()=>{
+ const d={epoch:"40",backend:"ASIO",enabledInputs:[0,1],
+   inputEndpoints:[0,1].map(port=>({port,label:"Mic "+port,active:true}))};
+ const base={admitted:false,hardwareConfiguration:"exact",device:d,
+   raw:{mixerSession:{authority:"NONE"},legacyM4:{active:true,routeAccepted:false,routingRevision:"1"}}};
+ const initial=vm.patchMatrix(base,"input");
+ assert.equal(initial.authority,"M4");assert.equal(initial.rows.length,10);
+ assert.equal(initial.rows[0].selected,"None");
+ assert.equal(vm.patchMatrix(base,"output").live,false);
+ const rows=Array.from({length:10},()=>({role:"INPUT",source:{mode:"MONO",left:1,right:-1}}));
+ const installed={...base,raw:{mixerSession:{authority:"M4",deviceEpoch:"40",routeRevision:"2",channels:rows},
+   legacyM4:{active:true,routeAccepted:true,routingRevision:"2"}}};
+ assert.deepEqual(vm.patchMatrix(installed,"input").rows[0].cells,["","M"]);
+ assert.equal(vm.patchMatrix({...installed,retained:true},"input").live,false);
+ assert.equal(vm.patchMatrix({...installed,raw:{...installed.raw,mixerSession:{...installed.raw.mixerSession,routeRevision:"1"}}},"input").live,false);
+});
+test("Matrix requires independent device readback matching inventory names, masks and format",()=>{
+ const {inventory}=fixture(),a=inventory.active;
+ const snapshot={device:{epoch:"41",backend:a.backend,captureDevice:a.captureDevice,
+   playbackDevice:a.playbackDevice,sampleRate:a.rate,bufferFrames:a.buffer,
+   enabledInputs:a.enabledInputs,enabledOutputs:a.enabledOutputs,
+   inputEndpoints:a.inputNames.map((label,port)=>({label,port,active:a.enabledInputs.includes(port)})),
+   outputEndpoints:a.outputNames.map((label,port)=>({label,port,active:a.enabledOutputs.includes(port)}))}};
+ assert.equal(vm.setupMatrixDeviceMatches(inventory,snapshot),true);
+ assert.equal(vm.setupMatrixDeviceMatches(inventory,{device:{...snapshot.device,epoch:"39"}}),false);
+ assert.equal(vm.setupMatrixDeviceMatches(inventory,{device:{...snapshot.device,bufferFrames:512}}),false);
+ assert.equal(vm.setupMatrixDeviceMatches(inventory,{device:{...snapshot.device,inputEndpoints:[{port:0,label:"Other",active:true}]}}),false);
+});
+
+test("Custom stereo supports sparse/reversed physical pins, rejects duplicate or disabled pins, and stays O(N+installed pairs)",()=>{
+ const device={enabledInputs:[0,2,3],inputEndpoints:[0,1,2,3].map(port=>({port,label:"Mic "+port,active:true}))};
+ const snap={admitted:true,device,graph:{channels:[{source:{sourceFormat:"STEREO",portId:"in:3",portIdRight:"in:0"}}]}};
+ const choice=vm.physicalInputChoice(snap,"STEREO",3,0);
+ assert.ok(choice);assert.equal(choice.left,3);assert.equal(choice.right,0);
+ assert.equal(vm.physicalInputChoice(snap,"STEREO",0,0),null);
+ assert.equal(vm.physicalInputChoice(snap,"STEREO",0,1),null);
+ assert.ok(vm.inputChoices(snap).some(x=>x.label===choice.label));
+ assert.equal(vm.inputLabel(snap,{mode:"STEREO",left:3,right:0}),choice.label);
+ const big={device:{enabledInputs:Array.from({length:64},(_,port)=>port),
+ inputEndpoints:Array.from({length:64},(_,port)=>({port,label:"Input "+(port+1),active:true}))}};
+ assert.equal(vm.inputChoices(big).length,128);
+ const strip=require("../web/approved-channel-strip-view-model.js");
+ assert.equal(strip.sourceChoiceMatches(choice,[choice]),true);
+ assert.equal(strip.sourceChoiceMatches({...choice,right:3},[{...choice,right:3}]),false);
+});
+
+test("Named patch projection rejects renamed pins, wrong device, disabled pins and reserved outputs",()=>{
+ const {inventory}=fixture(),a=inventory.active;
+ const d={epoch:"41",backend:a.backend,captureDevice:a.captureDevice,playbackDevice:a.playbackDevice,
+   sampleRate:a.rate,bufferFrames:a.buffer,enabledInputs:a.enabledInputs,enabledOutputs:a.enabledOutputs,
+   inputEndpoints:a.inputNames.map((label,port)=>({label,port,active:a.enabledInputs.includes(port)})),
+   outputEndpoints:a.outputNames.map((label,port)=>({label,port,active:a.enabledOutputs.includes(port)}))};
+ const entry={id:"preset-1",name:"Vocal",side:"input",mode:"MONO",left:0,right:-1,leftName:"Mic 1",rightName:"",available:true};
+ const data={...inventory,namedPatches:{revision:1,readOnly:false,entries:[entry]}};
+ const snap={device:d,raw:{physicalMainOutputs:[0,1]}};
+ assert.equal(vm.namedPatchChoices(data,snap,"input")[0].choice.left,0);
+ assert.match(vm.namedPatchChoices(data,snap,"input")[0].label,/Preset · Vocal/);
+ assert.deepEqual(vm.namedPatchChoices(data,{...snap,retained:true},"input"),[]);
+ assert.deepEqual(vm.namedPatchChoices(data,{...snap,device:{...d,captureDevice:"Other"}},"input"),[]);
+ assert.deepEqual(vm.namedPatchChoices({...data,namedPatches:{...data.namedPatches,entries:[{...entry,leftName:"Old Mic"}]}},snap,"input"),[]);
+ const out={...entry,id:"out",side:"output",mode:"STEREO",left:0,right:1,leftName:"Main L",rightName:"Main R"};
+ assert.deepEqual(vm.namedPatchChoices({...data,namedPatches:{...data.namedPatches,entries:[out]}},snap,"output"),[]);
+});
+
+test("Bus remap choices preserve masks and reservations, allow live drafts, require callback",()=>{
+ const d={epoch:"41",backend:"ASIO",enabledOutputs:[0,1,4,5,8,9,12,13],
+   outputEndpoints:[0,1,4,5,8,9,12,13].map(port=>({port,active:true,label:"Out "+port})),outputArmed:false};
+ const raw={physicalBusPatchSupported:true,physicalBusOutputObserved:true,
+   physicalBusSecondaryArmed:false,operatorOutputMuted:true,physicalMainOutputs:[0,1],
+   physicalMonitorOutputs:[4,5],externalOutputs:[{physicalLeft:12,physicalRight:13}],
+   mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"41"}};
+ const snap={device:d,raw,admitted:true,hardwareConfiguration:"exact",graph:{channels:[]}};
+ const rows=vm.patchMatrix(snap,"output").rows;
+ assert.deepEqual(rows[0].choices.map(x=>x.left),[0,8]);
+ assert.deepEqual(rows[1].choices.map(x=>x.left),[4,8]);
+ assert.equal(rows[0].editable,true);
+ assert.equal(vm.patchMatrix({...snap,raw:{...raw,operatorOutputMuted:false}},"output").rows[0].editable,true);
+ const pending=vm.patchMatrix({...snap,raw:{...raw,physicalBusOutputObserved:false}},"output").rows[0];
+ assert.equal(pending.editable,false);assert.equal(pending.pending,true);
+ assert.equal(vm.patchMatrix({...snap,raw:{...raw,physicalBusSecondaryArmed:true}},"output").rows[0].editable,true);
+ assert.equal(vm.patchMatrix({...snap,device:{...d,outputArmed:true}},"output").rows[0].editable,true);
+});
+
+// #861 successor: proposed Windows capture pins are not installed pins.
+test("capture recovery preserves exact endpoint, rate, output mask and explicit Apply",()=>{
+  const f=fixture(),a={...f.active,backend:"Windows Audio",captureDevice:"Microphone",playbackDevice:"Speakers",enabledInputs:[],inputNames:["Left","Right"]};
+  const inv={...f.inventory,active:a},d=vm.setupDraft(inv),before=JSON.stringify(inv);
+  const next=vm.captureRecoveryDraft(inv,d);
+  assert.deepEqual(next,{...d,inputPins:[0,1]});
+  assert.deepEqual(vm.setupBegin(vm.setupInitial(),{inventory:inv,draft:next,requestId:"recover",baselineEpoch:"40"}).request.config.enabledInputs,[0,1]);
+  assert.equal(JSON.stringify(inv),before);
+  for(const change of [{authorized:false},{open:false},{inputNames:[]},{backend:"ASIO"},{enabledInputs:[0]}])
+    assert.equal(vm.captureRecoveryDraft({...inv,active:{...a,...change}},d),null);
+  for(const change of [{capture:""},{inputPins:[1]},{rate:96000},{buffer:64},{outputPins:[2,3]}])
+    assert.equal(vm.captureRecoveryDraft(inv,{...d,...change}),null);
+  assert.equal(vm.captureRecoveryDraft(inv,d,{...vm.setupInitial(),phase:"RECOVERY_REQUIRED"}),null);
+  assert.match(vm.signalPathHint(a),/ZERO input pins/);
+  assert.match(vm.signalPathHint({...a,inputNames:[]}),/driver reports no input pins/);
+  const bridge=readFileSync("web/approved-native-bridge.js","utf8");
+  const action=bridge.slice(bridge.indexOf('querySelector("[data-audio-review-capture]").onclick'),bridge.indexOf('querySelector("[data-audio-apply]").onclick'));
+  assert.match(action,/captureRecoveryDraft/);assert.doesNotMatch(action,/sendDeviceApply\(/);
 });

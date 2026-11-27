@@ -433,3 +433,36 @@ test("pending M4 fader ACK never stalls independently accepted meters, FX rack o
  assert.equal(h.scope.tracks[4].level,-12);
  assert.equal(h.meters.length,60);
 });
+
+
+test("LIVE-OPS restoration with new leading ChannelId cannot alias surviving strip",()=>{
+ const h=harness({m4:true}),first=nativeChannelIdFixture();
+ first.workspaceGeneration="1";
+ const snapshot=h.listeners.get("arMixConsoleSnapshot");
+ snapshot(first);
+ const original=h.scope.tracks.map(t=>t.id);
+ assert.equal(new Set(original).size,10);
+ const next=clone(first);next.workspaceGeneration="2";
+ const added=clone(next.graph.channels[0]);added.id="9007199254741999";
+ added.name="NEW";added.controls.faderDb=-41;
+ next.graph.channels.unshift(added);
+ next.graph.channels[1].controls.faderDb=-11;
+ next.graph.channels.at(-1).controls.faderDb=-7;
+ next.mixerSession.channels=clone(next.graph.channels);
+ next.mixerSession.main.db=-7;
+ snapshot(next);
+ assert.equal(h.scope.tracks.length,11);
+ assert.equal(new Set(h.scope.tracks.map(t=>t.id)).size,11);
+ assert.equal(h.scope.tracks[1].id,original[0]);
+ assert.equal(h.scope.tracks[0].level,-41);
+ assert.equal(h.scope.tracks[1].level,-11);
+ assert.equal(h.scope.master.level,-7);
+ assert.equal(h.sent.filter(e=>e.name==="arMixConsoleIntent").length,0);
+ snapshot(first);
+ assert.equal(h.scope.tracks[0].name,"NEW");
+ const before=h.sent.filter(e=>e.name==="arMixConsoleIntent").length;
+ h.window.__ARMIX_NATIVE_M2__.consumeField({target:{dataset:{field:"level"},lane:1,value:"-18"},type:"change"});
+ const cmds=h.sent.filter(e=>e.name==="arMixConsoleIntent");
+ assert.equal(cmds.length,before+1);
+ assert.equal(cmds.at(-1).payload.targetChannelId,first.graph.channels[0].id);
+});

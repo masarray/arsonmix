@@ -9,7 +9,9 @@ const dspPaths = [
   /^engine\/builtin_fx\/Harmony[^/]*\.h$/,
   /^engine\/builtin_fx\/ChannelHarmonyProcessor\.h$/,
   /^tests\/harmony[^/]*\.(?:cpp|py)$/,
-  /^tools\/harmony_offline_ab\.cpp$/
+  /^tools\/harmony_offline_ab\.cpp$/,
+  /^scripts\/(?:harmony_vocalset_qualification\.py|vocal_harmony_ci_scope\.mjs)$/,
+  /^\.github\/workflows\/harmony-fast-dsp\.yml$/
 ];
 const uiPaths = [
   /^site\/preview-v2\/assets\/mixer-native-harmony\.js$/,

@@ -400,3 +400,73 @@ test('INT-1B rejects missed/unknown data rather than counting missing as zero',(
   assert.equal(p.samples.length,0);
   assert.match(p.warnings[0],/missing\/invalid 13/);
 });
+
+test("P11 render timing covers final output publication and flags incomplete sampling",()=>{
+  // A split ASIO singer monitor is a physical render, but STREAM alone
+  // is not evidence of armed physical hardware output. Verify both sinks.
+  assert.match(engine,/const bool wroteMain=outputGate\.hardware&&routed&&!splitMain&&nativeMain\[0\]&&nativeMain\[1\];/);
+  assert.match(engine,/const bool wroteMonitor=splitMain&&outputGate\.hardware&&routed&&nativeMonitor\[0\]&&nativeMonitor\[1\];/);
+  assert.match(engine,/if\(wroteMonitor\)\{[\s\S]*?publishDriverBufferPeaks\(l,r\);\s*\}else publishDriverBufferPeaks\(wroteMain\?audibleLeft:0\.f,wroteMain\?audibleRight:0\.f\);\s*const auto pressureRevision=nativePcm&&\(wroteMain\|\|wroteMonitor\)&&!cycle\.fadeIn&&!cycle\.fadeOut&&\s*routedFxMove==0&&!probePermit&&patchFade\.phase==armix::mixer::BusPatchEnvelope::idle\?\s*dryRoutingLab_\.renderedNativeRevision\(\):0;[\s\S]*?busPatchEnvelope_\.acknowledge\(patchFade\);\s*recordRenderTiming\(beginUs,periodUs,outputLease\.epoch,pressureRevision\);\s*return;/);
+  // Diagnostics retain lifetime histogram coverage but cannot extend an
+  // armed-native pressure segment (default zero epoch/revision).
+  assert.match(engine,/void recordRenderTiming\(std::uint64_t beginUs,double periodUs,\s*std::uint64_t epoch=0,std::uint64_t revision=0\) noexcept/);
+  assert.match(engine,/const auto endUs=clockMicros\(\);\s*if\(endUs<beginUs\)\{renderPressure_\.breakSequence\(\);cadence_\.breakSequence\(\);return;\}\s*const auto elapsedUs = endUs - beginUs;\s*renderPressure_\.finish\(epoch,revision,beginUs,elapsedUs,periodUs\)/);
+  assert.equal((engine.match(/realtimeHistogram_\.observe \(elapsedUs, periodUs\)/g)||[]).length,1);
+  assert.match(host,/"callbackTimingScope"/);
+  const v2=(second,props={},partial=false)=>{
+    const sample=int1bSample(second,props);
+    sample.callbackTimingScope="RENDER_THROUGH_FINAL_OUTPUT_PUBLICATION_V2";
+    if(partial)sample.callbackBudgetBuckets[3]=Math.floor(sample.callbackBudgetBuckets[3]/2);
+    return new Date(Date.UTC(2026,10,20,8,0,second)).toISOString()+
+      " | AUDIO_HEALTH | "+JSON.stringify(sample);
+  };
+  const full=analyzeHealthLog(Array.from({length:41},(_,s)=>v2(s)).join("\n"));
+  assert.equal(full.segments[0].histogramCoveragePct,100);
+  assert.equal(full.segments[0].comparable,true);
+  const partial=analyzeHealthLog(Array.from({length:41},(_,s)=>v2(s,{},true)).join("\n"));
+  assert.equal(partial.segments[0].histogramCoveragePct,50);
+  assert.equal(partial.segments[0].comparable,false);
+  assert.equal(partial.segments[0].diagnosis,"INSUFFICIENT_EVIDENCE");
+  const mixed=analyzeHealthLog([int1bLine(0,{}),v2(1),v2(2)].join("\n"));
+  assert.equal(mixed.segments.length,2);
+  const broken=analyzeHealthLog([v2(0),"2026-11-20T08:00:00.500Z | AUDIO_HEALTH | {",v2(1),v2(2)].join("\n"));
+  assert.equal(broken.segments.length,2);
+  assert.equal(broken.segments[1].invalidBefore,true);
+});
+
+test("P11 resource summaries preserve unknowns, provenance and sampled peaks",()=>{
+  const lines=Array.from({length:41},(_,s)=>{
+    const sample=int1bSample(s,{});
+    if(s>0){
+      sample.footerProcessCpuPercent=s===20?18:4;
+      sample.footerCpuProvenance="WINDOWS_PROCESS_CPU_ALL_LOGICAL_CORES_1HZ_NOT_AUDIO_CALLBACK_OR_SYSTEM_TOTAL";
+      sample.processWorkingSetMiB=s===20?180:100+s;
+      sample.processPrivateCommitMiB=200+s;
+    }
+    if(s===10)sample.footerCpuProvenance="UNKNOWN";
+    return new Date(Date.UTC(2026,10,20,8,0,s)).toISOString()+" | AUDIO_HEALTH | "+JSON.stringify(sample);
+  });
+  const report=analyzeHealthLog(lines.join("\n"));
+  const s=report.segments[0];
+  assert.equal(s.processCpuAllCorePct.samples,39);
+  assert.equal(s.processCpuAllCorePct.peak,18);
+  assert.equal(s.workingSetMiB.peak,180);
+  assert.equal(s.privateCommitMiB.delta,39);
+  assert.equal(analyzeHealthLog(int1bLine(0,{})).segments[0].processCpuAllCorePct.mean,null);
+  assert.match(markdownReport(report),/CPU mean \/ peak/);
+});
+
+test("P11 driver lifecycle or callback clock regression invalidates a measured window",()=>{
+  for(const key of ["deviceStartCount","deviceStopCount","callbackCadenceClockRegressions"]){
+    const log=Array.from({length:41},(_,s)=>{
+      const sample=int1bSample(s,{});
+      sample.callbackTimingScope="RENDER_THROUGH_FINAL_OUTPUT_PUBLICATION_V2";
+      if(s>=20)sample[key]+=1;
+      return new Date(Date.UTC(2026,10,20,8,0,s)).toISOString()+" | AUDIO_HEALTH | "+JSON.stringify(sample);
+    }).join("\n");
+    const result=analyzeHealthLog(log);
+    assert.equal(result.segments.length,1);
+    assert.equal(result.segments[0].stableLifecycle,false);
+    assert.equal(result.segments[0].comparable,false);
+  }
+});

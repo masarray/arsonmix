@@ -1,0 +1,24 @@
+# DS-06B / DS-07A — musical quality qualification harness
+
+Baseline candidate 01f8161a10830cffc3cc5bbcb221202798143151, PR #901. Automatic workflows 7/7 passed. Owner dispatcher 45606810636 confirmed CI_DISPATCHED; Windows FAT 45606870289 is compiling the immutable baseline (actual source verification, JUCE checkout, CMake and approved GUI bundle steps passed). Do not cancel or duplicate it. This follow-up changes offline tools/docs only; no runtime or approved GUI change. The artifact, if produced, still has the baseline SHA, not the new PR head.
+
+## Offline protocol
+
+Python >=3.11, NumPy and SciPy required only for offline measurement, never for ArSonMix runtime. Use the existing actual C++ renderer built from the candidate, not a second DSP. Build via the existing tools/de-ezzer CMake target. Run:
+
+    python tools/de-ezzer/qualify_test.py path/to/de_ezzer_render
+    python tools/de-ezzer/qualify.py --renderer path/to/de_ezzer_render --manifest corpus.json --output new-report-folder --source-sha EXACT_40_HEX_SOURCE_SHA --mode auto --mode voice --mode auto-focused --mode voice-focused
+
+Manifest schema 1:
+
+    {"schema":1,"clips":[{"id":"vocal01","kind":"singing","split":"heldout","source":"recording and speaker/session identifier","license":"license or authorized recording consent","sha256":"actual SHA256 of WAV","wav":"relative/path.wav","regions":[{"start_frame":4800,"end_frame":9600,"label":"excess_sibilance"},{"start_frame":19200,"end_frame":28800,"label":"protect"}]}]}
+
+Use lawful, explicitly authorized local recordings; do not commit private or copyrighted clips without permission. Freeze speaker/session-separated development and heldout splits before tuning. Annotate sample-frame intervals independently before listening to processed clips; nonoverlapping, >=20 ms. Use speech and singing across Indonesian/English, vocal pitch and dynamics, microphone distances and brightness, unvoiced consonants, breaths, cymbals/bright instruments, and mixed material; include protected articulation/body/air. The tool validates files by SHA256 and annotation shape, not the truth of license, recording class, split separation or annotation. User-supplied source SHA is logged alongside binary SHA256, not cryptographic build attestation.
+
+Measurements: one Hann-window spectrum per labeled region, energy summed across channels without mono cancellation; relative attenuation in 150–2000, 4000–10000, 10000–16000 Hz. Below -80 dBFS band RMS return null, not fabricated attenuation. Default candidate excess sibilance >=2 dB, measurable body absolute change <=0.5 dB, protected measurable bands absolute change <=0.5 dB. Unmeasurable body is not failed, unmeasurable sibilance or entirely unmeasurable protected interval fails. These exploratory thresholds are configurable and not industry-standard specifications. No claim of event detection precision/recall, sub-region timing, exact GR response, or loudness equivalence. Compare Focused/Shelf at matched measured sibilance reduction in a separate development calibration; the default sweep is matched settings, NOT matched benefit.
+
+Output contains per-clip/mode and split results, actual dry/wet/delta PCM reconstruction, original-relative gains, full float32 wet/delta files, randomized A/B pairs with identical WAV format, separate blind-key. Give listener ONLY blind directory; keep key/report away until scores are frozen. No independent normalization; use a common safe playback gain, stop if uncomfortable. Compare excessive sibilance, lisping, articulation, air, breath, vibrato, pumping and overall preference with repeated independent listeners. These files may exceed full scale; do not assume direct playback is level safe. Exit 0 means only measurement gates passed, 2 means measured failure, 1 means invalid input/aborted. Partial output may remain after error. Release qualified is always false, listening NOT_RUN. No real corpus or listening results yet.
+
+## Actual local evidence
+
+GCC C++20 -O3 -Wall -Wextra -Werror production renderer compiled from exact blobs: Core 8ee190be1d6338218b0c2fad0252418a6394d26c, Context 4eacd27d398eb138a0ce19962ac8bd83915c1a56, Wav 9c6ba4e760ccbdcfc5d34e8ba8a46fd920239105, Render da41cd3d471dc4ad9adda8e05a896b6e17d799d1, CLI 2eb4eec8f8cb3fd038ba840cabfe646d877d912a. Python 3.13, NumPy 2.3.5 and SciPy 1.17.0: qualify_test.py PASS, 48 kHz anti-phase synthetic stereo, measured cut/protect gates, reconstruction, bit-exact randomized float A/B source, intentional 30 dB gate failure, no overwrite, SHA mismatch and overlapping annotation rejection. Synthetic tone is not a vocal-quality benchmark. Tested script blobs a8c96dcc706126317599b6e243ae1bb8f70476fb and c0872de5f3543089f8997102ffc429b1885fc46d. This optional offline harness is not added to every PR CI; no new heavy workflow or dependency in product. Real heldout speech/singing, matched-benefit listening and physical FAT remain pending. 
