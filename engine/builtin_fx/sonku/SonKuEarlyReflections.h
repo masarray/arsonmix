@@ -55,6 +55,8 @@ public:
     static constexpr int sourceCount=2;
     static constexpr int ringFrames=8192;
     static constexpr int geometryInterval=64;
+    // Product configuration, before prepare/publication only.
+    void enableMovingFirOptimization(bool enabled) noexcept { movingFirOptimized_=enabled; }
     // Diagnostic only: target reuse is never an audio-state authority.
     std::uint64_t skippedGeometryUpdates() const noexcept {
         return geometryCacheSkips_;
@@ -374,6 +376,22 @@ public:
                         return std::array<float,2>{hL,hR};
                     };
                     const auto render=[&](auto&& sample) noexcept {
+                        // Independent coefficient pass: no per-tap stationary/fusion
+                        // branch on moving, non-fused paths. Keep ordered PCM sums.
+                        // Warming history still advances ALL taps, but reads only fresh ones.
+                        if(movingFirOptimized_ && !fused && !p.kernelStationary){
+                            for(int ear=0;ear<2;++ear){
+                                auto& kernel=p.kernel[ear];
+                                const auto& target=p.targetKernel[ear];
+                                for(int k=0;k<hrir::taps;++k)
+                                    kernel[k]+=kernelSlew_*(target[k]-kernel[k]);
+                            }
+                            for(int k=0;k<freshTaps;++k){
+                                const float x=sample(k);
+                                l+=x*p.kernel[0][k];r+=x*p.kernel[1][k];
+                            }
+                            return;
+                        }
                         for(int k=0;k<freshTaps;++k){
                             const float v=sample(k);
                             const auto h=advance(k);
@@ -680,6 +698,7 @@ private:
     float rate_=0.f,delaySlew_=0.f,gainSlew_=0.f,amountSlew_=0.f,kernelSlew_=0.f;
     float amount_=0.f,amountTarget_=0.f;
     int write_=0,untilGeometry_=0,validFrames_=0;
+    bool movingFirOptimized_=false; // immutable product policy, not a scene edit
     bool geometryCacheValid_=false;
     double cachedAzimuth_=0.;
     float cachedSpread_=0.f,cachedYaw_=0.f;

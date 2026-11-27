@@ -1,0 +1,26 @@
+name: SonKu P106 realtime musical candidate
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/**'
+      - 'tests/sonku_p106_rt_musical_candidate.cpp'
+      - '.github/workflows/sonku-p106-candidate.yml'
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compile real production-profile core and test
+        run: |
+          python3 - <<'PY'
+          import subprocess,sys
+          sys.path.insert(0,'tools')
+          from immersib_p102_geometry_cache_probe import MACROS
+          subprocess.run(['g++','-std=c++20','-O2','-ffp-contract=off','-Wall','-Wextra','-Werror',*['-D'+m+'=1' for m in MACROS],'tests/sonku_p106_rt_musical_candidate.cpp','-o','/tmp/sonku-p106'],check=True)
+          PY
+          /tmp/sonku-p106

@@ -1,0 +1,10 @@
+# P106 candidate — do not merge or release before qualification
+
+Base: 379e867985bb6bab8e07297ba7a8c44925b22b2d.
+Field report: intermittent crackle/RT Last red at 64 samples ASIO; ImmerSIB unaffected; occasional harsh upper mids.
+Code evidence: SonKuSpatialCore updates direct kernels every 16 samples; SonKuEarlyReflections updates 12 directional 140-tap image paths every 64 samples. Stationary geometry and kernel stasis benefit fixed ImmerSIB, not continuous Orbit. At 48 kHz 64 frames have only 1333 us total callback budget. Existing P102 cache numbers are not SonKu measurements. No field trace, driver DPC or audio capture yet: deadline cause remains unconfirmed.
+P98 Signature adds source 2.05k, ear presence, early air and final air on top of P97 and P99. Candidate reduces only redundant P98 gains for SonKu 1..3, adds bounded existing ear-edge relief; no new filter, buffer, latency, serialization or graph. Subjective improvement unverified.
+
+Performance candidate splits independent kernel slew from ordered FIR accumulation on nonfused nonstationary paths only, preserving fresh-history semantics and geometry cadence. Product policy set before publication; derived ImmerSIB never opts in. No worker, allocations or locks added. Existing queue, mode fade and graph retirement unchanged. Existing shared source lock MUST NOT be resealed to make CI green; candidate touches four protected files, so ordinary source identity gate is expected to reject. This draft requires an explicitly qualified product-specific implementation exception with original approved audio preserved before main integration.
+
+Candidate test: both rates, 64/128/256, FIR-only exact sample comparisons, room toggles, zero/nonzero spread, direction edit, anti-phase/silence, P98 frequency response, block partition and peak tests. Hosted timing informational (not hardware). Remaining gates: MSVC full host, independent historical ImmerSIB full PCM A/B, lifecycle/queue/retirement stress, ASIO 64 hardware soak with xrun/RT Last and same-session A/B, level-matched diverse listening. No acceptance claim before those gates. No change to main or release.

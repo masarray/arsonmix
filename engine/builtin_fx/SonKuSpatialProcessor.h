@@ -86,7 +86,11 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
         // Set once, OFF the callback: branded product instances inherit
         // P9.8 core without unrequested P9.9 vocal processing.
-        if(p99ForSonKuProduct_)core_.optInP99ForSonKuInsert();
+        if(p99ForSonKuProduct_){
+            core_.optInP99ForSonKuInsert();
+            // Candidate branch only: no derived ImmerSIB instance opts in.
+            core_.optInSonKuP106(true,true);
+        }
 #endif
         ready_=core_.prepare(rate,profile);
         observedAzimuthDegrees_.store(accepted_.startAzimuthDegrees,std::memory_order_relaxed);
