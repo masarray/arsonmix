@@ -133,7 +133,7 @@ def main():
             menu=page.locator("#moreTools")
             assert menu.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
             assert page.locator(".command-bar > .mixer-file-tool").count()==0
-            menu.locator("summary").click()
+            menu.locator(":scope > summary").click()
             file_group = menu.locator(".mixer-file-tool")
             assert file_group.all_text_contents() == ["New", "Save", "Open"], width
             new = menu.locator("[data-native-new-project]")
@@ -152,7 +152,7 @@ def main():
                 button.click()
                 assert page.evaluate("()=>window.__events.at(-1).payload.action") == (
                     "nativeMixerFile"+caption), (width, "file action disconnected", caption)
-            menu.locator("summary").click()
+            menu.locator(":scope > summary").click()
             # Native-only status presenter must not expose internal FAT,
             # PCM graph revision counters, or simulation copy in the UI.
             operator_footer = page.evaluate("""async()=>{

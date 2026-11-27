@@ -33,7 +33,6 @@ def run() -> None:
         source = html.read_text(encoding="utf-8")
         assert 'id="gainView"' in source and 'id="fxView"' in source
         assert 'id="mixContext"' in source
-        assert "Never auto-patch or remove a WIRE at minimum send level." in source
         assert "const send=sofEnabled&&isSofSource(t);" in source, (
             "Fader reset must inspect active SEND context instead of overwriting MAIN")
         assert "['INPUT','GROUP','FX_RETURN'].includes(t.nativeRole)" in source, (

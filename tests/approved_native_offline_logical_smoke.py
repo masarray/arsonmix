@@ -212,26 +212,33 @@ def main():
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
         state["offlineNewSessionAvailable"]=True
         emit(page,"arMixConsoleSnapshot",state)
-        page.once("dialog",lambda dialog:dialog.dismiss())
-        archive.click()
+        def open_menu():
+            menu = page.locator("#moreTools")
+            if menu.get_attribute("open") is None:
+                menu.locator(":scope > summary").click()
+
+        def confirm_menu_action(button, choice):
+            open_menu()
+            button.click()
+            page.get_by_role("dialog").get_by_role("button", name=choice, exact=True).click()
+
+        confirm_menu_action(archive, "Cancel")
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
-        page.once("dialog",lambda dialog:dialog.accept())
-        archive.click()
+        confirm_menu_action(archive, "Open archive")
         event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerOpenArchive')?.payload")
         assert event["confirmed"] is True and event["workspaceToken"]=="workspace-a" and event["baseRevision"]=="1", event
         new_project=page.get_by_role("button",name="New Project · empty mixer",exact=True)
+        open_menu()
         assert new_project.is_visible()
-        page.once("dialog",lambda dialog:dialog.dismiss())
-        new_project.click()
+        confirm_menu_action(new_project, "Cancel")
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
         # The leftmost New shortcut delegates to exactly the same transaction.
         toolbar_new=page.locator("#moreTools [data-native-new-project]")
+        open_menu()
         assert toolbar_new.inner_text()=="New" and toolbar_new.is_visible()
-        page.once("dialog",lambda dialog:dialog.dismiss())
-        toolbar_new.click()
+        confirm_menu_action(toolbar_new, "Cancel")
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
-        page.once("dialog",lambda dialog:dialog.accept())
-        toolbar_new.click()
+        confirm_menu_action(toolbar_new, "Continue")
         assert page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='nativeMixerNewOffline').length")==1
         new_event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerNewOffline')?.payload")
         assert new_event["mode"]=="EMPTY" and new_event["confirmed"] is True, new_event

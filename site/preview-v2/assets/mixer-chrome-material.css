@@ -1579,8 +1579,8 @@ html.armix-native-desktop .app .command-bar>.toolbar-label{
 .app .command-bar>#moreTools>summary.tool{display:flex!important;align-items:center;justify-content:center;min-width:32px!important;width:32px!important;padding:0!important;list-style:none}
 .app .command-bar>#moreTools>summary::-webkit-details-marker{display:none}
 .app .command-bar>#moreTools>.more-tools-panel{left:0!important;right:auto!important;width:248px!important;grid-template-columns:1fr!important;max-height:min(76dvh,620px);overflow:auto;padding:5px!important;gap:2px!important;background:#1c2a33!important;border:1px solid #526572!important;box-shadow:0 8px 24px #0008!important}
-.app #moreTools .more-tools-panel .mixer-file-tool{display:flex!important;align-items:center;justify-content:flex-start;text-align:left;gap:10px;min-height:29px!important;padding:4px 9px!important;box-shadow:none!important;background:transparent!important;color:#e1e8eb!important;text-shadow:none!important;border:1px solid transparent!important;font-size:11px!important}
-.app #moreTools .more-tools-panel .mixer-file-tool:hover,.app #moreTools .more-tools-panel .mixer-file-tool:focus-visible{background:#304654!important;border-color:#536e7d!important}
+.app #moreTools .more-tools-panel button.tool{justify-content:flex-start!important;text-align:left!important;gap:10px;min-height:29px!important;padding:4px 9px!important;box-shadow:none!important;background:transparent!important;color:#e1e8eb!important;text-shadow:none!important;border:1px solid transparent!important;font-size:11px!important}
+.app #moreTools .more-tools-panel button.tool:enabled:hover,.app #moreTools .more-tools-panel button.tool:focus-visible{background:#304654!important;border-color:#536e7d!important}
 .app #moreTools .mixer-file-tool img{width:16px;height:16px;flex:none;object-fit:contain}
 .app #moreTools .more-tools-panel .app-wire-setup{display:block!important}
 .app .command-bar>#wireConfigToggle[hidden]{display:none!important}
@@ -1590,3 +1590,6 @@ html.armix-native-desktop .app .command-bar>.toolbar-label{
 html.armix-native-desktop .app #moreTools .reference-file-menu{display:none!important}
 .app #moreTools .reference-file-item{display:flex!important;align-items:center;justify-content:flex-start;gap:10px;text-align:left;min-height:27px;padding:4px 9px!important}
 .app #moreTools .reference-file-item img{width:16px;height:16px;flex:none}
+
+.app #moreTools .more-tools-panel .mixer-file-tool{display:flex!important;align-items:center}
+html.armix-native-desktop #moreTools .more-tools-caption:has(+ #preview){display:none}

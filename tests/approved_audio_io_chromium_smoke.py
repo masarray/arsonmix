@@ -27,7 +27,7 @@ def verify_custom_input(page,out):
     # document-plus icon and no extra word in the visible/accessibility label.
     menu=page.locator("#moreTools")
     assert menu.evaluate("(el)=>el===el.parentElement.firstElementChild")
-    menu.locator("summary").click()
+    menu.locator(":scope > summary").click()
     new=page.locator("#moreTools [data-native-new-project]")
     assert new.is_visible() and new.inner_text()=="New"
     assert page.locator(".command-bar [data-native-extra-output], .command-bar [data-native-first-sound]").count()==0
@@ -35,7 +35,7 @@ def verify_custom_input(page,out):
     page.wait_for_function("()=>{const i=document.querySelector('[data-native-new-project] img');return i&&i.complete&&i.naturalWidth>0}")
     icon=new.locator("img")
     assert icon.get_attribute("src")=="assets/mixer-new.svg" and icon.get_attribute("alt")==""
-    menu.locator("summary").click()
+    menu.locator(":scope > summary").click()
     # Mixer + Anti Noiz may subscribe to the same real JUCE event.
     assert page.evaluate("()=>window.__nativeListenerCount('arMixConsoleSnapshot')") >= 2
     state=snapshot()

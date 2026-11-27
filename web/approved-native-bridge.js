@@ -1184,7 +1184,7 @@
           const draft=wireGainVisualTargets.get(edge.edgeId);
           const queued=next.logical?latestLogicalSendGains.get(edge.edgeId):null;
           const pending=next.logical&&pendingLogical?.operation==="SET_WIRE_GAIN"&&pendingLogical.payload.edgeId===edge.edgeId?pendingLogical.payload.gainLinear:null;
-          const preview=queued?.workspaceToken===next.workspaceToken?queued.db:
+          const preview=queued&&queued.workspaceToken===next.workspaceToken?queued.db:
             pending!==null?(pending<=0?-60:Math.max(-60,20*Math.log10(pending))):undefined;
           scope.syncFaderVisual?.(t,root,preview??(draft?.identity===next.identity?draft.db:undefined));
         }
@@ -5716,7 +5716,7 @@
     // GLOBAL A/B is a realtime SCALAR with unchanged graph revision and
     // unchanged saved insert flags. Include its accepted PCM readback so
     // bypassing every FX repaints each mounted rack without rebuilding DOM.
-    const signature=next.identity+"|"+String(next.raw?.globalFxBypassed)+"|"+
+    const signature=next.identity+"|"+JSON.stringify(caps.supportedOps)+"|"+String(next.raw?.globalFxBypassed)+"|"+
       JSON.stringify(next.graph.channels.map(ch=>[
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+
       JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
