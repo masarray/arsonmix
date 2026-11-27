@@ -568,6 +568,7 @@ jobs:
           run_test tests/approved_native_cold_start_smoke.py
           run_test tests/approved_native_fx_param_hotkey_smoke.py
           run_test tests/approved_native_offline_logical_smoke.py
+          run_test tests/approved_audio_io_chromium_smoke.py
           run_test tests/v6_operator_io_plugin_sof_smoke.py
           run_test tests/native_header_toolbar_chromium_smoke.py
           run_test tests/approved_native_wire_gain_smoke.py
