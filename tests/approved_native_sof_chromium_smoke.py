@@ -16,7 +16,7 @@ import tempfile
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import (
-    MAIN, RECEIVER, SEND, SOURCE, ack, emit, snapshot, open_menu_category,
+    MAIN, RECEIVER, SEND, SOURCE, ack, emit, snapshot, select_ribbon_workflow,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -382,11 +382,11 @@ def exercise_create_fx_return(browser,out):
     graph=state["graph"]
     graph["capabilities"]["supportedOps"].append("CREATE_GROUP")
     emit(page,"arMixConsoleSnapshot",state)
-    # V6 operator menu keeps original native command identity inside the
-    # Channel cascade. Exercise its real visible click, never a forced
-    # click on the hidden legacy toolbar control.
-    channel_menu = open_menu_category(page, "channel")
-    add_fx = channel_menu.locator("#addFx")
+    # V6 orderCommands moves the original native CREATE_GROUP controls
+    # from the legacy menu into the Routing ribbon. Select that real tab;
+    # stale menu metadata is not the DOM parent or visibility authority.
+    select_ribbon_workflow(page, "routing")
+    add_fx = page.locator("#addFx")
     assert add_fx.is_visible() and add_fx.is_enabled()
     add_fx.click()
     request=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeBusCreate').at(-1)")
