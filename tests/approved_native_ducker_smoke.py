@@ -196,7 +196,9 @@ def main():
         settled_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5a",after=settled_read)
         settled_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5b",after=settled_read)
         mutations=editor.locator(".armix-builtin-fx-power").evaluate("()=>({writes:window.__powerWrites,calls:window.__powerCalls})")
-        assert not mutations["writes"],mutations
+        assert not mutations["writes"] and not mutations["calls"],mutations
+        assert editor.locator(".armix-builtin-fx-power").get_attribute("title") is None
+        assert editor.locator(".armix-builtin-fx-power").get_attribute("aria-label")=="AUTO DUCKER ON · click to bypass"
         # Source readout must fit the actual long state seen in Windows FIELD.
         readback(page,[SOURCE,MIC2],settings=final["settings"],serial="6",available=False,after=settled_read)
         assert editor.locator(".mx-ducker-read").first.inner_text()=="Unavailable"
@@ -212,9 +214,13 @@ def main():
         assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
         assert editor.locator(".mx-ducker-phase").text_content()=="Edit delayed"
         assert editor.locator(".mx-ducker-phase").inner_text()=="EDIT DELAYED"
+        phase_notice=editor.locator(".mx-ducker-phase-notice")
+        assert phase_notice.is_visible() and "authoritative audio readback" in phase_notice.inner_text()
+        assert editor.locator(".mx-ducker-phase").get_attribute("title") is None
         readback(page,[SOURCE,MIC2],settings=final["settings"],serial="8",pending=False,after=busy_read)
         page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Check edit'",timeout=3000)
         assert editor.locator(".mx-ducker-phase").inner_text()=="CHECK EDIT"
+        assert phase_notice.is_visible() and "showing current native values" in phase_notice.inner_text()
         assert abs(float(depth.input_value())-final["settings"]["depthDb"])<.001
         assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
         emit(page,"arMixBuiltinDuckerAck",packet(lost,status="APPLIED"))

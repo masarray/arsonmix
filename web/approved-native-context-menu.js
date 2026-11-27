@@ -64,7 +64,11 @@
     clearTitles(document.documentElement);
     new MutationObserver(records=>{
       for(const entry of records){
-        if(entry.type==="attributes")clearTitles(entry.target);
+        // A title attribute mutation affects only its own element. Do not
+        // rescan the descendant tree on each meter/control update.
+        if(entry.type==="attributes"){
+          if(entry.target.hasAttribute("title"))entry.target.removeAttribute("title");
+        }
         else for(const node of entry.addedNodes)clearTitles(node);
       }
     }).observe(document.documentElement,{
