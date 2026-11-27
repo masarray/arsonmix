@@ -28,6 +28,10 @@ OWNED = {
 FOUR_IDS = frozenset(("arson-eq", "arson-comp", "arson-verb", "arsonkupik-enhancer"))
 
 
+def standard_ready(plugins):
+    return FOUR_IDS.issubset({p["productId"] for p in plugins})
+
+
 def distribution_for(plugins):
     ids = [p["productId"] for p in plugins]
     if len(ids) == 6 and set(ids) == set(OWNED):
@@ -161,6 +165,10 @@ def stage(plugins, output, notices, best_effort=False):
     leave the existing installed/package FactoryFX untouched. Temporary files
     are on the same filesystem so the final directory rename is atomic.
     """
+    # Existing reviewed Windows workflow invokes --best-effort. Once the
+    # four-product lock is complete, a supplier failure is a distribution
+    # failure, not permission to silently downgrade a Standard package.
+    standard = standard_ready(plugins)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     destination = output / "FactoryFX"
@@ -208,7 +216,7 @@ def stage(plugins, output, notices, best_effort=False):
                     "notices": ["FactoryFX/licenses/" + pid + ".txt"], "files": files,
                 })
             except (ValueError, OSError, urllib.error.URLError, zipfile.BadZipFile) as error:
-                if not best_effort:
+                if not best_effort or standard:
                     raise
                 # A failed supplier cannot leave a broken module in the final bundle.
                 shutil.rmtree(factory / OWNED[pid][1], ignore_errors=True)
@@ -231,7 +239,7 @@ def stage(plugins, output, notices, best_effort=False):
             factory.rename(destination)
     if best_effort:
         report = {
-            "schemaVersion": 1, "mode": "best-effort",
+            "schemaVersion": 1, "mode": "standard-four" if standard else "best-effort",
             "included": [{"productId": row["productId"],
                           "artifactSha256": row["artifactSha256"]} for row in rows],
             "omitted": omitted,
@@ -305,7 +313,8 @@ def read_best_effort_report(plugins, output):
     report = json.loads(path.read_text(encoding="utf-8"))
     if (not isinstance(report, dict) or set(report) !=
             {"schemaVersion", "mode", "included", "omitted"} or
-            report["schemaVersion"] != 1 or report["mode"] != "best-effort" or
+            report["schemaVersion"] != 1 or
+            report["mode"] != ("standard-four" if standard_ready(plugins) else "best-effort") or
             not isinstance(report["included"], list) or
             not isinstance(report["omitted"], list)):
         fail("invalid optional FactoryFX stage report")
@@ -332,6 +341,8 @@ def read_best_effort_report(plugins, output):
             len(accepted_ids) + len(omitted_ids) != len(expected_ids) or
             len(set(accepted_ids + omitted_ids)) != len(expected_ids)):
         fail("FactoryFX stage report does not account for every approved module")
+    if standard_ready(plugins) and omitted_ids:
+        fail("Standard FactoryFX cannot omit any locked module")
     return [locked[pid] for pid in accepted_ids]
 
 
@@ -356,6 +367,15 @@ def main():
         fail("Six-FX release requires all six approved effects")
     if args.action == "stage":
         stage(plugins, Path(args.output), Path(args.notices), args.best_effort)
+        # The normal Windows distribution verifier consumes a report even
+        # when a strict CLI gate was selected explicitly.
+        if args.require == "four" or args.require == "six":
+            report = {"schemaVersion": 1, "mode": "standard-four",
+                      "included": [{"productId": p["productId"],
+                                    "artifactSha256": p["artifactSha256"].lower()} for p in plugins],
+                      "omitted": []}
+            (Path(args.output) / "FACTORYFX_STAGE_REPORT.json").write_text(
+                json.dumps(report, indent=2) + "\n", encoding="utf-8")
     else:
         accepted = (read_best_effort_report(plugins, Path(args.output))
                     if args.best_effort else plugins)

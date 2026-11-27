@@ -231,6 +231,37 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(bundle.distribution_for(refs), "engineering-partial")
 
 
+    def test_standard_best_effort_cannot_silently_ship_three(self):
+        records = [dict(self.approved, productId=pid,
+                        sourceRepo="masarray/askp-vst" if pid=="arsonkupik-enhancer" else bundle.OWNED[pid][0])
+                   for pid in sorted(bundle.FOUR_IDS)]
+        self.assertTrue(bundle.standard_ready(records))
+        for p in records:
+            (self.notices / (p["productId"] + ".txt")).write_text("fixture")
+        with patch.object(bundle, "download_release", side_effect=OSError("supplier offline")):
+            with self.assertRaises(OSError):
+                bundle.stage(records, self.output, self.notices, best_effort=True)
+        self.assertFalse((self.output / "FactoryFX").exists())
+        self.assertFalse((self.output / "FACTORYFX_STAGE_REPORT.json").exists())
+
+    def test_standard_report_rejects_omission_and_old_optional_label(self):
+        records = [dict(self.approved, productId=pid) for pid in sorted(bundle.FOUR_IDS)]
+        included = [{"productId": p["productId"], "artifactSha256": p["artifactSha256"]}
+                    for p in records]
+        report = dict(schemaVersion=1, mode="standard-four", included=included, omitted=[])
+        target = self.output / "FACTORYFX_STAGE_REPORT.json"
+        target.write_text(json.dumps(report))
+        self.assertEqual(bundle.read_best_effort_report(records, self.output), records)
+        report.update(included=included[:-1], omitted=[{"productId": records[-1]["productId"], "reason": "OSError"}])
+        target.write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            bundle.read_best_effort_report(records, self.output)
+        report.update(mode="best-effort", included=included, omitted=[])
+        target.write_text(json.dumps(report))
+        with self.assertRaises(ValueError):
+            bundle.read_best_effort_report(records, self.output)
+
+
 class WatchTests(unittest.TestCase):
     def test_four_suppliers_are_monitored_and_missing_is_not_approved(self):
         def fake(repo):

@@ -39,6 +39,20 @@ $sentinel=Join-Path $studio ("installer-test-"+[guid]::NewGuid().ToString("N")+"
 "persistent-private-data" | Set-Content -LiteralPath $sentinel
 $fixtureReady=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-ready-"+[guid]::NewGuid().ToString("N"))
 $fixtureClosed=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-closed-"+[guid]::NewGuid().ToString("N"))
+# Compare actual installed FactoryFX resources against the same verified
+# lock, not merely the mixer EXE hash. Use the portable receipt as the
+# expected inventory; the installed tree must independently validate.
+function Assert-InstalledFactoryFx([string]$Phase) {
+    $receipt = Join-Path $install "FACTORYFX_STAGE_REPORT.json"
+    try {
+        Copy-Item -LiteralPath (Join-Path $dist "FACTORYFX_STAGE_REPORT.json") -Destination $receipt
+        & python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output $install --best-effort
+        if ($LASTEXITCODE -ne 0) { throw "Installed FactoryFX verification failed: $Phase" }
+        Write-Host "FACTORYFX_INSTALLED_TREE_VERIFIED: $Phase"
+    } finally {
+        Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
+    }
+}
 $fixtureProcess=$null
 $probeProcess=$null
 $probeToken=[guid]::NewGuid().ToString('D')
@@ -72,6 +86,7 @@ try {
        (Test-Path -LiteralPath (Join-Path $install "portable_mode.txt"))){
         throw "Installed EXE hash or storage mode differs from source"
     }
+    Assert-InstalledFactoryFx "fresh-install"
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
     $diagnosticHelper=Join-Path $install "ArSonMixStartupDiagnostics.ps1"
@@ -181,6 +196,7 @@ try {
             throw "Old loose legal file survived in-place update: $name"
         }
     }
+    Assert-InstalledFactoryFx "in-place-upgrade"
     Write-Host "INNO_GRACEFUL_UPDATE_PASS: running app Windows session close, verified PE replacement, user files preserved"
     $uninstall=Join-Path $install "unins000.exe"
     if(-not (Test-Path -LiteralPath $uninstall -PathType Leaf)){throw "Uninstaller missing"}
@@ -195,6 +211,7 @@ try {
         installerSha256=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
         certification="PREVIEW__INSTALLER_INTEGRITY_AND_UPDATE_TESTED";mode="PER_USER_NO_AUTOARM"
         updaterTest="WM_CLOSE_IN_PLACE_SHA256_AND_USER_DATA_PRESERVED"
+        factoryFxInstall="VERIFIED_LOCK_AND_RESOURCE_HASHES_FRESH_AND_UPGRADE"
         guiStartup="NATIVE_WEBVIEW_READY_NO_AUDIO"
         guiStartupRunnerBuild=[Environment]::OSVersion.Version.Build
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8

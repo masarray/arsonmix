@@ -592,6 +592,16 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixFactoryFxRegistryTests PRIVATE juce::juce_core juce::juce_cryptography juce::juce_recommended_config_flags)
   target_compile_features(ARMixFactoryFxRegistryTests PRIVATE cxx_std_20)
   add_test(NAME FactoryFxVerifiedManifestAndNegativePathGate COMMAND ARMixFactoryFxRegistryTests)
+  # Explicit FactoryFX candidate probe: opt-in target, no network or vendor
+  # DLL execution in the ordinary CTest/build or product application.
+  if(WIN32)
+    juce_add_console_app(ARMixFactoryFxHostProbe PRODUCT_NAME "ArSonMix Factory FX Host Probe")
+    set_target_properties(ARMixFactoryFxHostProbe PROPERTIES EXCLUDE_FROM_ALL TRUE)
+    target_sources(ARMixFactoryFxHostProbe PRIVATE tests/factory_fx_host_probe.cpp)
+    target_compile_features(ARMixFactoryFxHostProbe PRIVATE cxx_std_20)
+    target_compile_definitions(ARMixFactoryFxHostProbe PRIVATE JUCE_PLUGINHOST_VST3=1 JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(ARMixFactoryFxHostProbe PRIVATE juce::juce_audio_processors juce::juce_gui_basics juce::juce_recommended_config_flags)
+  endif()
   # Real native reverb/ArSonVerb core: JUCE host, PCM ACK, state/negative restore.
   juce_add_console_app(ARMixNativeVocalReverbTests PRODUCT_NAME
       "ArSonMix Vocal Reverb Native DSP and Session Tests")
