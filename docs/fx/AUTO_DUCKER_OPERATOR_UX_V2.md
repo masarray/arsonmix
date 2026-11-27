@@ -50,3 +50,6 @@ Use native-accessible buttons, labels, ranges with numeric entry, keyboard arrow
 | UX13 | CPU + listening A/B speech/music and overlapping mics | Natural phrasing, no pump/click/dropout; measured CPU |
 | UX14 | Full graph cycles/PDC and native state roundtrip | Deterministic current sample timing, no hidden block delay |
 Design review prototype is not PCM or installer proof. Current branch has one known failed logical-mixer test (nonfinite key isolation, run 45927919916), and six other workflows passed at prior head. Do not mark ready until resolved and exact-head qualified. Current raw pre-trim candidate does NOT meet the post-fader multi-source requirement.
+
+## V3 hardware panel revision
+Retain target/source and ACK protocol. Use the same stationary compressor knob-body and independent rotating pointer SVG assets with a 270° progress arc; five core controls in a single physical control deck, recessed detector and gain-reduction LCD, teal source activity and amber gain reduction. Drag vertically, Shift fine, double-click default; accessible numeric editing remains. The source picker has explicit accessible source labels and stable data IDs. Screenshot evidence must be captured before assertions as well as after accepted source edits. Hardware revision is candidate-only until visual and native checks pass.

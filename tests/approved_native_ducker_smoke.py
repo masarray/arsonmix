@@ -69,10 +69,15 @@ def main():
         ack(page,state,intents[0]);emit(page,"arMixConsoleSnapshot",state)
         editor.wait_for(state="visible")
         readback(page,[])
+        editor.screenshot(path=str(ROOT/"auto-ducker-native-initial.png"))
+        assert editor.locator(".mx-ducker-dial").count()==8
         editor.get_by_role("button",name="Edit sources").click()
-        assert editor.get_by_label("MAIN Downstream cycle",exact=False).is_disabled()
-        editor.get_by_text("CH03",exact=True).click()
-        editor.get_by_text("MIC 2",exact=True).click()
+        editor.screenshot(path=str(ROOT/"auto-ducker-native-initial-picker.png"))
+        main_option=editor.locator(f'.mx-ducker-option[data-source-id="{MAIN}"]')
+        assert main_option.locator("input").is_disabled()
+        assert "Downstream cycle" in main_option.inner_text()
+        editor.locator(f'.mx-ducker-option[data-source-id="{SOURCE}"] input').check()
+        editor.locator(f'.mx-ducker-option[data-source-id="{MIC2}"] input').check()
         editor.get_by_role("button",name="Apply",exact=True).click()
         req=latest(page,"nativeDuckerSources")
         assert req and set(req["sources"])=={SOURCE,MIC2}
