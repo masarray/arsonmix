@@ -110,15 +110,19 @@ def main():
                  .map(el=>({hidden:getComputedStyle(el).display==='none',
                            height:el.getBoundingClientRect().height}))};
             }""")
-            assert metrics["bar"]["height"] == 43, (width, "incorrect native toolbar height", metrics)
+            assert metrics["bar"]["height"] == 38, (width, "incorrect native toolbar height", metrics)
             assert metrics["more"]["right"] <= width + 1, (
                 width, "overflow More menu outside window", metrics)
             assert metrics["dividers"][0]["height"] in (0, 21), (
                 width, "divider layout changed", metrics)
             visible = metrics["visible"]
             # V6 menu belongs to the navigation row, not the command row.
-            assert metrics['nav']['height']==34 and abs(metrics['more']['bottom']-metrics['nav']['bottom'])<=3,(width,metrics)
+            assert metrics['nav']['height']==40 and abs(metrics['more']['bottom']-metrics['nav']['bottom'])<=3,(width,metrics)
             assert page.locator('.armix-ribbon-tabs [role=tab]').count()==6
+            tabs=page.locator('.armix-ribbon-tabs [role=tab]').evaluate_all("""nodes=>nodes.map(el=>({z:Number(getComputedStyle(el).zIndex),x:el.getBoundingClientRect().x,w:el.getBoundingClientRect().width,path:el.querySelector('path').getAttribute('d')}))""")
+            assert all(tabs[i]["z"]>tabs[i+1]["z"] for i in range(5)),(width,tabs)
+            assert all(abs(tabs[i]["x"]+tabs[i]["w"]-tabs[i+1]["x"]-22)<=1 for i in range(5)),(width,tabs)
+            assert all("H102 Q109 0 115 12" in t["path"] for t in tabs),(width,tabs)
             assert page.locator('.armix-ribbon-nav .logo').is_hidden()
             assert page.locator('.armix-ribbon-nav .file-name').is_hidden()
             assert page.locator('.armix-ribbon-nav #trackCount').is_hidden()
