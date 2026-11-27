@@ -42,6 +42,14 @@ int main() {
     const auto other=juce::File::getSpecialLocation(
         juce::File::tempDirectory).getChildFile("arsonmix-mv14-other.mp3")
             .getFullPathName();
+    // Catalogue survives removal and remains independent of active set.
+    const std::vector<SavedSet> one={{"Show",{juce::File(path)},{Track{}}}};
+    auto withCatalogue=Archive::parse(Archive::serialize(one,0,false,180,{juce::File(other)}));
+    assert(withCatalogue&&withCatalogue->catalogue.size()==2);
+    assert(withCatalogue->catalogue[0]==juce::File(other));
+    auto empty=one;empty[0].files.clear();empty[0].controls.clear();
+    auto retained=Archive::parse(Archive::serialize(empty,0,false,180,withCatalogue->catalogue));
+    assert(retained&&retained->catalogue.size()==2&&retained->sets[0].files.empty());
     // Invalid document/version never causes disk or player changes.
     assert(!Archive::parse(juce::var{}));
     assert(!Archive::parse(juce::JSON::parse("{\"version\":8}")));

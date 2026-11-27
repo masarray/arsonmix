@@ -7,7 +7,7 @@
  if(!root||!toggle)return;
  const backend=window.__JUCE__?.backend;
  const native=Boolean(backend?.emitEvent&&backend?.addEventListener);
- let model={tracks:[],setlists:[],queue:[],activeSetlist:0,
+ let model={tracks:[],catalogue:null,setlists:[],queue:[],activeSetlist:0,
    selected:-1,current:-1,pending:-1,autoNext:false,
    transport:{state:"EMPTY",title:"",currentSeconds:0,durationSeconds:0},
    error:""};
@@ -15,6 +15,10 @@
    if(native)backend.emitEvent("arMixAction",{action,value});
    else showFeedback("Playback is available in the ArSonMix desktop app",true);
  };
+ const media=new Map();let mediaRevision=0,coverId=-1,coverUri="";
+ const enriched=song=>song?{...song,...(media.get(song.catalogId)||{}),missing:typeof song.missing==="boolean"?song.missing:media.get(song.catalogId)?.missing}:null;
+ const activeCatalogueIndex=new Map();
+ const catalogView=()=>collectionView==="library"&&Array.isArray(model.catalogue);
  const setText=(el,value)=>{const next=String(value??"");if(el.textContent!==next)el.textContent=next;};
  const showFeedback=(msg,error=false)=>{
    const output=$("playerFeedback");
@@ -66,7 +70,7 @@
    if(top<list.scrollTop)list.scrollTop=top;
    else if(top+ROW_HEIGHT>list.scrollTop+height)list.scrollTop=Math.max(0,top+ROW_HEIGHT-height);
    renderTracks();
-   Array.from(list.children).find(row=>Number(row.dataset.songId)===item.id)?.children[0]?.focus({preventScroll:true});
+   Array.from(list.children).find(row=>Number(row.dataset.songId)===(catalogView()?item.catalogId:item.id))?.children[0]?.focus({preventScroll:true});
  }
  function focusSearch(){if(collectionView==="queue")switchCollection("setlist");search.focus({preventScroll:true});search.select?.();}
  $("playerAdd").addEventListener("click",()=>send("playerAdd"));
@@ -195,6 +199,7 @@
  }
  function switchCollection(view){
    closeSongMenu(false);collectionView=view;
+   if(view==="library"&&native&&!model.catalogue)send("playerCatalogue");
    const queue=view==="queue";
    $("playerSetlistView").setAttribute("aria-pressed",String(view==="setlist"));
    $("playerLibraryView").setAttribute("aria-pressed",String(view==="library"));$("playerLibraryNote").hidden=view!=="library";
@@ -249,6 +254,7 @@
    ["Find songs · Ctrl+F",focusSearch],["Show current song",()=>revealTrack(model.current),false,model.current<0],
    ["Show upcoming songs",()=>$("playerNextCard").click()],
    ["Song details",()=>setDetails(true)],["Setlist",()=>switchCollection("setlist")],["Queue",()=>switchCollection("queue")],
+   ["Refresh music metadata",()=>send("playerMediaRefresh"),false,!native],
    ["Keyboard shortcuts",()=>{setDetails(true);$("playerKeyboardHelp").open=true;$("playerKeyboardHelp").scrollIntoView?.({block:"nearest"});}],
    ["Minimize",()=>open(false)]
  ],()=>true,event);}
@@ -400,31 +406,36 @@
    // status ACK between click and dblclick must not lose the gesture or focus.
    for(const row of list.children){
      if(row.className!=="ap-songrow")continue;
-     const id=Number(row.dataset.songId),song=model.tracks[id];
+     const id=Number(row.dataset.songId),song=enriched(catalogView()?model.catalogue[id]:model.tracks[id]);
+     const activeId=catalogView()?(activeCatalogueIndex.get(id)??-2):id;
      const choose=row.children[0];
-     row.dataset.selected=String(id===model.selected);row.dataset.current=String(id===model.current);row.dataset.missing=String(Boolean(song?.missing));
-     choose.dataset.selected=String(id===model.selected);
-     choose.dataset.current=String(id===model.current);
-     choose.setAttribute("aria-selected",String(id===model.selected));
+     row.dataset.selected=String(activeId>=0&&activeId===model.selected);row.dataset.current=String(activeId>=0&&activeId===model.current);row.dataset.missing=String(Boolean(song?.missing));
+     choose.dataset.selected=row.dataset.selected;choose.dataset.current=row.dataset.current;
+     choose.setAttribute("aria-selected",row.dataset.selected);
      choose.children[2].textContent=song?.missing?"Missing":
-       id===model.current?"NOW":id===model.selected?"NEXT":"";
-     const seconds=id===model.current?Number(model.transport?.durationSeconds):Number(song?.durationSeconds);
+       activeId>=0&&activeId===model.current?"NOW":activeId>=0&&activeId===model.selected?"NEXT":"";
+     const seconds=activeId>=0&&activeId===model.current?Number(model.transport?.durationSeconds)||Number(song?.durationSeconds):Number(song?.durationSeconds);
      choose.children[4].textContent=Number.isFinite(seconds)&&seconds>0?duration(seconds):"—";
    }
  }
  function renderTracks(){
    const query=normalizeSearch(search.value);
-   const key=[libraryRevision,model.activeSetlist,collectionView,query].join("|");
+   const key=[libraryRevision,mediaRevision,model.activeSetlist,collectionView,query].join("|");
    if(key!==filteredKey){
      if(query!==previousQuery || model.activeSetlist!==previousSetlist)
        list.scrollTop=0;
      previousQuery=query;previousSetlist=model.activeSetlist;
      filteredKey=key;
-     if(searchIndexRevision!==libraryRevision){searchIndexRevision=libraryRevision;searchIndex=model.tracks.map(song=>normalizeSearch([song.title,song.artist,song.album,song.format].filter(Boolean).join(" ")));}
+     const global=catalogView(),source=global?model.catalogue:model.tracks;
+     const indexKey=[libraryRevision,mediaRevision,global].join("|");
+     if(searchIndexRevision!==indexKey){searchIndexRevision=indexKey;searchIndex=source.map(raw=>{const song=enriched(raw);return normalizeSearch([song.title,raw.title,song.artist,song.album,song.format].filter(Boolean).join(" "));});}
      const tokens=query.split(/\s+/).filter(Boolean);
-     filtered=model.tracks.filter((song,i)=>tokens.every(token=>searchIndex[i].includes(token)));
-     setText($("playerCount"),query?filtered.length+" / "+model.tracks.length+" songs":model.tracks.length+" songs");
-     if(collectionView==="library")filtered.sort((a,b)=>String(a.title||"").localeCompare(String(b.title||"")));
+     filtered=source.filter((song,i)=>tokens.every(token=>searchIndex[i].includes(token))).map(enriched);
+     const known=filtered.filter(song=>Number(song.durationSeconds)>0);
+     const seconds=known.reduce((sum,song)=>sum+Number(song.durationSeconds),0);
+     const total=known.length?(duration(seconds)+(known.length<filtered.length?"+":"")):"";
+     setText($("playerCount"),(query?filtered.length+" / "+source.length:source.length)+" songs"+(total?" · "+total:""));
+     if(collectionView==="library"&&!global)filtered.sort((a,b)=>String(a.title||"").localeCompare(String(b.title||"")));
      rendered="";
    }
    const visible=Math.max(24,Math.min(80,
@@ -454,7 +465,10 @@
    top.style.height=(start*ROW_HEIGHT)+"px";
    top.setAttribute("aria-hidden","true");
    list.append(top);
-   for(const song of songs){
+   for(const raw of songs){
+     const global=catalogView(),catalogId=raw.catalogId;
+     const activeId=global?(activeCatalogueIndex.get(catalogId)??-1):raw.id;
+     const song=global?{...raw,id:catalogId,keySemitones:activeId>=0?model.tracks[activeId]?.keySemitones:undefined}:raw;
      const row=document.createElement("div");
      row.className="ap-songrow";row.setAttribute("role","listitem");
      row.dataset.songId=String(song.id);
@@ -476,23 +490,24 @@
        song.id===model.current?"NOW":
        song.id===model.selected?"NEXT":"";
      const key=document.createElement("span");key.className="ap-songkey";
-     const semitones=Number(song.keySemitones)||0;key.textContent=(semitones>0?"+":"")+semitones+" st";
+     const semitones=Number(song.keySemitones)||0;key.textContent=global&&activeId<0?"—":(semitones>0?"+":"")+semitones+" st";
      const time=document.createElement("span");time.className="ap-songtime";time.textContent="—";choose.append(index,title,state,key,time);
      const revision=libraryRevision,setlist=model.activeSetlist;
      const valid=()=>revision===libraryRevision&&setlist===model.activeSetlist;
-     const select=()=>{if(valid())send("playerSelect",song.id);};
-     const playNow=()=>{if(valid()&&!song.missing&&model.pending<0)send("playerPlayNow",song.id);};
+     const add=()=>{if(valid()&&global&&activeId<0&&!song.missing&&model.tracks.length<2000)send("playerCatalogueAdd",{id:catalogId,set:setlist});};
+     const select=()=>{if(valid()&&activeId>=0)send("playerSelect",activeId);};
+     const playNow=()=>{if(valid()&&!song.missing){if(activeId>=0&&model.pending<0)send("playerPlayNow",activeId);else if(activeId<0)add();}};
      choose.addEventListener("click",select);
      choose.addEventListener("dblclick",playNow);
      choose.addEventListener("keydown",event=>{
        if(event.altKey||event.metaKey||event.shiftKey||!valid())return;
        if(event.key==="Enter"){
          event.preventDefault();event.stopPropagation?.();if(event.repeat)return;
-         if(event.ctrlKey){if(!song.missing&&model.queue.length<128)send("playerQueueAppend",song.id);}
+         if(event.ctrlKey){if(activeId>=0&&!song.missing&&model.queue.length<128)send("playerQueueAppend",activeId);}
          else playNow();
        }else if(!event.ctrlKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){
          event.preventDefault();event.stopPropagation?.();
-         const i=filtered.findIndex(item=>item.id===song.id);
+         const i=filtered.findIndex(item=>(global?item.catalogId:item.id)===song.id);
          focusTrack(event.key==="Home"?0:event.key==="End"?filtered.length-1:Math.max(0,Math.min(filtered.length-1,i+(event.key==="ArrowDown"?1:-1))));
        }
      });
@@ -500,8 +515,10 @@
      actions.setAttribute("aria-label","Actions for "+song.title);actions.setAttribute("aria-expanded","false");actions.setAttribute("aria-controls","playerSongMenu");
      actions.title="Actions for "+song.title;actions.disabled=!native;actions.setAttribute("aria-haspopup","menu");
      actions.innerHTML='<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
-     actions.addEventListener("click",()=>showSongMenu(actions,song,revision,setlist));
-     contextBind(row,event=>showSongMenu(actions,song,revision,setlist,event));
+     if(global&&activeId<0)choose.title="Double-click to add to active setlist; no playback";
+     const openActions=event=>{if(global&&activeId<0)showContext(actions,song.title,[["Add to active setlist",add,false,song.missing||model.tracks.length>=2000]],valid,event);else showSongMenu(actions,{...song,id:activeId},revision,setlist,event);};
+     actions.addEventListener("click",()=>openActions());
+     contextBind(row,openActions);
      row.addEventListener("dragstart",event=>{
        if(!row.draggable){event.preventDefault();return;}closeSongMenu(false);queueDrag=null; // catalogue and queue are distinct drag domains
        trackDrag={from:song.id,revision,setlist};
@@ -530,10 +547,14 @@
  function render(){
    const t=model.transport||{};
    const state=String(t.state||"EMPTY");
-   setText($("playerNow"),t.title||"No music loaded");
-   $("playerNowSubtitle").textContent=t.artist||(t.title?"Local music file":"Music player");
-   $("playerNowMeta").textContent=[t.format,t.sampleRate?Math.round(t.sampleRate/100)/10+" kHz":"",t.channels===2?"Stereo":t.channels===1?"Mono":""].filter(Boolean).join(" · ");
-   setText($("playerMiniTitle"),t.title||"No music loaded");setText($("playerMiniTime"),duration(t.currentSeconds)+" / "+duration(t.durationSeconds)+" · Key "+(model.tracks?.[model.current]?.keySemitones??0));updateMini();
+   const currentMedia=enriched(model.tracks[model.current]);
+   setText($("playerNow"),currentMedia?.title||t.title||"No music loaded");
+   setText($("playerNowSubtitle"),[currentMedia?.artist||t.artist,currentMedia?.album].filter(Boolean).join(" · ")||(t.title?"Local music file":"Music player"));
+   const format=currentMedia?.format||t.format,rate=currentMedia?.sampleRate||t.sampleRate,channels=currentMedia?.channels||t.channels;
+   setText($("playerNowMeta"),[format,rate?Math.round(rate/100)/10+" kHz":"",channels===2?"Stereo":channels===1?"Mono":""].filter(Boolean).join(" · "));
+   const artwork=$("playerArtwork"),uri=currentMedia?.catalogId===coverId?coverUri:"";
+   if(artwork.dataset.uri!==uri){artwork.dataset.uri=uri;artwork.hidden=!uri;$("playerArtworkFallback").hidden=Boolean(uri);if(uri)artwork.src=uri;else artwork.removeAttribute?.("src");}
+   setText($("playerMiniTitle"),currentMedia?.title||t.title||"No music loaded");setText($("playerMiniTime"),duration(t.currentSeconds)+" / "+duration(t.durationSeconds)+" · Key "+(model.tracks?.[model.current]?.keySemitones??0));updateMini();
    setText($("playerElapsed"),duration(t.currentSeconds));
    setText($("playerDuration"),duration(t.durationSeconds));
    setText($("playerRemaining"),"−"+duration(Math.max(0,(Number(t.durationSeconds)||0)-(Number(t.currentSeconds)||0))));
@@ -541,12 +562,12 @@
    // Mirror native precedence for presentation only; a queue entry title is
    // projected without file identity, so label it queued rather than guaranteed.
    const nextIndex=nextTrackIndex();
-   const pendingSong=model.pending>=0?model.tracks[model.pending]:null;
+   const pendingSong=model.pending>=0?enriched(model.tracks[model.pending]):null;
    const queueTitle=model.queue?.[0]?.title;
-   const nextTitle=pendingSong?.title||queueTitle||model.tracks[nextIndex]?.title;
+   const nextTitle=pendingSong?.title||queueTitle||enriched(model.tracks[nextIndex])?.title;
    $("playerNextLabel").textContent=pendingSong?"PREPARING":queueTitle?"QUEUED NEXT":"UP NEXT";
    setText($("playerUpNext"),nextTitle||"End of setlist");
-   const upcoming=pendingSong||(!queueTitle?model.tracks[nextIndex]:null);$("playerNextMeta").textContent=upcoming?((upcoming.keySemitones>0?"+":"")+(upcoming.keySemitones??0)+" st"+(Number(upcoming.durationSeconds)>0?" · "+duration(upcoming.durationSeconds):"")):"";
+   const upcoming=pendingSong||(!queueTitle?enriched(model.tracks[nextIndex]):null);$("playerNextMeta").textContent=upcoming?((upcoming.keySemitones>0?"+":"")+(upcoming.keySemitones??0)+" st"+(Number(upcoming.durationSeconds)>0?" · "+duration(upcoming.durationSeconds):"")):"";
    if(!draggingSeek){
      seek.value=String(+t.durationSeconds>0?
        Math.round(1000*Math.min(1,Math.max(0,
@@ -638,13 +659,13 @@
    $("playerNewSetlist").disabled=!canSwitch;
    renderSetlists();
    $("playerDeleteSetlist").disabled=!canSwitch||model.setlists.length<=1;
-   if(!root.hidden&&collectionView!=="queue")renderTracks();
+   if(!root.hidden&&collectionView!=="queue"&&!menuOwner&&!trackDrag)renderTracks();
  }
  search.addEventListener("input",renderTracks);
  search.addEventListener("keydown",event=>{
    if(event.key==="Escape"&&search.value){event.preventDefault();event.stopPropagation?.();search.value="";renderTracks();return;}
    if(event.key==="ArrowDown"&&filtered.length){event.preventDefault();event.stopPropagation?.();focusTrack(0);}
-   if(event.key==="Enter"&&!event.repeat&&!event.altKey&&!event.metaKey&&!event.shiftKey&&filtered.length){event.preventDefault();event.stopPropagation?.();const song=filtered[0];if(native){if(event.ctrlKey){if(!song.missing&&model.queue.length<128)send("playerQueueAppend",song.id);}else send("playerSelect",song.id);}focusTrack(0);}
+   if(event.key==="Enter"&&!event.repeat&&!event.altKey&&!event.metaKey&&!event.shiftKey&&filtered.length){event.preventDefault();event.stopPropagation?.();const song=filtered[0],id=catalogView()?(activeCatalogueIndex.get(song.catalogId)??-1):song.id;if(native&&id>=0){if(event.ctrlKey){if(!song.missing&&model.queue.length<128)send("playerQueueAppend",id);}else send("playerSelect",id);}focusTrack(0);}
  });
  list.addEventListener("scroll",()=>{closeSongMenu(false);renderTracks();},{passive:true});
  root.addEventListener("scroll",()=>closeSongMenu(false),{passive:true});$("playerQueuePanel").addEventListener("scroll",()=>closeSongMenu(false),{passive:true});
@@ -658,12 +679,17 @@
      event.preventDefault();$("playerPlay").click();
    }
  });
+ $("playerArtwork").addEventListener("error",()=>{$("playerArtwork").hidden=true;$("playerArtworkFallback").hidden=false;});
  if(native){
+   backend.addEventListener("arMixPlayerCatalogue",payload=>{if(payload?.schema!=="arsonmix.catalogue.v1"||!Array.isArray(payload.rows))return;model.catalogue=payload.rows.slice(0,64000);++libraryRevision;if(collectionView==="library")renderTracks();});
+   backend.addEventListener("arMixPlayerMedia",payload=>{if(payload?.schema!=="arsonmix.media.v1"||!Array.isArray(payload.rows))return;for(const row of payload.rows)if(Number.isInteger(row.catalogId)&&row.catalogId>=0&&row.catalogId<64000)media.set(row.catalogId,row);++mediaRevision;render();});
+   backend.addEventListener("arMixPlayerCover",payload=>{coverId=Number(payload?.catalogId);coverUri=typeof payload?.uri==="string"&&payload.uri.length<=350000&&/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(payload.uri)?payload.uri:"";render();});
+   backend.addEventListener("arMixPlayerMediaReset",()=>{media.clear();++mediaRevision;coverId=-1;coverUri="";render();});
    backend.addEventListener("arMixPlayerState",payload=>{
      if(!payload || payload.schema!=="arsonmix.player.v1")return;
      if(Array.isArray(payload.tracks)){
        closeSongMenu(false);trackDrag=null;model.tracks=payload.tracks;
-       ++libraryRevision;
+       ++libraryRevision;activeCatalogueIndex.clear();for(const song of model.tracks)if(Number.isInteger(song.catalogId))activeCatalogueIndex.set(song.catalogId,song.id);
      }
      if(Array.isArray(payload.queue)||Array.isArray(payload.setlists)||("pending" in payload&&payload.pending!==model.pending)||("activeSetlist" in payload&&payload.activeSetlist!==model.activeSetlist))
        ++showRevision;

@@ -219,3 +219,17 @@ publish({transport:{state:"STOPPED"}});assert.equal($("playerSetlistSelect").dis
 $("playerOptions").click();$("playerSongMenu").children.find(x=>x.textContent==="Show current song").click();
 assert.equal(document.activeElement,songRows().find(row=>row.dataset.songId==="1").children[0]);assert.equal(actions.length,0);
 console.log("V4.4 PASS: search, keyboard focus, live setlist guard");
+
+// P0 metadata readback never uses catalogue id as active deck index.
+publish({tracks:[{...songs[0],catalogId:4}],queue:[],current:0,selected:0,pending:-1});
+listeners.get("arMixPlayerMedia")({schema:"arsonmix.media.v1",rows:[{catalogId:4,title:"Real title",artist:"Artist",durationSeconds:123,format:"FLAC",sampleRate:48000,channels:2}]});
+assert.equal($("playerNow").textContent,"Real title");assert.match($("playerNowMeta").textContent,/FLAC/);
+assert.equal($("playerCount").textContent,"1 songs · 02:03");
+listeners.get("arMixPlayerCover")({catalogId:4,uri:"data:image/png;base64,AAAA"});assert.equal($("playerArtwork").hidden,false);
+listeners.get("arMixPlayerCover")({catalogId:3,uri:"data:image/png;base64,AAAA"});assert.equal($("playerArtwork").hidden,true);
+$("playerLibraryView").click();
+listeners.get("arMixPlayerCatalogue")({schema:"arsonmix.catalogue.v1",rows:Array.from({length:5},(_,catalogId)=>({catalogId,title:"Library "+catalogId}))});
+search.value="Library 1";search.fire("input");actions.length=0;
+songRows()[0].children[1].click();$("playerSongMenu").children[1].click();
+assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1).detail)),{action:"playerCatalogueAdd",value:{id:1,set:0}});
+assert.equal(actions.length,1);console.log("P0 UI metadata, duration and global catalogue intent PASS");

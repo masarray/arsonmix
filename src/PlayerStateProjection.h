@@ -3,6 +3,7 @@
 #include "PlayerSetlistArchive.h"
 #include <juce_core/juce_core.h>
 #include <memory>
+#include <map>
 #include <vector>
 
 // N-MOD-18: one read-only Player projection, CONTROL/UI thread only.
@@ -29,6 +30,7 @@ public:
         bool autoNext=false;
         bool loopAB=false;
         bool libraryBusy=false;
+        const std::map<juce::File,int>* catalogueIds=nullptr;
     };
     static juce::var build(const Source& s,bool includeLibrary,
                            bool includeTracks) {
@@ -79,6 +81,7 @@ public:
                 for(std::size_t i=0;i<s.files.size();++i) {
                     auto item=std::make_unique<juce::DynamicObject>();
                     item->setProperty("id",static_cast<int>(i));
+                    if(s.catalogueIds){const auto it=s.catalogueIds->find(s.files[i]);if(it!=s.catalogueIds->end())item->setProperty("catalogId",it->second);}
                     item->setProperty("title",
                         s.files[i].getFileNameWithoutExtension());
                     item->setProperty("missing",!s.files[i].existsAsFile());

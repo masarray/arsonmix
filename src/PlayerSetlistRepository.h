@@ -26,10 +26,10 @@ public:
     }
     static SaveStatus save(const juce::File& target,
                            const std::vector<PlayerSavedSet>& sets,
-                           int active,bool autoNext,int fadeMs) {
+                           int active,bool autoNext,int fadeMs,const std::vector<juce::File>& catalogue={}) {
         // Do not begin writing until *every* set is loadable by the codec.
         const auto document=PlayerSetlistArchive::serialize(
-            sets,active,autoNext,fadeMs);
+            sets,active,autoNext,fadeMs,catalogue);
         if (!document.isObject())return SaveStatus::invalidState;
         // JUCE creates a sibling staging file and replaces only after the
         // complete payload was written. Never mutate live media files.

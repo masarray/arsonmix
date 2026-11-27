@@ -508,3 +508,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-shortcuts{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:6px 0 10px;color:var(--ap-muted)}
 #arsonPlayer .ap-shortcuts kbd{font:inherit;font-size:10px;background:#202b32;border:1px solid #35444d;border-radius:3px;padding:2px 5px;color:var(--ap-ink)}
 #arsonPlayer .ap-song-menu button[data-danger="true"]{margin-top:3px}
+
+#arsonPlayer #playerArtwork{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+#arsonPlayer #playerArtworkFallback{display:grid;place-items:center}
+#arsonPlayer #playerCount{font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;text-overflow:ellipsis}

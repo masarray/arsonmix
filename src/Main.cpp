@@ -54,6 +54,7 @@
 #include "PlayerSetlistEditTransaction.h"
 #include "PlayerLibraryEditPlan.h"
 #include "PlayerStateProjection.h"
+#include "PlayerMediaMetadata.h"
 #include "NativeHotkeyRegistry.h"
 #include "NativeHotkeyCommandPlan.h"
 #include "NativeFxParameterHotkey.h"
@@ -946,6 +947,14 @@ private:
     using PlayerSavedSet=armix::player::PlayerSavedSet;
     std::vector<PlayerTrackSettings> playerTrackSettings_;
     std::vector<PlayerSavedSet> playerSets_;
+    std::vector<juce::File> playerCatalogue_;
+    std::map<juce::File,int> playerCatalogueIds_;
+    std::map<int,armix::player::PlayerMediaMetadata> playerMedia_;
+    bool playerMediaBusy_=false,playerCatalogueRequested_=false;
+    std::size_t playerMediaCursor_=0;
+    int playerCoverId_=-1;
+    juce::String playerCover_;
+    bool playerCoverBusy_=false;
     int playerActiveSet_=0;
     std::vector<juce::File> playerQueue_; // transient ordered PLAY NEXT queue
     armix::player::PlayerQueueEditEpoch playerQueueEpoch_;
@@ -6360,6 +6369,7 @@ private:
         }
         auto& parsed=*result.document;
         playerSets_=std::move(parsed.sets);
+        adoptPlayerCatalogue(std::move(parsed.catalogue));
         activatePlayerSet(parsed.active);
         playerAutoNext_=parsed.autoNext;
         playerFadeMilliseconds_=parsed.fadeMs;
@@ -6371,13 +6381,14 @@ private:
         auto outcome=Edit::replaceActiveTracks(
             settingsDirectory().getChildFile("player-library.json"),
             playerSets_,playerActiveSet_,nextFiles,nextControls,
-            nextAutoNext,nextFadeMs);
+            nextAutoNext,nextFadeMs,playerCatalogue_);
         if(!outcome.committed()) {
             playerError_=outcome.error;
             return false;
         }
         // File acceptance comes before EVERY durable in-memory mutation.
         playerSets_=std::move(outcome.sets);
+        adoptPlayerCatalogue(std::move(outcome.catalogue));
         playerLibrary_=std::move(nextFiles);
         playerTrackSettings_=std::move(nextControls);
         playerAutoNext_=nextAutoNext;
@@ -6436,12 +6447,13 @@ private:
                 settingsDirectory().getChildFile("player-library.json"),
                 playerSets_,playerActiveSet_,playerLibrary_,playerTrackSettings_,
                 playerAutoNext_,playerFadeMilliseconds_,command,index,
-                rename?value.toString():juce::String{});
+                rename?value.toString():juce::String{},playerCatalogue_);
             if(!outcome.committed()) {
                 playerError_=outcome.error;
                 emitPlayerState(true);return;
             }
             playerSets_=std::move(outcome.sets);
+            adoptPlayerCatalogue(std::move(outcome.catalogue));
             if(!rename) {
                 engine_.playerStop();
                 activatePlayerSet(outcome.active);
@@ -6603,6 +6615,106 @@ private:
             emitPlayerState(true,false);return;
         }
     }
+    // Catalogue IDs are append-only within this window; no WebView path input.
+    void adoptPlayerCatalogue(std::vector<juce::File> files){
+        if(files==playerCatalogue_)return;
+        playerCatalogue_=std::move(files);
+        playerCatalogueIds_.clear();
+        for(std::size_t i=0;i<playerCatalogue_.size();++i)
+            playerCatalogueIds_.emplace(playerCatalogue_[i],static_cast<int>(i));
+        if(playerCatalogueRequested_)emitPlayerCatalogue();
+    }
+    void emitPlayerCatalogue(){
+        if(!browser_.loaded)return;
+        juce::Array<juce::var> rows;
+        for(std::size_t i=0;i<playerCatalogue_.size();++i){
+            auto row=std::make_unique<juce::DynamicObject>();
+            row->setProperty("catalogId",static_cast<int>(i));
+            row->setProperty("title",playerCatalogue_[i].getFileNameWithoutExtension().substring(0,512));
+            rows.add(juce::var(row.release()));
+        }
+        auto event=std::make_unique<juce::DynamicObject>();
+        event->setProperty("schema","arsonmix.catalogue.v1");event->setProperty("rows",juce::var(rows));
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerCatalogue",juce::var(event.release()));
+    }
+    void emitPlayerMedia(const juce::Array<juce::var>& rows){
+        if(!browser_.loaded)return;
+        auto event=std::make_unique<juce::DynamicObject>();
+        event->setProperty("schema","arsonmix.media.v1");event->setProperty("rows",juce::var(rows));
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerMedia",juce::var(event.release()));
+    }
+    void emitPlayerCover(){
+        if(!browser_.loaded)return;
+        auto event=std::make_unique<juce::DynamicObject>();
+        event->setProperty("catalogId",playerCoverId_);event->setProperty("uri",playerCover_);
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerCover",juce::var(event.release()));
+    }
+    void pumpPlayerMedia(){
+        if(!browser_.loaded)return;
+        if(!playerMediaBusy_){
+            std::vector<std::pair<int,juce::File>> batch;
+            const auto add=[&](int id){
+                if(batch.size()>=12||playerMedia_.contains(id)||id<0||id>=static_cast<int>(playerCatalogue_.size()))return;
+                if(std::none_of(batch.begin(),batch.end(),[&](const auto& row){return row.first==id;}))
+                    batch.emplace_back(id,playerCatalogue_[static_cast<std::size_t>(id)]);
+            };
+            for(const auto index:{playerCurrent_,playerSelected_}){
+                if(index>=0&&index<static_cast<int>(playerLibrary_.size())){
+                    const auto found=playerCatalogueIds_.find(playerLibrary_[static_cast<std::size_t>(index)]);
+                    if(found!=playerCatalogueIds_.end())add(found->second);
+                }
+            }
+            for(const auto& file:playerLibrary_){if(batch.size()>=12)break;const auto found=playerCatalogueIds_.find(file);if(found!=playerCatalogueIds_.end())add(found->second);}
+            while(playerCatalogueRequested_&&batch.size()<12&&playerMediaCursor_<playerCatalogue_.size())add(static_cast<int>(playerMediaCursor_++));
+            if(!batch.empty()){
+                playerMediaBusy_=true;
+                std::thread([safe=juce::Component::SafePointer<ConsoleWindow>(this),batch=std::move(batch)]{
+                    juce::AudioFormatManager formats;formats.registerBasicFormats();
+                    std::vector<std::pair<int,armix::player::PlayerMediaMetadata>> results;
+                    for(const auto& [id,file]:batch)results.emplace_back(id,armix::player::PlayerMediaMetadata::probe(file,formats));
+                    juce::MessageManager::callAsync([safe,results=std::move(results)]() mutable{
+                        if(!safe)return;
+                        safe->playerMediaBusy_=false;juce::Array<juce::var> rows;
+                        for(auto& [id,media]:results){rows.add(media.project(id));safe->playerMedia_.insert_or_assign(id,std::move(media));}
+                        safe->emitPlayerMedia(rows);
+                    });
+                }).detach();
+            }
+        }
+        if(playerCoverBusy_)return;
+        int id=-1;
+        if(playerCurrent_>=0&&playerCurrent_<static_cast<int>(playerLibrary_.size())){
+            const auto found=playerCatalogueIds_.find(playerLibrary_[static_cast<std::size_t>(playerCurrent_)]);
+            if(found!=playerCatalogueIds_.end())id=found->second;
+        }
+        if(id==playerCoverId_)return;
+        playerCoverId_=id;playerCover_.clear();emitPlayerCover();
+        if(id<0)return;
+        playerCoverBusy_=true;
+        std::thread([safe=juce::Component::SafePointer<ConsoleWindow>(this),id,file=playerCatalogue_[static_cast<std::size_t>(id)]]{
+            auto cover=armix::player::PlayerMediaMetadata::cover(file);
+            juce::MessageManager::callAsync([safe,id,cover=std::move(cover)]{
+                if(!safe)return;
+                safe->playerCoverBusy_=false;
+                if(safe->playerCoverId_==id){safe->playerCover_=cover;safe->emitPlayerCover();}
+            });
+        }).detach();
+    }
+    void addPlayerCatalogueSong(const juce::var& value){
+        if(!value.isObject()||!value.getProperty("id",{}).isInt()||!value.getProperty("set",{}).isInt()||
+           static_cast<int>(value.getProperty("set",-1))!=playerActiveSet_||playerFolderBusy_)return;
+        const int id=static_cast<int>(value.getProperty("id",-1));
+        if(id<0||id>=static_cast<int>(playerCatalogue_.size()))return;
+        juce::Array<juce::File> files;files.add(playerCatalogue_[static_cast<std::size_t>(id)]);
+        auto plan=armix::player::PlayerLibraryEditPlan::append(playerLibrary_,playerTrackSettings_,files);
+        if(!plan||plan->added!=1){playerError_="Song already in setlist, missing, or setlist is full";return emitPlayerState();}
+        const int first=plan->first;
+        if(commitPlayerTrackEdit(std::move(plan->files),std::move(plan->controls))){
+            if(playerSelected_<0)playerSelected_=first;
+            playerError_.clear();
+        }
+        emitPlayerState(true);
+    }
     void emitPlayerState(bool includeLibrary=false,
                          bool includeTracks=true) {
         if(!browser_.loaded)return;
@@ -6613,13 +6725,14 @@ private:
             playerSelected_,playerCurrent_,playerActiveSet_,playerPendingIndex_,
             playerQueueEpoch_.revision(),playerFadeMilliseconds_,
             playerUndoRemove_.set,playerUndoRemove_.index,
-            playerAutoNext_,playerLoopCurrent_,playerFolderBusy_
+            playerAutoNext_,playerLoopCurrent_,playerFolderBusy_,&playerCatalogueIds_
         },includeLibrary,includeTracks);
         if(!snapshot.isObject()) {
             playerError_="Player library state is inconsistent; no snapshot published";
             return;
         }
         browser_.emitEventIfBrowserIsVisible("arMixPlayerState",snapshot);
+        pumpPlayerMedia();
     }
     void choosePlayerFiles() {
         if(playerFileChooser_)return; // one native dialog only
@@ -6981,7 +7094,20 @@ private:
             playerOutputPendingIndex_=playerSelected_;
             action="audioSetup";
         }
-        if(action=="playerSubscribe")return emitPlayerState(true);
+        if(action=="playerSubscribe"){
+            emitPlayerState(true);juce::Array<juce::var> batch;
+            for(const auto& [id,media]:playerMedia_){batch.add(media.project(id));if(batch.size()>=128){emitPlayerMedia(batch);batch.clear();}}
+            if(!batch.isEmpty())emitPlayerMedia(batch);
+            emitPlayerCover();return;
+        }
+        if(action=="playerCatalogue"){playerCatalogueRequested_=true;emitPlayerCatalogue();pumpPlayerMedia();return;}
+        if(action=="playerCatalogueAdd")return addPlayerCatalogueSong(value);
+        if(action=="playerMediaRefresh"){
+            if(playerMediaBusy_||playerCoverBusy_){playerError_="Media scan is in progress";return emitPlayerState();}
+            playerMedia_.clear();playerMediaCursor_=0;playerCoverId_=-1;playerCover_.clear();
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPlayerMediaReset",juce::var(true));
+            playerError_.clear();return emitPlayerState(true);
+        }
         if(action=="playerVolume") {
             if(value.isInt() || value.isDouble())
                 engine_.setPlayerVolume(static_cast<double>(value));
