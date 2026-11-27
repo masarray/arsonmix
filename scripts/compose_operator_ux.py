@@ -371,6 +371,13 @@ function openChannelIdentity(t,anchor){""",
         "", plugin, count=1, flags=re.S)
     if count != 1:
         raise ValueError("Operator UX obsolete minimized CSS drift")
+    # The former overflow policy hid the actual mix context on every viewport.
+    # Change that deployed owner in place; preserve the locked source CSS.
+    contextual_path = assets / "mixer-contextual-buttons.css"
+    contextual = contextual_path.read_text(encoding="utf-8")
+    contextual = once(contextual, "#wireConfigToggle,#mixContext){display:none!important}",
+        "#wireConfigToggle){display:none!important}", "restore visible mix context")
+    contextual_path.write_text(contextual,encoding="utf-8")
     chrome_path.write_text(chrome.rstrip()+"\n"+OPERATOR_CSS+"\n",encoding="utf-8")
     # V9: unified modal close material is compiled from its sole CSS owner.
     plugin_path.write_text(plugin,encoding="utf-8")

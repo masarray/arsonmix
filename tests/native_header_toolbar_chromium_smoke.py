@@ -140,6 +140,12 @@ def main():
             assert file_group.all_text_contents() == ["New", "Save", "Open"], width
             new = menu.locator("[data-native-new-project]")
             assert new.count() == 1 and new.is_visible(), width
+            panel=menu.locator(".project-menu-panel")
+            bounds=panel.bounding_box()
+            assert bounds and bounds["x"]>=0 and bounds["x"]+bounds["width"]<=width+1
+            assert bounds["height"]<=height-20
+            assert page.evaluate("()=>document.querySelector('#projectMenu .project-menu-item').getBoundingClientRect().height")>=28
+            page.screenshot(path=f"arsonmix-project-menu-{width}.png")
             assert new.get_by_role("img").count() == 0  # decorative icon
             image = new.locator("img")
             assert image.get_attribute("alt") == ""

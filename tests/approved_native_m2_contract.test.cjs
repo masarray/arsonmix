@@ -2064,7 +2064,8 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.doesNotMatch(menu,/Confirm Delete Track/);
  assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
  assert.match(menu,/Confirm Delete AUX/);
- assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
+ assert.match(bridge,/if\(command==="New"\)newSessionButtons\[0\]\.click\(\)/);
+ assert.match(bridge,/else backend\.emitEvent\("arMixAction",\{action:"nativeMixerFile"\+command\}\)/);
  assert.match(bridge,/if\(value==="__armix_settings__"\)\{openAdditionalOutput\(\);return;\}/);
  assert.doesNotMatch(bridge,/nativeExtraOutput|nativeFirstSound/);
  assert.match(bridge,/if\(page==="routing"\)mountInlineAdditionalOutput\(\)/);

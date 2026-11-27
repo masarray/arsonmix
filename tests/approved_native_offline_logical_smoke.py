@@ -363,6 +363,7 @@ def main():
             "()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(t=>t.name==='AUX A').id")))
         fader=page.locator(f'#tracks .strip[data-id="{wire_ids["source"]}"] .fader')
         assert not fader.is_disabled(), "Saved SEND must remain editable without PCM"
+        page.screenshot(path="arsonmix-offline-sof.png")
         fader.evaluate("(el)=>{el.value='-12';el.dispatchEvent(new Event('input',{bubbles:true}));}")
         assert not page.evaluate("()=>window.__events.some(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN')")
         fader.evaluate("(el)=>{el.dispatchEvent(new Event('change',{bubbles:true}));}")
