@@ -45,7 +45,7 @@ OPTIMIZED_SCHEMA = "arsonmix.immersib-p102-verified-bitexact-implementation.v1"
 # manifest remains frozen. Exact adapter blob, not an unrestricted exception.
 SONKU_CONTROL_PATH = "engine/builtin_fx/SonKuSpatialProcessor.h"
 SONKU_CONTROL_ORIGINAL = "e55f83d758cb3cb5d2f01999e99e1ff1314293ff"
-SONKU_CONTROL_VARIANT = "94aa050f5d660548a4c0ff3267bc91349d6f6a20"
+SONKU_CONTROL_VARIANT = "60993a16ada364c9ee5440f75432f693dc36accd"
 
 
 def verify_exact_optimized_provenance(root: Path) -> None:

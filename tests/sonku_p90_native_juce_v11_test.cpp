@@ -299,6 +299,48 @@ int main(){
   for(int n=65;n<128;++n)diff+=block(n);
   assert(diff>1.e-6 && "Head yaw must audibly alter native PCM");
  }
+ // Audio-owned transport captures actual nonzero phase; explicit seek stays explicit.
+ {
+  auto orbit=std::make_unique<SonKuSpatialProcessor>();
+  orbit->prepareToPlay(48000.,128);
+  auto motion=s;motion.moving=true;motion.startAzimuthDegrees=71.f;
+  motion.revolutionSeconds=.5f;motion.clockwise=true;
+  assert(orbit->queueSettings(motion,820));
+  orbit->consumeRealtimeEdits();assert(orbit->pollCompletion(ack)&&ack.applied);
+  orbit->sealForRealtime();
+  for(int i=0;i<43;++i)render(*orbit,i*128);
+  const float phase=orbit->observedAzimuthDegrees();
+  assert(std::abs(phase-motion.startAzimuthDegrees)>20.f);
+  motion.moving=false;motion.outputTrim=.1f; // stale field must not apply
+  assert(orbit->queueSettings(motion,821,true));
+  assert(!orbit->pollCompletion(ack));
+  render(*orbit,43*128);
+  assert(orbit->pollCompletion(ack)&&ack.requestId==821&&ack.applied);
+  assert(!ack.settings.moving&&std::abs(ack.settings.startAzimuthDegrees-phase)<.001f);
+  assert(ack.settings.outputTrim!=motion.outputTrim);
+  for(int i=0;i<16;++i)render(*orbit,(44+i)*128);
+  assert(std::abs(orbit->observedAzimuthDegrees()-phase)<.001f);
+  juce::MemoryBlock saved;orbit->getStateInformation(saved);
+  auto restored=std::make_unique<SonKuSpatialProcessor>();
+  restored->prepareToPlay(48000.,128);
+  assert(restored->restoreUnpublishedState(saved.getData(),static_cast<int>(saved.getSize())));
+  assert(std::abs(restored->observedAzimuthDegrees()-phase)<.001f);
+  restored->sealForRealtime();
+  render(*restored,0);
+  assert(std::abs(restored->observedAzimuthDegrees()-phase)<.001f);
+  motion=orbit->acceptedSettings();motion.moving=true;
+  motion.startAzimuthDegrees=0.f;
+  assert(orbit->queueSettings(motion,822,true));
+  render(*orbit,60*128);
+  assert(orbit->pollCompletion(ack)&&ack.requestId==822&&ack.applied);
+  assert(std::abs(ack.settings.startAzimuthDegrees-phase)<.001f);
+  assert(std::abs(orbit->observedAzimuthDegrees()-phase-1.92f)<.01f);
+  motion=orbit->acceptedSettings();motion.moving=false;motion.startAzimuthDegrees=0.f;
+  assert(orbit->queueSettings(motion,823)); // explicit preset/position
+  render(*orbit,61*128);
+  assert(orbit->pollCompletion(ack)&&ack.applied&&ack.settings.startAzimuthDegrees==0.f);
+  assert(orbit->observedAzimuthDegrees()==0.f);
+ }
  // Audio-thread head-yaw change is a separate accepted v10 transaction.
  s.headYawDegrees=60.f;
  s.spatialMix=.3f;

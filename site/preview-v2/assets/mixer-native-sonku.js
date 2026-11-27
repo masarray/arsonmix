@@ -324,8 +324,9 @@ function render(){
  // Never replay it or let another control write race it. Keep Close/Power
  // reachable so the user can recover an unavailable device.
  const recovering=Boolean(pending?.timedOut);
- root.querySelector(".sk-stage").inert=recovering;
- root.querySelector(".sk-controls").inert=recovering;
+ const transportPending=Boolean(pending?.holdOrbitPhase);
+ root.querySelector(".sk-stage").inert=recovering||transportPending;
+ root.querySelector(".sk-controls").inert=recovering||transportPending;
  root.dataset.recovering=String(recovering);
  // Header identity is always authoritative, including v2 native, reconnect
  // and logical sessions. A missing capability must never unlock presets.
@@ -600,12 +601,17 @@ const sameSettings=(a,b)=>a&&b&&Object.keys(defaults()).every(k=>a[k]===b[k]) &&
  (!(p83Capable||p84Capable) || (a.renderMode===b.renderMode &&
    a.musicCompatibleLowFrequency===b.musicCompatibleLowFrequency &&
    a.headYawDegrees===b.headYawDegrees));
-function send(next,continuous=false){
+function send(next,continuous=false,holdOrbitPhase=false){
  next={...next,spatialMix:1};
- if(pending?.timedOut){render();return false;}
+ if(pending?.timedOut||pending?.holdOrbitPhase||
+    (holdOrbitPhase&&(pending||liveTimer!==null||latest||drag||dialDrag||rangeEdits.size))){render();return false;}
  if(!valid(next))return false;
- draft={...next};
- if(!native()){accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");render();return true;}
+ if(!native()){
+  if(holdOrbitPhase){next.startAzimuthDegrees=angle(draft.moving?visualPhase:draft.startAzimuthDegrees);visualPhase=next.startAzimuthDegrees;}
+  draft={...next};accepted={...next};hint("BROWSER VISUAL ONLY · NO DSP");render();return true;
+ }
+ // Motion stays unchanged on screen until native phase is accepted.
+ if(!holdOrbitPhase)draft={...next};
  const c=context();
  if(!c){draft={...accepted};hint("NATIVE INSERT NOT ACCEPTED");render();return false;}
  if(pending){
@@ -615,13 +621,13 @@ function send(next,continuous=false){
  }
  if(sameSettings(next,accepted)){render();return true;}
  const id="sonku-"+String(Date.now()*1000+(++seq%1000));
- pending={requestId:id,settings:{...next},context:c,ack:false,sentAt:performance.now(),timedOut:false};
+ pending={requestId:id,settings:{...next},context:c,ack:false,sentAt:performance.now(),timedOut:false,holdOrbitPhase};
  hint(continuous?"DSP LIVE · AWAITING AUDIO ACK":"DSP QUEUED · AWAITING AUDIO ACK");
  // Render after recording pending so preset controls cannot appear
  // unlocked while a transaction is already in flight. Before emit also
  // prevents a synchronous native readback from being painted as pending.
  render();
- backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next});
+ backend().emitEvent("arMixAction",{action:"nativeSonKuSet",requestId:id,...c,settings:next,...(holdOrbitPhase?{holdOrbitPhase:true}:{})});
  return true;
 }
 function cancelLiveTimer(){
@@ -629,7 +635,7 @@ function cancelLiveTimer(){
 }
 function liveInput(next){
  next={...next,spatialMix:1};
- if(pending?.timedOut){render();return false;}
+ if(pending?.timedOut||pending?.holdOrbitPhase){render();return false;}
  if(!valid(next))return false;
  const now=performance.now(),wait=LIVE_INTERVAL_MS-(now-lastLiveAt);
  if(wait<=0){
@@ -705,9 +711,10 @@ function acceptSettingsReadback(incoming,appliedRequestId,c){
      String(sent.deviceEpoch)!==String(c.deviceEpoch)||
      String(sent.graphRevision)!==String(c.graphRevision)||
      sent.workspaceToken!==c.workspaceToken)return false;
-  const recovered=pending.timedOut;
+  const recovered=pending.timedOut,transport=pending.holdOrbitPhase;
   accepted={...incoming};pending=null;
-  if(recovered||!ownsDraft)draft={...incoming};
+  if(recovered||transport||!ownsDraft)draft={...incoming};
+  if(transport){visualPhase=angle(incoming.startAzimuthDegrees);observedAt=0;visualAt=0;}
   hint("DSP APPLIED · ACCEPTED");
   if(!recovered)flushLatest();
  }else{
@@ -867,7 +874,7 @@ $("skUpgrade").addEventListener("click",()=>{
    outputTrim:1,spacePreset:3,sourceDistanceMeters:1.6,roomAmount:.78,ambience:.33});
  if(!send(scene))render();
 });
-$("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving}));
+$("skMotion").addEventListener("click",()=>send({...draft,moving:!draft.moving},false,true));
 $("skDirection").addEventListener("click",()=>send({...draft,clockwise:!draft.clockwise}));
 root.querySelectorAll("[data-sk-room]").forEach(btn=>btn.addEventListener("click",()=>{
  const preset=Number(btn.dataset.skRoom),max=roomMaxDistance[preset];

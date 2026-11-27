@@ -7883,11 +7883,14 @@ private:
             const bool parameters=armix::builtin_fx::sonku_bridge::decodeSettings(
                 args.getProperty("settings",{}),settings);
             const auto numeric=fxRequest.sequence("sonku-");
+            const auto holdPhase=args.getProperty("holdOrbitPhase",{});
+            const bool validMotionIntent=holdPhase.isVoid()||holdPhase.isBool();
             bool queued=false;
-            if(p&&numeric&&parameters &&
+            if(p&&numeric&&parameters&&validMotionIntent &&
                !pendingNativeSonKu_.owner&&!nativeShowBusy_&&!studioBackupBusy_&&
                !engine_.independentClockActive()) {
-                queued=p->queueSettings(settings,numeric);
+                queued=static_cast<bool>(holdPhase)?
+                    p->queueSettings(settings,numeric,true):p->queueSettings(settings,numeric);
                 if(queued&&!unbound) {
                     pendingNativeSonKu_.owner=owner;
                     pendingNativeSonKu_.request=request;

@@ -292,15 +292,17 @@ def exercise(browser,out,width,height):
     accepted_snapshot(page,state,SETTINGS)
     editor.locator("#skMotion").click()
     command=last_action(page,"nativeSonKuSet")
-    assert command["settings"]["moving"] is False,command
+    assert command["settings"]["moving"] is False and command["holdOrbitPhase"] is True,command
+    assert editor.locator("#skMotion").inner_text()=="ORBIT","motion is not accepted until native readback"
     assert command["instanceId"]==INSTANCE and command["channelId"]==SOURCE
     emit(page,"arMixBuiltinSonKuQueue",{
         "requestId":command["requestId"],"status":"QUEUED"})
     emit(page,"arMixBuiltinSonKuAck",{
         "requestId":command["requestId"],"status":"APPLIED"})
-    accepted_snapshot(page,state,{**SETTINGS,"moving":False},
+    accepted_snapshot(page,state,{**SETTINGS,"moving":False,"startAzimuthDegrees":127.0},
         applied=command["requestId"])
     assert editor.locator("#skMotion").inner_text()=="STATIC"
+    assert int(editor.locator("#skMap [aria-valuenow]").first.get_attribute("aria-valuenow"))==round(127-SETTINGS["stereoSpreadDegrees"]/2)
     assert "ACCEPTED" in editor.locator("#skHint").inner_text()
     # Verify native HRTF azimuth is unchanged while screen orientation
     # now matches the real user: FRONT=TOP, anatomical RIGHT=SCREEN RIGHT.
