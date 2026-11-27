@@ -294,7 +294,10 @@ def main():
             latency=page.locator('[data-audio-latency]')
             assert latency.inner_text().strip()==(\
                 'Round-trip (estimated) 14.50 ms · Device 12.50 ms · FX/PDC 2.00 ms'), latency.inner_text()
-            assert 'Electrical round-trip requires physical loopback calibration' in latency.get_attribute('title')
+            # The approved native context menu strips Chromium title bubbles.
+            # The visible estimated label and explicit measured-loopback flow
+            # below are the real operator contract, not a browser tooltip.
+            assert latency.get_attribute('title') is None
             page.get_by_role('tab',name='Diagnostics').click()
             details=page.locator('[data-audio-loopback-details]')
             details.locator('summary').click()
