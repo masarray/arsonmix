@@ -99,6 +99,26 @@ class BundleTests(unittest.TestCase):
             with zipfile.ZipFile(p) as z, self.assertRaises(ValueError):
                 bundle.zip_members(z, "ArSonEQ.vst3")
 
+    def test_windows_zip_separators_do_not_weaken_path_gate(self):
+        good = "ArSonEQ.vst3/Contents/x86_64-win/ArSonEQ.vst3"
+        with zipfile.ZipFile(self.root / "windows.zip", "w") as z:
+            z.writestr(good.replace("/", "\\"), b"fixture")
+        with zipfile.ZipFile(self.root / "windows.zip") as z:
+            self.assertEqual(bundle.zip_members(z, "ArSonEQ.vst3")[0][1],
+                             "Contents/x86_64-win/ArSonEQ.vst3")
+        for names in ([good, good.replace("/", "\\")],
+                      [r"C:\ArSonEQ.vst3\Contents\x86_64-win\ArSonEQ.vst3"],
+                      [r"\\server\ArSonEQ.vst3\Contents\x86_64-win\ArSonEQ.vst3"],
+                      [r"ArSonEQ.vst3\Contents\..\evil.vst3"],
+                      [r"ArSonEQ.vst3\Contents\.\evil.vst3"],
+                      [good, "ArSonEQ.vst3/Contents/CON.txt"],
+                      [good, "ArSonEQ.vst3/Contents/bad."]):
+            with zipfile.ZipFile(self.root / "unsafe.zip", "w") as z:
+                for name in names:
+                    z.writestr(name, b"fixture")
+            with zipfile.ZipFile(self.root / "unsafe.zip") as z, self.assertRaises(ValueError):
+                bundle.zip_members(z, "ArSonEQ.vst3")
+
     def test_extra_factory_file_is_rejected(self):
         with patch.object(bundle, "download_release",
                           side_effect=lambda _p, target: shutil.copyfile(self.archive, target)):

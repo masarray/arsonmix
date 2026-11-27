@@ -15,7 +15,7 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 OWNED = {
     "arson-eq": ("masarray/arson-eq", "ArSonEQ", "ArSonEQ.vst3", "EQ"),
@@ -125,10 +125,14 @@ def zip_members(z, bundle):
         # Ignore zip folder markers and unrelated top-level build metadata.
         if info.is_dir():
             continue
-        pp = PurePosixPath(info.filename)
-        parts = pp.parts
-        if not parts or any(x in ("", ".", "..") for x in parts) or info.filename.startswith("/") or "\\" in info.filename:
-            fail("unsafe ZIP path")
+        # Older Windows ZIP producers use backslashes. Normalize ONLY
+        # separators, never resolve path traversal or extract raw names.
+        # Reject absolute, drive/ADS, UNC and dot/empty components before
+        # using a relative resource path on any host.
+        raw = info.filename.replace("\\", "/")
+        parts = raw.split("/")
+        if any(x in ("", ".", "..") or ":" in x or "\x00" in x for x in parts):
+            fail("unsafe ZIP path: " + repr(info.filename[:160]))
         mode = info.external_attr >> 16
         if stat.S_ISLNK(mode):
             fail("symlink inside VST3 archive")
@@ -147,7 +151,9 @@ def zip_members(z, bundle):
         if lower in seen:
             fail("duplicate / case-alias VST3 resource")
         seen.add(lower)
-        if not all(TOKEN.fullmatch(v) for v in sub):
+        if not all(TOKEN.fullmatch(v) and not v.endswith(".") and
+                   v.split(".")[0].upper() not in {"CON", "PRN", "AUX", "NUL", *("COM"+str(n) for n in range(1,10)), *("LPT"+str(n) for n in range(1,10))}
+                   for v in sub):
             fail("unsafe VST3 resource name")
         total += info.file_size
         if len(seen) > MAX_FILES or total > MAX_UNPACKED or info.file_size > MAX_UNPACKED:

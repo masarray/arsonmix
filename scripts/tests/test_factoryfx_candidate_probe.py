@@ -58,3 +58,11 @@ class CandidateTests(unittest.TestCase):
         file.write_bytes(b"MZ")
         with self.assertRaises(ValueError):
             probe.check_pe(file)
+
+    def test_sdk_moduleinfo_trailing_comma_preserves_strings(self):
+        path = self.root / "moduleinfo.json"
+        path.write_text(r'{"Classes":[{"Name":"example, }","CID":"a",},],}')
+        self.assertEqual(probe.read_module_info(path), {"Classes":[{"Name":"example, }","CID":"a"}]})
+        path.write_text('{"bad": unquoted}')
+        with self.assertRaises(json.JSONDecodeError):
+            probe.read_module_info(path)

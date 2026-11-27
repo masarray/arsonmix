@@ -51,6 +51,21 @@ def check_pe(path):
         if pe[:4] != b"PE\0\0" or struct.unpack_from("<H", pe, 4)[0] != 0x8664 or struct.unpack_from("<H", pe, 24)[0] != 0x20b:
             raise ValueError("not x64 PE32+")
 
+def read_module_info(path):
+    # Steinberg/JUCE moduleinfo is JSON-like and some SDK writers emit
+    # trailing commas. Remove only trailing commas outside string literals.
+    # Preserve the original bytes for hashing and never rewrite the binary.
+    if path.stat().st_size > 1024 * 1024:
+        raise ValueError("moduleinfo exceeds evidence budget")
+    raw = path.read_text(encoding="utf-8-sig")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        normal = re.sub(r'("(?:\\.|[^"\\])*")|,(?=\s*[}\]])',
+                        lambda m: m.group(1) or "", raw)
+        return json.loads(normal)
+
+
 def inspect_candidate(p, work, host=None):
     pid = p["productId"]
     name = bundle.OWNED[pid][2]
@@ -84,7 +99,7 @@ def inspect_candidate(p, work, host=None):
     classes = []
     metadata = target / "Contents" / "Resources" / "moduleinfo.json"
     if metadata.is_file():
-        obj = json.loads(metadata.read_text(encoding="utf-8-sig"))
+        obj = read_module_info(metadata)
         classes = [{"cid": c.get("CID"), "name": c.get("Name")} for c in obj.get("Classes", [])
                    if c.get("Category") == "Audio Module Class" and bundle.HEX(c.get("CID"), 32)]
     result = {"productId": pid, "artifactSha256": bundle.sha256(archive), "archiveStatus": "verified-x64",
