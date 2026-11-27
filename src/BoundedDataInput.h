@@ -71,7 +71,7 @@ struct BoundedDataInput final {
             unsigned exponent=0;
             do {
                 const auto d=static_cast<unsigned>(bytes[p]-'0');
-                if(exponent>(4096u-d)/10u)return false;
+                if(exponent>(999u-d)/10u)return false;
                 exponent=exponent*10u+d;
                 ++p;
             }while(p<size&&digit(bytes[p]));
@@ -97,6 +97,8 @@ struct BoundedDataInput final {
                 continue;
             }
             if(c=='"'){quoted=true;continue;}
+            // Only standard JSON strings are accepted (JUCE also accepts single quotes).
+            if(c=='\'')return false;
             if(c=='-'||(c>='0'&&c<='9')) {
                 if(!jsonNumber(bytes,size,i))return false;
                 continue;

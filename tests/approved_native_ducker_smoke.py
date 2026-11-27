@@ -20,12 +20,15 @@ def latest(page, action):
 def packet(action, **kw):
     return {**{k: action[k] for k in ("requestId","channelId","deviceEpoch","graphRevision","instanceId")}, **kw}
 
-def readback(page, sources, settings=DEFAULTS, serial="1"):
+def readback(page, sources, settings=DEFAULTS, serial="1", pending=False, available=True, after=None):
+    if after is not None:
+        page.wait_for_function("id=>window.__actions.filter(x=>x.action==='nativeDuckerSnapshot').at(-1)?.requestId!==id",arg=after)
     req = latest(page, "nativeDuckerSnapshot")
     assert req, "native DSP readback absent"
     emit(page,"arMixBuiltinDuckerSnapshot",packet(req,status="ACCEPTED",offline=False,
-        settings=settings,sources=sources,meterSerial=serial,gainReductionDb=8,
-        phase=2,meters=[dict(id=x,available=True,dbfs=-18) for x in sources]))
+        settings=settings,sources=sources,pending=pending,meterSerial=serial,gainReductionDb=8,
+        phase=2,meters=[dict(id=x,available=available,dbfs=-18) for x in sources]))
+    return req["requestId"]
 
 def main():
     spec=importlib.util.spec_from_file_location("bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -114,11 +117,32 @@ def main():
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
         readback(page,[SOURCE,MIC2],settings=req["settings"],serial="3")
         assert editor.locator(".mx-ducker-source").count()==2
+        # Owner FIELD regression: no horizontal overflow or transient footer.
+        assert editor.locator(".mx-ducker-status").count()==0
+        def assert_geometry():
+            assert editor.evaluate("""e=>[e,e.querySelector('.mx-ducker-list'),
+              ...e.querySelectorAll('.mx-ducker-source,.mx-ducker-read')].every(
+                n=>n.scrollWidth<=n.clientWidth+1)"""),"horizontal overflow"
+        assert_geometry()
         # Wheel without click: edit starts while pointer is still over knob.
         depth=editor.locator('input[type="range"][aria-label="Depth dB"]')
+        edit_button=editor.get_by_role("button",name="Edit sources")
+        edit_button.evaluate("""e=>{
+          window.__duckerEditMutations=[];
+          window.__duckerEditObserver=new MutationObserver(
+            rs=>window.__duckerEditMutations.push(...rs.map(r=>r.attributeName)));
+          window.__duckerEditObserver.observe(e,{attributes:true,attributeFilter:['disabled']});
+        }""")
+        depth.focus()
+        assert depth.evaluate("""e=>getComputedStyle(
+          e.parentElement.querySelector('.mx-ducker-dial')).outlineStyle==='none'""")
         depth.hover();page.mouse.wheel(0,-120)
         page.wait_for_function("()=>window.__actions.filter(x=>x.action==='nativeDuckerSet').at(-1)?.settings.depthDb>6")
         req=latest(page,"nativeDuckerSet")
+        assert edit_button.is_enabled()
+        emit(page,"arMixBuiltinDuckerAck",packet(req,status="PENDING"))
+        assert edit_button.is_enabled()
+        assert editor.locator(".mx-ducker-phase").text_content()!="Check edit"
         page.mouse.wheel(0,-120)
         assert latest(page,"nativeDuckerSet")["requestId"]==req["requestId"]
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
@@ -127,7 +151,36 @@ def main():
         final=latest(page,"nativeDuckerSet")
         assert final["settings"]["depthDb"]>req["settings"]["depthDb"]
         emit(page,"arMixBuiltinDuckerAck",packet(final,status="APPLIED"))
-        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5")
+        settled_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5")
+        assert edit_button.is_enabled()
+        assert edit_button.evaluate("()=>window.__duckerEditMutations.length")==0
+        assert_geometry()
+        # Source readout must fit the actual long state seen in Windows FIELD.
+        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="6",available=False,after=settled_read)
+        assert editor.locator(".mx-ducker-read").first.inner_text()=="Unavailable"
+        assert_geometry()
+        # A missing ACK must not permanently lock the editor or replay held edits.
+        # Use real browser gestures and a native quiescence readback, never fake APPLIED.
+        depth.hover();page.mouse.wheel(0,-120)
+        page.wait_for_function("id=>window.__actions.filter(x=>x.action==='nativeDuckerSet').at(-1)?.requestId!==id",arg=final["requestId"])
+        lost=latest(page,"nativeDuckerSet")
+        page.mouse.wheel(0,-120)
+        page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Edit delayed'",timeout=12000)
+        busy_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="7",pending=True)
+        assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
+        assert editor.locator(".mx-ducker-phase").text_content()=="Edit delayed"
+        assert editor.locator(".mx-ducker-phase").inner_text()=="EDIT DELAYED"
+        readback(page,[SOURCE,MIC2],settings=final["settings"],serial="8",pending=False,after=busy_read)
+        page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Check edit'",timeout=3000)
+        assert editor.locator(".mx-ducker-phase").inner_text()=="CHECK EDIT"
+        assert abs(float(depth.input_value())-final["settings"]["depthDb"])<.001
+        assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
+        emit(page,"arMixBuiltinDuckerAck",packet(lost,status="APPLIED"))
+        assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
+        # Numeric LCD keeps range and DSP draft consistent at boundaries.
+        numeric=editor.locator('input[type="number"][aria-label="Depth dB"]')
+        numeric.fill("");numeric.press("Tab")
+        assert abs(float(numeric.input_value())-final["settings"]["depthDb"])<.001
         # Each frame cell must be wider than it is high, not a portrait LED.
         assert editor.locator(".mx-ducker-led-cell").count()>20
         page.wait_for_function("""()=>[...document.querySelectorAll('#mxNativeDucker .mx-ducker-led-cell')]
@@ -141,7 +194,7 @@ def main():
         assert editor.get_by_text("MIC 2",exact=True).count()>=1
         editor.screenshot(path=str(ROOT/"auto-ducker-native-picker.png"))
         page.set_viewport_size({"width":500,"height":740})
-        assert editor.evaluate("e=>e.scrollWidth<=e.clientWidth+1")
+        assert_geometry()
         page.set_viewport_size({"width":1366,"height":768})
         editor.get_by_role("button",name="Cancel",exact=True).click()
         editor.get_by_role("button",name="Close Auto Ducker").click()
