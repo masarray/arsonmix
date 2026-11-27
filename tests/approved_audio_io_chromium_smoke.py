@@ -829,6 +829,32 @@ def verify_first_sound(page,out,single=False):
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='monitor').length")==0
 
 
+def verify_custom_recovery_routes(page,out):
+    """Normal recovery and Player must reuse custom Audio I/O, never JUCE."""
+    page.add_init_script(NATIVE_EVENTS + """window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>document.querySelector('.command-bar > [data-native-io]')")
+    assert page.get_by_text("Open JUCE driver recovery",exact=True).count()==0
+    page.locator("#moreTools > summary").click()
+    page.locator(".arNativeAdvancedRecovery > summary").click()
+    page.get_by_role("button",name="Open Audio I/O recovery").click()
+    dialog=page.locator(".armix-audio-dialog")
+    assert dialog.is_visible()
+    assert dialog.count()==1
+    page.locator("[data-audio-close]").click()
+    assert not dialog.is_visible()
+    page.locator("#playerToggle").click()
+    emit(page,"arMixPlayerState",{"schema":"arsonmix.player.v1",
+        "chooseOutput":True,"error":"Choose a verified MAIN output"})
+    page.locator("#playerChooseOutput").click()
+    assert dialog.is_visible() and dialog.count()==1
+    assert not page.evaluate("""()=>window.__actions.some(a=>
+      ['audioSetup','playerChooseOutput','audioDeviceApply'].includes(a.action))""")
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -870,6 +896,9 @@ def main():
         page.close()
         page=browser.new_page(viewport={"width":1366,"height":900})
         verify_io_defaults(page,out)
+        page.close()
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        verify_custom_recovery_routes(page,out)
         page.close()
         browser.close()
     print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output, muted bus remap, logical disclosure race and defaults")
