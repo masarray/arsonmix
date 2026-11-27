@@ -3614,9 +3614,8 @@ public:
         if(!retained)
             state->setProperty("latencySamples",nativePublisher_.latencySamples(epoch(),nativeAccepted_.pcmRevision));
         juce::Array<juce::var> allowed;
-        // Only expose operations backed by a real DSP lease. Dynamic
-        // FX_RETURN insertion is not available until a native VST3 owner
-        // can be prepared for its new ChannelId; do not advertise it.
+        // Only expose operations backed by a real DSP lease. The Add FX
+        // Return workflow prepares its wet-only owner before publication.
         if(!retained)
           for(const char* op: {"NATIVE_CREATE_GROUP_SELECTED",
                              "NATIVE_REMOVE_BUS","NATIVE_SET_BUS_MIX",
@@ -3707,6 +3706,10 @@ public:
         const bool pcmMeterValid=!retained &&
             nativeMeterEpoch_.load(std::memory_order_acquire)==epoch()&&
             nativeMeterRevision_.load(std::memory_order_acquire)==nativeAccepted_.pcmRevision;
+        // Zero-filled placeholders are not measured silence. Only the
+        // callback-observed graph revision authorizes operator diagnosis.
+        if(pcmMeterValid)state->setProperty("meterGraphRevision",
+            juce::String(std::to_string(nativeAccepted_.pcmRevision)));
         std::size_t meterIndex=0;
         for(const auto& ch:routing->channels) {
             auto row=std::make_unique<juce::DynamicObject>();

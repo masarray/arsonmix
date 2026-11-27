@@ -359,6 +359,47 @@ def exercise_dmx_conversion(browser, out):
     page.close()
 
 
+def exercise_create_fx_return(browser,out):
+    page=browser.new_page(viewport={"width":1366,"height":900})
+    errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
+    page.add_init_script(NATIVE_EVENTS+"""window.__actions=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){if(name==='arMixAction')window.__actions.push(payload);},
+        ...window.__nativeListenerMethods}};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled",timeout=15000)
+    state=admitted_session()
+    graph=state["graph"]
+    graph["capabilities"]["supportedOps"].append("CREATE_GROUP")
+    emit(page,"arMixConsoleSnapshot",state)
+    page.locator("#moreTools > summary").click()
+    page.locator("#addFx").click()
+    request=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeBusCreate').at(-1)")
+    assert request and request["purpose"]=="FX" and request["graphRevision"]=="2"
+    wet_id="9007199254740999"
+    wet=copy.deepcopy(graph["channels"][1])
+    wet.update(id=wet_id,name="FX Return 1",role="FX_RETURN",primaryOutId=MAIN,
+        inserts=[{"id":"new-wet-lease-1","catalogId":"armix.builtin.vocal-reverb-return.v1",
+                  "name":"Reverb-Sis Return","bypassed":False}])
+    assert page.locator('#tracks .strip[data-native-role="FX_RETURN"]').count()==0
+    emit(page,"arMixNativeBusAck",{"requestId":request["requestId"],"ok":True,
+        "createdId":wet_id,"graphRevision":"3"})
+    assert page.locator('#tracks .strip[data-native-role="FX_RETURN"]').count()==0
+    graph.update(revision="3",rosterRevision="4")
+    graph["channels"].append(wet)
+    graph["edges"].append(dict(graph["edges"][0],edgeId="9223372036854775991",
+        **{"from":wet_id,"to":MAIN,"primaryOutput":True,"gainLinear":1}))
+    graph["destinations"]=[{k:c[k] for k in ("id","role","name")} for c in graph["channels"]]
+    state["mixerSession"].update(routeRevision="3",rosterRevision="4",
+        channels=copy.deepcopy(graph["channels"]))
+    emit(page,"arMixConsoleSnapshot",state)
+    strip=page.locator('#tracks .strip[data-native-role="FX_RETURN"]')
+    strip.wait_for(state="attached",timeout=15000)
+    assert "Reverb-Sis Return" in strip.inner_text()
+    assert not errors,errors
+    page.close()
+
+
 def main():
     spec=importlib.util.spec_from_file_location(
         "native_bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -374,6 +415,7 @@ def main():
                     exercise(browser,out,width,height)
                     exercise_dmx(browser,out,width,height)
                 exercise_dmx_conversion(browser,out)
+                exercise_create_fx_return(browser,out)
             finally:
                 browser.close()
     print("PASS native SOF actual Chromium: exact EdgeId ON/OFF, PRE tap, gain, ACK/readback, no ghost patch or MAIN fader write; two viewports")

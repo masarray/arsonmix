@@ -7990,3 +7990,25 @@ test("FX Return creation requires prepared wet processor and exact independent r
  for(const ch of [{...row,role:"GROUP"},{...row,inserts:[]},{...row,primaryOutId:"7"}])
    assert.equal(stripVM.rosterReadbackSettlement(p,{...snap,graph:{...snap.graph,channels:[ch]}}),"WAIT");
 });
+
+test("routing diagnosis uses current callback meter evidence and preserves PRE semantics",()=>{
+ const src={id:"1",name:"Vocal",role:"INPUT",source:{portId:"in:2"},controls:{mute:false,faderDb:-60}};
+ const bus={id:"2",name:"AUX",role:"GROUP",controls:{mute:false,faderDb:0}};
+ const main={id:"3",name:"MAIN",role:"MAIN",controls:{mute:false,faderDb:0}};
+ const graph={revision:"7",mainChannelId:"3",channels:[src,bus,main],edges:[
+ {from:"1",to:"2",enabled:true,gainLinear:1,primaryOutput:false,tapStage:"PRE_FADER"},
+ {from:"2",to:"3",enabled:true,gainLinear:1,primaryOutput:true,tapStage:"POST_FADER"}]};
+ const telemetry={channelMeterGraphRevision:"7",channelMeterRmsPeak:{"1":{peakL:0,peakR:0},"3":{peakL:.1,peakR:.1}},
+ captureObserved:true,captureCallbackPeaks:[.5]};
+ const snapshot={admitted:true,graph,telemetry,device:{outputArmed:false,inputEndpoints:[{id:"in:2",active:true,callback:0}]}};
+ const msg=wireVM.routeDiagnostic(snapshot,"1");
+ assert.match(msg,/Vocal → AUX → MAIN/);assert.match(msg,/IN -6.0 dBFS/);
+ assert.match(msg,/POST silent/);assert.match(msg,/MAIN -20.0 dBFS/);
+ assert.match(msg,/outputs disarmed/);assert.match(msg,/physical sound unverified/);
+ assert.doesNotMatch(msg,/minimum fader/);
+ assert.match(wireVM.routeDiagnostic({...snapshot,telemetry:{...telemetry,channelMeterGraphRevision:"6"}},"1"),/POST N\/A · MAIN N\/A/);
+ graph.edges[0].tapStage="POST_FADER";
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/minimum fader/);
+ graph.edges[0].sendEnabled=false;
+ assert.match(wireVM.routeDiagnostic(snapshot,"1"),/no enabled unmuted route/);
+});
