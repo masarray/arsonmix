@@ -133,6 +133,25 @@ int main() {
         bool hit=true;
         assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
         assert(Media::probeCached(file,formats,cache,false,&hit)==info&&hit);
+        // Version 2 must retain the exact native double, not the rounded GUI JSON.
+        const auto slot=Media::cacheSlot(cache,file);
+        auto record=juce::JSON::parse(slot.loadFileAsString());
+        assert(static_cast<int>(record.getProperty("version",0))==2);
+        auto cachedRow=record.getProperty("metadata",{});
+        assert(cachedRow.getProperty("durationSeconds",{}).isString());
+        assert(cachedRow.getProperty("sampleRate",{}).isString());
+        // Old disposable records and malformed numeric strings are misses,
+        // repaired by a real probe without modifying the source media.
+        record.getDynamicObject()->setProperty("version",1);
+        assert(slot.replaceWithText(juce::JSON::toString(record,true)));
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&hit);
+        record=juce::JSON::parse(slot.loadFileAsString());
+        cachedRow=record.getProperty("metadata",{});
+        cachedRow.getDynamicObject()->setProperty("durationSeconds","0.3invalid");
+        assert(slot.replaceWithText(juce::JSON::toString(record,true)));
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&hit);
         assert(Media::probeCached(file,formats,cache,true,&hit)==info&&!hit);
         const auto originalTime=file.getLastModificationTime();
         assert(file.setLastModificationTime(juce::Time(originalTime.toMilliseconds()-10000)));

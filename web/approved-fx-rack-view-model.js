@@ -32,7 +32,8 @@
         index,insertId:insert.id,bypassed:insert.bypassed,effective,
         latencyTitle,
         pressed:String(effective),
-        title:action+" only insert "+(index+1),
+        title:action+" only insert "+(index+1)+
+          (!globalEnabled?" · Global FX is bypassed":!enabled?" · Rack is bypassed":""),
         label:action+" only FX insert "+(index+1)+" in "+name
       });
     }
@@ -566,7 +567,7 @@
     return {kind:"CONFIRMED",channelId:pending.channelId,
       slot:pending.slot,catalogId:fx.catalogId,instanceId:fx.id,name:fx.name};
   }
-  function nativePowerPlan(snapshot,{channelId:id,action,slot,
+  function nativePowerPlan(snapshot,{channelId:id,action,slot,insertId,
     pending=false,hardwareConfiguration}={}){
     const graph=snapshot?.graph;
     if(pending||snapshot?.admitted!==true||snapshot?.retained===true||
@@ -582,6 +583,7 @@
     if(rack?typeof ch.fxRackBypassed!=="boolean":
        !Number.isInteger(slot)||slot<0||slot>=8||
        typeof insert?.id!=="string"||!insert.id||
+       (insertId!==undefined&&insert.id!==insertId)||
        typeof insert.bypassed!=="boolean")return {kind:"UNAVAILABLE"};
     const bypassed=rack?!ch.fxRackBypassed:!insert.bypassed;
     return {kind:"READY",action:rack?"routingNativeFxRackBypass":

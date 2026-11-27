@@ -483,12 +483,12 @@ test("G-MV24 readback policy quarantines retained PCM without starving first M4 
    "retained ChannelId name/color/icon edits must finish on native ACK/readback");
  assert.match(expiration,/discardTransientNativeUi\(\)/,
    "real authority or physical device change still cancels cosmetic edit");
- assert.doesNotMatch(retained,/pendingNativeSources\.clear|pendingNativeFxPower=null|pendingWireGains\.clear|activeNativeSource=null/,
+ assert.doesNotMatch(retained,/pendingNativeSources\.clear|pendingNativeFxPowers\.clear|pendingWireGains\.clear|activeNativeSource=null/,
    "there must be no second partial cleanup list to drift from reconnect");
  for(const token of ["pendingNativeSources.clear()","pendingSourceQueue.clear()",
    "pendingM4RackPowers.clear()","pendingExternal.clear()",
    "pendingSlotPowers.clear()","pendingGlobalFx=null",
-   "pendingNativeFxPower=null","pendingWireGains.clear()",
+   "pendingNativeFxPowers.clear()","pendingWireGains.clear()",
    "pendingTrackDelete=null","pendingFxInsert=null","pendingIdentity"]){
    assert.ok(discard.includes(token),"retained cleanup must cover "+token);
  }
@@ -518,7 +518,7 @@ test("MV-12 approved bridge invalidates transient UI leases, not durable JUCE st
     "pendingNativeControl.clear()","liveFaderVisualTargets.clear()",
     "lastNativeControlSent.clear()","pendingWireGains.clear()",
     "pendingM4Controls.clear()","pendingM4RackPowers.clear()",
-    "pendingNativeFxPower=null","pendingGlobalFx=null",
+    "pendingNativeFxPowers.clear()","pendingGlobalFx=null",
     "pendingExternal.clear()","pendingSlotPowers.clear()",
     "activeNativeSource=null","pendingIdentity"] )
     assert.ok(cleanup.includes(token),"missing old transaction cancellation: "+token);

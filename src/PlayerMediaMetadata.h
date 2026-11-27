@@ -4,6 +4,8 @@
 #include <juce_core/juce_core.h>
 #include <algorithm>
 #include <cmath>
+#include <charconv>
+#include <limits>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -132,6 +134,22 @@ struct PlayerMediaMetadata {
         const auto slot=static_cast<unsigned long long>(file.getFullPathName().hashCode64())%8192;
         return directory.getChildFile(juce::String(static_cast<int>(slot))+".json");
     }
+    // Cache precision is independent of the GUI JSON projection. Decimal
+    // strings round-trip binary64 via locale-independent charconv; old v1
+    // rounded records are disposable and will be rebuilt from the source.
+    static juce::String cacheNumber(double value){
+        char buffer[64];
+        const auto encoded=std::to_chars(buffer,buffer+sizeof(buffer),value,
+            std::chars_format::general,std::numeric_limits<double>::max_digits10);
+        return encoded.ec==std::errc{}?juce::String::fromUTF8(buffer,static_cast<int>(encoded.ptr-buffer)):juce::String{};
+    }
+    static bool readCacheNumber(const juce::var& field,double& value){
+        if(!field.isString())return false;
+        const auto text=field.toString().toStdString();
+        if(text.empty()||text.size()>63)return false;
+        const auto decoded=std::from_chars(text.data(),text.data()+text.size(),value,std::chars_format::general);
+        return decoded.ec==std::errc{}&&decoded.ptr==text.data()+text.size()&&std::isfinite(value)&&value>0;
+    }
     static PlayerMediaMetadata probeCached(const juce::File& file,juce::AudioFormatManager& formats,
                                           const juce::File& directory,bool force=false,bool* hit=nullptr){
         if(hit)*hit=false;
@@ -142,17 +160,17 @@ struct PlayerMediaMetadata {
         const auto target=cacheSlot(directory,file);
         if(!force&&target.existsAsFile()&&target.getSize()<=16384){
             const auto doc=juce::JSON::parse(target.loadFileAsString());
-            if(static_cast<int>(doc.getProperty("version",0))==1&&
+            if(static_cast<int>(doc.getProperty("version",0))==2&&
                doc.getProperty("path","").toString()==path&&
                doc.getProperty("size","").toString()==size&&doc.getProperty("modified","").toString()==modified){
                 const auto row=doc.getProperty("metadata",{});
                 PlayerMediaMetadata value;
                 const auto str=[&](const char* key,int limit){return row.getProperty(key,"").toString().substring(0,limit);};
                 value.title=str("title",512);value.artist=str("artist",512);value.album=str("album",512);value.format=str("format",64);
-                value.seconds=static_cast<double>(row.getProperty("durationSeconds",0.0));
-                value.sampleRate=static_cast<double>(row.getProperty("sampleRate",0.0));
+                const bool validNumbers=readCacheNumber(row.getProperty("durationSeconds",{}),value.seconds)&&
+                    readCacheNumber(row.getProperty("sampleRate",{}),value.sampleRate);
                 const int channels=static_cast<int>(row.getProperty("channels",0));
-                if(value.title.isNotEmpty()&&value.format.isNotEmpty()&&std::isfinite(value.seconds)&&value.seconds>0&&
+                if(validNumbers&&value.title.isNotEmpty()&&value.format.isNotEmpty()&&std::isfinite(value.seconds)&&value.seconds>0&&
                    std::isfinite(value.sampleRate)&&value.sampleRate>0&&channels>0&&channels<=1024){
                     value.channels=static_cast<unsigned>(channels);
                     if(hit)*hit=true;
@@ -166,9 +184,14 @@ struct PlayerMediaMetadata {
            juce::String(file.getSize())!=size||juce::String(file.getLastModificationTime().toMilliseconds())!=modified)
             return value;
         auto doc=std::make_unique<juce::DynamicObject>();
-        doc->setProperty("version",1);doc->setProperty("path",path);
+        doc->setProperty("version",2);doc->setProperty("path",path);
         doc->setProperty("size",size);doc->setProperty("modified",modified);
-        doc->setProperty("metadata",value.project(0));
+        auto row=value.project(0);
+        const auto seconds=cacheNumber(value.seconds),rate=cacheNumber(value.sampleRate);
+        if(seconds.isEmpty()||rate.isEmpty())return value;
+        row.getDynamicObject()->setProperty("durationSeconds",seconds);
+        row.getDynamicObject()->setProperty("sampleRate",rate);
+        doc->setProperty("metadata",row);
         const auto json=juce::JSON::toString(juce::var(doc.release()),true);
         if(json.getNumBytesAsUTF8()<=16384&&directory.createDirectory().wasOk()){
             juce::TemporaryFile staging(target);

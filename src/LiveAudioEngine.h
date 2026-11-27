@@ -2425,8 +2425,11 @@ public:
         LiveDryRoutingLab::NativeBusResult fail{};
         fail.error=fx.hostUnavailable;
         auto* device=deviceManager_.getCurrentAudioDevice();
+        // STREAM only consumes the accepted post-FX MAIN PCM. It does not
+        // own a graph or a hardware patch; do not block same-device inserts.
+        // The publisher still fences independent monitor policy and stale revisions.
         if(independent_.active()||!attached_||!device||
-           !directFence_.permitted()||secondaryOutput_.armed()||
+           !directFence_.permitted()||
            handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)!=
@@ -2488,8 +2491,11 @@ public:
         LiveDryRoutingLab::NativeBusResult fail{};
         fail.error="NATIVE_VST3_HOST_UNAVAILABLE";
         auto* device=deviceManager_.getCurrentAudioDevice();
+        // STREAM only consumes the accepted post-FX MAIN PCM. It does not
+        // own a graph or a hardware patch; do not block same-device inserts.
+        // The publisher still fences independent monitor policy and stale revisions.
         if(independent_.active()||!attached_||!device||
-           !directFence_.permitted()||secondaryOutput_.armed()||
+           !directFence_.permitted()||
            handoff_.busy()||fxMovePhase_.load(std::memory_order_acquire)!=0||
            routeReconfiguring_.load(std::memory_order_acquire)||
            diagnosticRoute_.load(std::memory_order_acquire)!=
@@ -2527,7 +2533,7 @@ public:
                 std::move(instance),catalogId,chosen->name,
                 LiveDryRoutingLab::Block::hardFrameLimit);
             return dryRoutingLab_.attachNativeInsert(ep,pcmRevision,
-                rosterRevision,id,catalogId,std::move(lease),true);
+                rosterRevision,id,catalogId,std::move(lease),true,allOutputsDisarmed());
         } catch(...) {
             fail.error="NATIVE_VST3_VENDOR_PREPARE_FAILED";return fail;
         }
