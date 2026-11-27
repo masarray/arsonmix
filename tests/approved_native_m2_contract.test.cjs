@@ -3923,7 +3923,7 @@ test("O2 independent per-track external ASIO transactions and clear rejected ACK
  assert.match(src,/pendingExternal\.set\(id,/);
  assert.match(src,/pendingExternal\.delete\(id\)/);
  assert.match(src,/select\?\.removeAttribute\("aria-busy"\)/);
- assert.match(src,/if\(!pendingExternal\.has\(id\)\)select\.removeAttribute/);
+ assert.match(src,/if\(!pendingExternal\.has\(id\)&&select\.hasAttribute\?\.\("aria-busy"\)!==false\)\s*select\.removeAttribute\("aria-busy"\)/);
  const vm=read("web/approved-channel-strip-view-model.js");
  assert.match(vm,/SHARED with /);
  assert.match(vm,/signals SUM/);
@@ -8307,12 +8307,14 @@ function profileExternalProjection(fragment,deviceVM,stripVM){
  next.device.outputArmed=false;paint(next);const muted=snapshot();
  const unseen=idFor(tracks[23]);pendingExternal.set(unseen,{epoch:"17",acked:true,left:6,right:7});
  const stale=idFor(tracks[22]);pendingExternal.set(stale,{epoch:"16",acked:true,left:4,right:5});
- nodes.get(1).armBusy();paint(next);const settled=snapshot();
+ const waiting=idFor(tracks[0]);pendingExternal.set(waiting,{epoch:"17",acked:false,left:4,right:5});
+ nodes.get(1).armBusy();paint(next);const waitingState=snapshot();
+ pendingExternal.delete(waiting);paint(next);const settled=snapshot();
  // Rebuild a different bank and remove one physical assignment.
  nodes=new Map(tracks.slice(12).map(t=>[t.id,selectFor()]));
  next.raw.externalOutputs=rows.slice(0,23);paint(next);const rebuilt=snapshot();
  next.device.outputArmed=true;paint(next);const restored=snapshot();
- return {steady,live,muted,settled,rebuilt,restored};
+ return {steady,live,muted,waitingState,settled,rebuilt,restored};
 }
 
 test("External OUT steady readback indexes exact ChannelId and avoids unchanged DOM writes",()=>{
@@ -8323,6 +8325,8 @@ test("External OUT steady readback indexes exact ChannelId and avoids unchanged 
  assert.deepEqual(p.steady,{rowIdReads:2880,domWrites:0});
  assert.equal(p.live.nodes[0][1][2].status,"LIVE");
  assert.equal(p.muted.nodes[0][1][2].status,"MUTED");
+ assert.equal(p.waitingState.nodes[0][1][6],true,"unacknowledged request must stay busy");
+ assert.equal(p.waitingState.pending.length,1);
  assert.deepEqual(p.settled.pending,[]);
  assert.equal(p.settled.messages.length,1);
  assert.equal(p.settled.nodes[0][1][6],false);
