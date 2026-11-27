@@ -50,7 +50,7 @@ def assert_manager_controls(manager, same_row=True):
           background:s.backgroundColor,border:s.borderTopColor,font:s.fontSize};
       });
     }""")
-    assert all(abs(c["h"]-28)<=.5 and c["radius"]=="5px" and c["box"]=="border-box" and c["w"]>0 for c in controls),controls
+    assert all(abs(c["h"]-34)<=.5 and abs(float(c["radius"].removesuffix("px"))-c["h"]/2)<=.5 and c["box"]=="border-box" and c["w"]>0 for c in controls),controls
     fields=controls[:3]
     if same_row:
         assert max(c["y"] for c in fields)-min(c["y"] for c in fields)<=.5,fields
@@ -234,7 +234,7 @@ def exercise(browser,out,width,height,tap,close_reference):
         for key in ("backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
             assert face[key]==controls["add"][key],(key,face,controls["add"])
     for face in controls["filters"]:
-        assert face["height"]=="28px" and face["borderRadius"]=="5px",face
+        assert face["height"]=="34px" and face["borderRadius"]=="17px",face
         assert face["backgroundColor"]=="rgb(13, 32, 42)",face
         if controls["bank"]:
             for key in ("backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
