@@ -78,7 +78,7 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_COMP_UNSUPPORTED_AUDIO_FORMAT","NATIVE_COMP_PREPARE_REJECTED",
         "NATIVE_COMP_PREPARE_EXCEPTION","Saved native Compressor state rejected; graph unchanged",
         prepareNativeBuiltInFx<ChannelCompressorProcessor>},
-    NativeBuiltInFx{AutoDuckerProcessor::catalogIdentity,"Auto Ducker","Dynamics",false,8000.,384000.,
+    NativeBuiltInFx{AutoDuckerProcessor::catalogIdentity,"Auto Ducker","Dynamics",true,8000.,384000.,
         "NATIVE_DUCKER_HOST_UNAVAILABLE","NATIVE_DUCKER_DEVICE_CHANGED",
         "NATIVE_DUCKER_UNSUPPORTED_AUDIO_FORMAT","NATIVE_DUCKER_PREPARE_REJECTED",
         "NATIVE_DUCKER_PREPARE_EXCEPTION","Saved Auto Ducker state rejected; graph unchanged",

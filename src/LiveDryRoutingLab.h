@@ -1426,10 +1426,12 @@ public:
             reply.error="AUTO_DUCKER_PENDING_OR_INVALID_SOURCES";return reply;
         }
         auto settings=d->acceptedSettings();
+        const auto previous=settings;
         settings.sources=selection.sources;settings.count=selection.count;
         for(std::size_t i=0;i<settings.count;++i)
             if(settings.sources[i]==target.value||
-               !nativeAccepted_.graph.roster.find(ChannelId{settings.sources[i]})){
+               (!nativeAccepted_.graph.roster.find(ChannelId{settings.sources[i]})&&
+                !std::binary_search(previous.sources.begin(),previous.sources.begin()+previous.count,settings.sources[i]))){
                 reply.error="AUTO_DUCKER_SOURCE_UNAVAILABLE";return reply;
             }
         try{

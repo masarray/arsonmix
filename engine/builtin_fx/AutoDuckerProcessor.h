@@ -22,8 +22,7 @@ private:
     std::span<const std::uint64_t> ids_;
     const std::span<const std::uint64_t>* previous_;
 };
-// Qualification adapter. Hidden from picker until native editor/source
-// admission and accepted snapshot plumbing are qualified end-to-end.
+// Native insert; immutable sidechain selection and acknowledged DSP edits.
 class AutoDuckerProcessor final : public juce::AudioProcessor,
                                   public armix::mixer::RealtimeNativeFxControl {
 public:
@@ -122,13 +121,19 @@ public:
     bool queueSettings(const Settings& s,std::uint64_t request) noexcept {
         Edit e{};e.settings=s;e.request=request;e.rate=rate_;
         // Structural source edits require a graph transaction, not a scalar mailbox.
-        return ready_&&request&&s.validSources()&&s.sources==accepted_.sources&&
-               s.count==accepted_.count&&AutoDuckerCore::prepareSettings(rate_,s.dynamics,e.prepared)&&queue_.push(e);
+        if(!ready_||!request||!s.validSources()||s.sources!=accepted_.sources||
+           s.count!=accepted_.count||!AutoDuckerCore::prepareSettings(rate_,s.dynamics,e.prepared))return false;
+        // Queue pop -> completion push is also an in-flight edit. Saving or
+        // topology edits must never mistake that interval for quiescence.
+        if(editInFlight_.exchange(true,std::memory_order_acq_rel))return false;
+        if(queue_.push(e))return true;
+        editInFlight_.store(false,std::memory_order_release);return false;
     }
     bool pollCompletion(Completion& out) noexcept {
         if(!completion_.pop(out))return false;
         if(out.applied)accepted_.dynamics=out.settings.dynamics;
         out.settings=accepted_;
+        editInFlight_.store(false,std::memory_order_release);
         return true;
     }
     Settings acceptedSettings() const noexcept {return accepted_;}
@@ -156,7 +161,7 @@ public:
         return false;
     }
     void sealForRealtime() noexcept override {published_=true;}
-    bool stateSnapshotQuiescent() const noexcept override {return queue_.empty()&&completion_.empty();}
+    bool stateSnapshotQuiescent() const noexcept override {return !editInFlight_.load(std::memory_order_acquire)&&queue_.empty()&&completion_.empty();}
     void getStateInformation(juce::MemoryBlock& out) override {
         juce::MemoryOutputStream w(out,false);
         w.writeInt(0x41445543);w.writeInt(2);w.writeInt(static_cast<int>(accepted_.count));
@@ -204,6 +209,7 @@ private:
     Settings applied_{},accepted_{};
     std::atomic<float> gain_{1.f};
     std::atomic<bool> keyValid_{false};
+    std::atomic<bool> editInFlight_{false};
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free&&
                   std::atomic<float>::is_always_lock_free&&std::atomic<int>::is_always_lock_free&&
                   std::atomic<bool>::is_always_lock_free);

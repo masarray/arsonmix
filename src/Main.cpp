@@ -6231,7 +6231,56 @@ private:
                        next.sources[static_cast<std::size_t>(k)]==req.channel)return reject("INVALID_SOURCE");
                 std::sort(next.sources.begin(),next.sources.begin()+next.count);
                 if(!next.validSources())return reject("DUPLICATE_OR_INVALID_SOURCE");
-                if(req.unbound)return reject("CONNECT_AUDIO_TO_EDIT_TRIGGER_ROUTING");
+                if(req.unbound){
+                    if(logicalMixer_.readOnly())return reject("OFFLINE_WORKSPACE_READ_ONLY");
+                    const auto& workspace=logicalMixer_.workspace();
+                    const auto& roster=workspace.document().roster;
+                    const auto previous=d->acceptedSettings();
+                    for(std::size_t k=0;k<next.count;++k)
+                        if(!roster.find({next.sources[k]})&&
+                           !std::binary_search(previous.sources.begin(),previous.sources.begin()+previous.count,next.sources[k]))
+                            return reject("AUTO_DUCKER_SOURCE_UNAVAILABLE");
+                    // Validate the UNION of all existing Ducker dependencies
+                    // against the offline roster. No hardware or PCM required.
+                    armix::mixer::DynamicGraphRequest candidate;
+                    for(const auto& row:roster.channels()){
+                        for(std::size_t slot=0;slot<row.insertCatalogIds.size();++slot){
+                            if(row.insertCatalogIds[slot]!=D::catalogIdentity)continue;
+                            D::Settings routes{};
+                            if(row.id.value==req.channel&&slot==static_cast<std::size_t>(req.slot))routes=next;
+                            else {
+                                armix::session::StoredInsert other;
+                                std::unique_ptr<juce::AudioProcessor> processor;
+                                if(prepareLogicalFx(workspace,row.id,slot,other,processor).isNotEmpty())
+                                    return reject("AUTO_DUCKER_SAVED_SOURCE_STATE_INVALID");
+                                auto* fx=dynamic_cast<D*>(processor.get());
+                                if(!fx)return reject("AUTO_DUCKER_SAVED_SOURCE_STATE_INVALID");
+                                routes=fx->acceptedSettings();
+                            }
+                            for(std::size_t k=0;k<routes.count;++k){
+                                const armix::mixer::ChannelId source{routes.sources[k]};
+                                if(!roster.find(source))continue;
+                                auto& deps=candidate.postFaderSidechains;
+                                if(std::none_of(deps.begin(),deps.end(),[&](const auto& dep){
+                                    return dep.source==source&&dep.target==row.id;
+                                }))deps.push_back({source,row.id});
+                            }
+                        }
+                    }
+                    armix::mixer::DynamicPreparedMixerBlock graph;
+                    armix::mixer::DynamicGraphError fault;
+                    if(!armix::mixer::DynamicPreparedMixerBlock::compile(roster,candidate,graph,fault))
+                        return reject(fault.fault==armix::mixer::DynamicGraphFault::cycle?
+                            "AUTO_DUCKER_ROUTING_CYCLE":"AUTO_DUCKER_GRAPH_REJECTED");
+                    if(!d->setUnpublishedSettings(next))return reject("AUTO_DUCKER_INVALID_SETTINGS");
+                    juce::MemoryBlock bytes;d->getStateInformation(bytes);
+                    auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+                    if(!logicalMixer_.saveFx(std::move(saved),std::move(bytes),[safe,args](juce::String err){
+                        if(safe!=nullptr)safe->emitDuckerReply(args,"arMixBuiltinDuckerAck",
+                            err.isEmpty()?"APPLIED":"REJECTED",err);
+                    }))return reject("OFFLINE_FX_SAVE_FAILED");
+                    return;
+                }
                 const auto error=engine_.setNativeDuckerSources(owner,{req.channel},
                     static_cast<std::size_t>(req.slot),req.rawInstance.toString(),next);
                 if(error.isNotEmpty())return reject(error);

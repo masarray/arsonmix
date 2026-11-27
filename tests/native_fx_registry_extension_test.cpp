@@ -544,7 +544,7 @@ static void verifyGraphicEq31Processor() {
 static void verifyAutoDuckerProcessor() {
     using D=armix::builtin_fx::AutoDuckerProcessor;
     const auto* fx=armix::builtin_fx::findNativeBuiltInFx(D::catalogIdentity);
-    assert(fx&&juce::String(fx->name)=="Auto Ducker"&&!fx->showInPicker);
+    assert(fx&&juce::String(fx->name)=="Auto Ducker"&&fx->showInPicker);
     auto p=fx->prepare(48000.,128,nullptr,0);
     auto* d=dynamic_cast<D*>(p.get());assert(d&&d->getLatencySamples()==0);
     D::Settings s{};s.sources[0]=7;s.sources[1]=9007199254740993ULL;s.count=2;
@@ -572,6 +572,9 @@ static void verifyAutoDuckerProcessor() {
     {armix::mixer::AutoDuckerKeyScope scope({},99,128,entries);other->processBlock(pcm,midi);}
     D::Completion ack{};assert(other->pollCompletion(ack)&&ack.applied&&ack.requestId==10);
     assert(other->acceptedSettings().dynamics.depthDb==6.f&&other->observedKeyValid());
+    D::Meter meter{};assert(other->readMeter(meter)&&meter.serial>0);
+    assert(meter.ids[0]==7&&meter.available[0]&&meter.ids[1]==9007199254740993ULL&&!meter.available[1]);
+    assert(meter.gain<=1.f&&meter.gain>=0.f&&other->stateSnapshotQuiescent());
 }
 int main() {
     verifyAutoDuckerProcessor();

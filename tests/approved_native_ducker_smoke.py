@@ -1,0 +1,101 @@
+"""Actual compiled native editor, emulated JUCE boundary. Native PCM is separately tested."""
+import copy
+import importlib.util
+from pathlib import Path
+import tempfile
+from playwright.sync_api import sync_playwright
+from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN
+from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
+
+ROOT = Path(__file__).resolve().parents[1]
+ID = "armix.builtin.auto-ducker.v1"
+INSTANCE = "auto-ducker-native-1"
+MIC2 = "9007199254740997"
+DEFAULTS = dict(thresholdDb=-34, depthDb=12, attackMs=18, holdMs=220,
+                releaseMs=480, hysteresisDb=5, highPassHz=120, lowPassHz=5000)
+
+def latest(page, action):
+    return page.evaluate("a=>window.__actions.filter(x=>x.action===a).at(-1)", action)
+
+def packet(action, **kw):
+    return {**{k: action[k] for k in ("requestId","channelId","deviceEpoch","graphRevision","instanceId")}, **kw}
+
+def readback(page, sources, settings=DEFAULTS, serial="1"):
+    req = latest(page, "nativeDuckerSnapshot")
+    assert req, "native DSP readback absent"
+    emit(page,"arMixBuiltinDuckerSnapshot",packet(req,status="ACCEPTED",offline=False,
+        settings=settings,sources=sources,meterSerial=serial,gainReductionDb=8,
+        phase=2,meters=[dict(id=x,available=True,dbfs=-18) for x in sources]))
+
+def main():
+    spec=importlib.util.spec_from_file_location("bundle",ROOT/"scripts/build_approved_native_gui.py")
+    bundle=importlib.util.module_from_spec(spec);spec.loader.exec_module(bundle)
+    with tempfile.TemporaryDirectory(prefix="arsonmix-ducker-") as directory,sync_playwright() as pw:
+        out=Path(directory);bundle.stage(out)
+        browser=pw.chromium.launch(headless=True)
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        errors=[];page.on("pageerror",lambda e:errors.append(str(e)))
+        page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];window.__actions=[];
+          window.__JUCE__={backend:{emitEvent(n,p){if(n==='arMixConsoleIntent')window.__nativeIntents.push(p);
+            if(n==='arMixAction')window.__actions.push(p);},addEventListener(n,c){const old=window.__nativeListeners.get(n);
+            window.__nativeListeners.set(n,old?p=>{old(p);c(p);}:c);}}};""")
+        page.goto((out/"index.html").as_uri())
+        project_approved_editor_for_component_smoke(page)
+        page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled && window.ArSonMixNativeDucker")
+        state=snapshot();g=state["graph"]
+        g["capabilities"]["supportedOps"]+=["LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"]
+        mic=copy.deepcopy(g["channels"][0]);mic.update(id=MIC2,name="MIC 2",inserts=[],sends=[])
+        g["channels"].insert(2,mic)
+        g["destinations"]=[{k:c[k] for k in ("id","name","role")} for c in g["channels"]]
+        g["edges"].append(dict(edgeId="9223372036854775814",**{"from":MIC2,"to":MAIN},
+            primaryOutput=True,gainLinear=1,tap="POST_FADER",enabled=True,signalKind="AUDIO"))
+        state["mixerSession"]["channels"]=copy.deepcopy(g["channels"])
+        emit(page,"arMixConsoleSnapshot",state)
+        emit(page,"arMixCatalog",dict(items=[],builtIns=[dict(id=ID,name="Auto Ducker",category="Dynamics",showInPicker=True)]))
+        track=page.evaluate("id=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(t=>window.__ARMIX_NATIVE_M2__.nativeIdFor(t)===id)?.id",RECEIVER)
+        assert track is not None
+        strip=page.locator(f'#tracks .strip[data-id="{track}"]')
+        strip.locator(".fx-pick.empty").first.click()
+        picker=page.locator(f'#fastResults [data-fast-id="{ID}"]')
+        picker.wait_for(state="visible");assert picker.count()==1
+        picker.click()
+        intents=page.evaluate("()=>window.__nativeIntents.filter(x=>x.operation==='LOAD_INSERT')")
+        assert len(intents)==1 and intents[0]["payload"]["catalogId"]==ID
+        editor=page.locator("#mxNativeDucker");assert editor.is_hidden()
+        g.update(revision="3",rosterRevision="3")
+        g["channels"][1]["fxRackBypassed"]=False
+        g["channels"][1]["inserts"]=[dict(id=INSTANCE,catalogId=ID,name="Auto Ducker",bypassed=False)]
+        state["mixerSession"].update(routeRevision="3",rosterRevision="3",channels=copy.deepcopy(g["channels"]))
+        ack(page,state,intents[0]);emit(page,"arMixConsoleSnapshot",state)
+        editor.wait_for(state="visible")
+        readback(page,[])
+        editor.get_by_role("button",name="Edit sources").click()
+        assert editor.get_by_label("MAIN Downstream cycle",exact=False).is_disabled()
+        editor.get_by_text("CH03",exact=True).click()
+        editor.get_by_text("MIC 2",exact=True).click()
+        editor.get_by_role("button",name="Apply",exact=True).click()
+        req=latest(page,"nativeDuckerSources")
+        assert req and set(req["sources"])=={SOURCE,MIC2}
+        assert editor.locator(".mx-ducker-source").count()==0,"optimistic trigger readback"
+        g["revision"]="4";state["mixerSession"]["routeRevision"]="4"
+        emit(page,"arMixConsoleSnapshot",state)
+        emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
+        readback(page,[SOURCE,MIC2],serial="2")
+        assert editor.locator(".mx-ducker-source").count()==2
+        assert editor.locator(".mx-ducker-gr").inner_text()=="-8.0 dB"
+        editor.get_by_label("Ducking preset").select_option("Gentle")
+        req=latest(page,"nativeDuckerSet");assert req["settings"]["depthDb"]==6
+        emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
+        readback(page,[SOURCE,MIC2],settings=req["settings"],serial="3")
+        assert editor.locator(".mx-ducker-source").count()==2
+        editor.screenshot(path=str(ROOT/"auto-ducker-native-editor.png"))
+        editor.get_by_role("button",name="Edit sources").click()
+        editor.get_by_label("Search trigger sources").fill("MIC 2")
+        assert editor.get_by_text("MIC 2",exact=True).count()>=1
+        editor.screenshot(path=str(ROOT/"auto-ducker-native-picker.png"))
+        editor.get_by_role("button",name="Cancel",exact=True).click()
+        editor.get_by_role("button",name="Close Auto Ducker").click()
+        assert editor.is_hidden()
+        assert not errors,errors
+        browser.close()
+if __name__=="__main__":main()
