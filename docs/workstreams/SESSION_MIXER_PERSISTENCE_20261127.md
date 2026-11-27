@@ -12,3 +12,8 @@ Base: canonical integration #899 at 32acb5ee47d09f01c53ceba4b25cb9b7f4eda87a; ma
 - Header/rack menu offers save/open/insert; individual FX can export without removing it; deactivation remains an explicit separate operation after successful archive write. Native receipt only after operation returns.
 - Preserve disarmed capture gate, registered VST3 identity, graph/roster/instance checks, atomic archive behavior, one approved GUI and one PCM graph.
 - Regression contracts added to existing approved native M2 suite. Native compile, Chromium interactions, Windows restart and hardware confirmation remain required; no PASS claimed at source creation. No installer requested.
+
+## Additional persistence audit
+- The previous timer consumed the dirty audio-device flag before disk success. Keep it pending on failure, retry no faster than five seconds, and flush the verified machine profile before normal driver teardown.
+- Join the final .smix worker and consume its completion before stopping the engine, so an actual failed shutdown commit is recorded, not silently discarded. Do not save over a retained/faulted session or force a pending driver to open.
+- Request read-only MON inventory on startup even without an admitted audio route. Do not authorize an endpoint based on saved text. Normalized .arfx filenames cannot overwrite a path the user did not explicitly confirm.

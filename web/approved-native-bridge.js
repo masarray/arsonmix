@@ -5967,7 +5967,8 @@
       settleAdditionalOutput(live);
       paintAdditionalOutput();
       const current=protocol.secondaryOutputView(hardware,live);
-      if(!extraAutoInventoryStarted&&mainMonitorAllowed()&&document.querySelector("[data-main-monitor]")){
+      // Read saved identity even when audio is offline; discovery has no ARM side effect.
+      if(!extraAutoInventoryStarted&&document.querySelector("[data-main-monitor]")){
         extraAutoInventoryStarted=true;
         if(!extraInventoryKnown&&!extraInventoryPending)refreshAdditionalInventory();
       }

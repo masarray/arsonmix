@@ -112,3 +112,14 @@ test('bounded retry + callback watchdog cannot spin in realtime PCM',()=>{
   assert.match(main,/AudioContinuityRetry wasapiRecovery_/);
   assert.match(cmake,/P0DisplayIdlePreservesAudioAndDeviceRecoveryIntent/);
 });
+
+test('approved machine profile remains pending on IO failure and flushes on normal exit',()=>{
+  const persistence=main.split('void persistApprovedAudioSettings(bool shutdown)')[1]
+    .split('void timerCallback() override')[0];
+  assert.match(persistence,/if\(!shutdown&&now<deviceSettingsRetryAt_\)return/);
+  assert.match(persistence,/deviceSettingsRetryAt_=now\+5000/);
+  assert.ok(persistence.indexOf('return; // keep dirty')<persistence.indexOf('deviceSettingsDirty_ = false'));
+  assert.ok(persistence.indexOf('lastAudioXml_=text')<persistence.indexOf('deviceSettingsDirty_ = false'));
+  assert.match(main,/if\(!updaterProbeMode_\)persistApprovedAudioSettings\(true\)/);
+  assert.match(main,/mixerSessionWorker_\.finishForShutdown\(true\);\s*engine_\.stop\(\)/);
+});

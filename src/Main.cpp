@@ -859,6 +859,8 @@ public:
         // lose DSP ACK/readback. Do not unregister it until final teardown.
         browser_.onNativeEvent=nullptr;
         engine_.devices().removeChangeListener (this);
+        // Flush the last verified machine profile before the driver is closed.
+        if(!updaterProbeMode_)persistApprovedAudioSettings(true);
         // An in-flight durable HEAD must finish and adopt its workspace.
         // Only an incomplete CONTROL capture may be abandoned.
         if(pendingRetainedFxCapture_ && !pendingRetainedFxCapture_->committing)
@@ -883,6 +885,9 @@ public:
             if(error.isNotEmpty())
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
         }
+        // Wait for the final checkpoint result while CONTROL is still valid.
+        // The worker owns only immutable bytes and never waits for audio/UI.
+        mixerSessionWorker_.finishForShutdown(true);
         engine_.stop();
         // No UI/engine capture in the read-only worker. Join after audio
         // teardown so a slow endpoint enumeration cannot keep sound alive.
@@ -1198,6 +1203,7 @@ private:
         }
     }
     bool deviceSettingsDirty_ = false;
+    std::uint64_t deviceSettingsRetryAt_=0;
     // P0: last verified DIRECT WASAPI profile survives missing hardware;
     // never replace it with JUCE's incidental default after hotplug.
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> verifiedWasapiSetup_;
@@ -6234,12 +6240,18 @@ private:
              token,slot,save,deactivate,append](const juce::FileChooser& picker){
                 if(!safe)return;
                 auto file=picker.getResult();
-                if(save&&file!=juce::File{}&&file.getFileExtension().isEmpty())file=file.withFileExtension(".arfx");
                 juce::String error;
+                if(save&&file!=juce::File{}&&file.getFileExtension().isEmpty()) {
+                    file=file.withFileExtension(".arfx");
+                    // The chooser may have confirmed a different path. Never
+                    // overwrite the normalized name without explicit consent.
+                    if(file.exists())error="Choose the existing .arfx file explicitly to overwrite it";
+                }
                 bool archived=false;
                 if(file!=juce::File{}){
                     try{
-                        if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
+                        if(error.isNotEmpty()){} // preserve the file-name rejection
+                        else if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
                            safe->mixerSessionWorker_.busy()||safe->catalog_.busy()||safe->logicalVendorEditor_||
                            !safe->engine_.rackFileAllowed(ep,rev,roster,channel))
                             error="Device or rack changed; retry";
@@ -11870,6 +11882,38 @@ private:
         }
     }
 
+    // CONTROL only. A failed disk write remains pending, with bounded retry;
+    // never serialize an absent/temporary/unverified driver.
+    void persistApprovedAudioSettings(bool shutdown) {
+        if (deviceSettingsDirty_) {
+            const auto now=monotonicMilliseconds();
+            if(!shutdown&&now<deviceSettingsRetryAt_)return;
+            auto* activeDevice=engine_.devices().getCurrentAudioDevice();
+            if(engine_.hasTemporaryDiagnosticDevice()||engine_.independentClockActive()||
+               !engine_.directRouteAuthorized()||engine_.hasRetainedUnboundMixer()||
+               deviceApply_.busy()||!(activeDevice != nullptr && activeDevice->isOpen()))return;
+            auto xml=engine_.devices().createStateXml();
+            if(!xml)return;
+            const auto text=xml->toString();
+            if(text!=lastAudioXml_) {
+                const auto machineFolder=machineSettingsDirectory();
+                if(machineFolder.createDirectory().failed()||
+                   !machineFolder.getChildFile("audio-devices.xml").replaceWithText(text)) {
+                    const bool firstFailure=deviceSettingsRetryAt_==0;
+                    deviceSettingsRetryAt_=now+5000;
+                    if(firstFailure||shutdown) {
+                        diagnostics_.record("DEVICE_SAVE_FAIL","Cannot persist audio setup in machine AppData");
+                        emitNotice("Audio setup is active but could not be saved on this PC. Check AppData folder permissions.",true);
+                    }
+                    return; // keep dirty and retain the prior verified file
+                }
+                lastAudioXml_=text;
+            }
+            deviceSettingsDirty_ = false;
+            deviceSettingsRetryAt_=0;
+        }
+    }
+
     void timerCallback() override
     {
 #if defined(_WIN32)
@@ -12154,38 +12198,7 @@ private:
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (health,evidence.memory), true));
         }
 
-        if (deviceSettingsDirty_)
-        {
-            // Keep a newly approved device selection pending while the
-            // driver is temporarily closed; never serialize JUCE's empty
-            // default and never silently discard the unsaved user binding.
-            auto* activeDevice=engine_.devices().getCurrentAudioDevice();
-            if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
-                engine_.directRouteAuthorized() && !engine_.hasRetainedUnboundMixer() &&
-                !deviceApply_.busy() &&
-                activeDevice != nullptr && activeDevice->isOpen())
-            if (auto xml = engine_.devices().createStateXml())
-            {
-                deviceSettingsDirty_ = false;
-                const auto text = xml->toString();
-                if (text != lastAudioXml_)
-                {
-                    // A clean portable PC has no AppData/AR-MIX-Studio
-                    // directory yet. Create the machine-local parent before
-                    // writing the approved ASIO/WASAPI device XML.
-                    const auto machineFolder = machineSettingsDirectory();
-                    const auto folderReady = machineFolder.createDirectory().wasOk();
-                    if (!folderReady ||
-                        !machineFolder.getChildFile ("audio-devices.xml").replaceWithText (text))
-                    {
-                        diagnostics_.record ("DEVICE_SAVE_FAIL",
-                            "Cannot persist audio setup in machine AppData");
-                        emitNotice ("Audio setup is active but could not be saved on this PC. Check AppData folder permissions.", true);
-                    }
-                    else lastAudioXml_ = text;
-                }
-            }
-        }
+        persistApprovedAudioSettings(false);
         // A hidden/reloading WebView MUST NOT suspend the native player's
         // control-thread ACK, Auto Next, or A-B loop. Browser events are
         // optional observers; JUCE transport is the authority.
