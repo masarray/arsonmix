@@ -108,6 +108,7 @@ def verify_workspace_restore(browser, out):
       e.name!=='arMixConsoleIntent'&&e.name!=='arMixLogicalIntent'&&
       e.payload?.action!=='routingM4Control')""")
     assert not errors, errors
+    print('PASS LIVE-OPS workspace restore: 12 channels, all banks, cap/range/readout, stale snapshot rejection')
     page.close()
 
 
@@ -291,7 +292,9 @@ def main():
                     physicalLoopback=dict(deviceEpoch=71,inputs=[1],outputs=[0,1])),
             })
             latency=page.locator('[data-audio-latency]')
-            assert 'Estimated total I/O 14.50 ms' in latency.inner_text()
+            assert latency.inner_text().strip()==(\
+                'Round-trip (estimated) 14.50 ms · Device 12.50 ms · FX/PDC 2.00 ms'), latency.inner_text()
+            assert 'Electrical round-trip requires physical loopback calibration' in latency.get_attribute('title')
             page.get_by_role('tab',name='Diagnostics').click()
             details=page.locator('[data-audio-loopback-details]')
             details.locator('summary').click()
