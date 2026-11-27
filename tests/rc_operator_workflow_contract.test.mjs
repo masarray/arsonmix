@@ -4,6 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url);
 const read=file=>readFileSync(new URL('../'+file,import.meta.url),'utf8');
 const host=read('src/Main.cpp');
 const preset=read('site/preview-v2/assets/mixer-builtin-fx-preset-bar.js');
@@ -148,4 +150,29 @@ test('Harmonice wheel keeps V6 detents on precision ranges and accumulates held 
   fire(-120,true);assert.equal(draft,start+4*coarse);
   assert.equal(edits,6);
  }
+});
+
+
+test('matrix click toggles accepted exact mono/stereo pair, not a draft or mandatory bus',()=>{
+ const vm=require('../web/approved-device-view-model.js');
+ const none={label:'None',mode:'NONE',left:-1,right:-1},a={label:'A',mode:'STEREO',left:0,right:1},
+ b={label:'B',mode:'STEREO',left:1,right:2},m={label:'Mic',mode:'MONO',left:2,right:-1};
+ const choices=[none,a,b,m];
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'None',format:'STEREO'},choices,1,'input'),a);
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'B',format:'STEREO'},choices,1,'input'),none);
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'B',format:'STEREO'},choices,2,'input'),none);
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'Mic',format:'MONO'},choices,2,'input'),none);
+ assert.equal(vm.matrixCrosspointChoice({editable:true,selected:'A',bus:true},choices,0,'output'),null);
+ assert.equal(vm.matrixCrosspointChoice({editable:false,selected:'None'},choices,0,'output'),null);
+});
+test('operator workflow stays on native authority: direct matrix, MON mirror, grouping and buffer',()=>{
+ assert.match(bridge,/applyMatrixRow\(side,row.id,choice.label,lease,choice,true\)/);
+ assert.match(bridge,/selects=document.querySelectorAll\("\[data-main-monitor\]"\)/);
+ assert.match(bridge,/endpoint.dataset.mainMonitor="true"/);
+ assert.match(bridge,/requestRibbonBuffer\(value\)[\s\S]*?sendDeviceApply\(\)/);
+ assert.match(bridge,/requestUngroupSelected\(\)[\s\S]*?requestNativeBusDelete\(fresh\)/);
+ assert.doesNotMatch(bridge,/Verified Shows only · full dynamic-session autosave/);
+ const engine=read('src/LiveAudioEngine.h');
+ assert.match(engine,/DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"[\s\S]*?return editNativeInputTopology\(epoch/);
+ assert.match(read('scripts/clean_ribbon_v6.css'),/aria-selected=true\]\{[^}]*color:#071b24!important/);
 });

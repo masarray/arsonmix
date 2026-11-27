@@ -2825,8 +2825,24 @@ public:
             if(!std::isfinite(rate)||rate<8000.||rate>384000.)return fail;
             const bool stopped=allOutputsDisarmed();
             const int fade=static_cast<int>(std::ceil(rate*.008));
-            return dryRoutingLab_.removeNativeInputChannel(
+            auto result=dryRoutingLab_.removeNativeInputChannel(
                 epoch,pcmRevision,rosterRevision,id,stopped,{},fade,valid);
+            // Channel-local retirement is preferred. If topology/PDC or a
+            // bounded fade prevents continuity, the publisher has NOT
+            // committed and has cancelled the ramp. Reuse the ordinary
+            // roster publication gate instead of demanding operator MUTE.
+            const juce::String reason(result.error ? result.error : "");
+            if(!stopped&&!result.accepted&&valid()&&
+               nativeTopologyMatches(epoch,pcmRevision)&&
+               (reason=="DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"||
+                reason=="DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED")){
+                return editNativeInputTopology(epoch,"NATIVE_TRACK_DEVICE_UNAVAILABLE",
+                    "NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
+                        return dryRoutingLab_.removeNativeInputChannel(
+                            epoch,pcmRevision,rosterRevision,id,true,beforePublish,0,valid);
+                    });
+            }
+            return result;
         }catch(...){
             fail.error="NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION";return fail;
         }

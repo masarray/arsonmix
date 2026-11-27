@@ -357,24 +357,10 @@ def verify_output_matrix_direct_patch(page,out):
     cells=row.locator(".armix-patch-cell")
     assert cells.nth(0).is_disabled() and cells.nth(1).is_disabled()
     assert cells.nth(2).is_enabled() and cells.nth(3).is_enabled()
+    # Direct matrix click dispatches once, no Apply or speculative mark.
     cells.nth(2).click()
-    assert cells.nth(2).get_attribute("data-mark")=="L"
-    assert cells.nth(3).get_attribute("data-mark")=="R"
-    assert cells.nth(2).get_attribute("data-draft")=="true"
-    cells.nth(2).click()
-    assert row.get_by_label("CH03 assignment").input_value()=="None"
-    assert not row.get_by_role("button",name="Apply",exact=True).is_enabled()
-    cells.nth(3).click()
-    assert row.get_by_role("button",name="Apply",exact=True).is_enabled()
-    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingExternalOutput')")
-    # Independent preset metadata redraw must not lose a physical draft.
-    inventory["namedPatches"]={"revision":1,"readOnly":False,"entries":[]}
-    emit(page,"arMixAudioDeviceInventory",inventory)
-    assert cells.nth(2).get_attribute("data-draft")=="true"
-    row.get_by_role("button",name="Apply",exact=True).click()
-    dialog=page.get_by_role("dialog",name="External output")
-    assert dialog.is_visible()
-    dialog.get_by_role("button",name="Enable output",exact=True).click()
+    assert cells.nth(2).get_attribute("data-mark")==""
+    assert not page.get_by_role("dialog",name="External output").is_visible()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingExternalOutput').at(-1)")
     assert req and req["channelId"]==SOURCE and (req["left"],req["right"])==(2,3),req
     emit(page,"arMixExternalOutputAck",{"requestId":req["requestId"],"ok":True})
@@ -383,8 +369,7 @@ def verify_output_matrix_direct_patch(page,out):
     assert cells.nth(2).get_attribute("data-mark")=="L"
     assert cells.nth(2).get_attribute("data-draft")=="false"
     cells.nth(3).click()
-    assert row.get_by_label("CH03 assignment").input_value()=="None"
-    row.get_by_role("button",name="Apply",exact=True).click()
+    assert cells.nth(2).get_attribute("data-mark")=="L","unassign must await native readback"
     remove=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingExternalOutput').at(-1)")
     assert (remove["left"],remove["right"])==(-1,-1),remove
     emit(page,"arMixExternalOutputAck",{"requestId":remove["requestId"],"ok":True})

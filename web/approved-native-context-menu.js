@@ -160,6 +160,8 @@
         }else{
           const canDelete=menuTrack?.kind!=="master" && hooks.canDeleteStrip?.(menuTrack);
           menu.innerHTML='<button role="menuitem" data-menu="rename">Rename…</button>'+
+            (hooks.canGroupSelected?.()?'<button role="menuitem" data-menu="group-selected">Group Selected</button>':'')+
+            (hooks.canUngroupSelected?.()?'<button role="menuitem" data-menu="ungroup-selected">Ungroup Selected</button>':'')+
             '<button role="menuitem" class="danger" data-menu="delete" '+
             (canDelete?'':'disabled')+'>'+(menuTrack?.kind==="audio"?"Delete Track":"Delete…")+'</button>'+
             (canDelete?'':'<div class="detail">Delete unavailable for this native strip</div>')+
@@ -772,6 +774,12 @@
             label:track.name+" · "+(operation==="SET_MUTE"?"MUTE":"SOLO")};
           openHotkeyCapture(target,hotkeyEntries.find(m=>sameHotkeyTarget(m,target))||null);
         }
+        return;
+      }
+      if(action==="group-selected"||action==="ungroup-selected"){
+        dismissMenu();
+        if(action==="group-selected")hooks.groupSelected?.();
+        else hooks.ungroupSelected?.();
         return;
       }
       if(action==="delete"){
