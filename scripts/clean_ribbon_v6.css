@@ -39,8 +39,35 @@ html .app #armix-ribbon-commands.armix-ribbon .toolbar-select{border:1px solid #
 html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch{display:inline-flex!important;align-items:center;flex:none;gap:2px!important;padding:2px!important;height:30px!important;min-height:30px!important;max-height:30px!important;border:1px solid #688b9b!important;border-radius:999px!important;background:#0d202a!important;box-sizing:border-box!important}
 html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool{height:24px!important;min-height:24px!important;max-height:24px!important;padding:0 10px!important;border-radius:999px!important;justify-content:center!important;align-items:center!important}
 html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool[aria-pressed=true]{background:#416776!important;color:#f2fcff!important;border-color:#78a7b5!important;box-shadow:inset 0 1px #c3e5ed20!important}
-html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow{width:25px!important;min-width:25px!important;max-width:25px!important;height:25px!important;min-height:25px!important;padding:0!important;border-radius:50%!important}
-html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow svg{width:18px!important;height:18px!important}
+/* Bank navigation: dark V6 toolbar, not the historical silver button.
+   Keep both directions discoverable even when only one bank exists.
+   Single static face and centered vector; no additional state or render work. */
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):not([data-ribbon-hidden=true]){
+ display:grid!important;place-items:center!important;position:relative!important;box-sizing:border-box!important;flex:0 0 28px!important;
+ width:28px!important;min-width:28px!important;max-width:28px!important;height:28px!important;min-height:28px!important;max-height:28px!important;
+ padding:0!important;margin:0!important;border-radius:50%!important;border:1px solid #557585!important;background:#233e4c!important;color:#e0f3fa!important;
+ opacity:1!important;filter:none!important;box-shadow:none!important;transform:none!important;cursor:pointer;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext)>svg{
+ display:block!important;position:absolute!important;inset:0!important;margin:auto!important;width:18px!important;height:18px!important;
+ min-width:18px!important;max-width:18px!important;min-height:18px!important;max-height:18px!important;
+ color:inherit!important;fill:none!important;opacity:1!important;transform:none!important;pointer-events:none!important;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext)>svg>path{
+ fill:none!important;stroke:currentColor!important;stroke-width:2.5!important;stroke-linecap:round!important;stroke-linejoin:round!important;opacity:1!important;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):hover:not(:disabled){
+ background:#315363!important;border-color:#80b6c7!important;color:#f1fbff!important;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):active:not(:disabled){
+ background:#416776!important;border-color:#9ad8e4!important;color:#fff!important;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):disabled{
+ background:#1b2e39!important;border-color:#405a67!important;color:#859daa!important;opacity:1!important;cursor:default;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):focus-visible{
+ outline:2px solid #83dbea!important;outline-offset:1px!important;
+}
 html .app #armix-ribbon-commands.armix-ribbon>.sep,html .app #armix-ribbon-commands.armix-ribbon>.armix-toolbar-divider,html .app #armix-ribbon-commands.armix-ribbon>.toolbar-label{display:none!important}
 html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-hidden=true]{display:none!important;position:absolute!important;visibility:hidden!important;pointer-events:none!important}
 html .app #armix-ribbon-commands.armix-ribbon[data-ribbon-tab=routing]>:is(#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle):not([hidden]){display:inline-flex!important}

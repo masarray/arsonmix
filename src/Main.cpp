@@ -677,13 +677,15 @@ static bool isAutoUpdateHealthProbe()
 class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, private juce::ChangeListener
 {
 public:
-    explicit ConsoleWindow (std::function<void(int)> onStartupStage)
+    explicit ConsoleWindow (std::function<void(int)> onStartupStage,
+                            std::function<juce::var(const juce::var&)> onUpdateCenter)
         : DocumentWindow ("ArSonMiX — Native Mixer",
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
           presets_ (settingsDirectory().getChildFile ("presets"), settingsDirectory()),
           onStartupStage_ (std::move (onStartupStage)),
+          onUpdateCenter_ (std::move (onUpdateCenter)),
           browser_ (webViewOptions()
               .withNativeIntegrationEnabled()
               .withEventListener ("arMixGuiReady", [this] (juce::var ready)
@@ -767,6 +769,12 @@ public:
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
               .withEventListener ("arMixPlayerWindow", [this] (juce::var args) { handlePlayerWindow(args); })
+              .withEventListener ("arMixUpdateCenterIntent", [this] (juce::var args) {
+                  // Update control is presentation-only; do not pass through
+                  // onAction (which owns audio/device transactions).
+                  if(browser_.loaded && !updaterProbeMode_ && onUpdateCenter_)
+                      browser_.emitEventIfBrowserIsVisible("arMixUpdateCenterState",onUpdateCenter_(args));
+              })
               .withEventListener ("arMixOpenLegalSource", [] (juce::var)
               {
                   // Exact source for this *binary*; open only on user request,
@@ -1128,6 +1136,7 @@ private:
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
+    std::function<juce::var(const juce::var&)> onUpdateCenter_;
     Browser browser_;
     armix::hotkey::Registry hotkeys_{settingsDirectory()};
     juce::StringArray consumedHotkeyRequests_;
@@ -13296,6 +13305,15 @@ public:
     void initialise (const juce::String& commandLine) override
     {
         const auto args=getCommandLineParameterArray();
+        const auto appFolder=armix::storage::PortableWorkspace::executableDirectory();
+        if(armix::storage::PortableWorkspace::hasManagedPayloadShape(appFolder) &&
+           armix::storage::PortableWorkspace::portableRootFor(appFolder)==juce::File()){
+            // Unqualified staged binaries must never start with an empty or
+            // unintended workspace. No audio, WebView or session IO yet.
+            setApplicationReturnValue(1);
+            quit();
+            return;
+        }
         if (armix::vst::ScanIsolation::isWorker(args)) {
             scanWorkerMode_=true;
 #if defined(_WIN32)
@@ -13311,6 +13329,27 @@ public:
             return;
         }
 #if defined(_WIN32)
+        const bool supervised=juce::SystemStats::getEnvironmentVariable("ARSONMIX_PORTABLE_SUPERVISED",{})=="1";
+        if(!supervised && !isAutoUpdateHealthProbe() &&
+           armix::storage::PortableWorkspace::hasManagedPayloadShape(appFolder)){
+            setApplicationReturnValue(1);quit();return;
+        }
+        if(!supervised && !isAutoUpdateHealthProbe() &&
+           armix::storage::PortableWorkspace::launcherEnabledAt(appFolder)){
+            const auto shell=juce::File::getSpecialLocation(juce::File::windowsSystemDirectory)
+                .getChildFile("WindowsPowerShell/v1.0/powershell.exe");
+            const auto script=appFolder.getChildFile("ArSonMixAutoUpdate.ps1");
+            juce::StringArray command {shell.getFullPathName(),"-NoLogo","-NoProfile","-NonInteractive",
+                "-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",script.getFullPathName(),
+                "-LaunchPortable","-OwnerProcessId",juce::String(static_cast<int>(::GetCurrentProcessId()))};
+            if(commandLine.trim()=="--archive-mixer-session" || commandLine.trim()=="--safe-webview-profile"){
+                command.add("-PortableLaunchArgument");command.add(commandLine.trim());
+            }
+            juce::ChildProcess launcher;
+            if(!shell.existsAsFile()||!script.existsAsFile()||!launcher.start(command,0))
+                setApplicationReturnValue(1);
+            quit();return;
+        }
         // Per-user-session installer handshake. An Inno update requests the
         // ordinary JUCE quit path on the MESSAGE thread: the native mixer
         // persists accepted .smix state before the installer replaces the PE.
@@ -13373,7 +13412,15 @@ public:
                 }
             }
             else if (++updatePromptTicks_ % 40 == 0)
+            {
                 serviceSmartUpdateAcknowledgement();
+                // Long-running live sessions also discover releases. This
+                // existing message-thread timer launches only a throttled
+                // independent checker, never downloads or installs here.
+                if (window_ && startupMixerPresented_ &&
+                    juce::Time::getMillisecondCounter() - lastSmartUpdateCheckTick_ >= 6u * 60u * 60u * 1000u)
+                    launchSmartUpdater (false);
+            }
 #endif
             return;
         }
@@ -13446,7 +13493,7 @@ public:
                 else if (stage == 2)
                     presentMixerOnStartup();
             }
-        });
+        }, [this] (const juce::var& intent) { return serviceUpdateCenter(intent); });
 #if defined(_WIN32)
         if (!isAutoUpdateHealthProbe())
             launchSmartUpdater (false);
@@ -13534,31 +13581,167 @@ private:
     bool startupMixerPresented_ = false;
     bool recoveryOnly_ = false;
 
+    juce::var serviceUpdateCenter(const juce::var& intent)
+    {
+        const auto requestId=intent.getProperty("requestId",{}).toString();
+        const auto operation=intent.getProperty("operation",{}).toString();
+        if(requestId.isEmpty()||requestId.length()>18||!requestId.containsOnly("0123456789")||
+           (operation!="QUERY"&&operation!="CHECK"&&operation!="REVIEW"&&operation!="OPEN_DOWNLOADS"))return {};
+        juce::DynamicObject::Ptr response(new juce::DynamicObject());
+        response->setProperty("requestId",requestId);
+        response->setProperty("version",juce::String(JUCE_APPLICATION_VERSION_STRING));
+        response->setProperty("supported",false);
+        response->setProperty("manualAllowed",false);
+        response->setProperty("status","UNAVAILABLE");
 #if defined(_WIN32)
-    void serviceSmartUpdateAcknowledgement()
+        const auto installDir=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
+        const auto local=juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{});
+        const bool portable=smartUpdaterPortableEligible();
+        response->setProperty("portable",portable);
+        const bool managedPortable=portable&&armix::storage::PortableWorkspace::launcherEnabledAt(armix::storage::PortableWorkspace::portableRootFor(installDir));
+        response->setProperty("managedPortable",managedPortable);
+        const bool eligible=(smartUpdaterInstallEligible()||portable)&&local.isNotEmpty()&&
+            installDir.getChildFile("UpdateVerifier").getChildFile("gh.exe").existsAsFile()&&
+            installDir.getChildFile("UpdateVerifier").getChildFile("verifier.json").existsAsFile();
+        response->setProperty("supported",eligible);
+        if(!eligible)return juce::var(response.get());
+        const auto elapsed=juce::Time::getMillisecondCounter()-lastSmartUpdateCheckTick_;
+        response->setProperty("manualAllowed",elapsed>=60000u);
+        if(operation=="CHECK"){
+            if(elapsed<60000u)
+                response->setProperty("notice","A recent check was requested. Try again in one minute.");
+            else {
+                const bool started=launchSmartUpdater(false,true);
+                response->setProperty("notice",started?"Check requested. The updater will report its result.":"Unable to start the update checker.");
+                response->setProperty("manualAllowed",false);
+            }
+        }
+        const auto folder=portable?armix::storage::PortableWorkspace::updateRootFor(installDir):
+            juce::File(local).getChildFile("ArSonMix").getChildFile("Updates");
+        if(folder==juce::File())return juce::var(response.get());
+        const auto stateFile=folder.getChildFile("state.json");
+        const auto approvalFile=folder.getChildFile("approved.json");
+        const auto logFile=folder.getChildFile("last-result.txt");
+        const auto smallText=[](const juce::File& file,juce::int64 limit){
+            if(!file.existsAsFile()||file.getSize()>limit)return juce::String{};
+            juce::FileInputStream stream(file);
+            if(!stream.openedOk())return juce::String{};
+            juce::MemoryBlock bytes;
+            stream.readIntoMemoryBlock(bytes,static_cast<int>(limit+1));
+            if(bytes.getSize()>static_cast<size_t>(limit))return juce::String{};
+            return bytes.toString();
+        };
+        const auto state=juce::JSON::parse(smallText(stateFile,8192));
+        const auto phase=state.getProperty("phase",{}).toString();
+        const auto tag=state.getProperty("candidateTag",{}).toString();
+        const auto checked=state.getProperty("lastCheckUtc",{}).toString();
+        if(checked.length()<=60)response->setProperty("lastCheckUtc",checked);
+        if(tag.startsWith("v")&&tag.length()<=60)response->setProperty("candidateTag",tag);
+        const auto log=smallText(logFile,8192).trim().fromFirstOccurrenceOf(" ",false,false);
+        juce::String status="IDLE";
+        if(log.startsWith("UP_TO_DATE"))status="UP_TO_DATE";
+        else if(log.startsWith("CHECKING_FOR_UPDATES"))status="CHECKING";
+        else if(log.startsWith("DOWNLOADING_VERIFIED_UPDATE")||log.startsWith("RESUMING_VERIFIED_DOWNLOAD")||log.startsWith("STAGING_VERIFIED_SAME_VERSION_REPAIR"))status="DOWNLOADING";
+        else if(log.startsWith("NO_MATCHING_PUBLISHED_BASELINE"))status="BASELINE_UNAVAILABLE";
+        else if(log.startsWith("ROLLED_BACK"))status="ROLLED_BACK";
+        else if(log.startsWith("HEALTHY")||log.startsWith("REPAIRED"))status="HEALTHY";
+        else if(log.startsWith("FAIL_CLOSED")||log.startsWith("RECOVERY_FAILED")||
+                log.startsWith("RELEASE_REVOKED")||log.startsWith("ROLLBACK_RELEASE_UNAVAILABLE")||
+                log.startsWith("PREVIOUS_FAILURE_BLOCKED")||log.startsWith("INSTALLER_BYTES_CHANGED"))status="DEFERRED";
+        // A checker may have crashed after its last progress report. Never
+        // leave the UI claiming a live transfer indefinitely.
+        if((status=="CHECKING"||status=="DOWNLOADING")&&
+           juce::Time::getCurrentTime().toMilliseconds()-logFile.getLastModificationTime().toMilliseconds()>20*60*1000)
+            status="DEFERRED";
+        if(portable && phase=="portable-ready" && tag.startsWith("v") &&
+           tag.containsOnly("v0123456789.alpha-") && tag.length()<=60)
+        {
+            const auto downloads=folder.getChildFile("downloads");
+            const auto archive=downloads.getChildFile("ArSonMix-"+tag+"-Windows-x64-Portable.zip");
+            if(archive.existsAsFile() && archive.getSize()==static_cast<juce::int64>(state.getProperty("newAsset",{}).getProperty("size",0)))
+            {
+                status="PORTABLE_READY";
+                if(managedPortable){
+                    const auto approval=juce::JSON::parse(smallText(approvalFile,2048));
+                    const auto digest=state.getProperty("newAsset",{}).getProperty("digest",{}).toString();
+                    const bool approved=approval.getProperty("candidateTag",{}).toString()==tag &&
+                        approval.getProperty("candidateSha",{})==state.getProperty("candidateSha",{}) &&
+                        approval.getProperty("previousSha",{})==state.getProperty("previousSha",{}) &&
+                        digest.length()==71 && approval.getProperty("digest",{}).toString()==digest;
+                    status=approved?"APPROVED":"READY";
+                    if(operation=="REVIEW"&&!approved)serviceSmartUpdateAcknowledgement(true);
+                }else if(operation=="OPEN_DOWNLOADS")downloads.revealToUser();
+            }
+            else status="DEFERRED";
+        }
+        if(!portable && phase=="staged"){
+            if(state.getProperty("operation",{}).toString()=="repair")status="REPAIR_READY";
+            else {
+                const auto approval=juce::JSON::parse(smallText(approvalFile,2048));
+                const bool approved=tag.isNotEmpty()&&approval.getProperty("candidateTag",{}).toString()==tag&&
+                    state.getProperty("candidateSha",{}).toString().length()==40&&
+                    approval.getProperty("candidateSha",{})==state.getProperty("candidateSha",{})&&
+                    approval.getProperty("previousSha",{})==state.getProperty("previousSha",{});
+                status=approved?"APPROVED":"READY";
+                if(operation=="REVIEW"&&!approved)serviceSmartUpdateAcknowledgement(true);
+            }
+        }
+        response->setProperty("status",status);
+#endif
+        return juce::var(response.get());
+    }
+#if defined(_WIN32)
+    bool smartUpdaterPortableEligible() const
+    {
+        const auto exe=juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        const auto dir=exe.getParentDirectory();
+        return exe.getFileName().equalsIgnoreCase("ArSonMix-GUI10CH-P012-Windows-x64.exe") &&
+            dir.getChildFile("portable_mode.txt").existsAsFile() &&
+            dir.getChildFile("ArSonMixAutoUpdate.ps1").existsAsFile() &&
+            dir.getChildFile("BUILD_PROVENANCE.json").existsAsFile() &&
+            dir.getChildFile("UpdateVerifier").getChildFile("gh.exe").existsAsFile() &&
+            dir.getChildFile("UpdateVerifier").getChildFile("verifier.json").existsAsFile();
+    }
+    bool smartUpdaterInstallEligible() const
+    {
+        const auto installedExe=juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        const auto installDir=installedExe.getParentDirectory();
+        return installedExe.getFileName().equalsIgnoreCase("ArSonMix.exe") &&
+            installDir.getChildFile("ArSonMixAutoUpdate.ps1").existsAsFile() &&
+            installDir.getChildFile("BUILD_PROVENANCE.json").existsAsFile() &&
+            !installDir.getChildFile("portable_mode.txt").exists();
+    }
+    void serviceSmartUpdateAcknowledgement(bool explicitReview=false)
     {
         // The separately running updater has already staged and SHA-checked
         // both packages. Never claim a prompt can validate publisher identity.
-        if (!window_)
-            return;
+        if (!window_) return;
+        const auto installDir=armix::storage::PortableWorkspace::executableDirectory();
+        const bool portable=armix::storage::PortableWorkspace::isPortableAt(installDir);
+        const auto stable=armix::storage::PortableWorkspace::portableRootFor(installDir);
+        if(portable && (stable==juce::File() || !armix::storage::PortableWorkspace::launcherEnabledAt(stable)))return;
         const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
         if (local.isEmpty())
             return;
-        const auto folder = juce::File (local).getChildFile ("ArSonMix")
-                                               .getChildFile ("Updates");
+        const auto folder = portable?armix::storage::PortableWorkspace::updateRootFor(installDir):
+            juce::File (local).getChildFile ("ArSonMix").getChildFile ("Updates");
         const auto stateFile = folder.getChildFile ("state.json");
         if (!stateFile.existsAsFile() || stateFile.getSize() > 8192)
             return;
         const auto state = juce::JSON::parse (stateFile.loadFileAsString());
         const auto* object = state.getDynamicObject();
-        if (object == nullptr || object->getProperty ("phase").toString() != "staged"
-            || object->getProperty ("operation").toString() != "upgrade")
+        if (object == nullptr || object->getProperty ("phase").toString() != (portable?"portable-ready":"staged")
+            || (!portable && object->getProperty ("operation").toString() != "upgrade"))
             return;
+        const auto digest=portable?state.getProperty("newAsset",{}).getProperty("digest",{}).toString():juce::String{};
+        if(portable && (digest.length()!=71 || !digest.startsWith("sha256:") ||
+            !digest.substring(7).containsOnly("0123456789abcdef")))return;
         const auto tag = object->getProperty ("candidateTag").toString();
         const auto candidate = object->getProperty ("candidateSha").toString();
         const auto previous = object->getProperty ("previousSha").toString();
         if (tag.length() > 60 || !tag.startsWith ("v")
             || candidate.length() != 40 || previous.length() != 40
+            || previous != juce::String(ARMIX_BUILD_SOURCE_SHA)
             || !candidate.containsOnly ("0123456789abcdef")
             || !previous.containsOnly ("0123456789abcdef"))
             return;
@@ -13569,10 +13752,11 @@ private:
             if (const auto* ack = saved.getDynamicObject())
                 if (ack->getProperty ("candidateTag").toString() == tag
                     && ack->getProperty ("candidateSha").toString() == candidate
-                    && ack->getProperty ("previousSha").toString() == previous)
+                    && ack->getProperty ("previousSha").toString() == previous
+                    && (!portable || ack->getProperty("digest").toString()==digest))
                     return; // Already acknowledged; no repeat dialog.
         }
-        if (lastUpdatePromptedSha_ == candidate)
+        if (!explicitReview && lastUpdatePromptedSha_ == candidate)
             return; // Never nag during one mixer session.
         if (updateNotice_ && updateNotice_->isVisible())
             return; // Do not open another notice over a currently visible one.
@@ -13581,20 +13765,22 @@ private:
         // This branded floating notice is NON-modal:
         // a performer can still move faders or patch WIRE during a live session.
         updateNotice_ = std::make_unique<ArSonMixUpdateNotice> (tag,
-            [approvalFile, tag, candidate, previous]
+            [approvalFile, tag, candidate, previous, digest]
             {
                 auto approval = juce::DynamicObject::Ptr (new juce::DynamicObject());
                 approval->setProperty ("candidateTag", tag);
                 approval->setProperty ("candidateSha", candidate);
                 approval->setProperty ("previousSha", previous);
+                if(digest.isNotEmpty())approval->setProperty("digest",digest);
                 // A usability acknowledgement only. PowerShell verifies the
                 // published release, both installer hashes and process locks.
                 return approvalFile.replaceWithText (
                     juce::JSON::toString (juce::var (approval.get()), false));
             });
     }
-    void launchSmartUpdater (bool applyStaged)
+    bool launchSmartUpdater (bool applyStaged,bool checkNow=false)
     {
+        if(!applyStaged)lastSmartUpdateCheckTick_=juce::Time::getMillisecondCounter();
         // Windows per-user installation only: independent updater process.
         // On normal exit, apply only a previously prepared transaction.
         // No audio callback, router or plugin operation.
@@ -13606,10 +13792,12 @@ private:
         const auto powerShell = systemFolder.getChildFile ("WindowsPowerShell")
                                            .getChildFile ("v1.0")
                                            .getChildFile ("powershell.exe");
-        if (installedExe.getFileName().equalsIgnoreCase ("ArSonMix.exe")
+        const bool portable=smartUpdaterPortableEligible();
+        // Managed portable exits qualify a candidate after normal teardown
+        // and exact approval; legacy portable remains staging-only.
+        if ((smartUpdaterInstallEligible() || portable)
             && updaterScript.existsAsFile() && provenance.existsAsFile()
-            && powerShell.existsAsFile()
-            && !installDir.getChildFile ("portable_mode.txt").exists())
+            && powerShell.existsAsFile())
         {
             juce::StringArray command { powerShell.getFullPathName(),
                 "-NoLogo", "-NoProfile", "-NonInteractive",
@@ -13617,13 +13805,49 @@ private:
                 "-File", updaterScript.getFullPathName(),
                 "-OwnerProcessId", juce::String (static_cast<int> (::GetCurrentProcessId())) };
             if (applyStaged)
-                command.add ("-ApplyStaged");
+            {
+                command.add (portable ? "-PreparePortable" : "-ApplyStaged");
+                const auto stable=armix::storage::PortableWorkspace::portableRootFor(installDir);
+                if(portable && armix::storage::PortableWorkspace::launcherEnabledAt(stable)){
+                    const auto folder=armix::storage::PortableWorkspace::updateRootFor(installDir);
+                    juce::String stateText,approvalText;
+                    if(!armix::storage::BoundedDataInput::text(folder.getChildFile("state.json"),8192,stateText) ||
+                       !armix::storage::BoundedDataInput::text(folder.getChildFile("approved.json"),2048,approvalText))return false;
+                    const auto state=juce::JSON::parse(stateText),approval=juce::JSON::parse(approvalText);
+                    const auto previous=state.getProperty("previousSha",{}).toString();
+                    const auto candidate=state.getProperty("candidateSha",{}).toString();
+                    const auto tag=state.getProperty("candidateTag",{}).toString();
+                    const auto digest=state.getProperty("newAsset",{}).getProperty("digest",{}).toString();
+                    if(state.getProperty("phase",{}).toString()!="portable-ready" ||
+                       previous!=juce::String(ARMIX_BUILD_SOURCE_SHA) || candidate.length()!=40 ||
+                       !candidate.containsOnly("0123456789abcdef") || tag.length()>60 ||
+                       digest.length()!=71 || !digest.startsWith("sha256:") || !digest.substring(7).containsOnly("0123456789abcdef") ||
+                       approval.getProperty("previousSha",{}).toString()!=previous ||
+                       approval.getProperty("candidateSha",{}).toString()!=candidate ||
+                       approval.getProperty("candidateTag",{}).toString()!=tag ||
+                       approval.getProperty("digest",{}).toString()!=digest)return false;
+                    const auto token=juce::Uuid().toString();
+                    juce::DynamicObject::Ptr receipt(new juce::DynamicObject());
+                    receipt->setProperty("token",token);
+                    receipt->setProperty("ownerPid",static_cast<int>(::GetCurrentProcessId()));
+                    receipt->setProperty("createdMs",juce::Time::getCurrentTime().toMilliseconds());
+                    receipt->setProperty("previousSha",previous);receipt->setProperty("candidateSha",candidate);
+                    receipt->setProperty("candidateTag",tag);receipt->setProperty("digest",digest);
+                    const auto file=folder.getChildFile("normal-exit.json");
+                    if(!armix::storage::BoundedDataInput::managedPath(folder,file) ||
+                       !file.replaceWithText(juce::JSON::toString(juce::var(receipt.get()),false)))return false;
+                    command.add("-ExitReceipt");command.add(token);
+                }
+            }
+            else if(checkNow)
+                command.add ("-CheckNow");
             juce::ChildProcess supervisor;
             // The supervisor is detached from the mixing lifecycle. If it
             // cannot start, the GUI still operates normally; updates are
             // optional and never a reason to lose the live session.
-            supervisor.start (command, 0);
+            return supervisor.start (command, 0);
         }
+        return false;
     }
 #endif
     bool startupAttempted_ = false;
@@ -13631,6 +13855,7 @@ private:
     HANDLE updateRunningMutex_ = nullptr;
     HANDLE installerShutdownEvent_ = nullptr;
     int updatePromptTicks_ = 0;
+    juce::uint32 lastSmartUpdateCheckTick_=0;
     std::unique_ptr<ArSonMixUpdateNotice> updateNotice_;
     juce::uint32 updateProbeCompleteTick_ = 0;
     juce::String lastUpdatePromptedSha_;

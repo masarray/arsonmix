@@ -35,6 +35,27 @@ int main()
     const auto encoded = storage::PortableWorkspace::encode (rootA, plugin);
     assert (encoded == "workspace://Plugins/VST3/111/MyReverb.vst3");
     assert (storage::PortableWorkspace::decode (rootA, encoded) == plugin);
+    // A staged binary is not a portable root. Managed workspace opt-in
+    // must be provisioned by the stable launcher, never by the ZIP itself.
+    const auto payloads=appA.getChildFile(".ArSonMixUpdates/payloads");
+    const auto first=payloads.getChildFile(juce::String::repeatedString("a",40)+"-"+juce::String::repeatedString("b",64));
+    const auto second=payloads.getChildFile(juce::String::repeatedString("c",40)+"-"+juce::String::repeatedString("d",64));
+    for(const auto& version : {first,second}){
+        assert(version.createDirectory().wasOk());
+        assert(version.getChildFile("portable_mode.txt").replaceWithText("ARSONMIX_PORTABLE_WORKSPACE_V1"));
+        assert(storage::PortableWorkspace::hasManagedPayloadShape(version));
+        assert(storage::PortableWorkspace::dataRootFor(version)==juce::File());
+    }
+    assert(appA.getChildFile("portable_launcher_v2.txt").replaceWithText("ARSONMIX_PORTABLE_LAUNCHER_V2"));
+    for(const auto& version : {first,second}){
+        assert(storage::PortableWorkspace::portableRootFor(version)==appA);
+        assert(storage::PortableWorkspace::dataRootFor(version)==rootA);
+        assert(storage::PortableWorkspace::updateRootFor(version)==appA.getChildFile(".ArSonMixUpdates"));
+        assert(storage::PortableWorkspace::browserDataRootFor(version)==rootA.getChildFile("Cache/WebView2"));
+        assert(storage::PortableWorkspace::decode(storage::PortableWorkspace::dataRootFor(version),encoded)==plugin);
+    }
+    assert(appA.getChildFile("portable_launcher_v2.txt").deleteFile());
+    assert(storage::PortableWorkspace::dataRootFor(first)==juce::File());
     const auto outside = temp.getChildFile ("external.vst3");
     assert (storage::PortableWorkspace::encode (rootA, outside) == outside.getFullPathName());
 

@@ -4,6 +4,7 @@ on:
     paths:
       - 'installer/ArSonMixAutoUpdate.ps1'
       - '.github/workflows/updater-security-policy.yml'
+      - 'tests/portable_launcher_smoke.ps1'
   push:
     branches: [main]
     paths:
@@ -26,7 +27,23 @@ jobs:
           $output = & powershell.exe -NoLogo -NoProfile -NonInteractive -File installer/ArSonMixAutoUpdate.ps1 -PolicySelfTest
           $output | Write-Host
           if ($LASTEXITCODE -ne 0 -or $output -notcontains 'ARSONMIX_UPDATER_POLICY_PASS' -or
+              $output -notcontains 'ARSONMIX_UPDATER_AUTONOMOUS_POLICY_PASS' -or
               $output -notcontains 'ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS' -or
+              $output -notcontains 'ARSONMIX_PORTABLE_DOWNLOAD_POLICY_PASS' -or
+              $output -notcontains 'ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS' -or
+              $output -notcontains 'ARSONMIX_PORTABLE_CACHE_REVALIDATION_PASS' -or
+              $output -notcontains 'ARSONMIX_PORTABLE_ACTIVATION_RECOVERY_PASS' -or
+              $output -notcontains 'ARSONMIX_UPDATER_RESUME_POLICY_PASS' -or
+              $output -notcontains 'ARSONMIX_UPDATER_OFFLINE_ROLLBACK_LEASE_PASS' -or
               $output -notcontains 'ARSONMIX_UPDATER_LAST_MILE_PAIR_PASS') {
             throw 'Updater security policy failed'
+          }
+
+      - name: Actual stable portable bootstrap launch (synthetic PE, no network)
+        shell: powershell
+        run: |
+          $output = & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File tests/portable_launcher_smoke.ps1
+          $output | Write-Host
+          if ($LASTEXITCODE -ne 0 -or $output -notcontains 'ARSONMIX_PORTABLE_BOOTSTRAP_LAUNCH_PASS' -or $output -notcontains 'ARSONMIX_PORTABLE_ROLLBACK_LAUNCH_PASS') {
+            throw 'Portable bootstrap launcher smoke failed'
           }

@@ -8224,3 +8224,50 @@ test("V6 Player window owns only desktop presentation, never another player engi
  assert.match(js,/if\(desktopAvailable&&!desktopChild\)\{if\(visible\)windowCommand\("OPEN"\);return;\}/);
  assert.match(bundle,/player-window\.html/);
 });
+
+
+test("WIRE telemetry projects only mounted controls and never rewrites unchanged accessibility state",()=>{
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("  function paintNativeMeters(next) {");
+ const end=source.indexOf("    if (!scope?.displayMeterDbfs)return;",start);
+ assert.ok(start>=0&&end>start);
+ 
+function profile(source,count=48,visible=12,ticks=120){
+ const ops={queries:0,ariaWrites:0,classToggles:0};
+ const uiByWireId=new Map(Array.from({length:count},(_,i)=>[String(i),i+1]));
+ const graph={edges:Array.from({length:count},(_,i)=>({edgeId:String(i),primaryOutput:i%2===0})),channels:[]};
+ const controls=Array.from({length:visible},(_,i)=>{
+   const id=String(i+1);let aria=null,primary=false;
+   const label={textContent:""};
+   return {disabled:false,title:"",parentElement:{querySelector:()=>label,classList:{
+     contains:()=>primary,toggle:(k,v)=>{ops.classToggles++;primary=v}}},
+     getAttribute:k=>k==="data-wire-id"?id:k==="aria-label"?aria:null,
+     setAttribute:(k,v)=>{ops.ariaWrites++;aria=v}};
+ });
+ const document={querySelectorAll(s){ops.queries++;const m=s.match(/="([^"]+)"/);return m?controls.filter(c=>c.getAttribute("data-wire-id")===m[1]):controls;}};
+ const scope=null;
+ const paint=new Function("scope","document","uiByWireId",source+"\nreturn paintNativeMeters")(scope,document,uiByWireId);
+ paint({graph,retained:false});const cold={...ops};Object.keys(ops).forEach(k=>ops[k]=0);
+ for(let i=0;i<ticks;i++)paint({graph,retained:false});
+ const steady={...ops};
+ paint({graph,retained:true});
+ const retained=controls.map(c=>[c.disabled,c.title,c.getAttribute("aria-label"),c.parentElement.querySelector().textContent,c.parentElement.classList.contains()]);
+ paint({graph,retained:false});
+ const live=controls.map(c=>[c.disabled,c.title,c.getAttribute("aria-label"),c.parentElement.querySelector().textContent,c.parentElement.classList.contains()]);
+ return {cold,steady,retained,live};
+}
+ const fragment=source.slice(start,end)+"    if (!scope?.displayMeterDbfs)return;\n  }";
+ const result=profile(fragment);
+ assert.deepEqual(result.steady,{queries:120,ariaWrites:0,classToggles:0});
+ for(let i=0;i<12;i++){
+   const fixed=i%2===0;
+   assert.equal(result.live[i][0],fixed);
+   assert.equal(result.retained[i][0],true);
+   assert.equal(result.live[i][1],result.live[i][2]);
+   assert.equal(result.retained[i][1],result.retained[i][2]);
+   assert.equal(result.live[i][3],fixed?"UNITY":"LVL");
+   assert.equal(result.live[i][4],fixed);
+ }
+ const hidden=profile(fragment,48,0,120);
+ assert.deepEqual(hidden.steady,{queries:120,ariaWrites:0,classToggles:0});
+});
