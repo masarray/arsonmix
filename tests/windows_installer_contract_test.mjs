@@ -773,3 +773,15 @@ test('failed portable image is not offered again and launcher smoke exercises ac
   assert.match(check,/PREVIOUS_FAILURE_BLOCKED/);
   assert.match(read('tests/portable_launcher_smoke.ps1'),/ARSONMIX_PORTABLE_ROLLBACK_LAUNCH_PASS/);
 });
+
+
+test('cached executable hash is reused only while the executable read lease remains held',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const fn=u.slice(u.indexOf('function Expand-PortablePayload'),u.indexOf('function Write-AtomicUpdateJson'));
+  assert.match(fn,/\$binaryLease=\[IO.File\]::Open\(\$dest,[^\n]*\[IO.FileShare\]::Read\)/);
+  assert.match(fn,/if\(\$actualHash -cne \$expectedHash\)/);
+  assert.match(fn,/if\(\$isBinary\)\{\$binaryHash=\$actualHash\}/);
+  assert.match(fn,/\$binaryHash -cne \$build.exeSha256/);
+  assert.ok(fn.indexOf('$binaryLease.Dispose()')>fn.indexOf('Portable payload provenance mismatch'));
+  assert.match(read('tests/portable_verifier_profile.ps1'),/ARSONMIX_PORTABLE_PROFILE_PASS/);
+});

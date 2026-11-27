@@ -3923,7 +3923,7 @@ test("O2 independent per-track external ASIO transactions and clear rejected ACK
  assert.match(src,/pendingExternal\.set\(id,/);
  assert.match(src,/pendingExternal\.delete\(id\)/);
  assert.match(src,/select\?\.removeAttribute\("aria-busy"\)/);
- assert.match(src,/if\(!pendingExternal\.has\(id\)\)select\.removeAttribute/);
+ assert.match(src,/if\(!pendingExternal\.has\(id\)&&select\.hasAttribute\?\.\("aria-busy"\)!==false\)\s*select\.removeAttribute\("aria-busy"\)/);
  const vm=read("web/approved-channel-strip-view-model.js");
  assert.match(vm,/SHARED with /);
  assert.match(vm,/signals SUM/);
@@ -8270,4 +8270,67 @@ function profile(source,count=48,visible=12,ticks=120){
  }
  const hidden=profile(fragment,48,0,120);
  assert.deepEqual(hidden.steady,{queries:120,ariaWrites:0,classToggles:0});
+});
+
+
+// Execute actual production fragment with real device/strip VMs. Counters
+// measure source work, not browser wall time or audio CPU.
+function profileExternalProjection(fragment,deviceVM,stripVM){
+ const ops={rowIdReads:0,domWrites:0}, tracks=Array.from({length:24},(_,i)=>({id:i+1}));
+ const idFor=t=>String(9007199254740993n+BigInt(t.id));
+ const rows=tracks.map((t,i)=>({get channelId(){ops.rowIdReads++;return idFor(t)},
+   physicalLeft:i%2?6:4,physicalRight:i%2?7:5,status:"LIVE"}));
+ const next={device:{epoch:"17",backend:"ASIO",outputArmed:true,
+   enabledOutputs:[0,1,2,3,4,5,6,7],outputEndpoints:Array.from({length:8},(_,i)=>({port:i,label:"Pin "+i,active:true}))},
+   raw:{externalOutputs:rows,physicalMainOutputs:[0,1],physicalMonitorOutputs:[2,3]},
+   graph:{channels:tracks.map(t=>({id:idFor(t),name:"CH "+t.id}))}};
+ const pendingExternal=new Map(), messages=[];
+ const dataset=()=>new Proxy({}, {set(o,k,v){ops.domWrites++;o[k]=v;return true}});
+ const selectFor=()=>{let text="",title="",value="",busy=false,options=[];
+   const marker={dataset:dataset(),get textContent(){return text},set textContent(v){ops.domWrites++;text=v}};
+   return {dataset:dataset(),parentElement:{querySelector:()=>marker},marker,
+     get value(){return value},set value(v){ops.domWrites++;value=v},
+     get title(){return title},set title(v){ops.domWrites++;title=v},
+     replaceChildren(...nodes){ops.domWrites++;options=nodes.map(n=>n.value)},
+     hasAttribute(k){return busy},removeAttribute(k){ops.domWrites++;busy=false},
+     armBusy(){busy=true},snapshot(){return [value,title,{...this.dataset},text,{...marker.dataset},options,busy]}};
+ };
+ let nodes=new Map(tracks.slice(0,12).map(t=>[t.id,selectFor()]));
+ const document={querySelector:s=>nodes.get(Number(s.match(/data-id="(\d+)"/)[1])),createElement:()=>({})};
+ const scope={tracks};
+ const paint=new Function("deviceVM","stripVM","hardwareOutputPairs","stripNamedChoices","pendingExternal","scope","nativeIdFor","document","status",fragment+"\nreturn paintExternalReadback")(
+   deviceVM,stripVM,()=>deviceVM.outputChoices(next),()=>[{label:"Preset · A"}],pendingExternal,scope,idFor,document,m=>messages.push(m));
+ const snapshot=()=>({tracks:tracks.map(t=>t.externalOutput),nodes:[...nodes].map(([id,n])=>[id,n.snapshot()]),pending:[...pendingExternal.keys()],messages:[...messages]});
+ paint(next);const live=snapshot();ops.rowIdReads=ops.domWrites=0;
+ for(let n=0;n<120;n++)paint(next);
+ const steady={...ops};
+ next.device.outputArmed=false;paint(next);const muted=snapshot();
+ const unseen=idFor(tracks[23]);pendingExternal.set(unseen,{epoch:"17",acked:true,left:6,right:7});
+ const stale=idFor(tracks[22]);pendingExternal.set(stale,{epoch:"16",acked:true,left:4,right:5});
+ const waiting=idFor(tracks[0]);pendingExternal.set(waiting,{epoch:"17",acked:false,left:4,right:5});
+ nodes.get(1).armBusy();paint(next);const waitingState=snapshot();
+ pendingExternal.delete(waiting);paint(next);const settled=snapshot();
+ // Rebuild a different bank and remove one physical assignment.
+ nodes=new Map(tracks.slice(12).map(t=>[t.id,selectFor()]));
+ next.raw.externalOutputs=rows.slice(0,23);paint(next);const rebuilt=snapshot();
+ next.device.outputArmed=true;paint(next);const restored=snapshot();
+ return {steady,live,muted,waitingState,settled,rebuilt,restored};
+}
+
+test("External OUT steady readback indexes exact ChannelId and avoids unchanged DOM writes",()=>{
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("  const paintExternalReadback=(next)=>{"),end=source.indexOf("  const inputChoicesFor=",start);
+ assert.ok(start>=0&&end>start);
+ const p=profileExternalProjection(source.slice(start,end),deviceVM,stripVM);
+ assert.deepEqual(p.steady,{rowIdReads:2880,domWrites:0});
+ assert.equal(p.live.nodes[0][1][2].status,"LIVE");
+ assert.equal(p.muted.nodes[0][1][2].status,"MUTED");
+ assert.equal(p.waitingState.nodes[0][1][6],true,"unacknowledged request must stay busy");
+ assert.equal(p.waitingState.pending.length,1);
+ assert.deepEqual(p.settled.pending,[]);
+ assert.equal(p.settled.messages.length,1);
+ assert.equal(p.settled.nodes[0][1][6],false);
+ assert.equal(p.rebuilt.tracks[23],"None");
+ assert.equal(p.rebuilt.nodes[11][1][2].status,"NONE");
+ assert.equal(p.restored.nodes[0][1][2].status,"LIVE");
 });
