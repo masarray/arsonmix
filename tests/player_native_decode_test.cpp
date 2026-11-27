@@ -573,6 +573,9 @@ int main() {
                                std::isfinite(right[i]));
                         energy+=left[i]*left[i];
                     }
+                    // 256 frames at 48 kHz is 5.33 ms. Do not exhaust
+                    // the 250ms FIFO in a tight synthetic CPU loop.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 }
                 assert(energy>0.01);
                 assert(!loop.transitionActive());
@@ -590,9 +593,30 @@ int main() {
             assert(!loop.cancelPendingTransition());
             assert(!loop.service());
             assert(loop.isPlayingRequested());
-            loop.pull(left.data(),right.data(),256);
-            assert(loop.snapshot().generation==beforeCancel.generation);
-            assert(loop.snapshot().mediaPlayed>beforeCancel.mediaPlayed);
+            // A prebuffer boundary may legitimately underrun a single
+            // block. Test real PCM progress at callback cadence, not the
+            // scheduling order of two workers on the CI runner.
+            bool resumedPcm=false;
+            for(int b=0;b<40;++b) {
+                assert(!loop.service());
+                assert(!loop.transitionPending() && !loop.transitionActive());
+                assert(loop.isPlayingRequested());
+                loop.pull(left.data(),right.data(),256);
+                const auto afterCancel=loop.snapshot();
+                assert(afterCancel.generation==beforeCancel.generation);
+                assert(afterCancel.mediaPlayed>=beforeCancel.mediaPlayed);
+                assert(afterCancel.error.isEmpty());
+                double energy=0.;
+                for(int i=0;i<256;++i) {
+                    assert(std::isfinite(left[i]) && std::isfinite(right[i]));
+                    energy+=left[i]*left[i]+right[i]*right[i];
+                }
+                if(afterCancel.mediaPlayed>beforeCancel.mediaPlayed && energy>0.001) {
+                    resumedPcm=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(resumedPcm); // bounded ~200 ms; not an unconditional PASS
             // A user STOP during standby must prevent any stale queue from
             // becoming a different current after the decoder completes.
             assert(loop.queueTransition(longFile,0,100,180,1.,4.));
