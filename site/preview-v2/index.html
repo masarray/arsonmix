@@ -392,7 +392,7 @@ function sectionSof(t){
  const badge=!edge?'NO SEND':edge.kind!=='send'?'PRIMARY OUT':
    tap==='preFader'?'PRE-FADER':tap==='preFx'?'PRE-FX':'POST-FADER';
  const assignable=canDraftSof(t);
- const status=!dest?'Select a BUS/FX':!edge?(assignable?(t.sofDraft?.target===dest.id?'DRAFT '+wireDbText(t.sofDraft.db)+' · assign':'Assign + PRE / + POST'):'Patch with WIRE'):
+ const status=!dest?'Select a BUS/FX':!edge?(assignable?(t.sofDraft?.target===dest.id?'DRAFT '+wireDbText(t.sofDraft.db):'Choose send tap'):'Route unavailable'):
    !send?'PRIMARY ROUTE · no send level':
    send.sendEnabled===false?'OFF · saved '+wireDbText(send.levelDb):
    'LEVEL '+wireDbText(send.levelDb);
@@ -401,9 +401,9 @@ function sectionSof(t){
  const enabled=!!send&&send.sendEnabled!==false;
  return '<div class="section fx-section is-sof-view" data-sof-target="'+(dest?.id||'')+'">'+
   '<div class="subhead"><span class="sym">↗</span><span class="hint">SEND TO '+escapeHtml(sofTarget||'—')+'</span></div>'+
-  '<div class="sof-view-body"><div class="sof-info"><span class="sof-badge">'+badge+'</span>'+
+  '<div class="sof-view-body" data-sof-state="'+(assignable?'assign':send?'connected':'unavailable')+'"><div class="sof-info"><span class="sof-badge">'+badge+'</span>'+
   '<small>'+escapeHtml(status)+'</small></div>'+
-  '<div class="sof-actions">'+(assignable?'<button type="button" class="mx-sof-on-key" data-action="sofAssignPre" title="Assign PRE send at selected draft level" aria-label="Assign PRE send">+ PRE</button><button type="button" class="mx-sof-tap-key" data-action="sofAssignPost" title="Assign POST send at selected draft level" aria-label="Assign POST send">+ POST</button>':'<button type="button" class="mx-sof-on-key" data-action="sofOn"'+
+  '<div class="sof-actions">'+(assignable?'<button type="button" class="sof-assign-key" data-action="sofAssignPre" title="Assign PRE send at selected draft level" aria-label="Assign PRE send">+ PRE</button><button type="button" class="sof-assign-key" data-action="sofAssignPost" title="Assign POST send at selected draft level" aria-label="Assign POST send">+ POST</button>':!send?'':'<button type="button" class="mx-sof-on-key" data-action="sofOn"'+
   ' aria-label="'+escapeHtml(t.name+' send '+(enabled?'on':'off')+' to '+sofTarget)+'"'+
   ' title="'+escapeHtml('Send '+(enabled?'ON':'OFF')+' · '+sofTarget)+'" aria-pressed="'+enabled+'"'+
   (onEditable?'':' disabled')+'>'+(enabled?'ON':'OFF')+'</button>'+
@@ -1005,7 +1005,7 @@ function getSofEdge(t){
 function canDraftSof(t){
  const dest=selectedSofDestination();
  if(!dest||!isSofSource(t)||t.id===dest.id||wireFor(t.id,dest.id))return false;
- return window.__JUCE__?.backend?t.nativeTapAvailable===true:!wireIsCycle(t.id,dest.id);
+ return !wireIsCycle(t.id,dest.id)&&(!window.__JUCE__?.backend||t.nativeTapAvailable===true);
 }
 function getSofLevel(t){const edge=getSofEdge(t);return edge?edge.levelDb:
  (t.sofDraft?.target===sofTargetId?t.sofDraft.db:-60);}
@@ -3380,9 +3380,9 @@ function renderPluginCatalog(){
  plugEl('pluginResults').innerHTML=list.length?list.map(p=>{
   const isBad=p.status==='error'||p.status==='disabled';
   const status=p.status==='demo'?'UI only':p.status==='ready'?'Listed':p.status==='error'?'Error':'Disabled';
-  const latency=p.latencySamples==null?'Latency unknown':p.latencySamples+' smp (reported)';
+  const latency=p.latencySamples==null?'':p.latencySamples+' smp (reported)';
   const usedBy=tracks.concat(master).filter(t=>t.fx.includes(p.name)).map(t=>t.name);
-  return '<div class="plugin-item '+(isBad?'disabled':'')+'" role="listitem"><button class="plugin-choose" data-plugin-action="choose" data-plugin-id="'+escapeHtml(p.id)+'" '+(isBad||p.hidden?'disabled':'')+' title="'+(usedBy.length?'Used by '+escapeHtml(usedBy.join(', ')):'Assign to selected FX insert')+'"><span class="plugin-name">'+escapeHtml(p.name)+'</span><span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+' · '+escapeHtml(latency)+(usedBy.length?' · Used '+usedBy.length:'')+'</span></button><div class="plugin-labels"><span class="plugin-pill '+(isBad?'problem':'')+'">'+escapeHtml(p.format)+'</span><span>'+status+'</span></div><button class="plugin-flag '+(p.favorite?'starred':'')+'" data-plugin-action="fav" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.favorite?'Unfavorite':'Favorite')+' '+escapeHtml(p.name)+'" title="Toggle favorite">★</button><button class="plugin-flag" data-plugin-action="hide" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.hidden?'Show':'Hide')+' '+escapeHtml(p.name)+'" title="Hide or show effect">'+(p.hidden?'◉':'⊘')+'</button></div>';
+  return '<div class="plugin-item '+(isBad?'disabled':'')+'" role="listitem"><button class="plugin-choose" data-plugin-action="choose" data-plugin-id="'+escapeHtml(p.id)+'" '+(isBad||p.hidden?'disabled':'')+' title="'+(usedBy.length?'Used by '+escapeHtml(usedBy.join(', ')):'Assign to selected FX insert')+'"><span class="plugin-name">'+escapeHtml(p.name)+'</span><span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+(latency?' · '+escapeHtml(latency):'')+(usedBy.length?' · Used '+usedBy.length:'')+'</span></button><div class="plugin-labels"><span class="plugin-pill '+(isBad?'problem':'')+'">'+escapeHtml(p.format)+'</span><span>'+status+'</span></div><button class="plugin-flag '+(p.favorite?'starred':'')+'" data-plugin-action="fav" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.favorite?'Unfavorite':'Favorite')+' '+escapeHtml(p.name)+'" title="Toggle favorite">★</button><button class="plugin-flag" data-plugin-action="hide" data-plugin-id="'+escapeHtml(p.id)+'" aria-label="'+(p.hidden?'Show':'Hide')+' '+escapeHtml(p.name)+'" title="Hide or show effect">'+(p.hidden?'◉':'⊘')+'</button></div>';
  }).join(''):'<div class="plugin-empty">No effects match · try another category or clear the search.</div>';
  plugEl('pluginCount').textContent=list.length+' shown / '+pluginCatalog.length+' listed';
 }

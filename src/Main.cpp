@@ -14,6 +14,7 @@
 #include "NativeSessionToken.h"
 #include "ArSonMixStartupSplash.h"
 #include "ArSonWindowChrome.h"
+#include "ArSonWindowResizeGeometry.h"
 #include "NativeOwnedFloatingWindow.h"
 #include "VstOrbitController.h"
 #include "../engine/core/OrbitDistanceMapping.h"
@@ -582,6 +583,83 @@ private:
 
 
 
+// Player is a persistent, modeless owned desktop surface, not a second
+// player engine or a DOM drawer clipped by the mixer's WebView2.
+class PlayerDesktopWindow final : public juce::TopLevelWindow {
+public:
+    using Intent=std::function<void(const juce::var&)>;
+    PlayerDesktopWindow(juce::Component& mixer,Intent intent,
+                        std::function<void()> sync,std::function<void()> hidden)
+        : TopLevelWindow("ArSon Player",false),mixer_(mixer),
+          sync_(std::move(sync)),hidden_(std::move(hidden)),
+          browser_(webViewOptions().withNativeIntegrationEnabled()
+            .withEventListener("arMixPlayerWindowReady",[this](juce::var message){
+                if(message.getProperty("gui","").toString()!="APPROVED_PLAYER_WINDOW_V1")return;
+                browser_.loaded=true;
+                if(isVisible()&&sync_)sync_();
+            })
+            .withEventListener("arMixAction",[this,intent=std::move(intent)](juce::var request){
+                if(browser_.loaded&&isVisible()&&request.getProperty("action","").toString().startsWith("player")&&intent)
+                    intent(request);
+            })
+            .withEventListener("arMixPlayerWindowHide",[this](juce::var){hide();})
+            .withEventListener("arMixPlayerWindowDrag",[this](juce::var){
+#if JUCE_WINDOWS
+                if(!isVisible()||!(GetAsyncKeyState(VK_LBUTTON)&0x8000))return;
+                if(auto* peer=getPeer()){
+                    auto hwnd=static_cast<HWND>(peer->getNativeHandle());
+                    if(hwnd&&::IsWindow(hwnd)){
+                        ::ReleaseCapture();
+                        ::PostMessageW(hwnd,WM_SYSCOMMAND,SC_MOVE|HTCAPTION,0);
+                    }
+                }
+#endif
+            })
+            .withEventListener("arMixPlayerWindowActivate",[this](juce::var){
+                if(isVisible())(void)armix::ui::raiseOwnedFloatingWindow(*this,mixer_);
+            })
+            .withResourceProvider(assetFor)) {
+        setUsingNativeTitleBar(false);
+        setOpaque(true);
+        addAndMakeVisible(browser_);
+        const auto* display=juce::Desktop::getInstance().getDisplays().getDisplayForRect(mixer.getScreenBounds());
+        const auto area=display?display->userArea:juce::Rectangle<int>(0,0,1366,768);
+        centreWithSize(juce::jmin(410,area.getWidth()),juce::jmax(200,juce::jmin(820,area.getHeight()-24)));
+        addToDesktop();
+        browser_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot()+"player-window.html");
+    }
+    void resized() override { browser_.setBounds(getLocalBounds()); }
+    void userTriedToCloseWindow() override { hide(); }
+    void hide() {
+        if(!isVisible())return;
+        setVisible(false);
+        if(hidden_)hidden_();
+    }
+    bool present() {
+        if(!armix::ui::attachOwnedFloatingWindow(*this,mixer_))return false;
+        const bool wasVisible=isVisible();
+        armix::ui::placeFloatingEditor(*this,mixer_,!everPresented_);
+        everPresented_=true;
+        if(!wasVisible)setVisible(true);
+        toFront(true);
+        if(!wasVisible&&browser_.loaded&&sync_)sync_();
+        return true;
+    }
+    void emit(const juce::String& event,const juce::var& payload) {
+        if(browser_.loaded&&isVisible())browser_.emitEventIfBrowserIsVisible(event,payload);
+    }
+protected:
+    int getDesktopWindowStyleFlags() const override {
+        return juce::TopLevelWindow::getDesktopWindowStyleFlags() &
+            ~juce::ComponentPeer::windowAppearsOnTaskbar;
+    }
+private:
+    juce::Component& mixer_;
+    std::function<void()> sync_,hidden_;
+    Browser browser_;
+    bool everPresented_=false;
+};
+
 // A post-install GUI probe must not open the owner's last audio interface,
 // restore or overwrite the last .smix, or automatically resume live output.
 // Only the supervisor creates the canonical 36-character GUID env token.
@@ -687,6 +765,7 @@ public:
               })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
+              .withEventListener ("arMixPlayerWindow", [this] (juce::var args) { handlePlayerWindow(args); })
               .withEventListener ("arMixOpenLegalSource", [] (juce::var)
               {
                   // Exact source for this *binary*; open only on user request,
@@ -706,6 +785,12 @@ public:
         // A vendor plugin never receives a second processing callback.
         browser_.onNativeEvent=[this](const juce::String& event,
                                       const juce::var& payload) {
+            if(event=="arMixPlayerState"||event=="arMixPlayerActivity"||
+               event=="arMixPlayerCatalogue"||event=="arMixPlayerMedia"||
+               event=="arMixPlayerMediaReset"||event=="arMixPlayerCover") {
+                if(playerWindow_)playerWindow_->emit(event,payload);
+                return;
+            }
             const bool response=event.startsWith("arMixBuiltin") ||
                 event=="arMixNativeFxPowerAck" || event=="arMixGlobalFxAck" ||
                 event=="arMixLogicalAck";
@@ -774,6 +859,46 @@ public:
         }
 #endif
         return juce::DocumentWindow::keyPressed(key);
+    }
+
+    // JUCE 8.0.15 performs native borderless WM_NCHITTEST, but a WebView2
+    // child HWND can cover that client area. Reserve an actual native grip
+    // around the content and expose its eight resize directions to the peer.
+    // No WebView drag messages, HWND subclass or audio/control polling.
+    bool hasOperatorResizeGrip() const
+    {
+#if JUCE_WINDOWS
+        return isResizable() && !isUsingNativeTitleBar() && !isFullScreen() && !isKioskMode();
+#else
+        return false;
+#endif
+    }
+
+    juce::BorderSize<int> getBorderThickness() const override
+    {
+        if (hasOperatorResizeGrip())
+            return juce::BorderSize<int> (armix::windowchrome::resizeEdge);
+        return juce::DocumentWindow::getBorderThickness();
+    }
+
+    WindowControlKind findControlAtPoint (juce::Point<float> point) const override
+    {
+        using Zone = armix::windowchrome::ResizeZone;
+        switch (armix::windowchrome::resizeZone(point.x, point.y,
+                    static_cast<float>(getWidth()), static_cast<float>(getHeight()),
+                    hasOperatorResizeGrip()))
+        {
+            case Zone::left:        return WindowControlKind::sizeLeft;
+            case Zone::right:       return WindowControlKind::sizeRight;
+            case Zone::top:         return WindowControlKind::sizeTop;
+            case Zone::bottom:      return WindowControlKind::sizeBottom;
+            case Zone::topLeft:     return WindowControlKind::sizeTopLeft;
+            case Zone::topRight:    return WindowControlKind::sizeTopRight;
+            case Zone::bottomLeft:  return WindowControlKind::sizeBottomLeft;
+            case Zone::bottomRight: return WindowControlKind::sizeBottomRight;
+            case Zone::client:     break;
+        }
+        return juce::DocumentWindow::findControlAtPoint(point);
     }
 
     // Rebind the embedded WebView2 controller whenever its JUCE content
@@ -922,6 +1047,7 @@ public:
 #endif
         orbit_.stop();
         catalog_.onChanged = nullptr;
+        playerWindow_.reset(); // GUI only, before engine/relay teardown
         closeAllPluginEditors();
         // Shutdown is the ONE place where the mixer event relay is detached.
         // Ordinary .smix Open, FX replace, preset recall and device changes
@@ -1069,6 +1195,8 @@ private:
     bool nativeShowBusy_ = false;
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
+    std::unique_ptr<PlayerDesktopWindow> playerWindow_;
+    bool playerWindowCapabilityPublished_=false;
     std::unique_ptr<juce::FileChooser> playerFileChooser_;
     // PlayerShow v3: one active setlist projects into the existing native
     // library/controls so decoder bindings and FX routing do not change.
@@ -2883,6 +3011,7 @@ private:
             engine_.setMonitorEnabled(false);
             engine_.cancelAsioResetMonitorIntent();
             autoMainEpoch_=0;
+            diagnostics_.record("OUTPUT_MUTE","ON | PANIC_MUTE hotkey");
             emitApprovedNativeSnapshot();
             return;
         }
@@ -4772,6 +4901,11 @@ private:
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
         if(!lease)return emitNotice("Audio device is busy · try again",true);
         const bool resume=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+        const auto driverName=device->getName();
+        diagnostics_.record("ASIO_PANEL_BEGIN",
+            juce::String("priorMain=")+(resume?"ARMED_INTENT":"OFF")+
+            " | operatorMute="+(operatorOutputMuted_?"YES":"NO")+
+            " | driver="+driverName);
         pendingVendorStream_.reset();
         const auto streamIntent=engine_.captureSecondaryResumeIntent();
         const auto streamGeneration=secondaryRetry_.generation();
@@ -4787,16 +4921,25 @@ private:
                 manager.restartLastAudioDevice();
             }
         } catch(...) {panelError=true;}
-        const bool recovered=finishAudioSetupAndRecoverMixer();
+        // A vendor modal loop may return a different/null device. Never
+        // authorize a replacement just because the panel has closed.
+        auto* returned=manager.getCurrentAudioDevice();
+        const bool sameDriver=returned && returned->isOpen() &&
+            manager.getCurrentAudioDeviceType()=="ASIO" && returned->getName()==driverName;
+        const bool recovered=sameDriver && finishAudioSetupAndRecoverMixer();
         if(recovered){
             deviceSettingsDirty_=true;startupError_.clear();
-            if(resume&&!operatorOutputMuted_)requestAutomaticMain(false);
+            if(resume&&!operatorOutputMuted_&&!panelError)requestAutomaticMain(false);
             if(streamIntent&&!panelError&&streamGeneration==secondaryRetry_.generation()&&!pendingSecondaryStop_)
                 pendingVendorStream_=PendingVendorStream{*streamIntent,engine_.dryRoutingLabEpoch(),
                     engine_.outputArmRevision(),static_cast<std::uint64_t>(monotonicMilliseconds()+5000),resume};
         }
         diagnostics_.record(recovered&&!panelError?"ASIO_PANEL_RETURN":"ASIO_PANEL_RECOVERY_REQUIRED",
-            recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery");
+            juce::String(recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery")+
+            " | priorMain="+(resume?"ON":"OFF")+
+            " | operatorMute="+(operatorOutputMuted_?"YES":"NO")+
+            " | sameDriver="+(sameDriver?"YES":"NO")+
+            " | panelError="+(panelError?"YES":"NO"));
         emitApprovedNativeSnapshot();
         emitDeviceInventory(false);
         if(!recovered||panelError)
@@ -6022,6 +6165,12 @@ private:
                 const auto error=engine_.captureNativeMixerSession(retainedDoc,retainedStates,true);
                 if(error.isNotEmpty())return error;
                 retainedDoc.id=mixerSessionId_;
+                // A retained in-memory graph is not a disk recovery decision.
+                // Its physical gate may be closed for an ASIO panel/reset.
+                // Preserve the current operator desire, not transient PCM mute.
+                if(operatorOutputMuted_)retainedDoc.resumeMain=false;
+                else if(engine_.wantsMainContinuation())retainedDoc.resumeMain=true;
+                else retainedDoc.resumeMain.reset();
                 return resolveMixerSessionCatalog(retainedDoc,true);
             });
         if(checkpoint.source==Recovery::Source::missing) {
@@ -6102,6 +6251,8 @@ private:
             operatorOutputMuted_=true;
             autoMainEpoch_=0;
             engine_.setMonitorEnabled(false);
+            diagnostics_.record("OUTPUT_MUTE",usedPrevious?
+                "ON | previous checkpoint recovery":"ON | saved explicit MAIN mute");
         }
         if(plan.resumeMain)
             requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
@@ -6894,6 +7045,51 @@ private:
             playerCatalogueIds_.emplace(playerCatalogue_[i],static_cast<int>(i));
         if(playerCatalogueRequested_)emitPlayerCatalogue();
     }
+    void publishPlayerWindowState(){
+#if JUCE_WINDOWS
+        if(!browser_.loaded||!browser_.isShowing())return;
+        playerWindowCapabilityPublished_=true;
+        auto state=std::make_unique<juce::DynamicObject>();
+        state->setProperty("available",true);
+        state->setProperty("visible",playerWindow_&&playerWindow_->isVisible());
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerWindowState",juce::var(state.release()));
+#else
+        playerWindowCapabilityPublished_=true;
+#endif
+    }
+    void subscribePlayerPresentation(){
+        playerActivityDirty_=true;emitPlayerState(true);
+        juce::Array<juce::var> batch;
+        for(const auto& [id,media]:playerMedia_){
+            batch.add(media.project(id));
+            if(batch.size()>=128){emitPlayerMedia(batch);batch.clear();}
+        }
+        if(!batch.isEmpty())emitPlayerMedia(batch);
+        emitPlayerCover();
+    }
+    void handlePlayerWindow(const juce::var& args){
+#if JUCE_WINDOWS
+        const auto operation=args.getProperty("operation","").toString();
+        if(operation=="QUERY"){publishPlayerWindowState();return;}
+        if(operation!="OPEN"||!browser_.loaded||sessionLifecycleShuttingDown_)return;
+        if(!playerWindow_){
+            playerWindow_=std::make_unique<PlayerDesktopWindow>(*this,
+                [this](const juce::var& request){onAction(request);},
+                [this]{
+                    // The hidden child may have missed a media reset; clear
+                    // only its cache before replaying the accepted projection.
+                    if(playerWindow_)playerWindow_->emit("arMixPlayerMediaReset",juce::var(true));
+                    subscribePlayerPresentation();
+                    if(playerCatalogueRequested_)emitPlayerCatalogue();
+                },
+                [this]{publishPlayerWindowState();});
+        }
+        if(!playerWindow_->present())emitNotice("Unable to attach Player desktop window",true);
+        publishPlayerWindowState();
+#else
+        juce::ignoreUnused(args);
+#endif
+    }
     void emitPlayerCatalogue(){
         if(!browser_.loaded)return;
         juce::Array<juce::var> rows;
@@ -7405,7 +7601,11 @@ private:
             pendingSecondaryStop_=args;
             return;
         }
-        if(deviceApply_.busy() && action!="audioDeviceApply"){
+        // Output STOP must not disappear inside a vendor's nested modal loop.
+        // ARM is handled below too, but rejected with its correlated ACK while
+        // the transaction owns the physical route.
+        const bool outputIntent=action=="monitor"&&args.getProperty("value",{}).isBool();
+        if(deviceApply_.busy() && action!="audioDeviceApply" && !outputIntent){
             // Never silently swallow an operator's correlated editor click.
             // Admission remains closed while hardware Apply owns the graph.
             if(action=="routingFxEditor")
@@ -7465,12 +7665,7 @@ private:
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixOpenAudioIO",juce::var(true));
             return emitPlayerState();
         }
-        if(action=="playerSubscribe"){
-            playerActivityDirty_=true;emitPlayerState(true);juce::Array<juce::var> batch;
-            for(const auto& [id,media]:playerMedia_){batch.add(media.project(id));if(batch.size()>=128){emitPlayerMedia(batch);batch.clear();}}
-            if(!batch.isEmpty())emitPlayerMedia(batch);
-            emitPlayerCover();return;
-        }
+        if(action=="playerSubscribe"){subscribePlayerPresentation();return;}
         if(action=="playerCatalogue"){playerCatalogueRequested_=true;emitPlayerCatalogue();pumpPlayerMedia();return;}
         if(action=="playerCatalogueAdd")return addPlayerCatalogueSong(value);
         if(action=="playerFavorite")return changePlayerFavorite(value);
@@ -11526,6 +11721,8 @@ private:
             juce::String fault;
             if (arm && (nativeShowBusy_ || studioBackupBusy_))
                 fault="Finish Show/backup work before arming hardware OUTPUT.";
+            if (arm && deviceApply_.busy())
+                fault="Audio configuration is finishing · retry Resume when ready.";
             const auto expectedEpoch=args.getProperty("expectedEpoch",juce::var());
             const auto expectedRevision=args.getProperty("expectedRevision",juce::var());
             if(arm && retainedOfflineFxActive_ && fault.isEmpty())
@@ -12254,6 +12451,10 @@ private:
             browser_.resized(); // first visible HWND, not its pre-splash size
         }
         publishRibbonWindowState();
+        // Startup navigation may have queried while the WebView was hidden.
+        // Retry once on the existing tick after real GUI readiness, not per frame.
+        if(!playerWindowCapabilityPublished_&&browser_.loaded&&browser_.isShowing())
+            publishPlayerWindowState();
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.
         if (!browser_.loaded && !webViewStartupNoticeSent_ &&

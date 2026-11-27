@@ -69,9 +69,19 @@ def main():
                       shine:getComputedStyle(e,'::after').backgroundImage,
                       glyph:e.querySelector('svg').innerHTML};
                 }""")
+            def assert_center(ident):
+                g=page.locator("#"+ident).evaluate("""e=>{
+                    const a=e.getBoundingClientRect(),svg=e.querySelector('svg'),b=svg.getBoundingClientRect(),p=svg.getBBox();
+                    return {dx:(b.left+b.width/2)-(a.left+a.width/2),dy:(b.top+b.height/2)-(a.top+a.height/2),
+                      vx:p.x+p.width/2-12,vy:p.y+p.height/2-12};
+                }""")
+                assert abs(g["dx"])<=0.5 and abs(g["dy"])<=0.5,(ident,g)
+                assert abs(g["vx"])<=1 and abs(g["vy"])<=1,(ident,g)
             for full,ribbon in [("playerPlay","ribbonPlay"),("playerStop","ribbonStop"),
                                 ("playerPrevious","ribbonPrevious"),("playerNext","ribbonNext")]:
                 assert face(full)==face(ribbon),(full,face(full),face(ribbon))
+                assert_center(full)
+                assert_center(ribbon)
             screen=page.locator("#playerScreen")
             glass=panel.evaluate("""e=>{
                 const s=getComputedStyle(e),coat=getComputedStyle(e,'::after'),
@@ -226,6 +236,8 @@ def main():
             page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",{**state,"transport":{**state["transport"],"state":"PAUSED"}})
             page.wait_for_function("()=>document.getElementById('ribbonPlay').getAttribute('aria-pressed')==='false'")
             assert face("playerPlay")==face("ribbonPlay")
+            assert_center("playerPlay")
+            assert_center("ribbonPlay")
             page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
             page.wait_for_function("()=>document.getElementById('ribbonPlay').getAttribute('aria-pressed')==='true'")
             assert face("playerPlay")==face("ribbonPlay")
@@ -348,19 +360,109 @@ def main():
                 assert page.locator(".ap-songrow").count()<=80
                 print("64k Chromium catalogue search seconds",time.perf_counter()-start,flush=True)
             page.locator("#playerSetlistView").click()
+            # The Player is modeless, not an outside-dismissed popup. Exercise
+            # real pointer and keyboard focus transfer plus native readback.
+            before=page.evaluate("()=>window.__playerActions.length")
+            panel_rect=panel.bounding_box()
+            mixer_tab=page.locator("#ribbon-tab-mixer")
+            mixer_tab.focus()
+            assert panel.is_visible() and mixer_tab.evaluate("e=>e===document.activeElement")
+            mixer_tab.click()
+            assert panel.is_visible() and mixer_tab.get_attribute("aria-selected")=="true"
+            page.locator("#ribbon-tab-player").click()
+            assert panel.is_visible()
+            # At narrow reference widths the modeless panel may legitimately
+            # overlap its open-only ribbon button. Use a real pointer where
+            # exposed, otherwise keyboard activation of the same focusable
+            # command; never force-click through a floating window.
+            open_player=page.locator("#playerToggle")
+            exposed=open_player.evaluate("""e=>{const r=e.getBoundingClientRect();
+                const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+                return !!hit && e.contains(hit)}""")
+            if exposed:
+                open_player.click()
+            else:
+                assert width<=640, "desktop ribbon open command unexpectedly occluded"
+                open_player.focus()
+                assert open_player.evaluate("e=>e===document.activeElement")
+                open_player.press("Enter")
+            assert panel.is_visible() and panel.bounding_box()==panel_rect
+            search.focus()
+            page.keyboard.press("Escape")
+            assert panel.is_visible()
+            page.evaluate("()=>window.dispatchEvent(new Event('blur'))")
+            assert panel.is_visible()
+            publish(dict(transport=state["transport"]))
+            assert panel.is_visible()
+            assert page.locator("#playerToggle").get_attribute("aria-expanded")=="true"
+            assert page.evaluate("()=>window.__playerActions.length")==before
             page.locator("#playerClose").click()
+            assert panel.is_hidden()
             page.locator("#ribbon-tab-mixer").click()
             mini=page.locator("#playerMini")
             mini.wait_for(state="visible")
             assert page.locator("#playerMiniArtworkFallback").get_attribute("data-art")==fallback.get_attribute("data-art")
             assert page.locator("#playerMiniArtworkFallback").is_hidden()  # Ribbon has no cover
+            # Only Mini is visible here; the device and ribbon buttons are
+            # hidden, so compare CSS tokens and glyph, not their zero rects.
+            assert face("playerMiniPlay")==face("playerPlay"),(width,face("playerMiniPlay"),face("playerPlay"))
+            assert face("playerMiniNext")==face("playerNext"),(width,face("playerMiniNext"),face("playerNext"))
+            assert_center("playerMiniPlay")
+            assert_center("playerMiniNext")
             page.locator("#playerMiniPlay").click()
             assert page.evaluate("()=>window.__playerActions.at(-1).action")=="playerPause"
+            page.locator("#playerMiniExpand").click()
+            assert panel.is_visible() and mini.is_hidden()
+            page.locator("#playerMinimize").click()
+            assert panel.is_hidden() and mini.is_visible()
             page.locator("#playerMiniExpand").click()
             assert panel.is_visible() and mini.is_hidden()
             assert not errors,errors
             page.close()
             print("PASS Player assembled GUI",width,height,scale,flush=True)
+        # Separate native-only presentation, same Player loader, no mixer DOM.
+        child=browser.new_page(viewport={"width":410,"height":720})
+        errors=[]
+        child.on("pageerror",lambda e:errors.append(str(e)))
+        child.add_init_script(NATIVE_EVENTS+"""window.__windowEvents=[];window.__JUCE__={backend:{emitEvent(name,payload){window.__windowEvents.push({name,payload})},...window.__nativeListenerMethods}};""")
+        child.goto((out/"player-window.html").as_uri())
+        child.wait_for_function("()=>window.__windowEvents.some(e=>e.name==='arMixPlayerWindowReady')")
+        panel=child.locator("#arsonPlayer")
+        assert panel.is_visible() and panel.bounding_box()==dict(x=0,y=0,width=410,height=720)
+        assert child.locator("#tracks").count()==0
+        assert child.locator("#playerMini").is_hidden()
+        child.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
+        child.locator("#playerSearch").focus()
+        child.keyboard.press("Escape")
+        child.evaluate("()=>window.dispatchEvent(new Event('blur'))")
+        assert panel.is_visible()
+        assert child.evaluate("()=>!window.__windowEvents.some(e=>e.name==='arMixPlayerWindowHide')")
+        child.locator("#playerPlay").click()
+        assert child.evaluate("()=>window.__windowEvents.at(-1).payload.action")=="playerPause"
+        child.locator("#playerClose").click()
+        assert child.evaluate("()=>window.__windowEvents.at(-1).name")=="arMixPlayerWindowHide"
+        assert child.evaluate("()=>window.__windowEvents.filter(e=>e.name==='arMixAction').map(e=>e.payload.action)")==["playerPause"]
+        assert not errors,errors
+        child.close()
+        # Mixer capability negotiation: no clipped drawer on native OPEN,
+        # even after repeated commands. Visibility comes from native receipt.
+        host=browser.new_page(viewport={"width":1366,"height":768})
+        host.add_init_script(NATIVE_EVENTS+"""window.__windowEvents=[];window.__JUCE__={backend:{emitEvent(name,payload){window.__windowEvents.push({name,payload})},...window.__nativeListenerMethods}};""")
+        host.goto((out/"index.html").as_uri())
+        host.wait_for_function("()=>window.__nativeListeners.has('arMixPlayerWindowState')")
+        host.evaluate("()=>window.__nativeListeners.get('arMixPlayerWindowState')({available:true,visible:false})")
+        host.locator("#ribbon-tab-player").click()
+        host.locator("#playerToggle").click()
+        assert host.locator("#arsonPlayer").is_hidden()
+        assert host.evaluate("()=>window.__windowEvents.filter(e=>e.name==='arMixPlayerWindow'&&e.payload.operation==='OPEN').length")==1
+        host.evaluate("()=>window.__nativeListeners.get('arMixPlayerWindowState')({available:true,visible:true})")
+        assert host.locator("#playerToggle").get_attribute("aria-expanded")=="true"
+        host.locator("#ribbon-tab-mixer").click()
+        assert host.locator("#playerToggle").get_attribute("aria-expanded")=="true"
+        host.evaluate("()=>window.__nativeListeners.get('arMixPlayerWindowState')({available:true,visible:false})")
+        assert host.locator("#playerToggle").get_attribute("aria-expanded")=="false"
+        host.close()
+        print("PASS native Player window presentation and receipt seam",flush=True)
         browser.close()
 if __name__=="__main__":
     main()

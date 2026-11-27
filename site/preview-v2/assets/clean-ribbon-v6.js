@@ -5,75 +5,122 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const icon=(path,fill=false)=>'<svg viewBox="0 0 24 24" aria-hidden="true" '+(fill?'fill="currentColor"':'fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"')+'>'+path+'</svg>';
-const play=icon('<path d="M8 4.5a1 1 0 0 1 1.5-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 8 19.5z"/>',true);
+const play=icon('<path d="M6 5Q6 4 7 4.5L18 11Q19.5 12 18 13L7 19.5Q6 20 6 19Z"/>',true);
 const pause=icon('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',true);
 const button=(id,label,glyph)=>'<button type="button" id="'+id+'" title="'+label+'" aria-label="'+label+'">'+glyph+'</button>';
-// Keep original command nodes and listeners. Only their presentation page changes.
+// One disclosure and one cascade per category. Original command nodes and
+// native listeners are retained; category navigation never emits audio commands.
 function installCompactMenu(more){
  const panel=more.querySelector('.more-tools-panel');
  if(!panel)return null;
  const glyphs={
+ session:'<path d="M5 3h10l4 4v14H5zM14 3v5h5M8 12h8m-8 4h8"/>',
  channel:'<path d="M5 3v18M12 3v18M19 3v18M3 9h4m3 7h4m3-9h4"/>',
  view:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
  scenes:'<path d="m12 3 10 5-10 5L2 8zM2 12l10 5 10-5M2 16l10 5 10-5"/>',
- settings:'<circle cx="12" cy="12" r="3"/><path d="m12 2 2 3 3-.1 1.5 2.6-1.4 2.7 1.4 2.8 3 .9-1 3-3 .5-2 2.5-3-1-3 1-2-2.5-3-.5-1-3 3-.9L7 10 5.5 7.5 7 5l3 .1z"/>',
- diagnostics:'<path d="M2 12h4l3-7 4 14 3-7h6"/>'
+ settings:'<circle cx="12" cy="12" r="3"/><path d="m12 2 2 3 3-.1 1.5 2.6-1.4 2.7 1.4 2.8 3 .9-1 3-3 .5-2 2.5-3-1-3 1-2-2.5-3-.5-1-3 3-.9L7 10 5.5 7.5 7 5l3 .1z"/>'
  };
- const groups=[['channel','Channel'],['view','View'],['scenes','Scenes & Shows'],['settings','Settings'],['diagnostics','Diagnostics']];
- const nav=new Map();
- const back=document.createElement('button');back.type='button';back.className='armix-menu-back';
- back.innerHTML=icon('<path d="m15 5-7 7 7 7"/>')+'<span>Back</span>';
- panel.prepend(back);
+ const groups=[['session','Session'],['channel','Channel'],['view','View'],['scenes','Scenes & Shows'],['settings','Settings']];
+ const nav=new Map(),flyouts=new Map();
+ let page='root',hoverTimer=0;
+ const cancelHover=()=>{window.clearTimeout(hoverTimer);hoverTimer=0;};
+ const channelIds=new Set(['addTrack','addBus','addFx','addGroupBus','addGroupSelected','convertSelectedReverb','copy','paste','group','ungroup']);
+ const viewIds=new Set(['mode','viewFilter','ribbonFilterMenu','preview','reset']);
+ const sceneIds=new Set(['sceneSafe','sceneSelect','saveScene','recallScene']);
+ const headings=new Map([['PROJECT · MIXER SESSION','root'],['CHANNEL SETUP','channel'],['VIEW & SELECTION','channel'],['WIRE TOOLS','settings'],['REFERENCE TOOLS','view'],['AUDIO / SAFETY','settings'],['STUDIO / VERIFIED SHOWS','scenes']]);
+ const summary=more.querySelector(':scope > summary');
  for(const [id,label] of groups){
    const row=document.createElement('button');row.type='button';row.className='armix-menu-category';row.dataset.menuCategory=id;
    row.innerHTML=icon(glyphs[id])+'<span>'+label+'</span>'+icon('<path d="m9 5 7 7-7 7"/>');
-   row.addEventListener('click',()=>show(id,true));nav.set(id,row);panel.append(row);
+   const child=document.createElement('div');child.className='armix-menu-flyout';child.id='armix-menu-'+id;child.hidden=true;
+   child.setAttribute('role','group');child.setAttribute('aria-label',label);
+   row.setAttribute('aria-controls',child.id);row.setAttribute('aria-expanded','false');
+   row.addEventListener('click',()=>show(id,true));
+   row.addEventListener('pointerenter',e=>{
+     if(e.pointerType!=='mouse'||!more.open||row.hidden)return;
+     cancelHover();
+     if(page==='root'||page===id)show(id);
+     else hoverTimer=window.setTimeout(()=>{if(more.open)show(id);},120);
+   });
+   child.addEventListener('pointerenter',cancelHover);
+   nav.set(id,row);flyouts.set(id,child);panel.append(row,child);
  }
- let page='root';
- const channelIds=new Set(['addTrack','addBus','addFx','addGroupBus','addGroupSelected','convertSelectedReverb','copy','paste','group','ungroup']);
- const viewIds=new Set(['mode','viewFilter','ribbonFilterMenu']);
- const sceneIds=new Set(['sceneSafe','sceneSelect','saveScene','recallScene']);
- const headings=new Map([['PROJECT · MIXER SESSION','root'],['CHANNEL SETUP','channel'],['VIEW & SELECTION','channel'],['WIRE TOOLS','settings'],['REFERENCE TOOLS','diagnostics'],['AUDIO / SAFETY','settings'],['AUDIO HEALTH','diagnostics'],['STUDIO / VERIFIED SHOWS','scenes']]);
  function classify(){
-   let section='diagnostics';
-   for(const el of panel.children){
-     if(el===back||el.classList.contains('armix-menu-category'))continue;
+   let section='view';
+   // Headings remain inert direct children as section markers for late
+   // native insertions. Reparent each command at most once, never clone it.
+   for(const el of Array.from(panel.children)){
+     if(el.matches('.armix-menu-category,.armix-menu-flyout'))continue;
      const label=el.textContent.trim();
      if(el.matches('.more-tools-caption')&&headings.has(label)){
        section=headings.get(label);el.dataset.armixMenuHeading='true';el.dataset.armixMenuActive='false';continue;
      }
-     let group=section;
+     let group=el.dataset.armixMenuPage||section;
      if(el.matches('.mixer-file-tool,.reference-file-menu,[data-native-emergency-output]'))group='root';
      else if(channelIds.has(el.id))group='channel';
      else if(viewIds.has(el.id))group='view';
      else if(sceneIds.has(el.id))group='scenes';
-     else if(el.matches('[data-wire-open],.arNativeAdvancedRecovery'))group='settings';
-     // Unknown commands are retained in their original section (or Diagnostics).
-     el.dataset.armixMenuPage=group;el.dataset.armixMenuActive=String(group===page);
+     else if(el.matches('[data-wire-open]'))group='settings';
+     el.dataset.armixMenuPage=group;el.dataset.armixMenuActive='true';
+     if(flyouts.has(group))flyouts.get(group).append(el);
    }
    for(const [id,row] of nav){
-     row.hidden=page!=='root'||!Array.from(panel.children).some(el=>el.dataset.armixMenuPage===id&&!el.hidden);
+     const child=flyouts.get(id);
+     row.hidden=!Array.from(child.children).some(el=>!el.hidden);
+     if(row.hidden&&page===id)show('root');
    }
-   back.hidden=page==='root';
-   back.querySelector('span').textContent=page==='root'?'Back':groups.find(g=>g[0]===page)[1];
-   panel.dataset.armixMenuPage=page;
  }
+ function position(){
+   if(!more.open||page==='root')return;
+   const child=flyouts.get(page),row=nav.get(page);
+   if(!child||!row||child.hidden)return;
+   const root=panel.getBoundingClientRect(),anchor=row.getBoundingClientRect();
+   const top=Math.max(0,Math.min(anchor.top-root.top,window.innerHeight-root.top-child.offsetHeight-6));
+   child.style.top=top+'px';
+ }
+ const focusables=host=>Array.from(host.querySelectorAll('button:not(:disabled),select:not(:disabled),input:not(:disabled),summary,a[href]')).filter(el=>el.getClientRects().length);
  function show(id,focus=false){
-   page=id;classify();panel.scrollTop=0;
-   if(focus)(id==='root'?nav.get(lastPage):back)?.focus({preventScroll:true});
+   cancelHover();
+   const previous=page;page=flyouts.has(id)?id:'root';
+   for(const [key,row] of nav){
+     const active=key===page;row.setAttribute('aria-expanded',String(active));flyouts.get(key).hidden=!active;
+   }
+   panel.dataset.armixMenuPage=page;
+   position();
+   if(focus){
+     if(page==='root')nav.get(previous)?.focus({preventScroll:true});
+     else (focusables(flyouts.get(page))[0]||nav.get(page))?.focus({preventScroll:true});
+   }
  }
- let lastPage='channel';
- for(const [id,row] of nav)row.addEventListener('click',()=>{lastPage=id;});
- back.addEventListener('click',()=>show('root',true));
- more.addEventListener('toggle',()=>{if(!more.open)show('root');});
- more.addEventListener('keydown',e=>{
-   if(e.key!=='Escape'||!more.open)return;
-   e.preventDefault();e.stopPropagation();
-   if(page!=='root')show('root',true);else{more.open=false;more.querySelector('summary').focus();}
- });
- // Direct insertions only: native bridge installs the real commands at startup.
+ more.addEventListener('toggle',()=>{if(!more.open)show('root');else{position();if(!more.contains(document.activeElement))summary?.focus({preventScroll:true});}});
+ document.addEventListener('keydown',e=>{
+   if(!more.open)return;
+   if(e.key!=='Escape'&&!more.contains(e.target))return;
+   const child=e.target.closest?.('.armix-menu-flyout'),category=e.target.closest?.('.armix-menu-category');
+   if(e.key==='Escape'||(e.key==='ArrowLeft'&&child&&!e.target.matches('select,input'))){
+     e.preventDefault();e.stopPropagation();
+     if(page!=='root')show('root',true);else{more.open=false;summary?.focus();}
+   }else if(e.key==='ArrowRight'&&category){
+     e.preventDefault();show(category.dataset.menuCategory,true);
+   }else if((e.key==='ArrowDown'||e.key==='ArrowUp')&&!e.target.matches('select,input')){
+     const items=child?focusables(child):focusables(panel).filter(el=>!el.closest('.armix-menu-flyout'));
+     if(!items.length)return;
+     const at=items.indexOf(e.target),next=at<0?(e.key==='ArrowDown'?0:items.length-1):(at+(e.key==='ArrowDown'?1:items.length-1))%items.length;
+     e.preventDefault();items[next].focus({preventScroll:true});
+   }
+ },true);
+ document.addEventListener('pointerdown',e=>{if(more.open&&!more.contains(e.target))more.open=false;},true);
+ window.addEventListener('resize',position);
+ // A Show list/readback may add rows after opening. Observe only the five
+ // small popups (not the mixer), so the active flyout stays inside the window.
+ if(typeof ResizeObserver==='function'){
+   const sizes=new ResizeObserver(position);
+   for(const child of flyouts.values())sizes.observe(child);
+ }
+ // Only direct insertions: native bridge installs commands at startup.
+ // A second mutation after moving nodes is a no-op.
  new MutationObserver(classify).observe(panel,{childList:true});
- classify();
+ classify();show('root');
  return {show};
 }
 
@@ -96,7 +143,7 @@ function install(){
  if(filter){
    const jump=document.createElement('button');jump.type='button';jump.id='ribbonFilterMenu';jump.className='tool';jump.textContent='Channel filter…';
    jump.addEventListener('click',()=>{more.open=false;select('mixer');filter.focus();});
-   filter.before(jump);bar.append(filter);
+   filter.before(jump);jump.dataset.armixMenuPage='view';bar.append(filter);
    delete filter.dataset.armixMenuActive;delete filter.dataset.armixMenuPage;
  }
  const navTools=document.createElement('div');navTools.className='armix-ribbon-nav-tools';
@@ -137,7 +184,7 @@ function install(){
    for(const b of caption.querySelectorAll('button'))b.title+=' (desktop application only)';
  }
  const player=document.createElement('div');player.className='armix-ribbon-player';player.hidden=true;player.setAttribute('role','group');player.setAttribute('aria-label','Player transport');
- player.innerHTML='<span class="armix-ribbon-track" id="ribbonTrack">No music loaded</span><input type="range" id="ribbonSeek" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span class="armix-ribbon-time" id="ribbonTime">00:00 / 00:00</span><div class="armix-ribbon-transport">'+button('ribbonPrevious','Previous',icon('<rect x="4" y="5" width="3.5" height="14" rx="1"/><path d="M19 5 8 12l11 7z"/>',true))+button('ribbonPlay','Play',play)+button('ribbonNext','Next',icon('<rect x="16.5" y="5" width="3.5" height="14" rx="1"/><path d="m5 5 11 7-11 7z"/>',true))+button('ribbonStop','Stop',icon('<rect x="5" y="5" width="14" height="14" rx="2"/>',true))+'</div><div class="armix-ribbon-options">'+button('ribbonLoop','Loop A–B',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/>'))+button('ribbonMode','Playback mode / repeat',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/><path d="M10 12h4"/>'))+button('ribbonQueue','Queue',icon('<path d="M3 5h17M3 10h17M3 15h10m3 0 5 3-5 3z"/>'))+'</div><label class="armix-ribbon-volume">'+icon('<path d="M3 9v6h4l5 4V5L7 9H3zm13 0a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/>')+'<input type="range" id="ribbonVolume" min="0" max="100" step="1" value="50" aria-label="Player level before channel FX"></label>';
+ player.innerHTML='<span class="armix-ribbon-track" id="ribbonTrack">No music loaded</span><input type="range" id="ribbonSeek" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span class="armix-ribbon-time" id="ribbonTime">00:00 / 00:00</span><div class="armix-ribbon-transport">'+button('ribbonPrevious','Previous',icon('<rect x="4" y="5" width="3" height="14" rx="1"/><path d="M20 5 9 12l11 7z"/>',true))+button('ribbonPlay','Play',play)+button('ribbonNext','Next',icon('<rect x="17" y="5" width="3" height="14" rx="1"/><path d="M4 5l11 7-11 7z"/>',true))+button('ribbonStop','Stop',icon('<rect x="5" y="5" width="14" height="14" rx="2"/>',true))+'</div><div class="armix-ribbon-options">'+button('ribbonLoop','Loop A–B',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/>'))+button('ribbonMode','Playback mode / repeat',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/><path d="M10 12h4"/>'))+button('ribbonQueue','Queue',icon('<path d="M3 5h17M3 10h17M3 15h10m3 0 5 3-5 3z"/>'))+'</div><label class="armix-ribbon-volume">'+icon('<path d="M3 9v6h4l5 4V5L7 9H3zm13 0a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/>')+'<input type="range" id="ribbonVolume" min="0" max="100" step="1" value="50" aria-label="Player level before channel FX"></label>';
  // Restore local V6 order with the same native action controls.
  const sep=()=>{const el=document.createElement('span');el.className='armix-ribbon-separator';el.setAttribute('aria-hidden','true');return el;};
  const readout=document.createElement('div');readout.className='armix-ribbon-readout';
@@ -158,11 +205,21 @@ function install(){
  const click=id=>{const el=source(id);if(el&&!el.disabled)el.click();};
  const mainMix=document.createElement('button');mainMix.type='button';mainMix.className='tool';mainMix.id='ribbonMainMix';mainMix.textContent='Return to Main';mainMix.hidden=true;
  bar.insertBefore(mainMix,$('mixContext')||null);
- mainMix.addEventListener('click',()=>{if($('sofToggle')?.getAttribute('aria-pressed')==='true')click('sofToggle');});
- function syncMix(){const sof=$('sofToggle');mainMix.hidden=sof?.getAttribute('aria-pressed')!=='true';mainMix.disabled=!sof||sof.disabled;}
+ // Exiting SEND MIX is local navigation and cannot require native SEND
+ // admission. A temporarily disabled entry control must not trap the user.
+ mainMix.addEventListener('click',()=>{
+   const scope=window.__ARMIX_NATIVE_SCOPE__;
+   if(scope?.sofEnabled&&typeof scope.toggleSof==='function')scope.toggleSof(false);
+   else if($('sofToggle')?.getAttribute('aria-pressed')==='true')click('sofToggle');
+ });
+ function syncMix(){
+   const sof=$('sofToggle'),scope=window.__ARMIX_NATIVE_SCOPE__;
+   mainMix.hidden=sof?.getAttribute('aria-pressed')!=='true';
+   mainMix.disabled=mainMix.hidden||(!scope?.toggleSof&&(!sof||sof.disabled));
+ }
  if($('sofToggle'))new MutationObserver(syncMix).observe($('sofToggle'),{attributes:true,attributeFilter:['aria-pressed','disabled']});
  syncMix();
- const openPlayer=()=>{if($('arsonPlayer')?.hidden)click('playerToggle');};
+ const openPlayer=()=>click('playerToggle');
  $('ribbonQuickPlayer').addEventListener('click',openPlayer);
  function syncQuickPlayer(){
    const status=$('ribbonPlayerStatus'),playing=source('playerPlay')?.dataset.playing==='true';

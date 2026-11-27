@@ -29,7 +29,6 @@
   #wireMaster,
   .mixer-title button.wire-v34-tool,
   .console-body .section-rail button.rail-cell[data-section],
-  .plugin-footer button,
   .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,
   .plugin-browser .plugin-paths button,
@@ -64,7 +63,7 @@
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
-  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
   .route-choice-option,.wire-workspace .wire-ws-head button,
@@ -85,7 +84,7 @@
 ){--ari-on-top:#3b8c6e;--ari-on-hi:#50a783;--ari-on-mid:#3d956f;--ari-on-bottom:#308665;--ari-on-edge:#266347;--ari-on-ink:#f0fff7}
 .app :is(#mode,#wireNavigatorToggle,#wireMatrixToggle,#pluginsButton)
 {--ari-on-top:#388ea9;--ari-on-hi:#54aec6;--ari-on-mid:#3e94ae;--ari-on-bottom:#2d839c;--ari-on-edge:#246577;--ari-on-ink:#152b36}
-.app :is(#sofToggle,#saveScene,#recallScene,#pluginScan,#pluginImport)
+.app :is(#sofToggle,#saveScene,#recallScene)
 {--ari-on-top:#3c76a7;--ari-on-hi:#548ebd;--ari-on-mid:#417aaa;--ari-on-bottom:#366b99;--ari-on-edge:#28486f;--ari-on-ink:#f4faff}
 .app :is(#sceneSafe,#preview,#wireWsUndo)
 {--ari-on-top:#ba8034;--ari-on-hi:#cc9849;--ari-on-mid:#b98033;--ari-on-bottom:#aa722a;--ari-on-edge:#7d5021;--ari-on-ink:#21180c}
@@ -99,7 +98,7 @@
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
   .console-body .section-rail button.rail-cell[data-section],
-  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
   .route-choice-option,.wire-workspace .wire-ws-head button,
@@ -123,7 +122,7 @@
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
-  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
   .route-choice-option,.wire-workspace .wire-ws-head button,
@@ -434,9 +433,9 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
     #nativeOrbit .native-dialog-header):active{cursor:grabbing}
 .armix-floating-moved{will-change:auto}
 
-/* One compact, legible action face across the FX picker, manager footer and
-   search-folder row. Neither tiny naked links nor full-width flattened bars. */
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath){
+/* Compact action face for the quick FX picker only.
+   Plugin Manager footer and scan-folder actions belong to mixer-plugin-browser.css. */
+#fastManage{
   box-sizing:border-box!important;
   display:inline-flex!important;align-items:center!important;justify-content:center!important;
   flex:0 0 auto!important;width:auto!important;
@@ -447,16 +446,16 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
   font:500 10px/1.25 "ArSonMix Inter","Segoe UI",sans-serif!important;
   white-space:nowrap!important;box-shadow:inset 0 1px #ffffff15!important;cursor:pointer!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):hover:not(:disabled){
+#fastManage:hover:not(:disabled){
   background:var(--armix-floating-action-hover)!important;border-color:#8ac3d2!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):active:not(:disabled){
+#fastManage:active:not(:disabled){
   background:#1d485b!important;border-color:#64bdd2!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):focus-visible{
+#fastManage:focus-visible{
   outline:2px solid var(--armix-floating-action-focus)!important;outline-offset:2px!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):disabled{
+#fastManage:disabled{
   opacity:.44!important;cursor:not-allowed!important;
 }
 

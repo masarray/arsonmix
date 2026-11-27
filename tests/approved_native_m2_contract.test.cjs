@@ -7240,7 +7240,10 @@ test("P2 offline GAIN coalesces released values until durable ACK and exact read
 test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop is separate",()=>{
  const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp");
  assert.doesNotMatch(bridge,/dataset\.nativeMonitor|data-native-monitor|toolbar\.insertBefore\(monitor/);
- assert.match(bridge,/menu\.append\(caption,setup,muteBtn,hardwareNote/);
+ assert.match(bridge,/menu\.append\(caption,setup,muteBtn,\.\.\.newSessionButtons,archiveButton/);
+ assert.match(bridge,/audioDiagnosticTools\.append\(hardwareNote,inspect,tone,mark,report,advanced\)/);
+ assert.match(bridge,/querySelector\("\.armix-audio-diagnostics"\)\.append\(audioDiagnosticTools\)/);
+ assert.doesNotMatch(bridge,/menu\.append\([^;]*(?:hardwareNote|healthTitle|tone,mark,report|advanced)/);
  assert.match(bridge,/Resume after emergency stop/);
  assert.match(bridge,/EMERGENCY STOP · MORE → RESUME/);
  const start=native.indexOf("void serviceAutomaticMain()"),end=native.indexOf("void requestAutomaticMain",start);
@@ -7305,7 +7308,12 @@ test("P0 bounded editor retry stays on same owner and native failure class",()=>
 
 test("P0 native busy guard and all physical presentations produce explicit receipts",()=>{
  const m=read("src/Main.cpp"),w=read("src/NativeOwnedFloatingWindow.h");
- assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply"\)\{/);
+ assert.match(m,/const bool outputIntent=action=="monitor"&&args\.getProperty\("value",\{\}\)\.isBool\(\)/);
+ assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply" && !outputIntent\)\{/);
+ const monitor=m.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
+ assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
+ assert.match(monitor,/operatorOutputMuted_=!arm/);
+ assert.match(monitor,/arMixAudioArmAck/);
  assert.match(m,/emitRoutingFxEditorReceipt\(args,false,true,"FX editor unavailable: Audio I\/O is applying"\)/);
  assert.match(m,/opened=shownWindow->presentationConfirmed\(\)/);
  assert.match(m,/opened=\(\*extra\)->window->presentationConfirmed\(\)/);
@@ -8150,4 +8158,35 @@ test("Cold restart MON projects actual prepared muted endpoint, not invented ARM
  assert.match(n,/preferenceSaved=forgetSecondaryStartupSelection\(\)/);
  assert.match(b,/ack.action==="secondaryOutputStop"&&ack.preferenceSaved===true/);
  assert.match(b,/v.ready&&!v.fault&&!active&&v.name===extraPreferred/);
+});
+
+
+test("V6 native window resize keeps WebView out of the eight-direction grip",()=>{
+ const native=read("src/Main.cpp"),geometry=read("src/ArSonWindowResizeGeometry.h"),chrome=read("src/ArSonWindowChrome.h");
+ assert.match(native,/getBorderThickness\(\) const override/);
+ assert.match(native,/return juce::BorderSize<int> \(armix::windowchrome::resizeEdge\)/);
+ assert.match(native,/isResizable\(\) && !isUsingNativeTitleBar\(\) && !isFullScreen\(\) && !isKioskMode\(\)/);
+ assert.match(native,/findControlAtPoint \(juce::Point<float> point\) const override/);
+ for(const edge of ["Left","Right","Top","Bottom","TopLeft","TopRight","BottomLeft","BottomRight"])assert.ok(native.includes("WindowControlKind::size"+edge+";"),edge);
+ assert.match(native,/return juce::DocumentWindow::findControlAtPoint\(point\)/);
+ assert.match(geometry,/resizeEdge = 8/);assert.match(geometry,/resizeCorner = 16/);
+ assert.equal((geometry.match(/static_assert\(/g)||[]).length,14);
+ assert.match(chrome,/drawResizableWindowBorder[\s\S]*g\.drawRect \(0, 0, w, h, 1\)/);
+});
+
+
+test("V6 Player window owns only desktop presentation, never another player engine",()=>{
+ const native=read("src/Main.cpp"),js=read("site/preview-v2/assets/arson-player.js"),bundle=read("scripts/build_approved_native_gui.py");
+ const start=native.indexOf("class PlayerDesktopWindow final"),end=native.indexOf("// A post-install GUI probe",start);
+ const window=native.slice(start,end);
+ assert.match(window,/public juce::TopLevelWindow/);
+ assert.match(window,/attachOwnedFloatingWindow\(\*this,mixer_\)/);
+ assert.match(window,/placeFloatingEditor\(\*this,mixer_,!everPresented_\)/);
+ assert.match(window,/WM_SYSCOMMAND,SC_MOVE\|HTCAPTION/);
+ assert.match(window,/arMixPlayerWindowHide/);
+ assert.doesNotMatch(window,/activeWindowStatusChanged|focusLost|setAlwaysOnTop|LiveAudioEngine|AudioDeviceManager|playerStop|playerPause/);
+ assert.match(native,/std::unique_ptr<PlayerDesktopWindow> playerWindow_/);
+ assert.match(native,/if\(playerWindow_\)playerWindow_->emit\(event,payload\)/);
+ assert.match(js,/if\(desktopAvailable&&!desktopChild\)\{if\(visible\)windowCommand\("OPEN"\);return;\}/);
+ assert.match(bundle,/player-window\.html/);
 });

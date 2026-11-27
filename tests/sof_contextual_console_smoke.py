@@ -332,7 +332,8 @@ def run() -> None:
                     assert page.locator("#mixContext").inner_text().startswith("SEND MIX")
                     assert gain.is_disabled() and fx.is_disabled()
                     assert first.locator(".is-sof-view").count() == 1
-                    assert first.locator(".mx-sof-tap-key").count() == 1
+                    assert first.locator(".mx-sof-tap-key").count() == 0
+                    assert first.locator(".sof-assign-key").count() == 2
                     assert first.locator('button[data-hw-kind="tap"]').count() == 0
                     assert first.locator('button[data-hw-kind="mute"]').count() == 1
                     assert first.locator('button[data-hw-kind="solo"]').count() == 1
@@ -344,12 +345,9 @@ def run() -> None:
                     assert page.locator("#master .strip").count() == 1
                     assert page.locator("#wireLayer").count() == 1
 
-                    # SENDS mode exposes approved raster, not a fake CSS key.
-                    tap = first.locator(".mx-sof-tap-key")
-                    sprite = tap.evaluate(
-                        "el => getComputedStyle(el, '::before').backgroundImage")
-                    assert "harmonice-thin-flat-v9-approved-off-shadow-57x30.png" in sprite, sprite
-                    assert tap.is_enabled()
+                    # Unassigned sends expose explicit actions, not an installed tap.
+                    for label in ("Assign PRE send", "Assign POST send"):
+                        assert first.get_by_role("button",name=label).is_enabled()
 
                     # SOF target is a stable strip ID, never a BUS display name.
                     target_select = page.locator("#sofTarget")

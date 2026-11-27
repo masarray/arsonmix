@@ -376,6 +376,28 @@ body :is(#mxNativePeq,#mxNativeComp,#mxNativeDucker,#mxNativeGeq31,#mxNativeHarm
 """
 
 
+def floating_player_html() -> str:
+    """Native-only surface: reuse the approved Player loader and compiled CSS."""
+    return """<!doctype html>
+<html lang="en" data-armix-player-window="true"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ArSon Player</title>
+<link rel="stylesheet" href="assets/arsonmix-approved-runtime.css">
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#101921}
+html[data-armix-player-window] .app{display:contents!important}
+html[data-armix-player-window] .command-bar,html[data-armix-player-window] #playerMini{display:none!important}
+html[data-armix-player-window] #arsonPlayer{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;transform:none!important;max-width:none!important;max-height:none!important;box-shadow:none!important}
+#playerWindowAbort{position:fixed;right:8px;top:8px;z-index:10000;color:#e0f4fa;background:#263e4b;border:1px solid #526977;border-radius:4px;padding:6px}
+#playerWindowAbort[hidden]{display:none!important}
+</style>
+<script defer src="assets/mixer-contextual-buttons.js"></script>
+</head><body><div class="app"><div class="command-bar" hidden><button id="pluginsButton" type="button">Plugins</button></div></div>
+<button id="playerWindowAbort" type="button" onclick="window.__JUCE__?.backend?.emitEvent('arMixPlayerWindowHide',{})">Close Player</button>
+</body></html>
+"""
+
+
 def safe_symbol(filename: str) -> str:
     # JUCE 8 BinaryData: 'mixer-control-keys.css' -> 'mixercontrolkeys_css'
     stem, ext = filename.rsplit(".", 1)
@@ -462,9 +484,10 @@ def stage(out: Path) -> dict:
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
         (out / "fx-window.html").write_text(floating_fx_html(),encoding="utf-8")
-    files = [out / "index.html", out / "fx-window.html",
+        (out / "player-window.html").write_text(floating_player_html(),encoding="utf-8")
+    files = [out / "index.html", out / "fx-window.html", out / "player-window.html",
              *sorted(p for p in (out / "assets").rglob("*") if p.is_file())]
-    if any(p.is_symlink() or p.relative_to(out).parts[0] not in ("index.html", "fx-window.html", "assets") for p in files):
+    if any(p.is_symlink() or p.relative_to(out).parts[0] not in ("index.html", "fx-window.html", "player-window.html", "assets") for p in files):
         raise ValueError("Unsafe GUI resource input")
     if len(files) != len({f.name for f in files}):
         raise ValueError("Duplicate GUI asset basename would collide in JUCE BinaryData")

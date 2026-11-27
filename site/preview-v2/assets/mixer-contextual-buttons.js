@@ -55,7 +55,7 @@
     <section class="ap-hero">
       <div class="ap-nowhead"><div class="ap-trackmark" aria-label="Music artwork"><img id="playerArtwork" alt="Album artwork" hidden><span id="playerArtworkFallback" class="ap-cover-fallback" data-art="still" role="img" aria-label="No song loaded"></span></div><div class="ap-nowtext"><div class="ap-overline"><i></i><span id="playerState">NO TRACK</span></div><div id="playerNow" class="ap-title">No music loaded</div><div id="playerNowSubtitle" class="ap-subtitle">Music player</div><div id="playerNowMeta" class="ap-meta"></div></div><div class="ap-remaining"><output id="playerRemaining">−00:00</output><span>Remaining</span></div></div>
       <canvas id="playerWaveform" class="ap-waveform" width="256" height="70" aria-label="Progressive music waveform" role="img"></canvas><div class="ap-time"><span id="playerElapsed">00:00</span><input id="playerSeek" type="range" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span id="playerDuration">00:00</span></div>
-      <div class="ap-transport"><button id="playerPrevious" type="button" class="ap-minor" aria-label="Play previous setlist song" title="Play previous setlist song" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="4" y="5" width="3.5" height="14" rx="1"/><path d="M19 5 8 12l11 7z"/></svg></button><button id="playerStop" type="button" class="ap-stop" aria-label="Stop" title="Stop" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button><button id="playerPlay" type="button" class="ap-play" aria-label="Play" title="Play" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 4.5a1 1 0 0 1 1.5-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 8 19.5z"/></svg></button><button id="playerNext" type="button" class="ap-minor" aria-label="Next song" title="Next song" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="16.5" y="5" width="3.5" height="14" rx="1"/><path d="m5 5 11 7-11 7z"/></svg></button><button id="playerLoopAB" type="button" class="ap-minor ap-repeat" aria-label="Loop A–B (saved IN and OUT markers)" title="Loop A–B (saved IN and OUT markers)" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 3 3 3-3 3M21 6H8a5 5 0 0 0-5 5m3 10-3-3 3-3m-3 3h13a5 5 0 0 0 5-5"/></svg></button></div>
+      <div class="ap-transport"><button id="playerPrevious" type="button" class="ap-minor" aria-label="Play previous setlist song" title="Play previous setlist song" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="4" y="5" width="3" height="14" rx="1"/><path d="M20 5 9 12l11 7z"/></svg></button><button id="playerStop" type="button" class="ap-stop" aria-label="Stop" title="Stop" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></button><button id="playerPlay" type="button" class="ap-play" aria-label="Play" title="Play" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M6 5Q6 4 7 4.5L18 11Q19.5 12 18 13L7 19.5Q6 20 6 19Z"/></svg></button><button id="playerNext" type="button" class="ap-minor" aria-label="Next song" title="Next song" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="17" y="5" width="3" height="14" rx="1"/><path d="M4 5l11 7-11 7z"/></svg></button><button id="playerLoopAB" type="button" class="ap-minor ap-repeat" aria-label="Loop A–B (saved IN and OUT markers)" title="Loop A–B (saved IN and OUT markers)" aria-pressed="false"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 3 3 3-3 3M21 6H8a5 5 0 0 0-5 5m3 10-3-3 3-3m-3 3h13a5 5 0 0 0 5-5"/></svg></button></div>
       <div class="ap-pitchtempo" aria-label="Music pitch and playback speed"><div class="ap-pitch-section"><span id="playerPitchTarget" class="ap-pitchtarget">KEY · CURRENT</span><div class="ap-step"><button id="playerKeyMinus" type="button" class="" aria-label="Lower music key one semitone" title="Lower music key one semitone" >−</button><output id="playerKeyValue" aria-live="polite">0 st</output><button id="playerKeyPlus" type="button" class="" aria-label="Raise music key one semitone" title="Raise music key one semitone" >+</button></div></div><div class="ap-pitch-section"><span>TEMPO</span><div class="ap-step"><button id="playerTempoMinus" type="button" class="" aria-label="Slow music by five percent" title="Slow music by five percent" >−</button><output id="playerTempoValue" aria-live="polite">100%</output><button id="playerTempoPlus" type="button" class="" aria-label="Speed music by five percent" title="Speed music by five percent" >+</button></div></div><button id="playerPitchReset" type="button" class="ap-icon" aria-label="Reset key and tempo" title="Reset key and tempo" ><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8a7 7 0 1 1-1 8M5 3v5h5"/></svg></button></div>
       <div class="ap-statusbar"><span id="playerRouteLight" class="ap-route-light" aria-hidden="true"></span><div id="playerFeedback" class="ap-feedback" role="status" aria-live="polite">Add music to begin</div><button id="playerAutoNext" type="button" class="ap-mode" aria-label="Playback mode" title="Playback mode" aria-haspopup="menu" aria-expanded="false" aria-pressed="false"><span id="playerAutoText">Stop after song</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div><div class="ap-recovery"><button id="playerChooseOutput" type="button" class="" aria-label="Choose output" title="Choose output" hidden>Choose output</button><button id="playerRelink" type="button" class="" aria-label="Locate file" title="Locate file" hidden>Locate file</button></div>
       <button id="playerNextCard" class="ap-upnext" type="button" title="Show upcoming songs"><span class="ap-nextname"><span id="playerNextLabel">UP NEXT</span><strong id="playerUpNext">End of setlist</strong></span><span id="playerNextMeta" class="ap-nextmeta"></span><span id="playerTransitionStatus" role="status" aria-live="polite"></span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
@@ -69,7 +69,7 @@
   toolbar.insertAdjacentElement('afterend',panel);
   const mini=document.createElement('div');
   mini.id='playerMini';mini.hidden=true;mini.setAttribute('aria-label','ArSon MiniPlayer');
-  mini.innerHTML=`<span class="ap-mini-cover"><img id="playerMiniArtwork" alt="Album artwork" hidden><span id="playerMiniArtworkFallback" class="ap-cover-fallback" data-art="still" role="img" aria-label="No song loaded"></span></span><button id="playerMiniExpand" type="button" aria-label="Expand player"><span id="playerMiniTitle">No music loaded</span><small id="playerMiniTime">00:00 / 00:00</small></button><button id="playerMiniPlay" type="button" class="ap-mini-play" aria-label="Play" title="Play" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 4.5a1 1 0 0 1 1.5-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 8 19.5z"/></svg></button><button id="playerMiniNext" type="button" class="ap-mini-next" aria-label="Next song" title="Next song" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="16.5" y="5" width="3.5" height="14" rx="1"/><path d="m5 5 11 7-11 7z"/></svg></button>`;
+  mini.innerHTML=`<span class="ap-mini-cover"><img id="playerMiniArtwork" alt="Album artwork" hidden><span id="playerMiniArtworkFallback" class="ap-cover-fallback" data-art="still" role="img" aria-label="No song loaded"></span></span><button id="playerMiniExpand" type="button" aria-label="Expand player"><span id="playerMiniTitle">No music loaded</span><small id="playerMiniTime">00:00 / 00:00</small></button><button id="playerMiniPlay" type="button" class="ap-mini-play" aria-label="Play" title="Play" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M6 5Q6 4 7 4.5L18 11Q19.5 12 18 13L7 19.5Q6 20 6 19Z"/></svg></button><button id="playerMiniNext" type="button" class="ap-mini-next" aria-label="Next song" title="Next song" ><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><rect x="17" y="5" width="3" height="14" rx="1"/><path d="M4 5l11 7-11 7z"/></svg></button>`;
   playerButton.insertAdjacentElement('afterend',mini);
   const base=document.currentScript?.src||document.baseURI;
   // Player CSS is folded into the EXISTING approved runtime stylesheet.
@@ -119,6 +119,7 @@
     ['#nativeMySounds .native-dialog','.native-dialog-header'],
     ['#nativeOrbit .native-dialog','.native-dialog-header']
   ];
+  if(document.documentElement?.dataset?.armixPlayerWindow==="true")return;
   const gap=8, blocked='button,input,textarea,select,a,summary,[contenteditable="true"],[role="button"]';
   let moving=null,layer=1000;
   const clamp=(value,min,max)=>Math.max(min,Math.min(Math.max(min,max),value));
@@ -200,21 +201,22 @@
 
 /* Built-in FX wheel gestures are owned by each editor through mixer-builtin-fx-gesture.js. */
 
-/* One owner for short-lived UTILITY panels, not FX editors. First open is
-   centred in the app; subsequent opens retain the user's moved location.
-   Outside pointer or focus transfer invokes the EXISTING close button, so
-   navigator toggles, Player transport and plugin-manager state stay coherent. */
+/* Shared initial placement, distinct lifetime policies. First open is
+   centred; subsequent opens retain the user's moved location.
+   Transient utilities dismiss on outside pointer/focus. The Player is a
+   persistent modeless workspace: only its explicit controls can hide it. */
 (()=>{
  'use strict';
+ if(document.documentElement?.dataset?.armixPlayerWindow==="true")return;
  const list=[
   ['pluginBrowser','pluginClose','pluginsButton'],
-  ['arsonPlayer','playerClose','playerToggle'],
+  ['arsonPlayer','playerClose','playerToggle',false],
   ['wireWorkspace','wireWsClose','wireNavigatorToggle'],
   ['wireConfigWindow','wireConfigClose','wireConfigToggle']
  ];
- const panels=()=>list.map(([id,close,trigger])=>({
+ const panels=()=>list.map(([id,close,trigger,dismissOnOutside=true])=>({
   panel:document.getElementById(id),close:document.getElementById(close),
-  trigger:document.getElementById(trigger)
+  trigger:document.getElementById(trigger),dismissOnOutside
  })).filter(x=>x.panel&&x.close);
  const visible=panel=>!panel.hidden&&panel.getClientRects().length>0;
  const margin=12;
@@ -250,8 +252,8 @@
  function dismissOutside(target){
   if(!target?.closest)return;
   if(target.closest('#routeChoice,#fastPicker,.mx-fxp-form'))return;
-  for(const {panel,close,trigger} of panels()){
-   if(!visible(panel)||panel.contains(target)||trigger?.contains(target))continue;
+  for(const {panel,close,trigger,dismissOnOutside} of panels()){
+   if(!dismissOnOutside||!visible(panel)||panel.contains(target)||trigger?.contains(target))continue;
    if(panel.id==='wireWorkspace'&&
       target.closest('#wireMatrixToggle,#wireNavigatorToggle,[data-wire-open]'))continue;
    if(panel.id==='wireConfigWindow'&&

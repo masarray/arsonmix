@@ -3394,23 +3394,31 @@
       busPairs:Object.fromEntries(model.rows.filter(r=>r.bus).map(r=>[r.id,JSON.stringify(r.pair)]))};
     if(host.dataset.signature===signature)return;
     host.dataset.signature=signature;
+    const toolsOpen=host.querySelector("[data-io-matrix-tools]")?.open??false;
+    const previousMatrix=host.querySelector(".armix-matrix-scroll");
+    const scrollTop=previousMatrix?.scrollTop??0,scrollLeft=previousMatrix?.scrollLeft??0;
     host.replaceChildren();
     if(!ready||!model.live||!model.pins.length){
       host.textContent=!ready?"Apply device and pin changes first.":
         "Open a verified mixer with enabled "+side+" pins.";
       return;
     }
-    if(side==="input")renderLogicalInputs(host,model,next,busy);
-    else renderLogicalOutputs(host,model,next,busy);
-    renderIoDefaults(host,model,next,busy);
-    renderNamedPatchEditor(host,side,model,next,busy);
     const aliases=namedPatchChoices(side,model,next);
     const table=document.createElement("table");table.className="armix-patch-grid";
     const head=table.createTHead().insertRow();
     const th=label=>{const e=document.createElement("th");e.textContent=label;head.append(e);};
     th(side==="input"?"Mixer input":"Mixer output");
-    for(const pin of model.pins)th((pin.port+1)+" · "+pin.label);
-    th("Assignment");th(busy?"Pending":"");
+    for(const pin of model.pins){
+      th("");
+      const cell=head.lastElementChild;
+      cell.title=(pin.port+1)+" · "+pin.label;
+      const number=document.createElement("span");number.className="armix-pin-number";
+      number.textContent=String(pin.port+1);
+      const label=document.createElement("span");label.className="armix-pin-label";
+      label.textContent=pin.label;
+      cell.append(number,label);
+    }
+    th("Source / pair");th(busy?"Pending":"Apply");
     const body=table.createTBody();
     for(const row of model.rows){
       const tr=body.insertRow();const name=tr.insertCell();
@@ -3462,6 +3470,7 @@
         const cell=tr.insertCell(),button=document.createElement("button");
         button.type="button";button.className="armix-patch-cell";
         button.setAttribute("aria-label",row.name+" / "+pin.label);
+        button.title=row.name+" / "+pin.label+" · select, then Apply";
         button.disabled=busy||!row.editable;
         button.onclick=()=>{
           if(select.value===customValue){
@@ -3493,7 +3502,19 @@
       }else pick.textContent=row.state||"Read-only";
       update();
     }
-    host.append(table);
+    const matrix=document.createElement("div");matrix.className="armix-matrix-scroll";
+    matrix.tabIndex=0;matrix.setAttribute("role","region");
+    matrix.setAttribute("aria-label",side==="input"?"Input patch matrix":"Output patch matrix");
+    matrix.append(table);host.append(matrix);
+    matrix.scrollTop=scrollTop;matrix.scrollLeft=scrollLeft;
+    const tools=document.createElement("details");tools.dataset.ioMatrixTools="";
+    const summary=document.createElement("summary");summary.textContent="Port definitions, defaults & presets";
+    tools.append(summary);tools.open=toolsOpen;
+    if(side==="input")renderLogicalInputs(tools,model,next,busy);
+    else renderLogicalOutputs(tools,model,next,busy);
+    renderIoDefaults(tools,model,next,busy);
+    renderNamedPatchEditor(tools,side,model,next,busy);
+    if(tools.childElementCount>1)host.append(tools);
   }
   function paintPhysicalOutputs(next) {
     if(devicePanel&&!devicePanel.hidden){
@@ -3514,7 +3535,7 @@
     const signature=JSON.stringify([patches,String(next?.device?.backend||"")]);
     if(devicePanel.dataset.outputSignature===signature)return;
     devicePanel.dataset.outputSignature=signature;
-    const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
+    const summary=devicePanel.querySelector("[data-audio-output-overview] [data-audio-destination-heading]");
     if(summary)summary.textContent="Destinations · "+patches.length;
     view.replaceChildren();
     if(!patches.length){
@@ -3788,6 +3809,7 @@
   // Compact DAW-style device preferences INSIDE the approved Windows GUI.
   // Only the existing AudioDeviceManager inventory/APPLY API is used. This
   // replaces the 740x590 default JUCE dialog for normal operator setup.
+  let audioDiagnosticTools=null;
   let devicePanel=null,deviceInventory=null,deviceChoice=null,deviceRequest=0,
       deviceState=deviceVM.setupInitial(),deviceApplyTimer=0;
   // Snapshot the actual initiating action; never infer it from a later tab.
@@ -3950,6 +3972,10 @@
       mix.target.dispatchEvent(new Event("change",{bubbles:true}));
     }
     if(scope.sofTargetId===mix.id&&!scope.sofEnabled)scope.toggleSof(true);
+    // Explicit Edit headphone mix must expose its existing SOF controls.
+    // Ribbon selection is presentation only, not a second target or PCM write.
+    const mixerTab=document.getElementById('ribbon-tab-mixer');
+    if(mixerTab&&mixerTab.getAttribute('aria-selected')!=='true')mixerTab.click();
     mix.toggle.focus();
   }
   // MAIN MON is a presentation of the existing native secondary owner.
@@ -4337,14 +4363,23 @@
         .armix-audio-dialog[data-audio-tab="inputs"],
         .armix-audio-dialog[data-audio-tab="routing"]{width:min(1050px,96vw)}
         .armix-input-overview{padding:15px 20px}
-        .armix-crosspoint-scroll{overflow:auto;max-height:52vh}
-        .armix-patch-grid{border-collapse:separate;border-spacing:2px;font-size:11px;width:max-content;min-width:100%}
-        .armix-patch-grid th{font-weight:500;max-width:72px;min-width:42px;vertical-align:bottom;overflow-wrap:anywhere}
-        .armix-patch-grid th:first-child,.armix-patch-grid td:first-child{position:sticky;left:0;z-index:1;background:#26343d;min-width:95px;max-width:150px;padding:5px}
-        .armix-audio-dialog .armix-patch-cell{width:100%;min-width:32px;min-height:26px;padding:2px;border-radius:1px;background:#29343d;color:#8ba2af}
-        .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
-        .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
-        .armix-patch-grid select{max-width:210px;font-size:11px}
+        .armix-crosspoint-scroll{min-width:0}
+         .armix-matrix-scroll{overflow:auto;max-height:43vh;border:1px solid #354b59;border-radius:5px;scrollbar-gutter:stable}
+         .armix-patch-grid{border-collapse:separate;border-spacing:3px;font-size:11px;width:max-content;min-width:100%}
+         .armix-patch-grid th{font-weight:500;max-width:76px;min-width:48px;vertical-align:bottom;background:#20313c;position:sticky;top:0;z-index:2;padding:5px 3px}
+         .armix-pin-number{display:block;color:#cce7ee;font-variant-numeric:tabular-nums}
+         .armix-pin-label{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;color:#9ab6c4;font-size:10px;line-height:12px}
+         .armix-patch-grid th:first-child,.armix-patch-grid td:first-child{position:sticky;left:0;z-index:1;background:#20313c;min-width:86px;max-width:130px;padding:5px}
+         .armix-patch-grid th:first-child{z-index:3}
+         .armix-audio-dialog .armix-patch-cell{width:100%;min-width:34px;min-height:28px;padding:2px;border-radius:3px;border:1px solid #344b58;background:#182a35;color:#7693a2}
+         .armix-audio-dialog .armix-patch-cell:hover:not(:disabled){border-color:#8bbdcd;background:#294755}
+         .armix-audio-dialog .armix-patch-cell:focus-visible{outline:2px solid #9de4fa;outline-offset:-2px}
+         .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
+         .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
+         .armix-patch-grid select{max-width:180px;font-size:11px}
+         .armix-audio-dialog [data-io-matrix-tools]{margin:8px 0 0;padding:8px 0 0}
+         .armix-audio-dialog [data-io-matrix-tools] details{margin:0}
+         .armix-matrix-hint{margin:0 0 7px;color:#a9c1cd;font-size:11px}
         .armix-custom-stereo{display:grid;gap:3px;margin-top:4px}
         .armix-custom-stereo[hidden]{display:none!important}
         .armix-named-patches{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:6px 0 12px}
@@ -4384,6 +4419,10 @@
         .armix-audio-dialog .armix-audio-pins{max-height:min(44vh,340px);gap:16px}
         .armix-audio-dialog .armix-audio-pins label{min-height:24px}
         .armix-audio-dialog [data-audio-tab="diagnostics"]{margin-left:auto}
+        .armix-diagnostic-tools{display:grid;gap:6px;margin-top:8px}
+        .armix-diagnostic-tools button{justify-content:flex-start;text-align:left}
+        .armix-diagnostic-tools details button{display:block;width:100%;margin-top:5px}
+        .armix-diagnostic-tools summary{cursor:pointer}
         .armix-driver-inventory{padding:12px 20px;border-top:1px solid #354b59}
         .armix-endpoint-fields .armix-device-actions{padding:0;border:0;background:transparent}
         .armix-audio-dialog .armix-device-actions{padding:12px 20px;
@@ -4507,18 +4546,18 @@
           <span>Waiting for driver and mixer verification.</span></div>
         </div>
         <section class="armix-input-overview">
-          <div class="armix-output-heading">INPUTS · hardware to mixer</div>
-          <div class="armix-crosspoint-scroll" data-audio-input-grid></div>
-          <div class="armix-device-note">Choose Mono or Stereo, then Apply on the row. Blue = installed; amber = draft.</div>
+          <div class="armix-output-heading">Input patch matrix</div>
+          <div class="armix-matrix-hint">Select a pin or source, then Apply. Blue = installed · Amber = draft. Choose Mono or Stereo in Source / pair.</div>
+           <div class="armix-crosspoint-scroll" data-audio-input-grid></div>
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
-          <div class="armix-output-heading">Destinations</div>
-          <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
-          <details data-audio-hardware-routing>
-            <summary>Advanced hardware routing</summary>
-            <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
-            <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair. Blue = installed; amber = draft.</div>
-          </details>
+          <details data-audio-hardware-routing open>
+             <summary>Output patch matrix</summary>
+             <div class="armix-matrix-hint">Select a pair, then Apply. Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair. Blue = installed · Amber = draft.</div>
+             <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
+           </details>
+           <div class="armix-output-heading" data-audio-destination-heading>Destinations</div>
+           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-stream-inline" data-audio-extra-output></div>
           <div data-monitor-timing hidden class="armix-device-note">
             <strong>MONITOR timing</strong> · <span data-monitor-timing-value></span>
@@ -4541,11 +4580,15 @@
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
+      if(audioDiagnosticTools)devicePanel.querySelector(".armix-audio-diagnostics").append(audioDiagnosticTools);
       devicePanel.querySelector("[data-audio-close]").onclick=closeNativeAudioIO;
       // Vendor settings are distinct from choosing a different audio device.
       devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
         if(deviceBusy()||!deviceInventory||!deviceChoice||
            !deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
+        // Leave the transient SEND view before a modal driver transaction.
+        // This is navigation only: do not write a fader, route or output ARM.
+        if(scope?.sofEnabled)scope.toggleSof(false);
         const active=deviceInventory.active;
         backend.emitEvent("arMixAction",{action:"audioDriverPanel",driver:active.playbackDevice,
           deviceGeneration:active.deviceGeneration});
@@ -5072,7 +5115,7 @@
         expectedEpoch:ep,expectedRevision:rev});
       status("Verifying audio route after emergency stop");
     });
-    hardwareNote=item("span","more-tools-caption","Device not initialized");
+    hardwareNote=item("span","armix-device-note","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
     // Everyday I/O and driver recovery use the same custom Audio I/O pane.
     // Vendor ASIO dialogs remain available through its explicit driver action.
@@ -5096,12 +5139,13 @@
     // toggles. The marker snapshots the 5-second PRE-event counters and
     // Windows RAM/process paging context from the existing 1 Hz control
     // timer. No sampling or file I/O happens in the ASIO callback.
-    const healthTitle=item("span","more-tools-caption","AUDIO HEALTH");
     const inspect=item("button","tool","Inspect selected routing");
     inspect.addEventListener("click",()=>{
       const tracks=[...(scope?.tracks||[]),scope?.master];
       const selected=tracks.filter(t=>t?.selected);
       if(selected.length!==1){nativeToast("Select one mixer channel to inspect routing");return;}
+      if(deviceBusy())return;
+      closeNativeAudioIO();
       nativeToast(wireVM.routeDiagnostic(controller?.state()?.current,nativeIdFor(selected[0])));
       const routes=document.getElementById("wireNavigatorToggle");
       if(routes?.getAttribute("aria-expanded")!=="true")routes?.click();
@@ -5285,6 +5329,7 @@
     });
     const newSessionButtons=[["New Project · empty mixer","EMPTY"],["New from I/O defaults","DEFAULT"],["Reset I/O to defaults","RESET_IO"]].map(([label,mode])=>{
       const button=item("button","tool",label);
+      button.dataset.armixMenuPage=mode==="RESET_IO"?"settings":"session";
       button.title=mode==="EMPTY"?"Start fresh · previous mixer archived, output muted":"Offline only · previous checkpoint archived in Studio/SessionArchive";
       button.addEventListener("click",async()=>{
         const current=controller?.state()?.current;
@@ -5320,6 +5365,7 @@
       return button;
     });
     const archiveButton=item("button","tool","Open session archive");
+    archiveButton.dataset.armixMenuPage="session";
     archiveButton.title="Open an archived mixer offline; current checkpoint is backed up first";
     archiveButton.addEventListener("click",async()=>{
       if(!logicalView||pendingLogical||hardware?.raw?.offlineNewSessionAvailable!==true){
@@ -5331,8 +5377,13 @@
       backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
           workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
     });
-    menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
-      healthTitle,inspect,tone,mark,report,advanced,
+    // Engineering diagnostics belong to the existing native Audio I/O
+    // Diagnostics tab, never the operator's application menu.
+    audioDiagnosticTools=document.createElement("div");
+    audioDiagnosticTools.className="armix-diagnostic-tools";
+    audioDiagnosticTools.append(hardwareNote,inspect,tone,mark,report,advanced);
+    if(devicePanel)devicePanel.querySelector(".armix-audio-diagnostics").append(audioDiagnosticTools);
+    menu.append(caption,setup,muteBtn,...newSessionButtons,archiveButton,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
@@ -6579,7 +6630,7 @@
       if (!connected)return false;
       if(action==="sofAssignPre"||action==="sofAssignPost"){
         const plan=sofAssignmentPlan(t);
-        if(!plan||controller?.state()?.pending){nativeToast("SEND assignment unavailable · wait for accepted routing");return true;}
+        if(!plan||pendingLogical||controller?.state()?.pending){nativeToast("SEND assignment unavailable · wait for accepted routing");return true;}
         const {from,to}=plan;
         const tap=action==="sofAssignPre"?"PRE_FADER":"POST_FADER";
         const db=t.sofDraft?.target===scope.sofTargetId?t.sofDraft.db:-60;

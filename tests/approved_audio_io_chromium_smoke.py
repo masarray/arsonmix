@@ -51,6 +51,10 @@ def verify_custom_input(page,out):
     # publish the preset. Only independent correlated disk readback does.
     inventory["namedPatches"]={"revision":0,"readOnly":False,"entries":[]}
     emit(page,"arMixAudioDeviceInventory",inventory)
+    tools=page.locator("[data-audio-input-grid] [data-io-matrix-tools]")
+    assert not tools.evaluate("(e)=>e.open")
+    assert page.locator("[data-audio-input-grid] .armix-patch-grid").is_visible()
+    tools.locator(":scope > summary").click()
     name=page.get_by_label("Preset name",exact=True)
     name.fill("Vocal Stereo")
     page.get_by_label("Preset format",exact=True).select_option("STEREO")
@@ -199,6 +203,7 @@ def verify_logical_inputs(page,out):
     state["logicalInputRegistry"]={"revision":"1","ports":[],"references":[]}
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"inputs")
+    page.locator("[data-audio-input-grid] [data-io-matrix-tools] > summary").click()
     title="Session logical inputs"
     summary=page.get_by_text(title,exact=True)
     summary.press("Enter")
@@ -267,7 +272,7 @@ def verify_bus_remap(page,out):
         physicalBusSecondaryArmed=False,operatorOutputMuted=False)
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
-    page.locator("[data-audio-hardware-routing] > summary").click()
+    assert page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
     rows=page.locator("[data-audio-output-grid] tbody tr")
     main=rows.nth(0);monitor=rows.nth(1)
     assert main.get_by_label("MAIN assignment",exact=True).count()==0
@@ -349,7 +354,8 @@ def verify_logical_outputs(page,out):
         logicalOutputRegistry={"revision":"1","ports":[],"references":[]})
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
-    page.locator("[data-audio-hardware-routing] > summary").click()
+    assert page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
+    page.locator("[data-audio-output-grid] [data-io-matrix-tools] > summary").click()
     title="Session logical outputs"
     page.get_by_text(title,exact=True).click()
     name=page.get_by_label("Logical output name",exact=True)
@@ -445,7 +451,8 @@ def verify_io_defaults(page,out):
         ioDefaults={"revision":"0","readOnly":False,"canLoad":False,"inputs":0,"outputs":0})
     emit(page,"arMixConsoleSnapshot",state)
     open_verified_audio_io(page,state,"routing")
-    page.locator("[data-audio-hardware-routing] > summary").click()
+    assert page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
+    page.locator("[data-audio-output-grid] [data-io-matrix-tools] > summary").click()
     save=page.get_by_role("button",name="Make Default",exact=True)
     load=page.get_by_role("button",name="Load Default",exact=True)
     clear=page.get_by_role("button",name="Clear Default",exact=True)
@@ -557,7 +564,7 @@ def verify_additional_output(page,out):
     inventory=open_verified_audio_io(page,state,"routing")
     inline=page.locator("[data-audio-extra-output]")
     assert inline.get_by_label("Windows playback device").is_visible()
-    assert not page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
+    assert page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
     assert inline.get_by_role("button",name="Disconnect").is_enabled()
     assert not panel.is_visible()
     assert page.locator("[data-extra-device]").count()==1
@@ -775,6 +782,8 @@ def verify_independent_output(page,out,legacy_empty=False):
     before=page.evaluate("()=>window.__actions.length")
     edit.click()
     assert not panel.is_visible()
+    assert page.locator("#ribbon-tab-mixer").get_attribute("aria-selected")=="true"
+    assert page.locator("#sofToggle").is_visible()
     assert page.locator("#mixContext").inner_text()=="MONITOR MIX"
     mon=page.get_by_label("MAIN secondary monitor output")
     # SOF rebuilds MAIN; the accepted route must be painted immediately,
@@ -782,8 +791,15 @@ def verify_independent_output(page,out,legacy_empty=False):
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
     select_ribbon_workflow(page,"mixer")
-    page.locator("#sofToggle").click()
+    # Reproduce a transient admission lock on the entry button while SOF is
+    # active. The real visible Return to Main must still escape locally.
+    page.locator("#sofToggle").evaluate("el=>el.disabled=true")
+    escape=page.locator("#ribbonMainMix")
+    assert escape.is_visible() and escape.is_enabled()
+    escape.click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"
+    assert page.locator("#gainView").is_enabled() and page.locator("#fxView").is_enabled()
+    page.locator("#sofToggle").evaluate("el=>el.disabled=false")
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
     mon.select_option("__armix_settings__")
@@ -872,9 +888,13 @@ def verify_custom_recovery_routes(page,out):
     assert page.get_by_text("Open JUCE driver recovery",exact=True).count()==0
     page.locator("#moreTools > summary").click()
     page.locator('[data-menu-category="settings"]').click()
-    page.locator(".arNativeAdvancedRecovery > summary").click()
-    page.get_by_role("button",name="Open Audio I/O recovery").click()
+    assert page.locator("#moreTools .arNativeAdvancedRecovery").count()==0
+    page.locator("#armix-menu-settings").get_by_role("button",name="Audio I/O",exact=True).click()
     dialog=page.locator(".armix-audio-dialog")
+    assert dialog.is_visible()
+    dialog.locator('[data-audio-tab="diagnostics"]').click()
+    dialog.locator(".arNativeAdvancedRecovery > summary").click()
+    dialog.get_by_role("button",name="Open Audio I/O recovery").click()
     assert dialog.is_visible()
     assert dialog.count()==1
     page.locator("[data-audio-close]").click()

@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
-from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN, open_audio_io_command, select_ribbon_workflow
+from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN, open_audio_io_command, select_ribbon_workflow, open_menu_category
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -341,21 +341,17 @@ def main():
             show_id = "11111111-2222-4333-8444-555555555555"
             corrupt_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
             def show_click(text):
-                page.evaluate("""([selector,text])=>{
-                  const buttons=[...document.querySelectorAll(selector+' button')];
-                  const button=buttons.find(b=>b.textContent===text);
-                  if(!button)throw Error('Missing native Show button: '+text);
-                  button.click();
-                }""",[show_panel,text])
+                panel=open_menu_category(page,"scenes")
+                button=panel.get_by_role("button",name=text,exact=True)
+                assert button.is_visible()
+                button.click()
             def show_select(value):
-                return page.evaluate("""([selector,value])=>{
-                  const node=document.querySelector(selector+' select[aria-label="Saved native Show"]');
-                  if(!node)throw Error('Native Show selector absent');
-                  node.value=value;node.dispatchEvent(new Event('change'));
-                  const buttons=[...document.querySelectorAll(selector+' button')];
-                  const available=name=>buttons.find(b=>b.textContent===name)?.disabled===false;
-                  return {recall:available('Recall Show'),recover:available('Recover Last Good')};
-                }""",[show_panel,value])
+                panel=open_menu_category(page,"scenes")
+                node=panel.get_by_label("Saved native Show")
+                assert node.is_visible()
+                node.select_option(value)
+                return {key:panel.get_by_role("button",name=label,exact=True).is_enabled()
+                        for key,label in (("recall","Recall Show"),("recover","Recover Last Good"))}
             # File commands now live in the first application menu, not
             # on the toolbar surface. Exercise the visible controls, including
             # the original native action and icon, rather than bypassing them.
@@ -381,9 +377,14 @@ def main():
             emit(page,"arMixNativeSessionAck",{"operation":"OPEN","ok":False,"error":"Invalid mixer JSON"})
             assert page.get_by_text("Invalid mixer JSON",exact=True).count()>=1
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
-            show_click("Test MAIN output")
+            select_ribbon_workflow(page,"io")
+            page.locator(".command-bar > [data-native-io]").click()
+            page.locator('[data-audio-tab="diagnostics"]').click()
+            page.locator(".armix-audio-diagnostics").get_by_text("Test MAIN output",exact=True).click()
             assert page.evaluate("()=>window.__events.at(-1).payload")=={
                 "action":"diagnosticRoute","value":"TOGGLE_MAIN_OUTPUT_TONE"}
+            page.locator("[data-audio-close]").click()
+            select_ribbon_workflow(page,"scenes")
             show_click("Browse Shows")
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[
@@ -418,6 +419,7 @@ def main():
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[]})
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
+            select_ribbon_workflow(page,"mixer")
             # Failed preflight and an unbound audio device must not blank the
             # operator workspace. No unadmitted intent can escape to JUCE.
             assert page.locator('.console-pane').is_visible()

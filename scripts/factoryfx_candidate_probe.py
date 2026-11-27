@@ -122,6 +122,9 @@ def main():
                                 "error": str(e)})
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({"schemaVersion": 1, "candidates": results}, indent=2) + "\n", encoding="utf-8")
+    for row in results:
+        # Visible bounded evidence, no credentials or arbitrary remote text.
+        print(json.dumps({k: row[k] for k in ("productId", "archiveStatus", "error", "moduleInfoAudioClasses", "sourceCommitMentioned", "archiveBuildCommitMentions") if k in row}, ensure_ascii=True))
     return 1 if any(r["archiveStatus"] == "failed" for r in results) else 0
 
 if __name__ == "__main__":

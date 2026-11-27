@@ -106,6 +106,25 @@ private:
 class MixerCaptionLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
+    // The larger native hit target is not a thick decorative bevel.
+    void drawResizableWindowBorder (juce::Graphics& g, int w, int h,
+                                    const juce::BorderSize<int>& border,
+                                    juce::ResizableWindow& window) override
+    {
+        if (border.getTop() < 8)
+        {
+            juce::LookAndFeel_V4::drawResizableWindowBorder(g, w, h, border, window);
+            return;
+        }
+        g.setColour (juce::Colour (0xff101921));
+        g.fillRect (0, 0, w, border.getTop());
+        g.fillRect (0, h - border.getBottom(), w, border.getBottom());
+        g.fillRect (0, border.getTop(), border.getLeft(), h - border.getTopAndBottom());
+        g.fillRect (w - border.getRight(), border.getTop(), border.getRight(), h - border.getTopAndBottom());
+        g.setColour (juce::Colour (window.isActiveWindow() ? 0xff526977 : 0xff354957));
+        g.drawRect (0, 0, w, h, 1);
+    }
+
     juce::Button* createDocumentWindowButton (int kind) override
     {
         return new MixerCaptionButton (kind);

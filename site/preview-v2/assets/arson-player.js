@@ -7,6 +7,9 @@
  if(!root||!toggle)return;
  const backend=window.__JUCE__?.backend;
  const native=Boolean(backend?.emitEvent&&backend?.addEventListener);
+ const desktopChild=document.documentElement?.dataset?.armixPlayerWindow==="true";
+ let desktopAvailable=false,desktopVisible=false;
+ const windowCommand=operation=>backend.emitEvent("arMixPlayerWindow",{operation});
  let model={tracks:[],catalogue:null,setlists:[],queue:[],activeSetlist:0,
    selected:-1,current:-1,pending:-1,autoNext:false,
    transport:{state:"EMPTY",title:"",currentSeconds:0,durationSeconds:0},
@@ -63,6 +66,11 @@
      String(v%60).padStart(2,"0");
  };
  const open=visible=>{
+   if(desktopChild&&!visible){closeSongMenu(false);backend.emitEvent("arMixPlayerWindowHide",{});return;}
+   if(desktopAvailable&&!desktopChild){if(visible)windowCommand("OPEN");return;}
+   // Opening an already visible modeless Player must not hide it, rebuild
+   // its playlist or steal mixer focus during an unrelated state update.
+   if(visible&&!root.hidden)return;
    if(!visible)closeSongMenu(false);
    root.hidden=!visible;updateMini();
    toggle.setAttribute("aria-expanded",String(visible));
@@ -76,14 +84,15 @@
      (collectionView==="queue"?$("playerQueueView"):$("playerSearch")).focus({preventScroll:true});
    }
  };
- toggle.addEventListener("click",()=>open(root.hidden));
+ // Open Player is an open-only command; close/minimize remain explicit.
+ toggle.addEventListener("click",()=>open(true));
  $("playerClose").addEventListener("click",()=>open(false));
  $("playerMinimize").addEventListener("click",()=>{open(false);if(!$("playerMini").hidden)$("playerMiniExpand").focus();});
  $("playerMiniExpand").addEventListener("click",()=>open(true));
  $("playerMiniPlay").addEventListener("click",()=>send(model.transport?.state==="PLAYING"?"playerPause":"playerPlay"));
  $("playerMiniNext").addEventListener("click",()=>{if(model.pending<0)send("playerNext");});
  $("playerPrevious").addEventListener("click",()=>{if(model.pending<0&&model.current>0&&!model.tracks[model.current-1]?.missing)send("playerPlayNow",model.current-1);});
- function updateMini(){$("playerMini").hidden=!native||!root.hidden||!model.transport?.title||model.current<0;}
+ function updateMini(){$("playerMini").hidden=desktopChild||!native||!root.hidden||!model.transport?.title||model.current<0;}
  function setDetails(visible){$("playerDetails").hidden=!visible;$("playerDetailsToggle").setAttribute("aria-expanded",String(visible));if(visible)$("playerDetails").scrollIntoView?.({block:"nearest"});}
  $("playerDetailsToggle").addEventListener("click",()=>setDetails($("playerDetails").hidden));
  $("playerNextCard").addEventListener("click",()=>{
@@ -664,7 +673,7 @@
    loopBtn.title=model.loopAB?"Disable Loop A–B":"Loop A–B requires saved IN/OUT markers";
    loopBtn.setAttribute("aria-pressed",String(Boolean(model.loopAB)));
    const playing=state==="PLAYING";
-   for(const id of ["playerPlay","playerMiniPlay"]){const button=$(id);if(button.dataset.playing!==String(playing)){button.dataset.playing=String(playing);button.innerHTML=playing?"<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><rect x=\"6\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"/><rect x=\"14\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"/></svg>":"<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M8 4.5a1 1 0 0 1 1.5-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 8 19.5z\"/></svg>";button.setAttribute("aria-label",playing?"Pause":"Play");button.title=playing?"Pause":"Play";}}
+   for(const id of ["playerPlay","playerMiniPlay"]){const button=$(id);if(button.dataset.playing!==String(playing)){button.dataset.playing=String(playing);button.innerHTML=playing?"<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><rect x=\"6\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"/><rect x=\"14\" y=\"5\" width=\"4\" height=\"14\" rx=\"1\"/></svg>":"<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" fill=\"currentColor\"><path d=\"M6 5Q6 4 7 4.5L18 11Q19.5 12 18 13L7 19.5Q6 20 6 19Z\"/></svg>";button.setAttribute("aria-label",playing?"Pause":"Play");button.title=playing?"Pause":"Play";}}
    $("playerPrevious").disabled=!native||model.pending>=0||model.current<=0||Boolean(model.tracks[model.current-1]?.missing);
    $("playerMiniNext").disabled=model.pending>=0;$("playerNext").disabled=model.pending>=0;
    const editingIndex=model.selected>=0?model.selected:model.current;
@@ -748,7 +757,10 @@
  window.addEventListener?.("resize",()=>{closeSongMenu(false);rendered="";renderTracks();renderWaveform(model.transport||{});});
  root.addEventListener("keydown",event=>{
    if(event.ctrlKey&&!event.altKey&&!event.shiftKey&&!event.metaKey&&event.key.toLowerCase()==="f"){event.preventDefault();event.stopPropagation?.();focusSearch();return;}
-   if(event.key==="Escape"){event.stopPropagation();if(menuOwner){event.preventDefault();closeSongMenu(true);return;}open(false);toggle.focus();return;}
+   if(event.key==="Escape"){
+     // Escape may dismiss a transient song menu, never the Player itself.
+     event.stopPropagation();if(menuOwner){event.preventDefault();closeSongMenu(true);}return;
+   }
    const target=event.target;
    const interactive=target?.isContentEditable||["INPUT","TEXTAREA","SELECT","BUTTON","SUMMARY","A"].includes(target?.tagName)||target?.closest?.("button,input,select,textarea,summary,a,[contenteditable=true]");
    if(event.key===" "&&!event.repeat&&!interactive&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey){
@@ -774,9 +786,28 @@
      if(seekOrigin!==null&&seekOrigin!==seekIdentity()){seekCancelled=true;draggingSeek=false;}
      render();
    });
-   // Dynamic loader may join after the initial WebView readiness event.
-   // Request genuine native library/readback, not a browser-local fallback.
-   send("playerSubscribe");
+   if(desktopChild){
+     const abort=$("playerWindowAbort");
+     if(abort)abort.hidden=true;
+     root.addEventListener("pointerdown",event=>{
+       if(event.button!==0||event.isPrimary===false)return;
+       backend.emitEvent("arMixPlayerWindowActivate",{});
+       if(event.target.closest?.(".ap-top")&&!event.target.closest?.("button,input,select,textarea,a,summary")){
+         event.preventDefault();backend.emitEvent("arMixPlayerWindowDrag",{});
+       }
+     });
+     // Subscribe only after all handlers exist; native replays accepted state.
+     open(true);
+     backend.emitEvent("arMixPlayerWindowReady",{gui:"APPROVED_PLAYER_WINDOW_V1"});
+   }else{
+     backend.addEventListener("arMixPlayerWindowState",payload=>{
+       if(payload?.available!==true)return;
+       desktopAvailable=true;desktopVisible=payload.visible===true;
+       root.hidden=true;toggle.setAttribute("aria-expanded",String(desktopVisible));updateMini();
+     });
+     windowCommand("QUERY");
+     send("playerSubscribe");
+   }
  }
  switchCollection("setlist");
  render();

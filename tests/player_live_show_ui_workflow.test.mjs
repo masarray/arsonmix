@@ -181,7 +181,15 @@ assert.equal(songRows()[0].children[0].children[1].textContent,'Song 1999');
 assert.equal(list.scrollTop,0,'changing search returns to first match');
 search.value='';search.fire('input');
 assert.ok(songRows().length<=80);
+$('arsonPlayer').hidden=true;
 $('playerToggle').fire('click'); // opening hidden panel remeasures viewport
+assert.equal($('arsonPlayer').hidden,false);
+const openRows=list.children;
+$('playerToggle').click();
+assert.equal($('arsonPlayer').hidden,false,'Open Player is not a close toggle');
+assert.strictEqual(list.children,openRows,'repeat open must not rebuild rows');
+$('arsonPlayer').fire('keydown',{key:'Escape',stopPropagation(){},preventDefault(){}});
+assert.equal($('arsonPlayer').hidden,false,'Escape without a song menu must not hide Player');
 assert.ok(songRows().length<=80);
 assert.doesNotMatch(player,/new Audio\s*\(|AudioContext\s*\(/,
   'WebView may never become a competing audio player');
@@ -194,6 +202,8 @@ $('playerClose').click();assert.equal($('playerMini').hidden,false);
 assert.match($('playerMiniTime').textContent,/01:42 \/ 04:00/);
 actions.length=0;$('playerMiniPlay').click();assert.equal(actions.at(-1).detail.action,'playerPause');
 $('playerMiniExpand').click();assert.equal($('arsonPlayer').hidden,false);assert.equal($('playerMini').hidden,true);
+actions.length=0;$('playerMinimize').click();assert.equal($('arsonPlayer').hidden,true);assert.equal($('playerMini').hidden,false);
+$('playerMiniExpand').click();assert.equal($('arsonPlayer').hidden,false);assert.equal(actions.length,0,'visibility commands never change playback');
 $('playerLibraryView').click();assert.equal($('playerLibraryNote').hidden,false);assert.ok(songRows().every(row=>!row.draggable));
 $('playerSetlistView').click();assert.equal($('playerLibraryNote').hidden,true);
 const seek=$('playerSeek');seek.fire('pointerdown');seek.value='800';
