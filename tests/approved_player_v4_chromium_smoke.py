@@ -74,7 +74,8 @@ def main():
                     pointer:coat.pointerEvents,layer:Number(coat.zIndex),screenLayer:Number(screen.zIndex),
                     menuLayer:Number(menu.zIndex),isolation:s.isolation,filter:coat.filter,
                     backdrop:coat.backdropFilter,animation:coat.animationName,
-                    radius:coat.borderRadius,panelRadius:s.borderRadius,
+                    radius:coat.borderRadius,panelRadius:s.borderRadius,screenRadius:screen.borderRadius,
+                    rim:s.borderTopWidth, corners:[s.borderTopLeftRadius,s.borderTopRightRadius,s.borderBottomRightRadius,s.borderBottomLeftRadius],
                     overflow:s.overflowY};
             }""")
             assert glass["gradients"]==1 and glass["shadows"]==8,glass
@@ -82,7 +83,11 @@ def main():
             assert glass["inset"]==["0px"]*4 and glass["pointer"]=="none",glass
             assert glass["layer"]>glass["menuLayer"]>glass["screenLayer"] and glass["isolation"]=="isolate",glass
             assert glass["filter"]==glass["backdrop"]==glass["animation"]=="none",glass
-            assert glass["radius"]==glass["panelRadius"] and glass["overflow"]=="hidden",glass
+            outer=11 if width<=640 else 14
+            inner=outer-1
+            assert glass["panelRadius"]==f"{outer}px" and glass["rim"]=="1px",glass
+            assert glass["corners"]==[f"{outer}px"]*4,glass
+            assert glass["radius"]==glass["screenRadius"]==f"{inner}px" and glass["overflow"]=="hidden",glass
             assert screen.evaluate("e=>getComputedStyle(e).overflowY==='auto' && getComputedStyle(e).scrollbarWidth==='none'")
             # Reference geometry: measure the actual glass on a uniform dark
             # substrate, not the busy controls. The entire upper-left plane
@@ -122,6 +127,36 @@ def main():
                 print("PLAYER_EPS_SINGLE_PLANE_PASS",width,profile,flush=True)
             finally:
                 probe_style.evaluate("e=>e.remove()")
+            # Real composed corner clipping, including header, bezel and coat.
+            # Compare with the exact same scene without the panel. Disable only
+            # the intentional external shadow during this geometry probe.
+            rect=panel.bounding_box()
+            corner_style=page.add_style_tag(content="#arsonPlayer{box-shadow:none!important}")
+            try:
+                shown=page.screenshot(clip=rect,scale="css",animations="disabled")
+                hidden_style=page.add_style_tag(content="#arsonPlayer{visibility:hidden!important}")
+                try:
+                    behind=page.screenshot(clip=rect,scale="css",animations="disabled")
+                finally:
+                    hidden_style.evaluate("e=>e.remove()")
+                corners=page.evaluate("""async ([a,b,r])=>{
+                    const pixels=async s=>{const bmp=await createImageBitmap(new Blob([Uint8Array.from(atob(s),c=>c.charCodeAt(0))],{type:'image/png'}));
+                        const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
+                        const ctx=c.getContext('2d');ctx.drawImage(bmp,0,0);bmp.close();
+                        return {w:c.width,h:c.height,data:ctx.getImageData(0,0,c.width,c.height).data};};
+                    const [x,y]=await Promise.all([pixels(a),pixels(b)]);
+                    const delta=(px,py)=>{const i=(py*x.w+px)*4;return Math.max(...[0,1,2].map(k=>Math.abs(x.data[i+k]-y.data[i+k])));};
+                    return [[false,false],[true,false],[true,true],[false,true]].map(([right,bottom])=>{
+                        const dx=n=>right?x.w-1-n:n,dy=n=>bottom?x.h-1-n:n;
+                        const outside=[0,1,2].flatMap(i=>[0,1,2].map(j=>delta(dx(i),dy(j))));
+                        const inside=[r-2,r-1,r].flatMap(i=>[r-2,r-1,r].map(j=>delta(dx(i),dy(j))));
+                        return {outside:Math.max(...outside),inside:Math.max(...inside)};
+                    });
+                }""",[base64.b64encode(v).decode("ascii") for v in (shown,behind)]+[outer])
+                assert all(c["outside"]<=3 and c["inside"]>=8 for c in corners),corners
+                print("PLAYER_CONCENTRIC_CORNERS_PASS",width,corners,flush=True)
+            finally:
+                corner_style.evaluate("e=>e.remove()")
             def hit(control):
                 control.scroll_into_view_if_needed()
                 assert control.evaluate("""e=>{const r=e.getBoundingClientRect();
