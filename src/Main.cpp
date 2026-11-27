@@ -1016,6 +1016,10 @@ private:
     int playerFadeMilliseconds_=180; // compact optional transition setting
     int playerOutputPendingIndex_=-1; // only after explicit Choose output gesture
     bool playerAutoNext_=false;
+    int playerRepeat_=0; // explicit session preference, never restored into playback
+    armix::player::PlayerSessionActivity playerActivity_;
+    std::set<juce::File> playerFavorites_;
+    bool playerActivityDirty_=true,playerAutomaticPending_=false;
     bool playerLoopCurrent_=false; // explicit rehearsal toggle, never persisted
     bool playerFolderBusy_=false; // GUI only; background scanner never touches this
     armix::player::PlayerAutoAdvanceGate playerAutoAdvanceGate_;
@@ -6356,6 +6360,7 @@ private:
     void activatePlayerSet(int index) {
         if(index<0 || index>=static_cast<int>(playerSets_.size()))return;
         playerActiveSet_=index;
+        playerActivity_.resetSet();playerActivityDirty_=true;playerAutomaticPending_=false;
         const auto& chosen=playerSets_[static_cast<std::size_t>(index)];
         playerLibrary_=chosen.files;
         playerTrackSettings_=chosen.controls;
@@ -6374,6 +6379,7 @@ private:
     // retains the single deck, live selection and accepted native control.
     void restorePlayerLibrary() {
         playerSets_.clear();
+        restorePlayerFavorites();
         auto result=armix::player::PlayerSetlistRepository::load(
             settingsDirectory().getChildFile("player-library.json"));
         if(result.status==armix::player::PlayerSetlistRepository::LoadStatus::missing) {
@@ -6637,6 +6643,7 @@ private:
     void adoptPlayerCatalogue(std::vector<juce::File> files){
         if(files==playerCatalogue_)return;
         playerCatalogue_=std::move(files);
+        playerActivityDirty_=true;
         playerCatalogueIds_.clear();
         for(std::size_t i=0;i<playerCatalogue_.size();++i)
             playerCatalogueIds_.emplace(playerCatalogue_[i],static_cast<int>(i));
@@ -6733,6 +6740,73 @@ private:
         }
         emitPlayerState(true);
     }
+    // Preferences are independent of setlist persistence. An explicit
+    // favorite gesture writes a bounded atomic sidecar, never on playback ticks.
+    void restorePlayerFavorites(){
+        const auto file=settingsDirectory().getChildFile("player-favorites.json");
+        if(!file.existsAsFile()||file.getSize()>9*1024*1024)return;
+        const auto doc=juce::JSON::parse(file.loadFileAsString());
+        const auto values=doc.getProperty("files",{});
+        if(static_cast<int>(doc.getProperty("version",0))!=1)return;
+        if(const auto* rows=values.getArray()){
+            if(rows->size()>2000)return;
+            for(const auto& row:*rows){
+                const auto path=row.toString();
+                if(row.isString()&&path.length()<=4096&&juce::File::isAbsolutePath(path)){
+                    const juce::File song(path);
+                    if(armix::player::PlayerLibraryPolicy::supported(song))playerFavorites_.insert(song);
+                }
+            }
+        }
+    }
+    int playerCatalogueId(int index) const {
+        if(index<0||index>=static_cast<int>(playerLibrary_.size()))return -1;
+        const auto it=playerCatalogueIds_.find(playerLibrary_[static_cast<std::size_t>(index)]);
+        return it==playerCatalogueIds_.end()?-1:it->second;
+    }
+    bool playerAutomaticEnabled() const {
+        const int mode=playerCurrent_>=0&&playerCurrent_<static_cast<int>(playerTrackSettings_.size())?
+            playerTrackSettings_[static_cast<std::size_t>(playerCurrent_)].autoAfter:-1;
+        return armix::player::PlayerShowTransitionPolicy::automatic(playerAutoNext_,mode,playerRepeat_);
+    }
+    void emitPlayerActivity(){
+        if(!browser_.loaded||!playerActivityDirty_)return;
+        auto event=std::make_unique<juce::DynamicObject>();
+        event->setProperty("schema","arsonmix.activity.v1");
+        event->setProperty("repeat",playerRepeat_);
+        juce::Array<juce::var> recent,done,favorites;
+        for(int id:playerActivity_.recent())recent.add(id);
+        for(int id:playerActivity_.done())done.add(id);
+        for(const auto& file:playerFavorites_){
+            const auto it=playerCatalogueIds_.find(file);
+            if(it!=playerCatalogueIds_.end())favorites.add(it->second);
+        }
+        event->setProperty("recent",juce::var(recent));event->setProperty("done",juce::var(done));
+        event->setProperty("favorites",juce::var(favorites));
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerActivity",juce::var(event.release()));
+        playerActivityDirty_=false;
+    }
+    void changePlayerFavorite(const juce::var& value){
+        if(!value.isObject()||!value.getProperty("id",{}).isInt()||!value.getProperty("enabled",{}).isBool())return;
+        const int id=static_cast<int>(value.getProperty("id",-1));
+        if(id<0||id>=static_cast<int>(playerCatalogue_.size()))return;
+        const auto file=playerCatalogue_[static_cast<std::size_t>(id)];
+        auto candidate=playerFavorites_;
+        if(static_cast<bool>(value.getProperty("enabled",false))){
+            if(candidate.size()>=2000&&!candidate.contains(file)){playerError_="Maximum 2000 favorites";return emitPlayerState();}
+            candidate.insert(file);
+        }else candidate.erase(file);
+        if(candidate==playerFavorites_)return;
+        juce::Array<juce::var> rows;for(const auto& song:candidate)rows.add(song.getFullPathName());
+        auto doc=std::make_unique<juce::DynamicObject>();
+        doc->setProperty("version",1);doc->setProperty("files",juce::var(rows));
+        juce::TemporaryFile staging(settingsDirectory().getChildFile("player-favorites.json"));
+        if(!staging.getFile().replaceWithText(juce::JSON::toString(juce::var(doc.release()),false))||
+           !staging.overwriteTargetFileWithTemporary()){
+            playerError_="Unable to save favorites";emitPlayerState();return;
+        }
+        playerFavorites_=std::move(candidate);playerActivityDirty_=true;playerError_.clear();emitPlayerState();
+    }
     void emitPlayerState(bool includeLibrary=false,
                          bool includeTracks=true) {
         if(!browser_.loaded)return;
@@ -6750,7 +6824,7 @@ private:
             return;
         }
         browser_.emitEventIfBrowserIsVisible("arMixPlayerState",snapshot);
-        pumpPlayerMedia();
+        emitPlayerActivity();pumpPlayerMedia();
     }
     void choosePlayerFiles() {
         if(playerFileChooser_)return; // one native dialog only
@@ -6915,6 +6989,7 @@ private:
         playSelectedMusic();
     }
     void playSelectedMusic() {
+        if(playerPendingIndex_<0)playerAutomaticPending_=false;
         if(playerLibrary_.empty()) {
             playerError_="Add Music to begin";emitPlayerState();return;
         }
@@ -6969,8 +7044,9 @@ private:
         }
         emitPlayerState(true);
     }
-    void playNextMusic() {
+    void playNextMusic(bool automatic=false) {
         if(playerPendingIndex_>=0)return;
+        playerAutomaticPending_=false;
         // Next is a deliberate escape from rehearsal looping.
         playerLoopCurrent_=false;
         int queued=-1;
@@ -6984,8 +7060,10 @@ private:
                 playerQueueEpoch_.changed();
             }
         }
-        const int next=armix::player::PlayerShowTransitionPolicy::nextIndex(
-            playerCurrent_,playerSelected_,
+        using Transition=armix::player::PlayerShowTransitionPolicy;
+        const int next=automatic?Transition::automaticIndex(playerCurrent_,playerSelected_,
+            static_cast<int>(playerLibrary_.size()),queued,playerRepeat_):
+            Transition::nextIndex(playerCurrent_,playerSelected_,
             static_cast<int>(playerLibrary_.size()),queued);
         if(next<0) {
             playerPendingQueueFile_={};
@@ -6995,17 +7073,19 @@ private:
         playerSelected_=next;
         // Explicitly queued CURRENT is a repeat request, not a resume.
         // The standby worker can decode another instance of the same file.
-        if(queued==playerCurrent_ && queued>=0) {
+        if(next==playerCurrent_ && (queued>=0||automatic)) {
             const auto control=playerTrackSettings_[static_cast<std::size_t>(next)];
             if(engine_.queuePlayerTransition(file,control.key,control.tempo,
                    playerFadeMilliseconds_,control.cueIn,control.cueOut)) {
                 playerPendingIndex_=next;
-                playerPendingQueueFile_=file;
+                playerPendingQueueFile_=queued>=0?file:juce::File{};
+                playerAutomaticPending_=automatic;
                 playerError_.clear();
-            } else playerError_="Could not prepare queued song repeat";
+            } else playerError_="Could not prepare song repeat";
             emitPlayerState(true);return;
         }
         playSelectedMusic();
+        if(automatic&&playerPendingIndex_==next&&playerError_.isEmpty())playerAutomaticPending_=true;
         if(queued>=0 && playerError_.isEmpty()) {
             if(playerPendingIndex_==next) {
                 playerPendingQueueFile_=file;
@@ -7114,13 +7194,45 @@ private:
             return emitPlayerState();
         }
         if(action=="playerSubscribe"){
-            emitPlayerState(true);juce::Array<juce::var> batch;
+            playerActivityDirty_=true;emitPlayerState(true);juce::Array<juce::var> batch;
             for(const auto& [id,media]:playerMedia_){batch.add(media.project(id));if(batch.size()>=128){emitPlayerMedia(batch);batch.clear();}}
             if(!batch.isEmpty())emitPlayerMedia(batch);
             emitPlayerCover();return;
         }
         if(action=="playerCatalogue"){playerCatalogueRequested_=true;emitPlayerCatalogue();pumpPlayerMedia();return;}
         if(action=="playerCatalogueAdd")return addPlayerCatalogueSong(value);
+        if(action=="playerFavorite")return changePlayerFavorite(value);
+        if(action=="playerClearHistory"){
+            playerActivity_.clear();playerActivityDirty_=true;return emitPlayerState();
+        }
+        if(action=="playerPlaybackMode"){
+            if(!value.isBool()||playerPendingIndex_>=0)return;
+            const bool next=static_cast<bool>(value);
+            if(!commitPlayerPreferences(next,playerFadeMilliseconds_))return emitPlayerState();
+            playerRepeat_=0;playerActivityDirty_=true;playerAutoAdvanceGate_.rearm();playerError_.clear();
+            return emitPlayerState(true);
+        }
+        if(action=="playerRepeat"){
+            if(!value.isInt()||playerPendingIndex_>=0)return;
+            const int mode=static_cast<int>(value);if(mode<0||mode>2)return;
+            playerRepeat_=mode;playerActivityDirty_=true;playerAutoAdvanceGate_.rearm();
+            return emitPlayerState();
+        }
+        if(action=="playerAutoAfter"){
+            if(!value.isObject()||!value.getProperty("id",{}).isInt()||
+               !value.getProperty("set",{}).isInt()||!value.getProperty("mode",{}).isInt()||!value.getProperty("index",{}).isInt()||
+               static_cast<int>(value.getProperty("set",-1))!=playerActiveSet_||playerPendingIndex_>=0)return;
+            const int index=static_cast<int>(value.getProperty("index",-1));
+            const int mode=static_cast<int>(value.getProperty("mode",-2));
+            if(index<0||index>=static_cast<int>(playerTrackSettings_.size())||mode< -1||mode>1||
+               playerCatalogueId(index)!=static_cast<int>(value.getProperty("id",-1)))return;
+            auto controls=playerTrackSettings_;
+            controls[static_cast<std::size_t>(index)].autoAfter=mode;
+            if(commitPlayerTrackEdit(playerLibrary_,std::move(controls))){
+                playerAutoAdvanceGate_.rearm();playerError_.clear();
+            }
+            return emitPlayerState(true);
+        }
         if(action=="playerMediaRefresh"){
             if(playerMediaBusy_||playerCoverBusy_){playerError_="Media scan is in progress";return emitPlayerState();}
             playerMedia_.clear();playerMediaCursor_=0;playerCoverId_=-1;playerCover_.clear();
@@ -7275,7 +7387,7 @@ private:
                 playerLoopCurrent_=false;
             playerError_.clear();emitPlayerState(true);return;
         }
-        if(action=="playerPlay")return playTransportMusic();
+        if(action=="playerPlay"){playerAutoAdvanceGate_.rearm();return playTransportMusic();}
         if(action=="playerSeek") {
             const double seconds=static_cast<double>(value);
             const double total=static_cast<double>(
@@ -7288,12 +7400,14 @@ private:
             emitPlayerState();return;
         }
         if(action=="playerPause") {
+            playerAutomaticPending_=false;
             playerAutoAdvanceGate_.rearm();
             playerPendingQueueFile_={};
             playerPendingIndex_=-1;
             engine_.playerPause();emitPlayerState();return;
         }
         if(action=="playerStop") {
+            playerAutomaticPending_=false;
             playerAutoAdvanceGate_.rearm();
             playerLoopCurrent_=false;
             playerOutputPendingIndex_=-1;
@@ -12029,7 +12143,7 @@ private:
             emitScanProgress();
         // Run transport deadlines at 12 Hz only while necessary. The
         // browser still receives lightweight state at its old 4 Hz pace.
-        if(timerTicks_%3==0 || playerAutoNext_ ||
+        if(timerTicks_%3==0 || playerAutomaticEnabled() ||
            playerLoopCurrent_ || playerPendingIndex_>=0) {
             // Start only a genuinely prepared NEXT and ACK the row identity
             // in the same UI-owner thread. No session/graph mutation here.
@@ -12039,8 +12153,10 @@ private:
                 playerAutoAdvanceGate_.rearm();
                 if(playerPendingIndex_>=0 &&
                    playerPendingIndex_<static_cast<int>(playerLibrary_.size())) {
+                    if(playerAutomaticPending_)playerActivityDirty_=playerActivity_.complete(playerCatalogueId(playerCurrent_))||playerActivityDirty_;
                     playerCurrent_=playerPendingIndex_;
                     playerSelected_=playerCurrent_;
+                    playerActivityDirty_=playerActivity_.started(playerCatalogueId(playerCurrent_))||playerActivityDirty_;
                     if(playerPendingQueueFile_!=juce::File{} &&
                        armix::player::PlayerShowTransitionPolicy::
                            commitQueuedFront(playerQueue_,
@@ -12048,7 +12164,7 @@ private:
                         playerQueueEpoch_.changed();
                 }
                 playerPendingQueueFile_={};
-                playerPendingIndex_=-1;
+                playerPendingIndex_=-1;playerAutomaticPending_=false;
                 playerError_.clear();
                 emitPlayerState(true,false);
             } else if(playerPendingIndex_>=0 &&
@@ -12056,7 +12172,7 @@ private:
                 // Preserve queued entry on decode error: the performer can
                 // retry. A failed NEXT must not consume the user's setlist.
                 playerPendingQueueFile_={};
-                playerPendingIndex_=-1;
+                playerPendingIndex_=-1;playerAutomaticPending_=false;
                 playerError_="NEXT could not decode; current song is unchanged";
                 emitPlayerState(true);
             }
@@ -12076,11 +12192,13 @@ private:
                 if(found!=playerLibrary_.end())
                     queued=static_cast<int>(found-playerLibrary_.begin());
             }
+            playerActivityDirty_=playerActivity_.observe(playerCatalogueId(playerCurrent_),phase=="PLAYING",phase=="ENDED")||playerActivityDirty_;
+            const bool automaticEnabled=playerAutomaticEnabled();
             const int upcoming=activeCurrent?
-                armix::player::PlayerShowTransitionPolicy::nextIndex(
+                armix::player::PlayerShowTransitionPolicy::automaticIndex(
                     playerCurrent_,playerSelected_,
                     static_cast<int>(playerLibrary_.size()),
-                    queued):-1;
+                    queued,playerRepeat_):-1;
             // Rehearsal loop has priority over Auto Next and queued
             // songs, which remain untouched until the operator presses Next.
             // Reuse the exact M3 standby worker for a click-safe A-B return;
@@ -12120,10 +12238,10 @@ private:
             }
             // Queue is explicit operator intent: warm NEXT even while Auto
             // Next is OFF. Auto alone may prepare the following setlist row.
-            if(!playerLoopCurrent_ && (playerAutoNext_ || queued>=0) &&
+            if(!playerLoopCurrent_ && (automaticEnabled || queued>=0) &&
                phase=="PLAYING" && !fading && !preparing &&
                playerPendingIndex_<0 && upcoming>=0 &&
-               (upcoming!=playerCurrent_ || queued>=0)) {
+               (upcoming!=playerCurrent_ || queued>=0 || playerRepeat_!=0)) {
                 const auto preset=playerTrackSettings_[
                     static_cast<std::size_t>(upcoming)];
                 (void)engine_.preloadPlayerMusic(
@@ -12131,10 +12249,10 @@ private:
                     preset.key,preset.tempo,
                     preset.cueIn,preset.cueOut);
             }
-            if(playerAutoNext_ && !playerLoopCurrent_ && activeCurrent &&
+            if(automaticEnabled && !playerLoopCurrent_ && activeCurrent &&
                !fading && !preparing && playerPendingIndex_<0 &&
                upcoming>=0 &&
-               (upcoming!=playerCurrent_ || queued>=0) &&
+               (upcoming!=playerCurrent_ || queued>=0 || playerRepeat_!=0) &&
                (phase=="PLAYING" || phase=="ENDED")) {
                 // CUT is an end-only switch. Positive fade begins before
                 // EOF, bounded by media remaining + one 12 Hz timer tick.
@@ -12152,7 +12270,7 @@ private:
                             "tempoPercent",100)));
                 if((preEnd || phase=="ENDED") &&
                    playerAutoAdvanceGate_.claim()) {
-                    playNextMusic();
+                    playNextMusic(true);
                 }
             }
             if(browser_.loaded && timerTicks_%3==0)emitPlayerState();

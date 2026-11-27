@@ -251,3 +251,19 @@ assert.equal($("playerArtworkFallback").dataset.art,"unavailable");
 publish({current:-1,selected:-1,transport:{state:"EMPTY",title:""}});
 assert.equal($("playerArtworkFallback").dataset.art,"still");
 console.log("Artwork priority, stable fallback, missing and MiniPlayer PASS");
+
+// V4.8 native activity and commands. No UI-generated DONE or optimistic favorite.
+publish({tracks:[{...songs[0],catalogId:4,autoAfter:-1},{...songs[1],catalogId:5,autoAfter:0}],current:0,selected:0,pending:-1,transport:{state:"PLAYING"}});
+$("playerSetlistView").click();search.value="";search.fire("input");
+listeners.get("arMixPlayerActivity")({schema:"arsonmix.activity.v1",favorites:[5],done:[5],recent:[4,5],repeat:1});
+assert.equal(songRows()[1].children[0].children[2].textContent,"DONE");
+assert.equal($("playerAutoText").textContent,"Repeat one");
+$("playerAutoNext").click();$("playerSongMenu").children.find(x=>x.textContent==="Repeat all").click();assert.equal(actions.at(-1).detail.action,"playerRepeat");assert.equal(actions.at(-1).detail.value,2);
+$("playerAfterSong").fire("change",{target:{value:"1"}});assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1).detail)),{action:"playerAutoAfter",value:{id:4,index:0,set:0,mode:1}});
+songRows()[0].children[1].click();$("playerSongMenu").children.find(x=>x.textContent==="Add to favorites").click();
+assert.deepEqual(JSON.parse(JSON.stringify(actions.at(-1).detail)),{action:"playerFavorite",value:{id:4,enabled:true}});
+$("playerLibraryView").click();
+listeners.get("arMixPlayerCatalogue")({schema:"arsonmix.catalogue.v1",rows:Array.from({length:6},(_,catalogId)=>({catalogId,title:"Library "+catalogId}))});
+$("playerLibraryFilter").fire("change",{target:{value:"favorites"}});assert.equal(songRows().length,1);assert.equal(songRows()[0].dataset.songId,"5");
+$("playerLibraryFilter").fire("change",{target:{value:"recent"}});assert.equal(songRows().length,2);assert.equal(songRows()[0].dataset.songId,"4");
+console.log("V4.8 activity, filters, favorites, playback mode and per-song intent PASS");

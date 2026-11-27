@@ -82,6 +82,25 @@ def main():
             page.screenshot(path=str(evidence/f"context-{width}-{height}.png"))
             menu.get_by_role("menuitem",name="Add to queue").click()
             assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerQueueAppend","value":1}
+            # Native activity readback and genuine operator gestures.
+            page.evaluate("""()=>window.__nativeListeners.get('arMixPlayerActivity')({
+                schema:'arsonmix.activity.v1',favorites:[1],done:[1],recent:[0,1],repeat:1})""")
+            assert page.locator('.ap-songrow[data-song-id="1"]').get_attribute("data-done")=="true"
+            assert page.locator('.ap-songrow[data-song-id="1"]').get_attribute("data-favorite")=="true"
+            mode=page.locator("#playerAutoNext")
+            assert mode.inner_text()=="Repeat one"
+            mode.click()
+            menu.get_by_role("menuitem",name="Repeat all").click()
+            assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerRepeat","value":2}
+            page.locator("#playerLibraryView").click()
+            page.evaluate("""rows=>window.__nativeListeners.get('arMixPlayerCatalogue')({schema:'arsonmix.catalogue.v1',rows})""",
+                          [dict(catalogId=i,title="Track "+str(i+1)) for i in range(30)])
+            page.locator("#playerLibraryFilter").select_option("favorites")
+            assert page.locator(".ap-songrow").count()==1
+            assert page.locator(".ap-songrow").get_attribute("data-song-id")=="1"
+            page.locator("#playerLibraryFilter").select_option("recent")
+            assert page.locator(".ap-songrow").count()==2
+            page.locator("#playerSetlistView").click()
             page.locator("#playerClose").click()
             mini=page.locator("#playerMini")
             mini.wait_for(state="visible")

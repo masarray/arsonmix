@@ -54,6 +54,11 @@ int main() {
     juce::Array<juce::var> relativeCatalogue;relativeCatalogue.add("relative.mp3");
     badCatalogue.getDynamicObject()->setProperty("catalogue",juce::var(relativeCatalogue));
     assert(!Archive::parse(badCatalogue));
+    auto autoplaySet=one;autoplaySet[0].controls[0].autoAfter=1;
+    auto autoplay=Archive::parse(Archive::serialize(autoplaySet,0,false,180));
+    assert(autoplay&&autoplay->sets[0].controls[0].autoAfter==1);
+    autoplaySet[0].controls[0].autoAfter=2;
+    assert(!Archive::serialize(autoplaySet,0,false,180).isObject());
     // Invalid document/version never causes disk or player changes.
     assert(!Archive::parse(juce::var{}));
     assert(!Archive::parse(juce::JSON::parse("{\"version\":8}")));

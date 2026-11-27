@@ -526,3 +526,8 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 .ap-cover-fallback[data-art="still"]{background-image:url("player-cover-still.jpg")}
 .ap-cover-fallback[data-art="unavailable"]{background-image:url("player-cover-unavailable.jpg")}
 #arsonPlayer #playerCount{font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+#arsonPlayer .ap-library-filter{margin:0 12px 6px;padding:3px 6px;max-width:calc(100% - 24px);font-size:11px;background:#20282f;border:1px solid #34424b;border-radius:4px;color:var(--ap-ink)}
+#arsonPlayer .ap-songrow[data-done="true"]:not([data-current="true"]):not([data-selected="true"]) .ap-songname{color:#879ba6}
+#arsonPlayer .ap-songrow[data-favorite="true"] .ap-songname{color:#d7c49c}
+#arsonPlayer #playerAfterSongTarget{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

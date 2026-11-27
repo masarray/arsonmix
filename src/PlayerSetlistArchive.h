@@ -16,6 +16,7 @@ namespace armix::player {
 struct PlayerTrackSettings {
     int key=0, tempo=100;
     double cueIn=0., cueOut=0.;
+    int autoAfter=-1; // inherit global, 0 stop, 1 continue
 };
 struct PlayerSavedSet {
     juce::String name;
@@ -65,6 +66,11 @@ class PlayerSetlistArchive final {
                     settings.cueIn=cueIn;
                     settings.cueOut=cueOut;
                 }
+            }
+            if(version>=3){
+                const auto mode=item.getProperty("autoAfter",-1);
+                if(mode.isInt()&&static_cast<int>(mode)>=-1&&static_cast<int>(mode)<=1)
+                    settings.autoAfter=static_cast<int>(mode);
             }
             destination.files.push_back(source);
             destination.controls.push_back(settings);
@@ -197,6 +203,7 @@ public:
                 const auto& settings=s.controls[i];
                 if(settings.key< -6||settings.key>6||
                    settings.tempo<80||settings.tempo>120||
+                   settings.autoAfter< -1||settings.autoAfter>1||
                    !PlayerCueEditPolicy::validArchive(
                        {settings.cueIn,settings.cueOut}))
                     return {};
@@ -224,6 +231,7 @@ public:
                     "cueIn",set.controls[i].cueIn);
                 song.getDynamicObject()->setProperty(
                     "cueOut",set.controls[i].cueOut);
+                song.getDynamicObject()->setProperty("autoAfter",set.controls[i].autoAfter);
                 songs.add(std::move(song));
             }
             row.getDynamicObject()->setProperty("files",juce::var(songs));

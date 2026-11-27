@@ -87,6 +87,7 @@ public:
                     item->setProperty("missing",!s.files[i].existsAsFile());
                     item->setProperty("keySemitones",s.controls[i].key);
                     item->setProperty("tempoPercent",s.controls[i].tempo);
+                    item->setProperty("autoAfter",s.controls[i].autoAfter);
                     item->setProperty("cueIn",s.controls[i].cueIn);
                     item->setProperty("cueOut",s.controls[i].cueOut);
                     rows.add(juce::var(item.release()));

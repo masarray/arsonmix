@@ -49,6 +49,7 @@
  }
  const enriched=song=>song?{...song,...(media.get(song.catalogId)||{}),missing:typeof song.missing==="boolean"?song.missing:media.get(song.catalogId)?.missing}:null;
  const activeCatalogueIndex=new Map();
+ let activityRevision=0,repeatMode=0,favorites=new Set(),completed=new Set(),recent=[],libraryFilter="all";
  const catalogView=()=>collectionView==="library"&&Array.isArray(model.catalogue);
  const setText=(el,value)=>{const next=String(value??"");if(el.textContent!==next)el.textContent=next;};
  const showFeedback=(msg,error=false)=>{
@@ -191,8 +192,21 @@
    else showFeedback("Audio I/O is unavailable. Reopen the mixer.",true);
  });
  $("playerNext").addEventListener("click",()=>{if(model.pending<0)send("playerNext");});
- $("playerAutoNext").addEventListener("click",()=>
-   send("playerAutoNext",!model.autoNext));
+ $("playerAutoNext").addEventListener("click",event=>{
+   const owner=$("playerAutoNext");
+   showContext(owner,"Playback mode",[
+     [(model.autoNext&&repeatMode===0?"✓ ":"")+"Auto next",()=>send("playerPlaybackMode",true),false,model.pending>=0],
+     [(!model.autoNext&&repeatMode===0?"✓ ":"")+"Stop after song",()=>send("playerPlaybackMode",false),false,model.pending>=0],
+     [(repeatMode===1?"✓ ":"")+"Repeat one",()=>send("playerRepeat",1),false,model.pending>=0],
+     [(repeatMode===2?"✓ ":"")+"Repeat all",()=>send("playerRepeat",2),false,model.pending>=0]
+   ],()=>native&&model.pending<0);
+ });
+ $("playerAfterSong").addEventListener("change",event=>{
+   const index=model.selected,track=model.tracks[index],mode=Number(event.target.value);
+   event.target.value=String(track?.autoAfter??-1);
+   if(native&&model.pending<0&&Number.isInteger(track?.catalogId)&&[-1,0,1].includes(mode))
+     send("playerAutoAfter",{id:track.catalogId,index,set:model.activeSetlist,mode});
+ });
  const volume=$("playerVolume"),volumeDb=$("playerVolumeDb");
  const paintVolume=percent=>{paintRange(volume,percent);volumeDb.textContent=percent===0?"−∞ dB":(20*Math.log10(percent/100)).toFixed(1)+" dB";};
  volume.disabled=!native;
@@ -234,6 +248,7 @@
    const queue=view==="queue";
    $("playerSetlistView").setAttribute("aria-pressed",String(view==="setlist"));
    $("playerLibraryView").setAttribute("aria-pressed",String(view==="library"));$("playerLibraryNote").hidden=view!=="library";
+   $("playerLibraryFilter").hidden=view!=="library";
    $("playerQueueView").setAttribute("aria-pressed",String(queue));
    $("playerSetlistTools").hidden=queue;list.hidden=queue;$("playerQueuePanel").hidden=!queue;
    if(!queue){rendered="";renderTracks();}
@@ -241,6 +256,7 @@
  $("playerSetlistView").addEventListener("click",()=>switchCollection("setlist"));
  $("playerQueueView").addEventListener("click",()=>switchCollection("queue"));
  $("playerLibraryView").addEventListener("click",()=>switchCollection("library"));
+ $("playerLibraryFilter").addEventListener("change",event=>{const value=event.target.value;if(!["all","favorites","recent"].includes(value))return;libraryFilter=value;list.scrollTop=0;renderTracks();});
  // Shared context menu. Opening it is presentation-only; no implicit select or playback.
  function showContext(owner,title,commands,valid,event){
    if(menuOwner===owner&&!event){closeSongMenu(true);return;}
@@ -266,6 +282,8 @@
    surface.addEventListener("keydown",event=>{if(event.key==="ContextMenu"||(event.shiftKey&&event.key==="F10")){event.preventDefault();event.stopPropagation();openMenu(null);}});
  }
  function canRemoveSong(id){return id!==model.pending&&(id!==model.current||["STOPPED","ENDED"].includes(model.transport?.state));}
+ const afterLabel=mode=>mode===0?"Stop":mode===1?"Continue":"Use global";
+ const favoriteCommand=song=>[favorites.has(song.catalogId)?"Remove from favorites":"Add to favorites",()=>send("playerFavorite",{id:song.catalogId,enabled:!favorites.has(song.catalogId)}),false,!Number.isInteger(song.catalogId)];
  function showSongMenu(owner,song,revision,setlist,event){
    const valid=()=>native&&revision===libraryRevision&&setlist===model.activeSetlist;
    const live=fn=>()=>{if(model.pending<0)fn();};
@@ -278,6 +296,7 @@
      ["Move later",()=>send("playerMoveSong",{from:song.id,to:song.id+1}),false,song.id>=model.tracks.length-1||collectionView==="library"],
      ["Remove from setlist",()=>{if(canRemoveSong(song.id))send("playerRemoveSong",song.id);},true,!canRemoveSong(song.id)]
    ];
+   if(Number.isInteger(song.catalogId))commands.splice(commands.length-1,0,favoriteCommand(song),["After song: "+afterLabel(song.autoAfter),()=>{if(valid()){send("playerSelect",song.id);setDetails(true);$("playerAfterSong").focus();}},false,model.pending>=0]);
    if(song.missing&&song.id===model.selected)commands.unshift(["Locate file",()=>{if(model.selected===song.id)send("playerRelink");}]);
    showContext(owner,song.title||"Untitled",commands,valid,event);
  }
@@ -285,6 +304,9 @@
    ["Find songs · Ctrl+F",focusSearch],["Show current song",()=>revealTrack(model.current),false,model.current<0],
    ["Show upcoming songs",()=>$("playerNextCard").click()],
    ["Song details",()=>setDetails(true)],["Setlist",()=>switchCollection("setlist")],["Queue",()=>switchCollection("queue")],
+   ["Favorites",()=>{libraryFilter="favorites";$("playerLibraryFilter").value=libraryFilter;switchCollection("library");}],
+   ["Recently played (this session)",()=>{libraryFilter="recent";$("playerLibraryFilter").value=libraryFilter;switchCollection("library");}],
+   ["Clear session history",()=>send("playerClearHistory"),false,!native||(!recent.length&&!completed.size)],
    ["Refresh music metadata",()=>send("playerMediaRefresh"),false,!native],
    ["Keyboard shortcuts",()=>{setDetails(true);$("playerKeyboardHelp").open=true;$("playerKeyboardHelp").scrollIntoView?.({block:"nearest"});}],
    ["Minimize",()=>open(false)]
@@ -431,7 +453,8 @@
  const ROW_HEIGHT=34,OVERSCAN=8;
  let filteredKey="",previousQuery="",previousSetlist=-1,filtered=[];
  const normalizeSearch=value=>String(value??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase().trim();
- let searchIndexRevision=-1,searchIndex=[];
+ const searchCache=new WeakMap();
+ function searchText(raw){const tags=media.get(raw.catalogId);const cached=searchCache.get(raw);if(cached&&cached.tags===tags)return cached.text;const value=normalizeSearch([raw.title,tags?.title,tags?.artist||raw.artist,tags?.album||raw.album,tags?.format||raw.format].filter(Boolean).join(" "));searchCache.set(raw,{tags,text:value});return value;}
  function refreshVisibleTrackStates(){
    // Do not destroy the existing row on CURRENT/NEXT readback; a native
    // status ACK between click and dblclick must not lose the gesture or focus.
@@ -443,30 +466,33 @@
      row.dataset.selected=String(activeId>=0&&activeId===model.selected);row.dataset.current=String(activeId>=0&&activeId===model.current);row.dataset.missing=String(Boolean(song?.missing));
      choose.dataset.selected=row.dataset.selected;choose.dataset.current=row.dataset.current;
      choose.setAttribute("aria-selected",row.dataset.selected);
+     row.dataset.favorite=String(favorites.has(song?.catalogId));row.dataset.done=String(completed.has(song?.catalogId));
      choose.children[2].textContent=song?.missing?"Missing":
-       activeId>=0&&activeId===model.current?"NOW":activeId>=0&&activeId===model.selected?"NEXT":"";
+       activeId>=0&&activeId===model.current&&model.transport?.state!=="ENDED"?"NOW":activeId>=0&&activeId===model.selected&&activeId!==model.current?"NEXT":completed.has(song?.catalogId)?"DONE":favorites.has(song?.catalogId)?"★":"";
      const seconds=activeId>=0&&activeId===model.current?Number(model.transport?.durationSeconds)||Number(song?.durationSeconds):Number(song?.durationSeconds);
      choose.children[4].textContent=Number.isFinite(seconds)&&seconds>0?duration(seconds):"—";
    }
  }
  function renderTracks(){
    const query=normalizeSearch(search.value);
-   const key=[libraryRevision,mediaRevision,model.activeSetlist,collectionView,query].join("|");
+   const key=[libraryRevision,mediaRevision,model.activeSetlist,collectionView,query,catalogView()?libraryFilter:"",catalogView()&&libraryFilter!=="all"?activityRevision:0].join("|");
    if(key!==filteredKey){
      if(query!==previousQuery || model.activeSetlist!==previousSetlist)
        list.scrollTop=0;
      previousQuery=query;previousSetlist=model.activeSetlist;
      filteredKey=key;
      const global=catalogView(),source=global?model.catalogue:model.tracks;
-     const indexKey=[libraryRevision,mediaRevision,global].join("|");
-     if(searchIndexRevision!==indexKey){searchIndexRevision=indexKey;searchIndex=source.map(raw=>{const song=enriched(raw);return normalizeSearch([song.title,raw.title,song.artist,song.album,song.format].filter(Boolean).join(" "));});}
+     const pool=global&&libraryFilter==="recent"?recent.map(id=>model.catalogue[id]).filter(Boolean):
+       global&&libraryFilter==="favorites"?source.filter(song=>favorites.has(song.catalogId)):source;
      const tokens=query.split(/\s+/).filter(Boolean);
-     filtered=source.filter((song,i)=>tokens.every(token=>searchIndex[i].includes(token))).map(enriched);
-     const known=filtered.filter(song=>Number(song.durationSeconds)>0);
-     const seconds=known.reduce((sum,song)=>sum+Number(song.durationSeconds),0);
-     const total=known.length?(duration(seconds)+(known.length<filtered.length?"+":"")):"";
-     setText($("playerCount"),(query?filtered.length+" / "+source.length:source.length)+" songs"+(total?" · "+total:""));
-     if(collectionView==="library"&&!global)filtered.sort((a,b)=>String(a.title||"").localeCompare(String(b.title||"")));
+     // Cache normalized text per row + metadata object, enrich only visible
+     // rows. A 12-file metadata update must not normalize/copy 64k songs.
+     filtered=tokens.length?pool.filter(song=>tokens.every(token=>searchText(song).includes(token))):pool;
+     let known=0,seconds=0;
+     for(const song of filtered){const value=Number(media.get(song.catalogId)?.durationSeconds??song.durationSeconds);if(value>0&&Number.isFinite(value)){++known;seconds+=value;}}
+     const total=known?(duration(seconds)+(known<filtered.length?"+":"")):"";
+     setText($("playerCount"),(query?filtered.length+" / "+pool.length:pool.length)+" songs"+(total?" · "+total:""));
+     if(collectionView==="library"&&!global)filtered=[...filtered].sort((a,b)=>String(a.title||"").localeCompare(String(b.title||"")));
      rendered="";
    }
    const visible=Math.max(24,Math.min(80,
@@ -486,8 +512,7 @@
    if(!filtered.length){
      const message=document.createElement("div");
      message.className="ap-empty";
-     message.textContent=model.tracks.length?
-       "No songs match your search":"Add music files to create your setlist";
+     message.textContent=catalogView()&&libraryFilter==="favorites"?"No favorites yet":catalogView()&&libraryFilter==="recent"?"No songs played this session":model.tracks.length?"No songs match your search":"Add music files to create your setlist";
      list.append(message);return;
    }
    // Scroll spacers preserve the native scrollbar's real 2k-song range.
@@ -496,8 +521,8 @@
    top.style.height=(start*ROW_HEIGHT)+"px";
    top.setAttribute("aria-hidden","true");
    list.append(top);
-   for(const raw of songs){
-     const global=catalogView(),catalogId=raw.catalogId;
+   for(const item of songs){
+     const raw=enriched(item),global=catalogView(),catalogId=raw.catalogId;
      const activeId=global?(activeCatalogueIndex.get(catalogId)??-1):raw.id;
      const song=global?{...raw,id:catalogId,keySemitones:activeId>=0?model.tracks[activeId]?.keySemitones:undefined}:raw;
      const row=document.createElement("div");
@@ -547,7 +572,7 @@
      actions.title="Actions for "+song.title;actions.disabled=!native;actions.setAttribute("aria-haspopup","menu");
      actions.innerHTML='<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
      if(global&&activeId<0)choose.title="Double-click to add to active setlist; no playback";
-     const openActions=event=>{if(global&&activeId<0)showContext(actions,song.title,[["Add to active setlist",add,false,song.missing||model.tracks.length>=2000]],valid,event);else showSongMenu(actions,{...song,id:activeId},revision,setlist,event);};
+     const openActions=event=>{if(global&&activeId<0)showContext(actions,song.title,[["Add to active setlist",add,false,song.missing||model.tracks.length>=2000],favoriteCommand(song)],valid,event);else showSongMenu(actions,{...song,id:activeId,autoAfter:model.tracks[activeId]?.autoAfter},revision,setlist,event);};
      actions.addEventListener("click",()=>openActions());
      contextBind(row,openActions);
      row.addEventListener("dragstart",event=>{
@@ -574,7 +599,7 @@
    list.append(bottom);
    refreshVisibleTrackStates();
  }
- function nextTrackIndex(){if(model.pending>=0)return model.pending;const selected=model.selected>=0&&model.selected<model.tracks.length?model.selected:-1;const next=selected>=0&&selected!==model.current?selected:model.current<0?0:model.current+1;return next<model.tracks.length?next:-1;}
+ function nextTrackIndex(){if(model.pending>=0)return model.pending;const selected=model.selected>=0&&model.selected<model.tracks.length?model.selected:-1;const override=model.tracks[model.current]?.autoAfter;const repeat=override===0?0:repeatMode;if(selected>=0&&selected!==model.current)return selected;if(repeat===1&&model.current>=0)return model.current;const next=model.current<0?0:model.current+1;return next<model.tracks.length?next:repeat===2&&model.tracks.length?0:-1;}
  function render(){
    const t=model.transport||{};
    const state=String(t.state||"EMPTY");
@@ -651,8 +676,12 @@
    $("playerKeyPlus").disabled=key>=6;
    $("playerTempoMinus").disabled=tempo<=80;
    $("playerTempoPlus").disabled=tempo>=120;
-   $("playerAutoText").textContent=model.autoNext?"Auto next on":"Stop after song";
-   $("playerAutoNext").setAttribute("aria-pressed",String(model.autoNext));
+   const override=currentSong?.autoAfter??-1;
+   const modeLabel=override===0?"Stop · song":override===1&&repeatMode===0?"Continue · song":repeatMode===1?"Repeat one":repeatMode===2?"Repeat all":model.autoNext?"Auto next on":"Stop after song";
+   setText($("playerAutoText"),modeLabel);$("playerAutoNext").title="Playback mode · "+modeLabel;
+   $("playerAutoNext").setAttribute("aria-pressed",String(override===0?false:override===1||model.autoNext||repeatMode!==0));
+   $("playerAfterSong").value=String(chosen?.autoAfter??-1);$("playerAfterSong").disabled=!native||!Number.isInteger(chosen?.catalogId)||model.pending>=0;
+   setText($("playerAfterSongTarget"),chosen?"After "+chosen.title:"After selected song");
    $("playerFadeMs").value=String(model.crossfadeMs??180);
    const acceptedVolume=Number(t.volumePercent??50);
    if(!volumeDragging&&pendingVolume===null){volume.value=String(acceptedVolume);paintVolume(acceptedVolume);}
@@ -711,6 +740,7 @@
  });
  for(const id of ["playerArtwork","playerMiniArtwork"])$(id).addEventListener("error",coverError);
  if(native){
+   backend.addEventListener("arMixPlayerActivity",payload=>{if(payload?.schema!=="arsonmix.activity.v1")return;const ids=values=>Array.isArray(values)?values.filter(id=>Number.isInteger(id)&&id>=0&&id<64000):[];favorites=new Set(ids(payload.favorites));completed=new Set(ids(payload.done));recent=ids(payload.recent).slice(0,256);repeatMode=[0,1,2].includes(payload.repeat)?payload.repeat:0;++activityRevision;render();});
    backend.addEventListener("arMixPlayerCatalogue",payload=>{if(payload?.schema!=="arsonmix.catalogue.v1"||!Array.isArray(payload.rows))return;model.catalogue=payload.rows.slice(0,64000);++libraryRevision;if(collectionView==="library")renderTracks();});
    backend.addEventListener("arMixPlayerMedia",payload=>{if(payload?.schema!=="arsonmix.media.v1"||!Array.isArray(payload.rows))return;for(const row of payload.rows)if(Number.isInteger(row.catalogId)&&row.catalogId>=0&&row.catalogId<64000)media.set(row.catalogId,row);++mediaRevision;render();});
    backend.addEventListener("arMixPlayerCover",payload=>{const incoming=Number(payload?.catalogId);if(incoming!==coverId||payload?.uri!==coverUri)failedCover=null;coverId=incoming;coverUri=typeof payload?.uri==="string"&&payload.uri.length<=350000&&/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(payload.uri)?payload.uri:"";render();});
