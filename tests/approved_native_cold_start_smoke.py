@@ -534,7 +534,12 @@ def main():
                 {'name':backend,'inputs':['New Capture'],'outputs':['New Playback'],'separate':True}]})
             remap=page.locator('[data-audio-remap]')
             assert remap.is_hidden()
-            page.locator('[data-audio-apply]').click()
+            # This recovery already has a verified endpoint/pin inventory.
+            # Only explicit Hardware Pins Apply closes on installed readback;
+            # Audio Device Apply intentionally stays open for discovery.
+            page.get_by_role('tab',name='Hardware Pins').click()
+            assert apply.inner_text()=='Apply pins'
+            apply.click()
             read_apply='()=>window.__events.filter(e=>e.payload?.action==="audioDeviceApply").at(-1).payload'
             wait_apply()
             opened=page.evaluate(read_apply)
@@ -552,7 +557,12 @@ def main():
                 captureDevice=active['captureDevice'],playbackDevice=active['playbackDevice'],
                 sampleRate=48000,bufferFrames=256,outputArmed=True,
                 enabledInputs=active['enabledInputs'],enabledOutputs=active['enabledOutputs'],
-                inputEndpoints=g0['device']['inputEndpoints'])
+                inputEndpoints=[dict(id=f'in:{pin}',port=pin,callback=i,
+                    label=active['inputNames'][pin],active=True)
+                    for i,pin in enumerate(active['enabledInputs'])],
+                outputEndpoints=[dict(id=f'out:{pin}',port=pin,callback=i,
+                    label=active['outputNames'][pin],active=True)
+                    for i,pin in enumerate(active['enabledOutputs'])])
             rebound['graph']['revision']='6'
             rebound['graph']['capabilities']['supportedOps'].extend([
                 'CREATE_CHANNEL', 'SET_FADER', 'SET_WIRE_SUM_GAIN'])
@@ -580,13 +590,16 @@ def main():
             # Apply again while MAIN is live. The native transaction owns
             # temporary mute and restoration without an extra browser command.
             page.locator('[data-native-io]').click()
-            emit(page,'arMixAudioDeviceInventory',{'active':active,'types':[
+            emit(page,'arMixAudioDeviceInventory',{'active':applied,'types':[
                 {'name':backend,'inputs':['New Capture'],'outputs':['New Playback'],'separate':True}]})
-            page.locator('[data-audio-apply]').click()
+            page.get_by_role('tab',name='Hardware Pins').click()
+            assert apply.inner_text()=='Apply pins'
+            apply.click()
             wait_apply()
             rejected=page.evaluate(read_apply)
+            assert rejected['expectedDeviceGeneration']==93
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':rejected['requestId'],'ok':False,
-                'state':'REJECTED','active':active,'error':'Test driver rejected'})
+                'state':'REJECTED','active':applied,'error':'Test driver rejected'})
             assert progress.is_hidden() and apply.is_enabled() and capture_select.is_enabled()
             emit(page,'arMixAudioDeviceApplyAck',{'state':'REJECTED','error':'Unsolicited ACK'})
             assert 'Test driver rejected' in page.locator('[data-audio-active]').inner_text()
@@ -594,7 +607,7 @@ def main():
             wait_apply()
             repeated=page.evaluate(read_apply)
             assert repeated['requestId']!=rejected['requestId']
-            next_active={**active,'deviceGeneration':94}
+            next_active={**applied,'deviceGeneration':94}
             emit(page,'arMixAudioDeviceApplyAck',{'requestId':repeated['requestId'],'ok':True,
                 'state':'ACCEPTED_LIVE','active':next_active,'mixerBound':True,'outputMuted':False})
             assert progress.is_visible() and apply.is_disabled()
