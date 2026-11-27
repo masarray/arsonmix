@@ -147,7 +147,28 @@ def main():
             assert file_group.all_text_contents() == ["New", "Save", "Open"], width
             new = menu.locator("[data-native-new-project]")
             assert new.count() == 1 and new.is_visible(), width
+            panel=menu.locator(".more-tools-panel")
+            assert panel.bounding_box()["height"]<=300,(width,panel.bounding_box())
+            assert panel.locator(":scope > .armix-menu-category:visible").count()==5
+            assert panel.locator(":scope > [data-armix-menu-active=false]:visible").count()==0
+            assert menu.locator("[data-native-emergency-output]").is_visible()
+            assert not panel.get_by_text("Copy Audio Report",exact=True).is_visible()
             page.screenshot(path=f"operator-ux-application-menu-{width}.png")
+            panel.locator('[data-menu-category="diagnostics"]').click()
+            assert panel.get_by_text("Copy Audio Report",exact=True).is_visible()
+            assert not new.is_visible()
+            page.screenshot(path=f"operator-ux-menu-diagnostics-{width}.png")
+            panel.get_by_text("Copy Audio Report",exact=True).click()
+            assert page.evaluate("()=>window.__events.at(-1).payload.action")=="copyDiagnosticReport"
+            panel.locator(".armix-menu-back").click()
+            assert new.is_visible()
+            for category in ("channel","view","scenes","settings"):
+                panel.locator('[data-menu-category="'+category+'"]').click()
+                assert panel.locator(".armix-menu-back").is_visible()
+                assert panel.locator(":scope > [data-armix-menu-active=false]:visible").count()==0
+                page.keyboard.press("Escape")
+                assert new.is_visible()
+            assert panel.bounding_box()["height"]<=300
             assert new.get_by_role("img").count() == 0  # decorative icon
             image = new.locator("img")
             assert image.get_attribute("alt") == ""

@@ -8,6 +8,75 @@ const icon=(path,fill=false)=>'<svg viewBox="0 0 24 24" aria-hidden="true" '+(fi
 const play=icon('<path d="M8 4.5a1 1 0 0 1 1.5-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 8 19.5z"/>',true);
 const pause=icon('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',true);
 const button=(id,label,glyph)=>'<button type="button" id="'+id+'" title="'+label+'" aria-label="'+label+'">'+glyph+'</button>';
+// Keep original command nodes and listeners. Only their presentation page changes.
+function installCompactMenu(more){
+ const panel=more.querySelector('.more-tools-panel');
+ if(!panel)return null;
+ const glyphs={
+ channel:'<path d="M5 3v18M12 3v18M19 3v18M3 9h4m3 7h4m3-9h4"/>',
+ view:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+ scenes:'<path d="m12 3 10 5-10 5L2 8zM2 12l10 5 10-5M2 16l10 5 10-5"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="m12 2 2 3 3-.1 1.5 2.6-1.4 2.7 1.4 2.8 3 .9-1 3-3 .5-2 2.5-3-1-3 1-2-2.5-3-.5-1-3 3-.9L7 10 5.5 7.5 7 5l3 .1z"/>',
+ diagnostics:'<path d="M2 12h4l3-7 4 14 3-7h6"/>'
+ };
+ const groups=[['channel','Channel'],['view','View'],['scenes','Scenes & Shows'],['settings','Settings'],['diagnostics','Diagnostics']];
+ const nav=new Map();
+ const back=document.createElement('button');back.type='button';back.className='armix-menu-back';
+ back.innerHTML=icon('<path d="m15 5-7 7 7 7"/>')+'<span>Back</span>';
+ panel.prepend(back);
+ for(const [id,label] of groups){
+   const row=document.createElement('button');row.type='button';row.className='armix-menu-category';row.dataset.menuCategory=id;
+   row.innerHTML=icon(glyphs[id])+'<span>'+label+'</span>'+icon('<path d="m9 5 7 7-7 7"/>');
+   row.addEventListener('click',()=>show(id,true));nav.set(id,row);panel.append(row);
+ }
+ let page='root';
+ const channelIds=new Set(['addTrack','addBus','addFx','addGroupBus','addGroupSelected','convertSelectedReverb','copy','paste','group','ungroup']);
+ const viewIds=new Set(['mode','viewFilter']);
+ const sceneIds=new Set(['sceneSafe','sceneSelect','saveScene','recallScene']);
+ const headings=new Map([['PROJECT · MIXER SESSION','root'],['CHANNEL SETUP','channel'],['VIEW & SELECTION','channel'],['WIRE TOOLS','settings'],['REFERENCE TOOLS','diagnostics'],['AUDIO / SAFETY','settings'],['AUDIO HEALTH','diagnostics'],['STUDIO / VERIFIED SHOWS','scenes']]);
+ function classify(){
+   let section='diagnostics';
+   for(const el of panel.children){
+     if(el===back||el.classList.contains('armix-menu-category'))continue;
+     const label=el.textContent.trim();
+     if(el.matches('.more-tools-caption')&&headings.has(label)){
+       section=headings.get(label);el.dataset.armixMenuHeading='true';el.dataset.armixMenuActive='false';continue;
+     }
+     let group=section;
+     if(el.matches('.mixer-file-tool,.reference-file-menu,[data-native-emergency-output]'))group='root';
+     else if(channelIds.has(el.id))group='channel';
+     else if(viewIds.has(el.id))group='view';
+     else if(sceneIds.has(el.id))group='scenes';
+     else if(el.matches('[data-wire-open],.arNativeAdvancedRecovery'))group='settings';
+     // Unknown commands are retained in their original section (or Diagnostics).
+     el.dataset.armixMenuPage=group;el.dataset.armixMenuActive=String(group===page);
+   }
+   for(const [id,row] of nav){
+     row.hidden=page!=='root'||!Array.from(panel.children).some(el=>el.dataset.armixMenuPage===id&&!el.hidden);
+   }
+   back.hidden=page==='root';
+   back.querySelector('span').textContent=page==='root'?'Back':groups.find(g=>g[0]===page)[1];
+   panel.dataset.armixMenuPage=page;
+ }
+ function show(id,focus=false){
+   page=id;classify();panel.scrollTop=0;
+   if(focus)(id==='root'?nav.get(lastPage):back)?.focus({preventScroll:true});
+ }
+ let lastPage='channel';
+ for(const [id,row] of nav)row.addEventListener('click',()=>{lastPage=id;});
+ back.addEventListener('click',()=>show('root',true));
+ more.addEventListener('toggle',()=>{if(!more.open)show('root');});
+ more.addEventListener('keydown',e=>{
+   if(e.key!=='Escape'||!more.open)return;
+   e.preventDefault();e.stopPropagation();
+   if(page!=='root')show('root',true);else{more.open=false;more.querySelector('summary').focus();}
+ });
+ // Direct insertions only: native bridge installs the real commands at startup.
+ new MutationObserver(classify).observe(panel,{childList:true});
+ classify();
+ return {show};
+}
+
 function install(){
  const header=document.querySelector('.app > .window-title'),bar=document.querySelector('.app > .command-bar');
  const more=$('moreTools'),summary=more?.querySelector('summary');
@@ -22,6 +91,7 @@ function install(){
  header.append(tabs);bar.id='armix-ribbon-commands';
  summary.innerHTML=shape('menu',151,'armix-ribbon-menu-shape')+'<svg class="armix-ribbon-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>ArSon<span style="color:#51d4ef">Mix</span></span>';
  summary.setAttribute('aria-label','ArSonMix application menu');
+ const compactMenu=installCompactMenu(more);
  const player=document.createElement('div');player.className='armix-ribbon-player';player.hidden=true;player.setAttribute('role','group');player.setAttribute('aria-label','Player transport');
  player.innerHTML='<span class="armix-ribbon-track" id="ribbonTrack">No music loaded</span><input type="range" id="ribbonSeek" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span class="armix-ribbon-time" id="ribbonTime">00:00 / 00:00</span><div class="armix-ribbon-transport">'+button('ribbonPrevious','Previous',icon('<rect x="4" y="5" width="3.5" height="14" rx="1"/><path d="M19 5 8 12l11 7z"/>',true))+button('ribbonPlay','Play',play)+button('ribbonNext','Next',icon('<rect x="16.5" y="5" width="3.5" height="14" rx="1"/><path d="m5 5 11 7-11 7z"/>',true))+button('ribbonStop','Stop',icon('<rect x="5" y="5" width="14" height="14" rx="2"/>',true))+'</div><div class="armix-ribbon-options">'+button('ribbonLoop','Loop A–B',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/>'))+button('ribbonMode','Playback mode / repeat',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/><path d="M10 12h4"/>'))+button('ribbonQueue','Queue',icon('<path d="M3 5h17M3 10h17M3 15h10m3 0 5 3-5 3z"/>'))+'</div><label class="armix-ribbon-volume">'+icon('<path d="M3 9v6h4l5 4V5L7 9H3zm13 0a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/>')+'<input type="range" id="ribbonVolume" min="0" max="100" step="1" value="50" aria-label="Player level before channel FX"></label>';
  // Restore local V6 order with the same native action controls.
@@ -55,7 +125,7 @@ function install(){
  $('ribbonQueue').addEventListener('click',()=>{openPlayer();click('playerQueueView');});
  $('ribbonAdd').addEventListener('click',()=>click('playerAdd'));
  const findShow=label=>Array.from(more.querySelectorAll('button')).find(e=>e.textContent.trim()===label);
- for(const [id,label] of [['ribbonShowSave','Save Show'],['ribbonShowBrowse','Browse Shows']])$(id).addEventListener('click',()=>{const el=findShow(label);if(el&&!el.disabled){more.open=true;el.click();}});
+ for(const [id,label] of [['ribbonShowSave','Save Show'],['ribbonShowBrowse','Browse Shows']])$(id).addEventListener('click',()=>{const el=findShow(label);if(el&&!el.disabled){more.open=true;compactMenu?.show('scenes');el.click();}});
  const controls=new Map();
  function range(proxyId,originalId,max){
    const proxy=$(proxyId),original=source(originalId);if(!original)return;

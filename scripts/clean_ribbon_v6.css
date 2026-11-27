@@ -93,3 +93,57 @@ html .app #armix-ribbon-commands #playerToggle .armix-ribbon-open-icon{width:16p
 html .app #armix-ribbon-commands>#mixContext{border:0!important;background:transparent!important;color:#a8c3d0!important;font:400 11px "Segoe UI",Arial,sans-serif!important;text-transform:none!important;box-shadow:none!important;white-space:nowrap}
 @media(max-width:1200px){.armix-ribbon-player .armix-ribbon-separator{margin:0 1px}.armix-ribbon-player{gap:6px}.armix-ribbon-readout{flex-basis:145px}.armix-ribbon-player #ribbonSeek{flex-basis:105px}}
 @media(max-width:1100px){html .app #armix-ribbon-commands[data-ribbon-tab=player] .armix-ribbon-player{flex:1 1 0}.armix-ribbon-readout{flex:0 0 145px}}
+
+/* V6 shared presentation: application menu progressive disclosure and contextual controls.
+   No restyling of approved fader, gain, meter, MUTE/SOLO/PFL or FX editor hardware. */
+html .app #armix-ribbon-commands #moreTools>.more-tools-panel{
+ display:grid;grid-template-columns:minmax(0,1fr)!important;width:224px!important;
+ padding:4px!important;gap:1px!important;max-height:min(360px,calc(100dvh - 64px))!important;
+ overflow:auto!important;overscroll-behavior:contain;background:#192b36!important;
+ border:1px solid #526977!important;border-radius:5px!important;
+ box-shadow:0 5px 12px #0006!important;color:#dce9ef;
+}
+html .app #armix-ribbon-commands #moreTools:not([open])>.more-tools-panel{display:none!important}
+html .app #armix-ribbon-commands #moreTools>.more-tools-panel>[data-armix-menu-active=false],
+html .app #armix-ribbon-commands #moreTools>.more-tools-panel>[data-armix-menu-heading=true],
+html .app #armix-ribbon-commands #moreTools>.more-tools-panel>[hidden]{display:none!important}
+html .app #armix-ribbon-commands #moreTools .reference-file-menu>.more-tools-caption{display:none!important}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category,.armix-menu-back){
+ display:flex;align-items:center;justify-content:flex-start!important;gap:9px!important;
+ text-align:left!important;width:100%!important;min-height:28px!important;height:28px!important;
+ max-height:none!important;padding:0 8px!important;box-sizing:border-box;
+ font:400 12px/1.2 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;
+ text-transform:none!important;text-shadow:none!important;border:1px solid transparent!important;
+ border-radius:3px!important;box-shadow:none!important;background:transparent!important;color:#dce9ef!important;
+}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category,.armix-menu-back):enabled:hover,
+html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category,.armix-menu-back):focus-visible{
+ background:#2a4858!important;border-color:#3b687b!important;color:#effaff!important;
+}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(.armix-menu-category,.armix-menu-back)[hidden]{display:none!important}
+.armix-menu-category>span,.armix-menu-back>span{flex:1}
+.armix-menu-category>svg,.armix-menu-back>svg{width:15px;height:15px;flex:none;color:#a6bfcc}
+.armix-menu-category>svg:last-child{width:12px;height:12px;color:#829ba8}
+.armix-menu-back{order:-10}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel[data-armix-menu-page=root]>[data-native-emergency-output]{order:20;color:#ff9b90!important;border-top:1px solid #3a515f!important}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel select{width:100%!important;max-width:100%!important}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel .more-tools-caption{font:400 11px/1.4 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important;color:#9fb5c1!important;padding:4px 8px!important;white-space:normal!important}
+html .app #armix-ribbon-commands #moreTools .arNativeAdvancedRecovery summary{cursor:pointer}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel button:disabled{opacity:.45!important}
+html .app #armix-ribbon-commands.command-bar>button.tool:not(.bank-arrow),html .app #armix-ribbon-commands.command-bar .strip-view-switch>button.tool{
+ font:400 11px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important;
+ flex-shrink:0;white-space:nowrap;gap:5px!important;
+}
+html .app #armix-ribbon-commands.command-bar>:is(#addTrack,#ribbonMainMix){
+ background:#78c8d514!important;border-color:#83c7d344!important;color:#b6edf6!important;border-radius:15px!important
+}
+html .app #armix-ribbon-commands.command-bar .toolbar-select{
+ appearance:none!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' stroke='%239db5c2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")!important;
+ background-position:right 8px center!important;background-repeat:no-repeat!important;padding:0 24px 0 10px!important;
+ font:400 11px "Segoe UI",Arial,sans-serif!important;text-transform:none!important;
+}
+html .app #armix-ribbon-commands .strip-view-switch>button.tool{font-size:11px!important;text-transform:none!important}
+html .app #armix-ribbon-commands .armix-ribbon-options button[aria-pressed=true]{border-color:#65c2cc34;box-shadow:inset 0 1px #c7f6ff24}
+html .app #armix-ribbon-commands .armix-ribbon-player button{flex-shrink:0;transition:filter .12s,transform .12s}
+html .app #armix-ribbon-commands .armix-ribbon-player button:focus-visible{outline-offset:-2px}
+@media(prefers-reduced-motion:reduce){html .app #armix-ribbon-commands .armix-ribbon-player button{transition:none}}
