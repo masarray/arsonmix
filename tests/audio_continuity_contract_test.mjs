@@ -224,7 +224,9 @@ test('ASIO vendor panel preserves operator desire and only resumes the same veri
  assert.match(p,/ASIO_PANEL_BEGIN/);
  assert.doesNotMatch(p,/operatorOutputMuted_\s*=|setMonitorEnabled\(true\)/);
  const restore=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
- assert.match(restore,/retainedDoc\.resumeMain=engine_\.wantsMainContinuation\(\)&&!operatorOutputMuted_/);
+ assert.match(restore,/if\(operatorOutputMuted_\)retainedDoc\.resumeMain=false/);
+ assert.match(restore,/else if\(engine_\.wantsMainContinuation\(\)\)retainedDoc\.resumeMain=true/);
+ assert.match(restore,/else retainedDoc\.resumeMain\.reset\(\)/);
  assert.match(restore,/const bool holdMain=usedPrevious/);
 });
 test('nested device transaction permits explicit STOP but rejects ARM with native ACK',()=>{

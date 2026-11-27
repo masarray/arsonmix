@@ -6040,7 +6040,9 @@ private:
                 // A retained in-memory graph is not a disk recovery decision.
                 // Its physical gate may be closed for an ASIO panel/reset.
                 // Preserve the current operator desire, not transient PCM mute.
-                retainedDoc.resumeMain=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+                if(operatorOutputMuted_)retainedDoc.resumeMain=false;
+                else if(engine_.wantsMainContinuation())retainedDoc.resumeMain=true;
+                else retainedDoc.resumeMain.reset();
                 return resolveMixerSessionCatalog(retainedDoc,true);
             });
         if(checkpoint.source==Recovery::Source::missing) {
@@ -6121,6 +6123,8 @@ private:
             operatorOutputMuted_=true;
             autoMainEpoch_=0;
             engine_.setMonitorEnabled(false);
+            diagnostics_.record("OUTPUT_MUTE",usedPrevious?
+                "ON | previous checkpoint recovery":"ON | saved explicit MAIN mute");
         }
         if(plan.resumeMain)
             requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
