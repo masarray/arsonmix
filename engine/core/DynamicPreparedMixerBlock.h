@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicChannelRoster.h"
+#include "AutoDuckerKeyContext.h"
 #include "RealtimeSlew64.h"
 #include "StereoLatencyDelay.h"
 #include "RealtimeStereoControlWord.h"
@@ -610,13 +611,17 @@ public:
         next.scratch_.assign(active*2*frame,0.f);
         next.sourceTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.sourceFades_=std::make_unique<SourceFade[]>(rows.size());
+        next.sourceBlockTargets_.resize(rows.size());
         for(std::size_t i=0;i<rows.size();++i){
             const auto& lane=next.lanes_[i];
             if(lane.inputL<0)continue;
             const auto initial=packPhysical(lane.inputL,lane.inputR);
             next.sourceTargets_[i].store(initial,std::memory_order_relaxed);
             next.sourceFades_[i].current=next.sourceFades_[i].next=initial;
+            if(scheduled[i])next.duckerKeys_.push_back({lane.id.value,i,{}});
         }
+        std::sort(next.duckerKeys_.begin(),next.duckerKeys_.end(),
+            [](const auto& a,const auto& b){return a.id<b.id;});
         next.channelTargets_=std::make_unique<ChannelTarget[]>(rows.size());
         next.blockTargets_.resize(rows.size());
         next.soloAncestors_.assign(rows.size(),0);
@@ -727,6 +732,25 @@ public:
                 (!anySolo||soloAncestors_[i]||soloDescendants_[i]);
             channelTargets_[i].gate.retarget(audible?1.f:0.f);
         }
+        // A raw, pre-trim capture key is independent of strip/render order.
+        // Read each physical patch once at the block boundary; use the SAME
+        // snapshot for the program source render. A re-patch temporarily
+        // invalidates the key instead of triggering from the previous pin.
+        for(auto& entry:duckerKeys_){
+            const auto i=entry.laneIndex;
+            const auto& lane=lanes_[i];
+            const auto pair=sourceTargets_[i].load(std::memory_order_acquire);
+            sourceBlockTargets_[i]=pair;
+            entry.key={};
+            const auto& fade=sourceFades_[i];
+            const bool audible=!blockTargets_[i].mute &&
+                (!anySolo||soloAncestors_[i]||soloDescendants_[i]);
+            if(!audible||!physical||fade.remaining||pair!=fade.current)continue;
+            const int a=physicalLeft(pair),b=physicalRight(pair);
+            if(a<0||a>=physicalCount||!physical[a])continue;
+            if(lane.inputStereo&&(b<0||b>=physicalCount||!physical[b]))continue;
+            entry.key={physical[a],lane.inputStereo?physical[b]:nullptr};
+        }
         // Prepared active scratch only; zero-patched lanes cost nothing.
         for(const auto i:renderOrder_){
             auto& lane=lanes_[i];
@@ -743,7 +767,7 @@ public:
             float* const r=l+block;
             if(lane.inputL>=0 && physical) {
                 auto& fade=sourceFades_[i];
-                const auto desired=sourceTargets_[i].load(std::memory_order_acquire);
+                const auto desired=sourceBlockTargets_[i];
                 if(fade.remaining==0 && desired!=fade.current) {
                     fade.next=desired;fade.remaining=armix::dsp::RealtimeSlew64::samples;
                 }
@@ -808,7 +832,10 @@ public:
                     const float g=trim.inputApplied.next();l[f]*=g;r[f]*=g;
                 }
             }
-            processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
+            {
+                const AutoDuckerKeyScope keyScope(duckerKeys_,lane.id.value,frames);
+                processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
+            }
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
             auto& gate=channelTargets_[i].gate;
@@ -1000,6 +1027,8 @@ private:
     std::vector<unsigned char> initialAudible_,soloAncestors_,soloDescendants_;
     std::vector<Word::Snapshot> blockTargets_; // all allocated before RT
     std::vector<float> scratch_;
+    std::vector<AutoDuckerKeyEntry> duckerKeys_; // preallocated, callback-local views
+    std::vector<std::uint32_t> sourceBlockTargets_;
     std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
     std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;

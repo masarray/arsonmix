@@ -1044,7 +1044,43 @@ static void verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm() {
     assert(pcm.channelCount()==3);
 }
 
+static void verifyAutoDuckerKeyScope() {
+    constexpr std::uint64_t epoch=8491;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest req;req.physicalInputs=3;req.maxFrames=64;
+    const std::array<ChannelEdit,3> channels{
+        add(0,ChannelRole::input,"MUSIC"),add(1,ChannelRole::input,"VOICE"),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)};
+    auto a=session.edit(0,0,channels,req,epoch,epoch,true);
+    assert(a.ok());
+    const auto music=a.edit.createdIds[0],voice=a.edit.createdIds[1],main=a.edit.createdIds[2];
+    const std::array<ChannelEdit,2> links{output(music,main),output(voice,main)};
+    req.sources={{music,0,-1,false},{voice,1,-1,false}};
+    a=session.edit(1,1,links,req,epoch,epoch,true);assert(a.ok());
+    std::array<float,64> m{},v{},replacement{},l{},r{};m.fill(.1f);v.fill(.2f);replacement.fill(.3f);
+    const float* pins[]{m.data(),v.data(),replacement.data()};
+    const float* expected=v.data();int visits=0;
+    const auto fx=[&](ChannelId id,float*,float*,int frames) noexcept {
+        if(id==music){
+            ++visits;
+            assert(AutoDuckerKeyScope::find(voice.value,frames).left==expected);
+            assert(!AutoDuckerKeyScope::find(music.value,frames).valid());
+            assert(!AutoDuckerKeyScope::find(voice.value,frames+1).valid());
+            assert(!AutoDuckerKeyScope::find(main.value,frames).valid());
+        }
+    };
+    auto render=[&]{assert(session.render(epoch,pins,3,l.data(),r.data(),64,false,fx));
+        assert(!AutoDuckerKeyScope::find(voice.value,64).valid());};
+    render();assert(visits==1);
+    assert(session.setLiveMuteSolo(epoch,2,voice,true,false));expected=nullptr;render();
+    assert(session.setLiveMuteSolo(epoch,2,voice,false,false));expected=v.data();render();
+    assert(session.setLivePhysicalSource(epoch,2,voice,2,-1,false));expected=nullptr;render();
+    expected=replacement.data();render();
+    assert(visits==5);
+}
+
 int main() {
+    verifyAutoDuckerKeyScope();
     verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm();
     verifyNativeDeleteTrackRetainsUnrelatedWires();
     verifyGroupMuteAffectsRealNativePcm();

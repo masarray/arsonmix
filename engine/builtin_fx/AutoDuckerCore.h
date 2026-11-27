@@ -54,12 +54,13 @@ public:
         // may enter this audio-owned method (control mailbox contract).
         p_=p;hold_=std::min(hold_,p_.hold);
     }
-    void reset() noexcept {a_={};b_={};power_=0;gain_=1;hold_=0;active_=false;}
+    void clearKey() noexcept {a_={};b_={};power_=0;hold_=0;active_=false;}
+    void reset() noexcept {clearKey();gain_=1;}
     float gain() const noexcept {return gain_;}
     bool active() const noexcept {return active_;}
     void process(float* left,float* right,int frames,AutoDuckerKey key) noexcept {
         if(!ready_||!left||!right||left==right||frames<=0)return;
-        if(!key.valid()){a_={};b_={};power_=0;active_=false;hold_=0;}
+        if(!key.valid())clearKey();
         for(int i=0;i<frames;++i){
             if(key.valid()){
                 const float x=filtered(key.left[i],a_);
