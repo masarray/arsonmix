@@ -41,6 +41,26 @@ def assert_column_alignment(manager):
     assert result["rows"]>0 and not result["errors"],result
     return result
 
+def assert_manager_controls(manager, same_row=True):
+    controls=manager.evaluate("""el=>{
+      const ids=['pluginSearch','pluginCategory','pluginView','pluginImport','pluginScan','pluginAddPath'];
+      return ids.map(id=>{
+        const e=el.querySelector('#'+id),r=e.getBoundingClientRect(),s=getComputedStyle(e);
+        return {id,y:r.y,h:r.height,w:r.width,radius:s.borderRadius,box:s.boxSizing,
+          background:s.backgroundColor,border:s.borderTopColor,font:s.fontSize};
+      });
+    }""")
+    assert all(abs(c["h"]-28)<=.5 and c["radius"]=="5px" and c["box"]=="border-box" and c["w"]>0 for c in controls),controls
+    fields=controls[:3]
+    if same_row:
+        assert max(c["y"] for c in fields)-min(c["y"] for c in fields)<=.5,fields
+    else:
+        assert abs(fields[1]["y"]-fields[2]["y"])<=.5,fields
+    for c in fields[1:]:
+        for key in ("background","border","font"):
+            assert c[key]==fields[0][key],(key,fields)
+    return controls
+
 CLOSE_VISUAL = """el=>{
  const props=['width','height','minWidth','maxWidth','minHeight','maxHeight','borderRadius',
   'borderTopColor','borderTopWidth','backgroundImage','boxShadow','color','fontSize','lineHeight','filter','opacity','transitionProperty','transitionDuration','transitionTimingFunction'];
@@ -173,6 +193,21 @@ def exercise(browser,out,width,height,tap,close_reference):
     assert manager.locator("#pluginScan").is_visible() and manager.locator("#pluginImport").is_visible()
     assert manager.locator("#pluginAddPath").is_visible()
     assert manager.locator("#pluginSearch").is_visible()
+    assert manager.locator("#pluginNewPath,#pluginPaths,.plugin-disclaimer").count()==0
+    assert manager.locator("#pluginScanStatus").is_hidden()
+    assert "Static browser preview" not in manager.inner_text()
+    assert "Click a plugin to insert" not in manager.inner_text()
+    assert_manager_controls(manager)
+    # Actual native capture handlers still issue the same three actions.
+    for control,action in (("pluginImport","importVst3"),("pluginScan","scanVst3"),("pluginAddPath","addScanFolder")):
+        before=page.evaluate("(a)=>window.__events.filter(e=>e.name==='arMixAction'&&e.payload.action===a).length",action)
+        manager.locator("#"+control).click()
+        after=page.evaluate("(a)=>window.__events.filter(e=>e.name==='arMixAction'&&e.payload.action===a).length",action)
+        assert after==before+1,(action,before,after)
+    emit(page,"arMixScanProgress",{"active":True,"done":2,"total":5})
+    expect(manager.locator("#pluginScanStatus")).to_contain_text("2/5")
+    emit(page,"arMixScanProgress",{"active":False})
+    expect(manager.locator("#pluginScanStatus")).to_contain_text("scan finished")
     manager.locator("#pluginSearch").fill("Fixture VST 257")
     assert manager.locator(".plugin-item").count()==1
     assert manager.locator(".plugin-item .plugin-meta").inner_text()=="Fixture Vendor"
@@ -196,13 +231,13 @@ def exercise(browser,out,width,height,tap,close_reference):
     }""")
     assert controls["add"],controls
     for face in controls["buttons"]:
-        for key in ("height","borderRadius","backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
+        for key in ("backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
             assert face[key]==controls["add"][key],(key,face,controls["add"])
     for face in controls["filters"]:
-        assert face["height"]=="25px" and face["borderRadius"]=="14px",face
+        assert face["height"]=="28px" and face["borderRadius"]=="5px",face
         assert face["backgroundColor"]=="rgb(13, 32, 42)",face
         if controls["bank"]:
-            for key in ("height","borderRadius","backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
+            for key in ("backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
                 assert face[key]==controls["bank"][key],(key,face,controls["bank"])
     for icon in controls["icons"]:
         assert icon["w"]==24 and icon["h"]==24 and icon["iw"]=="16px" and icon["ih"]=="16px",icon
@@ -242,6 +277,7 @@ def exercise(browser,out,width,height,tap,close_reference):
     page.set_viewport_size({"width":720,"height":768})
     page.wait_for_function("""()=>{const r=document.querySelector("#pluginBrowser").getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth+.5&&r.bottom<=innerHeight+.5}""")
     assert assert_column_alignment(manager)["columns"]==6
+    assert_manager_controls(manager,same_row=False)
     page.screenshot(path=f"v6-plugin-manager-narrow-{width}.png")
     manager.locator("#pluginClose").click()
     assert manager.is_hidden()

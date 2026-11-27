@@ -114,7 +114,7 @@ def once(source: str, before: str, after: str, label: str) -> str:
 # V7 Plugin Manager: explicit desktop catalog and scanner workspace. The immutable
 # historical HTML remains untouched; both native and Pages consume this composition.
 PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop workspace, not mixer keys. */
-.plugin-browser{position:fixed!important;z-index:90!important;top:76px!important;right:max(14px,calc((100vw - 1000px)/2))!important;left:auto;bottom:auto!important;width:min(1000px,calc(100vw - 28px))!important;height:min(620px,calc(100dvh - 90px))!important;max-width:calc(100vw - 28px)!important;max-height:calc(100dvh - 48px)!important;min-width:min(740px,calc(100vw - 28px))!important;min-height:300px!important;display:flex;flex-direction:column;box-sizing:border-box;resize:both!important;overflow:hidden!important;background:#1a2b35!important;color:#c6d6df;border:1px solid #49616f!important;border-radius:5px!important;box-shadow:0 12px 32px #0009!important;pointer-events:auto!important;font-size:11px;font-weight:400}
+.plugin-browser{position:fixed!important;z-index:90!important;top:76px!important;right:max(14px,calc((100vw - 1000px)/2))!important;left:auto;bottom:auto!important;width:min(1000px,calc(100vw - 28px))!important;height:min(620px,calc(100dvh - 90px))!important;max-width:calc(100vw - 28px)!important;max-height:calc(100dvh - 48px)!important;min-width:min(740px,calc(100vw - 28px))!important;min-height:300px!important;display:flex;flex-direction:column;box-sizing:border-box;resize:both!important;overflow:hidden!important;background:#1a2b35!important;color:#c6d6df;border:1px solid #49616f!important;border-radius:5px!important;box-shadow:0 12px 32px #0009!important;pointer-events:auto!important;font-size:11px;font-weight:400;--plugin-control-height:28px;--plugin-control-radius:5px}
 .plugin-browser[hidden]{display:none!important}
 .plugin-browser[style*="left:"]{right:auto!important}
 .plugin-browser:not([hidden]) .plugin-head{cursor:move!important;touch-action:none!important;user-select:none!important}
@@ -126,31 +126,26 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-sidebar{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto;background:#1d303b;border-right:1px solid #3b515e;padding:12px;gap:12px}
 .plugin-sidebar-title{font-size:10px;color:#a7beca;letter-spacing:.055em;text-transform:uppercase;font-weight:500}
 .plugin-library-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-/* V6 Clean Ribbon visual recipe: compact pill, cyan action face, no metal. */
-.plugin-browser :is(.plugin-library-actions,.scan-add) button{display:inline-flex!important;align-items:center;justify-content:center;gap:5px;height:27px!important;min-height:27px!important;max-height:27px!important;padding:0 10px!important;background:#78c8d514!important;background-image:none!important;border:1px solid #83c7d344!important;border-radius:15px!important;box-shadow:none!important;color:#b6edf6!important;font:400 11px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important;text-shadow:none!important;white-space:nowrap;cursor:pointer}
+/* V6 material, manager-specific compact rectangular geometry. */
+.plugin-browser :is(.plugin-library-actions,.scan-add) button{display:inline-flex!important;align-items:center;justify-content:center;gap:5px;box-sizing:border-box!important;height:var(--plugin-control-height)!important;min-height:var(--plugin-control-height)!important;max-height:var(--plugin-control-height)!important;padding:0 10px!important;background:#78c8d514!important;background-image:none!important;border:1px solid #83c7d344!important;border-radius:var(--plugin-control-radius)!important;box-shadow:none!important;color:#b6edf6!important;font:400 11px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important;text-shadow:none!important;white-space:nowrap;cursor:pointer}
 .plugin-browser :is(.plugin-library-actions,.scan-add) button:hover:not(:disabled){background:#9abccb19!important;border-color:#93b5c22b!important;color:#f1f8fb!important}
 .plugin-browser :is(.plugin-library-actions,.scan-add) button:active:not(:disabled){background:#4bb6ce26!important;border-color:#62b9cb56!important;color:#9ce8f4!important}
 .plugin-browser :is(.plugin-library-actions,.scan-add) button:disabled{opacity:.45!important;cursor:not-allowed}
-.plugin-scan-settings{display:flex;flex-direction:column;min-width:0;gap:8px;padding:12px 0 0;background:transparent;border:0;border-top:1px solid #3b515e}
-.scan-title{font-size:10px;letter-spacing:.035em;color:#9cb4c3;font-weight:500}
-.scan-paths{display:flex;flex-direction:column;gap:0;max-height:184px;min-height:48px;overflow:auto;border:1px solid #3c5361;background:#162832}
-.scan-path{display:flex;align-items:center;gap:5px;min-width:0;min-height:29px;padding:3px 6px;border-bottom:1px solid #2b414d;font-size:10px}
-.scan-path>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.scan-path small{color:#94afbd;flex:none}.scan-path button{background:transparent;border:0;color:#a7bdc8}
-.scan-add{display:flex;flex-wrap:wrap;gap:6px}.scan-add input{flex:1 1 100%;min-width:0;height:27px;padding:0 10px;color:#d2e2e9;background:#0d202a;border:1px solid #83a6b42e;border-radius:14px;font:400 11px "Segoe UI",Arial,sans-serif}
+.plugin-scan-settings{display:flex;flex-direction:column;min-width:0;gap:8px;padding:0;background:transparent;border:0}
+.scan-add{display:flex;gap:6px}
 .scan-add button{width:100%}
 .scan-status{font-size:10px;color:#b1c4cf;line-height:1.5;overflow-wrap:anywhere;padding:8px 9px;border-left:2px solid #567b8c;background:#172b36;border-radius:0 3px 3px 0}
-.plugin-disclaimer{margin-top:auto;color:#93aab8;font-size:10px;line-height:1.45;padding-top:8px;border-top:1px solid #394f5c;overflow-wrap:anywhere}
+.scan-status:empty{display:none!important}
 .plugin-catalog{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:#142630}
 .plugin-catalog-tools{display:flex;flex:none;gap:8px;align-items:center;padding:9px 10px;border-bottom:1px solid #3b515e;background:#1b303b}
-.plugin-search-row{position:relative;display:flex;min-width:0;flex:1}
-.plugin-search-row::before{content:"";position:absolute;left:10px;top:9px;width:9px;height:9px;border:1.5px solid #8eacbc;border-radius:50%;pointer-events:none}
-.plugin-search-row::after{content:"";position:absolute;left:19px;top:19px;width:5px;height:1.5px;border-radius:1px;background:#8eacbc;transform:rotate(45deg);pointer-events:none}
-.plugin-search-row input{width:100%;min-width:0;height:30px;padding:0 9px 0 31px;background:#0d202a;color:#d2e2e9;border:1px solid #83a6b42e;border-radius:15px;font:400 11px "Segoe UI",Arial,sans-serif;letter-spacing:0}
-.plugin-filters{display:flex;gap:6px;min-width:0}
-.plugin-browser .plugin-filters select{width:112px;min-width:0;height:25px!important;min-height:25px!important;max-height:25px!important;appearance:none!important;border:1px solid #83a6b42e!important;border-radius:14px!important;background-color:#0d202a!important;color:#d2e2e9!important;box-shadow:none!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' stroke='%239db5c2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")!important;background-position:right 8px center!important;background-repeat:no-repeat!important;padding:0 24px 0 10px!important;font:400 11px "Segoe UI",Arial,sans-serif!important;text-transform:none!important;cursor:pointer}
-.plugin-browser .plugin-filters{align-items:center}
-.plugin-browser .plugin-filters select:hover:not(:disabled){border-color:#93b5c280!important;color:#f1f8fb!important}
+.plugin-browser .plugin-search-row{position:relative;display:flex;align-items:center;min-width:0;flex:1;height:var(--plugin-control-height);padding:0;margin:0}
+.plugin-search-row::before{content:"";position:absolute;left:10px;top:calc(50% - 6px);width:9px;height:9px;border:1.5px solid #8eacbc;border-radius:50%;pointer-events:none}
+.plugin-search-row::after{content:"";position:absolute;left:19px;top:calc(50% + 5px);width:5px;height:1.5px;border-radius:1px;background:#8eacbc;transform:rotate(45deg);pointer-events:none}
+.plugin-browser .plugin-filters{display:flex;align-items:center;gap:6px;min-width:0;height:var(--plugin-control-height);padding:0;margin:0}
+.plugin-browser :is(.plugin-search-row input,.plugin-filters select){box-sizing:border-box!important;height:var(--plugin-control-height)!important;min-height:var(--plugin-control-height)!important;max-height:var(--plugin-control-height)!important;min-width:0;margin:0!important;border:1px solid #83a6b42e!important;border-radius:var(--plugin-control-radius)!important;background-color:#0d202a!important;color:#d2e2e9!important;box-shadow:none!important;font:400 11px "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important}
+.plugin-browser .plugin-search-row input{width:100%;padding:0 9px 0 31px!important;background-image:none!important}
+.plugin-browser .plugin-filters select{width:112px;appearance:none!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' stroke='%239db5c2' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")!important;background-position:right 8px center!important;background-repeat:no-repeat!important;background-size:12px 12px!important;padding:0 24px 0 10px!important;cursor:pointer}
+.plugin-browser :is(.plugin-search-row input,.plugin-filters select):hover:not(:disabled){border-color:#93b5c280!important;color:#f1f8fb!important}
 .plugin-catalog{--plugin-columns:minmax(0,1fr) 112px 25px 25px;--plugin-identity:minmax(0,1.55fr) minmax(0,1fr) minmax(0,.75fr)}
 .plugin-headings,.plugin-item{display:grid;grid-template-columns:var(--plugin-columns);gap:0;align-items:center;min-width:0;width:100%;box-sizing:border-box}
 .plugin-headings{height:28px;flex:none;background:#233b49;color:#bdd0db;font-size:10px;font-weight:500;border-bottom:1px solid #4a6473;padding:0 6px}
@@ -183,7 +178,7 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-labels{font-size:10px;color:#a7bdca;letter-spacing:0}
 .plugin-pill{color:#b6cbd8;border:0;border-radius:0;background:none}
 .plugin-pill.problem,.plugin-item.disabled .plugin-labels{color:#e2a49b}
-.plugin-browser .plugin-flag{min-width:0!important;padding:0!important;border:0!important;border-radius:6px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;cursor:pointer;color:#96b0be}
+.plugin-browser .plugin-flag{min-width:0!important;padding:0!important;border:0!important;border-radius:4px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;cursor:pointer;color:#96b0be}
 .plugin-empty{padding:24px 12px;text-align:center;color:#9cb4c2;font-size:11px}
 .plugin-footer{display:flex;align-items:center;min-height:30px!important;height:auto!important;flex:none;padding:5px 12px!important;border-top:1px solid #3b515e;background:#1c303b;color:#a7bdca;font-size:10px;gap:8px}
 .plugin-footer #pluginCount{flex:1;color:#afc4cf;font-variant-numeric:tabular-nums;letter-spacing:0}
@@ -198,8 +193,8 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
  .plugin-heading-status,.plugin-labels{grid-template-columns:38px 46px}
  .plugin-category,.plugin-heading-category{display:none}
  .plugin-catalog-tools{flex-wrap:wrap;gap:5px;padding:6px}
- .plugin-search-row{flex-basis:100%}
- .plugin-filters{flex:1}.plugin-browser .plugin-filters select{width:auto;flex:1}
+ .plugin-browser .plugin-search-row{flex-basis:100%}
+ .plugin-browser .plugin-filters{flex:1}.plugin-browser .plugin-filters select{width:auto;flex:1}
 }
 """
 
@@ -226,10 +221,14 @@ def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
     count, actions = footer_match.groups()
     actions = once(actions, 'Import list…', 'Import…', 'import label')
     actions = once(actions, 'Import plugin metadata from a JSON registry exported by a scanner', 'Import VST3 in native host; import metadata in browser reference', 'import tooltip')
-    scan_start = original.index('<div class="plugin-scan-settings">')
-    scan_end = original.index('<div class="plugin-disclaimer">', scan_start)
-    scan = original[scan_start:scan_end].strip()
-    disclaimer = line('class="plugin-disclaimer"')
+    # Native Add folder already opens a JUCE chooser. Do not surface the
+    # historical reference path editor, fabricated default paths or demo copy.
+    add_folder = re.search(r'<button id="pluginAddPath">.*?</button>', line('id="pluginAddPath"'))
+    if not add_folder:
+        raise ValueError("Plugin folder chooser anchor drift")
+    scan = ('<div class="plugin-scan-settings"><div class="scan-add">'
+            + add_folder.group().replace('+ Add folder', 'Add folder…') + '</div>'
+            + '<div class="scan-status" id="pluginScanStatus" role="status" aria-live="polite"></div></div>')
     headings = ('<div class="plugin-headings"><div class="plugin-heading-identity">'
                 '<span>Name</span><span>Vendor</span><span class="plugin-heading-category">Category</span></div>'
                 '<div class="plugin-heading-status"><span>Format</span><span>Status</span></div>'
@@ -238,15 +237,27 @@ def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
     markup = ('    <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>\n'
               + head + '\n<div class="plugin-workspace"><section class="plugin-sidebar" aria-label="Plugin management">'
               + '<div class="plugin-sidebar-title">Library actions</div><div class="plugin-library-actions">' + actions + '</div>'
-              + scan + disclaimer + '</section><section class="plugin-catalog" aria-label="Plugin catalog">'
+              + scan + '</section><section class="plugin-catalog" aria-label="Plugin catalog">'
               + '<div class="plugin-catalog-tools">' + search + filters + '</div>'
               + '<div class="plugin-table-scroll">' + headings + results + '</div><div class="plugin-footer">' + count
-              + '<span>Click a plugin to insert</span></div></section></div>\n    </aside>')
+              + '</div></section></div>\n    </aside>')
     html = html[:start] + markup + html[end:]
     html = once(html,
         """<span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+(latency?' · '+escapeHtml(latency):'')+(usedBy.length?' · Used '+usedBy.length:'')+'</span>""",
         """<span class="plugin-meta" title="'+escapeHtml(p.vendor)+'">'+escapeHtml(p.vendor)+'</span><span class="plugin-category" title="'+escapeHtml([p.category,latency,usedBy.length?'Used '+usedBy.length:''].filter(Boolean).join(' · '))+'">'+escapeHtml(p.category)+'</span>""",
         "plugin row column layout")
+    # The native bridge intercepts Add folder and invokes chooseFolder().
+    # In the reference, fail honestly on request instead of editing fake paths.
+    html = once(html, " const container=plugEl('pluginPaths');",
+        " const container=plugEl('pluginPaths');if(!container)return;", "retire reference path rendering")
+    add_start = html.index("plugEl('pluginAddPath').addEventListener('click',()=>{")
+    add_end = html.index("plugEl('pluginScan').addEventListener('click',()=>{", add_start)
+    html = html[:add_start] + """plugEl('pluginAddPath').addEventListener('click',()=>{
+ plugEl('pluginScanStatus').textContent='Folder selection requires the desktop app.';
+});
+""" + html[add_end:]
+    html = once(html, 'Windows VST3 scan requires installed native host · GitHub Pages cannot access local plugin files',
+        'VST3 scanning requires the desktop app.', 'concise reference scan feedback')
     # Keep existing IDs/handlers and preference state; change only presentation.
     html = once(html, """title="Toggle favorite">★</button>""",
         """aria-pressed="'+String(!!p.favorite)+'" title="Toggle favorite"></button>""", "favorite vector")
