@@ -14,11 +14,13 @@ if($CheckNow -and ($ApplyStaged -or $RecoveryMode -or $PolicySelfTest)){throw 'C
 
 $repo='masarray/arsonmix'
 $api='https://api.github.com/repos/masarray/arsonmix/releases?per_page=100'
-$exe=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'ArSonMix.exe'))
+$portable=Test-Path -LiteralPath (Join-Path $PSScriptRoot 'portable_mode.txt') -PathType Leaf
+$exeName=if($portable){'ArSonMix-GUI10CH-P012-Windows-x64.exe'}else{'ArSonMix.exe'}
+$exe=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot $exeName))
 $provenance=Join-Path $PSScriptRoot 'BUILD_PROVENANCE.json'
 $local=$env:LOCALAPPDATA
 if([string]::IsNullOrWhiteSpace($local)){exit 0}
-$root=Join-Path $local 'ArSonMix\Updates'
+$root=if($portable){Join-Path $PSScriptRoot '.ArSonMixUpdates'}else{Join-Path $local 'ArSonMix\Updates'}
 $statePath=Join-Path $root 'state.json'
 # Consent is a usability acknowledgement, never a cryptographic trust boundary.
 # The worker independently verifies both published installers before execution.
@@ -269,11 +271,12 @@ function Get-AttestationVerifier([string]$installRoot=$PSScriptRoot) {
         return $path
     } catch {return $null}
 }
-function Get-AttestationArguments([string]$path,[string]$tag,[string]$sha) {
+function Get-AttestationArguments([string]$path,[string]$tag,[string]$sha,[switch]$PortableZip) {
+    $suffix=if($PortableZip){'Portable.zip'}else{'Setup.exe'}
     if($tag -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-alpha\.(0|[1-9][0-9]*)$' -or
        $null -eq (Version-Key $tag) -or $sha -cnotmatch '^[a-f0-9]{40}$' -or
        -not [IO.Path]::IsPathRooted($path) -or $path.Contains('"') -or
-       [IO.Path]::GetFileName($path) -cne "ArSonMix-$tag-Windows-x64-Setup.exe"){return $null}
+       [IO.Path]::GetFileName($path) -cne "ArSonMix-$tag-Windows-x64-$suffix"){return $null}
     return ('attestation verify "'+$path+'" --repo masarray/arsonmix'+
         ' --signer-workflow masarray/arsonmix/.github/workflows/alpha-preview-publish.yml'+
         ' --source-ref refs/heads/releases/alpha/'+$tag+
@@ -460,8 +463,8 @@ function Test-VerifiedRepositoryIdentity([object]$results,[string]$repositoryId=
     }
     return $false
 }
-function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha) {
-    $arguments=Get-AttestationArguments $path $tag $sha
+function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha,[switch]$PortableZip) {
+    $arguments=Get-AttestationArguments $path $tag $sha -PortableZip:$PortableZip
     if($null -eq $arguments){Fail 'Invalid attestation subject identity'}
     $verifier=Get-AttestationVerifier
     if($null -eq $verifier){Fail 'Bundled update verifier missing or damaged; repair required'}
@@ -525,6 +528,104 @@ function Download-Release-Verified([object]$release,[object]$installer,[string]$
     Download-Verified $installer $destination
     Assert-InstallerAttestation $destination $tag ([string]$release.target_commitish)
 }
+# Portable handoff: download signed ZIP only; never extract over a workspace.
+function Approved-Portable([object]$release) {
+    if($null -eq $release -or $release.draft -or
+       [string]$release.target_commitish -cnotmatch '^[a-f0-9]{40}$' -or
+       $null -eq (Version-Key ([string]$release.tag_name)) -or
+       [string]::IsNullOrWhiteSpace([string]$release.published_at)){return $null}
+    if($null -eq (Find-Asset $release 'RELEASE_TRUST-windows.json' 1) -or
+       $null -eq (Find-Asset $release 'SHA256SUMS.txt' 1)){return $null}
+    return (Find-Asset $release "ArSonMix-$($release.tag_name)-Windows-x64-Portable.zip" 2097152)
+}
+function Select-PortableRelease([object[]]$releases,[string]$installedSha) {
+    $baseline=$null;$new=$null
+    foreach($release in $releases){
+        if($release.target_commitish -ceq $installedSha -and $null -ne (Approved-Portable $release)){
+            if($null -eq $baseline -or (Compare-Version (Version-Key $release.tag_name) (Version-Key $baseline.tag_name)) -gt 0){$baseline=$release}
+        }
+    }
+    if($null -eq $baseline){return [pscustomobject]@{baseline=$null;candidate=$null}}
+    foreach($release in $releases){
+        if($null -eq (Approved-Portable $release) -or (-not $baseline.prerelease -and $release.prerelease)){continue}
+        if((Compare-Version (Version-Key $release.tag_name) (Version-Key $baseline.tag_name)) -le 0){continue}
+        if($null -eq $new -or (Compare-Version (Version-Key $release.tag_name) (Version-Key $new.tag_name)) -gt 0){$new=$release}
+    }
+    return [pscustomobject]@{baseline=$baseline;candidate=$new}
+}
+function Download-PortableVerified([object]$release,[object]$asset,[string]$destination) {
+    $tag=[string]$release.tag_name;$sha=[string]$release.target_commitish
+    $parent=[IO.Path]::GetDirectoryName($destination)
+    $sum=Find-Asset $release 'SHA256SUMS.txt' 1
+    $manifest=Find-Asset $release 'RELEASE_TRUST-windows.json' 1
+    if($null -eq $sum -or $null -eq $manifest -or $sum.size -gt 1048576 -or $manifest.size -gt 1048576){Fail 'Portable metadata missing or oversized'}
+    $sumPath=Join-Path $parent ("SHA256SUMS-$tag.txt")
+    $manifestPath=Join-Path $parent ("RELEASE_TRUST-$tag.json")
+    Download-Verified $sum $sumPath
+    Download-Verified $manifest $manifestPath
+    $proof=Read-Json $manifestPath
+    $hash=([string]$asset.digest).Substring(7)
+    $rows=@($proof.assets | Where-Object {$_.name -ceq $asset.name -and $_.sha256 -ceq $hash -and [long]$_.bytes -eq [long]$asset.size})
+    if($proof.schema -cne 'arsonmix.release-trust.v1' -or $proof.repository -cne 'masarray/arsonmix' -or
+       $proof.platform -cne 'windows' -or $proof.tag -cne $tag -or $proof.sourceCommit -cne $sha -or $rows.Count -ne 1){Fail 'Portable release manifest identity mismatch'}
+    $line=$hash+'  '+[string]$asset.name
+    if(@(Get-Content -LiteralPath $sumPath -Encoding ASCII | Where-Object {$_ -ceq $line}).Count -ne 1){Fail 'Portable checksum mismatch'}
+    Download-Verified $asset $destination
+    Assert-InstallerAttestation $destination $tag $sha -PortableZip
+}
+function Invoke-PortableUpdateCheck {
+    if($ApplyStaged -or $RecoveryMode -or -not (Owns-Exe $OwnerProcessId)){return}
+    $marker=Join-Path $PSScriptRoot 'portable_mode.txt'
+    if(-not (Test-RegularUpdateFile $marker) -or
+       (Get-Content -LiteralPath $marker -Raw).Trim() -cne 'ARSONMIX_PORTABLE_WORKSPACE_V1'){return}
+    foreach($folder in @($PSScriptRoot,$root)){
+        if(Test-Path -LiteralPath $folder){
+            $info=Get-Item -LiteralPath $folder -Force
+            if(-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return}
+        }
+    }
+    [IO.Directory]::CreateDirectory($root)|Out-Null
+    $file=Read-Json $provenance
+    if([string]$file.sourceCommit -cnotmatch '^[a-f0-9]{40}$' -or
+       $file.executable -cne 'ArSonMix-GUI10CH-P012-Windows-x64.exe'){return}
+    $installedSha=[string]$file.sourceCommit
+    $state=[pscustomobject]@{phase='idle';lastCheckUtc='';lastAttemptUtc='';candidateTag='';candidateSha='';previousSha=$installedSha;newAsset=$null}
+    if(Test-RegularUpdateFile $statePath){
+        try {
+            $saved=Read-Json $statePath
+            if($saved.previousSha -ceq $installedSha){
+                foreach($key in @('phase','lastCheckUtc','lastAttemptUtc','candidateTag','candidateSha','newAsset')){
+                    if($saved.PSObject.Properties.Name -contains $key){$state.$key=$saved.$key}
+                }
+            }
+        } catch {}
+    }
+    $now=[DateTime]::UtcNow
+    $attempt=[DateTime]::MinValue;$checked=[DateTime]::MinValue
+    $cooldown=if($CheckNow){1}else{20}
+    if($state.lastAttemptUtc -and [DateTime]::TryParse([string]$state.lastAttemptUtc,[ref]$attempt) -and
+       $now -ge $attempt.ToUniversalTime() -and $now.Subtract($attempt.ToUniversalTime()).TotalMinutes -lt $cooldown){return}
+    if(-not $CheckNow -and $state.lastCheckUtc -and [DateTime]::TryParse([string]$state.lastCheckUtc,[ref]$checked) -and
+       $now -ge $checked.ToUniversalTime() -and $now.Subtract($checked.ToUniversalTime()).TotalHours -lt 6){return}
+    $state.phase='checking';$state.lastAttemptUtc=$now.ToString('o');Write-State $state
+    Log-Result 'CHECKING_FOR_UPDATES'
+    $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/2';'X-GitHub-Api-Version'='2022-11-28'}
+    $selection=Select-PortableRelease (Read-PublishedReleases $headers) $installedSha
+    if($null -eq $selection.baseline){$state.phase='idle';Write-State $state;Log-Result 'NO_MATCHING_PUBLISHED_BASELINE';return}
+    if($null -eq $selection.candidate){
+        $state.phase='idle';$state.lastCheckUtc=$now.ToString('o');$state.candidateTag='';Write-State $state;Log-Result 'UP_TO_DATE';return
+    }
+    $candidate=$selection.candidate;$asset=Approved-Portable $candidate
+    $state.phase='downloading';$state.candidateTag=[string]$candidate.tag_name;$state.candidateSha=[string]$candidate.target_commitish;Write-State $state
+    Log-Result 'DOWNLOADING_VERIFIED_UPDATE'
+    $destination=Join-Path (Join-Path $root 'downloads') ([string]$asset.name)
+    Download-PortableVerified $candidate $asset $destination
+    $state.phase='portable-ready';$state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
+    $state.newAsset=[pscustomobject]@{name=$asset.name;digest=$asset.digest;size=$asset.size}
+    Write-State $state
+    Log-Result ('PORTABLE_DOWNLOAD_READY '+$candidate.tag_name)
+}
+
 function Test-StagedAsset([string]$path,[object]$asset) {
     try {
         if($null -eq $asset -or $asset.digest -cnotmatch '^sha256:[a-f0-9]{64}$' -or
@@ -1006,6 +1107,24 @@ if($PolicySelfTest) {
        (Get-ResumeResponseMode 416 '' 0 100 1000) -cne 'reject' -or
        (Get-ResumeResponseMode 200 '' 999 100 1000) -cne 'reject'){throw 'Resume response policy failed'}
     if((Get-PartialAssetPath 'asset.exe' ('a'*64)) -ceq (Get-PartialAssetPath 'asset.exe' ('b'*64))){throw 'Partial identity collision'}
+    $ptag='v0.5.0-alpha.9'
+    $pzip=Join-Path ([IO.Path]::GetTempPath()) "ArSonMix-$ptag-Windows-x64-Portable.zip"
+    if($null -eq (Get-AttestationArguments $pzip $ptag ('a'*40) -PortableZip) -or
+       $null -ne (Get-AttestationArguments $pzip $ptag ('a'*40))){throw 'Portable attestation filename policy failed'}
+    $makePortable={
+        param([string]$v,[string]$commit)
+        $names=@("ArSonMix-$v-Windows-x64-Portable.zip",'SHA256SUMS.txt','RELEASE_TRUST-windows.json')
+        $assets=@(foreach($name in $names){[pscustomobject]@{name=$name;state='uploaded';size=2097152;digest=('sha256:'+('a'*64));browser_download_url="https://github.com/masarray/arsonmix/releases/download/$v/$name"}})
+        [pscustomobject]@{tag_name=$v;target_commitish=$commit;draft=$false;prerelease=$true;published_at='2026-11-27T00:00:00Z';assets=$assets}
+    }
+    $baseline=& $makePortable 'v0.5.0-alpha.8' ('a'*40)
+    $candidate=& $makePortable 'v0.5.0-alpha.9' ('b'*40)
+    $selection=Select-PortableRelease @($baseline,$candidate) ('a'*40)
+    if($selection.candidate.tag_name -cne $candidate.tag_name){throw 'Portable release selection failed'}
+    $candidate.assets=@($candidate.assets | Where-Object {$_.name -cne 'RELEASE_TRUST-windows.json'})
+    if($null -ne (Select-PortableRelease @($baseline,$candidate) ('a'*40)).candidate){throw 'Portable release without trust manifest accepted'}
+    if($null -ne (Select-PortableRelease @($baseline) ('c'*40)).baseline){throw 'Unknown portable baseline accepted'}
+    Write-Output 'ARSONMIX_PORTABLE_DOWNLOAD_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_RESUME_POLICY_PASS'
     $leaseDir=Join-Path ([IO.Path]::GetTempPath()) ('armix-rollback-'+[guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($leaseDir)|Out-Null
@@ -1041,9 +1160,9 @@ try {
     if(-not (Test-Path -LiteralPath $provenance -PathType Leaf) -or
        (-not $RecoveryMode -and -not (Test-Path -LiteralPath $exe -PathType Leaf)) -or
        (-not $ApplyStaged -and -not $RecoveryMode -and -not (Owns-Exe $OwnerProcessId))) {exit 0}
-    # No update worker from portable builds, different installation roots,
+    # One update worker per user, for installed and portable packages,
     # arbitrary scripts outside {app}, or second ArSonMix updater instance.
-    if(Test-Path -LiteralPath (Join-Path $PSScriptRoot 'portable_mode.txt')){exit 0}
+    if($portable -and ($ApplyStaged -or $RecoveryMode)){exit 0}
     $mutex=[Threading.Mutex]::new($false,'Local\ArSonMix.AutoUpdater.v1')
     try {
         $locked=$mutex.WaitOne($(if($ApplyStaged -or $RecoveryMode){60000}else{0}))
@@ -1053,6 +1172,7 @@ try {
         Log-Result 'ABANDONED_MUTEX_RECLAIMED'
     }
     if(-not $locked){exit 0}
+    if($portable){Invoke-PortableUpdateCheck;exit 0}
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $file=Read-Json $provenance
     $installedSha=[string]$file.sourceCommit

@@ -17,7 +17,7 @@ def exercise(browser,dst,width,height):
           const status=payload.operation==='CHECK'?'CHECKING':window.__updateFixtureStatus;
           queueMicrotask(()=>window.__nativeListeners.get('arMixUpdateCenterState')?.({
             requestId:payload.requestId,version:'0.5.0-alpha.fixture',supported:true,
-            manualAllowed:status==='IDLE'||status==='READY',status,
+            manualAllowed:status==='IDLE'||status==='READY'||status==='PORTABLE_READY',status,portable:status==='PORTABLE_READY',
             candidateTag:status==='READY'?'v0.5.0-alpha.fixture-next':''
           }));
         }
@@ -50,6 +50,11 @@ def exercise(browser,dst,width,height):
     page.screenshot(path=f"autonomous-update-center-{width}.png")
     center.get_by_role("button",name="Review update").click()
     assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixUpdateCenterIntent'&&e.payload.operation==='REVIEW').length")==1
+    page.evaluate("()=>window.__updateFixtureStatus='PORTABLE_READY'")
+    center.get_by_role("button",name="Open download folder").wait_for(state="visible")
+    center.get_by_role("button",name="Open download folder").click()
+    assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixUpdateCenterIntent'&&e.payload.operation==='OPEN_DOWNLOADS').length")==1
+    assert center.get_by_text("Portable download only",exact=False).is_visible()
     center.get_by_role("button",name="Close Update Center").click()
     assert center.is_hidden()
     before=page.evaluate("()=>window.__events.filter(e=>e.name==='arMixUpdateCenterIntent').length")

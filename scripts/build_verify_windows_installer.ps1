@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Independent FAT-only GUI installer build AND real per-user install/uninstall.
-param([string]$OutputDir="dist",[string]$InstallerOutput="installer-output")
+param([string]$OutputDir="dist",[string]$InstallerOutput="installer-output",[switch]$IncludePortableUpdater)
 Set-StrictMode -Version Latest
 $ErrorActionPreference="Stop"
 $dist=(Resolve-Path -LiteralPath $OutputDir).Path
@@ -204,6 +204,13 @@ try {
         guiStartup="NATIVE_WEBVIEW_READY_NO_AUDIO"
         guiStartupRunnerBuild=[Environment]::OSVersion.Version.Build
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
+    if($IncludePortableUpdater){
+        $portableVerifier=Join-Path $dist 'UpdateVerifier'
+        if(Test-Path -LiteralPath $portableVerifier){throw 'Portable verifier destination already exists'}
+        Copy-Item -LiteralPath (Join-Path $stage 'UpdateVerifier') -Destination $portableVerifier -Recurse
+        Copy-Item -LiteralPath 'installer/ArSonMixAutoUpdate.ps1' -Destination $dist
+        Write-Host 'PORTABLE_RELEASE_UPDATE_DOWNLOADER_STAGED'
+    }
     Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app graceful update, SHA-matched PE, uninstall, private Studio intact"
     Write-Host "OWNER_FIELD_AUDIO_LISTENING_REPORTED__PER_BUILD_HARDWARE_REPORT_SEPARATE"
 }

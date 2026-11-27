@@ -5069,13 +5069,14 @@
     document.head.append(style);document.body.append(dialog);
     const q=selector=>dialog.querySelector(selector);
     const check=q("[data-update-check]"),review=q("[data-update-review]");
-    const messages={UNAVAILABLE:"Automatic updates are not available for this portable or incomplete installation.",
+    const messages={UNAVAILABLE:"Updates are not available for this development or incomplete package.",
       IDLE:"No update result yet.",UP_TO_DATE:"Last check found no newer release.",CHECKING:"Checking official releases…",
       DOWNLOADING:"Downloading and verifying the update…",BASELINE_UNAVAILABLE:"This build is not a published update baseline.",
+      PORTABLE_READY:"Portable ZIP downloaded and verified. Open the download folder; keep your original Studio intact.",
       READY:"A verified update is ready to review.",APPROVED:"Approved · will install after normal close.",
       REPAIR_READY:"Verified repair is ready after normal close.",HEALTHY:"Last update or repair passed the GUI health check.",
       ROLLED_BACK:"Update failed; the previous version was restored.",DEFERRED:"Update deferred safely. Check again when connectivity or verification is available."};
-    let serial=0,latest="",poll=0;
+    let serial=0,latest="",poll=0,portableReady=false;
     function request(operation){
       if(!dialog.open)return;
       latest=String(++serial);
@@ -5090,7 +5091,10 @@
       q("[data-update-checked]").textContent=date&&Number.isFinite(date.getTime())?"Last successful check · "+date.toLocaleString():"";
       if(typeof state.notice==="string")q("[data-update-notice]").textContent=state.notice.slice(0,200);
       check.disabled=state.supported!==true||state.manualAllowed!==true||["CHECKING","DOWNLOADING"].includes(state.status);
-      review.hidden=state.supported!==true||state.status!=="READY";
+      portableReady=state.portable===true&&state.status==="PORTABLE_READY";
+      review.textContent=portableReady?"Open download folder":"Review update";
+      review.hidden=state.supported!==true||(!portableReady&&state.status!=="READY");
+      q(".armix-update-safety").textContent=state.portable===true?"Portable download only · extract separately. No automatic replacement of the running app or Studio.":"Automatic checks · verified updates · installation only after normal close. Live audio stays available.";
     });
     trigger.addEventListener("click",()=>{
       const more=trigger.closest("details");if(more)more.open=false;
@@ -5102,7 +5106,7 @@
       }
     });
     check.addEventListener("click",()=>{check.disabled=true;q("[data-update-notice]").textContent="Requesting a check…";request("CHECK");});
-    review.addEventListener("click",()=>request("REVIEW"));
+    review.addEventListener("click",()=>request(portableReady?"OPEN_DOWNLOADS":"REVIEW"));
     q("[data-update-close]").addEventListener("click",()=>dialog.close());
     dialog.addEventListener("keydown",event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();dialog.close();}});
     dialog.addEventListener("close",()=>{window.clearInterval(poll);poll=0;latest="";document.querySelector("#moreTools > summary")?.focus();});

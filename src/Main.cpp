@@ -13348,7 +13348,7 @@ private:
         const auto requestId=intent.getProperty("requestId",{}).toString();
         const auto operation=intent.getProperty("operation",{}).toString();
         if(requestId.isEmpty()||requestId.length()>18||!requestId.containsOnly("0123456789")||
-           (operation!="QUERY"&&operation!="CHECK"&&operation!="REVIEW"))return {};
+           (operation!="QUERY"&&operation!="CHECK"&&operation!="REVIEW"&&operation!="OPEN_DOWNLOADS"))return {};
         juce::DynamicObject::Ptr response(new juce::DynamicObject());
         response->setProperty("requestId",requestId);
         response->setProperty("version",juce::String(JUCE_APPLICATION_VERSION_STRING));
@@ -13358,7 +13358,9 @@ private:
 #if defined(_WIN32)
         const auto installDir=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
         const auto local=juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{});
-        const bool eligible=smartUpdaterInstallEligible()&&local.isNotEmpty()&&
+        const bool portable=smartUpdaterPortableEligible();
+        response->setProperty("portable",portable);
+        const bool eligible=(smartUpdaterInstallEligible()||portable)&&local.isNotEmpty()&&
             installDir.getChildFile("UpdateVerifier").getChildFile("gh.exe").existsAsFile()&&
             installDir.getChildFile("UpdateVerifier").getChildFile("verifier.json").existsAsFile();
         response->setProperty("supported",eligible);
@@ -13374,7 +13376,8 @@ private:
                 response->setProperty("manualAllowed",false);
             }
         }
-        const auto folder=juce::File(local).getChildFile("ArSonMix").getChildFile("Updates");
+        const auto folder=portable?installDir.getChildFile(".ArSonMixUpdates"):
+            juce::File(local).getChildFile("ArSonMix").getChildFile("Updates");
         const auto stateFile=folder.getChildFile("state.json");
         const auto approvalFile=folder.getChildFile("approved.json");
         const auto logFile=folder.getChildFile("last-result.txt");
@@ -13409,7 +13412,19 @@ private:
         if((status=="CHECKING"||status=="DOWNLOADING")&&
            juce::Time::getCurrentTime().toMilliseconds()-logFile.getLastModificationTime().toMilliseconds()>20*60*1000)
             status="DEFERRED";
-        if(phase=="staged"){
+        if(portable && phase=="portable-ready" && tag.startsWith("v") &&
+           tag.containsOnly("v0123456789.alpha-") && tag.length()<=60)
+        {
+            const auto downloads=folder.getChildFile("downloads");
+            const auto archive=downloads.getChildFile("ArSonMix-"+tag+"-Windows-x64-Portable.zip");
+            if(archive.existsAsFile() && archive.getSize()==static_cast<juce::int64>(state.getProperty("newAsset",{}).getProperty("size",0)))
+            {
+                status="PORTABLE_READY";
+                if(operation=="OPEN_DOWNLOADS")downloads.revealToUser();
+            }
+            else status="DEFERRED";
+        }
+        if(!portable && phase=="staged"){
             if(state.getProperty("operation",{}).toString()=="repair")status="REPAIR_READY";
             else {
                 const auto approval=juce::JSON::parse(smallText(approvalFile,2048));
@@ -13426,6 +13441,17 @@ private:
         return juce::var(response.get());
     }
 #if defined(_WIN32)
+    bool smartUpdaterPortableEligible() const
+    {
+        const auto exe=juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        const auto dir=exe.getParentDirectory();
+        return exe.getFileName().equalsIgnoreCase("ArSonMix-GUI10CH-P012-Windows-x64.exe") &&
+            dir.getChildFile("portable_mode.txt").existsAsFile() &&
+            dir.getChildFile("ArSonMixAutoUpdate.ps1").existsAsFile() &&
+            dir.getChildFile("BUILD_PROVENANCE.json").existsAsFile() &&
+            dir.getChildFile("UpdateVerifier").getChildFile("gh.exe").existsAsFile() &&
+            dir.getChildFile("UpdateVerifier").getChildFile("verifier.json").existsAsFile();
+    }
     bool smartUpdaterInstallEligible() const
     {
         const auto installedExe=juce::File::getSpecialLocation(juce::File::currentExecutableFile);
@@ -13439,7 +13465,7 @@ private:
     {
         // The separately running updater has already staged and SHA-checked
         // both packages. Never claim a prompt can validate publisher identity.
-        if (!window_)
+        if (!window_ || smartUpdaterPortableEligible())
             return;
         const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
         if (local.isEmpty())
@@ -13507,10 +13533,11 @@ private:
         const auto powerShell = systemFolder.getChildFile ("WindowsPowerShell")
                                            .getChildFile ("v1.0")
                                            .getChildFile ("powershell.exe");
-        if (installedExe.getFileName().equalsIgnoreCase ("ArSonMix.exe")
+        const bool portable=smartUpdaterPortableEligible();
+        if (portable && applyStaged) return false;
+        if ((smartUpdaterInstallEligible() || portable)
             && updaterScript.existsAsFile() && provenance.existsAsFile()
-            && powerShell.existsAsFile()
-            && !installDir.getChildFile ("portable_mode.txt").exists())
+            && powerShell.existsAsFile())
         {
             juce::StringArray command { powerShell.getFullPathName(),
                 "-NoLogo", "-NoProfile", "-NonInteractive",

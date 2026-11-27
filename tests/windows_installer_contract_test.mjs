@@ -683,3 +683,17 @@ test('Rollback survives verifier replacement and offline network only under same
   assert.match(u,/ARSONMIX_UPDATER_OFFLINE_ROLLBACK_LEASE_PASS/);
   assert.match(u,/if\(\$null -ne \$rollbackGuard\)\{\$rollbackGuard\.Dispose\(\)\}/);
 });
+
+test('Portable release handoff downloads an attested ZIP but cannot apply or modify Studio',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1'),n=read('src/Main.cpp'),bridge=read('web/approved-native-bridge.js');
+  const work=u.slice(u.indexOf('function Invoke-PortableUpdateCheck'),u.indexOf('function Test-StagedAsset'));
+  assert.match(work,/Download-PortableVerified/);
+  assert.doesNotMatch(work,/Run-Installer|Expand-Archive|Start-Process|Remove-Item|Studio/);
+  assert.match(u,/if\(\$portable -and \(\$ApplyStaged -or \$RecoveryMode\)\)\{exit 0\}/);
+  assert.match(u,/Assert-InstallerAttestation \$destination \$tag \$sha -PortableZip/);
+  assert.match(u,/ARSONMIX_PORTABLE_DOWNLOAD_POLICY_PASS/);
+  assert.match(n,/if \(portable && applyStaged\) return false/);
+  assert.match(bridge,/Portable download only/);
+  assert.match(read('.github/workflows/alpha-preview-publish.yml'),/-IncludePortableUpdater/);
+  assert.match(read('scripts/build_verify_windows_installer.ps1'),/PORTABLE_RELEASE_UPDATE_DOWNLOADER_STAGED/);
+});

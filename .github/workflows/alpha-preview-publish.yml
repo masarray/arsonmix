@@ -163,7 +163,7 @@ jobs:
       - name: Build, install, upgrade and uninstall exact verified Windows installer
         shell: pwsh
         run: |
-          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output
+          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output -IncludePortableUpdater
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create release assets with checksums
