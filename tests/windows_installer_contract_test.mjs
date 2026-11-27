@@ -318,7 +318,7 @@ test('updater recovers after crash and offers only verified same-version repair'
     'candidate-unverified', 'INVALID_UPDATER_STATE_QUARANTINED',
     "operation='repair'", 'STAGING_VERIFIED_SAME_VERSION_REPAIR',
     'Clear-StagedVendorFiles', 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS',
-    'TotalMinutes -lt 20', 'TotalHours -lt 6'
+    'TotalMinutes -lt $attemptCooldown', 'TotalHours -lt 6'
   ]) assert.ok(s.includes(rule), rule);
   assert.doesNotMatch(s, /Remove-Item -LiteralPath \$stage -Recurse/);
   assert.doesNotMatch(s, /\bunins000\.exe\b/);
@@ -457,7 +457,7 @@ test('WebView2 error screen cannot acknowledge healthy GUI; staging retries afte
   assert.match(native,/onStartupStage_ \(3\)/); // error stage must not set marker
   assert.match(script, /\$state\.phase='staging-retry'\s*\n\s*\$state\.lastCheckUtc=''/);
   assert.match(script, /\$state\.phase='staged'\s*\n\s*\$state\.lastCheckUtc=\[DateTime\]::UtcNow\.ToString\('o'\)/);
-  assert.match(script, /TotalMinutes -lt 20/);
+  assert.match(script, /TotalMinutes -lt \$attemptCooldown/);
 });
 
 
@@ -474,7 +474,7 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
     assert.ok(updater.includes('[string]$approval.'+name+' -ceq [string]$transaction.'+name));
   assert.ok(updater.indexOf('UPDATE_WAITING_FOR_USER_OK') < updater.indexOf("    $state.phase='installing'"),
     'consent must gate the installer before any replacement');
-  assert.match(native, /void serviceSmartUpdateAcknowledgement\(\)/);
+  assert.match(native, /void serviceSmartUpdateAcknowledgement\(bool explicitReview=false\)/);
   assert.match(native, /if \(\+\+updatePromptTicks_ % 40 == 0\)/);
   assert.match(native, /class ArSonMixUpdateNotice final : public juce::DocumentWindow/);
   assert.match(native, /ArSonNoticeButton ok \{"OK",true\}/);

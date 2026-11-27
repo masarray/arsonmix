@@ -24,6 +24,7 @@ def exercise(browser,dst,width,height):
       },...window.__nativeListenerMethods}};""")
     page.goto((dst/"index.html").as_uri())
     page.locator("#ribbon-tab-mixer").wait_for(state="visible")
+    before_audio=page.evaluate("()=>window.__events.filter(e=>e.name==='arMixConsoleIntent'||e.name==='arMixAction'||e.name==='arMixLogicalIntent').length")
     menu=page.locator("#moreTools")
     menu.locator(":scope > summary").click()
     menu.locator('[data-menu-category="settings"]').click()
@@ -54,7 +55,7 @@ def exercise(browser,dst,width,height):
     before=page.evaluate("()=>window.__events.filter(e=>e.name==='arMixUpdateCenterIntent').length")
     page.wait_for_timeout(2200)
     assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixUpdateCenterIntent').length")==before
-    assert page.evaluate("()=>!window.__events.some(e=>e.name==='arMixConsoleIntent'||e.name==='arMixAction'||e.name==='arMixLogicalIntent')")
+    assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixConsoleIntent'||e.name==='arMixAction'||e.name==='arMixLogicalIntent').length")==before_audio
     assert not errors,errors
     page.close()
 

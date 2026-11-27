@@ -234,7 +234,66 @@ function Test-AttestationBundleUri([Uri]$uri,[string]$repositoryId) {
         $uri.AbsolutePath.StartsWith(('/attestations/'+$repositoryId+'/'),[StringComparison]::Ordinal) -and
         $uri.AbsolutePath -notmatch '%|\\|\.\.')
 }
-function Read-BoundedAttestationJson([Uri]$uri,[int]$maxBytes) {
+# Raw Snappy block transport used by GitHub attestation storage.
+# https://github.com/google/snappy/blob/main/format_description.txt
+# Bounded transport decoder only; the verifier owns cryptography.
+function Expand-BoundedSnappy([byte[]]$inputBytes,[int]$maxBytes) {
+    if($null -eq $inputBytes -or $inputBytes.Length -lt 1 -or $maxBytes -lt 1 -or $maxBytes -gt 262144){
+        throw 'Invalid Snappy bounds'
+    }
+    $pos=0;[long]$length=0;$terminated=$false
+    for($i=0;$i -lt 5;$i++){
+        if($pos -ge $inputBytes.Length){throw 'Truncated Snappy length'}
+        $b=[long]$inputBytes[$pos];$pos++
+        $length=$length -bor (($b -band 127) -shl (7*$i))
+        if($length -gt $maxBytes){throw 'Snappy expansion exceeds limit'}
+        if(($b -band 128) -eq 0){$terminated=$true;break}
+    }
+    if(-not $terminated -or $length -lt 1){throw 'Invalid Snappy length'}
+    $out=New-Object byte[] ([int]$length)
+    $written=0
+    while($pos -lt $inputBytes.Length -and $written -lt $length){
+        $tag=[int]$inputBytes[$pos];$pos++
+        $kind=$tag -band 3
+        if($kind -eq 0){
+            [long]$count=$tag -shr 2
+            if($count -ge 60){
+                $extra=[int]($count-59);$count=0
+                if($pos+$extra -gt $inputBytes.Length){throw 'Truncated Snappy literal length'}
+                for($j=0;$j -lt $extra;$j++){
+                    $count=$count -bor ([long]$inputBytes[$pos] -shl (8*$j));$pos++
+                }
+            }
+            $count++
+            if($count -gt $length-$written -or $count -gt $inputBytes.Length-$pos){throw 'Invalid Snappy literal'}
+            [Array]::Copy($inputBytes,$pos,$out,$written,[int]$count)
+            $pos+=[int]$count;$written+=[int]$count
+        } else {
+            [long]$offset=0
+            if($kind -eq 1){
+                if($pos -ge $inputBytes.Length){throw 'Truncated Snappy copy'}
+                $count=4+(($tag -shr 2) -band 7)
+                $offset=(($tag -band 224) -shl 3) -bor [int]$inputBytes[$pos];$pos++
+            } else {
+                $count=1+($tag -shr 2)
+                $extra=if($kind -eq 2){2}else{4}
+                if($pos+$extra -gt $inputBytes.Length){throw 'Truncated Snappy copy offset'}
+                for($j=0;$j -lt $extra;$j++){
+                    $offset=$offset -bor ([long]$inputBytes[$pos] -shl (8*$j));$pos++
+                }
+            }
+            if($offset -le 0 -or $offset -gt $written -or $count -gt $length-$written){throw 'Invalid Snappy backreference'}
+            while($count -gt 0){
+                $take=[int][Math]::Min([long]$count,$offset)
+                [Array]::Copy($out,$written-[int]$offset,$out,$written,$take)
+                $written+=$take;$count-=$take
+            }
+        }
+    }
+    if($written -ne $length -or $pos -ne $inputBytes.Length){throw 'Incomplete or trailing Snappy bytes'}
+    return ,$out
+}
+function Read-BoundedAttestationJson([Uri]$uri,[int]$maxBytes,[switch]$Snappy) {
     # Both callers validate the exact host/path before reaching here. No
     # authorization headers, redirect following or logging signed URL queries.
     $request=[Net.HttpWebRequest]::Create($uri)
@@ -246,18 +305,21 @@ function Read-BoundedAttestationJson([Uri]$uri,[int]$maxBytes) {
     if($uri.DnsSafeHost -ceq 'api.github.com'){
         $request.Headers['X-GitHub-Api-Version']='2022-11-28'
     }
+    $wireLimit=if($Snappy){$maxBytes+65536}else{$maxBytes}
     try {$response=$request.GetResponse()} catch {throw 'Public attestation download unavailable'}
     try {
-        if([int]$response.StatusCode -ne 200 -or $response.ContentLength -gt $maxBytes){throw 'Unexpected public attestation response'}
+        if([int]$response.StatusCode -ne 200 -or $response.ContentLength -gt $wireLimit){throw 'Unexpected public attestation response'}
         $stream=$response.GetResponseStream()
         $memory=[IO.MemoryStream]::new()
         try {
             $buffer=New-Object byte[] 16384
             while(($count=$stream.Read($buffer,0,$buffer.Length)) -gt 0){
-                if($memory.Length+$count -gt $maxBytes){throw 'Public attestation exceeds size limit'}
+                if($memory.Length+$count -gt $wireLimit){throw 'Public attestation exceeds size limit'}
                 $memory.Write($buffer,0,$count)
             }
-            $json=[Text.UTF8Encoding]::new($false,$true).GetString($memory.ToArray())
+            $bytes=$memory.ToArray()
+            if($Snappy){$bytes=Expand-BoundedSnappy $bytes $maxBytes}
+            $json=[Text.UTF8Encoding]::new($false,$true).GetString($bytes)
             return ($json | ConvertFrom-Json)
         } finally {$memory.Dispose();$stream.Dispose()}
     } finally {$response.Dispose()}
@@ -276,7 +338,8 @@ function Convert-AttestationResponse([object]$response,[string]$destination,[str
             $uri=$null
             if(-not [Uri]::TryCreate([string]$row.bundle_url,[UriKind]::Absolute,[ref]$uri) -or
                -not (Test-AttestationBundleUri $uri $repositoryId)){throw 'Unexpected attestation bundle URL'}
-            $bundle=Read-BoundedAttestationJson $uri 262144
+            if(-not $uri.AbsolutePath.EndsWith('.json.sn',[StringComparison]::Ordinal)){throw 'Unexpected attestation encoding'}
+            $bundle=Read-BoundedAttestationJson $uri 262144 -Snappy
         }
         if($null -eq $bundle){continue}
         $line=ConvertTo-Json -InputObject $bundle -Depth 60 -Compress
@@ -687,6 +750,28 @@ if($PolicySelfTest) {
        (Test-AttestationBundleUri ([Uri]'http://tmaproduction.blob.core.windows.net/attestations/1432648251/1.json') '1432648251')){
         throw 'Unsafe public bundle URL policy'
     }
+    $ascii=[Text.Encoding]::ASCII
+    if($ascii.GetString((Expand-BoundedSnappy ([byte[]](3,8,65,66,67)) 16)) -cne 'ABC' -or
+       $ascii.GetString((Expand-BoundedSnappy ([byte[]](5,0,65,1,1)) 16)) -cne 'AAAAA' -or
+       $ascii.GetString((Expand-BoundedSnappy ([byte[]](5,0,65,14,1,0)) 16)) -cne 'AAAAA' -or
+       $ascii.GetString((Expand-BoundedSnappy ([byte[]](5,0,65,15,1,0,0,0)) 16)) -cne 'AAAAA'){
+        throw 'Snappy literal/copy decode policy failed'
+    }
+    $literal=[byte[]](@(61,240,60)+@(65)*61)
+    if($ascii.GetString((Expand-BoundedSnappy $literal 64)) -cne ('A'*61)){throw 'Snappy extended literal failed'}
+    $badSnappy=@(
+        [pscustomobject]@{bytes=[byte[]](128);max=16},
+        [pscustomobject]@{bytes=[byte[]](17,0,65);max=16},
+        [pscustomobject]@{bytes=[byte[]](3,8,65);max=16},
+        [pscustomobject]@{bytes=[byte[]](4,1,0);max=16},
+        [pscustomobject]@{bytes=[byte[]](1,0,65,0);max=16},
+        [pscustomobject]@{bytes=[byte[]](5,0,65,14,2,0);max=16})
+    foreach($fixture in $badSnappy){
+        $rejected=$false
+        try {[void](Expand-BoundedSnappy $fixture.bytes $fixture.max)} catch {$rejected=$true}
+        if(-not $rejected){throw 'Malformed Snappy block accepted'}
+    }
+    Write-Output 'ARSONMIX_UPDATER_SNAPPY_POLICY_PASS'
     $cert=[pscustomobject]@{verificationResult=[pscustomobject]@{signature=[pscustomobject]@{certificate=[pscustomobject]@{sourceRepositoryIdentifier='1432648251'}}}}
     if(-not (Test-VerifiedRepositoryIdentity @($cert)) -or
        (Test-VerifiedRepositoryIdentity @()) -or

@@ -9,7 +9,7 @@ $ErrorActionPreference='Stop'
 $tokens=$null;$errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'installer/ArSonMixAutoUpdate.ps1').Path,[ref]$tokens,[ref]$errors)
 if($errors.Count -ne 0){throw 'Updater PowerShell parse failure'}
-foreach($name in @('Test-AttestationBundleUri','Read-BoundedAttestationJson','Convert-AttestationResponse','Read-PublicAttestation','Invoke-IsolatedVerifier','Test-VerifiedRepositoryIdentity')){
+foreach($name in @('Test-AttestationBundleUri','Expand-BoundedSnappy','Read-BoundedAttestationJson','Convert-AttestationResponse','Read-PublicAttestation','Invoke-IsolatedVerifier','Test-VerifiedRepositoryIdentity')){
     $matches=@($ast.FindAll({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $name},$false))
     if($matches.Count -ne 1){throw "Missing unique updater trust function: $name"}
     . ([scriptblock]::Create($matches[0].Extent.Text))

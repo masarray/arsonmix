@@ -13383,7 +13383,7 @@ private:
             juce::FileInputStream stream(file);
             if(!stream.openedOk())return juce::String{};
             juce::MemoryBlock bytes;
-            stream.readIntoMemoryBlock(bytes,static_cast<ssize_t>(limit+1));
+            stream.readIntoMemoryBlock(bytes,static_cast<int>(limit+1));
             if(bytes.getSize()>static_cast<size_t>(limit))return juce::String{};
             return bytes.toString();
         };
