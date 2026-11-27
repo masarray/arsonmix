@@ -782,8 +782,15 @@ def verify_independent_output(page,out,legacy_empty=False):
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
     select_ribbon_workflow(page,"mixer")
-    page.locator("#sofToggle").click()
+    # Reproduce a transient admission lock on the entry button while SOF is
+    # active. The real visible Return to Main must still escape locally.
+    page.locator("#sofToggle").evaluate("el=>el.disabled=true")
+    escape=page.locator("#ribbonMainMix")
+    assert escape.is_visible() and escape.is_enabled()
+    escape.click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"
+    assert page.locator("#gainView").is_enabled() and page.locator("#fxView").is_enabled()
+    page.locator("#sofToggle").evaluate("el=>el.disabled=false")
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
     mon.select_option("__armix_settings__")

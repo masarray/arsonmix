@@ -213,3 +213,26 @@ test('live checkpoint uses accepted metadata and immutable FX identity without m
  assert.match(store,/old.catalogId!=fx.catalogId\|\|old.path!=fx.path\|\|old.uid!=fx.uid/);
  assert.match(store,/staging.overwriteTargetFileWithTemporary\(\)/);
 });
+
+test('ASIO vendor panel preserves operator desire and only resumes the same verified driver',()=>{
+ const p=main.split('void showAsioControlPanel(')[1].split('void chooseStudioBackup()')[0];
+ assert.match(p,/const bool resume=engine_\.wantsMainContinuation\(\)&&!operatorOutputMuted_/);
+ assert.match(p,/engine_\.beginManualAudioSetup\(true\)/);
+ assert.match(p,/returned->getName\(\)==driverName/);
+ assert.match(p,/sameDriver && finishAudioSetupAndRecoverMixer\(\)/);
+ assert.match(p,/resume&&!operatorOutputMuted_&&!panelError\)requestAutomaticMain\(false\)/);
+ assert.match(p,/ASIO_PANEL_BEGIN/);
+ assert.doesNotMatch(p,/operatorOutputMuted_\s*=|setMonitorEnabled\(true\)/);
+ const restore=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
+ assert.match(restore,/retainedDoc\.resumeMain=engine_\.wantsMainContinuation\(\)&&!operatorOutputMuted_/);
+ assert.match(restore,/const bool holdMain=usedPrevious/);
+});
+test('nested device transaction permits explicit STOP but rejects ARM with native ACK',()=>{
+ const a=main.split('void onAction (const juce::var& args)')[1];
+ assert.match(a,/const bool outputIntent=action=="monitor"&&args\.getProperty\("value",\{\}\)\.isBool\(\)/);
+ assert.match(a,/action!="audioDeviceApply" && !outputIntent/);
+ const monitor=a.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
+ assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
+ assert.match(monitor,/if \(fault.isEmpty\(\)\) \{\s*operatorOutputMuted_=!arm/);
+ assert.match(monitor,/arMixAudioArmAck/);
+});

@@ -158,8 +158,18 @@ function install(){
  const click=id=>{const el=source(id);if(el&&!el.disabled)el.click();};
  const mainMix=document.createElement('button');mainMix.type='button';mainMix.className='tool';mainMix.id='ribbonMainMix';mainMix.textContent='Return to Main';mainMix.hidden=true;
  bar.insertBefore(mainMix,$('mixContext')||null);
- mainMix.addEventListener('click',()=>{if($('sofToggle')?.getAttribute('aria-pressed')==='true')click('sofToggle');});
- function syncMix(){const sof=$('sofToggle');mainMix.hidden=sof?.getAttribute('aria-pressed')!=='true';mainMix.disabled=!sof||sof.disabled;}
+ // Exiting SEND MIX is local navigation and cannot require native SEND
+ // admission. A temporarily disabled entry control must not trap the user.
+ mainMix.addEventListener('click',()=>{
+   const scope=window.__ARMIX_NATIVE_SCOPE__;
+   if(scope?.sofEnabled&&typeof scope.toggleSof==='function')scope.toggleSof(false);
+   else if($('sofToggle')?.getAttribute('aria-pressed')==='true')click('sofToggle');
+ });
+ function syncMix(){
+   const sof=$('sofToggle'),scope=window.__ARMIX_NATIVE_SCOPE__;
+   mainMix.hidden=sof?.getAttribute('aria-pressed')!=='true';
+   mainMix.disabled=mainMix.hidden||(!scope?.toggleSof&&(!sof||sof.disabled));
+ }
  if($('sofToggle'))new MutationObserver(syncMix).observe($('sofToggle'),{attributes:true,attributeFilter:['aria-pressed','disabled']});
  syncMix();
  const openPlayer=()=>{if($('arsonPlayer')?.hidden)click('playerToggle');};

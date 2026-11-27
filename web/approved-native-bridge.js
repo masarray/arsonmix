@@ -4546,6 +4546,9 @@
       devicePanel.querySelector("[data-audio-driver-panel]").onclick=()=>{
         if(deviceBusy()||!deviceInventory||!deviceChoice||
            !deviceVM.setupPresentation(deviceInventory,deviceChoice,deviceState).driverPanelAvailable)return;
+        // Leave the transient SEND view before a modal driver transaction.
+        // This is navigation only: do not write a fader, route or output ARM.
+        if(scope?.sofEnabled)scope.toggleSof(false);
         const active=deviceInventory.active;
         backend.emitEvent("arMixAction",{action:"audioDriverPanel",driver:active.playbackDevice,
           deviceGeneration:active.deviceGeneration});

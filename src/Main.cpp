@@ -2883,6 +2883,7 @@ private:
             engine_.setMonitorEnabled(false);
             engine_.cancelAsioResetMonitorIntent();
             autoMainEpoch_=0;
+            diagnostics_.record("OUTPUT_MUTE","ON | PANIC_MUTE hotkey");
             emitApprovedNativeSnapshot();
             return;
         }
@@ -4772,6 +4773,11 @@ private:
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::setupDialog);
         if(!lease)return emitNotice("Audio device is busy · try again",true);
         const bool resume=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
+        const auto driverName=device->getName();
+        diagnostics_.record("ASIO_PANEL_BEGIN",
+            juce::String("priorMain=")+(resume?"ARMED_INTENT":"OFF")+
+            " | operatorMute="+(operatorOutputMuted_?"YES":"NO")+
+            " | driver="+driverName);
         pendingVendorStream_.reset();
         const auto streamIntent=engine_.captureSecondaryResumeIntent();
         const auto streamGeneration=secondaryRetry_.generation();
@@ -4787,16 +4793,25 @@ private:
                 manager.restartLastAudioDevice();
             }
         } catch(...) {panelError=true;}
-        const bool recovered=finishAudioSetupAndRecoverMixer();
+        // A vendor modal loop may return a different/null device. Never
+        // authorize a replacement just because the panel has closed.
+        auto* returned=manager.getCurrentAudioDevice();
+        const bool sameDriver=returned && returned->isOpen() &&
+            manager.getCurrentAudioDeviceType()=="ASIO" && returned->getName()==driverName;
+        const bool recovered=sameDriver && finishAudioSetupAndRecoverMixer();
         if(recovered){
             deviceSettingsDirty_=true;startupError_.clear();
-            if(resume&&!operatorOutputMuted_)requestAutomaticMain(false);
+            if(resume&&!operatorOutputMuted_&&!panelError)requestAutomaticMain(false);
             if(streamIntent&&!panelError&&streamGeneration==secondaryRetry_.generation()&&!pendingSecondaryStop_)
                 pendingVendorStream_=PendingVendorStream{*streamIntent,engine_.dryRoutingLabEpoch(),
                     engine_.outputArmRevision(),static_cast<std::uint64_t>(monotonicMilliseconds()+5000),resume};
         }
         diagnostics_.record(recovered&&!panelError?"ASIO_PANEL_RETURN":"ASIO_PANEL_RECOVERY_REQUIRED",
-            recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery");
+            juce::String(recovered?"Vendor panel returned; verified device and mixer binding":"Vendor panel returned; mixer retained for recovery")+
+            " | priorMain="+(resume?"ON":"OFF")+
+            " | operatorMute="+(operatorOutputMuted_?"YES":"NO")+
+            " | sameDriver="+(sameDriver?"YES":"NO")+
+            " | panelError="+(panelError?"YES":"NO"));
         emitApprovedNativeSnapshot();
         emitDeviceInventory(false);
         if(!recovered||panelError)
@@ -6022,6 +6037,10 @@ private:
                 const auto error=engine_.captureNativeMixerSession(retainedDoc,retainedStates,true);
                 if(error.isNotEmpty())return error;
                 retainedDoc.id=mixerSessionId_;
+                // A retained in-memory graph is not a disk recovery decision.
+                // Its physical gate may be closed for an ASIO panel/reset.
+                // Preserve the current operator desire, not transient PCM mute.
+                retainedDoc.resumeMain=engine_.wantsMainContinuation()&&!operatorOutputMuted_;
                 return resolveMixerSessionCatalog(retainedDoc,true);
             });
         if(checkpoint.source==Recovery::Source::missing) {
@@ -7405,7 +7424,11 @@ private:
             pendingSecondaryStop_=args;
             return;
         }
-        if(deviceApply_.busy() && action!="audioDeviceApply"){
+        // Output STOP must not disappear inside a vendor's nested modal loop.
+        // ARM is handled below too, but rejected with its correlated ACK while
+        // the transaction owns the physical route.
+        const bool outputIntent=action=="monitor"&&args.getProperty("value",{}).isBool();
+        if(deviceApply_.busy() && action!="audioDeviceApply" && !outputIntent){
             // Never silently swallow an operator's correlated editor click.
             // Admission remains closed while hardware Apply owns the graph.
             if(action=="routingFxEditor")
@@ -11524,7 +11547,9 @@ private:
             // against the actual native route, never against UI appearance.
             const bool arm=bool(value);
             juce::String fault;
-            if (arm && (nativeShowBusy_ || studioBackupBusy_))
+            if (arm && deviceApply_.busy())
+                fault="Audio configuration is finishing · retry Resume when ready.";
+            if (arm && fault.isEmpty() && (nativeShowBusy_ || studioBackupBusy_))
                 fault="Finish Show/backup work before arming hardware OUTPUT.";
             const auto expectedEpoch=args.getProperty("expectedEpoch",juce::var());
             const auto expectedRevision=args.getProperty("expectedRevision",juce::var());
