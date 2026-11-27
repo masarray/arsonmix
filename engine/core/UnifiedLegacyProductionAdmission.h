@@ -191,6 +191,9 @@ public:
         plan.latency=+[](void* ctx,ChannelId id) noexcept {
             return static_cast<Bank*>(ctx)->latencySamples(id);
         };
+        plan.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+            static_cast<Bank*>(p)->collectPostFaderSidechains(routes);
+        };
         plan.deviceEpoch=deviceEpoch;plan.graphRevision=expectedPcmRevision+1;
         result.native=publisher.commit(candidate.roster,candidate.request,
             expectedPcmRevision,deviceEpoch,currentHardwareEpoch,

@@ -541,7 +541,59 @@ static void verifyGraphicEq31Processor() {
         static_cast<int>(adjusted.getSize())));
 }
 
+static void verifyAutoDuckerProcessor() {
+    using D=armix::builtin_fx::AutoDuckerProcessor;
+    const auto* fx=armix::builtin_fx::findNativeBuiltInFx(D::catalogIdentity);
+    assert(fx&&juce::String(fx->name)=="Auto Ducker"&&fx->showInPicker);
+    auto p=fx->prepare(48000.,128,nullptr,0);
+    auto* d=dynamic_cast<D*>(p.get());assert(d&&d->getLatencySamples()==0);
+    D::Settings s{};s.sources[0]=7;s.sources[1]=9007199254740993ULL;s.count=2;
+    assert(d->setUnpublishedSettings(s));
+    juce::MemoryBlock bytes;d->getStateInformation(bytes);
+    auto restored=fx->prepare(48000.,128,bytes.getData(),static_cast<int>(bytes.getSize()));
+    auto* other=dynamic_cast<D*>(restored.get());assert(other);
+    assert(other->acceptedSettings().sources==s.sources&&other->acceptedSettings().count==2);
+    juce::MemoryBlock again;other->getStateInformation(again);assert(again==bytes);
+    assert(!fx->prepare(48000.,128,bytes.getData(),static_cast<int>(bytes.getSize()-1)));
+    auto invalid=s;invalid.sources[1]=7;assert(!other->setUnpublishedSettings(invalid));
+    juce::MemoryBlock v1;
+    {juce::MemoryOutputStream old(v1,false);
+     old.writeInt(0x41445543);old.writeInt(1);old.writeInt64(19);
+     for(float v:{-34.f,12.f,18.f,220.f,480.f,5.f,120.f,5000.f})old.writeFloat(v);}
+    auto migrated=fx->prepare(48000.,128,v1.getData(),static_cast<int>(v1.getSize()));
+    auto* legacy=dynamic_cast<D*>(migrated.get());
+    assert(legacy&&legacy->acceptedSettings().count==1&&legacy->acceptedSettings().sources[0]==19);
+    other->sealForRealtime();assert(!other->setUnpublishedSettings(s));
+    auto newRoute=s;newRoute.sources[0]=8;assert(!other->queueSettings(newRoute,9));
+    auto tweak=s;tweak.dynamics.depthDb=6;assert(other->queueSettings(tweak,10));
+    std::array<float,128> key{};key.fill(.1f);
+    std::array<armix::mixer::AutoDuckerKeyEntry,1> entries{{{7,0,{key.data(),nullptr}}}};
+    juce::AudioBuffer<float> pcm(2,128);pcm.clear();juce::MidiBuffer midi;
+    {armix::mixer::AutoDuckerKeyScope scope({},99,128,entries);other->processBlock(pcm,midi);}
+    D::Completion ack{};assert(other->pollCompletion(ack)&&ack.applied&&ack.requestId==10);
+    assert(other->acceptedSettings().dynamics.depthDb==6.f&&other->observedKeyValid());
+    D::Meter meter{};assert(other->readMeter(meter)&&meter.serial>0);
+    assert(meter.ids[0]==7&&meter.available[0]&&meter.ids[1]==9007199254740993ULL&&!meter.available[1]);
+    assert(meter.gain<=1.f&&meter.gain>=0.f&&other->stateSnapshotQuiescent());
+    // Exercise full -> short -> empty -> full publication without exposing
+    // stale tail IDs, powers or availability from an earlier graph lease.
+    std::array<std::uint64_t,32> full{};
+    for(std::size_t k=0;k<full.size();++k)full[k]=k+1;
+    const auto verifyFrame=[&](std::span<const std::uint64_t> ids){
+        armix::builtin_fx::AutoDuckerSelectionScope selection(ids);
+        armix::mixer::AutoDuckerKeyScope scope({},99,128,entries);
+        other->processBlock(pcm,midi);
+        assert(other->readMeter(meter));
+        for(std::size_t k=0;k<meter.ids.size();++k){
+            assert(meter.ids[k]==(k<ids.size()?ids[k]:0));
+            if(k>=ids.size())assert(meter.power[k]==0.f&&!meter.available[k]);
+        }
+    };
+    verifyFrame(full);verifyFrame(std::span<const std::uint64_t>(full).subspan(6,1));
+    verifyFrame({});verifyFrame(full);
+}
 int main() {
+    verifyAutoDuckerProcessor();
     verifyGraphicEq31Processor();
     verifySharedNativeFxControlRequest(); 
     verifyFirstSoundGuitarProcessor();

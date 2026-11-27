@@ -135,6 +135,8 @@ public:
             sliders_[i].setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
             sliders_[i].setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);
             sliders_[i].setRange(0.,1.,0.005);
+            sliders_[i].setScrollWheelEnabled(true);
+            sliders_[i].setChangeNotificationOnlyOnRelease(false);
             sliders_[i].setLookAndFeel(&knobsLook_);
             sliders_[i].onValueChange=[this,i] {
                 if(refreshing_ || focus_>=draft_.count)return;

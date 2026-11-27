@@ -939,7 +939,7 @@ for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim
   const delta=dialDrag.startY-e.clientY;
   if(Math.abs(delta)>2)dialDrag.moved=true;
   if(!dialDrag.moved)return;
-  const raw=dialDrag.origin+delta*(max-min)/135;
+  const raw=dialDrag.origin+delta*(max-min)/135*(e.shiftKey?.1:1);
   const bounded=Math.min(max,Math.max(min,raw));
   const next=Math.min(max,Math.max(min,min+Math.round((bounded-min)/step)*step));
   if(Number(input.value)!==next){input.value=String(next);input.dispatchEvent(new Event("input",{bubbles:true}));}
@@ -964,6 +964,8 @@ for(const [id,initial] of [["skSpeed",12],["skSpread",60],["skMix",100],["skTrim
   input.dispatchEvent(new Event("change",{bubbles:true}));
  });
 }
+for(const input of root.querySelectorAll('input[type="range"]'))
+ window.ArMixFxGesture.bindRange(input,{target:input.closest(".sk-dial")||input,enabled:()=>!!current&&(!native()||!!context())});
 const map=$("skMap");
 function toAzimuth(e) {
  // SVG user-space is authoritative despite CSS borders/DPI/letterboxing.

@@ -439,6 +439,13 @@ def exercise(browser,out,width,height):
         assert command_count()==before+2
         applied_settings(dialAction,{**firstSettings,
             "revolutionSeconds":dialAction["settings"]["revolutionSeconds"]})
+    # Verify wheel target is the visible dial, not its pointer-events:none range.
+    before=command_count()
+    knob.hover();page.mouse.wheel(0,-120)
+    page.wait_for_function("n=>window.__actions.filter(a=>a.action==='nativeSonKuSet').length>n",arg=before)
+    wheel=last_action(page,"nativeSonKuSet")
+    assert wheel["settings"]["revolutionSeconds"]>dialAction["settings"]["revolutionSeconds"]
+    applied_settings(wheel,wheel["settings"])
     # M4: native SPACE must be an actual typed ACK/readback edit.
     # No browser-only audio, no visual success before PCM applied.
     assert editor.locator(".sk-space-options button").count()==4

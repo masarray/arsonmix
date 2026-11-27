@@ -327,14 +327,21 @@ def main():
                 assert float(after["offset"])<float(before["offset"]),(before,after)
                 assert after["transform"]!=before["transform"]
                 assert after["bg"]==before["bg"],"knob chassis must not rotate"
-                # Wheel burst sends one bounded native intent after 95ms.
-                page.wait_for_timeout(140)
+                # First wheel emits immediately, then the newest edit survives an outstanding ACK.
                 rotary=last(page,"nativeThrowSet")
-                assert rotary["settings"]["wet"]>.42 and rotary["settings"]["wet"]<=.44
+                assert .42<rotary["settings"]["wet"]<=.44
+                page.mouse.wheel(0,-120)
+                assert last(page,"nativeThrowSet")["requestId"]==rotary["requestId"]
                 emit(page,"arMixBuiltinThrowQueue",{"requestId":rotary["requestId"],"status":"QUEUED"})
                 emit(page,"arMixBuiltinThrowAck",{"requestId":rotary["requestId"],"status":"APPLIED"})
                 updated={**DEFAULTS,"mode":0,"wet":rotary["settings"]["wet"]}
                 reply_snapshot(page,state,updated,applied=rotary["requestId"])
+                page.wait_for_function("id=>window.__actions.filter(x=>x.action==='nativeThrowSet').at(-1)?.requestId!==id",arg=rotary["requestId"])
+                final=last(page,"nativeThrowSet")
+                assert final["settings"]["wet"]>updated["wet"]
+                emit(page,"arMixBuiltinThrowAck",{"requestId":final["requestId"],"status":"APPLIED"})
+                updated=final["settings"]
+                reply_snapshot(page,state,updated,applied=final["requestId"])
                 assert "%" in editor.locator("#vtWetValue").inner_text()
                 # Portable My Preset — the user file never captures the
                 # current Music ChannelId, detected beat grid or echo tails.

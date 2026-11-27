@@ -334,10 +334,11 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;
  background:#273d49;color:#dcf2fc;cursor:pointer;font:16px sans-serif}
 /* Popup HWND itself moves beyond the mixer; DO NOT drag a second fake
    window inside the child WebView's clipped compositing rectangle. */
-body :is(#mxNativePeq,#mxNativeComp,#mxNativeGeq31,#mxNativeHarmony,
+body :is(#mxNativePeq,#mxNativeComp,#mxNativeDucker,#mxNativeGeq31,#mxNativeHarmony,
  #mxNativeVocalThrow,#mxNativeSonKu){left:0!important;top:0!important}
 </style>
 <script defer src="assets/approved-native-contract.js"></script>
+<script defer src="assets/mixer-builtin-fx-gesture.js"></script>
 <script defer src="assets/mixer-builtin-fx-preset-bar.js"></script>
 <script defer src="assets/approved-floating-fx-bridge.js"></script>
 </head><body><output id="fxWindowStatus" role="status">Loading owned FX editor…</output>

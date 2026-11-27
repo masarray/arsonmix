@@ -1348,6 +1348,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
             const auto published=nativePublisher_.commit(
@@ -1396,6 +1399,9 @@ public:
             fx.latency=+[](void* p,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             const auto committed=nativePublisher_.commit(roster,nativeAccepted_.graph.request,
                 revision,ep,epoch(),false,std::move(fx),false,true);
             if(!committed.ok()){reply.error="NATIVE_FX_RACK_PCM_COMMIT_REJECTED";return reply;}
@@ -1406,6 +1412,64 @@ public:
             reply.accepted=true;reply.error="";reply.pcmRevision=committed.revision;
             reply.rosterRevision=nativeAccepted_.graph.roster.revision();return reply;
         }catch(...){reply.error="NATIVE_FX_RACK_PREPARE_FAILED";return reply;}
+    }
+    // Exact current owner + revision; new source set and dependency DAG
+    // become visible in ONE native publication. No change to physical pins.
+    NativeBusResult setNativeDuckerSources(const FxGraph::InstanceLease& held,
+            armix::mixer::ChannelId target,std::size_t slot,const juce::String& token,
+            const armix::builtin_fx::AutoDuckerProcessor::Settings& selection) {
+        using namespace armix::mixer;
+        NativeBusResult reply;reply.error="STALE_AUTO_DUCKER";
+        if(!retainedNativeFxPower(held,target,slot,token).valid)return reply;
+        auto* d=dynamic_cast<armix::builtin_fx::AutoDuckerProcessor*>(held->processor.get());
+        if(!d||!selection.validSources()||!d->stateSnapshotQuiescent()){
+            reply.error="AUTO_DUCKER_PENDING_OR_INVALID_SOURCES";return reply;
+        }
+        auto settings=d->acceptedSettings();
+        const auto previous=settings;
+        settings.sources=selection.sources;settings.count=selection.count;
+        for(std::size_t i=0;i<settings.count;++i)
+            if(settings.sources[i]==target.value||
+               (!nativeAccepted_.graph.roster.find(ChannelId{settings.sources[i]})&&
+                !std::binary_search(previous.sources.begin(),previous.sources.begin()+previous.count,settings.sources[i]))){
+                reply.error="AUTO_DUCKER_SOURCE_UNAVAILABLE";return reply;
+            }
+        try{
+            const auto ep=epoch(),revision=nativeAccepted_.pcmRevision;
+            DynamicChannelFxLeaseBank staged;
+            if(!DynamicChannelFxLeaseBank::stageDuckerSources(*nativeAccepted_.fxOwners,
+                revision+1,target,slot,held,settings,staged))return reply;
+            auto owner=std::make_shared<DynamicChannelFxLeaseBank>(std::move(staged));
+            owner->bindGlobalRackOverride(&globalFxBypassed_);
+            DynamicNativeSessionPublisher::FxPlan plan;
+            plan.owner=owner;plan.context=owner.get();plan.deviceEpoch=ep;plan.graphRevision=revision+1;
+            plan.render=+[](void* p,ChannelId id,float* a,float* b,int n) noexcept{
+                (*static_cast<DynamicChannelFxLeaseBank*>(p))(id,a,b,n);
+            };
+            plan.latency=+[](void* p,ChannelId id) noexcept{
+                return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
+            };
+            plan.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
+            const auto result=nativePublisher_.commit(nativeAccepted_.graph.roster,
+                nativeAccepted_.graph.request,revision,ep,epoch(),false,std::move(plan),false,true);
+            if(!result.ok()){
+                reply.error=result.graphError.fault==DynamicGraphFault::cycle?
+                    "AUTO_DUCKER_ROUTING_CYCLE":
+                    result.graphError.fault==DynamicGraphFault::sidechainLatency?
+                    "AUTO_DUCKER_PDC_UNSUPPORTED":"AUTO_DUCKER_GRAPH_REJECTED";
+                return reply;
+            }
+            d->acknowledgePublishedSources(settings);
+            nativeAccepted_.fxOwners=std::move(owner);
+            nativeAccepted_.pcmRevision=result.revision;
+            reapplyExternalOutputsSameEpoch();nativeStructureLive_=true;
+            nativeMeterEpoch_.store(0,std::memory_order_release);
+            reply.accepted=true;reply.error="";reply.pcmRevision=result.revision;
+            reply.rosterRevision=nativeAccepted_.graph.roster.revision();
+        }catch(...){reply.error="AUTO_DUCKER_PREPARE_FAILED";}
+        return reply;
     }
     bool retainsFxEditor(std::uint64_t ep,const FxGraph::InstanceLease& owner) const noexcept {
         if(!owner||ep!=epoch()||!ready())return false;
@@ -1644,6 +1708,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
             // Keep old PCM running throughout candidate validation/FX lease
@@ -1741,6 +1808,9 @@ public:
             };
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
@@ -1905,6 +1975,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
             if(beforePublish)beforePublish();
@@ -1982,6 +2055,9 @@ public:
             };
             fx.latency=+[](void* ctx,ChannelId channel) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(channel);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
@@ -2074,6 +2150,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=expectedEpoch;fx.graphRevision=expectedPcmRevision+1;
             if(beforePublish)beforePublish(); // late PCM publication gate
             const auto published=nativePublisher_.commit(
@@ -2150,6 +2229,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=ep;fx.graphRevision=expectedPcmRev+1;
             const auto published=nativePublisher_.commit(
                  roster,nativeAccepted_.graph.request,expectedPcmRev,
@@ -2222,6 +2304,9 @@ public:
             };
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             fx.deviceEpoch=ep;
             fx.graphRevision=expectedPcmRev+1;
@@ -2671,6 +2756,9 @@ public:
             fx.latency=+[](void* p,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             const auto published=nativePublisher_.commit(
                 document.roster,document.request,previous,generation,epoch(),
                 true,std::move(fx));
@@ -3028,6 +3116,9 @@ public:
             };
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             const auto applied=nativePublisher_.commit(nativeAccepted_.graph.roster,request,
                 revision,newEpoch,epoch(),true,std::move(fx));

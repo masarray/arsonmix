@@ -475,9 +475,9 @@ controls.forEach((c,i)=>{
   activeSlider=-1;requestSnapshot(true);
  });
  c.cell.addEventListener("wheel",event=>{
-  if(!artworkLoaded)return;
-  event.preventDefault();
-  const cur=draft.bands[i],target=clamp(cur-Math.sign(event.deltaY)*.5,-12,12);
+  const dir=window.ArMixFxGesture.direction(event);if(!artworkLoaded||!dir||(!context()&&native()))return;
+  event.preventDefault();event.stopPropagation();
+  const cur=draft.bands[i],target=clamp(cur+dir*(event.shiftKey?.1:.5),-12,12);
   updateBand(i,wheelZeroSnap(cur,target,1.1,c.cell));
  },{passive:false});
  c.cell.addEventListener("dblclick",event=>{event.preventDefault();updateBand(i,0);});
@@ -499,7 +499,7 @@ dial.addEventListener("pointermove",e=>{
 });
 const stopDial=e=>{if(dragOutput?.id!==e.pointerId)return;dragOutput=null;try{dial.releasePointerCapture(e.pointerId);}catch{}flush();};
 dial.addEventListener("pointerup",stopDial);dial.addEventListener("pointercancel",stopDial);
-dial.addEventListener("wheel",e=>{e.preventDefault();updateOutput(wheelZeroSnap(draft.levelDb,clamp(draft.levelDb+(e.deltaY<0?.5:-.5),-24,6),.65,dial));},{passive:false});
+dial.addEventListener("wheel",e=>{const dir=window.ArMixFxGesture.direction(e);if(!dir||(!context()&&native()))return;e.preventDefault();e.stopPropagation();updateOutput(wheelZeroSnap(draft.levelDb,clamp(draft.levelDb+dir*(e.shiftKey?.1:.5),-24,6),.65,dial));},{passive:false});
 dial.addEventListener("dblclick",e=>{e.preventDefault();updateOutput(0);});
 dial.addEventListener("keydown",e=>{
  const step=e.shiftKey?.1:.5;

@@ -146,7 +146,7 @@ def main():
                 assert abs(moved["width"]-1430)<1
                 # Shift+wheel pans the hardware across the mixer viewport
                 # even if a cropped header ends in controls or Close.
-                page.mouse.move(min(width-50,190),moved["y"]+85)
+                page.mouse.move(min(width-50,190),moved["y"]+15)
                 page.keyboard.down("Shift")
                 page.mouse.wheel(0,260)
                 page.keyboard.up("Shift")
