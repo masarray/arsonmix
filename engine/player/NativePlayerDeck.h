@@ -143,6 +143,7 @@ public:
         wantedPlay_.store(false,std::memory_order_release);
         requestedSeekSeconds_.store(cueInSeconds_.load(
             std::memory_order_acquire),std::memory_order_release);
+        error_.store(0,std::memory_order_release);
         state_.store(State::stopped,std::memory_order_release);
         generation_.fetch_add(1,std::memory_order_acq_rel);
         played_.store(0,std::memory_order_relaxed);

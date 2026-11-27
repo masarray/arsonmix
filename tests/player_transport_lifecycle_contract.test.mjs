@@ -36,3 +36,8 @@ const nextBody=source.slice(source.indexOf("void playNextMusic("),source.indexOf
 assert.doesNotMatch(nextBody,/commitQueuedFront/,"queue cannot be consumed before native PCM");
 assert.match(timer,/!playerAutoAdvanceGate_\.claimed\(\)/);
 console.log("Player cancellation, queue PCM commit, retry gate source contracts PASS");
+
+assert.match(timer,/playerLibrary_\[static_cast<std::size_t>\(playerCurrent_\)\]==playerPendingQueueFile_/,"only the acknowledged song may consume its queue entry");
+assert.match(source,/if\(playerMediaRefreshRequested_\)\{\s*if\(playerMediaBusy_\|\|playerCoverBusy_\)return;/);
+assert.doesNotMatch(source,/playerError_="Media scan is in progress"/,"refresh should coalesce, not reject while scanning");
+console.log("Queued song identity and coalesced refresh contracts PASS");

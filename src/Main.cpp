@@ -1000,7 +1000,7 @@ private:
     bool playerMediaBusy_=false,playerCatalogueRequested_=false;
     std::size_t playerMediaCursor_=0,playerMediaRecheckCursor_=0;
     juce::uint32 playerMediaRecheckAt_=0,playerCoverRecheckAt_=0;
-    bool playerMediaForceRefresh_=false;
+    bool playerMediaForceRefresh_=false,playerMediaRefreshRequested_=false;
     int playerCoverId_=-1;
     juce::String playerCover_;
     bool playerCoverBusy_=false;
@@ -6691,6 +6691,15 @@ private:
     }
     void pumpPlayerMedia(){
         if(!browser_.loaded)return;
+        // Coalesce refresh while a bounded worker batch is in flight. Do
+        // not reject the gesture or launch stale parallel workers.
+        if(playerMediaRefreshRequested_){
+            if(playerMediaBusy_||playerCoverBusy_)return;
+            playerMediaRefreshRequested_=false;
+            playerMedia_.clear();playerMediaCursor_=0;playerMediaRecheckCursor_=0;
+            playerMediaForceRefresh_=true;playerCoverId_=-1;playerCover_.clear();
+            browser_.emitEventIfBrowserIsVisible("arMixPlayerMediaReset",juce::var(true));
+        }
         const auto now=juce::Time::getMillisecondCounter();
         if(!playerMediaBusy_){
             const bool recheck=now-playerMediaRecheckAt_>=1000;
@@ -7254,10 +7263,8 @@ private:
             return emitPlayerState(true);
         }
         if(action=="playerMediaRefresh"){
-            if(playerMediaBusy_||playerCoverBusy_){playerError_="Media scan is in progress";return emitPlayerState();}
-            playerMedia_.clear();playerMediaCursor_=0;playerMediaRecheckCursor_=0;playerMediaForceRefresh_=true;playerCoverId_=-1;playerCover_.clear();
-            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPlayerMediaReset",juce::var(true));
-            playerError_.clear();return emitPlayerState(true);
+            playerMediaRefreshRequested_=true;
+            playerError_.clear();return emitPlayerState();
         }
         if(action=="playerVolume") {
             if(value.isInt() || value.isDouble())
@@ -12179,6 +12186,7 @@ private:
                     playerSelected_=playerCurrent_;
                     playerActivityDirty_=playerActivity_.started(playerCatalogueId(playerCurrent_))||playerActivityDirty_;
                     if(playerPendingQueueFile_!=juce::File{} &&
+                       playerLibrary_[static_cast<std::size_t>(playerCurrent_)]==playerPendingQueueFile_ &&
                        armix::player::PlayerShowTransitionPolicy::
                            commitQueuedFront(playerQueue_,
                                              playerPendingQueueFile_))
