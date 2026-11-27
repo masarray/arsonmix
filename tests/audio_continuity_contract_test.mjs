@@ -243,12 +243,13 @@ test('nested device transaction permits explicit STOP but rejects ARM with nativ
 });
 
 test('smart bus remap uses native temporary stop and verified continuation, not an operator latch on success',()=>{
- const p=main.split('void handlePhysicalBusOutput(')[1].split('void serviceVendorStreamRecovery()')[0];
+ const p=main.split('void handlePhysicalBusOutput(')[1].split('void serviceSecondaryContinuity()')[0];
  assert.match(p,/const bool resumeMain=engine_\.isMonitorEnabled\(\)&&!operatorOutputMuted_/);
  assert.match(p,/engine_\.captureSecondaryResumeIntent\(\)/);
  assert.ok(p.indexOf('engine_.setMonitorEnabled(false)')<p.indexOf('engine_.patchPhysicalBusOutput('));
  assert.ok(p.indexOf('engine_.disarmSecondaryOutput()')<p.indexOf('engine_.patchPhysicalBusOutput('));
- assert.match(p,/if\(resumeMain\)requestAutomaticMain\(false\)/);
+ assert.match(p,/if\(resumeMain&&!operatorOutputMuted_\) \{[\s\S]*?engine_\.retainMainIntentAfterBusPatch\(\);\s*requestAutomaticMain\(false\)/);
+ assert.match(engine,/void retainMainIntentAfterBusPatch\(\) noexcept \{mainOutputIntent_\.operatorRequested\(true\);\}/);
  assert.match(p,/if\(stream\)pendingVendorStream_=PendingVendorStream/);
  assert.match(p,/operatorOutputMuted_=true;\s*diagnostics_\.record\("OUTPUT_MUTE","ON \| bus remap rejected"\)/);
  const panic=main.split('if(mapping.operation=="PANIC_MUTE")')[1].split('// Existing control-thread guards')[0];
@@ -257,7 +258,7 @@ test('smart bus remap uses native temporary stop and verified continuation, not 
 });
 
 test('physical bus remap waits for AUDIO fade receipt with bounded CONTROL lease',()=>{
- const p=main.split('void servicePendingPhysicalBusPatch()')[1].split('void serviceVendorStreamRecovery()')[0];
+ const p=main.split('void servicePendingPhysicalBusPatch()')[1].split('void serviceSecondaryContinuity()')[0];
  assert.match(p,/monotonicMilliseconds\(\)\)>=p.deadline/);
  assert.match(p,/if\(!engine_\.physicalBusPatchFadeReady\(\)\)return/);
  assert.match(p,/handlePhysicalBusOutput\(args,true\)/);

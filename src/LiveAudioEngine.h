@@ -1689,6 +1689,9 @@ public:
     }
     bool physicalBusPatchFadeReady() const noexcept {return busPatchEnvelope_.ready();}
     void finishPhysicalBusPatchFade(bool resume) noexcept {busPatchEnvelope_.finish(resume);}
+    // CONTROL: preserve the existing MAIN desire across temporary routing
+    // silence. The verified automatic arm path alone may open its PCM gate.
+    void retainMainIntentAfterBusPatch() noexcept {mainOutputIntent_.operatorRequested(true);}
 
     juce::String patchPhysicalBusOutput(std::uint64_t ep,std::uint64_t rev,
             bool monitor,std::array<int,2> previous,std::array<int,2> wanted,

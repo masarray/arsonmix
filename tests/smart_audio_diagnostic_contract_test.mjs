@@ -406,7 +406,7 @@ test("P11 render timing covers final output publication and flags incomplete sam
   // is not evidence of armed physical hardware output. Verify both sinks.
   assert.match(engine,/const bool wroteMain=outputGate\.hardware&&routed&&!splitMain&&nativeMain\[0\]&&nativeMain\[1\];/);
   assert.match(engine,/const bool wroteMonitor=splitMain&&outputGate\.hardware&&routed&&nativeMonitor\[0\]&&nativeMonitor\[1\];/);
-  assert.match(engine,/if\(wroteMonitor\)\{[\s\S]*?publishDriverBufferPeaks\(l,r\);\s*\}else publishDriverBufferPeaks\(wroteMain\?audibleLeft:0\.f,wroteMain\?audibleRight:0\.f\);\s*const auto pressureRevision=nativePcm&&\(wroteMain\|\|wroteMonitor\)&&!cycle\.fadeIn&&!cycle\.fadeOut&&\s*routedFxMove==0&&!probePermit\?dryRoutingLab_\.renderedNativeRevision\(\):0;\s*recordRenderTiming\(beginUs,periodUs,outputLease\.epoch,pressureRevision\);\s*return;/);
+  assert.match(engine,/if\(wroteMonitor\)\{[\s\S]*?publishDriverBufferPeaks\(l,r\);\s*\}else publishDriverBufferPeaks\(wroteMain\?audibleLeft:0\.f,wroteMain\?audibleRight:0\.f\);\s*const auto pressureRevision=nativePcm&&\(wroteMain\|\|wroteMonitor\)&&!cycle\.fadeIn&&!cycle\.fadeOut&&\s*routedFxMove==0&&!probePermit&&patchFade\.phase==armix::mixer::BusPatchEnvelope::idle\?\s*dryRoutingLab_\.renderedNativeRevision\(\):0;[\s\S]*?busPatchEnvelope_\.acknowledge\(patchFade\);\s*recordRenderTiming\(beginUs,periodUs,outputLease\.epoch,pressureRevision\);\s*return;/);
   // Diagnostics retain lifetime histogram coverage but cannot extend an
   // armed-native pressure segment (default zero epoch/revision).
   assert.match(engine,/void recordRenderTiming\(std::uint64_t beginUs,double periodUs,\s*std::uint64_t epoch=0,std::uint64_t revision=0\) noexcept/);

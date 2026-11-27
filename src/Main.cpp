@@ -4796,66 +4796,6 @@ private:
         }
         return result;
     }
-    void serviceSecondaryContinuity() {
-        if(pendingVendorStream_||deviceApply_.busy())return; // existing transaction owns recovery
-        const auto epoch=engine_.dryRoutingLabEpoch(),revision=engine_.outputArmRevision();
-        if(engine_.secondaryArmed()) {
-            if(!secondaryContinuity_||secondaryContinuity_->epoch!=epoch||
-               secondaryContinuity_->revision!=revision) {
-                cancelSecondaryContinuity();
-                if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
-                    if(auto intent=engine_.captureSecondaryResumeIntent())
-                        secondaryContinuity_=SecondaryContinuity{std::move(*intent),epoch,revision};
-            }
-            if(secondaryRetry_.pending())secondaryRetry_.recovered();
-            return;
-        }
-        if(!secondaryContinuity_)return;
-        if(secondaryContinuity_->epoch!=epoch||secondaryContinuity_->revision!=revision||
-           nativeShowBusy_||studioBackupBusy_||retainedOfflineFxActive_||
-           pendingRetainedFxCapture_||engine_.hasRuntimeFxFault()||
-           (!engine_.secondaryFaulted()&&!secondaryRetry_.pending())) {
-            cancelSecondaryContinuity();
-            return;
-        }
-        const auto now=static_cast<std::uint64_t>(monotonicMilliseconds());
-        secondaryRetry_.fault(now);
-        if(!secondaryRetry_.due(now)||deviceApply_.busy()||mixerSessionWorker_.busy()||
-           !engine_.secondaryResumeReady()||
-           (secondaryContinuity_->waitForMain&&!engine_.isMonitorEnabled()))return;
-        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
-        if(!lease)return;
-        const auto intent=secondaryContinuity_->intent;
-        const auto generation=secondaryRetry_.generation();
-        // Identity preflight avoids opening a default or a replacement device.
-        const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(intent.name);
-        if(current.ok()&&current.selection.id!=intent.endpointId) {
-            cancelSecondaryContinuity();
-            emitNotice("Additional output identity changed · choose your destination again",true);
-            return;
-        }
-        if(generation!=secondaryRetry_.generation())return;
-        const auto error=current.ok()?engine_.restoreSecondaryOutput(intent):current.error;
-        // A nested native device event or Stop may revoke this request while
-        // the vendor open runs. Never publish success for a superseded intent.
-        if(generation!=secondaryRetry_.generation()||
-           engine_.dryRoutingLabEpoch()!=epoch||engine_.outputArmRevision()!=revision) {
-            engine_.disconnectSecondaryOutput();
-            cancelSecondaryContinuity();
-            return;
-        }
-        if(error.isEmpty()) {
-            secondaryRetry_.recovered();
-            diagnostics_.record("SECONDARY_HOTPLUG_RESTORED",intent.name);
-            emitNotice("Additional output restored",false);
-        } else {
-            secondaryRetry_.failed(now);
-            // A missing cable may return after minutes or hours. Keep the
-            // verified session intent with a capped 30s cadence, no toast spam.
-            if(secondaryRetry_.attempts()==1)
-                diagnostics_.record("SECONDARY_HOTPLUG_WAITING",error);
-        }
-    }
     struct PendingPhysicalBusPatch {
         juce::var args;
         std::uint64_t epoch,revision,deadline;
@@ -4939,7 +4879,12 @@ private:
                     {static_cast<int>(left),static_cast<int>(right)},leftName.toString(),rightName.toString());
                 if(afterFade)engine_.finishPhysicalBusPatchFade(error.isEmpty()&&(resumeMain||stream.has_value()));
                 if(error.isEmpty()) {
-                    if(resumeMain)requestAutomaticMain(false);
+                    if(resumeMain&&!operatorOutputMuted_) {
+                        // Restore desire immediately, not the physical gate:
+                        // a session checkpoint must not save transient STOP.
+                        engine_.retainMainIntentAfterBusPatch();
+                        requestAutomaticMain(false);
+                    }
                     if(stream)pendingVendorStream_=PendingVendorStream{*stream,
                         engine_.dryRoutingLabEpoch(),engine_.outputArmRevision(),
                         static_cast<std::uint64_t>(monotonicMilliseconds())+5000,resumeMain};
@@ -4951,6 +4896,66 @@ private:
             }
             if(afterFade&&!attempted)engine_.finishPhysicalBusPatchFade(true);
             emitPhysicalBusOutputAck(args,error);
+    }
+    void serviceSecondaryContinuity() {
+        if(pendingVendorStream_||deviceApply_.busy())return; // existing transaction owns recovery
+        const auto epoch=engine_.dryRoutingLabEpoch(),revision=engine_.outputArmRevision();
+        if(engine_.secondaryArmed()) {
+            if(!secondaryContinuity_||secondaryContinuity_->epoch!=epoch||
+               secondaryContinuity_->revision!=revision) {
+                cancelSecondaryContinuity();
+                if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
+                    if(auto intent=engine_.captureSecondaryResumeIntent())
+                        secondaryContinuity_=SecondaryContinuity{std::move(*intent),epoch,revision};
+            }
+            if(secondaryRetry_.pending())secondaryRetry_.recovered();
+            return;
+        }
+        if(!secondaryContinuity_)return;
+        if(secondaryContinuity_->epoch!=epoch||secondaryContinuity_->revision!=revision||
+           nativeShowBusy_||studioBackupBusy_||retainedOfflineFxActive_||
+           pendingRetainedFxCapture_||engine_.hasRuntimeFxFault()||
+           (!engine_.secondaryFaulted()&&!secondaryRetry_.pending())) {
+            cancelSecondaryContinuity();
+            return;
+        }
+        const auto now=static_cast<std::uint64_t>(monotonicMilliseconds());
+        secondaryRetry_.fault(now);
+        if(!secondaryRetry_.due(now)||deviceApply_.busy()||mixerSessionWorker_.busy()||
+           !engine_.secondaryResumeReady()||
+           (secondaryContinuity_->waitForMain&&!engine_.isMonitorEnabled()))return;
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
+        if(!lease)return;
+        const auto intent=secondaryContinuity_->intent;
+        const auto generation=secondaryRetry_.generation();
+        // Identity preflight avoids opening a default or a replacement device.
+        const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(intent.name);
+        if(current.ok()&&current.selection.id!=intent.endpointId) {
+            cancelSecondaryContinuity();
+            emitNotice("Additional output identity changed · choose your destination again",true);
+            return;
+        }
+        if(generation!=secondaryRetry_.generation())return;
+        const auto error=current.ok()?engine_.restoreSecondaryOutput(intent):current.error;
+        // A nested native device event or Stop may revoke this request while
+        // the vendor open runs. Never publish success for a superseded intent.
+        if(generation!=secondaryRetry_.generation()||
+           engine_.dryRoutingLabEpoch()!=epoch||engine_.outputArmRevision()!=revision) {
+            engine_.disconnectSecondaryOutput();
+            cancelSecondaryContinuity();
+            return;
+        }
+        if(error.isEmpty()) {
+            secondaryRetry_.recovered();
+            diagnostics_.record("SECONDARY_HOTPLUG_RESTORED",intent.name);
+            emitNotice("Additional output restored",false);
+        } else {
+            secondaryRetry_.failed(now);
+            // A missing cable may return after minutes or hours. Keep the
+            // verified session intent with a capped 30s cadence, no toast spam.
+            if(secondaryRetry_.attempts()==1)
+                diagnostics_.record("SECONDARY_HOTPLUG_WAITING",error);
+        }
     }
     void serviceVendorStreamRecovery() {
         if(!pendingVendorStream_)return;
@@ -7732,6 +7737,8 @@ private:
                 emitNotice("FX editor unavailable: Audio I/O is applying",true);
             else if(action=="audioDriverPanel")
                 emitNotice("Audio device is busy · try again",true);
+            else if(action=="routingPhysicalBusOutput")
+                emitPhysicalBusOutputAck(args,"BUS OUTPUT: audio transaction busy");
             else if(action=="routingNativeSourcePatch"){
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("requestId",args.getProperty("requestId",{}));
