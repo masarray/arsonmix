@@ -752,3 +752,15 @@ test('portable activation requires exact consent, cryptographic proof, clean pro
   assert.match(w,/getChildFile\("ArSonMix\/Updates\/probes"\)/);
   assert.match(read('scripts/build_verify_windows_installer.ps1'),/ARSONMIX_PORTABLE_LAUNCHER_V2/);
 });
+
+
+test('normal close receipt recovers vanished PID and interrupted updater without widening trust',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1'),n=read('src/Main.cpp');
+  assert.match(n,/command.add\("-ExitReceipt"\);command.add\(token\)/);
+  assert.match(n,/getChildFile\("normal-exit.json"\)/);
+  assert.match(u,/Test-PortableExitReceipt/);
+  assert.match(u,/Read-PortableExitReceipt \$ExitReceipt \$OwnerProcessId/);
+  assert.match(u,/Invoke-PortablePreparation \$null \$intent/);
+  assert.match(u,/Stale or wrong normal exit receipt accepted/);
+  assert.match(read('tests/portable_launcher_smoke.ps1'),/ARSONMIX_PORTABLE_BOOTSTRAP_LAUNCH_PASS/);
+});

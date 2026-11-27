@@ -13585,7 +13585,8 @@ private:
                                            .getChildFile ("v1.0")
                                            .getChildFile ("powershell.exe");
         const bool portable=smartUpdaterPortableEligible();
-        // Portable exit only prepares a versioned payload; never switches or runs it.
+        // Managed portable exits qualify a candidate after normal teardown
+        // and exact approval; legacy portable remains staging-only.
         if ((smartUpdaterInstallEligible() || portable)
             && updaterScript.existsAsFile() && provenance.existsAsFile()
             && powerShell.existsAsFile())
@@ -13596,7 +13597,40 @@ private:
                 "-File", updaterScript.getFullPathName(),
                 "-OwnerProcessId", juce::String (static_cast<int> (::GetCurrentProcessId())) };
             if (applyStaged)
+            {
                 command.add (portable ? "-PreparePortable" : "-ApplyStaged");
+                const auto stable=armix::storage::PortableWorkspace::portableRootFor(installDir);
+                if(portable && armix::storage::PortableWorkspace::launcherEnabledAt(stable)){
+                    const auto folder=armix::storage::PortableWorkspace::updateRootFor(installDir);
+                    juce::String stateText,approvalText;
+                    if(!armix::storage::BoundedDataInput::text(folder.getChildFile("state.json"),8192,stateText) ||
+                       !armix::storage::BoundedDataInput::text(folder.getChildFile("approved.json"),2048,approvalText))return false;
+                    const auto state=juce::JSON::parse(stateText),approval=juce::JSON::parse(approvalText);
+                    const auto previous=state.getProperty("previousSha",{}).toString();
+                    const auto candidate=state.getProperty("candidateSha",{}).toString();
+                    const auto tag=state.getProperty("candidateTag",{}).toString();
+                    const auto digest=state.getProperty("newAsset",{}).getProperty("digest",{}).toString();
+                    if(state.getProperty("phase",{}).toString()!="portable-ready" ||
+                       previous!=juce::String(ARMIX_BUILD_SOURCE_SHA) || candidate.length()!=40 ||
+                       !candidate.containsOnly("0123456789abcdef") || tag.length()>60 ||
+                       digest.length()!=71 || !digest.startsWith("sha256:") || !digest.substring(7).containsOnly("0123456789abcdef") ||
+                       approval.getProperty("previousSha",{}).toString()!=previous ||
+                       approval.getProperty("candidateSha",{}).toString()!=candidate ||
+                       approval.getProperty("candidateTag",{}).toString()!=tag ||
+                       approval.getProperty("digest",{}).toString()!=digest)return false;
+                    const auto token=juce::Uuid().toString();
+                    juce::DynamicObject::Ptr receipt(new juce::DynamicObject());
+                    receipt->setProperty("token",token);
+                    receipt->setProperty("ownerPid",static_cast<int>(::GetCurrentProcessId()));
+                    receipt->setProperty("createdMs",juce::Time::getCurrentTime().toMilliseconds());
+                    receipt->setProperty("previousSha",previous);receipt->setProperty("candidateSha",candidate);
+                    receipt->setProperty("candidateTag",tag);receipt->setProperty("digest",digest);
+                    const auto file=folder.getChildFile("normal-exit.json");
+                    if(!armix::storage::BoundedDataInput::managedPath(folder,file) ||
+                       !file.replaceWithText(juce::JSON::toString(juce::var(receipt.get()),false)))return false;
+                    command.add("-ExitReceipt");command.add(token);
+                }
+            }
             else if(checkNow)
                 command.add ("-CheckNow");
             juce::ChildProcess supervisor;

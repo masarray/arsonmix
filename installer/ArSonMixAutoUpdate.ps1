@@ -9,6 +9,7 @@ param([ValidateRange(0,2147483647)][int]$OwnerProcessId=0,
       [switch]$CheckNow,
       [switch]$PreparePortable,
       [switch]$LaunchPortable,
+      [ValidatePattern('^$|^[a-f0-9]{32}$')][string]$ExitReceipt='',
       [ValidateSet('','--archive-mixer-session','--safe-webview-profile')][string]$PortableLaunchArgument='')
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -52,6 +53,7 @@ $statePath=Join-Path $root 'state.json'
 # Consent is a usability acknowledgement, never a cryptographic trust boundary.
 # The worker independently verifies both published installers before execution.
 $approvalPath=Join-Path $root 'approved.json'
+$exitReceiptPath=Join-Path $root 'normal-exit.json'
 $logPath=Join-Path $root 'last-result.txt'
 $mutex=$null
 $locked=$false
@@ -625,13 +627,13 @@ function Publish-VerifiedPortableDownload([string]$stageFile,[string]$destinatio
     [IO.File]::Move($stageFile,$destination)
 }
 function Test-PortableCacheLayout {
-    foreach($folder in @($PSScriptRoot,$root,(Join-Path $root 'stage'),(Join-Path $root 'downloads'),(Join-Path $root 'payloads'),(Join-Path $root 'proofs'),(Join-Path $root 'selectors'))){
+    foreach($folder in @($PSScriptRoot,$portableStableRoot,$root,(Join-Path $root 'stage'),(Join-Path $root 'downloads'),(Join-Path $root 'payloads'),(Join-Path $root 'proofs'),(Join-Path $root 'selectors'))){
         if(Test-Path -LiteralPath $folder){
             $info=Get-Item -LiteralPath $folder -Force
             if(-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $false}
         }
     }
-    foreach($path in @($statePath,($statePath+'.new'),$logPath,(Join-Path $root 'prepared.json'))){
+    foreach($path in @($statePath,($statePath+'.new'),$logPath,(Join-Path $root 'prepared.json'),$approvalPath,$exitReceiptPath)){
         if((Test-Path -LiteralPath $path) -and -not (Test-RegularUpdateFile $path)){return $false}
     }
     return $true
@@ -1022,11 +1024,34 @@ function Test-PortableCandidateHealth([string]$binary){
         if(Test-RegularUpdateFile $marker){Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue}
     }
 }
-function Commit-PortableCandidate([object]$state,[object]$asset,[string]$zipPath,[string]$target){
+# A normal-exit receipt is consent/lifecycle evidence, NOT publisher trust.
+function Test-PortableExitReceipt([object]$receipt,[object]$state,[string]$token,[int]$pidValue,[long]$nowMs){
+    try{
+        return ($null -ne $receipt -and $receipt.token -cmatch '^[a-f0-9]{32}$' -and
+            ($token -ceq '' -or $receipt.token -ceq $token) -and
+            ($pidValue -eq 0 -or [int]$receipt.ownerPid -eq $pidValue) -and [int]$receipt.ownerPid -gt 0 -and
+            [long]$receipt.createdMs -le $nowMs -and $nowMs-[long]$receipt.createdMs -le 900000 -and
+            $receipt.previousSha -ceq $state.previousSha -and $receipt.candidateSha -ceq $state.candidateSha -and
+            $receipt.candidateTag -ceq $state.candidateTag -and $receipt.digest -ceq $state.newAsset.digest -and
+            $receipt.digest -cmatch '^sha256:[a-f0-9]{64}$')
+    }catch{return $false}
+}
+function Read-PortableExitReceipt([string]$token,[int]$pidValue){
+    if(-not (Test-RegularUpdateFile $exitReceiptPath) -or -not (Test-RegularUpdateFile $statePath)){return $null}
+    try{
+        $receipt=Read-Json $exitReceiptPath
+        $state=Read-Json $statePath
+        if($state.phase -ceq 'portable-ready' -and
+           (Test-PortableExitReceipt $receipt $state $token $pidValue ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()))){return $receipt}
+    }catch{}
+    return $null
+}
+function Commit-PortableCandidate([object]$state,[object]$asset,[string]$zipPath,[string]$target,[object]$exitIntent){
     if(-not (Test-PortableLauncherRoot) -or -not (Test-PortableMixerAbsent) -or
        -not (Test-RegularUpdateFile $approvalPath)){return}
     $approval=Read-Json $approvalPath
-    if(-not (Test-PortableApproval $approval $state)){return}
+    if(-not (Test-PortableApproval $approval $state) -or
+       -not (Test-PortableExitReceipt $exitIntent $state '' 0 ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()))){return}
     $bootstrap=Get-PortableBootstrap
     $selected=Get-PortableSelection $bootstrap
     if($selected.active.sourceCommit -cne $state.previousSha -or $selected.blockedDigest -ceq $asset.digest){return}
@@ -1051,11 +1076,13 @@ function Commit-PortableCandidate([object]$state,[object]$asset,[string]$zipPath
     $binary=Get-VerifiedPortableImage $version $bootstrap
     if(-not (Test-PortableCandidateHealth $binary)){
         Write-PortableSelection $selected $selected.active $selected.previous $version.digest
+        $state.phase='portable-blocked';Write-State $state
         Log-Result ('ROLLED_BACK_PORTABLE_PROBE '+$version.tag)
         return
     }
     if(-not (Test-PortableMixerAbsent)){return}
     Write-PortableSelection $selected $version $selected.active ''
+    $state.phase='portable-activated';Write-State $state
     Log-Result ('HEALTHY_PORTABLE_ACTIVATED '+$version.tag)
 }
 function Invoke-PortableLaunch {
@@ -1063,6 +1090,21 @@ function Invoke-PortableLaunch {
         -not (Test-PortableMixerAbsent)){return}
     $bootstrap=Get-PortableBootstrap
     $selected=Get-PortableSelection $bootstrap
+    # Recover a fresh exact normal-exit intent after an interrupted worker.
+    if($PortableLaunchArgument -ceq ''){
+        $intent=Read-PortableExitReceipt '' 0
+        if($null -ne $intent -and $intent.previousSha -ceq $selected.active.sourceCommit){
+            try{
+                $currentDir=if($selected.active.digest -ceq ''){$portableStableRoot}else{
+                    Join-Path (Join-Path $root 'payloads') ($selected.active.sourceCommit+'-'+$selected.active.digest.Substring(7))
+                }
+                [void](Get-VerifiedPortableImage $selected.active $bootstrap)
+                Invoke-PortablePreparation $null $intent (Join-Path $currentDir 'BUILD_PROVENANCE.json')
+            }catch{Log-Result ('PORTABLE_ACTIVATION_DEFERRED '+$_.Exception.Message)}
+            if(-not (Test-PortableMixerAbsent)){return}
+            $selected=Get-PortableSelection $bootstrap
+        }
+    }
     try{
         $binary=Get-VerifiedPortableImage $selected.active $bootstrap
         $child=Start-PortableImage $binary $PortableLaunchArgument
@@ -1070,14 +1112,19 @@ function Invoke-PortableLaunch {
         if($null -eq $selected.previous -or -not (Test-PortableMixerAbsent)){throw}
         $binary=Get-VerifiedPortableImage $selected.previous $bootstrap
         Write-PortableSelection $selected $selected.previous $null $selected.active.digest
+        if(Test-RegularUpdateFile $statePath){
+            try{$state=Read-Json $statePath;$state.phase='portable-blocked';Write-State $state}catch{}
+        }
         Log-Result ('ROLLED_BACK_PORTABLE_IMAGE '+$selected.active.tag)
         $child=Start-PortableImage $binary $PortableLaunchArgument
     }
     $child.Dispose()
 }
 
-function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
-    if($null -eq $owner -or -not $owner.WaitForExit(120000)){return}
+function Invoke-PortablePreparation([Diagnostics.Process]$owner,[object]$exitIntent=$null,[string]$currentProvenance=$provenance) {
+    if($null -ne $owner){if(-not $owner.WaitForExit(120000)){return}}
+    elseif($null -eq $exitIntent){return}
+    if(-not (Test-PortableMixerAbsent)){return}
     # A replacement portable session may have started while the owner exited.
     # Defer all extraction in that case; never close a process.
     foreach($process in [Diagnostics.Process]::GetProcessesByName([IO.Path]::GetFileNameWithoutExtension($exe))){
@@ -1085,7 +1132,7 @@ function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
     }
     if(-not (Test-PortableCacheLayout) -or -not (Test-RegularUpdateFile $statePath)){return}
     $state=Read-Json $statePath
-    $build=Read-Json $provenance
+    $build=Read-Json $currentProvenance
     if($state.phase -cne 'portable-ready' -or $state.previousSha -cne $build.sourceCommit){return}
     $tag=[string]$state.candidateTag;$sha=[string]$state.candidateSha
     if($null -eq (Version-Key $tag) -or $sha -cnotmatch '^[a-f0-9]{40}$'){return}
@@ -1120,7 +1167,7 @@ function Invoke-PortablePreparation([Diagnostics.Process]$owner) {
             digest=[string]$asset.digest;bytes=[long]$asset.size;previousSha=[string]$build.sourceCommit}
         Write-AtomicUpdateJson (Join-Path $root 'prepared.json') $receipt
         Log-Result ('PORTABLE_PAYLOAD_PREPARED '+$tag)
-        Commit-PortableCandidate $state $asset $zipPath $target
+        Commit-PortableCandidate $state $asset $zipPath $target $exitIntent
     }finally{
         $lease.Dispose()
         # Scratch is a new updater-owned directory, never the active workspace.
@@ -1755,6 +1802,13 @@ if($PolicySelfTest) {
         if(-not (Test-PortableApproval $approval $state)){throw 'Exact portable consent rejected'}
         $approval.digest='sha256:'+('0'*64)
         if(Test-PortableApproval $approval $state){throw 'Wrong digest consent accepted'}
+        $now=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        $intent=[pscustomobject]@{token=('1'*32);ownerPid=123;createdMs=$now;previousSha=$base.sourceCommit;
+            candidateSha=$next.sourceCommit;candidateTag=$next.tag;digest=$next.digest}
+        if(-not (Test-PortableExitReceipt $intent $state ('1'*32) 123 $now)){throw 'Valid normal exit receipt rejected'}
+        if((Test-PortableExitReceipt $intent $state ('2'*32) 123 $now) -or
+           (Test-PortableExitReceipt $intent $state ('1'*32) 124 $now) -or
+           (Test-PortableExitReceipt $intent $state ('1'*32) 123 ($now+900001))){throw 'Stale or wrong normal exit receipt accepted'}
         foreach($case in @('healthy','no-marker','nonzero')){
             $marker=Join-Path $fixture ($case+'.ready')
             $script=Join-Path $fixture ($case+'.ps1')
@@ -1807,11 +1861,18 @@ try {
             try{if(-not $launcher.WaitForExit(15000)){exit 0}}finally{$launcher.Dispose()}
         }
     }
+    $exitIntent=$null
     if($PreparePortable){
-        if(-not $portable -or -not (Owns-Exe $OwnerProcessId)){exit 0}
-        $portableOwner=[Diagnostics.Process]::GetProcessById($OwnerProcessId)
-        if(-not [string]::Equals([IO.Path]::GetFullPath($portableOwner.MainModule.FileName),$exe,[StringComparison]::OrdinalIgnoreCase)){exit 0}
-        [void]$portableOwner.Handle # pin the original process identity across mutex wait
+        if(-not $portable){exit 0}
+        if(Owns-Exe $OwnerProcessId){
+            try{
+                $portableOwner=[Diagnostics.Process]::GetProcessById($OwnerProcessId)
+                if(-not [string]::Equals([IO.Path]::GetFullPath($portableOwner.MainModule.FileName),$exe,[StringComparison]::OrdinalIgnoreCase)){exit 0}
+                [void]$portableOwner.Handle
+            }catch{if($null -ne $portableOwner){$portableOwner.Dispose();$portableOwner=$null}}
+        }
+        if($ExitReceipt){$exitIntent=Read-PortableExitReceipt $ExitReceipt $OwnerProcessId}
+        if($null -eq $portableOwner -and $null -eq $exitIntent){exit 0}
     }
     if($portable -and (-not (Test-PortableCacheLayout) -or $ApplyStaged -or $RecoveryMode)){exit 0}
     if($RecoveryMode -and -not (Test-Path -LiteralPath $provenance -PathType Leaf)) {
@@ -1834,7 +1895,7 @@ try {
     }
     if(-not $locked){exit 0}
     if($LaunchPortable){Invoke-PortableLaunch;exit 0}
-    if($PreparePortable){Invoke-PortablePreparation $portableOwner;exit 0}
+    if($PreparePortable){Invoke-PortablePreparation $portableOwner $exitIntent;exit 0}
     if($portable){Invoke-PortableUpdateCheck;exit 0}
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $file=Read-Json $provenance

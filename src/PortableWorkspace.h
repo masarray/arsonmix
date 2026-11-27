@@ -82,6 +82,7 @@ struct PortableWorkspace final
 
     static bool launcherEnabledAt(const juce::File& folder)
     {
+        if(folder==juce::File())return false;
         const auto cap=folder.getChildFile("portable_launcher_v2.txt");
         juce::String value,mode;
         return BoundedDataInput::managedPath(folder,cap) &&
