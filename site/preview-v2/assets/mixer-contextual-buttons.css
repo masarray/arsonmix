@@ -283,7 +283,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-top>svg{color:var(--ap-mint);width:17px;height:17px}
 #arsonPlayer .ap-brand{font-size:13px;font-weight:450;flex:1}
 #arsonPlayer .ap-chrome{display:flex;align-items:center;gap:1px}
-#arsonPlayer .ap-chrome .ap-icon{width:22px;height:26px}
+#arsonPlayer .ap-chrome .ap-icon{width:24px;height:26px}
 #arsonPlayer .ap-chrome svg{width:12px;height:12px}
 #arsonPlayer .ap-hero{padding:12px 12px 19px}
 #arsonPlayer .ap-nowhead{display:grid;grid-template-columns:68px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:90px;margin-bottom:12px}
@@ -495,3 +495,12 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 :is(#fastPicker,#routeChoice,#channelIdentity,#nativeFxSelector,#nativePluginManager,#nativeMySounds,#nativeOrbit){
  z-index:12000!important;
 }
+
+/* Player row states: visible shape and text, not color alone. */
+#arsonPlayer .ap-songrow .ap-song{justify-items:stretch}
+#arsonPlayer .ap-songrow[data-current="true"] .ap-index{font-size:0}
+#arsonPlayer .ap-songrow[data-current="true"] .ap-index::after{content:"▶";font-size:10px}
+#arsonPlayer .ap-songrow[data-selected="true"]:not([data-current="true"]) .ap-index{font-size:0}
+#arsonPlayer .ap-songrow[data-selected="true"]:not([data-current="true"]) .ap-index::after{content:"NEXT";font-size:8px}
+#arsonPlayer #playerTransitionStatus:empty,#arsonPlayer #playerNextMeta:empty{display:none}
+#arsonPlayer .ap-top{touch-action:none;user-select:none}

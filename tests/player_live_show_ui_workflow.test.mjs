@@ -124,12 +124,21 @@ assert.equal(actions.length,0,'stale contextual action cannot remove a different
 actions.length=0;
 selectedRow.children[0].fire('click');
 selectedRow.children[0].fire('dblclick');
-assert.equal(actions[0].detail.action,'playerSelect');
-assert.equal(actions[1].detail.action,'playerPlayNow');
+assert.equal(actions.length,0,'detached song cannot select/play a replacement index');
+const acceptedRow=songRows().find(row=>row.dataset.songId==='1400');
+acceptedRow.children[0].fire('click');acceptedRow.children[0].fire('dblclick');
+assert.equal(actions[0].detail.action,'playerSelect');assert.equal(actions[1].detail.action,'playerPlayNow');
 actions.length=0; // isolate the next gesture, not previous click evidence
 
 const data={types:['application/x-arsonmix-queue'],setData(){},getData(){}};
 const prevent=()=>{};
+const trackTarget=songRows().find(row=>row.dataset.songId==='1401');
+trackTarget.fire('drop',{dataTransfer:{getData(){return '0';}},preventDefault:prevent});
+assert.equal(actions.length,0,'external text drag must not reorder music');
+acceptedRow.fire('dragstart',{dataTransfer:data,preventDefault:prevent});
+publish({tracks:songs,selected:1400,current:1399,pending:-1});
+songRows().find(row=>row.dataset.songId==='1401').fire('drop',{dataTransfer:data,preventDefault:prevent});
+assert.equal(actions.length,0,'library revision invalidates drag origin');
 const rows=queueRows();
 rows[5].fire('dragstart',{dataTransfer:data,preventDefault:prevent});
 rows[1].fire('dragover',{dataTransfer:data,preventDefault:prevent});
@@ -187,4 +196,11 @@ actions.length=0;$('playerMiniPlay').click();assert.equal(actions.at(-1).detail.
 $('playerMiniExpand').click();assert.equal($('arsonPlayer').hidden,false);assert.equal($('playerMini').hidden,true);
 $('playerLibraryView').click();assert.equal($('playerLibraryNote').hidden,false);assert.ok(songRows().every(row=>!row.draggable));
 $('playerSetlistView').click();assert.equal($('playerLibraryNote').hidden,true);
+const seek=$('playerSeek');seek.fire('pointerdown');seek.value='800';
+publish({current:1,selected:1,pending:-1,transport:{title:'Song 0001',durationSeconds:180}});
+actions.length=0;seek.fire('change');assert.equal(actions.length,0,'seek gesture cannot cross song identity');
+seek.fire('keydown');seek.value='500';seek.fire('change');assert.equal(actions.at(-1).detail.value,90);
+const current=songRows().find(row=>row.dataset.songId==='1');
+if(current){current.children[1].click();assert.equal($('playerSongMenu').children[5].disabled,true);}
+
 console.log('V4.2 PASS: right click, keyboard menu, virtual rows, queue epochs, native MiniPlayer and library view');

@@ -8,16 +8,17 @@
  const backend=window.__JUCE__?.backend;
  const native=Boolean(backend?.emitEvent&&backend?.addEventListener);
  let model={tracks:[],setlists:[],queue:[],activeSetlist:0,
-   selected:-1,current:-1,autoNext:false,
+   selected:-1,current:-1,pending:-1,autoNext:false,
    transport:{state:"EMPTY",title:"",currentSeconds:0,durationSeconds:0},
    error:""};
  const send=(action,value)=>{
    if(native)backend.emitEvent("arMixAction",{action,value});
    else showFeedback("Playback is available in the ArSonMix desktop app",true);
  };
+ const setText=(el,value)=>{const next=String(value??"");if(el.textContent!==next)el.textContent=next;};
  const showFeedback=(msg,error=false)=>{
    const output=$("playerFeedback");
-   output.textContent=msg||"";
+   setText(output,msg);
    output.dataset.error=error?"true":"false";
  };
  const duration=(seconds)=>{
@@ -30,6 +31,7 @@
    root.hidden=!visible;updateMini();
    toggle.setAttribute("aria-expanded",String(visible));
    if(visible){
+     render();
      // An initially hidden WebView has no reliable clientHeight. Recompute
      // the visible window after the approved Player panel is shown.
      rendered="";
@@ -48,7 +50,15 @@
  function updateMini(){$("playerMini").hidden=!native||!root.hidden||!model.transport?.title||model.current<0;}
  function setDetails(visible){$("playerDetails").hidden=!visible;$("playerDetailsToggle").setAttribute("aria-expanded",String(visible));if(visible)$("playerDetails").scrollIntoView?.({block:"nearest"});}
  $("playerDetailsToggle").addEventListener("click",()=>setDetails($("playerDetails").hidden));
- $("playerNextCard").addEventListener("click",()=>switchCollection(model.queue?.length?"queue":"setlist"));
+ $("playerNextCard").addEventListener("click",()=>{
+   if(model.queue?.length){switchCollection("queue");return;}
+   const next=nextTrackIndex();
+   switchCollection("setlist");
+   if(next<0)return;
+   if(!filtered.some(song=>song.id===next)){search.value="";renderTracks();}
+   const pos=filtered.findIndex(song=>song.id===next);
+   if(pos>=0){list.scrollTop=pos*ROW_HEIGHT;renderTracks();}
+ });
  $("playerAdd").addEventListener("click",()=>send("playerAdd"));
  $("playerAddFolder").addEventListener("click",()=>send("playerAddFolder"));
  $("playerRelink").addEventListener("click",()=>send("playerRelink"));
@@ -61,25 +71,31 @@
  $("playerLoopAB").addEventListener("click",()=>
    send("playerLoopToggle",!Boolean(model.loopAB)));
  const seek=$("playerSeek"),waveCanvas=$("playerWaveform");
- let draggingSeek=false;
- seek.addEventListener("pointerdown",()=>{draggingSeek=true;});
+ let draggingSeek=false,seekOrigin=null,seekCancelled=false;
+ const seekIdentity=()=>[model.activeSetlist,model.current,libraryRevision,Number(model.transport?.durationSeconds)||0].join("|");
+ seek.addEventListener("pointerdown",()=>{draggingSeek=true;seekCancelled=false;seekOrigin=seekIdentity();});
  seek.addEventListener("pointerup",()=>{draggingSeek=false;});
- seek.addEventListener("pointercancel",()=>{draggingSeek=false;});
+ seek.addEventListener("pointercancel",()=>{draggingSeek=false;seekOrigin=null;seekCancelled=true;});
+ seek.addEventListener("keydown",()=>{seekCancelled=false;seekOrigin=null;});
  // 'change' emits one intentional seek on release or keyboard commit.
  // Never send a native seek for each pointermove while the show is live.
  seek.addEventListener("change",()=>{
    draggingSeek=false;
+   const stale=seekCancelled||(seekOrigin!==null&&seekOrigin!==seekIdentity());
+   seekOrigin=null;seekCancelled=false;
+   if(stale){render();return;}
    const length=Number(model.transport?.durationSeconds)||0;
    const fraction=Number(seek.value)/1000;
    paintRange(seek,fraction*100);
-   if(length>0 && Number.isFinite(fraction))
+   if(native&&model.pending<0&&length>0 && Number.isFinite(fraction))
      send("playerSeek",Math.max(0,Math.min(length,
        Math.round(fraction*length*100)/100)));
  });
  const paintRange=(input,percent)=>input.style.setProperty?.("--ap-fill",Math.max(0,Math.min(100,Number(percent)||0))+"%");
  seek.addEventListener("input",()=>paintRange(seek,Number(seek.value)/10));
- let lastWaveSignature="";
+ let lastWaveSignature="",lastPeaks=null,peakRevision=0;
  const renderWaveform=transport=>{
+   if(root.hidden)return;
    const peaks=transport.waveform, length=Number(transport.durationSeconds)||0;
    const fraction=length>0?Math.max(0,Math.min(1,(Number(transport.currentSeconds)||0)/length)):0;
    const song=model.tracks?.[model.current], inPoint=Number(song?.cueIn)||0,outPoint=Number(song?.cueOut)||0;
@@ -88,7 +104,9 @@
    const w=rect?.width>0?Math.max(1,Math.round(rect.width*dpr)):waveCanvas.width;
    const h=rect?.height>0?Math.max(1,Math.round(rect.height*dpr)):waveCanvas.height;
    const valid=Array.isArray(peaks)&&peaks.length===256&&length>0;
-   const signature=[w,h,model.current,inPoint,outPoint,Math.round(fraction*w),valid?peaks.join(","):"empty"].join("|");
+   if(valid&&(!lastPeaks||peaks.some((value,i)=>value!==lastPeaks[i]))){lastPeaks=peaks.slice();++peakRevision;}
+   else if(!valid&&lastPeaks){lastPeaks=null;++peakRevision;}
+   const signature=[w,h,model.current,inPoint,outPoint,length,Math.round(fraction*w),peakRevision].join("|");
    if(signature===lastWaveSignature)return;
    lastWaveSignature=signature;
    if(waveCanvas.width!==w)waveCanvas.width=w;
@@ -111,7 +129,7 @@
  };
  waveCanvas.addEventListener("click",event=>{
    const rect=waveCanvas.getBoundingClientRect?.(),length=Number(model.transport?.durationSeconds)||0;
-   if(!native||!rect?.width||length<=0||!Number.isFinite(event.clientX))return;
+   if(!native||model.pending>=0||event.button>0||!rect?.width||length<=0||!Number.isFinite(event.clientX))return;
    const fraction=Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width));
    send("playerSeek",Math.round(fraction*length*100)/100);
  });
@@ -121,14 +139,29 @@
  $("playerTempoMinus").addEventListener("click",()=>send("playerTempoStep",-1));
  $("playerTempoPlus").addEventListener("click",()=>send("playerTempoStep",1));
  $("playerPitchReset").addEventListener("click",()=>send("playerPitchTempoReset"));
- $("playerChooseOutput").addEventListener("click",()=>send("playerChooseOutput"));
- $("playerNext").addEventListener("click",()=>send("playerNext"));
+ $("playerChooseOutput").addEventListener("click",()=>{
+   // Interoperate with #968 custom Audio I/O, retain legacy native fallback.
+   const audioIO=document.querySelector?.(".command-bar > [data-native-io]");
+   if(audioIO){audioIO.click();showFeedback("Choose MAIN output in Audio I/O, then press Play.");}
+   else send("playerChooseOutput");
+ });
+ $("playerNext").addEventListener("click",()=>{if(model.pending<0)send("playerNext");});
  $("playerAutoNext").addEventListener("click",()=>
    send("playerAutoNext",!model.autoNext));
  const volume=$("playerVolume"),volumeDb=$("playerVolumeDb");
  const paintVolume=percent=>{paintRange(volume,percent);volumeDb.textContent=percent===0?"−∞ dB":(20*Math.log10(percent/100)).toFixed(1)+" dB";};
  volume.disabled=!native;
- volume.addEventListener("input",()=>{paintVolume(Number(volume.value));send("playerVolume",Number(volume.value));});
+ let volumeDragging=false,volumeFrame=null,pendingVolume=null;
+ function flushVolume(){volumeFrame=null;if(pendingVolume!==null){const v=pendingVolume;pendingVolume=null;send("playerVolume",v);}}
+ volume.addEventListener("pointerdown",()=>{volumeDragging=true;});
+ volume.addEventListener("pointerup",()=>{volumeDragging=false;});
+ volume.addEventListener("pointercancel",()=>{volumeDragging=false;});
+ volume.addEventListener("input",()=>{
+   const v=Number(volume.value);if(!Number.isFinite(v))return;
+   pendingVolume=Math.max(0,Math.min(100,v));paintVolume(pendingVolume);
+   if(volumeFrame===null){if(window.requestAnimationFrame)volumeFrame=window.requestAnimationFrame(flushVolume);else flushVolume();}
+ });
+ volume.addEventListener("change",()=>{if(volumeFrame!==null)window.cancelAnimationFrame?.(volumeFrame);flushVolume();volumeDragging=false;});
  $("playerFadeMs").addEventListener("change",event=>
    send("playerFadeMs",Number(event.target.value)));
  $("playerNewSetlist").addEventListener("click",()=>send("playerNewSetlist"));
@@ -142,9 +175,9 @@
  });
  $("playerUndoRemove").addEventListener("click",()=>send("playerUndoRemove"));
  const list=$("playerList"),search=$("playerSearch"),songMenu=$("playerSongMenu");
- let collectionView="setlist",menuOwner=null;
+ let collectionView="setlist",menuOwner=null,menuEpoch=0;
  function closeSongMenu(restoreFocus=false){
-   const owner=menuOwner;menuOwner=null;songMenu.hidden=true;
+   const owner=menuOwner;menuOwner=null;++menuEpoch;songMenu.hidden=true;
    if(owner){owner.setAttribute("aria-expanded","false");if(restoreFocus&&owner.isConnected!==false)owner.focus({preventScroll:true});}
  }
  function switchCollection(view){
@@ -163,11 +196,11 @@
  function showContext(owner,title,commands,valid,event){
    if(menuOwner===owner&&!event){closeSongMenu(true);return;}
    closeSongMenu(false);if(!valid())return;
-   menuOwner=owner;owner.setAttribute("aria-expanded","true");
+   menuOwner=owner;const epoch=menuEpoch;owner.setAttribute("aria-expanded","true");
    const heading=document.createElement("div");heading.className="ap-song-menu-title";heading.textContent=title;heading.setAttribute("role","presentation");songMenu.replaceChildren(heading);
    for(const [label,execute,danger,disabled] of commands){
      const item=document.createElement("button");item.type="button";item.textContent=label;item.disabled=Boolean(disabled);item.dataset.danger=String(Boolean(danger));item.setAttribute("role","menuitem");item.tabIndex=-1;
-     item.addEventListener("click",()=>{if(menuOwner!==owner||!valid()||item.disabled)return;closeSongMenu(true);execute();});songMenu.append(item);
+     item.addEventListener("click",()=>{if(menuOwner!==owner||epoch!==menuEpoch||!valid()||item.disabled)return;closeSongMenu(true);execute();});songMenu.append(item);
    }
    songMenu.hidden=false;
    const anchor=owner.getBoundingClientRect?.(),panel=root.getBoundingClientRect?.(),m=songMenu.getBoundingClientRect?.();
@@ -183,6 +216,7 @@
    surface.addEventListener("contextmenu",event=>{event.preventDefault();event.stopPropagation();openMenu(event);});
    surface.addEventListener("keydown",event=>{if(event.key==="ContextMenu"||(event.shiftKey&&event.key==="F10")){event.preventDefault();event.stopPropagation();openMenu(null);}});
  }
+ function canRemoveSong(id){return id!==model.pending&&(id!==model.current||["STOPPED","ENDED"].includes(model.transport?.state));}
  function showSongMenu(owner,song,revision,setlist,event){
    const valid=()=>native&&revision===libraryRevision&&setlist===model.activeSetlist;
    const live=fn=>()=>{if(model.pending<0)fn();};
@@ -191,7 +225,7 @@
      ["Add to queue",()=>send("playerQueueAppend",song.id),false,song.missing],
      ["Move earlier",()=>send("playerMoveSong",{from:song.id,to:song.id-1}),false,song.id===0||collectionView==="library"],
      ["Move later",()=>send("playerMoveSong",{from:song.id,to:song.id+1}),false,song.id>=model.tracks.length-1||collectionView==="library"],
-     ["Remove from setlist",()=>{if(song.id!==model.pending)send("playerRemoveSong",song.id);},true,song.id===model.pending],
+     ["Remove from setlist",()=>{if(canRemoveSong(song.id))send("playerRemoveSong",song.id);},true,!canRemoveSong(song.id)],
      ["Play now",live(()=>send("playerPlayNow",song.id)),false,song.missing||model.pending>=0],
      ["Prepare / edit key & tempo",()=>send("playerSelect",song.id),false,false]
    ];
@@ -200,7 +234,7 @@
  }
  function showPlayerOptions(owner,event){showContext(owner,"Player",[["Song details",()=>setDetails(true)],["Setlist",()=>switchCollection("setlist")],["Queue",()=>switchCollection("queue")],["Minimize",()=>open(false)]],()=>true,event);}
  function showSetOptions(owner,event){
-   const set=model.activeSetlist,valid=()=>native&&model.activeSetlist===set;
+   const set=model.activeSetlist,epoch=showRevision,valid=()=>native&&model.activeSetlist===set&&epoch===showRevision;
    showContext(owner,"Setlist",[
      ["Add music",()=>send("playerAdd"),false,model.libraryBusy],["Import folder",()=>send("playerAddFolder"),false,model.libraryBusy],
      ["New setlist",()=>send("playerNewSetlist")],["Rename setlist",()=>{setDetails(true);$("playerSetManage").open=true;$("playerSetlistName").focus();}],
@@ -240,7 +274,7 @@
    return button;
  };
  let renderedSets=-1,showRevision=0;
- let queueDrag=null;
+ let queueDrag=null,trackDrag=null;
  const queueGesture=(action,from,to=-1)=>{
    if(!native || model.pending>=0 ||
       !Number.isSafeInteger(model.queueRevision) ||
@@ -284,7 +318,8 @@
      const controls=document.createElement("span");
      controls.className="ap-row-actions";
      const epoch=model.queueRevision;
-     const guard=fn=>()=>{if(epoch===model.queueRevision)fn();};
+     const queueSet=model.activeSetlist;
+     const guard=fn=>()=>{if(epoch===model.queueRevision&&queueSet===model.activeSetlist)fn();};
      const up=actionButton("↑","Move "+item.title+" earlier",
        guard(()=>queueGesture("playerQueueMove",item.id,item.id-1)));
      const down=actionButton("↓","Move "+item.title+" later",
@@ -296,7 +331,6 @@
        guard(()=>queueGesture("playerQueueRemove",item.id)));
      remove.disabled=model.pending>=0;
      controls.append(up,down,remove);
-     const queueSet=model.activeSetlist;
      contextBind(row,event=>showContext(up,item.title||"Queued song",[
        ["Move to front",()=>queueGesture("playerQueueMove",item.id,0),false,item.id===0||model.pending>=0],
        ["Move earlier",()=>queueGesture("playerQueueMove",item.id,item.id-1),false,up.disabled],
@@ -307,7 +341,7 @@
        if(!row.draggable || model.pending>=0){
          event.preventDefault();return;
        }
-       queueDrag={from:item.id,revision:model.queueRevision,
+       trackDrag=null;queueDrag={from:item.id,revision:model.queueRevision,
                   setlist:model.activeSetlist};
        event.dataTransfer?.setData(
          "application/x-arsonmix-queue","reorder");
@@ -420,35 +454,39 @@
      const key=document.createElement("span");key.className="ap-songkey";
      const semitones=Number(song.keySemitones)||0;key.textContent=(semitones>0?"+":"")+semitones+" st";
      const time=document.createElement("span");time.className="ap-songtime";time.textContent="—";choose.append(index,title,state,key,time);
-     choose.addEventListener("click",()=>send("playerSelect",song.id));
-     choose.addEventListener("dblclick",()=>send("playerPlayNow",song.id));
+     const revision=libraryRevision,setlist=model.activeSetlist;
+     const valid=()=>revision===libraryRevision&&setlist===model.activeSetlist;
+     const select=()=>{if(valid())send("playerSelect",song.id);};
+     const playNow=()=>{if(valid()&&!song.missing&&model.pending<0)send("playerPlayNow",song.id);};
+     choose.addEventListener("click",select);
+     choose.addEventListener("dblclick",playNow);
      choose.addEventListener("keydown",event=>{
        if(event.key==="Enter"){
          event.preventDefault();
-         send("playerPlayNow",song.id);
+         if(!event.repeat)playNow();
        }
      });
      const actions=document.createElement("button");actions.type="button";actions.className="ap-row-menu";
      actions.setAttribute("aria-label","Actions for "+song.title);actions.setAttribute("aria-expanded","false");actions.setAttribute("aria-controls","playerSongMenu");
      actions.title="Actions for "+song.title;actions.disabled=!native;actions.setAttribute("aria-haspopup","menu");
      actions.innerHTML='<svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
-     const revision=libraryRevision,setlist=model.activeSetlist;
      actions.addEventListener("click",()=>showSongMenu(actions,song,revision,setlist));
      contextBind(row,event=>showSongMenu(actions,song,revision,setlist,event));
      row.addEventListener("dragstart",event=>{
        if(!row.draggable){event.preventDefault();return;}closeSongMenu(false);queueDrag=null; // catalogue and queue are distinct drag domains
-       event.dataTransfer?.setData("text/plain",String(song.id));
+       trackDrag={from:song.id,revision,setlist};
+       event.dataTransfer?.setData("application/x-arsonmix-track","reorder");
        if(event.dataTransfer)event.dataTransfer.effectAllowed="move";
      });
-     row.addEventListener("dragover",event=>event.preventDefault());
+     const validDrag=()=>trackDrag&&collectionView==="setlist"&&valid()&&trackDrag.revision===libraryRevision&&trackDrag.setlist===model.activeSetlist;
+     row.addEventListener("dragover",event=>{if(validDrag())event.preventDefault();});
      row.addEventListener("drop",event=>{
-       event.preventDefault();
-       const data=event.dataTransfer?.getData("text/plain");
-       if(!data||collectionView!=="setlist"||revision!==libraryRevision||setlist!==model.activeSetlist)return;
-       const source=Number(data);
+       event.preventDefault();if(!validDrag())return;
+       const source=trackDrag.from;trackDrag=null;
        if(Number.isInteger(source)&&source>=0&&source<model.tracks.length&&source!==song.id)
          send("playerMoveSong",{from:source,to:song.id});
      });
+     row.addEventListener("dragend",()=>{trackDrag=null;});
      row.append(choose,actions);list.append(row);
    }
    const bottom=document.createElement("div");
@@ -458,35 +496,34 @@
    list.append(bottom);
    refreshVisibleTrackStates();
  }
+ function nextTrackIndex(){if(model.pending>=0)return model.pending;const selected=model.selected>=0&&model.selected<model.tracks.length?model.selected:-1;const next=selected>=0&&selected!==model.current?selected:model.current<0?0:model.current+1;return next<model.tracks.length?next:-1;}
  function render(){
    const t=model.transport||{};
    const state=String(t.state||"EMPTY");
-   $("playerNow").textContent=t.title||"No music loaded";
+   setText($("playerNow"),t.title||"No music loaded");
    $("playerNowSubtitle").textContent=t.artist||(t.title?"Local music file":"Music player");
    $("playerNowMeta").textContent=[t.format,t.sampleRate?Math.round(t.sampleRate/100)/10+" kHz":"",t.channels===2?"Stereo":t.channels===1?"Mono":""].filter(Boolean).join(" · ");
-   $("playerMiniTitle").textContent=t.title||"No music loaded";$("playerMiniTime").textContent=duration(t.currentSeconds)+" / "+duration(t.durationSeconds)+" · Key "+(model.tracks?.[model.current]?.keySemitones??0);updateMini();
-   $("playerElapsed").textContent=duration(t.currentSeconds);
-   $("playerDuration").textContent=duration(t.durationSeconds);
-   $("playerRemaining").textContent="−"+duration(Math.max(0,(Number(t.durationSeconds)||0)-(Number(t.currentSeconds)||0)));
-   $("playerState").textContent=({EMPTY:"NO TRACK",PLAYING:"NOW PLAYING",PAUSED:"PAUSED",PREPARING:"PREPARING",ENDED:"FINISHED",ERROR:"PLAYBACK ERROR"})[state]||"CURRENT · "+state;
+   setText($("playerMiniTitle"),t.title||"No music loaded");setText($("playerMiniTime"),duration(t.currentSeconds)+" / "+duration(t.durationSeconds)+" · Key "+(model.tracks?.[model.current]?.keySemitones??0));updateMini();
+   setText($("playerElapsed"),duration(t.currentSeconds));
+   setText($("playerDuration"),duration(t.durationSeconds));
+   setText($("playerRemaining"),"−"+duration(Math.max(0,(Number(t.durationSeconds)||0)-(Number(t.currentSeconds)||0))));
+   setText($("playerState"),({EMPTY:"NO TRACK",PLAYING:"NOW PLAYING",PAUSED:"PAUSED",PREPARING:"PREPARING",ENDED:"FINISHED",ERROR:"PLAYBACK ERROR"})[state]||"CURRENT · "+state);
    // Mirror native precedence for presentation only; a queue entry title is
    // projected without file identity, so label it queued rather than guaranteed.
-   const selected=model.selected>=0&&model.selected<model.tracks.length?model.selected:-1;
-   const sequential=model.current<0?0:model.current+1;
-   const nextIndex=selected>=0&&selected!==model.current?selected:sequential;
+   const nextIndex=nextTrackIndex();
    const pendingSong=model.pending>=0?model.tracks[model.pending]:null;
    const queueTitle=model.queue?.[0]?.title;
    const nextTitle=pendingSong?.title||queueTitle||model.tracks[nextIndex]?.title;
    $("playerNextLabel").textContent=pendingSong?"PREPARING":queueTitle?"QUEUED NEXT":"UP NEXT";
-   $("playerUpNext").textContent=nextTitle||"End of setlist";
+   setText($("playerUpNext"),nextTitle||"End of setlist");
    const upcoming=pendingSong||(!queueTitle?model.tracks[nextIndex]:null);$("playerNextMeta").textContent=upcoming?((upcoming.keySemitones>0?"+":"")+(upcoming.keySemitones??0)+" st"+(Number(upcoming.durationSeconds)>0?" · "+duration(upcoming.durationSeconds):"")):"";
-   if(!draggingSeek && document.activeElement!==seek){
+   if(!draggingSeek){
      seek.value=String(+t.durationSeconds>0?
        Math.round(1000*Math.min(1,Math.max(0,
          +t.currentSeconds/(+t.durationSeconds)))):0);
    }
    paintRange(seek,Number(seek.value)/10);
-   seek.disabled=!(+t.durationSeconds>0) || !native;
+   seek.disabled=!(+t.durationSeconds>0)||!native||model.pending>=0;
    renderWaveform(t);
    const currentSong=model.tracks?.[model.current];
    const inPoint=Number(currentSong?.cueIn)||0;
@@ -509,7 +546,7 @@
    const playing=state==="PLAYING";
    for(const id of ["playerPlay","playerMiniPlay"]){const button=$(id);if(button.dataset.playing!==String(playing)){button.dataset.playing=String(playing);button.innerHTML=playing?"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.55\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M10 9v6m4-6v6\"/></svg>":"<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.55\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m9 5 11 7-11 7z\" fill=\"currentColor\" stroke=\"none\"/></svg>";button.setAttribute("aria-label",playing?"Pause":"Play");button.title=playing?"Pause":"Play";}}
    $("playerPrevious").disabled=!native||model.pending>=0||model.current<=0||Boolean(model.tracks[model.current-1]?.missing);
-   $("playerMiniNext").disabled=model.pending>=0;
+   $("playerMiniNext").disabled=model.pending>=0;$("playerNext").disabled=model.pending>=0;
    const editingIndex=model.selected>=0?model.selected:model.current;
    const chosen=model.tracks[editingIndex];
    // These controls are song presets: NEXT can be prepared during a live
@@ -537,7 +574,7 @@
    $("playerAutoNext").setAttribute("aria-pressed",String(model.autoNext));
    $("playerFadeMs").value=String(model.crossfadeMs??180);
    const acceptedVolume=Number(t.volumePercent??50);
-   if(document.activeElement!==volume){volume.value=String(acceptedVolume);paintVolume(acceptedVolume);}
+   if(!volumeDragging&&pendingVolume===null){volume.value=String(acceptedVolume);paintVolume(acceptedVolume);}
    volume.title="Native source level before channel FX · "+acceptedVolume+"%";
    $("playerTransitionStatus").textContent=t.crossfading?"Crossfading…":
      t.transitionPending?"Preparing NEXT…":"";
@@ -565,9 +602,9 @@
    $("playerRelink").hidden=!native || !missing;
    $("playerAddFolder").disabled=Boolean(model.libraryBusy);
    $("playerAdd").disabled=Boolean(model.libraryBusy);
-   $("playerCount").textContent=model.tracks.length+" songs";
+   setText($("playerCount"),model.tracks.length+" songs");
    renderSetlists();
-   renderTracks();
+   if(!root.hidden&&collectionView!=="queue")renderTracks();
  }
  search.addEventListener("input",renderTracks);
  list.addEventListener("scroll",()=>{closeSongMenu(false);renderTracks();},{passive:true});
@@ -585,12 +622,13 @@
    backend.addEventListener("arMixPlayerState",payload=>{
      if(!payload || payload.schema!=="arsonmix.player.v1")return;
      if(Array.isArray(payload.tracks)){
-       closeSongMenu(false);model.tracks=payload.tracks;
+       closeSongMenu(false);trackDrag=null;model.tracks=payload.tracks;
        ++libraryRevision;
      }
      if(Array.isArray(payload.queue)||Array.isArray(payload.setlists)||("pending" in payload&&payload.pending!==model.pending)||("activeSetlist" in payload&&payload.activeSetlist!==model.activeSetlist))
        ++showRevision;
      model={...model,...payload,tracks:model.tracks};
+     if(seekOrigin!==null&&seekOrigin!==seekIdentity()){seekCancelled=true;draggingSeek=false;}
      render();
    });
    // Dynamic loader may join after the initial WebView readiness event.
