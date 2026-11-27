@@ -35,13 +35,29 @@ def main():
             fallback=page.locator("#playerArtworkFallback")
             assert fallback.is_visible()
             assert fallback.get_attribute("data-art") in ("blue-hour","prism","tide","dune","bloom")
-            assert fallback.evaluate("""async el=>{
-                const url=getComputedStyle(el).backgroundImage.slice(5,-2);
-                const image=new Image();image.src=url;await image.decode();
-                return image.naturalWidth===512&&image.naturalHeight===512;
-            }""")
-            for name in ("blue-hour","prism","tide","dune","bloom","still","unavailable"):
-                assert (out/"assets"/f"player-cover-{name}.svg").is_file()
+            names=("blue-hour","prism","tide","dune","bloom","still","unavailable")
+            total=0
+            for name in names:
+                asset=out/"assets"/f"player-cover-{name}.jpg"
+                assert asset.is_file() and asset.read_bytes().startswith(b"\xff\xd8\xff")
+                assert not (out/"assets"/f"player-cover-{name}.svg").exists()
+                total+=asset.stat().st_size
+            assert total<=160*1024,total
+            # Decode every CSS-mapped cover using the actual assembled resource paths.
+            # Restore the native-driven state before taking any screenshots.
+            assert fallback.evaluate("""async (el,names)=>{
+                const initial=el.dataset.art;
+                try {
+                    for (const name of names) {
+                        el.dataset.art=name;
+                        const url=getComputedStyle(el).backgroundImage.slice(5,-2);
+                        if (!url.endsWith('/player-cover-'+name+'.jpg')) return false;
+                        const image=new Image();image.src=url;await image.decode();
+                        if(image.naturalWidth!==256||image.naturalHeight!==256)return false;
+                    }
+                    return true;
+                } finally {el.dataset.art=initial;}
+            }""",list(names))
             page.screenshot(path=str(evidence/f"player-{width}-{height}.png"))
             assert page.locator("#playerSetlistSelect").is_disabled()
             search=page.locator("#playerSearch")
