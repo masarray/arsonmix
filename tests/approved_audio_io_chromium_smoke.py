@@ -878,10 +878,16 @@ def verify_custom_recovery_routes(page,out):
     page.locator("#playerToggle").click()
     emit(page,"arMixPlayerState",{"schema":"arsonmix.player.v1",
         "chooseOutput":True,"error":"Choose a verified MAIN output"})
+    before=page.evaluate("()=>window.__actions.filter(a=>a.action==='playerChooseOutput').length")
     page.locator("#playerChooseOutput").click()
+    assert page.evaluate("()=>window.__actions.filter(a=>a.action==='playerChooseOutput').length")==before+1
+    assert not dialog.is_visible(), "no speculative recovery before native dispatcher"
+    # The real ConsoleWindow action validates Player selection and error,
+    # then emits arMixOpenAudioIO. Exercise the same reply in this mock.
+    emit(page,"arMixOpenAudioIO",True)
     assert dialog.is_visible() and dialog.count()==1
     assert not page.evaluate("""()=>window.__actions.some(a=>
-      ['audioSetup','playerChooseOutput','audioDeviceApply'].includes(a.action))""")
+      ['audioSetup','audioDeviceApply'].includes(a.action))""")
     page.locator("[data-audio-close]").click()
     emit(page,"arMixOpenAudioIO",True)
     assert dialog.is_visible() and dialog.count()==1
