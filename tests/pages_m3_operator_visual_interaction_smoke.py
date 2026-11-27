@@ -93,8 +93,18 @@ def interactions(page):
     assert empty.locator('button[data-action="slotPower"]').count()==0
     assert empty.locator(".fx-slot-placeholder").count()==1
     assert occupied.locator('button[data-action="slotPower"]').count()==1
-    assert abs(empty.locator('.fx-pick').bounding_box()['x']-
-               occupied.locator('.fx-pick').bounding_box()['x'])<=1.25
+    placeholder=empty.locator(".fx-slot-placeholder")
+    power=occupied.locator('button[data-action="slotPower"]')
+    assert placeholder.get_attribute("aria-hidden")=="true"
+    assert placeholder.evaluate("e=>getComputedStyle(e).visibility")=="hidden"
+    assert placeholder.evaluate("e=>getComputedStyle(e).pointerEvents")=="none"
+    lane=placeholder.bounding_box()
+    key=power.bounding_box()
+    assert lane and key and abs(lane["width"]-21)<.6 and abs(key["width"]-21)<.6, (lane,key)
+    assert abs(lane["height"]-17)<.6 and abs(key["height"]-17)<.6,(lane,key)
+    vacant=empty.locator('.fx-pick').bounding_box()
+    installed=occupied.locator('.fx-pick').bounding_box()
+    assert abs(vacant['x']-installed['x'])<=1.25,(vacant,installed,lane,key)
 
     # Drive the real operator UI, not private IIFE variables. The display
     # preview is simulated; no native audio device or DSP is involved.
