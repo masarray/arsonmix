@@ -371,7 +371,21 @@ def main():
             assert panel.is_visible() and mixer_tab.get_attribute("aria-selected")=="true"
             page.locator("#ribbon-tab-player").click()
             assert panel.is_visible()
-            page.locator("#playerToggle").click()
+            # At narrow reference widths the modeless panel may legitimately
+            # overlap its open-only ribbon button. Use a real pointer where
+            # exposed, otherwise keyboard activation of the same focusable
+            # command; never force-click through a floating window.
+            open_player=page.locator("#playerToggle")
+            exposed=open_player.evaluate("""e=>{const r=e.getBoundingClientRect();
+                const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+                return !!hit && e.contains(hit)}""")
+            if exposed:
+                open_player.click()
+            else:
+                assert width<=640, "desktop ribbon open command unexpectedly occluded"
+                open_player.focus()
+                assert open_player.evaluate("e=>e===document.activeElement")
+                open_player.press("Enter")
             assert panel.is_visible() and panel.bounding_box()==panel_rect
             search.focus()
             page.keyboard.press("Escape")

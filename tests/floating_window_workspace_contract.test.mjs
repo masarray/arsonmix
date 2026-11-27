@@ -83,14 +83,19 @@ test('Pointer drag clamps viewport, keeps click controls and releases capture',(
   assert.equal(data.get('top'),'62px');
 });
 
-test('All floating closes and compact FX picker actions use one token family',()=>{
+test('Floating closes share one token family; Plugin Manager actions have one local owner',()=>{
   for(const id of ['#identityClose','#pluginClose','#fastClose',
     '#wireConfigClose','#wireWsClose','#routeChoiceClose','#playerClose',
     '[data-audio-close]','[data-io-close]','[data-send-close]',
     '[data-source-close]','.armix-floating-close','.armix-builtin-fx-close'])
     assert.ok(css.includes(id),'close surface missing: '+id);
-  for(const action of ['#fastManage','#pluginImport','#pluginScan','#pluginAddPath'])
-    assert.ok(css.includes(action),'flat picker action not normalized: '+action);
+  assert.ok(css.includes('#fastManage'),'quick picker action missing');
+  const pluginCss=read('site/preview-v2/assets/mixer-plugin-browser.css');
+  for(const action of ['#pluginImport','#pluginScan','#pluginAddPath'])
+    assert.ok(!css.includes(action),'Plugin Manager action leaked into contextual owner: '+action);
+  assert.match(pluginCss,/\.plugin-footer button,\.scan-add button\{background:#203c4b;/);
+  assert.match(pluginCss,/\.plugin-footer button:hover:not\(:disabled\),\.scan-add button:hover:not\(:disabled\)/);
+  assert.match(pluginCss,/min-height:28px/);
   assert.match(css,/--armix-floating-action-bg:/);
   assert.match(css,/--armix-floating-close-face:/);
   assert.match(css,/min-height:28px!important/);

@@ -7308,7 +7308,12 @@ test("P0 bounded editor retry stays on same owner and native failure class",()=>
 
 test("P0 native busy guard and all physical presentations produce explicit receipts",()=>{
  const m=read("src/Main.cpp"),w=read("src/NativeOwnedFloatingWindow.h");
- assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply"\)\{/);
+ assert.match(m,/const bool outputIntent=action=="monitor"&&args\.getProperty\("value",\{\}\)\.isBool\(\)/);
+ assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply" && !outputIntent\)\{/);
+ const monitor=m.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
+ assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
+ assert.match(monitor,/operatorOutputMuted_=!arm/);
+ assert.match(monitor,/arMixAudioArmAck/);
  assert.match(m,/emitRoutingFxEditorReceipt\(args,false,true,"FX editor unavailable: Audio I\/O is applying"\)/);
  assert.match(m,/opened=shownWindow->presentationConfirmed\(\)/);
  assert.match(m,/opened=\(\*extra\)->window->presentationConfirmed\(\)/);
