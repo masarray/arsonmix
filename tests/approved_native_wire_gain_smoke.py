@@ -171,7 +171,7 @@ def verify_inspector_rejected_gain(page, out):
     # production Matrix entry lives in More > WIRE TOOLS. Exercise the
     # actual visible menu, not a hidden compatibility trigger.
     more=page.locator("#moreTools")
-    more.locator(":scope > summary").click()
+    open_menu_category(page,"settings")
     assert more.evaluate("(el)=>el.open")
     menu_matrix=more.locator('[data-wire-open="matrix"]')
     assert menu_matrix.is_visible(), "More must retain accessible Matrix"
@@ -237,10 +237,42 @@ def verify_inspector_rejected_gain(page, out):
     assert slider.evaluate("el=>document.activeElement===el")
     assert not errors,errors
 
+def select_ribbon_workflow(page, workflow):
+    """Navigate the actual visible ribbon; do not force-click hidden legacy controls."""
+    tab=page.locator("#ribbon-tab-"+workflow)
+    tab.wait_for(state="visible")
+    if tab.get_attribute("aria-selected")!="true":
+        tab.click()
+    assert tab.get_attribute("aria-selected")=="true"
+
+
+def open_audio_io_from_ribbon(page):
+    select_ribbon_workflow(page,"io")
+    action=page.locator(".command-bar [data-native-io]")
+    assert action.is_visible()
+    action.click()
+    assert page.locator(".armix-audio-dialog").is_visible()
+
+
+def open_menu_category(page, category):
+    menu=page.locator("#moreTools")
+    panel=menu.locator(".more-tools-panel")
+    if menu.get_attribute("open") is None:
+        menu.locator(":scope > summary").click()
+    current=panel.get_attribute("data-armix-menu-page")
+    if current==category:
+        return panel
+    if current!="root":
+        panel.locator(".armix-menu-back").click()
+    panel.locator('[data-menu-category="'+category+'"]').click()
+    assert panel.get_attribute("data-armix-menu-page")==category
+    return panel
+
+
 def open_verified_audio_io(page, state, tab):
     """Driver inventory is independent of installed native graph readback."""
     d=state["device"]
-    page.locator("[data-native-io]").click()
+    open_audio_io_from_ribbon(page)
     assert page.locator('button[data-audio-tab="inputs"]').is_disabled()
     assert page.locator('[data-audio-pins]').is_hidden()
     def names(side):

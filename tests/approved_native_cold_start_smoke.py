@@ -9,7 +9,8 @@ from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
-from approved_native_wire_gain_smoke import snapshot, emit, ack, SOURCE, RECEIVER, MAIN
+from approved_native_wire_gain_smoke import (snapshot, emit, ack, SOURCE, RECEIVER, MAIN,
+    select_ribbon_workflow, open_audio_io_from_ribbon, open_menu_category)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -163,7 +164,7 @@ def main():
             # Output-only playback is a REAL Audio I/O choice, not a hidden
             # capture prerequisite. Verify native intent/ACK on the approved
             # assembled Windows GUI at every supported viewport.
-            page.locator('.command-bar [data-native-io]').click()
+            open_audio_io_from_ribbon(page)
             assert page.evaluate("""()=>Boolean(
                 window.ArSonApprovedChannelStripViewModel &&
                 window.ArSonApprovedFxRackViewModel &&
@@ -278,7 +279,7 @@ def main():
             assert page.locator('.armix-audio-shade').is_hidden()
             # Optional calibration is a native request with an explicit
             # consent boundary. Browser fixtures never emit real PCM.
-            page.locator('.command-bar [data-native-io]').click()
+            open_audio_io_from_ribbon(page)
             asio='Studio ASIO'
             emit(page,'arMixAudioDeviceInventory',{
                 'types':[dict(name='ASIO',separate=False,inputs=[asio],outputs=[asio])],
@@ -325,6 +326,7 @@ def main():
             emit(page,'arMixConsoleSnapshot',g0)
             add_track=page.locator('.command-bar #addTrack')
             assert add_track.is_enabled()
+            select_ribbon_workflow(page,'mixer')
             add_track.click()
             create='()=>window.__events.filter(e=>e.payload?.action==="routingNativeTrackCreate")'
             bootstrap=page.evaluate(create)[-1]['payload']
@@ -340,21 +342,17 @@ def main():
             show_id = "11111111-2222-4333-8444-555555555555"
             corrupt_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
             def show_click(text):
-                page.evaluate("""([selector,text])=>{
-                  const buttons=[...document.querySelectorAll(selector+' button')];
-                  const button=buttons.find(b=>b.textContent===text);
-                  if(!button)throw Error('Missing native Show button: '+text);
-                  button.click();
-                }""",[show_panel,text])
+                panel=open_menu_category(page,"diagnostics" if text=="Test MAIN output" else "scenes")
+                button=panel.get_by_role("button",name=text,exact=True)
+                assert button.is_visible()
+                button.click()
             def show_select(value):
-                return page.evaluate("""([selector,value])=>{
-                  const node=document.querySelector(selector+' select[aria-label="Saved native Show"]');
-                  if(!node)throw Error('Native Show selector absent');
-                  node.value=value;node.dispatchEvent(new Event('change'));
-                  const buttons=[...document.querySelectorAll(selector+' button')];
-                  const available=name=>buttons.find(b=>b.textContent===name)?.disabled===false;
-                  return {recall:available('Recall Show'),recover:available('Recover Last Good')};
-                }""",[show_panel,value])
+                panel=open_menu_category(page,"scenes")
+                node=panel.locator('select[aria-label="Saved native Show"]')
+                assert node.is_visible()
+                node.select_option(value)
+                return {key:panel.get_by_role("button",name=label,exact=True).is_enabled()
+                        for key,label in (("recall","Recall Show"),("recover","Recover Last Good"))}
             # File commands now live in the first application menu, not
             # on the toolbar surface. Exercise the visible controls, including
             # the original native action and icon, rather than bypassing them.
@@ -417,6 +415,7 @@ def main():
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[]})
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
+            select_ribbon_workflow(page,'mixer')  # dismiss the Show menu through actual navigation
             # Failed preflight and an unbound audio device must not blank the
             # operator workspace. No unadmitted intent can escape to JUCE.
             assert page.locator('.console-pane').is_visible()
@@ -536,7 +535,7 @@ def main():
             emit(page,'arMixConsoleSnapshot',state)
             assert page.evaluate('()=>window.__ARMIX_NATIVE_M2__.state().current.retained')
             # One explicit Apply accepts the verified replacement binding.
-            page.locator('[data-native-io]').click()
+            open_audio_io_from_ribbon(page)
             backend='Windows Audio'
             active={'backend':backend,'captureDevice':'New Capture','playbackDevice':'New Playback',
                 'open':True,'authorized':True,'deviceGeneration':92,'rate':48000,'buffer':256,
@@ -601,7 +600,7 @@ def main():
             page.locator('#fastClose').click()
             # Apply again while MAIN is live. The native transaction owns
             # temporary mute and restoration without an extra browser command.
-            page.locator('[data-native-io]').click()
+            open_audio_io_from_ribbon(page)
             emit(page,'arMixAudioDeviceInventory',{'active':applied,'types':[
                 {'name':backend,'inputs':['New Capture'],'outputs':['New Playback'],'separate':True}]})
             page.get_by_role('tab',name='Hardware Pins').click()
@@ -628,6 +627,7 @@ def main():
             emit(page,'arMixConsoleSnapshot',rebound)
             assert page.locator('.armix-audio-shade').is_hidden()
             assert page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')==monitor_events
+            select_ribbon_workflow(page,'mixer')
             add_track.click()
             request=page.evaluate(create)[-1]['payload']
             assert (request['deviceEpoch'],request['graphRevision'],request['rosterRevision'])==(
