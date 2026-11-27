@@ -6307,7 +6307,6 @@
       status("NATIVE: "+field+" awaits accepted control/readback");
       return true;
     },
-    canAssignSof:t=>!!sofAssignmentPlan(t),
     consumeAction(t,action,btn) {
       if (!connected)return false;
       if(action==="sofAssignPre"||action==="sofAssignPost"){

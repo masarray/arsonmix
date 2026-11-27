@@ -383,7 +383,7 @@ function sectionSof(t){
  const visual=!send?'idle':tap==='preFader'||tap==='preFx'?'pre':'post';
  const badge=!edge?'NO SEND':edge.kind!=='send'?'PRIMARY OUT':
    tap==='preFader'?'PRE-FADER':tap==='preFx'?'PRE-FX':'POST-FADER';
- const assignable=native&&!edge&&!!window.__ARMIX_NATIVE_M2__?.canAssignSof?.(t);
+ const assignable=native&&!edge&&!!dest&&t.id!==dest.id&&t.nativeTapAvailable===true;
  const status=!dest?'Select a BUS/FX':!edge?(assignable?'Assign a silent send':'Patch with WIRE'):
    !send?'PRIMARY ROUTE · no send level':
    send.sendEnabled===false?'OFF · saved '+wireDbText(send.levelDb):
