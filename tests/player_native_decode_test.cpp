@@ -483,6 +483,28 @@ int main() {
             assert(heardSound && !show.transitionActive());
             show.service(); // retire old decoder off realtime
             assert(show.snapshot().title==file.getFileNameWithoutExtension());
+            const auto corrupt=longFile.withFileExtension(".standby.wav");
+            assert(corrupt.replaceWithText("not a WAV"));
+            assert(show.preload(corrupt,0,100));
+            bool rejected=false;
+            for(int attempt=0;attempt<600;++attempt) {
+                if(!show.preload(corrupt,0,100)){rejected=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            assert(rejected);
+            for(int attempt=0;attempt<8;++attempt)
+                assert(!show.preload(corrupt,0,100));
+            assert(file.copyFileTo(corrupt));
+            // Passive warm-up remains latched; explicit Next retries.
+            assert(!show.preload(corrupt,0,100));
+            assert(show.queueTransition(corrupt,0,100,0));
+            bool recovered=false;
+            for(int attempt=0;attempt<600;++attempt) {
+                if(show.service()){recovered=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            assert(recovered);
+            show.stop();
             show.deviceRate(0.0);
             assert(!show.isPlayingRequested());
         }
@@ -615,6 +637,7 @@ int main() {
             assert(last.mediaPlayed<=last.mediaDuration);
             assert(energy>0.1 && endingEnergy>0.0001);
         }
+        assert(longFile.withFileExtension(".standby.wav").deleteFile());
         assert(longFile.deleteFile());
     }
     assert(file.deleteFile());

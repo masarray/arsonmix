@@ -12218,7 +12218,7 @@ private:
             if(playerPendingIndex_<0 && playerPendingQueueFile_!=juce::File{}) {
                 if(!activeCurrent ||
                    playerLibrary_[static_cast<std::size_t>(playerCurrent_)]!=playerPendingQueueFile_ ||
-                   phase=="ERROR" || phase=="STOPPED") {
+                   phase=="ERROR") {
                     playerPendingQueueFile_={};
                 } else if(phase=="PLAYING" || phase=="ENDED") {
                     if(armix::player::PlayerShowTransitionPolicy::commitQueuedFront(
