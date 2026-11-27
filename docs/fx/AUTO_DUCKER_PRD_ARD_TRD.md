@@ -1,4 +1,6 @@
 # Auto Ducker — PRD / ARD / TRD and qualification
+
+> **Product direction superseded:** [Operator UX V2](AUTO_DUCKER_OPERATOR_UX_V2.md) defines multi-source logical channels/buses and selectable signal taps. The single physical-source implementation below remains historical candidate evidence, not release scope.
 Status: **foundation candidate, not an exposed product FX**. Base main 379e867985bb6bab8e07297ba7a8c44925b22b2d. No hardware/audio listening claim.
 
 ## PRD
