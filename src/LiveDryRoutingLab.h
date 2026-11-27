@@ -1783,7 +1783,8 @@ public:
                   const std::string& name,float sendGain,
                   armix::mixer::ChannelId remove={},
                   bool outputsDisarmed=false,
-                  const std::function<void()>& beforePublish={},bool connectMain=true) {
+                  const std::function<void()>& beforePublish={},bool connectMain=true,
+                  armix::mixer::DynamicChannelFxLeaseBank::Lease wetReturn={}) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1797,13 +1798,13 @@ public:
         if(!outputsDisarmed) {
             reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
         }
-        // A new FX_RETURN has no attached native VST3 owner yet. Reusing
-        // the old lease bank cannot create an insert for the new ChannelId:
-        // its parallel input would be routed back as extra DRY PCM. Until
-        // INSERT/REMOVE FX is transactional for dynamic BUSes, reject
-        // creation instead of offering a falsely wet, louder return.
-        // Original M4 AUX 1-4 remain true processed FX return paths.
-        if(!remove.value && role==ChannelRole::fxReturn) {
+        // Require a prepared, independently owned wet-only processor.
+        // Roster, insert reference and processor lease publish together.
+        // An empty return must never route a second copy of dry PCM.
+        if(!remove.value && role==ChannelRole::fxReturn &&
+           (!wetReturn||!wetReturn->processor||!wetReturn->silenceBypass||
+            wetReturn->catalogId!=armix::builtin_fx::VocalReverbProcessor::wetReturnIdentity||
+            !selection.empty()||!connectMain)) {
             reply.error="FX_RETURN_REQUIRES_NATIVE_VST3_OWNER";return reply;
         }
         // Original AUX lanes become ordinary native ChannelId FX returns
@@ -1815,6 +1816,8 @@ public:
             if(remove.value) {
                 changed=next.removeBusAndRestoreSources(
                     expectedRosterRevision,remove);
+            } else if(role==ChannelRole::fxReturn) {
+                changed=next.createReverbReturn(expectedRosterRevision,name);
             } else if(selection.empty()) {
                 changed=next.createStandaloneBus(
                     expectedRosterRevision,name,role,connectMain);
@@ -1833,6 +1836,10 @@ public:
                 DynamicChannelFxLeaseBank::reuseWithoutChannel(
                     expectedEpoch,expectedPcmRevision+1,
                     *nativeAccepted_.fxOwners,remove,bank):
+                role==ChannelRole::fxReturn?
+                DynamicChannelFxLeaseBank::appendOwned(
+                    expectedEpoch,expectedPcmRevision+1,*nativeAccepted_.fxOwners,
+                    changed.createdIds.front(),ProcessingFormat::stereo,std::move(wetReturn),bank):
                 DynamicChannelFxLeaseBank::reuseRevision(
                     expectedEpoch,expectedPcmRevision+1,
                     *nativeAccepted_.fxOwners,bank);

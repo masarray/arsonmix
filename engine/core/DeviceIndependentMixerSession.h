@@ -99,6 +99,13 @@ public:
         return commit(std::move(candidate),std::move(result));
     }
 
+    Result createReverbReturn(std::uint64_t expected,std::string name) {
+        if(!initialized_)return {ChannelEditFault::invalidAction,revision(),{}};
+        auto candidate=roster_;
+        auto result=candidate.createReverbReturn(expected,std::move(name));
+        return commit(std::move(candidate),std::move(result));
+    }
+
     Result createGroupForSelected(std::uint64_t expected,std::span<const ChannelId> selected,std::string name) {
         if(!initialized_)return {ChannelEditFault::invalidAction,revision(),{}};
         auto candidate=roster_;

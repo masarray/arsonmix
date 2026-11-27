@@ -1792,17 +1792,17 @@
       pendingBusCreate=null;syncAddTrack(next);
       const strip=scope?.tracks?.find(t=>t.id===uiByNativeId.get(p.createdId));
       if(strip)scope?.revealTrack?.(strip);
-      status(p.connectMain===false?"AUX added · no MAIN route · choose destination":"BUS added · native ChannelId PCM and WIRE readback verified");
+      status(p.connectMain===false?"AUX added · no MAIN route · choose destination":p.purpose==="FX"?"FX Return added · wet-only processor verified · assign SEND":"BUS added · native ChannelId PCM and WIRE readback verified");
     }
   }
   function requestNativeBusCreate(track=false,fxBus=false){
     return requestNativeReceivingStrip(track,fxBus?"FX":"AUX");
   }
   function requestNativeReceivingStrip(track,purpose,selection=[]){
-    const prefix=purpose==="FX"?"FX Bus ":purpose==="GROUP"?"Group Bus ":"Aux Bus ";
+    const prefix=purpose==="FX"?"FX Return ":purpose==="GROUP"?"Group Bus ":"Aux Bus ";
     if(logicalView)
       return logicalIntent(track?"CREATE_CHANNEL":"CREATE_GROUP",null,
-        track?{}:{name:prefix+(logicalView.graph.channels.length+1),connectMain:purpose!=="AUX",...(selection.length?{selection}:{})}).ok;
+        track?{}:{name:prefix+(logicalView.graph.channels.length+1),purpose,connectMain:purpose!=="AUX",...(selection.length?{selection}:{})}).ok;
     const accepted=controller?.state()?.current,operation=
       track?"CREATE_CHANNEL":"CREATE_GROUP";
     const plan=stripVM.rosterMutationPlan(accepted,{
@@ -1812,7 +1812,7 @@
     });
     if(plan.kind!=="READY")return false;
     const requestId=(track?"track-":"bus-")+(++stripRequestSerial);
-    pendingBusCreate={requestId,track,...plan.pending,selection,connectMain:track||purpose!=="AUX"};
+    pendingBusCreate={requestId,track,...plan.pending,selection,purpose,connectMain:track||purpose!=="AUX"};
     syncAddTrack(accepted);
     backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload,purpose,...(selection.length?{selection}:{})});
     const label=track?"Audio Track":"BUS";
@@ -7115,9 +7115,9 @@
       const convert=aux.cloneNode(false);convert.id="convertSelectedReverb";convert.hidden=false;convert.disabled=false;convert.textContent="Reverb-Sis → FX Return";convert.title="Convert the selected channel’s last Reverb-Sis insert to a native shared wet return";
       document.getElementById("addFx")?.after(convert);
     }
-    for(const [id,label] of [["addBus","+ AUX"],["addGroupBus","+ Group BUS"],["addGroupSelected","Group selected…"],["addFx","+ FX Bus"]]){
+    for(const [id,label] of [["addBus","+ AUX"],["addGroupBus","+ Group BUS"],["addGroupSelected","Group selected…"],["addFx","+ FX Return"]]){
       const el=document.getElementById(id);if(el){el.textContent=label;el.hidden=false;el.disabled=true;
-        el.title=id==="addBus"?"Independent AUX · starts with no MAIN route":id==="addFx"?"Shared FX bus · configure a wet-only insert before raising sends":"Create a receiving GROUP with independent routing and insert rack";}
+        el.title=id==="addBus"?"Independent AUX · starts with no MAIN route":id==="addFx"?"Shared Reverb-Sis wet return · assign SEND explicitly":"Create a receiving GROUP with independent routing and insert rack";}
     }
     for(const [id,reason] of Object.entries(nativeReferenceOnly)){
       const el=document.getElementById(id);

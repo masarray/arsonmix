@@ -7974,3 +7974,19 @@ test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction ev
  assert.match(f,/await confirmArson/);assert.match(f,/lease!==ioConfirmationLease\(\)/);
  assert.equal((b.match(/await confirmIo\(/g)||[]).length,7);
  });
+
+test("FX Return creation requires prepared wet processor and exact independent readback",()=>{
+ const lab=read("src/LiveDryRoutingLab.h"),engine=read("src/LiveAudioEngine.h");
+ const f=lab.slice(lab.indexOf("NativeBusResult editNativeBus("),lab.indexOf("NativeBusResult editNativeProcessingFormat("));
+ assert.match(f,/!wetReturn->silenceBypass/);assert.match(f,/next\.createReverbReturn/);
+ assert.match(f,/DynamicChannelFxLeaseBank::appendOwned/);
+ assert.ok(f.indexOf("DynamicChannelFxLeaseBank::appendOwned")<f.indexOf("nativePublisher_.commit"));
+ assert.match(engine,/prepareNativeVocalReverbReturn\(rate,frames,nullptr,0\)/);
+ const main="8",id="9",epoch="17";
+ const p={operation:"CREATE_GROUP",purpose:"FX",epoch,baseGraphRevision:"19",baseRosterRevision:"20",acked:true,ackRevision:"21",createdId:id,beforeIds:[main]};
+ const row={id,role:"FX_RETURN",primaryOutId:main,inserts:[{catalogId:"armix.builtin.vocal-reverb-return.v1"}]};
+ const snap={admitted:true,device:{epoch},graph:{revision:"21",rosterRevision:"22",mainChannelId:main,channels:[row]},raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:epoch,routeRevision:"21",rosterRevision:"22"}}};
+ assert.equal(stripVM.rosterReadbackSettlement(p,snap),"CONFIRMED");
+ for(const ch of [{...row,role:"GROUP"},{...row,inserts:[]},{...row,primaryOutId:"7"}])
+   assert.equal(stripVM.rosterReadbackSettlement(p,{...snap,graph:{...snap.graph,channels:[ch]}}),"WAIT");
+});

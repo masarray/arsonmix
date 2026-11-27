@@ -8926,9 +8926,17 @@ private:
                             name.toStdString(),armix::mixer::ProcessingFormat::stereo);
                     });
                 } else if(!track) {
+                    const auto purpose=args.getProperty("purpose","").toString();
+                    const bool wet=purpose=="FX";
                     int count=0;
-                    if(rows)for(const auto& row:*rows)
-                        if(row.getProperty("role","").toString()=="GROUP")++count;
+                    juce::StringArray names;
+                    if(rows)for(const auto& row:*rows){
+                        names.add(row.getProperty("name","").toString());
+                        if(row.getProperty("role","").toString()==(wet?"FX_RETURN":"GROUP"))++count;
+                    }
+                    const juce::String prefix=wet?"FX Return ":purpose=="GROUP"?"Group Bus ":"Aux Bus ";
+                    juce::String name;
+                    do {name=prefix+juce::String(++count);}while(names.contains(name,true));
                     const auto rawSelection=args.getProperty("selection",{});
                     std::vector<armix::mixer::ChannelId> selection;
                     bool selectionValid=rawSelection.isVoid();
@@ -8947,11 +8955,9 @@ private:
                     if(!selectionValid)result.error="INVALID_GROUP_SELECTION";
                     else result=withNativeTopologyContinuity(ep,rev,false,[&]{
                         return engine_.editNativeBus(ep,rev,roster,
-                            armix::mixer::ChannelRole::group,
+                            wet?armix::mixer::ChannelRole::fxReturn:armix::mixer::ChannelRole::group,
                             std::span<const armix::mixer::ChannelId>{selection},
-                            (args.getProperty("purpose","").toString()=="FX"?"FX Bus ":
-                             args.getProperty("purpose","").toString()=="GROUP"?"Group Bus ":"Aux Bus ")+std::to_string(count+1),1.f,{},
-                            args.getProperty("purpose","").toString()!="AUX");
+                            name.toStdString(),1.f,{},purpose!="AUX");
                     });
                 }
             }

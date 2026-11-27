@@ -245,5 +245,19 @@ int main() {
     valid(restored.removeInput(restored.revision(),backing).accepted());
     valid(!restored.roster().find(backing));
     valid(restored.mainId()==stableMain);
-    std::cout<<"Device-independent logical mixer: 8 scenarios PASS\n";
+    // New FX Return is one logical transaction, not an empty dry bus.
+    const auto beforeReturn=restored.revision();
+    auto fxReturn=restored.createReverbReturn(beforeReturn,"Room Return");
+    valid(fxReturn.accepted() && fxReturn.createdIds.size()==1);
+    const auto returnId=fxReturn.createdIds.front();
+    const auto* wet=restored.roster().find(returnId);
+    valid(wet&&wet->role==ChannelRole::fxReturn&&wet->insertCatalogIds.size()==1&&
+          wet->insertCatalogIds[0]=="armix.builtin.vocal-reverb-return.v1"&&
+          wet->sends.size()==1&&wet->sends.front().destination==stableMain&&wet->sends.front().primaryOutput);
+    const auto afterReturn=restored.revision();
+    valid(!restored.createReverbReturn(beforeReturn,"Stale").accepted()&&restored.revision()==afterReturn);
+    DeviceIndependentMixerSession recovered;
+    valid(recovered.restore(restored.roster()));
+    valid(recovered.roster().find(returnId)->insertCatalogIds==wet->insertCatalogIds);
+    std::cout<<"Device-independent logical mixer: 9 scenarios PASS\n";
 }

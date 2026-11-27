@@ -727,7 +727,8 @@
       case "CREATE_CHANNEL":
       case "CREATE_GROUP":
         return validId(p.createdId) && graph.channels.some(ch=>
-          ch.id===p.createdId && ch.role===(p.operation==="CREATE_CHANNEL"?"INPUT":"GROUP")) &&
+          ch.id===p.createdId && ch.role===(p.operation==="CREATE_CHANNEL"?"INPUT":v.purpose==="FX"?"FX_RETURN":"GROUP") &&
+          (v.purpose!=="FX"||(ch.inserts?.length===1&&ch.inserts[0].catalogId==="armix.builtin.vocal-reverb-return.v1"&&ch.primaryOutId===graph.mainChannelId))) &&
           (v.connectMain!==false||graph.channels.some(ch=>ch.id===p.createdId&&!ch.primaryOutId)) &&
           (v.selection===undefined||(Array.isArray(v.selection)&&v.selection.length>0&&v.selection.every(id=>
             graph.channels.some(ch=>ch.id===id&&ch.primaryOutId===p.createdId))));

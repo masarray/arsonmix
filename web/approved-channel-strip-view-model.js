@@ -321,7 +321,8 @@
       return decimalId(pending.createdId)&&
         !pending.beforeIds?.includes(pending.createdId)&&
         matches.length===1&&
-        matches[0].role===ROSTER_OPS[pending.operation].role&&
+        matches[0].role===(pending.purpose==="FX"?"FX_RETURN":ROSTER_OPS[pending.operation].role)&&
+        (pending.purpose!=="FX"||(matches[0].inserts?.length===1&&matches[0].inserts[0].catalogId==="armix.builtin.vocal-reverb-return.v1"&&matches[0].primaryOutId===g.mainChannelId))&&
         (pending.connectMain!==false||!matches[0].primaryOutId)&&
         (!pending.selection?.length||pending.selection.every(id=>g.channels.some(ch=>ch.id===id&&ch.primaryOutId===pending.createdId)))?
         "CONFIRMED":"WAIT";

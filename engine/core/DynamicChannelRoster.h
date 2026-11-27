@@ -604,6 +604,24 @@ public:
         result.revision=++revision_;return result;
     }
 
+    // Build the receiving strip and its mandatory wet insert reference on
+    // a private candidate. The caller still has to prepare a matching real
+    // processor lease before publishing any PCM. Never expose an empty return.
+    ChannelEditResult createReverbReturn(std::uint64_t expectedRevision,std::string name) {
+        auto candidate=*this;
+        auto created=candidate.createStandaloneBus(expectedRevision,std::move(name),ChannelRole::fxReturn,true);
+        if(!created.ok())return created;
+        ChannelEdit insert;
+        insert.kind=ChannelEdit::Kind::addInsertReference;
+        insert.id=created.createdIds.front();
+        insert.text="armix.builtin.vocal-reverb-return.v1";
+        auto edited=candidate.edit(candidate.revision(),std::span<const ChannelEdit>{&insert,1});
+        if(!edited.ok()){edited.revision=revision_;return edited;}
+        created.revision=edited.revision;
+        *this=std::move(candidate);
+        return created;
+    }
+
     // Studio Console Remove Bus: reconnect incoming exclusive primary OUT to
     // MAIN, intentionally detach SENDs addressed to the removed Bus. This is
     // one guarded topology transaction; the caller must publish it or roll

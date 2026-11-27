@@ -144,7 +144,11 @@ public:
             const auto rawSelection=payload.getProperty("selection",{});
             const auto connectMain=payload.getProperty("connectMain",juce::var(true));
             if(!connectMain.isBool())return bad("INVALID_GROUP_OUTPUT");
-            if(rawSelection.isVoid())result=editor_.createBus(expected,name,Role::group,static_cast<bool>(connectMain));
+            const auto purpose=payload.getProperty("purpose","").toString();
+            if(purpose=="FX"){
+                if(!rawSelection.isVoid()||!static_cast<bool>(connectMain))return bad("INVALID_FX_RETURN_REQUEST");
+                result=editor_.createReverbReturn(expected,name);
+            } else if(rawSelection.isVoid())result=editor_.createBus(expected,name,Role::group,static_cast<bool>(connectMain));
             else {
                 const auto* ids=rawSelection.getArray();
                 if(!static_cast<bool>(connectMain)||!ids||ids->isEmpty()||static_cast<std::size_t>(ids->size())>editor_.roster().size())
