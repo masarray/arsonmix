@@ -42,7 +42,7 @@ html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool[ari
 /* Bank navigation: dark V6 toolbar, not the historical silver button.
    Keep both directions discoverable even when only one bank exists.
    Single static face and centered vector; no additional state or render work. */
-html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext){
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):not([data-ribbon-hidden=true]){
  display:grid!important;place-items:center!important;position:relative!important;box-sizing:border-box!important;flex:0 0 28px!important;
  width:28px!important;min-width:28px!important;max-width:28px!important;height:28px!important;min-height:28px!important;max-height:28px!important;
  padding:0!important;margin:0!important;border-radius:50%!important;border:1px solid #557585!important;background:#233e4c!important;color:#e0f3fa!important;

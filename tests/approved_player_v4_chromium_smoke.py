@@ -27,6 +27,13 @@ def main():
             page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
             page.locator("#ribbon-tab-player").click()
             assert page.locator("#ribbon-tab-player").get_attribute("aria-selected")=="true"
+            # Hidden Mixer arrows must not retain flex layout width when the
+            # Player workflow owns the command row (CSS specificity regression).
+            for ident in ("bankPrev", "bankNext"):
+                bank = page.locator("#"+ident)
+                assert bank.get_attribute("data-ribbon-hidden") == "true"
+                assert bank.evaluate("e=>getComputedStyle(e).display") == "none"
+                assert bank.evaluate("e=>e.getBoundingClientRect().width") == 0
             assert page.locator(".armix-ribbon-player img").count()==0
             for ident,size in [("ribbonPrevious",28),("ribbonPlay",32),("ribbonNext",28),("ribbonStop",22)]:
                 g=page.locator("#"+ident).evaluate("e=>({w:e.offsetWidth,h:e.offsetHeight,r:getComputedStyle(e).borderRadius})")
