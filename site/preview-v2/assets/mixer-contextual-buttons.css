@@ -433,9 +433,9 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
     #nativeOrbit .native-dialog-header):active{cursor:grabbing}
 .armix-floating-moved{will-change:auto}
 
-/* One compact, legible action face across the FX picker, manager footer and
-   search-folder row. Neither tiny naked links nor full-width flattened bars. */
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath){
+/* Compact action face for the quick FX picker only.
+   Plugin Manager footer and scan-folder actions belong to mixer-plugin-browser.css. */
+#fastManage{
   box-sizing:border-box!important;
   display:inline-flex!important;align-items:center!important;justify-content:center!important;
   flex:0 0 auto!important;width:auto!important;
@@ -446,16 +446,16 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
   font:500 10px/1.25 "ArSonMix Inter","Segoe UI",sans-serif!important;
   white-space:nowrap!important;box-shadow:inset 0 1px #ffffff15!important;cursor:pointer!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):hover:not(:disabled){
+#fastManage:hover:not(:disabled){
   background:var(--armix-floating-action-hover)!important;border-color:#8ac3d2!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):active:not(:disabled){
+#fastManage:active:not(:disabled){
   background:#1d485b!important;border-color:#64bdd2!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):focus-visible{
+#fastManage:focus-visible{
   outline:2px solid var(--armix-floating-action-focus)!important;outline-offset:2px!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):disabled{
+#fastManage:disabled{
   opacity:.44!important;cursor:not-allowed!important;
 }
 
