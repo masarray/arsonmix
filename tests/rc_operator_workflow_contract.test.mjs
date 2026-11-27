@@ -84,7 +84,9 @@ test('FX picker closes and opens an actual editor only after accepted native or 
 test('Vocal Throw wheel does not flicker performance button and presets have dark dropdown',()=>{
   assert.doesNotMatch(throwFx,/vtThrow"\)\.disabled=value!=="on"\|\|!!pending/);
   assert.match(throwFx,/vtThrow"\)\.disabled=value!=="on"\|\|pending\?\.command==="nativeThrowTrigger"/);
-  assert.match(throwFx,/wheelFlush=setTimeout\(\(\)=>\{/);
+  assert.match(throwFx,/if\(remaining<=0\)flushRotary\(\)/);
+  assert.match(throwFx,/if\(pending\)return;[\s\S]*?wheelFlush=setTimeout\(flushRotary,remaining\)/);
+  assert.match(throwFx,/if\(!rotaryDirty\)draft=\{\.\.\.accepted\}/);
   assert.match(rackCss,/\.mx-vthrow \.vt-preset select\{[\s\S]*?color-scheme:dark/);
   assert.match(rackCss,/\.mx-vthrow \.vt-preset :is\(option,optgroup\)\{background-color:#272b34;color:#e8eaf1/);
 });
@@ -94,10 +96,32 @@ test('modeless utility windows are centered/dismissible without dismissing FX ed
   assert.match(controller,/function centerFirst\(panel\)/);
   assert.match(controller,/function dismissOutside\(target\)/);
   assert.match(controller,/close\.click\(\)/);
-  assert.match(controller,/\.mx-comp-slider,\.mx-harm-slider input\[type="range"\]/);
-  assert.match(controller,/input\.dispatchEvent\(new Event\('input'/);
+  assert.doesNotMatch(controller,/\.mx-comp-slider,\.mx-harm-slider input\[type="range"\]/);
+  const gesture=read("site/preview-v2/assets/mixer-builtin-fx-gesture.js");
+  assert.match(gesture,/input\.dispatchEvent\(new Event\("input"/);
+  assert.match(gesture,/e\.stopPropagation\(\)/);
   assert.match(closeCss,/--armix-floating-close-icon:url\("data:image\/svg\+xml/);
   assert.match(closeCss,/M6\.4,19L5,17\.6L10\.6,12L5,6\.4/);
   assert.match(closeCss,/margin-inline-start:auto!important/);
   assert.doesNotMatch(closeCss,/content:"×"!important/);
+});
+
+test('shared FX wheel helper clamps, preserves fine steps, ignores zoom and disabled controls',()=>{
+ const code=read("site/preview-v2/assets/mixer-builtin-fx-gesture.js");
+ const win={};new Function("window",code)(win);
+ const handlers={};let edits=[];
+ const input={min:"0",max:"10",step:".5",value:"5",disabled:false,isConnected:true,
+  closest:()=>null,addEventListener:(name,fn)=>{handlers[name]=fn;}};
+ win.ArMixFxGesture.bindRange(input,{onChange:v=>edits.push(v)});
+ const fire=(deltaY,extra={})=>{const e={deltaY,deltaX:0,preventDefault(){this.defaultPrevented=true;},stopPropagation(){this.stopped=true;},...extra};handlers.wheel(e);return e;};
+ assert.equal(fire(-120).stopped,true);assert.equal(edits.at(-1),6.5);
+ fire(120,{shiftKey:true});assert.equal(edits.at(-1),6);
+ fire(0,{deltaX:-120,shiftKey:true});assert.equal(edits.at(-1),6.5);
+ fire(0,{deltaX:120,shiftKey:true});assert.equal(edits.at(-1),6);
+ const count=edits.length;
+ assert.equal(fire(-120,{ctrlKey:true}).defaultPrevented,undefined);
+ assert.equal(fire(-120,{deltaX:200}).defaultPrevented,undefined);
+ input.disabled=true;fire(-120);assert.equal(edits.length,count);
+ input.disabled=false;input.value="9.5";fire(-120);assert.equal(edits.at(-1),10);
+ fire(-120);assert.equal(edits.at(-1),10);
 });

@@ -465,9 +465,11 @@ def main():
                 assert "conic-gradient" in arc["groove"],arc
                 assert "conic-gradient" in arc["level"],arc
                 assert "radial-gradient" in arc["mask"],arc
-                dial.evaluate("""e=>{
-                    e.value='75';e.dispatchEvent(new Event('input',{bubbles:true}));
-                }""")
+                dial.hover()
+                # 10 wheel notches of 3 percent; each held latest value is native-bound.
+                for _ in range(10): page.mouse.wheel(0,-120)
+                first_wet=last_action(page,"nativeHarmonySetSettings")
+                apply_edit(page,state,{**locked,"wet":first_wet["settings"]["wet"]},7,0)
                 wet_edit=last_action(page,"nativeHarmonySetSettings")
                 assert abs(wet_edit["settings"]["wet"]-.75)<.0001
                 changed={**locked,"wet":.75}

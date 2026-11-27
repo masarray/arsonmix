@@ -2608,6 +2608,16 @@ public:
            independent_.active())return {};
         return dryRoutingLab_.retainedNativeFxPower(held,id,slot,token);
     }
+    juce::String setNativeDuckerSources(
+            const armix::mixer::LiveChannelFxGraph::InstanceLease& held,
+            armix::mixer::ChannelId id,std::size_t slot,const juce::String& token,
+            const armix::builtin_fx::AutoDuckerProcessor::Settings& settings) {
+        if(routeReconfiguring_.load(std::memory_order_acquire)||independent_.active()||
+           diagnosticRoute_.load(std::memory_order_acquire)!=armix::diagnostics::Route::normal)
+            return "AUTO_DUCKER_HOST_UNAVAILABLE";
+        const auto result=dryRoutingLab_.setNativeDuckerSources(held,id,slot,token,settings);
+        return result.accepted?juce::String{}:result.error;
+    }
     bool bypassRetainedNativeFx(
             const armix::mixer::LiveChannelFxGraph::InstanceLease& held,
             armix::mixer::ChannelId id,std::size_t slot,

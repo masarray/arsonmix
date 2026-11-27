@@ -115,7 +115,7 @@ const sliderDefs=[["color","COLOR",0,100,.1],["space","SPACE",0,100,.1],
                   ["wet","WET",0,100,.1],["gainDb","GAIN",-24,12,.1]];
 for(const [key,label,min,max,step] of sliderDefs){
  const box=document.createElement("label");box.className="mx-harm-slider";
- box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag vertically or horizontally · Shift for fine control · Arrow keys">`;
+ box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag or hover + wheel · Shift for fine control · Arrow keys">`;
  el("mxHSliders").append(box);
 }
 const fresh=()=>({key:0,scale:0,voices:3,voiceMode:0,correction:false,
@@ -462,6 +462,7 @@ el("mxHCorrection").addEventListener("click",()=>{
 // one-in-flight ACK/readback contract still owns accepted DSP state.
 // Pointer-up flushes the last value even if the frame has not run.
 sliders.forEach(({input})=>{
+ window.ArMixFxGesture.bindRange(input,{enabled:()=>!!current&&(!native()||mode==="NATIVE")});
  const key=input.dataset.field;
  const apply=x=>edit({[key]:key==="gainDb"?x:x/100});
  let gesture=null,frame=0;

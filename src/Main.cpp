@@ -384,6 +384,7 @@ public:
             catalog=="armix.builtin.graphic-eq31.v1"?juce::Point<int>(1430,280):
             catalog=="armix.builtin.channel-eq.v1"?juce::Point<int>(850,500):
             catalog=="armix.builtin.channel-compressor.v1"?juce::Point<int>(760,530):
+            catalog=="armix.builtin.auto-ducker.v1"?juce::Point<int>(720,450):
             catalog=="armix.builtin.arson-harmony.v1"?juce::Point<int>(1080,610):
             catalog=="armix.builtin.vocal-throw.v1"?juce::Point<int>(1020,450):
             juce::Point<int>(1080,640);
@@ -1008,6 +1009,14 @@ private:
         juce::uint32 started=0;
         bool timeoutReported=false;
     } pendingNativeAntiNoiz_;
+    struct PendingNativeDucker {
+        armix::mixer::LiveChannelFxGraph::InstanceLease owner;
+        juce::var identity;
+        std::uint64_t sequence=0;
+        juce::uint32 started=0;
+        bool timeoutNotified=false;
+    };
+    std::vector<PendingNativeDucker> pendingNativeDuckers_;
     juce::String lastNativeCompRequest_,lastNativeCompInstance_;
     juce::String lastNativeCompEpoch_,lastNativeCompRevision_;
     struct PendingNativeDeEzzer {
@@ -1662,6 +1671,7 @@ private:
         const juce::StringArray editors{
             "armix.builtin.channel-eq.v1",
             "armix.builtin.channel-compressor.v1",
+            "armix.builtin.auto-ducker.v1",
             "armix.builtin.graphic-eq31.v1",
             "armix.builtin.arson-harmony.v1",
             "armix.builtin.vocal-throw.v1",
@@ -1763,6 +1773,8 @@ private:
                 permitted={"nativeGeqSnapshot","nativeGeqSet","nativeBuiltinFxUserPreset"};
             else if(ref->catalogId=="armix.builtin.channel-compressor.v1")
                 permitted={"nativeCompSnapshot","nativeCompSet","nativeBuiltinFxUserPreset"};
+            else if(ref->catalogId=="armix.builtin.auto-ducker.v1")
+                permitted={"nativeDuckerSnapshot","nativeDuckerSet","nativeDuckerSources"};
             else if(ref->catalogId=="armix.builtin.arson-harmony.v1")
                 permitted={"nativeHarmonySnapshot","nativeHarmonySetSettings",
                            "nativeHarmonyUserPreset"};
@@ -5200,6 +5212,76 @@ private:
             "arMixBuiltinCompAck",juce::var(ack.release()));
     }
 
+    void emitDuckerReply(const juce::var& identity,const char* event,
+                         const juce::String& status,const juce::String& error={}) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        for(const auto* key:{"requestId","channelId","deviceEpoch","graphRevision","instanceId"})
+            reply->setProperty(key,identity.getProperty(key,{}));
+        reply->setProperty("status",status);reply->setProperty("errorCode",error);
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(event,juce::var(reply.release()));
+    }
+    void servicePendingNativeDucker() {
+        using D=armix::builtin_fx::AutoDuckerProcessor;
+        for(auto i=pendingNativeDuckers_.begin();i!=pendingNativeDuckers_.end();){
+            auto* d=dynamic_cast<D*>(i->owner->processor.get());
+            D::Completion c{};
+            if(d&&d->pollCompletion(c)){
+                const bool accepted=c.applied&&c.requestId==i->sequence;
+                emitDuckerReply(i->identity,"arMixBuiltinDuckerAck",
+                    accepted?"APPLIED":"REJECTED",accepted?"":"DSP_EDIT_REJECTED");
+                i=pendingNativeDuckers_.erase(i);continue;
+            }
+            if(!d||!engine_.retainsRoutedFxEditor(
+                    static_cast<std::uint64_t>(i->identity.getProperty("deviceEpoch",{}).toString().getLargeIntValue()),i->owner)){
+                emitDuckerReply(i->identity,"arMixBuiltinDuckerAck","REJECTED","INSTANCE_RETIRED");
+                i=pendingNativeDuckers_.erase(i);continue;
+            }
+            if(!i->timeoutNotified&&juce::Time::getMillisecondCounter()-i->started>3000u){
+                i->timeoutNotified=true; // not a false rollback; still drain late completion
+                emitDuckerReply(i->identity,"arMixBuiltinDuckerAck","PENDING","WAITING_FOR_AUDIO");
+            }
+            ++i;
+        }
+    }
+
+    void emitNativeDuckerSnapshot(const juce::var& identity,
+            armix::builtin_fx::AutoDuckerProcessor* d,bool offline) {
+        auto reply=std::make_unique<juce::DynamicObject>();
+        for(const auto* key:{"requestId","channelId","deviceEpoch","graphRevision","instanceId"})
+            reply->setProperty(key,identity.getProperty(key,{}));
+        reply->setProperty("status",d?"ACCEPTED":"REJECTED");
+        reply->setProperty("offline",offline);
+        if(d){
+            const auto s=d->acceptedSettings();const auto& v=s.dynamics;
+            auto settings=std::make_unique<juce::DynamicObject>();
+            settings->setProperty("thresholdDb",v.thresholdDb);settings->setProperty("depthDb",v.depthDb);
+            settings->setProperty("attackMs",v.attackMs);settings->setProperty("holdMs",v.holdMs);
+            settings->setProperty("releaseMs",v.releaseMs);settings->setProperty("hysteresisDb",v.hysteresisDb);
+            settings->setProperty("highPassHz",v.highPassHz);settings->setProperty("lowPassHz",v.lowPassHz);
+            reply->setProperty("settings",juce::var(settings.release()));
+            juce::Array<juce::var> sources;
+            for(std::size_t k=0;k<s.count;++k)sources.add(juce::String(std::to_string(s.sources[k])));
+            reply->setProperty("sources",juce::var(sources));
+            reply->setProperty("pending",!d->stateSnapshotQuiescent());
+            armix::builtin_fx::AutoDuckerProcessor::Meter frame;
+            if(!offline&&d->readMeter(frame)){
+                reply->setProperty("meterSerial",juce::String(std::to_string(frame.serial)));
+                reply->setProperty("gainReductionDb",std::max(0.f,-20.f*std::log10(std::max(1.e-8f,frame.gain))));
+                reply->setProperty("phase",frame.phase);
+                juce::Array<juce::var> meters;
+                for(std::size_t k=0;k<frame.ids.size()&&frame.ids[k];++k){
+                    auto entry=std::make_unique<juce::DynamicObject>();
+                    entry->setProperty("id",juce::String(std::to_string(frame.ids[k])));
+                    entry->setProperty("available",frame.available[k]);
+                    entry->setProperty("dbfs",std::max(-100.f,10.f*std::log10(std::max(1.e-10f,frame.power[k]))));
+                    meters.add(juce::var(entry.release()));
+                }
+                reply->setProperty("meters",juce::var(meters));
+            }
+        }
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixBuiltinDuckerSnapshot",juce::var(reply.release()));
+    }
+
     // SonKu Native FX: one editor target = exact ChannelId/slot/instance/epoch.
     // Snapshot reads accepted CONTROL settings only; the single atomically
     // published angle is observation, never another audio motion clock.
@@ -7769,6 +7851,115 @@ private:
                 queued?"NONE":liveCommand&&request.unbound?"ANTI_NOIZ_REQUIRES_LIVE_PCM":
                 pendingNativeAntiNoiz_.owner?"ANTI_NOIZ_CONTROL_BUSY":"INVALID_OR_STALE_ANTI_NOIZ",
                 p);
+            return;
+        }
+
+        if(action=="nativeDuckerSnapshot"||action=="nativeDuckerSet"||action=="nativeDuckerSources"){
+            using D=armix::builtin_fx::AutoDuckerProcessor;
+            const auto req=armix::builtin_fx::NativeFxControlRequest::parse(args,LiveDryRoutingLab::maxFxPerLane);
+            armix::session::StoredInsert saved;
+            auto offline=req.valid&&req.unbound?openLogicalBuiltinFx(args,saved,D::catalogIdentity):nullptr;
+            auto owner=req.valid&&!req.unbound?engine_.leaseNativeVst3Editor(req.epoch,req.revision,
+                armix::mixer::ChannelId{req.channel},static_cast<std::size_t>(req.slot),req.rawInstance.toString()):
+                armix::mixer::LiveChannelFxGraph::InstanceLease{};
+            auto* d=dynamic_cast<D*>(req.unbound?offline.get():owner?owner->processor.get():nullptr);
+            if(action=="nativeDuckerSnapshot"){emitNativeDuckerSnapshot(args,d,req.unbound);return;}
+            const auto reject=[&](const juce::String& error){
+                emitDuckerReply(args,"arMixBuiltinDuckerAck","REJECTED",error);
+            };
+            if(!d||!req.sequence("ducker-")||nativeShowBusy_||studioBackupBusy_||
+               mixerSessionWorker_.busy()||deviceApply_.busy()||engine_.independentClockActive()||
+               !d->stateSnapshotQuiescent()||std::any_of(pendingNativeDuckers_.begin(),pendingNativeDuckers_.end(),
+                   [&](const auto& p){return p.owner==owner;}))return reject("AUTO_DUCKER_NOT_READY_OR_BUSY");
+            auto next=d->acceptedSettings();
+            if(action=="nativeDuckerSources"){
+                const auto values=args.getProperty("sources",{});
+                const auto* ids=values.getArray();
+                if(!ids||ids->size()>static_cast<int>(next.sources.size()))return reject("INVALID_SOURCE_COUNT");
+                next.sources={};next.count=static_cast<std::uint32_t>(ids->size());
+                for(int k=0;k<ids->size();++k)
+                    if(!armix::console::approvedNativeId((*ids)[k],next.sources[static_cast<std::size_t>(k)])||
+                       next.sources[static_cast<std::size_t>(k)]==req.channel)return reject("INVALID_SOURCE");
+                std::sort(next.sources.begin(),next.sources.begin()+next.count);
+                if(!next.validSources())return reject("DUPLICATE_OR_INVALID_SOURCE");
+                if(req.unbound){
+                    if(logicalMixer_.readOnly())return reject("OFFLINE_WORKSPACE_READ_ONLY");
+                    const auto& workspace=logicalMixer_.workspace();
+                    const auto& roster=workspace.document().roster;
+                    const auto previous=d->acceptedSettings();
+                    for(std::size_t k=0;k<next.count;++k)
+                        if(!roster.find({next.sources[k]})&&
+                           !std::binary_search(previous.sources.begin(),previous.sources.begin()+previous.count,next.sources[k]))
+                            return reject("AUTO_DUCKER_SOURCE_UNAVAILABLE");
+                    // Validate the UNION of all existing Ducker dependencies
+                    // against the offline roster. No hardware or PCM required.
+                    armix::mixer::DynamicGraphRequest candidate;
+                    for(const auto& row:roster.channels()){
+                        for(std::size_t slot=0;slot<row.insertCatalogIds.size();++slot){
+                            if(row.insertCatalogIds[slot]!=D::catalogIdentity)continue;
+                            D::Settings routes{};
+                            if(row.id.value==req.channel&&slot==static_cast<std::size_t>(req.slot))routes=next;
+                            else {
+                                armix::session::StoredInsert other;
+                                std::unique_ptr<juce::AudioProcessor> processor;
+                                if(prepareLogicalFx(workspace,row.id,slot,other,processor).isNotEmpty())
+                                    return reject("AUTO_DUCKER_SAVED_SOURCE_STATE_INVALID");
+                                auto* fx=dynamic_cast<D*>(processor.get());
+                                if(!fx)return reject("AUTO_DUCKER_SAVED_SOURCE_STATE_INVALID");
+                                routes=fx->acceptedSettings();
+                            }
+                            for(std::size_t k=0;k<routes.count;++k){
+                                const armix::mixer::ChannelId source{routes.sources[k]};
+                                if(!roster.find(source))continue;
+                                auto& deps=candidate.postFaderSidechains;
+                                if(std::none_of(deps.begin(),deps.end(),[&](const auto& dep){
+                                    return dep.source==source&&dep.target==row.id;
+                                }))deps.push_back({source,row.id});
+                            }
+                        }
+                    }
+                    armix::mixer::DynamicPreparedMixerBlock graph;
+                    armix::mixer::DynamicGraphError fault;
+                    if(!armix::mixer::DynamicPreparedMixerBlock::compile(roster,candidate,graph,fault))
+                        return reject(fault.fault==armix::mixer::DynamicGraphFault::cycle?
+                            "AUTO_DUCKER_ROUTING_CYCLE":"AUTO_DUCKER_GRAPH_REJECTED");
+                    if(!d->setUnpublishedSettings(next))return reject("AUTO_DUCKER_INVALID_SETTINGS");
+                    juce::MemoryBlock bytes;d->getStateInformation(bytes);
+                    auto safe=juce::Component::SafePointer<ConsoleWindow>(this);
+                    if(!logicalMixer_.saveFx(std::move(saved),std::move(bytes),[safe,args](juce::String err){
+                        if(safe!=nullptr)safe->emitDuckerReply(args,"arMixBuiltinDuckerAck",
+                            err.isEmpty()?"APPLIED":"REJECTED",err);
+                    }))return reject("OFFLINE_FX_SAVE_FAILED");
+                    return;
+                }
+                const auto error=engine_.setNativeDuckerSources(owner,{req.channel},
+                    static_cast<std::size_t>(req.slot),req.rawInstance.toString(),next);
+                if(error.isNotEmpty())return reject(error);
+                emitApprovedNativeSnapshot();
+                emitDuckerReply(args,"arMixBuiltinDuckerAck","APPLIED");
+                return;
+            }
+            const auto values=args.getProperty("settings",{});
+            auto number=[&](const char* key,float& out){
+                const auto v=values.getProperty(key,{});
+                if(!v.isDouble()&&!v.isInt())return false;
+                const auto n=static_cast<double>(v);
+                if(!std::isfinite(n))return false;
+                out=static_cast<float>(n);return std::isfinite(out);
+            };
+            auto& v=next.dynamics;
+            const bool valid=values.isObject()&&number("thresholdDb",v.thresholdDb)&&number("depthDb",v.depthDb)&&
+                number("attackMs",v.attackMs)&&number("holdMs",v.holdMs)&&number("releaseMs",v.releaseMs)&&
+                number("hysteresisDb",v.hysteresisDb)&&number("highPassHz",v.highPassHz)&&number("lowPassHz",v.lowPassHz);
+            const auto sequence=req.sequence("ducker-");
+            if(!valid)return reject("INVALID_DYNAMICS");
+            if(req.unbound){
+                const bool queued=d->queueSettings(next,sequence);
+                return completeLogicalFxEdit(args,std::move(saved),d,queued,"arMixBuiltinDuckerAck");
+            }
+            if(pendingNativeDuckers_.size()>=32)return reject("AUTO_DUCKER_CONTROL_BUSY");
+            if(!d->queueSettings(next,sequence))return reject("INVALID_DYNAMICS_OR_BUSY");
+            pendingNativeDuckers_.push_back({owner,args,sequence,juce::Time::getMillisecondCounter(),false});
             return;
         }
 
@@ -11364,6 +11555,7 @@ private:
         servicePendingNativeEq();
         servicePendingNativeGeq();
         servicePendingNativeComp();
+        servicePendingNativeDucker();
         servicePendingNativeDeEzzer();
         servicePendingNativeAntiNoiz();
         servicePendingNativeSonKu();

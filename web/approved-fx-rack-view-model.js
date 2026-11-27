@@ -372,6 +372,7 @@
     "armix.builtin.channel-eq.v1":"ArSonMixNativeEq",
     "armix.builtin.graphic-eq31.v1":"ArSonMixGraphicEq31",
     "armix.builtin.channel-compressor.v1":"ArSonMixNativeCompressor",
+    "armix.builtin.auto-ducker.v1":"ArSonMixNativeDucker",
     "armix.builtin.anti-noiz.v1":"ArSonMixNativeAntiNoiz",
     "armix.builtin.arson-harmony.v1":"ArSonMixNativeHarmony",
     "armix.builtin.vocal-throw.v1":"ArSonMixNativeVocalThrow",

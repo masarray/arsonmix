@@ -448,6 +448,7 @@ public:
                 const auto label=id=="armix.builtin.arson-harmony.v1"?"Harmonice":
                     stored!=document_.inserts.end() && stored->name.isNotEmpty()?stored->name:
                     id=="armix.builtin.channel-compressor.v1"?"Compressor":
+                    id=="armix.builtin.auto-ducker.v1"?"Auto Ducker":
                     id=="armix.builtin.channel-eq.v1"?"Parametric EQ":id;
                 set(fx,"name",label);
                 set(fx,"bypassed",(stored!=document_.inserts.end() && stored->bypass) ||

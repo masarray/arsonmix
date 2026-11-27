@@ -3,6 +3,7 @@
 
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
+#include "../engine/builtin_fx/AutoDuckerProcessor.h"
 #include "../engine/builtin_fx/AntiNoizProcessor.h"
 #include "../engine/builtin_fx/GraphicEq31Processor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
@@ -135,6 +136,11 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_COMP_UNSUPPORTED_AUDIO_FORMAT","NATIVE_COMP_PREPARE_REJECTED",
         "NATIVE_COMP_PREPARE_EXCEPTION","Saved native Compressor state rejected; graph unchanged",
         prepareNativeBuiltInFx<ChannelCompressorProcessor>},
+    NativeBuiltInFx{AutoDuckerProcessor::catalogIdentity,"Auto Ducker","Dynamics",true,8000.,384000.,
+        "NATIVE_DUCKER_HOST_UNAVAILABLE","NATIVE_DUCKER_DEVICE_CHANGED",
+        "NATIVE_DUCKER_UNSUPPORTED_AUDIO_FORMAT","NATIVE_DUCKER_PREPARE_REJECTED",
+        "NATIVE_DUCKER_PREPARE_EXCEPTION","Saved Auto Ducker state rejected; graph unchanged",
+        prepareNativeBuiltInFx<AutoDuckerProcessor>},
     NativeBuiltInFx{AntiNoizProcessor::catalogIdentity,"Anti Noiz","Dynamics",true,44100.,96000.,
         "NATIVE_AN_HOST_UNAVAILABLE","NATIVE_AN_DEVICE_CHANGED",
         "NATIVE_AN_UNSUPPORTED_AUDIO_FORMAT","NATIVE_AN_PREPARE_OR_PDC_REJECTED",

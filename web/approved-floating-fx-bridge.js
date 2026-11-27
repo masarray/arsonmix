@@ -11,6 +11,8 @@
       ["mixer-native-peq.js","ArSonMixNativeEq","#mxNativePeq"],
     "armix.builtin.channel-compressor.v1":
       ["mixer-native-compressor.js","ArSonMixNativeCompressor","#mxNativeComp"],
+    "armix.builtin.auto-ducker.v1":
+      ["mixer-native-ducker.js","ArSonMixNativeDucker","#mxNativeDucker"],
     "armix.builtin.graphic-eq31.v1":
       ["mixer-native-geq31.js","ArSonMixGraphicEq31","#mxNativeGeq31"],
     "armix.builtin.arson-harmony.v1":
@@ -36,7 +38,7 @@
   // header grabs the REAL HWND through Windows system-move, never an inner
   // CSS card. Preserve every original preset, Power, S/M/L and Close click.
   // Document capture beats each original editor's DOM drag listener.
-  const dragHeaders=".mx-peq-title,.mx-comp-head,.mx-geq31-head,"+
+  const dragHeaders=".mx-peq-title,.mx-comp-head,.mx-ducker-head,.mx-geq31-head,"+
     ".mx-harm-head,.vt-face-header,.sk-head";
   // Forward real editor interaction before child controls can stop bubbling.
   document.addEventListener("pointerdown",event=>{

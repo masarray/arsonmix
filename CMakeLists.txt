@@ -580,6 +580,9 @@ target_link_libraries(ARMixConsole PRIVATE
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(ARMixAutoDuckerCoreTests tests/auto_ducker_core_test.cpp)
+  target_compile_features(ARMixAutoDuckerCoreTests PRIVATE cxx_std_20)
+  add_test(NAME NativeAutoDuckerCoreTimingStereoAndKeyLoss COMMAND ARMixAutoDuckerCoreTests)
   # Pure-C++ P0 audio-continuity gate: display idle must never reset MAIN.
   add_executable(ARMixAudioContinuityPolicyTests tests/audio_continuity_policy_test.cpp)
   target_compile_features(ARMixAudioContinuityPolicyTests PRIVATE cxx_std_20)
