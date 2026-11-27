@@ -433,6 +433,7 @@ jobs:
           python -m pip install playwright
           python -m playwright install --with-deps chromium
       - run: python tests/approved_native_ducker_smoke.py
+      - run: python tests/approved_floating_fx_window_smoke.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: ${{ always() }}
         with:

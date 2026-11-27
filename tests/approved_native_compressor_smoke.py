@@ -401,6 +401,7 @@ def main():
                 ratio.hover()
                 page.keyboard.down("Shift")
                 page.mouse.wheel(0,-120)
+                page.wait_for_function("""()=>window.__actions.some(a=>a.action==='nativeCompSet' && Math.abs(a.settings.ratio-3.1)<.0001)""")
                 page.keyboard.up("Shift")
                 new_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
                 new_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])

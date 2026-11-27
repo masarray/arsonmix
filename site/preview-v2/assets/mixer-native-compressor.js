@@ -148,7 +148,7 @@ Object.entries(defs).forEach(([key,r])=>{
   else delayed={...draft};
  };
  input.addEventListener("input",()=>changeValue(Number(input.value)));
- window.ArMixFxGesture.bindRange(input,{get:()=>draft[key],enabled:()=>!!current&&(!native()||!!context()),onChange:changeValue});
+ window.ArMixFxGesture.bindRange(input,{target:item,get:()=>draft[key],enabled:()=>!!current&&(!native()||!!context()),onChange:value=>{changeValue(value);if(native()&&!pending)send();}});
  input.addEventListener("change",()=>{if(native())send();else saveDemo();});
  let drag=null;
  input.addEventListener("pointerdown",e=>{
