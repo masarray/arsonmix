@@ -119,6 +119,7 @@
     ['#nativeMySounds .native-dialog','.native-dialog-header'],
     ['#nativeOrbit .native-dialog','.native-dialog-header']
   ];
+  if(document.documentElement?.dataset?.armixPlayerWindow==="true")return;
   const gap=8, blocked='button,input,textarea,select,a,summary,[contenteditable="true"],[role="button"]';
   let moving=null,layer=1000;
   const clamp=(value,min,max)=>Math.max(min,Math.min(Math.max(min,max),value));
@@ -206,6 +207,7 @@
    persistent modeless workspace: only its explicit controls can hide it. */
 (()=>{
  'use strict';
+ if(document.documentElement?.dataset?.armixPlayerWindow==="true")return;
  const list=[
   ['pluginBrowser','pluginClose','pluginsButton'],
   ['arsonPlayer','playerClose','playerToggle',false],

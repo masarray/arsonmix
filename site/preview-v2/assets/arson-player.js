@@ -7,6 +7,9 @@
  if(!root||!toggle)return;
  const backend=window.__JUCE__?.backend;
  const native=Boolean(backend?.emitEvent&&backend?.addEventListener);
+ const desktopChild=document.documentElement?.dataset?.armixPlayerWindow==="true";
+ let desktopAvailable=false,desktopVisible=false;
+ const windowCommand=operation=>backend.emitEvent("arMixPlayerWindow",{operation});
  let model={tracks:[],catalogue:null,setlists:[],queue:[],activeSetlist:0,
    selected:-1,current:-1,pending:-1,autoNext:false,
    transport:{state:"EMPTY",title:"",currentSeconds:0,durationSeconds:0},
@@ -63,6 +66,8 @@
      String(v%60).padStart(2,"0");
  };
  const open=visible=>{
+   if(desktopChild&&!visible){closeSongMenu(false);backend.emitEvent("arMixPlayerWindowHide",{});return;}
+   if(desktopAvailable&&!desktopChild){if(visible)windowCommand("OPEN");return;}
    // Opening an already visible modeless Player must not hide it, rebuild
    // its playlist or steal mixer focus during an unrelated state update.
    if(visible&&!root.hidden)return;
@@ -87,7 +92,7 @@
  $("playerMiniPlay").addEventListener("click",()=>send(model.transport?.state==="PLAYING"?"playerPause":"playerPlay"));
  $("playerMiniNext").addEventListener("click",()=>{if(model.pending<0)send("playerNext");});
  $("playerPrevious").addEventListener("click",()=>{if(model.pending<0&&model.current>0&&!model.tracks[model.current-1]?.missing)send("playerPlayNow",model.current-1);});
- function updateMini(){$("playerMini").hidden=!native||!root.hidden||!model.transport?.title||model.current<0;}
+ function updateMini(){$("playerMini").hidden=desktopChild||!native||!root.hidden||!model.transport?.title||model.current<0;}
  function setDetails(visible){$("playerDetails").hidden=!visible;$("playerDetailsToggle").setAttribute("aria-expanded",String(visible));if(visible)$("playerDetails").scrollIntoView?.({block:"nearest"});}
  $("playerDetailsToggle").addEventListener("click",()=>setDetails($("playerDetails").hidden));
  $("playerNextCard").addEventListener("click",()=>{
@@ -781,9 +786,28 @@
      if(seekOrigin!==null&&seekOrigin!==seekIdentity()){seekCancelled=true;draggingSeek=false;}
      render();
    });
-   // Dynamic loader may join after the initial WebView readiness event.
-   // Request genuine native library/readback, not a browser-local fallback.
-   send("playerSubscribe");
+   if(desktopChild){
+     const abort=$("playerWindowAbort");
+     if(abort)abort.hidden=true;
+     root.addEventListener("pointerdown",event=>{
+       if(event.button!==0||event.isPrimary===false)return;
+       backend.emitEvent("arMixPlayerWindowActivate",{});
+       if(event.target.closest?.(".ap-top")&&!event.target.closest?.("button,input,select,textarea,a,summary")){
+         event.preventDefault();backend.emitEvent("arMixPlayerWindowDrag",{});
+       }
+     });
+     // Subscribe only after all handlers exist; native replays accepted state.
+     open(true);
+     backend.emitEvent("arMixPlayerWindowReady",{gui:"APPROVED_PLAYER_WINDOW_V1"});
+   }else{
+     backend.addEventListener("arMixPlayerWindowState",payload=>{
+       if(payload?.available!==true)return;
+       desktopAvailable=true;desktopVisible=payload.visible===true;
+       root.hidden=true;toggle.setAttribute("aria-expanded",String(desktopVisible));updateMini();
+     });
+     windowCommand("QUERY");
+     send("playerSubscribe");
+   }
  }
  switchCollection("setlist");
  render();

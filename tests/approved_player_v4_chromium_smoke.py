@@ -406,6 +406,48 @@ def main():
             assert not errors,errors
             page.close()
             print("PASS Player assembled GUI",width,height,scale,flush=True)
+        # Separate native-only presentation, same Player loader, no mixer DOM.
+        child=browser.new_page(viewport={"width":410,"height":720})
+        errors=[]
+        child.on("pageerror",lambda e:errors.append(str(e)))
+        child.add_init_script(NATIVE_EVENTS+"""window.__windowEvents=[];window.__JUCE__={backend:{emitEvent(name,payload){window.__windowEvents.push({name,payload})},...window.__nativeListenerMethods}};""")
+        child.goto((out/"player-window.html").as_uri())
+        child.wait_for_function("()=>window.__windowEvents.some(e=>e.name==='arMixPlayerWindowReady')")
+        panel=child.locator("#arsonPlayer")
+        assert panel.is_visible() and panel.bounding_box()==dict(x=0,y=0,width=410,height=720)
+        assert child.locator("#tracks").count()==0
+        assert child.locator("#playerMini").is_hidden()
+        child.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
+        child.locator("#playerSearch").focus()
+        child.keyboard.press("Escape")
+        child.evaluate("()=>window.dispatchEvent(new Event('blur'))")
+        assert panel.is_visible()
+        assert child.evaluate("()=>!window.__windowEvents.some(e=>e.name==='arMixPlayerWindowHide')")
+        child.locator("#playerPlay").click()
+        assert child.evaluate("()=>window.__windowEvents.at(-1).payload.action")=="playerPause"
+        child.locator("#playerClose").click()
+        assert child.evaluate("()=>window.__windowEvents.at(-1).name")=="arMixPlayerWindowHide"
+        assert not errors,errors
+        child.close()
+        # Mixer capability negotiation: no clipped drawer on native OPEN,
+        # even after repeated commands. Visibility comes from native receipt.
+        host=browser.new_page(viewport={"width":1366,"height":768})
+        host.add_init_script(NATIVE_EVENTS+"""window.__windowEvents=[];window.__JUCE__={backend:{emitEvent(name,payload){window.__windowEvents.push({name,payload})},...window.__nativeListenerMethods}};""")
+        host.goto((out/"index.html").as_uri())
+        host.wait_for_function("()=>window.__nativeListeners.has('arMixPlayerWindowState')")
+        host.evaluate("()=>window.__nativeListeners.get('arMixPlayerWindowState')({available:true,visible:false})")
+        host.locator("#ribbon-tab-player").click()
+        host.locator("#playerToggle").click()
+        assert host.locator("#arsonPlayer").is_hidden()
+        assert host.evaluate("()=>window.__windowEvents.filter(e=>e.name==='arMixPlayerWindow'&&e.payload.operation==='OPEN').length")==1
+        host.evaluate("()=>window.__nativeListeners.get('arMixPlayerWindowState')({available:true,visible:true})")
+        assert host.locator("#playerToggle").get_attribute("aria-expanded")=="true"
+        host.locator("#ribbon-tab-mixer").click()
+        assert host.locator("#playerToggle").get_attribute("aria-expanded")=="true"
+        host.evaluate("()=>window.__nativeListeners.get('arMixPlayerWindowState')({available:true,visible:false})")
+        assert host.locator("#playerToggle").get_attribute("aria-expanded")=="false"
+        host.close()
+        print("PASS native Player window presentation and receipt seam",flush=True)
         browser.close()
 if __name__=="__main__":
     main()

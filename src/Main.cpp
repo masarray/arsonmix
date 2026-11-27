@@ -583,6 +583,80 @@ private:
 
 
 
+// Player is a persistent, modeless owned desktop surface, not a second
+// player engine or a DOM drawer clipped by the mixer's WebView2.
+class PlayerDesktopWindow final : public juce::TopLevelWindow {
+public:
+    using Intent=std::function<void(const juce::var&)>;
+    PlayerDesktopWindow(juce::Component& mixer,Intent intent,
+                        std::function<void()> sync,std::function<void()> hidden)
+        : TopLevelWindow("ArSon Player",false),mixer_(mixer),
+          sync_(std::move(sync)),hidden_(std::move(hidden)),
+          browser_(webViewOptions().withNativeIntegrationEnabled()
+            .withEventListener("arMixPlayerWindowReady",[this](juce::var message){
+                if(message.getProperty("gui","").toString()!="APPROVED_PLAYER_WINDOW_V1")return;
+                browser_.loaded=true;
+                if(isVisible()&&sync_)sync_();
+            })
+            .withEventListener("arMixAction",[this,intent=std::move(intent)](juce::var request){
+                if(browser_.loaded&&isVisible()&&request.getProperty("action","").toString().startsWith("player")&&intent)
+                    intent(request);
+            })
+            .withEventListener("arMixPlayerWindowHide",[this](juce::var){
+                setVisible(false);
+                if(hidden_)hidden_();
+            })
+            .withEventListener("arMixPlayerWindowDrag",[this](juce::var){
+#if JUCE_WINDOWS
+                if(!isVisible()||!(GetAsyncKeyState(VK_LBUTTON)&0x8000))return;
+                if(auto* peer=getPeer()){
+                    auto hwnd=static_cast<HWND>(peer->getNativeHandle());
+                    if(hwnd&&::IsWindow(hwnd)){
+                        ::ReleaseCapture();
+                        ::PostMessageW(hwnd,WM_SYSCOMMAND,SC_MOVE|HTCAPTION,0);
+                    }
+                }
+#endif
+            })
+            .withEventListener("arMixPlayerWindowActivate",[this](juce::var){
+                if(isVisible())(void)armix::ui::raiseOwnedFloatingWindow(*this,mixer_);
+            })
+            .withResourceProvider(assetFor)) {
+        setUsingNativeTitleBar(false);
+        setOpaque(true);
+        addAndMakeVisible(browser_);
+        const auto* display=juce::Desktop::getInstance().getDisplays().getDisplayForRect(mixer.getScreenBounds());
+        const auto area=display?display->userArea:juce::Rectangle<int>(0,0,1366,768);
+        centreWithSize(juce::jmin(410,area.getWidth()),juce::jmax(200,juce::jmin(820,area.getHeight()-24)));
+        addToDesktop();
+        browser_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot()+"player-window.html");
+    }
+    void resized() override { browser_.setBounds(getLocalBounds()); }
+    bool present() {
+        if(!armix::ui::attachOwnedFloatingWindow(*this,mixer_))return false;
+        const bool wasVisible=isVisible();
+        armix::ui::placeFloatingEditor(*this,mixer_,!everPresented_);
+        everPresented_=true;
+        if(!wasVisible)setVisible(true);
+        toFront(true);
+        if(!wasVisible&&browser_.loaded&&sync_)sync_();
+        return true;
+    }
+    void emit(const juce::String& event,const juce::var& payload) {
+        if(browser_.loaded&&isVisible())browser_.emitEventIfBrowserIsVisible(event,payload);
+    }
+protected:
+    int getDesktopWindowStyleFlags() const override {
+        return juce::TopLevelWindow::getDesktopWindowStyleFlags() &
+            ~juce::ComponentPeer::windowAppearsOnTaskbar;
+    }
+private:
+    juce::Component& mixer_;
+    std::function<void()> sync_,hidden_;
+    Browser browser_;
+    bool everPresented_=false;
+};
+
 // A post-install GUI probe must not open the owner's last audio interface,
 // restore or overwrite the last .smix, or automatically resume live output.
 // Only the supervisor creates the canonical 36-character GUID env token.
@@ -688,6 +762,7 @@ public:
               })
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
+              .withEventListener ("arMixPlayerWindow", [this] (juce::var args) { handlePlayerWindow(args); })
               .withEventListener ("arMixOpenLegalSource", [] (juce::var)
               {
                   // Exact source for this *binary*; open only on user request,
@@ -707,6 +782,12 @@ public:
         // A vendor plugin never receives a second processing callback.
         browser_.onNativeEvent=[this](const juce::String& event,
                                       const juce::var& payload) {
+            if(event=="arMixPlayerState"||event=="arMixPlayerActivity"||
+               event=="arMixPlayerCatalogue"||event=="arMixPlayerMedia"||
+               event=="arMixPlayerMediaReset"||event=="arMixPlayerCover") {
+                if(playerWindow_)playerWindow_->emit(event,payload);
+                return;
+            }
             const bool response=event.startsWith("arMixBuiltin") ||
                 event=="arMixNativeFxPowerAck" || event=="arMixGlobalFxAck" ||
                 event=="arMixLogicalAck";
@@ -963,6 +1044,7 @@ public:
 #endif
         orbit_.stop();
         catalog_.onChanged = nullptr;
+        playerWindow_.reset(); // GUI only, before engine/relay teardown
         closeAllPluginEditors();
         // Shutdown is the ONE place where the mixer event relay is detached.
         // Ordinary .smix Open, FX replace, preset recall and device changes
@@ -1110,6 +1192,7 @@ private:
     bool nativeShowBusy_ = false;
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
+    std::unique_ptr<PlayerDesktopWindow> playerWindow_;
     std::unique_ptr<juce::FileChooser> playerFileChooser_;
     // PlayerShow v3: one active setlist projects into the existing native
     // library/controls so decoder bindings and FX routing do not change.
@@ -6935,6 +7018,41 @@ private:
             playerCatalogueIds_.emplace(playerCatalogue_[i],static_cast<int>(i));
         if(playerCatalogueRequested_)emitPlayerCatalogue();
     }
+    void publishPlayerWindowState(){
+#if JUCE_WINDOWS
+        auto state=std::make_unique<juce::DynamicObject>();
+        state->setProperty("available",true);
+        state->setProperty("visible",playerWindow_&&playerWindow_->isVisible());
+        browser_.emitEventIfBrowserIsVisible("arMixPlayerWindowState",juce::var(state.release()));
+#endif
+    }
+    void subscribePlayerPresentation(){
+        playerActivityDirty_=true;emitPlayerState(true);
+        juce::Array<juce::var> batch;
+        for(const auto& [id,media]:playerMedia_){
+            batch.add(media.project(id));
+            if(batch.size()>=128){emitPlayerMedia(batch);batch.clear();}
+        }
+        if(!batch.isEmpty())emitPlayerMedia(batch);
+        emitPlayerCover();
+    }
+    void handlePlayerWindow(const juce::var& args){
+#if JUCE_WINDOWS
+        const auto operation=args.getProperty("operation","").toString();
+        if(operation=="QUERY"){publishPlayerWindowState();return;}
+        if(operation!="OPEN"||!browser_.loaded||sessionLifecycleShuttingDown_)return;
+        if(!playerWindow_){
+            playerWindow_=std::make_unique<PlayerDesktopWindow>(*this,
+                [this](const juce::var& request){onAction(request);},
+                [this]{subscribePlayerPresentation();if(playerCatalogueRequested_)emitPlayerCatalogue();},
+                [this]{publishPlayerWindowState();});
+        }
+        if(!playerWindow_->present())emitNotice("Unable to attach Player desktop window",true);
+        publishPlayerWindowState();
+#else
+        juce::ignoreUnused(args);
+#endif
+    }
     void emitPlayerCatalogue(){
         if(!browser_.loaded)return;
         juce::Array<juce::var> rows;
@@ -7506,12 +7624,7 @@ private:
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixOpenAudioIO",juce::var(true));
             return emitPlayerState();
         }
-        if(action=="playerSubscribe"){
-            playerActivityDirty_=true;emitPlayerState(true);juce::Array<juce::var> batch;
-            for(const auto& [id,media]:playerMedia_){batch.add(media.project(id));if(batch.size()>=128){emitPlayerMedia(batch);batch.clear();}}
-            if(!batch.isEmpty())emitPlayerMedia(batch);
-            emitPlayerCover();return;
-        }
+        if(action=="playerSubscribe"){subscribePlayerPresentation();return;}
         if(action=="playerCatalogue"){playerCatalogueRequested_=true;emitPlayerCatalogue();pumpPlayerMedia();return;}
         if(action=="playerCatalogueAdd")return addPlayerCatalogueSong(value);
         if(action=="playerFavorite")return changePlayerFavorite(value);

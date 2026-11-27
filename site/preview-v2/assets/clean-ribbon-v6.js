@@ -209,7 +209,7 @@ function install(){
  function syncMix(){const sof=$('sofToggle');mainMix.hidden=sof?.getAttribute('aria-pressed')!=='true';mainMix.disabled=!sof||sof.disabled;}
  if($('sofToggle'))new MutationObserver(syncMix).observe($('sofToggle'),{attributes:true,attributeFilter:['aria-pressed','disabled']});
  syncMix();
- const openPlayer=()=>{if($('arsonPlayer')?.hidden)click('playerToggle');};
+ const openPlayer=()=>click('playerToggle');
  $('ribbonQuickPlayer').addEventListener('click',openPlayer);
  function syncQuickPlayer(){
    const status=$('ribbonPlayerStatus'),playing=source('playerPlay')?.dataset.playing==='true';
