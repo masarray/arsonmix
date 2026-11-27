@@ -241,7 +241,7 @@ def select_ribbon_workflow(page, workflow):
     """Navigate the actual visible ribbon; do not force-click hidden legacy controls."""
     tab=page.locator("#ribbon-tab-"+workflow)
     tab.wait_for(state="visible")
-    if tab.get_attribute("aria-selected")!="true":
+    if tab.get_attribute("aria-selected")!="true" or page.locator("#moreTools").get_attribute("open") is not None:
         tab.click()
     assert tab.get_attribute("aria-selected")=="true"
 
