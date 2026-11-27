@@ -1318,7 +1318,7 @@
   // Native-only operator controls in the EXISTING approved More menu:
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
-  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
+  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null, ribbonAudioSummary=null;
   let lastM4Performance=null,m4PaintKey="";
   let externalSerial=0;
   const pendingExternal=new Map(); // each ChannelId independent; no mixer-wide lock
@@ -2669,7 +2669,9 @@
   function syncEmergencyOutputControl(d) {
     if(!muteBtn)return;
     const panic=hardware?.raw?.operatorOutputMuted===true;
-    muteBtn.textContent=panic?"Resume after emergency stop":"Emergency stop audio";
+    muteBtn.dataset.emergencyMode=panic?"resume":"stop";
+    const label=panic?"Resume after emergency stop":"Emergency stop audio";
+    if(muteBtn.textContent!==label)muteBtn.textContent=label;
     muteBtn.disabled=panic?!deviceReady():d?.outputArmed!==true;
     muteBtn.title=panic?"Resume only the verified native route":
       "Emergency stop · normal device recovery is automatic";
@@ -3725,6 +3727,14 @@
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
     syncEmergencyOutputControl(d);
+    if(ribbonAudioSummary){
+      const values=deviceOpen?[String(d.backend),String(d.playbackDevice||"Unknown output"),
+        String(d.sampleRate/1000)+" kHz",String(d.bufferFrames)+" samples"]:["No device","—","—","—"];
+      ribbonAudioSummary.querySelectorAll("span[data-audio-value]").forEach((el,index)=>{
+        if(el.textContent!==values[index])el.textContent=values[index];
+        if(el.title!==values[index])el.title=values[index];
+      });
+    }
     paintPhysicalOutputs(next);
     // Keep the SAME verified playback device for mixer master projection.
     // Footer display is independent; device identity must never be dropped.
@@ -5362,7 +5372,17 @@
       io.addEventListener("click",openNativeAudioIO);
       // The application menu is always the first toolbar item.
       toolbar.prepend(more);
-      toolbar.append(io);
+      ribbonAudioSummary=document.createElement("div");
+      ribbonAudioSummary.dataset.ribbonAudioSummary="true";
+      ribbonAudioSummary.setAttribute("role","group");
+      ribbonAudioSummary.setAttribute("aria-label","Current verified audio configuration");
+      for(const label of ["Driver","Output","Rate","Buffer"]){
+        const caption=item("span","armix-ribbon-audio-label",label);
+        const value=item("span","armix-ribbon-audio-value","—");
+        value.dataset.audioValue=label.toLowerCase();
+        ribbonAudioSummary.append(caption,value);
+      }
+      toolbar.append(ribbonAudioSummary,io);
       const player=document.getElementById("playerToggle"),plugins=document.getElementById("pluginsButton");
       if(player?.parentElement===toolbar&&plugins?.parentElement===toolbar)
         plugins.after(player);

@@ -653,6 +653,9 @@ public:
               .withEventListener ("arMixHotkeyIntent", [this] (juce::var args) {
                   handleNativeHotkeyIntent(args);
               })
+              .withEventListener ("arMixRibbonWindow", [this] (juce::var args) {
+                  handleRibbonWindowCommand(args);
+              })
               .withEventListener ("arMixWindowFullscreen", [this] (juce::var args) {
                   // WebView2 forwards plain F11; JUCE owns native geometry.
                   if(args.getProperty("operation","").toString()=="TOGGLE")
@@ -805,14 +808,82 @@ public:
             setAlwaysOnTop(topmostBeforeOperatorFullscreen_);
             if(!maximisedBeforeOperatorFullscreen_)setFullScreen(false);
             else setFullScreen(true);
-            setTitleBarHeight(31);
+            setTitleBarHeight(ribbonChromeActive_ ? 0 : 31);
         }
         operatorFullscreen_=entering;
+        publishRibbonWindowState();
         if(browser_.isShowing())browser_.resized();
         auto reply=std::make_unique<juce::DynamicObject>();
         reply->setProperty("active",operatorFullscreen_);
         browser_.emitEventIfBrowserIsVisible("arMixWindowFullscreenState",
                                              juce::var(reply.release()));
+#endif
+    }
+
+    // Main window only. Retain the real native caption until the embedded
+    // ribbon has installed its controls and the existing GUI handshake succeeds.
+    // The existing message-thread tick also observes external OS state changes.
+    void publishRibbonWindowState()
+    {
+#if defined(_WIN32)
+        if(!ribbonChromeRequested_ || !browser_.loaded || !browser_.isShowing())return;
+        if(!ribbonChromeActive_) {
+            ribbonChromeActive_=true;
+            setTitleBarHeight(0);
+            // Keep allButtons flags and JUCE's Alt+F4 shortcut. Native
+            // buttons receive zero-height bounds from the existing LookAndFeel.
+            browser_.resized();
+        }
+        const bool maximised=isFullScreen() || operatorFullscreen_;
+        const int state=(maximised?1:0)|(operatorFullscreen_?2:0)|(isMinimised()?4:0);
+        if(state==lastRibbonWindowState_)return;
+        lastRibbonWindowState_=state;
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("active",true);
+        reply->setProperty("maximised",maximised);
+        reply->setProperty("fullscreen",operatorFullscreen_);
+        reply->setProperty("minimised",isMinimised());
+        browser_.emitEventIfBrowserIsVisible("arMixRibbonWindowState",juce::var(reply.release()));
+#endif
+    }
+
+    void handleRibbonWindowCommand(const juce::var& args)
+    {
+#if defined(_WIN32)
+        const auto operation=args.getProperty("operation","").toString();
+        if(operation=="READY") {
+            ribbonChromeRequested_=true;
+            lastRibbonWindowState_=-1;
+            publishRibbonWindowState();
+            return;
+        }
+        if(!ribbonChromeActive_ || !browser_.loaded || !isEnabled())return;
+        if(operation=="MINIMISE") {
+            if(operatorFullscreen_)toggleOperatorFullscreen();
+            setMinimised(true);
+        } else if(operation=="TOGGLE_MAXIMISE") {
+            if(operatorFullscreen_)toggleOperatorFullscreen();
+            else setFullScreen(!isFullScreen());
+        } else if(operation=="CLOSE") {
+            // Same application quit path as the native caption, Alt+F4 and
+            // normal shutdown: session checkpoint, plug-in teardown, audio stop.
+            juce::MessageManager::callAsync([safe=juce::Component::SafePointer<ConsoleWindow>(this)] {
+                if(safe)safe->closeButtonPressed();
+            });
+            return;
+        } else if(operation=="BEGIN_MOVE") {
+            // Never start an OS move from a tab/button or a released pointer.
+            // JS sends only after a threshold on the empty ribbon drag region.
+            if(isFullScreen() || operatorFullscreen_ || !(GetAsyncKeyState(VK_LBUTTON)&0x8000))return;
+            if(auto* peer=getPeer()) {
+                auto hwnd=static_cast<HWND>(peer->getNativeHandle());
+                ReleaseCapture();
+                PostMessageW(hwnd,WM_SYSCOMMAND,SC_MOVE|HTCAPTION,0);
+            }
+        } else return;
+        publishRibbonWindowState();
+#else
+        juce::ignoreUnused(args);
 #endif
     }
 
@@ -898,6 +969,9 @@ public:
 
 private:
     armix::ui::MixerCaptionLookAndFeel mixerCaption_;
+    bool ribbonChromeRequested_=false;
+    bool ribbonChromeActive_=false;
+    int lastRibbonWindowState_=-1;
     bool operatorFullscreen_=false;
     bool maximisedBeforeOperatorFullscreen_=false;
     bool topmostBeforeOperatorFullscreen_=false;
@@ -11905,6 +11979,7 @@ private:
             setVisible (true);
             browser_.resized(); // first visible HWND, not its pre-splash size
         }
+        publishRibbonWindowState();
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.
         if (!browser_.loaded && !webViewStartupNoticeSent_ &&

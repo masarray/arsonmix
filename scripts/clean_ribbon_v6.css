@@ -1,20 +1,33 @@
 /* Owner-approved Clean Ribbon V6: only header presentation, never strip hardware. */
-html .app .window-title.armix-ribbon-nav,html.armix-native-desktop .app > .window-title.armix-ribbon-nav{display:flex!important;height:34px!important;min-height:34px!important;flex:0 0 34px!important;gap:0!important;padding:0 0 0 145px!important;background:#1b2b35!important;border-bottom:2px solid #2fa9c8!important;box-shadow:none!important;overflow:hidden!important}
+/* One geometry for menu cap and overlapping tabs; cyan rail is separate. */
+html .app:has(>.armix-ribbon-nav){--armix-tab-height:32px;--armix-tab-rail:2px}
+html .app .window-title.armix-ribbon-nav,html.armix-native-desktop .app > .window-title.armix-ribbon-nav{display:flex!important;height:40px!important;min-height:40px!important;flex:0 0 40px!important;gap:0!important;padding:5px 8px 0 137px!important;background:linear-gradient(#374d5e,#233541)!important;border:1px solid #59717e!important;border-bottom:var(--armix-tab-rail) solid #2fa9c8!important;border-radius:5px 5px 0 0!important;box-shadow:none!important;overflow:hidden!important}
 html .app .window-title.armix-ribbon-nav>.logo,html .app .window-title.armix-ribbon-nav>.file-name,html .app .window-title.armix-ribbon-nav>#trackCount{display:none!important}
-.armix-ribbon-tabs{display:flex;align-items:stretch;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding-left:4px}
+.armix-ribbon-tabs{display:flex;align-items:stretch;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding-left:0;background:#1b2b35;border-radius:4px 4px 0 0}
 .armix-ribbon-tabs::-webkit-scrollbar{display:none}
-.armix-ribbon-tab{isolation:isolate;position:relative;border:0;background:none;color:#e0edf3;font:400 12px/1 "Segoe UI",Arial,sans-serif;flex:0 0 126px;height:32px;margin-left:-22px;padding:0 20px 0 7px;cursor:pointer}
-.armix-ribbon-tab:first-child{margin-left:0}
-.armix-ribbon-tab svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:-1}
+.armix-ribbon-tab{isolation:isolate;position:relative;border:0;background:none;color:#e0edf3;font:400 12px/1 "Segoe UI",Arial,sans-serif;flex:0 0 126px;height:var(--armix-tab-height);min-height:var(--armix-tab-height);max-height:var(--armix-tab-height);box-sizing:border-box;margin-left:-22px;padding:0 20px 0 6px;cursor:pointer;--tab-top:#516471;--tab-mid:#344651;--tab-bottom:#25343f;display:flex;align-items:center;justify-content:center;box-shadow:none;text-shadow:none}
+.armix-ribbon-tab:first-of-type{margin-left:0}
+.armix-ribbon-tab svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:-1;overflow:visible;filter:drop-shadow(-1px 1px 1px #0005)}
 .armix-ribbon-tab path{stroke:#657580;stroke-width:.5;vector-effect:non-scaling-stroke}
-.armix-ribbon-tab:hover path{fill:#425867}
-.armix-ribbon-tab[aria-selected=true] path{fill:url(#armix-ribbon-active)}
+.armix-ribbon-tab:hover:not([aria-selected=true]){--tab-top:#627988;--tab-mid:#425867;--tab-bottom:#314550}
+.armix-ribbon-tab[aria-selected=true]{--tab-top:#36b8da;--tab-mid:#20a1c3;--tab-bottom:#087f9f}
 .armix-ribbon-tab:focus-visible{outline:1px solid #a8e9ff;outline-offset:-4px}
-html .app #armix-ribbon-commands.command-bar.armix-ribbon{height:43px!important;min-height:43px!important;max-height:43px!important;flex:0 0 43px!important;gap:8px!important;padding:0 8px!important;background:linear-gradient(#263d49,#203541)!important;border-top:0!important;box-shadow:none!important;overflow:visible!important}
-html .app #armix-ribbon-commands.armix-ribbon>#moreTools{position:absolute!important;left:0!important;top:-34px!important;width:146px!important;height:32px!important;min-width:0!important;margin:0!important;z-index:4!important}
-html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool{height:32px!important;min-width:146px!important;width:146px!important;max-width:146px!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:linear-gradient(#374d5e,#14232e)!important;color:#dceaf0!important;font:400 12px "Segoe UI",Arial,sans-serif!important;justify-content:flex-start!important;gap:9px!important;padding:0 12px!important;list-style:none}
+html .app #armix-ribbon-commands.command-bar.armix-ribbon{height:38px!important;min-height:38px!important;max-height:38px!important;flex:0 0 38px!important;gap:8px!important;padding:0 8px 2px!important;background:linear-gradient(#233541,#14232e)!important;border:1px solid #59717e!important;border-top:0!important;border-radius:0 0 5px 5px!important;box-shadow:none!important;overflow:visible!important}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools{position:absolute!important;left:8px!important;top:calc(-1 * (var(--armix-tab-height) + var(--armix-tab-rail)))!important;width:151px!important;height:var(--armix-tab-height)!important;min-height:var(--armix-tab-height)!important;max-height:var(--armix-tab-height)!important;box-sizing:border-box;min-width:0!important;margin:0!important;z-index:8!important}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool{height:var(--armix-tab-height)!important;min-height:var(--armix-tab-height)!important;max-height:var(--armix-tab-height)!important;box-sizing:border-box!important;margin:0!important;transform:none!important;text-shadow:none!important;min-width:151px!important;width:151px!important;max-width:151px!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;position:relative;isolation:isolate;--tab-top:#59483b;--tab-mid:#423329;--tab-bottom:#30251f;color:#fff7ef!important;font:400 12px "Segoe UI",Arial,sans-serif!important;justify-content:flex-start!important;gap:9px!important;padding:0 12px!important;list-style:none}
 html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool::before,html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool::after{content:none!important}
-html .app #armix-ribbon-commands.armix-ribbon>#moreTools[open]>summary.tool{background:linear-gradient(#36b8da,#087f9f)!important}
+/* Application menu is a disclosure, not a selected workflow. Burnished copper
+   is its own accent family; cyan remains reserved for the active workspace. */
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool:hover{--tab-top:#795438;--tab-mid:#5b3d2b;--tab-bottom:#3e2d23}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools[open]>summary.tool{background:transparent!important;--tab-top:#955b34;--tab-mid:#8c502d;--tab-bottom:#60341f}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools[open]>summary.tool:hover{--tab-top:#98603a;--tab-mid:#90542f;--tab-bottom:#653921}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool:focus-visible{outline:1px solid #fff0db!important;outline-offset:-4px}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool .armix-menu-brand-accent{color:#fff0db}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool .armix-menu-icon-open{display:none}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools[open]>summary.tool .armix-menu-icon-closed{display:none}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools[open]>summary.tool .armix-menu-icon-open{display:inline}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool .armix-ribbon-menu-shape path{stroke:#88705c}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools[open]>summary.tool .armix-ribbon-menu-shape path{stroke:#b28a6b}
 .armix-ribbon-menu-icon{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5}
 html .app #armix-ribbon-commands.armix-ribbon .more-tools-panel{position:absolute!important;left:5px!important;right:auto!important;top:34px!important;max-height:calc(100dvh - 48px)!important;overflow:auto!important;border:1px solid #526977!important;border-radius:5px!important;background:#192b36!important;box-shadow:0 5px 12px #0006!important}
 html .app #armix-ribbon-commands.command-bar.armix-ribbon>button.tool,html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool,html .app #armix-ribbon-commands.armix-ribbon .more-tools-panel button.tool{height:27px!important;min-height:27px!important;max-height:27px!important;padding:0 10px!important;min-width:0!important;border:1px solid transparent!important;border-radius:15px!important;background:transparent!important;box-shadow:none!important;color:#c8dce5!important;text-shadow:none!important;font:400 11px "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important}
@@ -36,9 +49,9 @@ html .app #armix-ribbon-commands.armix-ribbon>.tool[data-native-io],html .app #a
 html .app #armix-ribbon-commands.armix-ribbon .more-tools-panel button.tool{justify-content:flex-start!important;border-radius:4px!important;width:100%!important}
 html .app #armix-ribbon-commands.armix-ribbon #playerToggle{height:30px!important;min-height:30px!important;border-radius:18px!important;padding:0 12px!important;color:#ecfaff!important;border:1px solid #42d9e8!important;background:linear-gradient(#3a6975,#224651)!important;box-shadow:inset 0 0 6px #42d9e82a,0 0 7px #23cbe64a!important}
 html .app #armix-ribbon-commands.armix-ribbon:not([data-ribbon-tab=player]) #playerToggle{height:27px!important;min-height:27px!important;border-color:#83c7d344!important;background:#78c8d514!important;box-shadow:none!important;color:#b6edf6!important}
-.armix-ribbon-player{display:flex;align-items:center;gap:8px;flex:1;min-width:0;white-space:nowrap;font:400 11px "Segoe UI",Arial,sans-serif;color:#dce9ef}
+.armix-ribbon-player{display:flex;align-items:center;gap:10px;flex:0 1 auto;min-width:0;white-space:nowrap;font:400 11px "Segoe UI",Arial,sans-serif;color:#dce9ef}
 .armix-ribbon-player[hidden]{display:none!important}
-.armix-ribbon-track{min-width:90px;max-width:210px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.armix-ribbon-track{min-width:45px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .armix-ribbon-time{color:#a3bfca;font-variant-numeric:tabular-nums;flex:none}
 .armix-ribbon-transport,.armix-ribbon-options,.armix-ribbon-volume{display:flex;align-items:center;gap:7px;flex:none}
 .armix-ribbon-player button{font:inherit;display:grid;place-items:center;padding:0;cursor:pointer;color:#f3f9fb}
@@ -61,7 +74,7 @@ html .app #armix-ribbon-commands.armix-ribbon:not([data-ribbon-tab=player]) #pla
 .armix-ribbon-options button:hover:not(:disabled){background-color:#a4c4d326;color:#fff}
 .armix-ribbon-player input[type=range]{appearance:none;-webkit-appearance:none;height:5px;min-width:45px;border:0;background:linear-gradient(90deg,#21cde7 var(--ribbon-fill,0%),#536c79 var(--ribbon-fill,0%));border-radius:9px;box-shadow:inset 0 1px #e3f8ff17;cursor:pointer;margin:0}
 .armix-ribbon-player input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:13px;height:13px;background:linear-gradient(#f7ffff,#d0e5ed);border:1px solid #78c5d6;border-radius:50%;box-shadow:0 0 4px #5bdcf64d}
-.armix-ribbon-player #ribbonSeek{flex:1;max-width:225px}
+.armix-ribbon-player #ribbonSeek{flex:1 1 225px;width:225px;max-width:225px;min-width:65px}
 .armix-ribbon-player #ribbonVolume{width:90px}
 .armix-ribbon-volume>svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.65}
 .armix-ribbon-scene{display:flex;gap:6px;align-items:center}
@@ -79,3 +92,136 @@ html .app #armix-ribbon-commands>#ribbonMainMix[hidden]{display:none!important}
 
 html .app #armix-ribbon-commands.command-bar.armix-ribbon{position:relative!important}
 @media(max-width:1100px){html .app #armix-ribbon-commands[data-ribbon-tab=player] .armix-ribbon-player{overflow-x:auto;min-width:0;flex:1 1 0}.armix-ribbon-player>*{flex-shrink:0}}
+
+/* Restore owner-approved local V6 composition without changing audio bindings. */
+html .app #armix-ribbon-commands #moreTools summary .armix-ribbon-menu-shape{position:absolute;inset:0;width:100%;height:100%;z-index:-1;overflow:visible;pointer-events:none;filter:drop-shadow(-1px 1px 1px #0005)}
+html .app #armix-ribbon-commands #moreTools summary .armix-ribbon-menu-shape path{stroke:#657580;stroke-width:.5;vector-effect:non-scaling-stroke}
+.armix-ribbon-readout{display:flex;align-items:center;gap:8px;flex:0 1 245px;min-width:145px;max-width:245px;height:26px;padding:0 3px}
+.armix-ribbon-readout>svg{width:14px;height:14px;color:#91bbca;flex:none}
+.armix-ribbon-player .armix-ribbon-separator{height:26px;width:1px;flex:none;background:linear-gradient(transparent,#7f9ba74d 18%,#7f9ba74d 82%,transparent);margin:0 3px}
+.armix-ribbon-options .armix-ribbon-option-divider{height:17px;width:1px;background:#8da9b448;margin:0 3px;flex:none}
+html .app #armix-ribbon-commands[data-ribbon-tab=player]{gap:10px!important}
+html .app #armix-ribbon-commands[data-ribbon-tab=player] #playerToggle{flex:none;margin-left:0!important;display:inline-flex!important;align-items:center;gap:7px;justify-content:center;white-space:nowrap}
+html .app #armix-ribbon-commands #playerToggle .armix-ribbon-open-icon{width:16px;height:16px;flex:none;stroke-width:1.6}
+html .app #armix-ribbon-commands>#mixContext{border:0!important;background:transparent!important;color:#a8c3d0!important;font:400 11px "Segoe UI",Arial,sans-serif!important;text-transform:none!important;box-shadow:none!important;white-space:nowrap}
+@media(max-width:1200px){.armix-ribbon-player .armix-ribbon-separator{margin:0 1px}.armix-ribbon-player{gap:6px}.armix-ribbon-readout{flex-basis:145px}.armix-ribbon-player #ribbonSeek{flex-basis:105px}}
+@media(max-width:1100px){html .app #armix-ribbon-commands[data-ribbon-tab=player] .armix-ribbon-player{flex:1 1 0}.armix-ribbon-readout{flex:0 0 145px}}
+
+/* V6 shared presentation: application menu progressive disclosure and contextual controls.
+   No restyling of approved fader, gain, meter, MUTE/SOLO/PFL or FX editor hardware. */
+html .app #armix-ribbon-commands #moreTools>.more-tools-panel{
+ display:grid;grid-template-columns:minmax(0,1fr)!important;width:224px!important;
+ padding:4px!important;gap:1px!important;max-height:min(360px,calc(100dvh - 64px))!important;
+ overflow:auto!important;overscroll-behavior:contain;background:#192b36!important;
+ border:1px solid #526977!important;border-radius:5px!important;
+ box-shadow:0 5px 12px #0006!important;color:#dce9ef;
+}
+html .app #armix-ribbon-commands #moreTools:not([open])>.more-tools-panel{display:none!important}
+html .app #armix-ribbon-commands #moreTools>.more-tools-panel>[data-armix-menu-active=false],
+html .app #armix-ribbon-commands #moreTools>.more-tools-panel>[data-armix-menu-heading=true],
+html .app #armix-ribbon-commands #moreTools>.more-tools-panel>[hidden]{display:none!important}
+html .app #armix-ribbon-commands #moreTools .reference-file-menu>.more-tools-caption{display:none!important}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category,.armix-menu-back){
+ display:flex;align-items:center;justify-content:flex-start!important;gap:9px!important;
+ text-align:left!important;width:100%!important;min-height:28px!important;height:28px!important;
+ max-height:none!important;padding:0 8px!important;box-sizing:border-box;
+ font:400 12px/1.2 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;
+ text-transform:none!important;text-shadow:none!important;border:1px solid transparent!important;
+ border-radius:3px!important;box-shadow:none!important;background:transparent!important;color:#dce9ef!important;
+}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category,.armix-menu-back):enabled:hover,
+html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category,.armix-menu-back):focus-visible{
+ background:#2a4858!important;border-color:#3b687b!important;color:#effaff!important;
+}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(.armix-menu-category,.armix-menu-back)[hidden]{display:none!important}
+.armix-menu-category>span,.armix-menu-back>span{flex:1}
+.armix-menu-category>svg,.armix-menu-back>svg{width:15px;height:15px;flex:none;color:#a6bfcc}
+.armix-menu-category>svg:last-child{width:12px;height:12px;color:#829ba8}
+.armix-menu-back{order:-10}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel[data-armix-menu-page=root]>[data-native-emergency-output]{order:20;color:#ff9b90!important;border-top:1px solid #3a515f!important}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel select{width:100%!important;max-width:100%!important}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel .more-tools-caption{font:400 11px/1.4 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important;color:#9fb5c1!important;padding:4px 8px!important;white-space:normal!important}
+html .app #armix-ribbon-commands #moreTools .arNativeAdvancedRecovery summary{cursor:pointer}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel button:disabled{opacity:.45!important}
+html .app #armix-ribbon-commands.command-bar>button.tool:not(.bank-arrow),html .app #armix-ribbon-commands.command-bar .strip-view-switch>button.tool{
+ font:400 11px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important;
+ flex-shrink:0;white-space:nowrap;gap:5px!important;
+}
+html .app #armix-ribbon-commands.command-bar>:is(#addTrack,#ribbonMainMix){
+ background:#78c8d514!important;border-color:#83c7d344!important;color:#b6edf6!important;border-radius:15px!important
+}
+html .app #armix-ribbon-commands.command-bar .toolbar-select{
+ appearance:none!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' stroke='%239db5c2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")!important;
+ background-position:right 8px center!important;background-repeat:no-repeat!important;padding:0 24px 0 10px!important;
+ font:400 11px "Segoe UI",Arial,sans-serif!important;text-transform:none!important;
+}
+html .app #armix-ribbon-commands .strip-view-switch>button.tool{font-size:11px!important;text-transform:none!important}
+html .app #armix-ribbon-commands .armix-ribbon-options button[aria-pressed=true]{border-color:#65c2cc34;box-shadow:inset 0 1px #c7f6ff24}
+html .app #armix-ribbon-commands .armix-ribbon-player button{flex-shrink:0;transition:filter .12s,transform .12s}
+html .app #armix-ribbon-commands .armix-ribbon-player button:focus-visible{outline-offset:-2px}
+@media(prefers-reduced-motion:reduce){html .app #armix-ribbon-commands .armix-ribbon-player button{transition:none}}
+
+/* Native command order and V6 outline glyphs; no label/handler replacement. */
+html .app #armix-ribbon-commands.armix-ribbon :is(#pluginsButton):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M8%203v5m8-5v5M6%208h12v4a6%206%200%200%201-6%206v4m0-4a6%206%200%200%201-6-6z%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(#sofToggle):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%203v18M12%203v18M19%203v18M3%209h4m3%207h4m3-9h4%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(#wireNavigatorToggle):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%225%22%20cy%3D%225%22%20r%3D%222%22%2F%3E%3Ccircle%20cx%3D%2219%22%20cy%3D%225%22%20r%3D%222%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2219%22%20r%3D%222%22%2F%3E%3Cpath%20d%3D%22M5%207v4l7%204v2m7-10v4l-7%204%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(#wireMatrixToggle):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Crect%20x%3D%223%22%20y%3D%223%22%20width%3D%2218%22%20height%3D%2218%22%20rx%3D%222%22%2F%3E%3Cpath%20d%3D%22M3%209h18M3%2015h18M9%203v18M15%203v18%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(#wireConfigToggle, [data-native-io]):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%203v18M12%203v18M19%203v18M3%209h4m3%207h4m3-9h4%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(#saveScene):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M4%203h13l3%203v15H4zM8%203v7h8V3M8%2021v-7h8v7%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(#recallScene):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2010a9%209%200%201%201%202%208M3%204v6h6%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(#clearCue):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M3%2013v-2a9%209%200%200%201%2018%200v2M3%2013h4v7H5a2%202%200%200%201-2-2zM21%2013h-4v7h2a2%202%200%200%200%202-2z%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(#ribbonMainMix):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M5%203v18M12%203v18M19%203v18M3%209h4m3%207h4m3-9h4%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon :is([data-native-emergency-output]):not(:has(svg,img))::before{content:""!important;display:inline-block!important;position:static!important;width:14px!important;height:14px!important;flex:0 0 14px!important;background:currentColor!important;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%229%22%2F%3E%3Cpath%20d%3D%22M12%207v6m0%204h.01%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat!important;opacity:.9;box-shadow:none!important;border:0!important;transform:none!important}
+html .app #armix-ribbon-commands.armix-ribbon>.tool:not(.bank-arrow){justify-content:center!important}
+html .app #armix-ribbon-commands.armix-ribbon :is(.strip-view-switch,#sofToggle,#addTrack){position:relative}
+html .app #armix-ribbon-commands.armix-ribbon[data-ribbon-tab=mixer] :is(.strip-view-switch,#sofToggle,#addTrack)::after{content:""!important;display:block!important;position:absolute!important;left:-5px!important;top:4px!important;bottom:4px!important;width:1px!important;height:auto!important;background:#7f9ba74d!important;border:0!important;box-shadow:none!important;pointer-events:none}
+html .app #armix-ribbon-commands.armix-ribbon #addTrack{margin-left:0!important}
+html .app #armix-ribbon-commands.armix-ribbon #mixContext{margin-left:auto!important;flex:none}
+@media(max-width:1200px){html .app #armix-ribbon-commands.armix-ribbon[data-ribbon-tab=mixer] :is(.strip-view-switch,#sofToggle,#addTrack)::after{display:none!important}html .app #armix-ribbon-commands.command-bar>button.tool:not(.bank-arrow){padding-inline:7px!important}}
+
+/* Golden local V6 spacing, shared quick navigation and stop-only safety shortcut. */
+html .app .window-title.armix-ribbon-nav{background:linear-gradient(#374d5e,#233541 94%)!important}
+.armix-ribbon-tab{letter-spacing:0!important;text-transform:none!important}
+.armix-ribbon-nav-tools{display:flex;align-items:center;justify-content:flex-end;flex:none;gap:8px;padding:0 6px 0 10px;background:#1b2b35;font:400 10px "Segoe UI",Arial,sans-serif;color:#9bb6c2;letter-spacing:0}
+.armix-ribbon-nav-status{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.armix-ribbon-nav-status::before{content:"";width:6px;height:6px;border-radius:50%;background:#7594a2}
+.armix-ribbon-nav-status.is-playing::before{background:#6fba9d}
+.armix-ribbon-nav-tools button{display:grid;place-items:center;width:27px;height:24px;background:#203541;color:#b3ceda;border:1px solid #405561;border-radius:3px;padding:0}
+.armix-ribbon-nav-tools button svg{width:14px;height:14px}
+.armix-ribbon-nav-tools button:hover:not(:disabled){color:#e0faff;border-color:#68b8cd;background:#2e4c5c}
+.armix-ribbon-nav-tools button:focus-visible{outline:1px solid #73d6e6}
+html .app #armix-ribbon-commands.command-bar.armix-ribbon{padding-left:12px!important}
+html .app #armix-ribbon-commands.command-bar.armix-ribbon[data-ribbon-tab=player]{padding-left:16px!important}
+html .app #armix-ribbon-commands.armix-ribbon>#ribbonEmergency{width:28px!important;min-width:28px!important;padding:0!important;flex:none;color:#e4a29b!important}
+html .app #armix-ribbon-commands.armix-ribbon>#ribbonEmergency svg{width:15px;height:15px}
+html .app #armix-ribbon-commands.armix-ribbon>#ribbonEmergency.is-stopped{color:#e4a29b!important;opacity:1}
+html .app #armix-ribbon-commands.armix-ribbon>#ribbonEmergency[hidden]{display:none!important}
+html .app #armix-ribbon-commands.armix-ribbon>#mixContext{border-left:1px solid #7f9ba74d!important;padding-left:10px!important}
+html .app #armix-ribbon-commands.armix-ribbon>#viewFilter{width:auto!important;max-width:115px!important;min-width:70px!important}
+html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-audio-summary]{display:flex;align-items:center;gap:5px;min-width:0;font:400 11px "Segoe UI",Arial,sans-serif;letter-spacing:0}
+.armix-ribbon-audio-label{color:#9bb1be;font-size:10px;white-space:nowrap}
+.armix-ribbon-audio-value{background:#0d202a66;border:1px solid #83a6b42e;border-radius:14px;padding:5px 10px;color:#d2e2e9;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:13px}
+.armix-ribbon-audio-value[data-audio-value=output]{min-width:80px;max-width:200px}
+html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-audio-summary][data-ribbon-hidden=true]{display:none!important}
+html .app #armix-ribbon-commands .armix-ribbon-scene button{letter-spacing:0!important;text-transform:none!important}
+@media(max-width:1100px){.armix-ribbon-nav-status{display:none}.armix-ribbon-nav-tools{padding-inline:4px}.armix-ribbon-audio-value[data-audio-value=output]{max-width:130px}}
+@media(max-width:650px){html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-audio-summary]{overflow-x:auto;scrollbar-width:thin}.armix-ribbon-audio-label,.armix-ribbon-audio-value{flex:none}}
+
+/* V6 approved local right-hand cluster: 34 x 32px, 13px thin glyphs.
+   No separate web titlebar and no simulated desktop actions. */
+.armix-ribbon-window-controls{display:flex;align-items:stretch;flex:none;position:relative;z-index:10;padding-left:4px;border-left:1px solid #405561;background:#1b2b35;box-sizing:border-box}
+.armix-ribbon-window-controls button{display:grid;place-items:center;width:34px;height:var(--armix-tab-height);min-width:0;padding:0;border:0;border-radius:0;background:transparent;color:#c3d5df;transition:background .1s ease;cursor:pointer}
+.armix-ribbon-window-controls button svg{width:13px;height:13px;stroke-width:1.5;pointer-events:none}
+.armix-ribbon-window-controls button:hover:enabled{background:#405866;color:#fff}
+.armix-ribbon-window-controls button:active:enabled{background:#263d49}
+.armix-ribbon-window-controls #ribbonWinClose:hover:enabled{background:#b44248;color:#fff}
+.armix-ribbon-window-controls button:focus-visible{outline:1px solid #73d6e6;outline-offset:-3px}
+.armix-ribbon-window-controls button:disabled{cursor:default;opacity:.65}
+.armix-ribbon-nav-tools{height:var(--armix-tab-height);align-self:flex-start}
+.armix-ribbon-window-controls{align-self:flex-start}
+@media(max-width:1000px){.armix-ribbon-window-controls button{width:30px}.armix-ribbon-nav-tools{display:none}}
+@media(prefers-reduced-motion:reduce){.armix-ribbon-window-controls button{transition:none}}
+
+/* Local V6 Main Mix indicator: thin mixer glyph on the left. */
+html .app #armix-ribbon-commands.armix-ribbon>#mixContext{display:flex!important;align-items:center;gap:6px}
+html .app #armix-ribbon-commands.armix-ribbon>#mixContext::before{content:"";display:inline-block;width:13px;height:13px;flex:0 0 13px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M5%203v18M12%203v18M19%203v18M3%209h4m3%207h4m3-9h4%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat}
