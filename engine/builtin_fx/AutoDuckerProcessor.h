@@ -86,7 +86,9 @@ public:
     }
     bool queueSettings(const Settings& s,std::uint64_t request) noexcept {
         Edit e{};e.settings=s;e.request=request;e.rate=rate_;
-        return ready_&&request&&s.validSources()&&AutoDuckerCore::prepareSettings(rate_,s.dynamics,e.prepared)&&queue_.push(e);
+        // Structural source edits require a graph transaction, not a scalar mailbox.
+        return ready_&&request&&s.validSources()&&s.sources==accepted_.sources&&
+               s.count==accepted_.count&&AutoDuckerCore::prepareSettings(rate_,s.dynamics,e.prepared)&&queue_.push(e);
     }
     bool pollCompletion(Completion& out) noexcept {
         if(!completion_.pop(out))return false;
@@ -105,6 +107,13 @@ public:
         const auto& s=accepted_.dynamics;
         for(float v:{s.thresholdDb,s.depthDb,s.attackMs,s.holdMs,s.releaseMs,s.hysteresisDb,s.highPassHz,s.lowPassHz})
             w.writeFloat(v);
+    }
+    bool setUnpublishedSettings(const Settings& s) noexcept {
+        AutoDuckerCore::Prepared p{};
+        if(published_||!stateSnapshotQuiescent()||!s.validSources()||
+           !AutoDuckerCore::prepareSettings(ready_?rate_:48000.,s.dynamics,p))return false;
+        if(ready_&&!core_.prepare(rate_,s.dynamics))return false;
+        accepted_=applied_=s;return true;
     }
     bool restoreUnpublishedState(const void* data,int bytes) {
         if(published_||!data||bytes<12||!stateSnapshotQuiescent())return false;
@@ -127,10 +136,7 @@ public:
         d.thresholdDb=in.readFloat();d.depthDb=in.readFloat();d.attackMs=in.readFloat();
         d.holdMs=in.readFloat();d.releaseMs=in.readFloat();d.hysteresisDb=in.readFloat();
         d.highPassHz=in.readFloat();d.lowPassHz=in.readFloat();
-        AutoDuckerCore::Prepared p{};
-        if(!in.isExhausted()||!AutoDuckerCore::prepareSettings(ready_?rate_:48000.,d,p))return false;
-        if(ready_&&!core_.prepare(rate_,d))return false;
-        accepted_=applied_=s;return true;
+        return in.isExhausted()&&setUnpublishedSettings(s);
     }
     void setStateInformation(const void* data,int bytes) override {(void)restoreUnpublishedState(data,bytes);}
 private:

@@ -1348,6 +1348,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
             const auto published=nativePublisher_.commit(
@@ -1395,6 +1398,9 @@ public:
             };
             fx.latency=+[](void* p,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             const auto committed=nativePublisher_.commit(roster,nativeAccepted_.graph.request,
                 revision,ep,epoch(),false,std::move(fx),false,true);
@@ -1644,6 +1650,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
             // Keep old PCM running throughout candidate validation/FX lease
@@ -1741,6 +1750,9 @@ public:
             };
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
@@ -1905,6 +1917,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
             if(beforePublish)beforePublish();
@@ -1982,6 +1997,9 @@ public:
             };
             fx.latency=+[](void* ctx,ChannelId channel) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(channel);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             fx.deviceEpoch=expectedEpoch;
             fx.graphRevision=expectedPcmRevision+1;
@@ -2074,6 +2092,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=expectedEpoch;fx.graphRevision=expectedPcmRevision+1;
             if(beforePublish)beforePublish(); // late PCM publication gate
             const auto published=nativePublisher_.commit(
@@ -2150,6 +2171,9 @@ public:
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             fx.deviceEpoch=ep;fx.graphRevision=expectedPcmRev+1;
             const auto published=nativePublisher_.commit(
                  roster,nativeAccepted_.graph.request,expectedPcmRev,
@@ -2222,6 +2246,9 @@ public:
             };
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             fx.deviceEpoch=ep;
             fx.graphRevision=expectedPcmRev+1;
@@ -2671,6 +2698,9 @@ public:
             fx.latency=+[](void* p,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);
             };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
+            };
             const auto published=nativePublisher_.commit(
                 document.roster,document.request,previous,generation,epoch(),
                 true,std::move(fx));
@@ -3028,6 +3058,9 @@ public:
             };
             fx.latency=+[](void* ctx,ChannelId id) noexcept {
                 return static_cast<DynamicChannelFxLeaseBank*>(ctx)->latencySamples(id);
+            };
+            fx.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+                static_cast<DynamicChannelFxLeaseBank*>(p)->collectPostFaderSidechains(routes);
             };
             const auto applied=nativePublisher_.commit(nativeAccepted_.graph.roster,request,
                 revision,newEpoch,epoch(),true,std::move(fx));

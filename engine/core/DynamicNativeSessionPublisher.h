@@ -32,8 +32,10 @@ public:
         void (*render)(void*,ChannelId,float*,float*,int) noexcept=nullptr;
         std::uint64_t deviceEpoch=0,graphRevision=0;
         int (*latency)(void*,ChannelId) noexcept=nullptr;
+        // CONTROL only: derive sidechain topology from exact owned FX state.
+        void (*sidechains)(void*,std::vector<DynamicSidechainDependency>&)=nullptr;
         bool valid() const noexcept {
-            return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision&&!latency) ||
+            return (!owner&&!context&&!render&&!deviceEpoch&&!graphRevision&&!latency&&!sidechains) ||
                    (owner&&context==owner.get()&&render&&
                     deviceEpoch>0&&graphRevision>0);
         }
@@ -75,7 +77,7 @@ public:
                         std::uint64_t proposedDeviceEpoch,
                         std::uint64_t activeDeviceEpoch,
                         bool allOutputsDisarmed,
-                        FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr},bool verifiedInternalWireOnly=false,
+                        FxPlan fx={nullptr,nullptr,nullptr,0,0,nullptr,nullptr},bool verifiedInternalWireOnly=false,
                         bool verifiedInternalFxOnly=false,
                         const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr) {
         CommitResult report;report.revision=publisher_.lastRevision();
@@ -138,8 +140,19 @@ public:
         next->deviceEpoch=proposedDeviceEpoch;
         next->graphRevision=expectedRevision+1;
         auto prepared=std::make_unique<Prepared>();
+        // FX state is the canonical source of production sidechain routes.
+        // Preserve missing source IDs in processor state, not dangling edges.
+        auto effective=request;
+        if(fx.sidechains){
+            effective.postFaderSidechains.clear();
+            fx.sidechains(fx.context,effective.postFaderSidechains);
+            auto& deps=effective.postFaderSidechains;
+            deps.erase(std::remove_if(deps.begin(),deps.end(),[&](const auto& d){
+                return !roster.find(d.source);
+            }),deps.end());
+        }
         if(!DynamicPreparedMixerBlock::compile(
-              roster,request,prepared->graph,report.graphError)) {
+              roster,effective,prepared->graph,report.graphError)) {
             report.fault=Fault::invalidGraph;return report;
         }
         if(!prepared->graph.prepareLatency([&](ChannelId id) noexcept {

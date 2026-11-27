@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicChannelRoster.h"
+#include "DynamicPreparedMixerBlock.h"
+#include "../builtin_fx/AutoDuckerProcessor.h"
 #include "LiveChannelFxGraph.h"
 #include "../builtin_fx/ChannelHarmonyProcessor.h"
 #include <algorithm>
@@ -415,6 +417,25 @@ public:
             list.push_back(std::move(a));
         }
         return prepare(epoch,revision,list,destination,prior.external_);
+    }
+
+    // CONTROL-only extraction from exact FX leases. Deduplicate the union.
+    void collectPostFaderSidechains(std::vector<DynamicSidechainDependency>& out) const {
+        for(const auto& row:rows_)
+            for(std::size_t slot=0;slot<row.count;++slot){
+                const auto* ducker=dynamic_cast<const armix::builtin_fx::AutoDuckerProcessor*>(
+                    row.owners[slot]->processor.get());
+                if(!ducker)continue;
+                const auto state=ducker->acceptedSettings();
+                for(std::size_t k=0;k<state.count;++k)
+                    out.push_back({ChannelId{state.sources[k]},row.id});
+            }
+        std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){
+            return a.target.value==b.target.value?a.source.value<b.source.value:a.target.value<b.target.value;
+        });
+        out.erase(std::unique(out.begin(),out.end(),[](const auto& a,const auto& b){
+            return a.target==b.target&&a.source==b.source;
+        }),out.end());
     }
 
     // Process each M4 VST exactly once at its target ChannelId. CPU work is

@@ -549,7 +549,7 @@ public:
             }
             auto& sources=sideFrom[t->second];
             if(std::find(sources.begin(),sources.end(),s->second)!=sources.end()||
-               sources.size()>=armix::builtin_fx::AutoDuckerCore::maxSources){
+               sources.size()>=8*armix::builtin_fx::AutoDuckerCore::maxSources){
                 error={DynamicGraphFault::invalidSidechain,dep.target};return false;
             }
             sources.push_back(s->second);sideTo[s->second].push_back(t->second);
