@@ -14,6 +14,7 @@ import json
 import tempfile
 from playwright.sync_api import sync_playwright
 
+from approved_native_wire_gain_smoke import snapshot
 ROOT=Path(__file__).resolve().parents[1]
 CASES=(
  ("armix.builtin.channel-eq.v1","#mxNativePeq"),
@@ -66,6 +67,57 @@ INIT="""(() => {
 })()"""
 
 
+def physical_power_transaction(browser,url):
+    page=browser.new_page(viewport={"width":1366,"height":768})
+    errors=[]
+    page.on("pageerror",lambda error:errors.append(str(error)))
+    try:
+        page.add_init_script(INIT)
+        page.goto(url)
+        page.wait_for_function("()=>window.__fxOutbound?.some(x=>x.name==='arMixFloatingReady')")
+        catalog="armix.builtin.auto-ducker.v1"
+        state=snapshot()
+        instance="physical-ducker-one"
+        for channel in state["graph"]["channels"]:
+            channel["fxRackBypassed"]=False
+        state["graph"]["channels"][0]["inserts"]=[{"id":instance,"catalogId":catalog,"name":"Auto Ducker","bypassed":False}]
+        state["mixerSession"]["channels"]=json.loads(json.dumps(state["graph"]["channels"]))
+        payload={"snapshot":state,"channelId":CHANNEL,"slot":0,"catalogId":catalog,"instanceId":instance}
+        page.evaluate("(p)=>window.__fxDispatch('arMixFloatingOpen',p)",payload)
+        page.locator("#mxNativeDucker").wait_for(state="visible")
+        def click():
+            return page.evaluate("""channel=>{
+                const list=()=>window.__fxOutbound.filter(x=>x.name==='arMixFloatingPower');
+                const before=list().length;
+                window.__ARMIX_NATIVE_M2__.consumeAction({nativeId:channel},"slotPower",{dataset:{slot:"0"}});
+                return {count:list().length-before,payload:list().at(-1)?.payload};
+            }""",CHANNEL)
+        def ack(request):
+            page.evaluate("(a)=>window.__fxDispatch('arMixNativeFxPowerAck',a)",
+                {"requestId":request["requestId"],"ok":True,"channelId":CHANNEL,"bypassed":request["value"]})
+        def publish(value):
+            state["graph"]["channels"][0]["inserts"][0]["bypassed"]=value
+            state["mixerSession"]["channels"]=json.loads(json.dumps(state["graph"]["channels"]))
+            page.evaluate("(s)=>window.__fxDispatch('arMixConsoleSnapshot',s)",state)
+        first=click();assert first["count"]==1 and first["payload"]["value"] is True
+        ack(first["payload"])
+        assert click()["count"]==0,"ACK alone released physical power fence"
+        publish(True)
+        second=click();assert second["count"]==1 and second["payload"]["value"] is False
+        publish(False)
+        assert click()["count"]==0,"snapshot alone released physical power fence"
+        ack(second["payload"])
+        third=click();assert third["count"]==1 and third["payload"]["value"] is True
+        ack(first["payload"])
+        assert click()["count"]==0,"late ACK released newer transaction"
+        ack(third["payload"]);publish(True)
+        assert click()["count"]==1
+        assert not errors,errors
+        print("PASS physical floating FX power ACK/readback order and late receipt fence")
+    finally:
+        page.close()
+
+
 def main():
     spec=importlib.util.spec_from_file_location(
         "approved_bundle",ROOT/"scripts/build_approved_native_gui.py")
@@ -88,6 +140,7 @@ def main():
                 try:
                     url=f"http://127.0.0.1:{server.server_address[1]}/fx-window.html"
                     chrome_reference=None
+                    physical_power_transaction(browser,url)
                     for catalog,selector in CASES:
                         page=browser.new_page(viewport={"width":1580,"height":900},
                                                reduced_motion="reduce")

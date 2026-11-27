@@ -25,6 +25,22 @@
   let current=null,identity=null,busyLoad=null,pending=null;
   let acceptedWorkspace=""; // retained exact workspace, even between snapshots
   let powerSequence=0,pendingPower=null;
+  // Physical power has two independent proofs. An ACK is not a fresh rack
+  // snapshot, especially when child WebView snapshot relay is throttled.
+  const physicalPowerValue=(p,next)=>p.gate==="global"?next?.view.raw?.globalFxBypassed:
+    p.gate==="rack"?next?.channel.fxRackBypassed:next?.insert.bypassed;
+  function settlePhysicalPower(){
+    const p=pendingPower;
+    if(!p||p.logical)return;
+    if(!current||current.kind!=="CHANNEL_ID"||
+       current.view.device.epoch!==p.epoch||
+       protocol.nativeHardwareConfiguration(current.view.device)!==p.hardware||
+       identity?.instanceId!==p.instance){
+      pendingPower=null;
+      return;
+    }
+    if(p.acked&&physicalPowerValue(p,current)===p.value)pendingPower=null;
+  }
   const banner=document.getElementById("fxWindowStatus");
   const inform=message=>{
     if(banner){banner.textContent=message;banner.hidden=false;}
@@ -112,19 +128,23 @@
          (gate==="rack"&&verified.channel.fxRackBypassed!==true)||
          (gate==="global"&&verified.view.raw?.globalFxBypassed!==true)))
         return true;
-      if(pendingPower&&Date.now()-pendingPower.sentAt<8000)return true;
+      settlePhysicalPower();
+      if(pendingPower)return true;
       // No crypto.randomUUID dependency: JUCE WebView2 origins can restrict
       // Web Crypto. Native still verifies exact channel/slot/instance/epoch.
       const requestId="fx-window-"+Date.now().toString(36)+"-"+(++powerSequence);
-      pendingPower={id:requestId,gate,sentAt:Date.now(),
-        logical:verified.kind!=="CHANNEL_ID"};
+      const value=gate==="slot"?!verified.insert.bypassed:false;
+      pendingPower={id:requestId,gate,value,acked:false,
+        logical:verified.kind!=="CHANNEL_ID",epoch:verified.view.device.epoch,
+        hardware:protocol.nativeHardwareConfiguration(verified.view.device),
+        instance:identity.instanceId};
       backend.emitEvent("arMixFloatingPower",{
         requestId,channelId:identity.channelId,slot:identity.slot,
         instanceId:identity.instanceId,catalogId:identity.catalogId,gate,
         deviceEpoch:verified.view.device.epoch,
         graphRevision:verified.view.graph.revision,
         workspaceToken:verified.view.workspaceToken||"",
-        value:gate==="slot"?!verified.insert.bypassed:false,
+        value,
         logical:verified.kind!=="CHANNEL_ID"
       });
       window.setTimeout(()=>{
@@ -181,6 +201,7 @@
     if(!identity||Object.keys(proposed).some(key=>identity[key]!==proposed[key]))
       identity=proposed;
     current=next;
+    settlePhysicalPower();
     acceptedWorkspace=next.view.workspaceToken||"";
     if(pending===proposed.catalogId) {
       // A repeated rack double-click must re-show the SAME exact editor
@@ -258,6 +279,7 @@
     if(!identity)return;
     const next=project(snapshot,identity);
     current=next;
+    settlePhysicalPower();
     if(!next)inform("FX disconnected · waiting for a matching saved editor");
   });
   const powerReceipt=ack=>{
@@ -267,10 +289,14 @@
       (pendingPower.gate==="global"&&
        ack.requestId==="global-fx-"+pendingPower.id);
     if(!matches)return; // another editor's ACK is not this window's ACK
-    pendingPower=null;
-    if(ack.ok!==true)inform("FX power rejected · refresh accepted native FX Rack");
-    // Successful ACK is not a claim of PCM state: the later native
-    // arMixConsoleSnapshot repaints the editor from accepted readback.
+    if(ack.ok!==true||ack.bypassed!==pendingPower.value||
+       (pendingPower.gate!=="global"&&ack.channelId!==identity?.channelId)){
+      pendingPower=null;
+      inform("FX power rejected · refresh accepted native FX Rack");
+      return;
+    }
+    pendingPower.acked=true;
+    settlePhysicalPower(); // handles snapshot-before-ACK as well as ACK-before-snapshot
   };
   backend.addEventListener("arMixNativeFxPowerAck",powerReceipt);
   backend.addEventListener("arMixGlobalFxAck",powerReceipt);
