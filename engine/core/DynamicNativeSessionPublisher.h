@@ -185,7 +185,9 @@ public:
         }
         if(!prepared->graph->prepareLatency([&](ChannelId id) noexcept {
                return fx.latency?fx.latency(fx.context,id):0;
-           },request.maxScratchBytes,report.graphError)) {
+           },request.maxScratchBytes,report.graphError,
+           fx.sidechains?SidechainTimingPolicy::causalLive:
+                         SidechainTimingPolicy::requireCoincidence)) {
             report.fault=Fault::invalidGraph;return report;
         }
         // Install all eligible external targets on the UNPUBLISHED graph.

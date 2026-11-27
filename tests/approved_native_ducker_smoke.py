@@ -106,6 +106,15 @@ def main():
         req=latest(page,"nativeDuckerSources")
         assert req and set(req["sources"])=={SOURCE,MIC2}
         assert editor.locator(".mx-ducker-source").count()==0,"optimistic trigger readback"
+        emit(page,"arMixBuiltinDuckerAck",packet(req,status="REJECTED",errorCode="AUTO_DUCKER_ROUTING_CYCLE"))
+        notice=editor.locator(".mx-ducker-picker-notice")
+        assert notice.is_visible() and "routing cycle" in notice.inner_text()
+        assert first.is_checked() and editor.locator(f'.mx-ducker-option[data-source-id="{MIC2}"] input').is_checked()
+        assert editor.locator(".mx-ducker-source").count()==0
+        editor.get_by_role("button",name="Apply",exact=True).click()
+        retry=latest(page,"nativeDuckerSources")
+        assert retry["requestId"]!=req["requestId"] and retry["sources"]==req["sources"]
+        req=retry
         g["revision"]="4";state["mixerSession"]["routeRevision"]="4"
         emit(page,"arMixConsoleSnapshot",state)
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))

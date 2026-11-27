@@ -47,6 +47,10 @@ struct DynamicPlayerPcmBlock final {
 // removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
 // This is an explicit prepared-graph policy, not a realtime control.
 enum class MonitorLatencyPolicy : std::uint8_t { aligned, independent };
+// Post-fader dynamics have two explicit timing contracts. Strict is useful
+// for callers requiring sample coincidence; live ducking consumes the actual
+// causal key, including source FX latency, without retiming the audible graph.
+enum class SidechainTimingPolicy : std::uint8_t { requireCoincidence, causalLive };
 // Control-only dependency; never an audible send.
 struct DynamicSidechainDependency final {ChannelId source{},target{};};
 struct DynamicGraphRequest final {
@@ -374,7 +378,8 @@ public:
     // including a destination's own hardware capture and PRE-fader sends.
     // A failure discards the unpublished candidate; the old graph stays live.
     template<class Latency>
-    bool prepareLatency(Latency&& latency,std::size_t budget,DynamicGraphError& error) {
+    bool prepareLatency(Latency&& latency,std::size_t budget,DynamicGraphError& error,
+                        SidechainTimingPolicy sidechainTiming=SidechainTimingPolicy::requireCoincidence) {
         std::vector<int> arrival(lanes_.size(),0),output(lanes_.size(),0);
         std::size_t bytes=scratch_.size()*sizeof(float);
         edgeDelays_.resize(edges_.size());physicalDelays_.resize(lanes_.size());
@@ -400,8 +405,12 @@ public:
             for(std::size_t e=lanes_[i].first;e<lanes_[i].last;++e)
                 arrival[edges_[e].destination]=std::max(arrival[edges_[e].destination],output[i]);
         }
-        // Conservative admission until per-insert sidechain PDC is available:
-        // a delayed key/target chain cannot silently acquire a block delay.
+        // Strict clients retain the original coincidence fence. Native live
+        // ducking instead uses actual post-fader PCM from this callback in DAG
+        // order; it adds neither program delay nor a previous-block key.
+        // A latent source can trigger later (or earlier than a latent target).
+        // Audio fan-in/output PDC below is identical in both modes.
+        if(sidechainTiming==SidechainTimingPolicy::requireCoincidence)
         for(const auto i:renderOrder_){
             const auto& lane=lanes_[i];
             for(auto k=lane.keyFirst;k<lane.keyLast;++k){

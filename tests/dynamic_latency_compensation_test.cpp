@@ -87,8 +87,105 @@ static void verifyExactHistoryAndSend() {
     }
     std::puts("PASS: 9000 variable history blocks and 4000 exact stereo SEND blocks");
 }
+
+ // FIELD regression: apply a post-fader key with 1408 samples of actual
+ // source FX latency while output is armed. No PDC retiming, no callback
+ // allocation, no previous-block detector, no fake key or audible send.
+static void verifyLiveDuckerCausalTiming(){
+    using armix::builtin_fx::AutoDuckerCore;
+    constexpr int delay=1408;
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,3> edits{};
+    for(int i=0;i<3;++i){
+        auto& e=edits[i];e.kind=ChannelEdit::Kind::add;e.position=i;
+        e.role=i==2?ChannelRole::main:ChannelRole::input;
+        e.format=ProcessingFormat::stereo;e.text=i==0?"MUSIC":i==1?"CH 9":"MAIN";
+        e.connectMainOnCreate=i!=2;
+    }
+    const auto made=roster.edit(0,edits);assert(made.ok());
+    const auto music=made.createdIds[0],voice=made.createdIds[1];
+    struct Fx {
+        ChannelId music{},voice{};
+        armix::dsp::StereoLatencyDelay sourceDelay;
+        AutoDuckerCore core;
+        bool selected=false,expectKey=false;
+        int time=0,firstKey=-1;
+        void render(ChannelId id,float* l,float* r,int n) noexcept {
+            if(id==voice){
+                for(int i=0;i<n;++i)sourceDelay.process(l[i],r[i]);
+            }else if(id==music){
+                const auto key=AutoDuckerKeyScope::findPostFader(voice.value,n);
+                assert(key.valid()==expectKey);
+                for(int i=0;i<n;++i){
+                    assert(std::abs(l[i]-.25f)<1.e-6f);
+                    if(key.valid()){
+                        const int sample=time+i-delay;
+                        const float expected=sample<0?0.f:(sample%48<24?.5f:-.5f);
+                        assert(std::abs(key.left[i]-expected)<1.e-6f);
+                        if(firstKey<0&&key.left[i]!=0.f)firstKey=time+i;
+                    }
+                }
+                core.process(l,r,n,key);
+            }
+        }
+    };
+    auto fx=std::make_shared<Fx>();fx->music=music;fx->voice=voice;
+    assert(fx->sourceDelay.prepare(delay)&&fx->core.prepare(48000));
+    DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=64;
+    req.sources={{music,0,1,true},{voice,2,3,true}};
+    DynamicNativeSessionPublisher pub;
+    DynamicNativeSessionPublisher::FxPlan plan;
+    plan.owner=fx;plan.context=fx.get();plan.deviceEpoch=41;plan.graphRevision=1;
+    plan.latency=+[](void* p,ChannelId id) noexcept{return id==static_cast<Fx*>(p)->voice?1408:0;};
+    plan.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept{static_cast<Fx*>(p)->render(id,l,r,n);};
+    plan.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& deps){
+        auto& f=*static_cast<Fx*>(p);if(f.selected)deps.push_back({f.voice,f.music});
+    };
+    assert(pub.commit(roster,req,0,41,41,true,plan).ok());
+    assert(pub.latencySamples(41,1)==delay);
+    std::array<float,64> m{},v{},l{},r{};m.fill(.25f);
+    const float* pins[]{m.data(),m.data(),v.data(),v.data()};
+    const auto render=[&](int n){
+        for(int i=0;i<n;++i)v[i]=(fx->time+i)%48<24?.5f:-.5f;
+        const auto before=allocations;
+        assert(pub.render(41,pins,4,l.data(),r.data(),n,false,
+            [](ChannelId,float*,float*,int) noexcept{}));
+        assert(allocations==before);
+        // The original audible PDC is retained; first signal must not
+        // emerge early because a control-only dependency was published.
+        for(int i=0;i<n;++i)if(fx->time+i<delay)
+            assert(l[i]==0.f&&r[i]==0.f);
+        fx->time+=n;
+    };
+    for(int i=0;i<5;++i)render(64);
+    fx->selected=true;plan.graphRevision=2;
+    assert(pub.commit(roster,req,1,41,41,false,plan,false,true,nullptr,nullptr,true).ok());
+    assert(pub.latencySamples(41,2)==delay);
+    fx->expectKey=true;
+    for(int i=0;i<150;++i)render(i%2?64:37);
+    assert(fx->firstKey==delay&&fx->core.gain()<.4f);
+    // A cycle is still rejected without changing the accepted revision.
+    auto invalid=plan;invalid.graphRevision=3;
+    invalid.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& deps){
+        auto& f=*static_cast<Fx*>(p);deps.push_back({f.voice,f.music});deps.push_back({f.music,f.voice});
+    };
+    const auto rejected=pub.commit(roster,req,2,41,41,false,invalid,false,true,nullptr,nullptr,true);
+    assert(!rejected.ok()&&rejected.graphError.fault==DynamicGraphFault::cycle);
+    assert(pub.acceptedRevision()==2);
+    render(64);
+    // Clear sources live; retained DSP releases smoothly (not a reset).
+    fx->selected=false;plan.graphRevision=3;
+    assert(pub.commit(roster,req,2,41,41,false,plan,false,true,nullptr,nullptr,true).ok());
+    fx->expectKey=false;
+    const float before=fx->core.gain();render(37);
+    assert(fx->core.gain()>before&&fx->core.gain()<1.f);
+    assert(pub.latencySamples(41,3)==delay);
+    std::puts("PASS: live causal post-fader Ducker, 1408-sample source latency, stable PDC and cycle rollback");
+}
+
 int main(){
     verifyExactHistoryAndSend();
+    verifyLiveDuckerCausalTiming();
     {
         using Edit=MonitorTimingEdit;
         const std::array pins{0,1,4,5,8,9};
