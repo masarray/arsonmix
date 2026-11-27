@@ -7570,8 +7570,11 @@ test("RTR integration preserves monitor timing, Additional Output, performance a
   assert.match(b,/data-audio-extra-output/);
   assert.match(b,/data-audio-tab="performance"/);
   const rack=b.slice(b.indexOf("function requestRackFile("),b.indexOf("const nativeHooks="));
-  assert.ok(rack.indexOf('inlineFxClip?.closeRackEditors([identity.channelId])')>=0);
-  assert.ok(rack.indexOf('inlineFxClip?.closeRackEditors([identity.channelId])')<rack.indexOf('action:"fxRackFile"'));
+  assert.doesNotMatch(rack,/closeRackEditors|retirePendingRackEditor/);
+  const receipt=b.slice(b.indexOf('backend.addEventListener("arMixFxRackFileResult"'),b.indexOf('backend.addEventListener("arMixNotice"'));
+  assert.ok(receipt.indexOf('inlineFxClip?.closeRackEditors([pending.channelId])')>receipt.indexOf('receipt.phase==="COMPLETED"'));
+  assert.match(receipt,/receipt\?\.requestId!==pending\.requestId/);
+  assert.match(receipt,/receipt\.channelId!==pending\.channelId/);
   const live=m.slice(m.indexOf("bool canCreateLiveSession("),m.indexOf("bool liveNewSessionLeaseMatches("));
   assert.match(live,/!fxRackFileChooser_/);
 });
@@ -7586,7 +7589,7 @@ test("intentional rack edits retire only affected pending native HWND feedback",
  const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
  assert.ok(edit.indexOf("retirePendingRackEditor(")>edit.indexOf('decision.kind!=="READY"'));
  assert.ok(edit.indexOf("retirePendingRackEditor(")<edit.indexOf("controller.intent("));
- assert.match(b,/retirePendingRackEditor\(\[identity.channelId\]\)/);
+ assert.match(b,/retirePendingRackEditor\(\[pending.channelId\]\)/);
  assert.match(b,/retirePendingRackEditor\(\);\s*inlineFxClip\?\.closeRackEditors\(\)/);
 });
 
@@ -8146,8 +8149,8 @@ test("Channel context menu exposes non-destructive FX save and real native recei
  assert.match(b,/arMixFxRackFileResult/);
  assert.match(n,/emitFxRackFileResult\(args,"CHOOSER"/);
  assert.match(n,/rackFileTargetAvailable\(ep,rev,roster,channel\)/);
- assert.match(n,/AlertWindow::showOkCancelBox/);
- assert.match(n,/if\(choice==1\)perform\(true\)/);
+ assert.match(n,/fxRackConsent_=std::make_unique<ArSonRecoveryNotice>/);
+ assert.match(n,/if\(accepted\)perform\(true\)/);
  assert.equal(protocol.operatorMessage("FX rack file: Disarm MAIN and STREAM; use a current native rack"),"FX rack file: Disarm MAIN and STREAM; use a current native rack");
  assert.equal(protocol.operatorMessage("FX rack file: Opening file dialog…"),"FX rack file: Opening file dialog…");
  assert.match(n,/if\(archived&&deactivate\)/);

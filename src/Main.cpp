@@ -208,8 +208,9 @@ class ArSonRecoveryNotice final : public juce::DocumentWindow
 {
 public:
     ArSonRecoveryNotice(const juce::String& title,const juce::String& message,
-            const juce::String& primary,const juce::String& cancel,std::function<void(bool)> onChoice)
-        : DocumentWindow("ArSonMix recovery",juce::Colour(0xff101921),closeButton),
+            const juce::String& primary,const juce::String& cancel,std::function<void(bool)> onChoice,
+            const juce::String& windowName="ArSonMix recovery")
+        : DocumentWindow(windowName,juce::Colour(0xff101921),closeButton),
           panel_(title,message,primary,cancel),onChoice_(std::move(onChoice))
     {
         setLookAndFeel(&caption_);
@@ -1122,6 +1123,7 @@ private:
     armix::session::NativeIoDefaults ioDefaults_{machineSettingsDirectory()};
     std::unique_ptr<juce::FileChooser> namedIoFileChooser_;
     std::unique_ptr<juce::FileChooser> fxRackFileChooser_;
+    std::unique_ptr<ArSonRecoveryNotice> fxRackConsent_;
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
@@ -6628,6 +6630,7 @@ private:
                     if(!safe||safe->sessionLifecycleShuttingDown_)return;
                     const auto finish=[safe,args](const juce::String& phase,const juce::String& message){
                         if(!safe)return;
+                        safe->fxRackConsent_.reset();
                         safe->fxRackFileChooser_.reset();
                         safe->emitFxRackFileResult(args,phase,message);
                     };
@@ -6706,14 +6709,17 @@ private:
                         return finish("FAILED","FX rack file: Audio configuration is not ready; retry");
                     // File picker is already closed. Cancel leaves audio and rack
                     // unchanged. An explicit OK is required to disarm both outputs.
-                    juce::AlertWindow::showOkCancelBox(juce::MessageBoxIconType::QuestionIcon,
-                        "FX rack file",
-                        "MAIN and additional playback output must be muted briefly to safely save or restore FX state. They will stay muted until you explicitly Resume. Continue?",
-                        "Mute & continue","Cancel",safe.getComponent(),
-                        juce::ModalCallbackFunction::create([perform,finish](int choice){
-                            if(choice==1)perform(true);
+                    safe->fxRackConsent_=std::make_unique<ArSonRecoveryNotice>(
+                        "Save / Open FX Rack",
+                        "MAIN and additional playback output must be muted to safely save or restore FX state. They will stay muted until you explicitly Resume. Continue?",
+                        "Mute & continue","Cancel",[perform,finish](bool accepted){
+                            if(accepted)perform(true);
                             else finish("CANCELLED","FX rack file: Cancelled; rack unchanged");
-                        }));
+                        },"ArSonMix · FX Rack");
+#if JUCE_WINDOWS
+                    if(!armix::ui::attachOwnedFloatingWindow(*safe->fxRackConsent_,*safe.getComponent()))
+                        return finish("FAILED","FX rack file: Could not attach safety confirmation");
+#endif
                 });
             });
     }
