@@ -3541,9 +3541,11 @@ private:
         ack->setProperty("graphRevision",graph.getProperty("revision","0"));
         ack->setProperty("rosterRevision",graph.getProperty("rosterRevision","0"));
         ack->setProperty("productionCallbackLive",false);
-        if(request.getProperty("operation","").toString()=="LOAD_INSERT" ||
-           (translated.ok() && translated.translated.getProperty("operation","").toString()=="NATIVE_LOAD_INSERT")) {
-            diagnostics_.record(nativeStillAdmitted?"NATIVE_FX_INSERT_ACCEPTED":"NATIVE_FX_INSERT_REJECTED",
+        const auto operation=request.getProperty("operation","").toString();
+        if(operation=="LOAD_INSERT"||operation=="MOVE_INSERT"||operation=="REMOVE_INSERT") {
+            const auto event=operation=="LOAD_INSERT"?"NATIVE_FX_INSERT":
+                operation=="MOVE_INSERT"?"NATIVE_FX_MOVE":"NATIVE_FX_REMOVE";
+            diagnostics_.record(juce::String(event)+(nativeStillAdmitted?"_ACCEPTED":"_REJECTED"),
                 ack->getProperty("errorCode").toString()+
                 " | secondaryArmed="+juce::String(engine_.secondaryArmed()?"YES":"NO"));
         }
@@ -8827,7 +8829,7 @@ private:
                 // producer state once per successful gesture, never on hover.
                 emitApprovedNativeSnapshot();
             }
-            if(applied)diagnostics_.record("NATIVE_FX_POWER",
+            diagnostics_.record(applied?"NATIVE_FX_POWER":"NATIVE_FX_POWER_REJECTED",
                 rawId.toString()+(action=="routingNativeFxRackBypass"?" rack":" insert")+
                 (static_cast<bool>(value)?" BYPASS":" ENABLE"));
             return;

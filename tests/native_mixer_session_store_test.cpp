@@ -2605,14 +2605,32 @@ static void verifyLiveInsertWithSecondaryMainTap(){
     render();assert(render()>.01f);
     const auto state=mixer.nativeBusStatus();
     const auto channels=state.getProperty("channels",{});assert(channels.isArray());
-    bool found=false;
-    for(const auto& row:*channels.getArray())if(row.getProperty("id","").toString()=="16"){
-        const auto rack=row.getProperty("inserts",{});assert(rack.isArray()&&rack.size()==2);
-        assert(rack[0].getProperty("id",{}).toString()=="armix.builtin.auto-ducker.v1");
-        assert(rack[1].getProperty("id",{}).toString()=="armix.builtin.channel-eq.v1");
-        found=true;
-    }
-    assert(found);
+    const auto rackFor=[](const juce::var& rows,std::uint64_t channel){
+        const juce::String id(std::to_string(channel));
+        for(const auto& row:*rows.getArray())
+            if(row.getProperty("id","").toString()==id)
+                return row.getProperty("inserts",{});
+        return juce::var{};
+    };
+    const auto rack=rackFor(channels,16);
+    assert(rack.isArray()&&rack.size()==2);
+    assert(rack[0].getProperty("id",{}).toString()=="armix.builtin.auto-ducker.v1");
+    assert(rack[1].getProperty("id",{}).toString()=="armix.builtin.channel-eq.v1");
+    const auto token=rack[0].getProperty("instanceId",{}).toString();
+    const auto ready=revisions();
+    assert(mixer.bypassNativeInsert(pins.epoch,ready[0],{16},0,token,true));
+    assert(!mixer.editNativeFxRack(pins.epoch,ready[0],ready[1],{16},0,
+        "obsolete-token",{2},0).accepted);
+    assert(revisions()==ready);
+    assert(mixer.editNativeFxRack(pins.epoch,ready[0],ready[1],{16},0,
+        token,{2},0).accepted);
+    const auto movedRows=mixer.nativeBusStatus().getProperty("channels",{});
+    const auto destination=rackFor(movedRows,2);
+    assert(destination.isArray()&&destination.size()==1);
+    assert(destination[0].getProperty("instanceId",{}).toString()==token);
+    assert(bool(destination[0].getProperty("bypassed",false)));
+    assert(rackFor(movedRows,16).size()==1);
+    render();assert(render()>.01f);
     std::cout<<"LIVE_INSERT_SECONDARY_MAIN_TAP_PASS\n";
 }
 int main(){

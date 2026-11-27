@@ -1836,7 +1836,7 @@ test("Native FX GUI routes through ChannelId PCM with no operator MONITOR ritual
    assert.match(install,/attachNativeInsert\([\s\S]*allOutputsDisarmed\(\)/);
  }
  assert.match(pub,/independentMonitorPublished_ \|\|/);
- assert.match(main,/NATIVE_FX_INSERT_REJECTED/);
+ assert.match(main,/NATIVE_FX_INSERT/);
 });
 test("Native VST3 insert ACK + readback distinguishes vendor catalog key from live instance token",()=>{
   const base=acceptedFixture();
@@ -5075,7 +5075,7 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
    "globalPowerSettlement","m4SlotPowerAckResult","m4SlotPowerSettlement"])
    assert.match(bridge,new RegExp("fxRackVM\\."+name+"\\("));
  assert.match(bridge,/const current=controller\?\.state\(\)\?\.current;\s*const button=document\.getElementById\?\.\("globalFxToggle"\)/);
- assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{\s*onNativeReadback\(next,confirmed\);/);
+ assert.match(bridge,/onAccepted:\(next,confirmed\)=>\{[\s\S]*?onNativeReadback\(next,confirmed\);/);
  assert.match(bridge,/fxRackVM\.nativeEditorAckResult\(pendingFxEditorAck,null,accepted,/);
  assert.match(bridge,/if\(fresh\)p\.lease=fresh;/);
  assert.match(bridge,/pendingFxEditorAck=null;\s*nativeToast\("FX editor unavailable · accepted instance changed"\);/);
@@ -6430,7 +6430,7 @@ test("G-MV34 native/global positive FX ACK wins across duplicate negative ACK",(
  const source=read("web/approved-fx-rack-view-model.js"),
    bridge=read("web/approved-native-bridge.js");
  assert.equal((source.match(/function nativePhysicalFxReady\(/g)||[]).length,1);
- assert.match(bridge,/fxRackVM\.nativePowerSettlement\(pendingNativeFxPower,next,/);
+ assert.match(bridge,/fxRackVM\.nativePowerSettlement\(pending,next,hardwareConfiguration\)/);
  assert.match(bridge,/fxRackVM\.nativeInsertSettlement\(pendingFxInsert,next,confirmed,/);
  assert.match(bridge,/const hardwareConfiguration=protocol\.nativeHardwareConfiguration\(accepted\?\.device\)/);
  assert.match(bridge,/pendingGlobalFx=\{requestId,bypassed:plan\.bypassed,acked:false,\.\.\.ctx\}/);

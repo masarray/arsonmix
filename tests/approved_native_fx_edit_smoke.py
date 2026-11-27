@@ -24,10 +24,15 @@ def main():
                 if(name==='arMixAction')window.__actions.push(payload);},
                 ...window.__nativeListenerMethods}};""")
             page.goto((out/'index.html').as_uri());page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
-            state=snapshot();state['graph']['capabilities']['supportedOps']+=['MOVE_INSERT','REMOVE_INSERT']
+            state=snapshot();state['graph']['capabilities']['supportedOps']+=['LOAD_INSERT','MOVE_INSERT','REMOVE_INSERT']
             state['graph']['channels'][0]['inserts']=[
                 {'id':'actual-a','catalogId':'a','name':'ArSonEQ','bypassed':False},
                 {'id':'actual-b','catalogId':'b','name':'ArSonKuPik','bypassed':True}]
+            state["globalFxBypassed"]=False
+            state["secondaryMainReady"]=True
+            for channel in state["graph"]["channels"]:
+                channel["fxRackBypassed"]=False
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
             emit(page,'arMixConsoleSnapshot',state)
             def row(channel,slot):return page.locator(f'#tracks .strip[data-id="{channel}"] .fxslot-row[data-slot="{slot}"]')
             def move(source,slot,destination,target_slot,after=False):
@@ -49,6 +54,63 @@ def main():
                 state['mixerSession'].update(routeRevision=n,rosterRevision=n,channels=copy.deepcopy(state['graph']['channels']))
                 ack(page,state,request);emit(page,'arMixConsoleSnapshot',state)
                 page.wait_for_function('()=>!window.__ARMIX_NATIVE_M2__.state().pending')
+            # A failed insert used to trigger a strip rebuild and another
+            # subscribe each time the same snapshot arrived from native.
+            emit(page,"arMixCatalog",{"items":[],"builtIns":[
+                {"id":"armix.builtin.auto-ducker.v1","name":"Auto Ducker","category":"Dynamics"}
+            ]})
+            row(1,2).locator(".fx-pick").click()
+            page.get_by_role("button",name="Auto Ducker",exact=False).click()
+            insertion=page.evaluate("()=>window.__nativeIntents.at(-1)")
+            assert insertion["operation"]=="LOAD_INSERT" and insertion["payload"]["slot"]==2
+            old_row=row(1,0).element_handle()
+            emit(page,"arMixConsoleAck",{"requestId":insertion["requestId"],"status":"REJECTED",
+                "errorCode":"AUTO_DUCKER_HOST_UNAVAILABLE","deviceEpoch":state["device"]["epoch"],
+                "graphRevision":state["graph"]["revision"],"rosterRevision":state["graph"]["rosterRevision"]})
+            for _ in range(3):
+                emit(page,"arMixConsoleSnapshot",state)
+            assert old_row.evaluate("(row)=>row.isConnected"),"rejection remounted the FX rack"
+            assert "could not be added" in page.locator("#armixNativeToast").inner_text()
+            assert page.locator("#fastClose").is_visible()
+            page.locator("#fastClose").click()
+            page.locator("#armixNativeToast").evaluate("(el)=>el.hidden=true")
+            assert row(1,2).locator(".fx-pick.empty").is_visible()
+
+            def click_power(slot):
+                row(1,slot).locator('[data-action="slotPower"]').click()
+                action=page.evaluate("()=>window.__actions.at(-1)")
+                assert action["action"]=="routingNativeFxInsertBypass"
+                return action
+
+            def send_power_ack(action):
+                emit(page,"arMixNativeFxPowerAck",{"requestId":action["requestId"],
+                    "channelId":action["channelId"],"ok":True,"bypassed":action["value"]})
+
+            def publish_power(slot,value):
+                state["graph"]["channels"][0]["inserts"][slot]["bypassed"]=value
+                state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+                emit(page,"arMixConsoleSnapshot",state)
+
+            # A different slot remains editable before the first slot is
+            # confirmed. Deliver first slot snapshot before its ACK.
+            power=click_power(0)
+            other=click_power(1)
+            assert power["insertId"]=="actual-a" and power["value"] is True
+            assert other["insertId"]=="actual-b" and other["value"] is False
+            publish_power(0,True)
+            send_power_ack(power)
+            emit(page,"arMixConsoleSnapshot",state)
+            send_power_ack(other)
+            publish_power(1,False)
+            retry=click_power(0)
+            assert retry["requestId"]!=power["requestId"] and retry["value"] is False
+            send_power_ack(retry)
+            publish_power(0,False)
+            publish_power(1,True)
+            assert row(1,0).get_attribute("data-fx-slot-enabled")=="true"
+            assert row(1,1).get_attribute("data-fx-slot-enabled")=="false"
+            page.evaluate("()=>window.__nativeIntents.length=0")
+
             # Escape cancels presentation without committing an audio edit.
             assert page.locator('.fx-grip').count()==0,'retired handle must never appear'
             surface=row(1,0).locator('.fx-pick').bounding_box();assert surface
