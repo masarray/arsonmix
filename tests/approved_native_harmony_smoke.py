@@ -465,11 +465,22 @@ def main():
                 assert "conic-gradient" in arc["groove"],arc
                 assert "conic-gradient" in arc["level"],arc
                 assert "radial-gradient" in arc["mask"],arc
-                dial.evaluate("""e=>{
-                    e.value='75';e.dispatchEvent(new Event('input',{bubbles:true}));
-                }""")
+                dial.hover()
+                # 10 wheel notches of 3 percent; each held latest value is native-bound.
+                # Playwright wheel is asynchronous. Verify each actual
+                # trusted event updates the visible draft BEFORE ACK.
+                for i in range(1,11):
+                    page.mouse.wheel(0,-120)
+                    page.wait_for_function("""v=>Math.abs(parseFloat(document.querySelector(
+                      '.mx-harm-slider input[data-field="wet"]').parentElement.style
+                      .getPropertyValue('--dial-sweep'))-v)<.001""",arg=(45+3*i)*2.7)
+                first_wet=last_action(page,"nativeHarmonySetSettings")
+                assert abs(first_wet["settings"]["wet"]-.48)<.0001,first_wet
+                apply_edit(page,state,{**locked,"wet":first_wet["settings"]["wet"]},7,0)
+                page.wait_for_function("""id=>window.__actions.filter(a=>a.action==='nativeHarmonySetSettings')
+                  .at(-1)?.requestId!==id""",arg=first_wet["requestId"])
                 wet_edit=last_action(page,"nativeHarmonySetSettings")
-                assert abs(wet_edit["settings"]["wet"]-.75)<.0001
+                assert abs(wet_edit["settings"]["wet"]-.75)<.0001,wet_edit
                 changed={**locked,"wet":.75}
                 apply_edit(page,state,changed,7,0)
                 arc2=dial_visual()

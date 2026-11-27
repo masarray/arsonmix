@@ -1,0 +1,31 @@
+# Auto Ducker — PRD / ARD / TRD and qualification
+
+> **Product direction superseded:** [Operator UX V2](AUTO_DUCKER_OPERATOR_UX_V2.md) defines multi-source logical channels/buses and selectable signal taps. The single physical-source implementation below remains historical candidate evidence, not release scope.
+Status: **foundation candidate, not an exposed product FX**. Base main 379e867985bb6bab8e07297ba7a8c44925b22b2d. No hardware/audio listening claim.
+
+## PRD
+User installs Auto Ducker on Music, chooses a different logical input (Mic/Host), and receives natural voice-over ducking in MAIN and downstream stream outputs. Mic PCM and manual faders remain unchanged. No gate-like chopping. A compact editor should expose source, reduction, sensitivity, attack, hold, release, key activity and actual gain reduction; advanced controls hysteresis and detector HP/LP. Presets: Radio (-12 dB, 18/220/480 ms); Gentle (-6 dB, 35/280/650 ms); Announcement (-18 dB, 10/250/450 ms). Presets other than default are proposed, not yet implemented or listening-qualified. Invalid/missing/self key must fail open (smooth unity) and be shown explicitly. Stable ChannelId, not label, device pin or strip ordinal. V1 supports physical input key; group/return/player key is deferred until causal routing is specified. No promise of semantic VAD; level-based speech-band detector can still trigger on speech-like noise.
+
+## Global evidence
+- Yamaha live ducker: https://manual.yamaha.com/pa/pv/pvd_cg/en/02_AudioComponent_en.html (key-in/range/attack/hold/release)
+- OBS: https://obsproject.com/kb/compressor-filter/ (live source-controlled ducking)
+- Adobe: https://helpx.adobe.com/au/audition/desktop/editing-audio-files/essential-sound-panel.html (operator simplicity; offline workflow only)
+- Giannoulis, Massberg, Reiss, JAES 2012: https://aes.org/publications/elibrary/elibrary-page/?id=16354 (dynamics topology and smoothing)
+Design values are engineering starting points, not externally validated listening results.
+
+## ARD
+One native ordered stereo gain-cell insert; sidechain is a read-only control signal and never an audible send. Production owner remains DynamicPreparedMixerBlock + DynamicChannelFxLeaseBank + native FX registry. Do not use Harmony's order-dependent post-FX observer as a same-block detector; avoid extra callback, UI meter polling, device restart, new shared global state or ASIO/WASAPI-specific paths.
+Candidate host integration: callback-scoped, order-independent read-only physical-source views keyed by stable ChannelId, resolved before insert processing; no self-key; muted/solo-excluded/unpatched/disappeared key is absent. Resolve physical re-patch consistently at the block boundary; never borrow an expired pointer. Tap before inserts/fader so FX reverb tails and fader moves do not trigger; raw capture is explicitly pre-trim. During a physical pin crossfade key is unavailable until the next stable callback. No additional PCM delay; causality means no anticipation of first syllable. PDC offsets between key and target require explicit tests. Post-insert stream routing must reuse existing MAIN/monitor/external taps. Do not advertise until route, state, editor and bypass qualification pass.
+
+## TRD
+Core AutoDuckerCore: prepared coefficients/control-side validation; two independent first-order HP/LP detector channels, max squared band signal (anti-phase safe), attack/release power envelope, threshold hysteresis and sample-count hold. One linked gain for both program channels; exponential approach to fixed bounded range. Time constants are defined as 90% of a step in linear amplitude (detector uses power); hold is after envelope crosses closing threshold. Missing key releases immediately with selected release, no hold. No heap/lock/log/exp per sample, no lookahead. Default threshold -34 dBFS, depth 12 dB, 18/220/480 ms, hysteresis 5 dB, HP120/LP5000. Actual time from voice onset also includes detection time. Accepted settings must travel through existing bounded mailbox/ACK lifecycle; prepare/restore offline and validate schema, no mutation of live audio state from UI. Persist key ID and settings, not detector history. Host bypass uses existing FX envelope and temporal processing contract. Versioned state and explicit source validity required before picker registration.
+
+## Qualification and reconciliation
+- Foundation gate: standalone C++20 PCM tests across 8–384 kHz, arbitrary callback partition, stereo/antiphase, depth, hold, recovery, missing key, DC, nonfinite key, invalid settings.
+- Production gates NOT met by foundation: operator ChannelId source selection, CI qualification of candidate order-independent render and physical re-patch/mute/solo, FX insert move/bypass, source delete and show roundtrip, editor ownership and ACK, CMake Windows build, ASIO physical and WASAPI/VB Cable capture, CPU and listening A/B against radio reference. Require no mic modification, no double-render, no underruns, no added latency, no regression when feature unused. CPU budget target <1% of a 48k/128-frame callback per instance on reference machine; measure, do not assume.
+- Release: reconcile with current main and concurrent P0 ASIO / routing / native editor work, pass exact-head CI and physical acceptance before exposing/merging product. No installer claim.
+
+## Candidate host seam (not release admission)
+The native graph now snapshots raw physical key views before the FX traversal, with shared physical patch targets, and scopes the views to one FX invocation. The native registry contains a hidden adapter with versioned state and bounded edit/ACK queues; it has no editor and must not be advertised. The pure C++ graph fixture checks stable key lookup, self/unknown key rejection, mute and physical repatch. Current key is raw pre-trim (not post-FX); group, player and FX-return sources are not supported. No exact-head Windows/physical validation yet.
+
+The standalone DSP cases are also invoked by the existing logical-mixer fast C++20 suite, avoiding a parallel CI workflow. Gain integration uses double precision to avoid high-rate/long-release float convergence stalls.

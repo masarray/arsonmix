@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicChannelRoster.h"
+#include "AutoDuckerKeyContext.h"
 #include "RealtimeSlew64.h"
 #include "StereoLatencyDelay.h"
 #include "RealtimeStereoControlWord.h"
@@ -46,6 +47,8 @@ struct DynamicPlayerPcmBlock final {
 // removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
 // This is an explicit prepared-graph policy, not a realtime control.
 enum class MonitorLatencyPolicy : std::uint8_t { aligned, independent };
+// Control-only dependency; never an audible send.
+struct DynamicSidechainDependency final {ChannelId source{},target{};};
 struct DynamicGraphRequest final {
     std::vector<DynamicSourcePatch> sources;
     int physicalInputs=0;
@@ -53,12 +56,14 @@ struct DynamicGraphRequest final {
     std::size_t maxScratchBytes=64U*1024U*1024U; // admission, not channel-count cap
     bool mainMonoAfterFx=false; // legacy MAIN mono occurs after MAIN VST+balance
     MonitorLatencyPolicy monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
+    std::vector<DynamicSidechainDependency> postFaderSidechains;
 };
 enum class DynamicGraphFault : std::uint8_t {
     none, noMaster, multipleMasters, invalidFrameCapacity,
     invalidPhysicalCount, missingSource, invalidSource,
     invalidSendDestination, duplicateSend, mainFeedback, cycle, invalidChannel,
-    scratchBudget, overflow, multipleMonitors, monitorFeedback, invalidMonitorLatencyPolicy
+    scratchBudget, overflow, multipleMonitors, monitorFeedback, invalidMonitorLatencyPolicy,
+    invalidSidechain, sidechainLatency
 };
 struct DynamicGraphError final {
     DynamicGraphFault fault=DynamicGraphFault::none;
@@ -81,7 +86,7 @@ class DynamicPreparedMixerBlock final {
         bool inputStereo=false,enabled=false;
         bool monoPan=false; // mono source/processing, independent of VST rack width
         float gainL=1.f,gainR=1.f;
-        std::size_t first=0,last=0,slot=0;
+        std::size_t first=0,last=0,slot=0,keyFirst=0,keyLast=0;
     };
     // Immutable topology + atomics for live control targets. Callback-only
     // smoothed state is preallocated per accepted graph revision.
@@ -395,6 +400,17 @@ public:
             for(std::size_t e=lanes_[i].first;e<lanes_[i].last;++e)
                 arrival[edges_[e].destination]=std::max(arrival[edges_[e].destination],output[i]);
         }
+        // Conservative admission until per-insert sidechain PDC is available:
+        // a delayed key/target chain cannot silently acquire a block delay.
+        for(const auto i:renderOrder_){
+            const auto& lane=lanes_[i];
+            for(auto k=lane.keyFirst;k<lane.keyLast;++k){
+                const auto source=postKeys_[k].laneIndex;
+                if(output[source]!=arrival[i]||output[i]!=arrival[i]){
+                    error={DynamicGraphFault::sidechainLatency,lane.id};return false;
+                }
+            }
+        }
         int terminal=0,externalTerminal=0;
         LatencyPlanSummary summary;
         summary.hasMonitor=monitor_!=notScheduled;
@@ -701,6 +717,22 @@ public:
                 ++indegree[to];
             }
         }
+        // Sidechain order constraints share the audio DAG's cycle check but
+        // never enter the audible CSR, solo closure, gain or send fan-out.
+        std::vector<std::vector<std::size_t>> sideTo(rows.size()),sideFrom(rows.size());
+        for(const auto& dep:req.postFaderSidechains){
+            const auto s=byId.find(dep.source.value),t=byId.find(dep.target.value);
+            if(s==byId.end()||t==byId.end()||s->second==t->second){
+                error={DynamicGraphFault::invalidSidechain,dep.target};return false;
+            }
+            auto& sources=sideFrom[t->second];
+            if(std::find(sources.begin(),sources.end(),s->second)!=sources.end()||
+               sources.size()>=8*armix::builtin_fx::AutoDuckerCore::maxSources){
+                error={DynamicGraphFault::invalidSidechain,dep.target};return false;
+            }
+            sources.push_back(s->second);sideTo[s->second].push_back(t->second);
+            ++indegree[t->second];
+        }
         // Kahn compile O(V+E), no per-callback DAG sort or send scan.
         std::deque<std::size_t> queue;
         for(std::size_t i=0;i<rows.size();++i)
@@ -712,6 +744,7 @@ public:
             order.push_back(i);
             for(const auto& edge:outgoing[i])
                 if(--indegree[edge.destination]==0)queue.push_back(edge.destination);
+            for(const auto target:sideTo[i])if(--indegree[target]==0)queue.push_back(target);
         }
         if(order.size()!=rows.size()){
             error.fault=DynamicGraphFault::cycle;return false;
@@ -768,6 +801,20 @@ public:
         std::vector<unsigned char> scheduled(rows.size(),0);
         for(const auto i:next.renderOrder_)scheduled[i]=1;
 
+        // One target-local sorted key view; source publication indexes are
+        // prepared on CONTROL. No scratch copies or scans of unrelated routes.
+        next.postKeyPublish_.resize(rows.size());
+        for(std::size_t i=0;i<rows.size();++i){
+            auto& lane=next.lanes_[i];
+            auto& from=sideFrom[i];
+            std::sort(from.begin(),from.end(),[&](auto a,auto b){return rows[a].id.value<rows[b].id.value;});
+            lane.keyFirst=next.postKeys_.size();
+            for(auto source:from){
+                next.postKeyPublish_[source].push_back(next.postKeys_.size());
+                next.postKeys_.push_back({rows[source].id.value,source,{}});
+            }
+            lane.keyLast=next.postKeys_.size();
+        }
         const auto active=next.renderOrder_.size();
         const std::size_t frame=static_cast<std::size_t>(req.maxFrames);
         if(frame>0 && active>req.maxScratchBytes/(2*sizeof(float)*frame)) {
@@ -788,13 +835,17 @@ public:
         next.scratch_.assign(active*2*frame,0.f);
         next.sourceTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.sourceFades_=std::make_unique<SourceFade[]>(rows.size());
+        next.sourceBlockTargets_.resize(rows.size());
         for(std::size_t i=0;i<rows.size();++i){
             const auto& lane=next.lanes_[i];
             if(lane.inputL<0)continue;
             const auto initial=packPhysical(lane.inputL,lane.inputR);
             next.sourceTargets_[i].store(initial,std::memory_order_relaxed);
             next.sourceFades_[i].current=next.sourceFades_[i].next=initial;
+            if(scheduled[i])next.duckerKeys_.push_back({lane.id.value,i,{}});
         }
+        std::sort(next.duckerKeys_.begin(),next.duckerKeys_.end(),
+            [](const auto& a,const auto& b){return a.id<b.id;});
         next.channelTargets_=std::make_unique<ChannelTarget[]>(rows.size());
         next.blockTargets_.resize(rows.size());
         next.soloAncestors_.assign(rows.size(),0);
@@ -907,6 +958,26 @@ public:
                 (!anySolo||soloAncestors_[i]||soloDescendants_[i]);
             channelTargets_[i].gate.retarget(audible?1.f:0.f);
         }
+        // A raw, pre-trim capture key is independent of strip/render order.
+        // Read each physical patch once at the block boundary; use the SAME
+        // snapshot for the program source render. A re-patch temporarily
+        // invalidates the key instead of triggering from the previous pin.
+        for(auto& entry:duckerKeys_){
+            const auto i=entry.laneIndex;
+            const auto& lane=lanes_[i];
+            const auto pair=sourceTargets_[i].load(std::memory_order_acquire);
+            sourceBlockTargets_[i]=pair;
+            entry.key={};
+            const auto& fade=sourceFades_[i];
+            const bool audible=!blockTargets_[i].mute &&
+                (!anySolo||soloAncestors_[i]||soloDescendants_[i]);
+            if(!audible||!physical||fade.remaining||pair!=fade.current)continue;
+            const int a=physicalLeft(pair),b=physicalRight(pair);
+            if(a<0||a>=physicalCount||!physical[a])continue;
+            if(lane.inputStereo&&(b<0||b>=physicalCount||!physical[b]))continue;
+            entry.key={physical[a],lane.inputStereo?physical[b]:nullptr};
+        }
+        for(auto& entry:postKeys_)entry.key={}; // never reuse a previous callback view
         // Prepared active scratch only; zero-patched lanes cost nothing.
         for(const auto i:renderOrder_){
             auto& lane=lanes_[i];
@@ -928,7 +999,7 @@ public:
             sum.wireSumApplied.applyStereo(l,r,frames);
             if(lane.inputL>=0 && physical) {
                 auto& fade=sourceFades_[i];
-                const auto desired=sourceTargets_[i].load(std::memory_order_acquire);
+                const auto desired=sourceBlockTargets_[i];
                 if(fade.remaining==0 && desired!=fade.current) {
                     fade.next=desired;fade.remaining=armix::dsp::RealtimeSlew64::samples;
                 }
@@ -994,7 +1065,11 @@ public:
                 trim.inputApplied.retarget(trim.inputGain.load(std::memory_order_acquire));
                 trim.inputApplied.applyStereo(l,r,frames);
             }
-            processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
+            {
+                const auto post=std::span<const AutoDuckerKeyEntry>(postKeys_).subspan(lane.keyFirst,lane.keyLast-lane.keyFirst);
+                const AutoDuckerKeyScope keyScope(duckerKeys_,lane.id.value,frames,post);
+                processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
+            }
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
             auto& gate=channelTargets_[i].gate;
@@ -1072,6 +1147,12 @@ public:
                 r[f]*=controls.appliedR.next();
                 observedL=std::max(observedL,std::abs(l[f]));
                 observedR=std::max(observedR,std::abs(r[f]));
+            }
+            // Source is fully processed for THIS callback. Its scratch is
+            // retained until all consumers finish; never inject key PCM.
+            const bool keyAudible=!goal.mute&&(!anySolo||soloAncestors_[i]||soloDescendants_[i]);
+            if(keyAudible){
+                for(auto k:postKeyPublish_[i])postKeys_[k].key={l,r};
             }
             if(i<channelPeaksL.size()) {
                 channelPeaksL[i]=observedL;
@@ -1244,6 +1325,10 @@ private:
     std::vector<unsigned char> initialAudible_,soloAncestors_,soloDescendants_;
     std::vector<Word::Snapshot> blockTargets_; // all allocated before RT
     std::vector<float> scratch_;
+    std::vector<AutoDuckerKeyEntry> postKeys_;
+    std::vector<std::vector<std::size_t>> postKeyPublish_;
+    std::vector<AutoDuckerKeyEntry> duckerKeys_; // preallocated, callback-local views
+    std::vector<std::uint32_t> sourceBlockTargets_;
     std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
     std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;

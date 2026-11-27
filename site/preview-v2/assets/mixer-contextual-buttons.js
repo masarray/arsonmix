@@ -204,35 +204,7 @@
   },{passive:true});
 })();
 
-/* DAW-standard wheel adjust for native built-in compressor/Harmonice dials.
-   EQ and Vocal Throw already own their wheel controls; console faders and
-   SEND levels have separate handlers. Do not intercept preset-list scrolling.
-   This never writes native PCM directly: original input listeners own edits,
-   ACK and readback. */
-(()=>{
-  'use strict';
-  const residues=new WeakMap();
-  document.addEventListener('wheel',event=>{
-    if(event.ctrlKey||!Number.isFinite(event.deltaY)||event.deltaY===0)return;
-    const input=event.target.closest?.('.mx-comp-slider,.mx-harm-slider input[type="range"]');
-    if(!input||input.disabled||input.closest?.('[hidden]'))return;
-    const min=Number(input.min),max=Number(input.max),value=Number(input.value);
-    const step=Number(input.step)||1;
-    if(![min,max,value,step].every(Number.isFinite)||step<=0||max<=min)return;
-    event.preventDefault();
-    const pixels=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?240:1);
-    const residue=(residues.get(input)||0)+pixels;
-    const ticks=Math.trunc(residue/100);
-    residues.set(input,residue-ticks*100);
-    if(!ticks)return;
-    const amount=ticks;
-    const quantized=Math.round((value-min-amount*step)/step)*step+min;
-    const next=Math.max(min,Math.min(max,Number(quantized.toFixed(5))));
-    if(next===value)return;
-    input.value=String(next);
-    input.dispatchEvent(new Event('input',{bubbles:true}));
-  },{passive:false});
-})();
+/* Built-in FX wheel gestures are owned by each editor through mixer-builtin-fx-gesture.js. */
 
 /* One owner for short-lived UTILITY panels, not FX editors. First open is
    centred in the app; subsequent opens retain the user's moved location.
@@ -355,20 +327,21 @@
    Real out-of-mixer popout requires a JUCE-owned separate HWND. */
 (()=>{
  'use strict';
- // One bounded layer range for the eight approved inline editor surfaces.
+ // One bounded layer range for the nine approved inline editor surfaces.
  // Native leases and audio state remain exclusively in their existing owners.
  const owners=Object.freeze({
   '#mxNativeGeq31':'ArSonMixGraphicEq31','#mxNativePeq':'ArSonMixNativeEq',
   '#mxNativeComp':'ArSonMixNativeCompressor','#mxNativeHarmony':'ArSonMixNativeHarmony',
+  '#mxNativeDucker':'ArSonMixNativeDucker',
   '#mxNativeVocalThrow':'ArSonMixNativeVocalThrow','#mxNativeSonKu':'ArSonMixNativeSonKu',
   '#mxNativeAntiNoiz':'ArSonMixNativeAntiNoiz','#mxNativeDeEzzerHost':'ArSonMixNativeDeEzzer'
  });
  const selectors=Object.keys(owners),rootSelector=selectors.join(',');
- // Reserve 9000..9007 for FX; native context/hotkey panels start at
+ // Reserve 9000..9008 for FX; native context/hotkey panels start at
  // 10018 and modal/confirmation surfaces remain above this band.
  const layerBase=9000;
  let order=[];
- const popupSelector='.mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu';
+ const popupSelector='.mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu,.mx-ducker-picker';
  const modalSelector='[aria-modal="true"],dialog[open],#fastPicker,#routeChoice,#channelIdentity,#nativeFxSelector,#nativePluginManager,#nativeMySounds,#nativeOrbit,#armixContext,#armixOrbit,#armixFxParamBrowse,#armixHotkeyCard,#armixHotkeyRegister';
  const isVisible=el=>el&&!el.hidden&&!el.closest('[hidden]')&&
    el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
@@ -443,7 +416,7 @@
   if(popup){
    // Use the existing cancel lifecycle. Menus have no pending edit; hiding
    // just their menu never affects the accepted DSP or the editor identity.
-   const cancel=popup.querySelector('.mx-fxp-cancel,#mxHPresetCancel');
+   const cancel=popup.querySelector('.mx-fxp-cancel,#mxHPresetCancel,.mx-ducker-cancel');
    if(cancel)cancel.click();
    else if(popup.matches('.mx-fxp-menu,#mxHPresetMenu'))popup.hidden=true;
    event.preventDefault();event.stopImmediatePropagation();return;

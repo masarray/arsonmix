@@ -115,7 +115,7 @@ const sliderDefs=[["color","COLOR",0,100,.1],["space","SPACE",0,100,.1],
                   ["wet","WET",0,100,.1],["gainDb","GAIN",-24,12,.1]];
 for(const [key,label,min,max,step] of sliderDefs){
  const box=document.createElement("label");box.className="mx-harm-slider";
- box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag vertically or horizontally · Shift for fine control · Arrow keys">`;
+ box.innerHTML=`<span class="mx-harm-dial-face" aria-hidden="true"><i class="mx-harm-dial-pointer"></i></span><span class="mx-harm-dial-label">${label}</span><output data-out="${key}"></output><input data-field="${key}" type="range" min="${min}" max="${max}" step="${step}" aria-label="${label}" title="Drag or hover + wheel · Shift for fine control · Arrow keys">`;
  el("mxHSliders").append(box);
 }
 const fresh=()=>({key:0,scale:0,voices:3,voiceMode:0,correction:false,
@@ -464,6 +464,19 @@ el("mxHCorrection").addEventListener("click",()=>{
 sliders.forEach(({input})=>{
  const key=input.dataset.field;
  const apply=x=>edit({[key]:key==="gainDb"?x:x/100});
+ // Wheel must accumulate from the latest intended setting, not from a
+ // range element that Chromium may normalize during a fractional drag.
+ window.ArMixFxGesture.bindRange(input,{
+   // Preserve V6 wheel increments independently of the integrated 0.1
+   // range resolution used for precision drag/keyboard interaction.
+   normalSteps:key==="gainDb"?15:30,
+   fineSteps:key==="gainDb"?5:10,
+   enabled:()=>!!current&&(!native()||mode==="NATIVE"),
+   get:()=>{
+     const v=latest||pending?.settings||(heldPatch?{...settings,...heldPatch}:settings);
+     return key==="gainDb"?v[key]:v[key]*100;
+   },onChange:apply
+ });
  let gesture=null,frame=0;
  const cancel=()=>{if(frame)cancelAnimationFrame(frame);frame=0;gesture=null;};
  const live=()=>gesture&&!root.hidden&&current===gesture.owner&&
