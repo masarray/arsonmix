@@ -6,7 +6,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from approved_floating_fx_window_smoke import INIT, document, CHANNEL, INSTANCE
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 from native_event_fixture import NATIVE_EVENTS
 from approved_native_offline_logical_smoke import snapshot, emit
 
@@ -43,7 +43,7 @@ def assert_column_alignment(manager):
 
 CLOSE_VISUAL = """el=>{
  const props=['width','height','minWidth','maxWidth','minHeight','maxHeight','borderRadius',
-  'borderTopColor','borderTopWidth','backgroundImage','boxShadow','color','fontSize','lineHeight','filter','opacity'];
+  'borderTopColor','borderTopWidth','backgroundImage','boxShadow','color','fontSize','lineHeight','filter','opacity','transitionProperty','transitionDuration','transitionTimingFunction'];
  const icon=['backgroundImage','backgroundSize','backgroundPosition','display','opacity','inset','transform'];
  const read=(style,keys)=>Object.fromEntries(keys.map(k=>[k,style[k]]));
  return {face:read(getComputedStyle(el),props),icon:read(getComputedStyle(el,'::after'),icon),
@@ -52,9 +52,14 @@ CLOSE_VISUAL = """el=>{
 
 def close_visual_states(page,button):
     page.mouse.move(0,0)
+    expect(button).to_have_css('border-top-color','rgb(96, 125, 140)')
+    expect(button).to_have_css('color','rgb(224, 237, 242)')
     normal=button.evaluate(CLOSE_VISUAL)
     button.hover()
-    # Hover state uses the shared red socket; active is a real pointer hold.
+    # Both surfaces use the same 100 ms transition. Sample its settled value,
+    # not a different arbitrary frame of the same animation in each page.
+    expect(button).to_have_css('border-top-color','rgb(178, 112, 120)')
+    expect(button).to_have_css('color','rgb(255, 255, 255)')
     hover=button.evaluate(CLOSE_VISUAL)
     box=button.bounding_box()
     page.mouse.move(box["x"]+box["width"]/2,box["y"]+box["height"]/2)

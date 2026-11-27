@@ -130,7 +130,7 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-browser #pluginScan{background:#24566b!important;border-color:#487c90!important;color:#edf8ff!important}
 .plugin-browser .plugin-library-actions button:hover:not(:disabled),.plugin-browser .scan-add button:hover:not(:disabled){background:#345568!important;border-color:#75a9bb!important}
 .plugin-browser .plugin-library-actions button:disabled{opacity:.5!important;cursor:not-allowed}
-.plugin-scan-settings{display:flex;flex-direction:column;min-width:0;gap:8px;padding:0;background:transparent;border:0}
+.plugin-scan-settings{display:flex;flex-direction:column;min-width:0;gap:8px;padding:12px 0 0;background:transparent;border:0;border-top:1px solid #3b515e}
 .scan-title{font-size:10px;letter-spacing:.035em;color:#9cb4c3;font-weight:500}
 .scan-paths{display:flex;flex-direction:column;gap:0;max-height:184px;min-height:48px;overflow:auto;border:1px solid #3c5361;background:#162832}
 .scan-path{display:flex;align-items:center;gap:5px;min-width:0;min-height:29px;padding:3px 6px;border-bottom:1px solid #2b414d;font-size:10px}
@@ -138,12 +138,14 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .scan-path small{color:#94afbd;flex:none}.scan-path button{background:transparent;border:0;color:#a7bdc8}
 .scan-add{display:flex;flex-wrap:wrap;gap:6px}.scan-add input{flex:1 1 100%;min-width:0;height:29px;padding:0 7px;color:#dfedf3;background:#132630;border:1px solid #3f5866;border-radius:3px}
 .scan-add button{width:100%}
-.scan-status{font-size:10px;color:#b1c4cf;line-height:1.5;overflow-wrap:anywhere}
+.scan-status{font-size:10px;color:#b1c4cf;line-height:1.5;overflow-wrap:anywhere;padding:8px 9px;border-left:2px solid #567b8c;background:#172b36;border-radius:0 3px 3px 0}
 .plugin-disclaimer{margin-top:auto;color:#93aab8;font-size:10px;line-height:1.45;padding-top:8px;border-top:1px solid #394f5c;overflow-wrap:anywhere}
 .plugin-catalog{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:#142630}
 .plugin-catalog-tools{display:flex;flex:none;gap:8px;align-items:center;padding:9px 10px;border-bottom:1px solid #3b515e;background:#1b303b}
-.plugin-search-row{display:flex;min-width:0;flex:1}
-.plugin-search-row input{width:100%;min-width:0;height:30px;padding:0 9px;background:#10232d;color:#e0edf4;border:1px solid #45606e;border-radius:3px;font-size:11px}
+.plugin-search-row{position:relative;display:flex;min-width:0;flex:1}
+.plugin-search-row::before{content:"";position:absolute;left:10px;top:9px;width:9px;height:9px;border:1.5px solid #8eacbc;border-radius:50%;pointer-events:none}
+.plugin-search-row::after{content:"";position:absolute;left:19px;top:19px;width:5px;height:1.5px;border-radius:1px;background:#8eacbc;transform:rotate(45deg);pointer-events:none}
+.plugin-search-row input{width:100%;min-width:0;height:30px;padding:0 9px 0 31px;background:#10232d;color:#e0edf4;border:1px solid #45606e;border-radius:4px;font-size:11px;letter-spacing:0}
 .plugin-filters{display:flex;gap:6px;min-width:0}
 .plugin-filters select{width:112px;min-width:0;height:30px;background:#203642;color:#c6d9e4;border:1px solid #405b6b;border-radius:3px;padding:0 5px;font-size:11px}
 .plugin-catalog{--plugin-columns:minmax(0,1fr) 112px 25px 25px;--plugin-identity:minmax(0,1.55fr) minmax(0,1fr) minmax(0,.75fr)}
@@ -162,9 +164,9 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-item:hover,.plugin-item:focus-within{background:#264553;box-shadow:inset 2px 0 #74b9ce}
 .plugin-browser .plugin-choose{height:26px!important;min-height:26px!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;background-image:none!important;box-shadow:none!important;align-items:center;cursor:pointer;color:#d9e6ee;font-size:11px}
 .plugin-item.disabled .plugin-choose{opacity:.52}
-.plugin-name{font-size:11px;color:#e2edf3;font-weight:400}
-.plugin-meta,.plugin-category{font-size:10px;color:#a9bfcc;font-weight:400}
-.plugin-labels{font-size:10px;color:#a7bdca}
+.plugin-name{font-size:11px;color:#e2edf3;font-weight:400;letter-spacing:0}
+.plugin-meta,.plugin-category{font-size:11px;color:#a9bfcc;font-weight:400;letter-spacing:0}
+.plugin-labels{font-size:10px;color:#a7bdca;letter-spacing:0}
 .plugin-pill{color:#b6cbd8;border:0;border-radius:0;background:none}
 .plugin-pill.problem,.plugin-item.disabled .plugin-labels{color:#e2a49b}
 .plugin-browser .plugin-flag{display:grid!important;place-items:center;justify-self:center;text-align:center!important;height:24px!important;width:24px!important;min-width:0!important;padding:0!important;border:0!important;border-radius:2px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;color:#849ca9;font-size:13px;line-height:24px}
@@ -172,7 +174,7 @@ PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop w
 .plugin-browser .plugin-flag:hover{background:#3a5665!important;color:#edf7fc!important}
 .plugin-empty{padding:24px 12px;text-align:center;color:#9cb4c2;font-size:11px}
 .plugin-footer{display:flex;align-items:center;min-height:30px!important;height:auto!important;flex:none;padding:5px 12px!important;border-top:1px solid #3b515e;background:#1c303b;color:#a7bdca;font-size:10px;gap:8px}
-.plugin-footer #pluginCount{flex:1;color:#afc4cf}
+.plugin-footer #pluginCount{flex:1;color:#afc4cf;font-variant-numeric:tabular-nums;letter-spacing:0}
 .plugin-browser button:not(#pluginClose):focus-visible,.plugin-browser input:focus-visible,.plugin-browser select:focus-visible{outline:2px solid #9ad9ed!important;outline-offset:-2px}
 .console-body.plugin-open #viewport{margin-right:0!important}
 .plugin-browser[hidden],.fast-picker[hidden]{display:none!important}
