@@ -178,9 +178,9 @@ def verify_inspector_rejected_gain(page, out):
     menu_matrix.click()
     assert not more.evaluate("(el)=>el.open"), "Matrix should dismiss More"
     assert page.locator("#wireWorkspace").is_visible()
-    route=page.locator('[data-ws-inspect="1:2"]')
+    route=page.locator('[data-ws-crosspoint="1:2"]')
     route.wait_for(state="visible")
-    route.click()
+    route.click(button="right")
     slider=page.locator("#wireWsGain")
     slider.wait_for(state="visible")
     assert slider.is_enabled(),"Selected parallel SEND must allow native gain"

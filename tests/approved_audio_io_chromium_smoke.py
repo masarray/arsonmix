@@ -726,14 +726,40 @@ def verify_main_monitor_shortcut(page,out):
         assert mon.is_enabled() and mon.input_value()=="USB DAC"
         assert page.locator(".strip.master select[data-field=output]").input_value()==primary
         assert page.evaluate("()=>window.__actions.length")==before
-    mon.select_option("")
+    inventory=open_verified_audio_io(page,state,"routing")
+    matrix_mon=page.get_by_label("MON / STREAM device",exact=True)
+    assert matrix_mon.input_value()=="USB DAC"
+    matrix_mon.select_option("")
     stop=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputStop').at(-1)")
     assert stop["requestId"] and mon.input_value()=="USB DAC"
     emit(page,"arMixSecondaryOutputAck",{"requestId":stop["requestId"],"action":stop["action"],"ok":True})
     live.update(secondaryOutputReady=False,secondaryOutputArmed=False,secondaryOutputName="")
     emit(page,"arMixStatus",live)
-    assert mon.input_value()==""
+    assert mon.input_value()=="" and matrix_mon.input_value()==""
+    matrix_mon.select_option("Speakers")
+    second=page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryOutputEnable').at(-1)")
+    assert second["requestId"]!=enable["requestId"] and second["value"]=="Speakers"
+    assert matrix_mon.input_value()=="" and mon.input_value()==""
+    emit(page,"arMixSecondaryOutputAck",{"requestId":second["requestId"],"action":second["action"],"ok":True})
+    live.update(secondaryOutputReady=True,secondaryOutputArmed=True,secondaryOutputName="Speakers")
+    emit(page,"arMixStatus",live)
+    assert matrix_mon.input_value()=="Speakers" and mon.input_value()=="Speakers"
     assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm','audioDeviceApply'].includes(a.action)).length")==0
+    # A separate buffer change reuses the existing verified device transaction.
+    inventory["active"]["buffers"]=[128,256,512,state["device"]["bufferFrames"]]
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    page.locator("[data-audio-close]").click()
+    select_ribbon_workflow(page,"io")
+    buffer=page.locator("select[data-audio-value=buffer]")
+    old=state["device"]["bufferFrames"]
+    target=256 if old!=256 else 512
+    assert buffer.is_enabled() and buffer.input_value()==str(old)
+    buffer.select_option(str(target))
+    page.wait_for_function("()=>window.__actions.some(a=>a.action==='audioDeviceApply')")
+    apply=page.evaluate("()=>window.__actions.filter(a=>a.action==='audioDeviceApply').at(-1)")
+    assert apply["config"]["bufferSize"]==target,apply
+    assert buffer.is_disabled() and buffer.input_value()==str(old)
+    assert page.locator(".armix-audio-dialog").is_hidden()
 
 def verify_independent_output(page,out,legacy_empty=False):
     """Two-pin native fixture: one mode action, no manual mute/arm ritual."""

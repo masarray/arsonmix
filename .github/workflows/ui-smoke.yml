@@ -405,7 +405,7 @@ jobs:
   studio-audio-io:
     name: Studio Audio I/O real Chromium routing interaction
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-live-fx-rack-file-dialog-20261127' || github.head_ref == 'fix/p0-asio-panel-main-sof-recovery-20261127' || github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'fix/production-profile-wire-readback-20261127') }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/operator-workflow-reconciliation-20261128' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-live-fx-rack-file-dialog-20261127' || github.head_ref == 'fix/p0-asio-panel-main-sof-recovery-20261127' || github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'fix/production-profile-wire-readback-20261127') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -434,7 +434,7 @@ jobs:
           python tests/approved_stage_c_css_visual_parity_smoke.py
           python tests/approved_css_stage_c_computed_parity_smoke.py
       - name: Profiled WIRE readback — exact assembled Chromium routing regression
-        if: ${{ github.head_ref == 'fix/production-profile-wire-readback-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
+        if: ${{ github.head_ref == 'fix/operator-workflow-reconciliation-20261128' || github.head_ref == 'fix/production-profile-wire-readback-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
         run: python tests/approved_native_wire_gain_smoke.py
       - name: V6 direct assignment and Plugin Manager actual Chromium
         if: ${{ github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
@@ -481,7 +481,7 @@ jobs:
   clean-ribbon-v6:
     name: Clean Ribbon V6 exact-head native assembly Chromium
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || github.head_ref == 'fix/v6-mobile-ribbon-ownership-20261128' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || startsWith(github.head_ref, 'feat/clean-ribbon-v6-') || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'feat/autonomous-updater-v2-20261127') }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/operator-workflow-reconciliation-20261128' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || github.head_ref == 'fix/v6-mobile-ribbon-ownership-20261128' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || startsWith(github.head_ref, 'feat/clean-ribbon-v6-') || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'feat/autonomous-updater-v2-20261127') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

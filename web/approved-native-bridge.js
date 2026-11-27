@@ -4359,7 +4359,7 @@
     loopbackPending=false;
     loopbackField("confirmed").checked=false;
     for(const side of ["input","output"])loopbackField(side).disabled=false;
-    devicePanel.hidden=true;
+    devicePanel.hidden=true;syncRibbonBuffer();
     outputMatrixDrafts.clear();
     syncNamedOptions();
     for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
