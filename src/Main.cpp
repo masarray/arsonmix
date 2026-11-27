@@ -6844,13 +6844,13 @@ private:
             playerSelected_,playerCurrent_,playerActiveSet_,playerPendingIndex_,
             playerQueueEpoch_.revision(),playerFadeMilliseconds_,
             playerUndoRemove_.set,playerUndoRemove_.index,
-            playerAutoNext_,playerLoopCurrent_,playerFolderBusy_,&playerCatalogueIds_
+            playerAutoNext_,playerLoopCurrent_,playerFolderBusy_,&playerCatalogueIds_,
+            playerMediaRefreshRequested_
         },includeLibrary,includeTracks);
         if(!snapshot.isObject()) {
             playerError_="Player library state is inconsistent; no snapshot published";
             return;
         }
-        snapshot.getDynamicObject()->setProperty("mediaRefreshQueued",playerMediaRefreshRequested_);
         browser_.emitEventIfBrowserIsVisible("arMixPlayerState",snapshot);
         emitPlayerActivity();pumpPlayerMedia();
     }

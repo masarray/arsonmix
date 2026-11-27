@@ -45,5 +45,7 @@ console.log("Queued song identity and coalesced refresh contracts PASS");
 assert.match(timer,/loopDue\(phase=="PLAYING",phase=="ENDED"/);
 assert.match(timer,/playerError_="Loop standby failed; press Play or Next to retry";\s*playerLoopCurrent_=false;\s*\(void\)playerAutoAdvanceGate_\.claim\(\)/);
 assert.match(source,/playerLoopCurrent_ && playerPendingIndex_>=0 &&\s*playerPendingIndex_==playerCurrent_ &&\s*engine_\.cancelPlayerPendingTransition\(\)/);
-assert.match(source,/setProperty\("mediaRefreshQueued",playerMediaRefreshRequested_\)/);
+assert.match(source,/playerFolderBusy_,&playerCatalogueIds_,\s*playerMediaRefreshRequested_/);
+assert.match(readFileSync("src/PlayerStateProjection.h","utf8"),/setProperty\("mediaRefreshQueued",s.mediaRefreshQueued\)/);
+assert.doesNotMatch(source.slice(source.indexOf("void emitPlayerState("),source.indexOf("void choosePlayerFiles()")),/setProperty/);
 console.log("P1 loop EOF fallback, pending cancel and refresh readback contracts PASS");
