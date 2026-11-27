@@ -1362,15 +1362,23 @@
   const paintExternalReadback=(next)=>{
     const assignments=Array.isArray(next?.raw?.externalOutputs)?
       next.raw.externalOutputs:[];
+    // Index only this accepted snapshot; keep first-match identity semantics.
+    const byChannel=new Map();
+    for(const row of assignments){
+      const id=row.channelId;
+      if(!byChannel.has(id))byChannel.set(id,row);
+    }
     // Readback includes already installed logical routes; only new direct
     // assignments use the reservation-filtered inventory.
     const choices=deviceVM.outputChoices(next,true);
     const availableChoices=hardwareOutputPairs();
     const named=stripNamedChoices("output").map(p=>p.label);
+    const commonLabels=[...availableChoices.map(p=>p.label),...named];
+    const commonSignature=commonLabels.join("|");
     // Settle every accepted ChannelId, including channels not projected
     // into a visible mixer bank. The strip is presentation only.
     for(const [id,pending] of pendingExternal){
-      const row=assignments.find(p=>p.channelId===id);
+      const row=byChannel.get(id);
       const {state,value}=deviceVM.externalPresentation(next,row,choices);
       const result=stripVM.externalPending(pending,next?.device?.epoch,state,row);
       if(result==="STALE")pendingExternal.delete(id);
@@ -1383,7 +1391,7 @@
     }
     for(const t of scope?.tracks||[]) {
       const id=nativeIdFor(t);
-      const row=assignments.find(p=>p.channelId===id);
+      const row=byChannel.get(id);
       // Native PCM/armed status is projected, never asserted by the DOM.
       const projected=deviceVM.externalPresentation(next,row,choices);
       const {state,value}=projected;
@@ -1391,10 +1399,10 @@
       const select=document.querySelector('.strip[data-id="'+t.id+
         '"] select[data-field="external"]');
       if(!select?.dataset)continue; // headless contract mocks may omit DOM dataset
-      const labels=[...availableChoices.map(p=>p.label),...named];
-      if(!labels.includes(value))labels.push(value);
-      const signature=labels.join("|");
+      const listed=commonLabels.includes(value);
+      const signature=listed?commonSignature:[...commonLabels,value].join("|");
       if(select.dataset.choices!==signature){
+        const labels=listed?commonLabels:[...commonLabels,value];
         select.replaceChildren(...labels.map(s=>{
           const op=document.createElement("option");
           op.value=op.textContent=s;return op;
@@ -1402,14 +1410,15 @@
         select.dataset.choices=signature;
       }
       if(select.value!==value)select.value=value;
-      select.dataset.status=state;
+      if(select.dataset.status!==state)select.dataset.status=state;
       const marker=select.parentElement?.querySelector(".external-out-state");
       if(marker){
-        marker.textContent=projected.marker;
-        marker.dataset.status=state;
+        if(marker.textContent!==projected.marker)marker.textContent=projected.marker;
+        if(marker.dataset.status!==state)marker.dataset.status=state;
       }
-      select.title=projected.title;
-      if(!pendingExternal.has(id))select.removeAttribute("aria-busy");
+      if(select.title!==projected.title)select.title=projected.title;
+      if(!pendingExternal.has(id)&&select.hasAttribute?.("aria-busy")!==false)
+        select.removeAttribute("aria-busy");
     }
   };
   const inputChoicesFor=()=>deviceVM.inputChoices(hardware);
