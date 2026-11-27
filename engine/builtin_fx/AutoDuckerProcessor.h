@@ -8,6 +8,20 @@
 #include <atomic>
 
 namespace armix::builtin_fx {
+// Immutable per-instance selection is borrowed from the SAME published bank
+// as PCM. Empty scope is a real empty selection; absence is isolated fixture.
+inline thread_local const std::span<const std::uint64_t>* currentDuckerSelection=nullptr;
+class AutoDuckerSelectionScope final {
+public:
+    explicit AutoDuckerSelectionScope(std::span<const std::uint64_t> ids) noexcept
+        : ids_(ids),previous_(currentDuckerSelection){currentDuckerSelection=&ids_;}
+    ~AutoDuckerSelectionScope(){currentDuckerSelection=previous_;}
+    AutoDuckerSelectionScope(const AutoDuckerSelectionScope&)=delete;
+    AutoDuckerSelectionScope& operator=(const AutoDuckerSelectionScope&)=delete;
+private:
+    std::span<const std::uint64_t> ids_;
+    const std::span<const std::uint64_t>* previous_;
+};
 // Qualification adapter. Hidden from picker until native editor/source
 // admission and accepted snapshot plumbing are qualified end-to-end.
 class AutoDuckerProcessor final : public juce::AudioProcessor,
@@ -64,12 +78,15 @@ public:
         const auto n=pcm.getNumSamples();
         std::array<AutoDuckerSource,AutoDuckerCore::maxSources> keys{};
         bool valid=false;
-        for(std::size_t i=0;i<applied_.count;++i){
-            keys[i]={applied_.sources[i],armix::mixer::AutoDuckerKeyScope::findPostFader(applied_.sources[i],n)};
+        const auto ids=currentDuckerSelection?*currentDuckerSelection:
+            std::span<const std::uint64_t>(applied_.sources.data(),applied_.count);
+        const auto count=std::min(ids.size(),keys.size());
+        for(std::size_t i=0;i<count;++i){
+            keys[i]={ids[i],armix::mixer::AutoDuckerKeyScope::findPostFader(ids[i],n)};
             valid|=keys[i].key.valid();
         }
         core_.processSources(pcm.getWritePointer(0),pcm.getWritePointer(1),n,
-                            {keys.data(),applied_.count});
+                            {keys.data(),count});
         gain_.store(core_.gain(),std::memory_order_relaxed);
         keyValid_.store(valid,std::memory_order_release);
     }
@@ -92,10 +109,16 @@ public:
     }
     bool pollCompletion(Completion& out) noexcept {
         if(!completion_.pop(out))return false;
-        if(out.applied)accepted_=out.settings;
+        if(out.applied)accepted_.dynamics=out.settings.dynamics;
+        out.settings=accepted_;
         return true;
     }
     Settings acceptedSettings() const noexcept {return accepted_;}
+    // CONTROL after successful publication of a staged immutable selection.
+    // Audio reads that bank's scope, never these control-owned source IDs.
+    void acknowledgePublishedSources(const Settings& s) noexcept {
+        accepted_.sources=s.sources;accepted_.count=s.count;
+    }
     float observedGain() const noexcept {return gain_.load(std::memory_order_relaxed);}
     bool observedKeyValid() const noexcept {return keyValid_.load(std::memory_order_acquire);}
     void sealForRealtime() noexcept override {published_=true;}

@@ -144,6 +144,8 @@ public:
                         return Fault::duplicateInstance;
                 row.owners[i]=owner; // owner reference acquired OFF realtime
                 row.raw[i]=owner.get();
+                if(auto* d=dynamic_cast<armix::builtin_fx::AutoDuckerProcessor*>(owner->processor.get()))
+                    row.duckerRoutes.push_back({i,d->acceptedSettings()});
                 // Discover each music-guide listener OFF realtime. A lease
                 // owns its processor through the same PCM snapshot lifetime.
                 if(auto* harmony=dynamic_cast<armix::builtin_fx::ChannelHarmonyProcessor*>(
@@ -422,20 +424,35 @@ public:
     // CONTROL-only extraction from exact FX leases. Deduplicate the union.
     void collectPostFaderSidechains(std::vector<DynamicSidechainDependency>& out) const {
         for(const auto& row:rows_)
-            for(std::size_t slot=0;slot<row.count;++slot){
-                const auto* ducker=dynamic_cast<const armix::builtin_fx::AutoDuckerProcessor*>(
-                    row.owners[slot]->processor.get());
-                if(!ducker)continue;
-                const auto state=ducker->acceptedSettings();
-                for(std::size_t k=0;k<state.count;++k)
-                    out.push_back({ChannelId{state.sources[k]},row.id});
-            }
+            for(const auto& route:row.duckerRoutes)
+                for(std::size_t k=0;k<route.settings.count;++k)
+                    out.push_back({ChannelId{route.settings.sources[k]},row.id});
         std::sort(out.begin(),out.end(),[](const auto& a,const auto& b){
             return a.target.value==b.target.value?a.source.value<b.source.value:a.target.value<b.target.value;
         });
         out.erase(std::unique(out.begin(),out.end(),[](const auto& a,const auto& b){
             return a.target==b.target&&a.source==b.source;
         }),out.end());
+    }
+
+    // Stage a source edit without resetting DSP, recreating an editor or
+    // mutating any published row. Both old and new graphs retain same lease.
+    static bool stageDuckerSources(const DynamicChannelFxLeaseBank& prior,
+            std::uint64_t nextRevision,ChannelId target,std::size_t slot,
+            const Lease& held,const armix::builtin_fx::AutoDuckerProcessor::Settings& settings,
+            DynamicChannelFxLeaseBank& out) {
+        if(nextRevision<=prior.revision_||!settings.validSources()||!held)return false;
+        const auto* old=prior.ownerForControl(target,slot);
+        if(!old||*old!=held)return false;
+        DynamicChannelFxLeaseBank candidate;
+        candidate.epoch_=prior.epoch_;candidate.revision_=nextRevision;
+        candidate.rows_=prior.rows_;candidate.musicGuides_=prior.musicGuides_;
+        candidate.external_=prior.external_;candidate.globalRackOverride_=prior.globalRackOverride_;
+        for(auto& row:candidate.rows_)if(row.id==target)
+            for(auto& route:row.duckerRoutes)if(route.slot==slot){
+                route.settings=settings;out=std::move(candidate);return true;
+            }
+        return false;
     }
 
     // Process each M4 VST exactly once at its target ChannelId. CPU work is
@@ -451,8 +468,14 @@ public:
                 globalRackOverride_->load(std::memory_order_acquire)) ||
                 (row->rackBypassed &&
                  row->rackBypassed->load(std::memory_order_acquire));
-            for(std::size_t i=0;i<row->count;++i)
-                row->raw[i]->render(left,right,frames,rackOff);
+            std::size_t route=0;
+            for(std::size_t i=0;i<row->count;++i){
+                if(route<row->duckerRoutes.size()&&row->duckerRoutes[route].slot==i){
+                    const auto& s=row->duckerRoutes[route++].settings;
+                    const armix::builtin_fx::AutoDuckerSelectionScope selection({s.sources.data(),s.count});
+                    row->raw[i]->render(left,right,frames,rackOff);
+                }else row->raw[i]->render(left,right,frames,rackOff);
+            }
         }
         // Post-FX / pre-fader PCM tap of the selected OTHER ChannelId.
         // The guide is read-only: it NEVER creates a WIRE or audible send.
@@ -471,12 +494,14 @@ private:
         ChannelId target{};
         armix::builtin_fx::ChannelHarmonyProcessor* processor=nullptr;
     };
+    struct DuckerRoute final {std::size_t slot=0;armix::builtin_fx::AutoDuckerProcessor::Settings settings{};};
     struct Row final {
         ChannelId id{};
         ProcessingFormat format=ProcessingFormat::stereo;
         std::uint8_t count=0;
         std::shared_ptr<std::atomic<bool>> rackBypassed; // persists across revisions
         std::array<Lease,maxInserts> owners{};
+        std::vector<DuckerRoute> duckerRoutes; // only allocated for actual duckers
         std::array<FxGraph::FxInstance*,maxInserts> raw{};
     };
     const Row* find(ChannelId id) const noexcept {
