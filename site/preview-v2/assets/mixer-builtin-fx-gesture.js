@@ -15,7 +15,7 @@ function direction(e){
  return delta===0?0:delta<0?1:-1;
 }
 function bindRange(input,{get=()=>Number(input.value),enabled=()=>true,
-                         normalSteps=3,onChange=null,target=input}={}){
+                         normalSteps=3,fineSteps=1,onChange=null,target=input}={}){
  target.setAttribute?.("data-fx-wheel","");
  target.addEventListener("wheel",e=>{
   const dir=direction(e);
@@ -24,7 +24,7 @@ function bindRange(input,{get=()=>Number(input.value),enabled=()=>true,
   const lo=Number(input.min),hi=Number(input.max),step=Number(input.step),value=get();
   if(![lo,hi,step,value].every(Number.isFinite)||step<=0||hi<=lo)return;
   e.preventDefault();e.stopPropagation();
-  const steps=e.shiftKey?1:normalSteps;
+  const steps=e.shiftKey?fineSteps:normalSteps;
   const next=Math.max(lo,Math.min(hi,Number((lo+
      Math.round((value-lo)/step+dir*steps)*step).toFixed(8))));
   if(next===value)return;

@@ -467,6 +467,10 @@ sliders.forEach(({input})=>{
  // Wheel must accumulate from the latest intended setting, not from a
  // range element that Chromium may normalize during a fractional drag.
  window.ArMixFxGesture.bindRange(input,{
+   // Preserve V6 wheel increments independently of the integrated 0.1
+   // range resolution used for precision drag/keyboard interaction.
+   normalSteps:key==="gainDb"?15:30,
+   fineSteps:key==="gainDb"?5:10,
    enabled:()=>!!current&&(!native()||mode==="NATIVE"),
    get:()=>{
      const v=latest||pending?.settings||(heldPatch?{...settings,...heldPatch}:settings);

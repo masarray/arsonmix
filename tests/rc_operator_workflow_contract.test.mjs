@@ -125,3 +125,27 @@ test('shared FX wheel helper clamps, preserves fine steps, ignores zoom and disa
  input.disabled=false;input.value="9.5";fire(-120);assert.equal(edits.at(-1),10);
  fire(-120);assert.equal(edits.at(-1),10);
 });
+
+test('Harmonice wheel keeps V6 detents on precision ranges and accumulates held drafts',()=>{
+ const code=read("site/preview-v2/assets/mixer-builtin-fx-gesture.js");
+ const harmony=read("site/preview-v2/assets/mixer-native-harmony.js");
+ const win={};new Function("window",code)(win);
+ const normal=harmony.match(/normalSteps:key==="gainDb"\?(\d+):(\d+)/);
+ const fine=harmony.match(/fineSteps:key==="gainDb"\?(\d+):(\d+)/);
+ assert.ok(normal&&fine,"Harmonice must declare its wheel detents");
+ for(const [index,min,max,start,coarse,small] of [[2,0,100,45,3,1],[1,-24,12,0,1.5,.5]]){
+  let draft=start,handler,edits=0;
+  const input={min:String(min),max:String(max),step:".1",value:String(start),
+   disabled:false,isConnected:true,closest:()=>null,
+   addEventListener:(name,fn)=>{if(name==="wheel")handler=fn;}};
+  win.ArMixFxGesture.bindRange(input,{normalSteps:Number(normal[index]),
+   fineSteps:Number(fine[index]),get:()=>draft,onChange:v=>{draft=v;edits++;}});
+  const fire=(deltaY,shiftKey=false)=>handler({deltaY,deltaX:0,shiftKey,
+   preventDefault(){this.defaultPrevented=true;},stopPropagation(){}});
+  for(let i=1;i<=4;i++){input.value=String(start);fire(-120);
+   assert.equal(draft,Math.min(max,start+i*coarse));}
+  fire(120,true);assert.equal(draft,start+4*coarse-small);
+  fire(-120,true);assert.equal(draft,start+4*coarse);
+  assert.equal(edits,6);
+ }
+});
