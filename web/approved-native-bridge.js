@@ -3394,23 +3394,29 @@
       busPairs:Object.fromEntries(model.rows.filter(r=>r.bus).map(r=>[r.id,JSON.stringify(r.pair)]))};
     if(host.dataset.signature===signature)return;
     host.dataset.signature=signature;
+    const toolsOpen=host.querySelector("[data-io-matrix-tools]")?.open??false;
     host.replaceChildren();
     if(!ready||!model.live||!model.pins.length){
       host.textContent=!ready?"Apply device and pin changes first.":
         "Open a verified mixer with enabled "+side+" pins.";
       return;
     }
-    if(side==="input")renderLogicalInputs(host,model,next,busy);
-    else renderLogicalOutputs(host,model,next,busy);
-    renderIoDefaults(host,model,next,busy);
-    renderNamedPatchEditor(host,side,model,next,busy);
     const aliases=namedPatchChoices(side,model,next);
     const table=document.createElement("table");table.className="armix-patch-grid";
     const head=table.createTHead().insertRow();
     const th=label=>{const e=document.createElement("th");e.textContent=label;head.append(e);};
     th(side==="input"?"Mixer input":"Mixer output");
-    for(const pin of model.pins)th((pin.port+1)+" · "+pin.label);
-    th("Assignment");th(busy?"Pending":"");
+    for(const pin of model.pins){
+      th("");
+      const cell=head.lastElementChild;
+      cell.title=(pin.port+1)+" · "+pin.label;
+      const number=document.createElement("span");number.className="armix-pin-number";
+      number.textContent=String(pin.port+1);
+      const label=document.createElement("span");label.className="armix-pin-label";
+      label.textContent=pin.label;
+      cell.append(number,label);
+    }
+    th("Source / pair");th(busy?"Pending":"Apply");
     const body=table.createTBody();
     for(const row of model.rows){
       const tr=body.insertRow();const name=tr.insertCell();
@@ -3493,7 +3499,18 @@
       }else pick.textContent=row.state||"Read-only";
       update();
     }
-    host.append(table);
+    const matrix=document.createElement("div");matrix.className="armix-matrix-scroll";
+    matrix.tabIndex=0;matrix.setAttribute("role","region");
+    matrix.setAttribute("aria-label",side==="input"?"Input patch matrix":"Output patch matrix");
+    matrix.append(table);host.append(matrix);
+    const tools=document.createElement("details");tools.dataset.ioMatrixTools="";
+    const summary=document.createElement("summary");summary.textContent="Port definitions, defaults & presets";
+    tools.append(summary);tools.open=toolsOpen;
+    if(side==="input")renderLogicalInputs(tools,model,next,busy);
+    else renderLogicalOutputs(tools,model,next,busy);
+    renderIoDefaults(tools,model,next,busy);
+    renderNamedPatchEditor(tools,side,model,next,busy);
+    if(tools.childElementCount>1)host.append(tools);
   }
   function paintPhysicalOutputs(next) {
     if(devicePanel&&!devicePanel.hidden){
@@ -3514,7 +3531,7 @@
     const signature=JSON.stringify([patches,String(next?.device?.backend||"")]);
     if(devicePanel.dataset.outputSignature===signature)return;
     devicePanel.dataset.outputSignature=signature;
-    const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
+    const summary=devicePanel.querySelector("[data-audio-output-overview] [data-audio-destination-heading]");
     if(summary)summary.textContent="Destinations · "+patches.length;
     view.replaceChildren();
     if(!patches.length){
@@ -4337,14 +4354,23 @@
         .armix-audio-dialog[data-audio-tab="inputs"],
         .armix-audio-dialog[data-audio-tab="routing"]{width:min(1050px,96vw)}
         .armix-input-overview{padding:15px 20px}
-        .armix-crosspoint-scroll{overflow:auto;max-height:52vh}
-        .armix-patch-grid{border-collapse:separate;border-spacing:2px;font-size:11px;width:max-content;min-width:100%}
-        .armix-patch-grid th{font-weight:500;max-width:72px;min-width:42px;vertical-align:bottom;overflow-wrap:anywhere}
-        .armix-patch-grid th:first-child,.armix-patch-grid td:first-child{position:sticky;left:0;z-index:1;background:#26343d;min-width:95px;max-width:150px;padding:5px}
-        .armix-audio-dialog .armix-patch-cell{width:100%;min-width:32px;min-height:26px;padding:2px;border-radius:1px;background:#29343d;color:#8ba2af}
-        .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
-        .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
-        .armix-patch-grid select{max-width:210px;font-size:11px}
+        .armix-crosspoint-scroll{min-width:0}
+         .armix-matrix-scroll{overflow:auto;max-height:43vh;border:1px solid #354b59;border-radius:5px;scrollbar-gutter:stable}
+         .armix-patch-grid{border-collapse:separate;border-spacing:3px;font-size:11px;width:max-content;min-width:100%}
+         .armix-patch-grid th{font-weight:500;max-width:76px;min-width:48px;vertical-align:bottom;background:#20313c;position:sticky;top:0;z-index:2;padding:5px 3px}
+         .armix-pin-number{display:block;color:#cce7ee;font-variant-numeric:tabular-nums}
+         .armix-pin-label{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;color:#9ab6c4;font-size:10px;line-height:12px}
+         .armix-patch-grid th:first-child,.armix-patch-grid td:first-child{position:sticky;left:0;z-index:1;background:#20313c;min-width:86px;max-width:130px;padding:5px}
+         .armix-patch-grid th:first-child{z-index:3}
+         .armix-audio-dialog .armix-patch-cell{width:100%;min-width:34px;min-height:28px;padding:2px;border-radius:3px;border:1px solid #344b58;background:#182a35;color:#7693a2}
+         .armix-audio-dialog .armix-patch-cell:hover:not(:disabled){border-color:#8bbdcd;background:#294755}
+         .armix-audio-dialog .armix-patch-cell:focus-visible{outline:2px solid #9de4fa;outline-offset:-2px}
+         .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
+         .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
+         .armix-patch-grid select{max-width:180px;font-size:11px}
+         .armix-audio-dialog [data-io-matrix-tools]{margin:8px 0 0;padding:8px 0 0}
+         .armix-audio-dialog [data-io-matrix-tools] details{margin:0}
+         .armix-matrix-hint{margin:0 0 7px;color:#a9c1cd;font-size:11px}
         .armix-custom-stereo{display:grid;gap:3px;margin-top:4px}
         .armix-custom-stereo[hidden]{display:none!important}
         .armix-named-patches{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:6px 0 12px}
@@ -4507,18 +4533,18 @@
           <span>Waiting for driver and mixer verification.</span></div>
         </div>
         <section class="armix-input-overview">
-          <div class="armix-output-heading">INPUTS · hardware to mixer</div>
+          <div class="armix-output-heading">Input patch matrix</div>
           <div class="armix-crosspoint-scroll" data-audio-input-grid></div>
-          <div class="armix-device-note">Choose Mono or Stereo, then Apply on the row. Blue = installed; amber = draft.</div>
+          <div class="armix-device-note">Select a pin or source, then Apply. Blue = installed · Amber = draft. Choose Mono or Stereo in Source / pair.</div>
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
-          <div class="armix-output-heading">Destinations</div>
-          <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
-          <details data-audio-hardware-routing>
-            <summary>Advanced hardware routing</summary>
-            <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
-            <div class="armix-device-note">Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair. Blue = installed; amber = draft.</div>
-          </details>
+          <details data-audio-hardware-routing open>
+             <summary>Output patch matrix</summary>
+             <div class="armix-matrix-hint">Select a pair, then Apply. Mute MAIN and STREAM before changing an existing MAIN / MONITOR pair. Blue = installed · Amber = draft.</div>
+             <div class="armix-crosspoint-scroll" data-audio-output-grid></div>
+           </details>
+           <div class="armix-output-heading" data-audio-destination-heading>Destinations</div>
+           <div class="armix-output-matrix" data-audio-output-matrix role="list"></div>
           <div class="armix-stream-inline" data-audio-extra-output></div>
           <div data-monitor-timing hidden class="armix-device-note">
             <strong>MONITOR timing</strong> · <span data-monitor-timing-value></span>
@@ -6579,7 +6605,7 @@
       if (!connected)return false;
       if(action==="sofAssignPre"||action==="sofAssignPost"){
         const plan=sofAssignmentPlan(t);
-        if(!plan||controller?.state()?.pending){nativeToast("SEND assignment unavailable · wait for accepted routing");return true;}
+        if(!plan||pendingLogical||controller?.state()?.pending){nativeToast("SEND assignment unavailable · wait for accepted routing");return true;}
         const {from,to}=plan;
         const tap=action==="sofAssignPre"?"PRE_FADER":"POST_FADER";
         const db=t.sofDraft?.target===scope.sofTargetId?t.sofDraft.db:-60;
