@@ -3,6 +3,7 @@
 #include "../engine/player/NativePlayerShowDeck.h"
 #include "../engine/player/PlayerSetlistPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
+#include "../src/PlayerMediaMetadata.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -120,6 +121,41 @@ int main() {
             song.setSample(1,i,-.15f);
         }
         assert(writer->writeFromAudioSampleBuffer(song,0,song.getNumSamples()));
+    }
+    {
+        using Media=armix::player::PlayerMediaMetadata;
+        juce::AudioFormatManager formats;formats.registerBasicFormats();
+        const auto info=Media::probe(file,formats);
+        assert(!info.missing&&info.channels==2&&info.sampleRate==44100.0);
+        assert(std::abs(info.seconds-16384.0/44100.0)<1e-6);
+        assert(info.title==file.getFileNameWithoutExtension());
+        assert(Media::probe(file.withFileExtension(".missing"),formats).missing);
+        juce::MemoryOutputStream png;
+        assert(juce::Base64::convertFromBase64(png,"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aO1sAAAAASUVORK5CYII="));
+        const auto* bytes=static_cast<const unsigned char*>(png.getData());
+        assert(Media::imageUri(bytes,png.getDataSize()).startsWith("data:image/png;base64,"));
+        auto oversized=juce::MemoryBlock(png.getData(),png.getDataSize());
+        auto* malformed=static_cast<unsigned char*>(oversized.getData());malformed[16]=1;
+        assert(Media::imageUri(malformed,oversized.getSize()).isEmpty());
+        assert(Media::imageUri(bytes,10).isEmpty());
+        const auto coverFile=file.withFileExtension(".png");
+        assert(coverFile.replaceWithData(png.getData(),png.getDataSize()));
+        assert(Media::cover(file).startsWith("data:image/png;base64,"));
+        assert(coverFile.deleteFile());
+        // ID3 APIC fixture is metadata-only; no claim of MP3 audio decoding.
+        const auto id3File=file.withFileExtension(".mp3");
+        juce::MemoryOutputStream apic;
+        apic.writeByte(0);apic.write("image/png",10);apic.writeByte(3);apic.writeByte(0);
+        apic.write(png.getData(),png.getDataSize());
+        juce::MemoryOutputStream frames;frames.write("APIC",4);
+        frames.writeIntBigEndian(static_cast<int>(apic.getDataSize()));frames.writeShortBigEndian(0);
+        frames.write(apic.getData(),apic.getDataSize());
+        const auto n=frames.getDataSize();
+        unsigned char header[10]={'I','D','3',3,0,0,0,0,static_cast<unsigned char>((n>>7)&127),static_cast<unsigned char>(n&127)};
+        juce::MemoryOutputStream tagged;tagged.write(header,10);tagged.write(frames.getData(),n);
+        assert(id3File.replaceWithData(tagged.getData(),tagged.getDataSize()));
+        assert(Media::cover(id3File).startsWith("data:image/png;base64,"));
+        assert(id3File.deleteFile());
     }
     {
         armix::player::NativePlayerDeck deck;

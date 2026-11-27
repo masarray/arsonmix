@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -96,6 +97,7 @@ struct PlayerMediaMetadata {
         m.artist=tag({"artist","ARTIST","id3artist","IART"});
         m.album=tag({"album","ALBUM","id3album","IPRD"});
         if(file.hasFileExtension("mp3"))id3(file,[&](const unsigned char* frame,const unsigned char* p,std::size_t n){
+            if(std::memcmp(frame,"TIT2",4)!=0&&std::memcmp(frame,"TPE1",4)!=0&&std::memcmp(frame,"TALB",4)!=0)return false;
             auto value=id3Text(p,n);if(value.isEmpty())return false;
             if(std::memcmp(frame,"TIT2",4)==0)m.title=value;
             else if(std::memcmp(frame,"TPE1",4)==0)m.artist=value;

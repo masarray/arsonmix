@@ -8,6 +8,10 @@ on:
       - 'engine/player/NativePlayerDeck.h'
       - 'engine/player/NativePlayerShowDeck.h'
       - 'tests/player_native_decode_test.cpp'
+      - 'src/PlayerMediaMetadata.h'
+      - 'src/PlayerSetlistArchive.h'
+      - 'src/PlayerSetlistEditTransaction.h'
+      - 'tests/player_setlist_archive_test.cpp'
       - '.github/workflows/player-native-deck-windows.yml'
   workflow_dispatch:
 permissions:
@@ -62,12 +66,15 @@ jobs:
       - name: Compile ONLY real native player decoder test target
         shell: pwsh
         run: |
-          cmake --build build --config Release --parallel 2 --target ARMixPlayerDecodeTests
+          cmake --build build --config Release --parallel 2 --target ARMixPlayerDecodeTests ARMixPlayerSetlistArchiveTests
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run ONLY real WAV player/loop/seek/crossfade regression
         shell: pwsh
         run: |
           ctest --test-dir build -C Release --output-on-failure `
-            -R '^ArSonPlayerRealWavDecodeResampleAndTransport$'
+            -R '^(ArSonPlayerRealWavDecodeResampleAndTransport|ArSonPlayerV1V2V3SetlistArchiveMigrationAndPersistence)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host 'PLAYER_DECK_REAL_JUCE_WAV_CTEST=PASS (physical ASIO NOT qualified)'
+
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Write-Host 'PLAYER_DECK_REAL_JUCE_WAV_CTEST=PASS (physical ASIO NOT qualified)'
