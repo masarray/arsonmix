@@ -172,17 +172,18 @@ def main():
             # Click the LCD to enter editing; Escape restores the accepted
             # native setting without issuing a new DSP command.
             assert editor.locator("#vtBpm").is_hidden()
-            before_cancel=page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeThrowSet').length")
             editor.locator("#vtDisplayBpm").click()
             assert editor.locator("#vtBpm").is_visible()
             assert editor.locator("#vtBpm").input_value()=="120"
+            writes=page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeThrowSet').length")
             editor.locator("#vtBpm").fill("133")
             editor.locator("#vtBpm").press("Escape")
-            assert editor.is_visible(), "Escape must cancel the local BPM edit, not close the editor"
+            assert editor.is_visible(),"Escape must cancel the BPM edit, not close the FX editor"
             assert editor.locator("#vtBpm").is_hidden()
-            assert editor.locator("#vtDisplayBpm").is_visible()
+            assert editor.locator("#vtBpm").input_value()=="120"
             assert editor.locator("#vtDisplayBpm").inner_text()=="120"
-            assert page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeThrowSet').length")==before_cancel
+            assert page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeThrowSet').length")==writes,\
+                "Cancelling an edit must not send a DSP setting"
             assert editor.locator("#vtBeatRail i[data-on='true']").count()==3
             assert editor.locator(".vt-encoder-bank .vt-encoder-face").count()==6
             assert editor.locator("#vtWetDial[role='slider']").count()==1
@@ -191,27 +192,7 @@ def main():
             assert trigger.get_attribute("aria-label")=="Throw captured vocal phrase"
             assert trigger.inner_text().strip()=="","Singer cue has no noisy visible words"
             tb=trigger.bounding_box()
-            # Diagnostic only: preserve the existing size requirement.
-            geometry=trigger.evaluate("""el=>{
-                const props=e=>{const s=getComputedStyle(e),r=e.getBoundingClientRect();
-                    return {id:e.id,cls:e.className,w:r.width,h:r.height,
-                    cssWidth:s.width,cssHeight:s.height,maxWidth:s.maxWidth,
-                    maxHeight:s.maxHeight,zoom:s.zoom,transform:s.transform,
-                    display:s.display,flex:s.flex,grid:s.gridTemplateColumns};};
-                const chain=[];for(let e=el;e&&chain.length<9;e=e.parentElement)chain.push(props(e));
-                const rules=[];for(const sheet of document.styleSheets){
-                    try{const scan=rs=>{for(const rule of rs){
-                        if(rule.conditionText&&rule instanceof CSSMediaRule&&!matchMedia(rule.conditionText).matches)continue;
-                        if(rule.cssRules)scan(rule.cssRules);
-                        else if(rule.selectorText&&el.matches(rule.selectorText)&&
-                            /width|height|zoom|transform|flex/.test(rule.style.cssText))
-                            rules.push({selector:rule.selectorText,style:rule.style.cssText,source:sheet.href||sheet.ownerNode?.id});}};
-                        scan(sheet.cssRules);}catch(e){rules.push(String(e));}
-                }
-                return {chain,rules,viewport:[innerWidth,innerHeight]};}""")
-            print("VOCAL_THROW_GEOMETRY",geometry,flush=True)
-            page.screenshot(path="arsonmix-vocal-throw-diagnostic-"+str(width)+".png")
-            assert tb and tb["width"]>=160 and tb["height"]>=160,(width,tb,geometry)
+            assert tb and tb["width"]>=160 and tb["height"]>=160
             assert editor.locator(".vt-throw-engraving").inner_text()=="THROW"
             assert editor.locator("#vtTap").is_visible()
             assert editor.locator("#vtMusicStatus").inner_text()=="TAP"

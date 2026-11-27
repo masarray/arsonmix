@@ -422,13 +422,20 @@ jobs:
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
+          set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          python scripts/build_pages.py --out dist-pages --sha "$EXPECTED_SOURCE_SHA" --branch main
+          python scripts/build_landing_assets.py dist-pages
+          python tests/single_preview_publication_contract_test.py dist-pages
           failed=0
           run_test() {
             echo "::group::$*"
             if python "$@"; then echo "P0_TAIL_PASS $*"; else echo "P0_TAIL_FAIL $*"; failed=1; fi
             echo "::endgroup::"
           }
+          run_test tests/approved_audio_io_chromium_smoke.py
+          run_test tests/approved_inline_fx_clip_smoke.py
+          run_test tests/approved_operator_ux_chromium_fat.py
           run_test tests/approved_native_vocal_throw_smoke.py
           run_test tests/approved_native_harmony_smoke.py
           run_test tests/approved_native_cold_start_smoke.py
