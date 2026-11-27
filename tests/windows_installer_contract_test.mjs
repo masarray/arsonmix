@@ -477,7 +477,8 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
   assert.match(native, /void serviceSmartUpdateAcknowledgement\(\)/);
   assert.match(native, /if \(\+\+updatePromptTicks_ % 40 == 0\)/);
   assert.match(native, /class ArSonMixUpdateNotice final : public juce::DocumentWindow/);
-  assert.match(native, /juce::TextButton ok \{"OK"\}/);
+  assert.match(native, /ArSonNoticeButton ok \{"OK",true\}/);
+  assert.match(native, /class ArSonNoticeButton final : public juce::TextButton/);
   assert.match(native, /void closeButtonPressed\(\) override \{ setVisible \(false\); \}/);
   assert.match(native, /std::make_unique<ArSonMixUpdateNotice>/);
   assert.doesNotMatch(native, /juce::NativeMessageBox::showAsync \(options/);
@@ -516,7 +517,7 @@ test('silent post-install GUI probe cannot automatically arm ASIO or save a user
   assert.match(main.slice(guard,engine), /return;\s*\}\s*auto saved/);
   assert.match(main, /if \(!updaterProbeMode_ &&\s*\(static_cast<bool>\(lab\.getProperty/);
   assert.match(main, /if \(!isAutoUpdateHealthProbe\(\)\)\s*launchSmartUpdater \(false\)/);
-  assert.match(main, /if \(!recoveryOnly_ && !innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
+  assert.match(main, /if \(hadMixerWindow && !recoveryOnly_ && !innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
   assert.match(main, /updateProbeCompleteTick_ >= 3500u/);
   assert.match(updater, /GUI_READY_NO_AUDIO/);
   assert.match(updater, /PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH/);
@@ -559,9 +560,13 @@ test('P0 Windows 10 fresh install needs no VC redistributable and reports missin
   assert.ok(cmake.indexOf('set(CMAKE_MSVC_RUNTIME_LIBRARY')<
     cmake.indexOf('add_subdirectory("${JUCE_ROOT}"'),
     'static CRT must apply to JUCE and app as one ABI');
-  assert.match(native,/Download \/ Repair WebView2/);
-  assert.match(native,/developer\.microsoft\.com\/en-us\/microsoft-edge\/webview2/);
-  assert.match(native,/if \(result == 0\)/);
+  const emergency=native.slice(native.indexOf('class ArSonRecoveryNotice final'),native.indexOf('class ConsoleWindow final'));
+  assert.match(emergency, /"Repair WebView2","Close",\[\]\(bool accepted\)/);
+  assert.match(emergency, /if\(accepted\)juce::URL\("https:\/\/developer\.microsoft\.com\/en-us\/microsoft-edge\/webview2\/"\)\s*\.launchInDefaultBrowser\(\)/);
+  assert.match(emergency, /panel_\.primary\.onClick=\[this\]\{finish\(true\);\}/);
+  assert.match(emergency, /panel_\.cancel\.onClick=\[this\]\{finish\(false\);\}/);
+  assert.match(emergency, /void closeButtonPressed\(\) override \{finish\(false\);\}/);
+  assert.doesNotMatch(emergency.slice(0,emergency.indexOf('void showWebViewStartupError')), /NativeMessageBox|runModalLoop|enterModalState/);
   assert.match(iss,/^RestartIfNeededByRun=no$/m);
   const packaged=read('scripts/build_verify_windows_installer.ps1');
   const pe=read('scripts/verify_win10_pe_runtime.py');
@@ -597,8 +602,9 @@ test("cold-start mixer archive requires confirmation and bypasses normal startup
   assert.ok(at>0&&end>at);
   const recovery=main.slice(at,end);
   assert.match(recovery,/recoveryOnly_=true/);
-  assert.match(recovery,/\.withButton\("Cancel"\)\.withButton\("Archive session"\)/);
-  assert.match(recovery,/if\(choice!=1\)\{systemRequestedQuit\(\);return;\}/);
+  assert.match(recovery,/"Archive session","Cancel",\[this\]\(bool accepted\)/);
+  assert.match(recovery,/if\(!accepted\)\{systemRequestedQuit\(\);return;\}/);
+  assert.ok(recovery.indexOf('if(!accepted)') < recovery.indexOf('quarantineForStartupRecovery(archived)'));
   assert.match(recovery,/quarantineForStartupRecovery\(archived\)/);
   assert.match(recovery,/\}\);\s*return;\s*\}/);
   assert.doesNotMatch(recovery,/engine_\.start|startTimer|make_unique<ConsoleWindow>|launchSmartUpdater/);
