@@ -112,7 +112,7 @@
       // Anti Noiz is responsive and fits the viewport. Rescue the whole
       // face after a resize, not just a draggable edge. Wide hardware
       // editors retain their established partial-pan policy.
-      const compact=root.id==="mxNativeAntiNoiz";
+      const compact=root.id==="mxNativeAntiNoiz"||root.id==="mxNativeDucker";
       const x=compact&&r.width<=innerWidth?
         limit(r.left,0,innerWidth-r.width):limit(r.left,handle-r.width,innerWidth-handle);
       const y=compact&&r.height<=innerHeight?

@@ -7869,7 +7869,7 @@ private:
             };
             if(!d||!req.sequence("ducker-")||nativeShowBusy_||studioBackupBusy_||
                mixerSessionWorker_.busy()||deviceApply_.busy()||engine_.independentClockActive()||
-               !d->stateSnapshotQuiescent()||std::any_of(pendingNativeDuckers_.begin(),pendingNativeDuckers_.end(),
+               engine_.isGraphSwitchPending()||!d->stateSnapshotQuiescent()||std::any_of(pendingNativeDuckers_.begin(),pendingNativeDuckers_.end(),
                    [&](const auto& p){return p.owner==owner;}))return reject("AUTO_DUCKER_NOT_READY_OR_BUSY");
             auto next=d->acceptedSettings();
             if(action=="nativeDuckerSources"){

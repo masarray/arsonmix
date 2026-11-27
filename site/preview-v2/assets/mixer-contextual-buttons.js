@@ -327,20 +327,21 @@
    Real out-of-mixer popout requires a JUCE-owned separate HWND. */
 (()=>{
  'use strict';
- // One bounded layer range for the eight approved inline editor surfaces.
+ // One bounded layer range for the nine approved inline editor surfaces.
  // Native leases and audio state remain exclusively in their existing owners.
  const owners=Object.freeze({
   '#mxNativeGeq31':'ArSonMixGraphicEq31','#mxNativePeq':'ArSonMixNativeEq',
   '#mxNativeComp':'ArSonMixNativeCompressor','#mxNativeHarmony':'ArSonMixNativeHarmony',
+  '#mxNativeDucker':'ArSonMixNativeDucker',
   '#mxNativeVocalThrow':'ArSonMixNativeVocalThrow','#mxNativeSonKu':'ArSonMixNativeSonKu',
   '#mxNativeAntiNoiz':'ArSonMixNativeAntiNoiz','#mxNativeDeEzzerHost':'ArSonMixNativeDeEzzer'
  });
  const selectors=Object.keys(owners),rootSelector=selectors.join(',');
- // Reserve 9000..9007 for FX; native context/hotkey panels start at
+ // Reserve 9000..9008 for FX; native context/hotkey panels start at
  // 10018 and modal/confirmation surfaces remain above this band.
  const layerBase=9000;
  let order=[];
- const popupSelector='.mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu';
+ const popupSelector='.mx-fxp-form,.mx-fxp-menu,#mxHPresetForm,#mxHPresetMenu,.mx-ducker-picker';
  const modalSelector='[aria-modal="true"],dialog[open],#fastPicker,#routeChoice,#channelIdentity,#nativeFxSelector,#nativePluginManager,#nativeMySounds,#nativeOrbit,#armixContext,#armixOrbit,#armixFxParamBrowse,#armixHotkeyCard,#armixHotkeyRegister';
  const isVisible=el=>el&&!el.hidden&&!el.closest('[hidden]')&&
    el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden';
@@ -415,7 +416,7 @@
   if(popup){
    // Use the existing cancel lifecycle. Menus have no pending edit; hiding
    // just their menu never affects the accepted DSP or the editor identity.
-   const cancel=popup.querySelector('.mx-fxp-cancel,#mxHPresetCancel');
+   const cancel=popup.querySelector('.mx-fxp-cancel,#mxHPresetCancel,.mx-ducker-cancel');
    if(cancel)cancel.click();
    else if(popup.matches('.mx-fxp-menu,#mxHPresetMenu'))popup.hidden=true;
    event.preventDefault();event.stopImmediatePropagation();return;

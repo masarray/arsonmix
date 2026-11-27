@@ -179,7 +179,6 @@ public:
                 return !roster.find(d.source);
             }),deps.end());
         }
-              roster,effective,prepared->graph,report.graphError)) {
         if(!DynamicPreparedMixerBlock::compile(
               roster,effective,*prepared->graph,report.graphError)) {
             report.fault=Fault::invalidGraph;return report;
