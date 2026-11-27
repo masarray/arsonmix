@@ -1356,6 +1356,20 @@
     const choices=deviceVM.outputChoices(next,true);
     const availableChoices=hardwareOutputPairs();
     const named=stripNamedChoices("output").map(p=>p.label);
+    // Settle every accepted ChannelId, including channels not projected
+    // into a visible mixer bank. The strip is presentation only.
+    for(const [id,pending] of pendingExternal){
+      const row=assignments.find(p=>p.channelId===id);
+      const {state,value}=deviceVM.externalPresentation(next,row,choices);
+      const result=stripVM.externalPending(pending,next?.device?.epoch,state,row);
+      if(result==="STALE")pendingExternal.delete(id);
+      else if(result==="CONFIRMED"){
+        pendingExternal.delete(id);
+        const name=next?.graph?.channels?.find(c=>c.id===id)?.name||"Channel "+id;
+        status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
+          "EXTERNAL OUT verified · "+name+" → "+value);
+      }
+    }
     for(const t of scope?.tracks||[]) {
       const id=nativeIdFor(t);
       const row=assignments.find(p=>p.channelId===id);
@@ -1384,14 +1398,6 @@
         marker.dataset.status=state;
       }
       select.title=projected.title;
-      const pending=pendingExternal.get(id);
-      const result=stripVM.externalPending(pending,next?.device?.epoch,state,row);
-      if(result==="STALE")pendingExternal.delete(id);
-      else if(result==="CONFIRMED"){
-        pendingExternal.delete(id);
-        status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
-          "EXTERNAL OUT verified · "+t.name+" → "+value);
-      }
       if(!pendingExternal.has(id))select.removeAttribute("aria-busy");
     }
   };
@@ -2678,8 +2684,12 @@
   }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
-  async function requestExternalOutput(t,label,el=null){
-        const previous=t.externalOutput||"None";
+  async function requestExternalOutput(t,label,el=null,matrixChannelId=null){
+        // Matrix owns ChannelId selection, not the mounted strip/bank.
+        const id=matrixChannelId??nativeIdFor(t);
+        const acceptedLabel=()=>deviceVM.externalPresentation(hardware,
+          hardware?.raw?.externalOutputs?.find(p=>p.channelId===id)).value;
+        const previous=matrixChannelId!==null?acceptedLabel():t.externalOutput||"None";
         if(busOutputPending){
           if(el)el.value=previous;
           nativeToast("Wait for bus mapping readback");return true;
@@ -2689,14 +2699,15 @@
           if(!alias){if(el)el.value=previous;nativeToast("I/O preset unavailable");return true;}
           label=alias.choice.label;
         }
-        const id=nativeIdFor(t);
+        const channelName=matrixChannelId!==null?
+          controller?.state()?.current?.graph?.channels?.find(c=>c.id===id)?.name:t.name;
         // One pure Channel Strip preflight for ASIO port identity and
         // shared-output confirmation; only this bridge dispatches native.
         const plan=stripVM.externalOutputPlan({
           native:controller?.state()?.current,hardware,channelId:id,
           selectedLabel:label,currentLabel:previous,
           choices:hardwareOutputPairs(),pending:pendingExternal.has(id),
-          channelName:t.name
+          channelName
         });
         if(plan.kind==="UNAVAILABLE"){
           if(el)el.value=previous;
@@ -2709,10 +2720,14 @@
         if(el)el.value=previous;
         if(plan.requiresConfirmation&&!await confirmIo("External output",plan.confirmation,"Enable output"))return true;
         const freshTrack=scope?.tracks?.find(x=>nativeIdFor(x)===id);
-        if(!freshTrack||(freshTrack.externalOutput||"None")!==previous)return true;
+        if(matrixChannelId!==null?
+          (!matrixReady(hardware)||matrixBusy()||namedPatchPending||acceptedLabel()!==previous):
+          (!freshTrack||(freshTrack.externalOutput||"None")!==previous))return true;
+        const freshName=matrixChannelId!==null?
+          controller?.state()?.current?.graph?.channels?.find(c=>c.id===id)?.name:freshTrack.name;
         const freshPlan=stripVM.externalOutputPlan({native:controller?.state()?.current,
           hardware,channelId:id,selectedLabel:label,currentLabel:previous,
-          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),channelName:freshTrack.name});
+          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),channelName:freshName});
         if(JSON.stringify(freshPlan)!==JSON.stringify(plan)){
           nativeToast("Routing changed · review external output again");return true;
         }
@@ -2842,7 +2857,9 @@
       const choice=row.choices.find(x=>x.label===label&&x.left===requested.left&&x.right===requested.right);
       if(!choice||choice.label===row.selected||
          !await confirmIo("Remap bus output","Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO.","Remap output"))return;
-      if(!matrixReady(hardware))return;
+      if(!matrixReady(hardware)||matrixBusy()||namedPatchPending||
+         hardware.device.epoch!==lease.epoch||hardware.hardwareConfiguration!==lease.config||
+         hardware.graph?.revision!==lease.revision||hardware.graph?.rosterRevision!==lease.roster)return;
       const fresh=deviceVM.patchMatrix(hardware,side).rows.find(x=>x.id===id&&x.editable);
       if(!fresh||JSON.stringify(fresh.pair)!==JSON.stringify(row.pair)||
          !fresh.choices.some(x=>x.label===label&&x.left===choice.left&&x.right===choice.right))return;
@@ -2860,9 +2877,8 @@
         paintPhysicalOutputs(hardware);
       },5000);
     }else{
-      const track=scope?.tracks?.find(t=>nativeIdFor(t)===id);
-      if(!track||!current?.admitted)return;
-      requestExternalOutput(track,label);
+      if(!current?.admitted)return;
+      await requestExternalOutput(null,label,null,id);
     }
     paintPhysicalOutputs(hardware);
   }
@@ -3380,6 +3396,7 @@
     }
     host.append(section);
   }
+  const outputMatrixDrafts=new Map();
   function paintRouteMatrix(next,side){
     const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
     if(!host)return;
@@ -3391,6 +3408,7 @@
       next?.raw?.ioDefaults,next?.raw?.logicalInputRegistry?.revision,next?.raw?.logicalOutputRegistry?.revision]);
     const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
       revision:model.revision,roster:model.roster,
+      externalRevision:next?.raw?.externalRevision,
       busPairs:Object.fromEntries(model.rows.filter(r=>r.bus).map(r=>[r.id,JSON.stringify(r.pair)]))};
     if(host.dataset.signature===signature)return;
     host.dataset.signature=signature;
@@ -3399,11 +3417,33 @@
     const scrollTop=previousMatrix?.scrollTop??0,scrollLeft=previousMatrix?.scrollLeft??0;
     host.replaceChildren();
     if(!ready||!model.live||!model.pins.length){
+      if(side==="output")outputMatrixDrafts.clear();
       host.textContent=!ready?"Apply device and pin changes first.":
         "Open a verified mixer with enabled "+side+" pins.";
       return;
     }
     const aliases=namedPatchChoices(side,model,next);
+    if(side==="output"){
+      const note=document.createElement("div");note.className="armix-matrix-hint";
+      const text=document.createElement("span");
+      const muted=next.raw?.operatorOutputMuted===true&&next.device?.outputArmed===false&&next.raw?.physicalBusSecondaryArmed===false;
+      text.textContent=muted?"Outputs disarmed · apply a verified pair; resume explicitly when ready. ":
+        "CH/AUX: select a free or shared stereo pair. MAIN/MONITOR: mute outputs before remapping. ";
+      note.append(text);
+      if(!muted&&next.device?.backend==="ASIO"){
+        const stop=document.createElement("button");stop.type="button";stop.textContent="Mute MAIN & STREAM";
+        stop.disabled=busy;
+        stop.onclick=async()=>{
+          if(matrixBusy()||!await confirmIo("Mute hardware outputs","Stop MAIN and STREAM before bus remapping? Audio will remain muted until you explicitly resume.","Mute outputs"))return;
+          backend.emitEvent("arMixAction",{action:"monitor",value:false});
+          status("Output mute requested · waiting for native readback");
+        };
+        note.append(stop);
+      }
+      host.append(note);
+      const ids=new Set(model.rows.map(r=>r.id));
+      for(const id of outputMatrixDrafts.keys())if(!ids.has(id))outputMatrixDrafts.delete(id);
+    }
     const table=document.createElement("table");table.className="armix-patch-grid";
     const head=table.createTHead().insertRow();
     const th=label=>{const e=document.createElement("th");e.textContent=label;head.append(e);};
@@ -3450,6 +3490,21 @@
       if(side==="input"&&row.editable&&model.pins.length>1)
         select.append(new Option("Custom stereo L/R…",customValue));
       select.value=row.selected??"";
+      // Preserve only a draft tied to exactly the same physical identity,
+      // graph, accepted row and available pair list. Unrelated named preset
+      // or busy-state repaints do not silently erase the user's selection.
+      const draftKey=side==="output"?JSON.stringify([lease.config,lease.epoch,lease.authority,
+        lease.revision,lease.roster,lease.externalRevision,row.selected,row.cells,
+        model.pins,candidates,aliases]):null;
+      const saved=side==="output"?outputMatrixDrafts.get(row.id):null;
+      if(saved&&saved.key===draftKey&&row.editable&&[...select.options].some(o=>o.value===saved.value&&!o.disabled))
+        select.value=saved.value;
+      else if(side==="output")outputMatrixDrafts.delete(row.id);
+      const remember=()=>{
+        if(side!=="output")return;
+        if(select.value===row.selected)outputMatrixDrafts.delete(row.id);
+        else outputMatrixDrafts.set(row.id,{key:draftKey,value:select.value});
+      };
       const selectedChoice=()=>select.value===customValue?
         deviceVM.physicalInputChoice(next,"STEREO",Number(customLeft.value),Number(customRight.value)):
         select.value.startsWith("preset:")?aliases.find(p=>"preset:"+p.id===select.value)?.choice:
@@ -3470,8 +3525,12 @@
         const cell=tr.insertCell(),button=document.createElement("button");
         button.type="button";button.className="armix-patch-cell";
         button.setAttribute("aria-label",row.name+" / "+pin.label);
-        button.title=row.name+" / "+pin.label+" · select, then Apply";
-        button.disabled=busy||!row.editable;
+        const pinChoice=side==="output"?candidates.find(x=>x.left===pin.port||x.right===pin.port):null;
+        const blocked=side==="output"&&!pinChoice;
+        button.title=row.name+" / "+pin.label+" · "+(!row.editable?(row.state||"Read-only"):
+          blocked?"Unavailable pair · reserved, disabled or incomplete":busy?"Waiting for native readback":"Select, then Apply");
+        if(side==="output")button.dataset.unavailable=String(blocked||!row.editable);
+        button.disabled=busy||!row.editable||blocked;
         button.onclick=()=>{
           if(select.value===customValue){
             const pinValue=String(pin.port);
@@ -3483,13 +3542,13 @@
             (current?.mode==="NONE"&&row.format==="STEREO");
           const choice=candidates.find(x=>(side==="output"||x.mode===(stereo?"STEREO":"MONO"))&&
             (x.left===pin.port||(stereo&&x.right===pin.port)));
-          if(choice){select.value=choice.label;update();}
+          if(choice){select.value=choice.label;remember();update();}
         };
         cell.append(button);controls.push({button,pin,index});
       }
       const pick=tr.insertCell(),action=tr.insertCell();
       if(row.editable){
-        select.disabled=busy;select.onchange=update;pick.append(select);
+        select.disabled=busy;select.onchange=()=>{remember();update();};pick.append(select);
         if(side==="input"){
           customLeft.onchange=customRight.onchange=update;
           pick.append(custom);
@@ -4224,6 +4283,7 @@
     loopbackField("confirmed").checked=false;
     for(const side of ["input","output"])loopbackField(side).disabled=false;
     devicePanel.hidden=true;
+    outputMatrixDrafts.clear();
     syncNamedOptions();
     for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
       delete host.dataset.signature;
@@ -4376,6 +4436,7 @@
          .armix-audio-dialog .armix-patch-cell:focus-visible{outline:2px solid #9de4fa;outline-offset:-2px}
          .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
          .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
+         .armix-audio-dialog .armix-patch-cell[data-unavailable="true"][data-mark=""]{background:#15222a;border-color:#293943;color:#52636c;cursor:not-allowed}
          .armix-patch-grid select{max-width:180px;font-size:11px}
          .armix-audio-dialog [data-io-matrix-tools]{margin:8px 0 0;padding:8px 0 0}
          .armix-audio-dialog [data-io-matrix-tools] details{margin:0}
