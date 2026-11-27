@@ -9,6 +9,7 @@
 #include "../src/LiveDryRoutingLab.h"
 #include "../src/NativeMixerSessionFxRestore.h"
 #include "../src/NativeLogicalMixerControl.h"
+#include "../engine/core/NativeOutputPairTap.h"
 
 using namespace armix::mixer;
 using namespace armix::session;
@@ -2561,16 +2562,19 @@ static void verifyLiveInsertWithSecondaryMainTap(){
     inL.fill(.1f);inR.fill(.1f);
     const float* in[]={inL.data(),inR.data()};float* out[]={outL.data(),outR.data()};
     auto render=[&]{
-        std::array<float*,2> tap{};
+        std::array<float*,2> splitTap{};
+        std::array<int,2> mainPair{};
         const auto lease=mixer.captureNativeOutputLease();
         assert(mixer.process(in,2,out,2,480,1.f,false,nullptr,nullptr,false,
-            nullptr,nullptr,false,{},false,&lease,false,&tap));
-        assert(tap[0]&&tap[1]);
-        for(int i=0;i<480;++i){
+            &mainPair,nullptr,false,{},false,&lease,false,&splitTap));
+        // FIELD is aligned MAIN, not separate headphone/stream mode.
+        // Match the production callback's NativeOutputPairTap fallback.
+        assert(!splitTap[0]&&!splitTap[1]);
+        assert((mainPair==std::array<int,2>{0,1}));
+        const auto tap=NativeOutputPairTap::select(out,2,mainPair);
+        assert(tap[0]==outL.data()&&tap[1]==outR.data());
+        for(int i=0;i<480;++i)
             assert(std::isfinite(tap[0][i])&&std::isfinite(tap[1][i]));
-            assert(std::abs(tap[0][i]-outL[i])<1.e-6f);
-            assert(std::abs(tap[1][i]-outR[i])<1.e-6f);
-        }
         return outL.back();
     };
     render();const float baseline=render();assert(baseline>.01f);
