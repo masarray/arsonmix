@@ -154,9 +154,9 @@ html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.a
 html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category):focus-visible{
  background:#2a4858!important;border-color:#3b687b!important;color:#effaff!important;
 }
-html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(.armix-menu-category)[hidden]{display:none!important}
-.armix-menu-category>span>span{flex:1}
-.armix-menu-category>svg>svg{width:15px;height:15px;flex:none;color:#a6bfcc}
+html .app #armix-ribbon-commands #moreTools .more-tools-panel .armix-menu-category[hidden]{display:none!important}
+.armix-menu-category>span{flex:1;min-width:0}
+.armix-menu-category>svg{width:15px;height:15px;flex:none;color:#a6bfcc}
 .armix-menu-category>svg:last-child{width:12px;height:12px;color:#829ba8}
 html .app #armix-ribbon-commands #moreTools .more-tools-panel>[data-native-emergency-output]{order:20;color:#ff9b90!important;border-top:1px solid #3a515f!important}
 html .app #armix-ribbon-commands #moreTools .more-tools-panel select{width:100%!important;max-width:100%!important}
