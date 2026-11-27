@@ -954,6 +954,7 @@ private:
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     std::uint64_t workspaceGeneration_=0; // message-thread committed workspace identity
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
+    armix::session::SessionCheckpointCadence sessionCheckpointCadence_;
     bool mixerSessionStartupInspected_=false;
     std::unique_ptr<juce::XmlElement> pendingStartupAsioSettings_;
     armix::device::AudioContinuityRetry startupAsioRetry_;
@@ -6122,6 +6123,7 @@ private:
                 safe->diagnostics_.record("DYNAMIC_MIXER_SAVED",
                     "AUTO_CHECKPOINT");
             }else{
+                safe->sessionCheckpointCadence_.failed(monotonicMilliseconds());
                 safe->mixerSessionStatus_="SAVE_REJECTED";
                 safe->mixerSessionError_=failure;
                 safe->diagnostics_.record("DYNAMIC_MIXER_SAVE_REJECTED",failure);
@@ -12269,15 +12271,22 @@ private:
         serviceVendorStreamRecovery();
         serviceSecondaryContinuity();
         serviceStartupSecondaryPreparation();
-        // Autosave only while ALL outputs are muted. Vendor-state reads
-        // happen on CONTROL; disk commits run on ONE serialized IO worker.
-        // A performance with armed speakers/stream is never interrupted for
-        // snapshot capture. One bounded attempt per 60 seconds of idle UI.
-        if(audioEngineStarted_ && timerTicks_%720==0 &&
-           engine_.allOutputsDisarmed() && !mixerSessionWorker_.busy() &&
-           !nativeShowBusy_ && !studioBackupBusy_ && !catalog_.busy() &&
-           !engine_.isGraphSwitchPending() && !engine_.hasTemporaryDiagnosticDevice())
-            (void)saveMixerSession(false);
+        // Autosave only while ALL outputs are muted. Detect actual accepted
+        // mixer-control changes without hashing or calling vendor code on
+        // every timer tick. Unknown vendor edits still get periodic capture.
+        // Disk commits stay on the existing serialized IO worker.
+        const bool checkpointReady=audioEngineStarted_&&mixerSessionStartupInspected_&&
+            !mixerSessionRecoveryPending_&&!startupFxGuard_&&!vendorSafeRecoveryActive()&&
+            !engine_.hasRuntimeFxFault()&&!retainedOfflineFxActive_&&!pendingRetainedFxCapture_&&
+            engine_.directRouteAuthorized()&&engine_.hasBoundMixerRoute()&&
+            !mixerSessionWorker_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!catalog_.busy()&&
+            !logicalVendorEditor_&&!engine_.isGraphSwitchPending()&&!engine_.hasTemporaryDiagnosticDevice();
+        const auto checkpointNow=monotonicMilliseconds();
+        if(sessionCheckpointCadence_.observe(checkpointNow,engine_.allOutputsDisarmed(),
+                 checkpointReady,engine_.sessionCheckpointStamp())) {
+            const auto error=saveMixerSession(false);
+            if(error.isNotEmpty())sessionCheckpointCadence_.failed(checkpointNow);
+        }
         if (engine_.finalizeGraphSwitch())
         {
             ++fxGraphRevision_;

@@ -155,3 +155,24 @@ test('last saved MAIN mute and previous-generation recovery remain muted after r
  assert.match(s,/if\(holdMain\)\s*\{\s*operatorOutputMuted_=true;\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
  assert.match(main,/if\(mixerSessionRecoveryPending_\)return; \/\/ saved session has not been restored/);
 });
+
+test('smart idle checkpoint observes actual controls, debounces, and never captures armed audio',()=>{
+ const h=read('src/SessionCheckpointCadence.h');
+ const roster=read('engine/core/DynamicChannelRoster.h');
+ assert.match(h,/if\(!disarmed\) \{wasDisarmed_=false;return false;\}/);
+ assert.match(h,/quietMs=2000, retryMs=5000, refreshMs=60000/);
+ assert.match(h,/stamp!=stamp_/);
+ assert.match(h,/now-lastAttempt_<refreshMs/);
+ assert.match(roster,/if\(row.faderLinear!=gain\|\|row.pan!=pan\)\+\+liveStateRevision_/);
+ assert.match(engine,/dryRoutingLab_\.sessionLiveControlRevision\(\)/);
+ assert.match(main,/sessionCheckpointCadence_\.observe\(checkpointNow,engine_\.allOutputsDisarmed\(\)/);
+ assert.match(main,/sessionCheckpointCadence_\.failed\(monotonicMilliseconds\(\)\)/);
+ assert.doesNotMatch(main,/timerTicks_%720==0/);
+});
+test('recovered checkpoint is durably muted before atomic HEAD publication',()=>{
+ const s=read('src/NativeMixerSessionStore.h');
+ const recover=s.split('juce::String recoverPrevious(MixerSessionDocument& out')[1].split('private:')[0];
+ assert.ok(recover.indexOf('writePointer(marker,pointer)')<recover.indexOf('writePointer(head,pointer)'));
+ assert.match(recover,/verified.resumeMain=false/);
+ assert.match(s,/if\(recovered.isEmpty\(\)\|\|recovered==pointer\)doc.resumeMain=false/);
+});

@@ -10,6 +10,7 @@
 #include "../engine/diagnostics/PhysicalLoopback.h"
 #include "LiveDryRoutingLab.h"
 #include "NativeMixerSessionFxRestore.h"
+#include "SessionCheckpointCadence.h"
 #include "NativeTopologyEditSafety.h"
 #include "../engine/dsp/NativeMasterAnalysisTap.h"
 #include "../engine/player/NativePlayerShowDeck.h"
@@ -2337,6 +2338,13 @@ public:
     std::uint64_t dryRoutingLabEpoch() const noexcept {return dryRoutingLab_.epoch();}
     std::uint64_t dryRoutingLabRevision() const noexcept {return dryRoutingLab_.revision();}
     std::uint64_t outputArmRevision() const noexcept {return dryRoutingLab_.controlRevision();}
+    armix::session::CheckpointStamp sessionCheckpointStamp() const noexcept {
+        return {dryRoutingLab_.epoch(),dryRoutingLab_.controlRevision(),
+            dryRoutingLab_.sessionLiveControlRevision(),dryRoutingLab_.logicalInputRevision(),
+            dryRoutingLab_.logicalOutputRevision(),masterGain_.load(std::memory_order_relaxed),
+            masterMute_.load(std::memory_order_relaxed),masterMono_.load(std::memory_order_relaxed),
+            wantsMainContinuation()};
+    }
     bool nativeTopologyMatches(std::uint64_t ep,std::uint64_t rev) const noexcept {
         return dryRoutingLab_.nativeTopologyMatches(ep,rev);
     }

@@ -6,6 +6,7 @@
 #include <iostream>
 #include "../src/NativeMixerSessionStore.h"
 #include "../src/NativeMixerSessionRecovery.h"
+#include "../src/SessionCheckpointCadence.h"
 #include "../src/LiveDryRoutingLab.h"
 #include "../src/NativeMixerSessionFxRestore.h"
 #include "../src/NativeLogicalMixerControl.h"
@@ -2633,7 +2634,63 @@ static void verifyLiveInsertWithSecondaryMainTap(){
     render();assert(render()>.01f);
     std::cout<<"LIVE_INSERT_SECONDARY_MAIN_TAP_PASS\n";
 }
+static void checkCheckpointCadenceAndRecoveredMute() {
+    SessionCheckpointCadence cadence;
+    CheckpointStamp stamp;
+    assert(!cadence.observe(0,false,true,stamp));
+    assert(!cadence.observe(1000,true,true,stamp));
+    assert(!cadence.observe(2999,true,true,stamp));
+    assert(cadence.observe(3000,true,true,stamp));
+    assert(!cadence.observe(3001,true,false,stamp));
+    assert(!cadence.observe(5001,true,true,stamp));
+    ++stamp.live;
+    assert(!cadence.observe(6000,true,true,stamp));
+    ++stamp.live; // continuous drag postpones expensive vendor capture
+    assert(!cadence.observe(7000,true,true,stamp));
+    assert(cadence.observe(9000,true,true,stamp));
+    cadence.failed(9000);
+    assert(!cadence.observe(13999,true,true,stamp));
+    assert(cadence.observe(14000,true,true,stamp));
+    assert(!cadence.observe(74000,false,true,stamp)); // never interrupt live output
+    assert(!cadence.observe(75000,true,true,stamp));
+    assert(cadence.observe(77000,true,true,stamp));
+    assert(!cadence.observe(136999,true,true,stamp));
+    assert(cadence.observe(137000,true,true,stamp)); // vendor-state fallback
+
+    auto doc=makeSession();
+    auto roster=doc.roster;
+    const auto graphRevision=roster.revision(),stateRevision=roster.liveStateRevision();
+    const auto* row=roster.find({1});assert(row);
+    assert(roster.rememberLiveMix({1},row->faderLinear,row->pan));
+    assert(roster.liveStateRevision()==stateRevision);
+    assert(roster.rememberLiveMix({1},.123f,.321f));
+    assert(roster.liveStateRevision()==stateRevision+1 && roster.revision()==graphRevision);
+
+    const auto studio=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("ArSonMix-recovery-mute","",false);
+    assert(studio.createDirectory().wasOk());
+    NativeMixerSessionStore store(studio);
+    doc.resumeMain=true;
+    assert(store.commit(doc,{}).isEmpty());
+    doc.masterGain=.44f;
+    assert(store.commit(doc,{}).isEmpty());
+    const auto head=studio.getChildFile("MixerSession").getChildFile("HEAD");
+    assert(head.deleteFile());
+    MixerSessionDocument loaded;
+    std::vector<BinaryState> states;
+    assert(store.recoverPrevious(loaded,states).isEmpty());
+    assert(loaded.resumeMain==false);
+    // Simulate a second process restart BEFORE any new autosave.
+    NativeMixerSessionStore restarted(studio);
+    assert(restarted.load(loaded,states).isEmpty() && loaded.resumeMain==false);
+    // New verified explicit intent is authoritative, not an old marker.
+    assert(restarted.commit(doc,{}).isEmpty());
+    assert(restarted.load(loaded,states).isEmpty() && loaded.resumeMain==true);
+    assert(studio.deleteRecursively());
+}
+
 int main(){
+    checkCheckpointCadenceAndRecoveredMute();
     verifyLiveInsertWithSecondaryMainTap();
     verifyDetachedPendingEqCapture();
     verifyCreatedWetReturnPcmAndRecovery();

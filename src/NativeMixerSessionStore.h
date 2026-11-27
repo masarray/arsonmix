@@ -247,6 +247,13 @@ public:
         if(error.isNotEmpty())return error;
         if(readPointer(root_.getChildFile("HEAD"))!=pointer)
             return "Mixer HEAD changed during read";
+        // A recovered generation must stay muted even if the process dies
+        // before its first new checkpoint. The marker is bound to this HEAD.
+        const auto recovery=root_.getChildFile("RECOVERED_MUTED");
+        if(recovery.exists()) {
+            const auto recovered=readPointer(recovery);
+            if(recovered.isEmpty()||recovered==pointer)doc.resumeMain=false;
+        }
         out=std::move(doc);states=std::move(binary);
         return {};
     }
@@ -275,12 +282,19 @@ public:
         if(error.isNotEmpty())return "Previous mixer generation invalid: "+error;
         if(readPointer(head)!=before)
             return "Mixer HEAD changed during recovery";
+        // Publish the disarm marker BEFORE HEAD: a crash between these
+        // atomic writes cannot allow the recovered generation to auto-arm.
+        const auto marker=root_.getChildFile("RECOVERED_MUTED");
+        if(!Input::managedPath(root_,marker))return "Unsafe mixer recovery marker path";
+        error=writePointer(marker,pointer);
+        if(error.isNotEmpty())return error;
         error=writePointer(head,pointer);
         if(error.isNotEmpty())return error;
         if(readPointer(head)!=pointer)
             return "Mixer HEAD changed after recovery";
         // Return the same verified immutable generation that was published.
         // No second blob read or hash pass is needed on the control thread.
+        verified.resumeMain=false;
         out=std::move(verified);
         states=std::move(binary);
         return {};
