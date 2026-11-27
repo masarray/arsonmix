@@ -136,12 +136,6 @@ html .app #armix-ribbon-commands #moreTools .armix-menu-flyout{
 }
 html .app #armix-ribbon-commands #moreTools .armix-menu-flyout[hidden],
 html .app #armix-ribbon-commands #moreTools .armix-menu-flyout>[hidden]{display:none!important}
-html .app #armix-ribbon-commands #moreTools .armix-menu-category[aria-expanded=true]{
- background:#2a4858!important;border-color:#3b687b!important;color:#effaff!important;
-}
-html .app #armix-ribbon-commands #moreTools .armix-menu-flyout button.tool{
- white-space:normal!important;height:auto!important;min-height:28px!important;padding-block:4px!important;
-}
 html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category){
  display:flex;align-items:center;justify-content:flex-start!important;gap:9px!important;
  text-align:left!important;width:100%!important;min-height:28px!important;height:28px!important;
@@ -153,6 +147,12 @@ html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.a
 html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category):enabled:hover,
 html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category):focus-visible{
  background:#2a4858!important;border-color:#3b687b!important;color:#effaff!important;
+}
+html .app #armix-ribbon-commands #moreTools .armix-menu-category[aria-expanded=true]{
+ background:#2a4858!important;border-color:#3b687b!important;color:#effaff!important;
+}
+html .app #armix-ribbon-commands #moreTools .armix-menu-flyout button.tool{
+ white-space:normal!important;height:auto!important;min-height:28px!important;padding-block:4px!important;
 }
 html .app #armix-ribbon-commands #moreTools .more-tools-panel .armix-menu-category[hidden]{display:none!important}
 .armix-menu-category>span{flex:1;min-width:0}

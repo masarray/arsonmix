@@ -280,7 +280,8 @@ def main():
                 row=panel.locator('[data-menu-category="'+category+'"]')
                 row.hover()
                 child=panel.locator("#armix-menu-"+category)
-                assert child.is_visible() and row.get_attribute("aria-expanded")=="true"
+                child.wait_for(state="visible")
+                assert row.get_attribute("aria-expanded")=="true"
                 assert new.is_visible() and panel.locator(":scope > .armix-menu-category:visible").count()==5
                 assert panel.locator(".armix-menu-flyout:visible").count()==1
                 box=child.bounding_box()
@@ -298,8 +299,14 @@ def main():
             child=panel.locator("#armix-menu-settings")
             assert child.is_visible()
             assert child.evaluate("el=>el.contains(document.activeElement)")
+            assert row.evaluate("el=>getComputedStyle(el).backgroundColor")=="rgb(42, 72, 88)"
             page.keyboard.press("ArrowLeft")
             assert not child.is_visible() and row.evaluate("el=>el===document.activeElement")
+            # Outside-click dismissal, without a native mixer command.
+            row.click()
+            page.locator("#ribbon-tab-mixer").click()
+            assert menu.get_attribute("open") is None and not child.is_visible()
+            menu.locator(":scope > summary").click()
             # Technical actions are still real native commands, now in Audio I/O.
             row.click()
             child.get_by_text("Audio I/O",exact=True).click()

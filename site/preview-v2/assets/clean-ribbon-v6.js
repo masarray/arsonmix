@@ -22,7 +22,8 @@ function installCompactMenu(more){
  };
  const groups=[['session','Session'],['channel','Channel'],['view','View'],['scenes','Scenes & Shows'],['settings','Settings']];
  const nav=new Map(),flyouts=new Map();
- let page='root';
+ let page='root',hoverTimer=0;
+ const cancelHover=()=>{window.clearTimeout(hoverTimer);hoverTimer=0;};
  const channelIds=new Set(['addTrack','addBus','addFx','addGroupBus','addGroupSelected','convertSelectedReverb','copy','paste','group','ungroup']);
  const viewIds=new Set(['mode','viewFilter','ribbonFilterMenu','preview','reset']);
  const sceneIds=new Set(['sceneSafe','sceneSelect','saveScene','recallScene']);
@@ -35,7 +36,13 @@ function installCompactMenu(more){
    child.setAttribute('role','group');child.setAttribute('aria-label',label);
    row.setAttribute('aria-controls',child.id);row.setAttribute('aria-expanded','false');
    row.addEventListener('click',()=>show(id,true));
-   row.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse'&&more.open&&!row.hidden)show(id);});
+   row.addEventListener('pointerenter',e=>{
+     if(e.pointerType!=='mouse'||!more.open||row.hidden)return;
+     cancelHover();
+     if(page==='root'||page===id)show(id);
+     else hoverTimer=window.setTimeout(()=>{if(more.open)show(id);},120);
+   });
+   child.addEventListener('pointerenter',cancelHover);
    nav.set(id,row);flyouts.set(id,child);panel.append(row,child);
  }
  function classify(){
@@ -73,6 +80,7 @@ function installCompactMenu(more){
  }
  const focusables=host=>Array.from(host.querySelectorAll('button:not(:disabled),select:not(:disabled),input:not(:disabled),summary,a[href]')).filter(el=>el.getClientRects().length);
  function show(id,focus=false){
+   cancelHover();
    const previous=page;page=flyouts.has(id)?id:'root';
    for(const [key,row] of nav){
      const active=key===page;row.setAttribute('aria-expanded',String(active));flyouts.get(key).hidden=!active;
@@ -102,6 +110,12 @@ function installCompactMenu(more){
  });
  document.addEventListener('pointerdown',e=>{if(more.open&&!more.contains(e.target))more.open=false;},true);
  window.addEventListener('resize',position);
+ // A Show list/readback may add rows after opening. Observe only the five
+ // small popups (not the mixer), so the active flyout stays inside the window.
+ if(typeof ResizeObserver==='function'){
+   const sizes=new ResizeObserver(position);
+   for(const child of flyouts.values())sizes.observe(child);
+ }
  // Only direct insertions: native bridge installs commands at startup.
  // A second mutation after moving nodes is a no-op.
  new MutationObserver(classify).observe(panel,{childList:true});
