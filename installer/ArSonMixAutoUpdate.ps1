@@ -718,6 +718,7 @@ function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourc
     Add-Type -AssemblyName System.IO.Compression
     $lease.Position=0
     $zip=[IO.Compression.ZipArchive]::new($lease,[IO.Compression.ZipArchiveMode]::Read,$true)
+    $binaryHash=$null;$binaryLease=$null
     try {
         if($zip.Entries.Count -lt 1 -or $zip.Entries.Count -gt 4096){throw 'Portable member count out of bounds'}
         $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
@@ -811,7 +812,15 @@ function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourc
                 try{
                     $expectedHash=[BitConverter]::ToString($algorithm.ComputeHash($entryStream)).Replace('-','').ToLowerInvariant()
                 }finally{$entryStream.Dispose();$algorithm.Dispose()}
-                if((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expectedHash){throw 'Cached portable member hash mismatch'}
+                $isBinary=$member.relative -ieq 'ArSonMix-GUI10CH-P012-Windows-x64.exe'
+                if($isBinary){
+                    # Retain a read lease until the provenance check. Reusing
+                    # the exact checked hash cannot hide a subsequent write.
+                    $binaryLease=[IO.File]::Open($dest,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+                }
+                $actualHash=(Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+                if($actualHash -cne $expectedHash){throw 'Cached portable member hash mismatch'}
+                if($isBinary){$binaryHash=$actualHash}
                 continue
             }
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($dest))|Out-Null
@@ -832,14 +841,18 @@ function Expand-PortablePayload([IO.Stream]$lease,[string]$target,[string]$sourc
         }
         $build=Read-Json (Join-Path $target 'BUILD_PROVENANCE.json')
         $binary=Join-Path $target 'ArSonMix-GUI10CH-P012-Windows-x64.exe'
+        if(-not $VerifyOnly){$binaryHash=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()}
         if($build.sourceCommit -cne $sourceSha -or $build.executable -cne [IO.Path]::GetFileName($binary) -or
            $build.exeSha256 -cnotmatch '^[a-f0-9]{64}$' -or
            [long]$build.guiExeBytes -ne (Get-Item -LiteralPath $binary).Length -or
-           (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant() -cne $build.exeSha256 -or
+           $binaryHash -cne $build.exeSha256 -or
            (Get-Content -LiteralPath (Join-Path $target 'portable_mode.txt') -Raw).Trim() -cne 'ARSONMIX_PORTABLE_WORKSPACE_V1'){
             throw 'Portable payload provenance mismatch'
         }
-    }finally{$zip.Dispose()}
+    }finally{
+        if($null -ne $binaryLease){$binaryLease.Dispose()}
+        $zip.Dispose()
+    }
 }
 # Write an independently replaceable record; an interrupted write leaves the
 # old record or no record, never a partially written JSON selected for launch.
