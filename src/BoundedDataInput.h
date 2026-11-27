@@ -4,6 +4,7 @@
 #include <array>
 #include <utility>
 #include <limits>
+#include <cstdint>
 
 // CONTROL / IO only. Limits apply to actual bytes, not just file/ZIP metadata.
 // This is structural preflight; the existing typed JSON codecs remain authoritative.
@@ -40,6 +41,41 @@ struct BoundedDataInput final {
         result=std::move(value);
         return true;
     }
+    // JUCE 8.0.15 parseNumber accumulates the positive integer prefix in
+    // int64 before deciding whether to parse a double; its double reader
+    // also accumulates the exponent in int. Bound both before calling JUCE.
+    // Quoted 64-bit IDs remain untouched. INT64_MIN as a raw numeric token
+    // is rejected because JUCE cannot safely accumulate its magnitude.
+    static bool jsonNumber(const char* bytes,std::size_t size,std::size_t& i) noexcept {
+        const auto digit=[](char c){return c>='0'&&c<='9';};
+        auto j=i;
+        if(bytes[j]=='-')++j;
+        if(j==size||!digit(bytes[j]))return false;
+        constexpr auto limit=std::numeric_limits<std::int64_t>::max();
+        std::int64_t magnitude=0;
+        while(j<size&&digit(bytes[j])){
+            const auto d=bytes[j++]-'0';
+            if(magnitude>(limit-d)/10)return false;
+            magnitude=magnitude*10+d;
+        }
+        if(j<size&&bytes[j]=='.'){
+            ++j;
+            if(j==size||!digit(bytes[j]))return false;
+            while(j<size&&digit(bytes[j]))++j;
+        }
+        if(j<size&&(bytes[j]=='e'||bytes[j]=='E')){
+            ++j;
+            if(j<size&&(bytes[j]=='+'||bytes[j]=='-'))++j;
+            if(j==size||!digit(bytes[j]))return false;
+            unsigned exponent=0;
+            while(j<size&&digit(bytes[j])){
+                exponent=exponent*10+static_cast<unsigned>(bytes[j++]-'0');
+                if(exponent>999)return false;
+            }
+        }
+        i=j-1;
+        return true;
+    }
     static bool jsonStructure(const juce::String& text) {
         const auto* bytes=text.toRawUTF8();
         const auto size=text.getNumBytesAsUTF8();
@@ -56,6 +92,12 @@ struct BoundedDataInput final {
                 continue;
             }
             if(c=='"'){quoted=true;continue;}
+            // Only standard JSON strings are accepted (JUCE also accepts single quotes).
+            if(c=='\'')return false;
+            if(c=='-'||(c>='0'&&c<='9')){
+                if(!jsonNumber(bytes,size,i))return false;
+                continue;
+            }
             if(c=='{'||c=='[') {
                 if(depth==stack.size())return false;
                 stack[depth++]=c;
