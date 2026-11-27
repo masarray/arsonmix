@@ -15,7 +15,9 @@ import tempfile
 
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
-from approved_native_wire_gain_smoke import MAIN, RECEIVER, SEND, SOURCE, ack, emit, snapshot
+from approved_native_wire_gain_smoke import (
+    MAIN, RECEIVER, SEND, SOURCE, ack, emit, snapshot, open_menu_category,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -380,8 +382,13 @@ def exercise_create_fx_return(browser,out):
     graph=state["graph"]
     graph["capabilities"]["supportedOps"].append("CREATE_GROUP")
     emit(page,"arMixConsoleSnapshot",state)
-    page.locator("#moreTools > summary").click()
-    page.locator("#addFx").click()
+    # V6 operator menu keeps original native command identity inside the
+    # Channel cascade. Exercise its real visible click, never a forced
+    # click on the hidden legacy toolbar control.
+    channel_menu = open_menu_category(page, "channel")
+    add_fx = channel_menu.locator("#addFx")
+    assert add_fx.is_visible() and add_fx.is_enabled()
+    add_fx.click()
     request=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeBusCreate').at(-1)")
     assert request and request["purpose"]=="FX" and request["graphRevision"]=="2"
     wet_id="9007199254740999"
