@@ -818,6 +818,7 @@ function strip(t){
  else code+='<div class="route-field"><span class="route-caption">IN</span><span class="route-identity">SUM BUS</span></div>';
  if(t.nativeRole==='MONITOR')code+='<div class="route-field"><span class="route-caption">OUT</span><span class="route-identity" title="Configure physical Monitor pins in Audio I/O">AUDIO I/O</span></div>';
  else code+='<div class="route-field"><span class="route-caption">OUT</span><select class="route-select" data-field="output" title="Primary output" aria-label="'+escapeHtml(t.name)+' output">'+option(channelOptions(t,'output'),t.output)+'</select></div>';
+ if(t.kind==='master'&&window.__JUCE__?.backend)code+='<div class="route-field"><span class="route-caption">MON</span><select class="route-select" data-main-monitor aria-label="MAIN secondary monitor output" title="Additional MAIN playback output" disabled><option value="">None</option></select></div>';
  // Same external-output field and channel geometry in Preview and native.
  // Browser preview is a non-audio reference: leave hardware controls disabled.
  if(t.kind!=='master'){
