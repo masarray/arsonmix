@@ -115,12 +115,26 @@ def main():
         retry=latest(page,"nativeDuckerSources")
         assert retry["requestId"]!=req["requestId"] and retry["sources"]==req["sources"]
         req=retry
+        # Reopening the same editor while Apply is outstanding must not lose
+        # the pending transaction, selected rows, or the current picker.
+        assert page.evaluate("""id=>{const t=window.__ARMIX_NATIVE_SCOPE__.tracks.find(t=>window.__ARMIX_NATIVE_M2__.nativeIdFor(t)===id);return window.ArSonMixNativeDucker.open(t,0)}""",RECEIVER)
+        assert first.is_checked() and editor.locator(".mx-ducker-picker").is_visible()
+        assert editor.get_by_role("button",name="Apply",exact=True).is_disabled()
+        second=editor.locator(f'.mx-ducker-option[data-source-id="{MIC2}"] input')
+        second.uncheck() # a newer local source draft during the first ACK
+        assert latest(page,"nativeDuckerSources")["requestId"]==req["requestId"]
         g["revision"]="4";state["mixerSession"]["routeRevision"]="4"
         emit(page,"arMixConsoleSnapshot",state)
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
         readback(page,[SOURCE,MIC2],serial="2")
         assert editor.locator(".mx-ducker-source").count()==2
         assert editor.locator(".mx-ducker-gr").inner_text()=="-8.0 dB"
+        assert editor.locator(".mx-ducker-picker").is_visible() and not second.is_checked()
+        assert editor.get_by_role("button",name="Apply",exact=True).is_enabled()
+        assert latest(page,"nativeDuckerSources")["requestId"]==req["requestId"],"new draft was auto-replayed"
+        second.check() # now matches authoritative sources again
+        assert editor.get_by_role("button",name="Apply",exact=True).is_disabled()
+        editor.get_by_role("button",name="Cancel",exact=True).click()
         editor.get_by_label("Ducking preset").select_option("Gentle")
         req=latest(page,"nativeDuckerSet");assert req["settings"]["depthDb"]==6
         emit(page,"arMixBuiltinDuckerAck",packet(req,status="APPLIED"))
@@ -164,6 +178,27 @@ def main():
         assert edit_button.is_enabled()
         assert edit_button.evaluate("()=>window.__duckerEditMutations.length")==0
         assert_geometry()
+        # Idle paint must not rewrite the stable power state or accessibility
+        # attributes on each polling tick/readback.
+        editor.locator(".armix-builtin-fx-power").evaluate("""e=>{
+          window.__powerWrites=[];window.__powerCalls=[];
+          const watched=['data-fx-state','disabled','aria-pressed','title','aria-label'];
+          const original=e.setAttribute;
+          e.setAttribute=function(k,v){if(watched.includes(k))window.__powerCalls.push([k,this.getAttribute(k),v,new Error().stack]);return original.call(this,k,v);};
+          for(const k of ['disabled','title']){
+            let proto=e,desc;
+            while(proto&&!(desc=Object.getOwnPropertyDescriptor(proto,k)))proto=Object.getPrototypeOf(proto);
+            if(desc?.set)Object.defineProperty(e,k,{configurable:true,get(){return desc.get.call(this);},set(v){window.__powerCalls.push([k,desc.get.call(this),v,new Error().stack]);desc.set.call(this,v);}});
+          }
+          window.__powerObserver=new MutationObserver(rs=>window.__powerWrites.push(...rs.map(r=>[r.attributeName,r.oldValue,e.getAttribute(r.attributeName)])));
+          window.__powerObserver.observe(e,{attributes:true,attributeOldValue:true,attributeFilter:watched});
+        }""")
+        settled_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5a",after=settled_read)
+        settled_read=readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5b",after=settled_read)
+        mutations=editor.locator(".armix-builtin-fx-power").evaluate("()=>({writes:window.__powerWrites,calls:window.__powerCalls})")
+        assert not mutations["writes"] and not mutations["calls"],mutations
+        assert editor.locator(".armix-builtin-fx-power").get_attribute("title") is None
+        assert editor.locator(".armix-builtin-fx-power").get_attribute("aria-label")=="AUTO DUCKER ON · click to bypass"
         # Source readout must fit the actual long state seen in Windows FIELD.
         readback(page,[SOURCE,MIC2],settings=final["settings"],serial="6",available=False,after=settled_read)
         assert editor.locator(".mx-ducker-read").first.inner_text()=="Unavailable"
@@ -179,9 +214,13 @@ def main():
         assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
         assert editor.locator(".mx-ducker-phase").text_content()=="Edit delayed"
         assert editor.locator(".mx-ducker-phase").inner_text()=="EDIT DELAYED"
+        phase_notice=editor.locator(".mx-ducker-phase-notice")
+        assert phase_notice.is_visible() and "authoritative audio readback" in phase_notice.inner_text()
+        assert editor.locator(".mx-ducker-phase").get_attribute("title") is None
         readback(page,[SOURCE,MIC2],settings=final["settings"],serial="8",pending=False,after=busy_read)
         page.wait_for_function("()=>document.querySelector('.mx-ducker-phase').textContent==='Check edit'",timeout=3000)
         assert editor.locator(".mx-ducker-phase").inner_text()=="CHECK EDIT"
+        assert phase_notice.is_visible() and "showing current native values" in phase_notice.inner_text()
         assert abs(float(depth.input_value())-final["settings"]["depthDb"])<.001
         assert latest(page,"nativeDuckerSet")["requestId"]==lost["requestId"]
         emit(page,"arMixBuiltinDuckerAck",packet(lost,status="APPLIED"))
