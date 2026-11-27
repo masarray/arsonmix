@@ -148,10 +148,10 @@ html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.a
 html .app #armix-ribbon-commands #moreTools .more-tools-panel :is(button.tool,.armix-menu-category):focus-visible{
  background:#2a4858!important;border-color:#3b687b!important;color:#effaff!important;
 }
-html .app #armix-ribbon-commands #moreTools .armix-menu-category[aria-expanded=true]{
+html .app #armix-ribbon-commands #moreTools .more-tools-panel .armix-menu-category[aria-expanded=true]{
  background:#2a4858!important;border-color:#3b687b!important;color:#effaff!important;
 }
-html .app #armix-ribbon-commands #moreTools .armix-menu-flyout button.tool{
+html .app #armix-ribbon-commands #moreTools .more-tools-panel .armix-menu-flyout button.tool{
  white-space:normal!important;height:auto!important;min-height:28px!important;padding-block:4px!important;
 }
 html .app #armix-ribbon-commands #moreTools .more-tools-panel .armix-menu-category[hidden]{display:none!important}
