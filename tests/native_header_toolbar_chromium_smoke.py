@@ -83,6 +83,29 @@ def main():
                 !document.querySelector('.command-bar [data-native-monitor]') &&
                 !!document.querySelector('[data-native-emergency-output]') &&
                 !!document.getElementById('playerToggle')""")
+            # Actual assembled controls, with native event readback fixture.
+            cap=page.locator(".armix-ribbon-window-controls")
+            assert cap.is_visible() and cap.locator("button").count()==3
+            assert cap.locator("button:disabled").count()==3
+            assert page.evaluate("()=>window.__events.some(e=>e.name==='arMixRibbonWindow'&&e.payload.operation==='READY')")
+            page.evaluate("()=>window.__nativeListeners.get('arMixRibbonWindowState')({active:true,maximised:false,fullscreen:false,minimised:false})")
+            assert cap.locator("button:enabled").count()==3
+            geometry=cap.locator("button").evaluate_all("""nodes=>nodes.map(e=>{const r=e.getBoundingClientRect();return {x:r.x,right:r.right,y:r.y,w:r.width,h:r.height}})""")
+            assert all(g["w"]==34 and g["h"]==32 for g in geometry),(width,geometry)
+            assert all(abs(a["right"]-b["x"])<0.1 for a,b in zip(geometry,geometry[1:])),(width,geometry)
+            assert abs(geometry[-1]["right"]-page.locator(".armix-ribbon-nav").bounding_box()["width"]-page.locator(".armix-ribbon-nav").bounding_box()["x"]+9)<1,(width,geometry)
+            for ident,operation in [("ribbonWinMin","MINIMISE"),("ribbonWinMax","TOGGLE_MAXIMISE"),("ribbonWinClose","CLOSE")]:
+                page.locator("#"+ident).click()
+                assert page.evaluate("()=>window.__events.at(-1)")=={"name":"arMixRibbonWindow","payload":{"operation":operation}}
+            page.evaluate("()=>window.__nativeListeners.get('arMixRibbonWindowState')({active:true,maximised:true,fullscreen:false,minimised:false})")
+            assert page.locator("#ribbonWinMax").get_attribute("aria-label")=="Restore"
+            page.evaluate("()=>window.__nativeListeners.get('arMixRibbonWindowState')({active:true,maximised:false,fullscreen:false,minimised:false})")
+            assert page.locator("#ribbonWinMax").get_attribute("aria-label")=="Maximize"
+            page.locator("#ribbonWinClose").hover()
+            assert page.locator("#ribbonWinClose").evaluate("e=>getComputedStyle(e).backgroundColor") in ("rgb(180, 66, 72)","rgba(180, 66, 72, 1)") or page.locator("#ribbonWinClose").evaluate("e=>e.matches(':hover')")
+            page.mouse.move(10,100)
+            if width==1366:
+                page.screenshot(path="operator-ux-toolbar-window-controls-1366.png",clip={"x":width-400,"y":0,"width":400,"height":80})
             assert page.locator(".command-bar [data-native-extra-output], .command-bar [data-native-first-sound]").count() == 0
             assert page.locator(".command-bar").get_by_text("Mute Output", exact=True).count() == 0
             assert page.locator(".command-bar").get_by_text("Resume Output", exact=True).count() == 0

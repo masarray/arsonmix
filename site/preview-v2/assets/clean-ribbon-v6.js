@@ -102,6 +102,40 @@ function install(){
  const navTools=document.createElement('div');navTools.className='armix-ribbon-nav-tools';
  navTools.innerHTML='<span class="armix-ribbon-nav-status" id="ribbonPlayerStatus"></span>'+button('ribbonQuickPlayer','Open Player',icon('<path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/>'));
  header.append(navTools);
+ // Exact V6 right-hand caption: independent from the tablist, no web fullscreen
+ // or browser close simulation. Only the native host can admit these actions.
+ const caption=document.createElement('div');caption.className='armix-ribbon-window-controls';
+ caption.setAttribute('role','group');caption.setAttribute('aria-label','Window controls');
+ const maxGlyph=icon('<rect x="5" y="5" width="14" height="14" rx="1"/>');
+ const restoreGlyph=icon('<path d="M8 5h11v11M5 8h11v11H5z"/>');
+ caption.innerHTML=button('ribbonWinMin','Minimize',icon('<path d="M5 12h14"/>'))+
+   button('ribbonWinMax','Maximize',maxGlyph)+button('ribbonWinClose','Close',icon('<path d="m6 6 12 12M18 6 6 18"/>'));
+ header.append(caption);
+ const windowBackend=window.__JUCE__?.backend;
+ const windowSend=operation=>windowBackend?.emitEvent?.('arMixRibbonWindow',{operation});
+ let windowAdmitted=false,windowMaximised=false;
+ for(const b of caption.querySelectorAll('button'))b.disabled=true;
+ if(windowBackend?.emitEvent&&windowBackend?.addEventListener){
+   windowBackend.addEventListener('arMixRibbonWindowState',state=>{
+     if(state?.active!==true||typeof state.maximised!=='boolean')return;
+     windowAdmitted=true;windowMaximised=state.maximised;
+     for(const b of caption.querySelectorAll('button'))b.disabled=false;
+     const max=$('ribbonWinMax'),label=windowMaximised?'Restore':'Maximize';
+     if(max.title!==label){max.innerHTML=windowMaximised?restoreGlyph:maxGlyph;max.title=label;max.setAttribute('aria-label',label);}
+   });
+   for(const [id,operation] of [['ribbonWinMin','MINIMISE'],['ribbonWinMax','TOGGLE_MAXIMISE'],['ribbonWinClose','CLOSE']])
+     $(id).addEventListener('click',()=>{if(windowAdmitted)windowSend(operation);});
+   // Blank space only; tabs, quick Player and caption never initiate drag.
+   let start=null;
+   tabs.addEventListener('pointerdown',e=>{if(windowAdmitted&&!windowMaximised&&e.target===tabs&&e.button===0)start={x:e.clientX,y:e.clientY};});
+   tabs.addEventListener('pointermove',e=>{if(!start)return;if(!(e.buttons&1)){start=null;return;}
+     if(Math.hypot(e.clientX-start.x,e.clientY-start.y)>=5){start=null;windowSend('BEGIN_MOVE');}});
+   for(const event of ['pointerup','pointercancel','pointerleave'])tabs.addEventListener(event,()=>{start=null;});
+   tabs.addEventListener('dblclick',e=>{if(windowAdmitted&&e.target===tabs)windowSend('TOGGLE_MAXIMISE');});
+   windowSend('READY');
+ } else {
+   for(const b of caption.querySelectorAll('button'))b.title+=' (desktop application only)';
+ }
  const player=document.createElement('div');player.className='armix-ribbon-player';player.hidden=true;player.setAttribute('role','group');player.setAttribute('aria-label','Player transport');
  player.innerHTML='<span class="armix-ribbon-track" id="ribbonTrack">No music loaded</span><input type="range" id="ribbonSeek" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span class="armix-ribbon-time" id="ribbonTime">00:00 / 00:00</span><div class="armix-ribbon-transport">'+button('ribbonPrevious','Previous',icon('<rect x="4" y="5" width="3.5" height="14" rx="1"/><path d="M19 5 8 12l11 7z"/>',true))+button('ribbonPlay','Play',play)+button('ribbonNext','Next',icon('<rect x="16.5" y="5" width="3.5" height="14" rx="1"/><path d="m5 5 11 7-11 7z"/>',true))+button('ribbonStop','Stop',icon('<rect x="5" y="5" width="14" height="14" rx="2"/>',true))+'</div><div class="armix-ribbon-options">'+button('ribbonLoop','Loop A–B',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/>'))+button('ribbonMode','Playback mode / repeat',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/><path d="M10 12h4"/>'))+button('ribbonQueue','Queue',icon('<path d="M3 5h17M3 10h17M3 15h10m3 0 5 3-5 3z"/>'))+'</div><label class="armix-ribbon-volume">'+icon('<path d="M3 9v6h4l5 4V5L7 9H3zm13 0a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/>')+'<input type="range" id="ribbonVolume" min="0" max="100" step="1" value="50" aria-label="Player level before channel FX"></label>';
  // Restore local V6 order with the same native action controls.

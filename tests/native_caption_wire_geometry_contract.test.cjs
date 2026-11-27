@@ -29,7 +29,21 @@ assert.match(chrome,/void paintButton \(juce::Graphics& g, bool over, bool down\
 assert.match(chrome,/if \(over \|\| down\)/);
 
 assert.match(main, /setUsingNativeTitleBar \(false\)/);
-assert.match(main, /setTitleBarHeight \(31\)/);
+assert.match(main, /setTitleBarHeight \(31\)/); // fallback until ribbon handshake
+const windowChrome=main.slice(main.indexOf('void publishRibbonWindowState()'),main.indexOf('void activeWindowStatusChanged() override'));
+assert.match(windowChrome,/!ribbonChromeRequested_ \|\| !browser_\.loaded \|\| !browser_\.isShowing\(\)/);
+assert.match(windowChrome,/setTitleBarHeight\(0\)/);
+assert.match(windowChrome,/setTitleBarButtonsRequired\(0,false\)/);
+assert.match(windowChrome,/setMinimised\(true\)/);
+assert.match(windowChrome,/setFullScreen\(!isFullScreen\(\)\)/);
+assert.match(windowChrome,/safe->closeButtonPressed\(\)/);
+assert.match(windowChrome,/arMixRibbonWindowState/);
+assert.doesNotMatch(windowChrome,/engine_|quit\(\)/);
+assert.match(main,/setTitleBarHeight\(ribbonChromeActive_ \? 0 : 31\)/);
+const ribbon=read('site/preview-v2/assets/clean-ribbon-v6.js');
+assert.match(ribbon,/windowSend\('READY'\)/);
+assert.match(ribbon,/windowAdmitted\)windowSend\(operation\)/);
+assert.doesNotMatch(ribbon,/requestFullscreen|window\.close\(/);
 assert.match(main, /setLookAndFeel \(nullptr\)/);
 assert.match(chrome, /M6\.4,19L5,17\.6L10\.6,12/);
 assert.match(chrome, /M6,21V19H18v2H6Z/);

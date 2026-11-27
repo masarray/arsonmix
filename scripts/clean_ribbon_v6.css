@@ -195,3 +195,18 @@ html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-audio-summary][data-r
 html .app #armix-ribbon-commands .armix-ribbon-scene button{letter-spacing:0!important;text-transform:none!important}
 @media(max-width:1100px){.armix-ribbon-nav-status{display:none}.armix-ribbon-nav-tools{padding-inline:4px}.armix-ribbon-audio-value[data-audio-value=output]{max-width:130px}}
 @media(max-width:650px){html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-audio-summary]{overflow-x:auto;scrollbar-width:thin}.armix-ribbon-audio-label,.armix-ribbon-audio-value{flex:none}}
+
+/* V6 approved local right-hand cluster: 34 x 32px, 13px thin glyphs.
+   No separate web titlebar and no simulated desktop actions. */
+.armix-ribbon-window-controls{display:flex;align-items:stretch;flex:none;position:relative;z-index:10;padding-left:4px;border-left:1px solid #405561;background:#1b2b35;box-sizing:border-box}
+.armix-ribbon-window-controls button{display:grid;place-items:center;width:34px;height:var(--armix-tab-height);min-width:0;padding:0;border:0;border-radius:0;background:transparent;color:#c3d5df;transition:background .1s ease;cursor:pointer}
+.armix-ribbon-window-controls button svg{width:13px;height:13px;stroke-width:1.5;pointer-events:none}
+.armix-ribbon-window-controls button:hover:enabled{background:#405866;color:#fff}
+.armix-ribbon-window-controls button:active:enabled{background:#263d49}
+.armix-ribbon-window-controls #ribbonWinClose:hover:enabled{background:#b44248;color:#fff}
+.armix-ribbon-window-controls button:focus-visible{outline:1px solid #73d6e6;outline-offset:-3px}
+.armix-ribbon-window-controls button:disabled{cursor:default;opacity:.65}
+.armix-ribbon-nav-tools{height:var(--armix-tab-height);align-self:flex-start}
+.armix-ribbon-window-controls{align-self:flex-start}
+@media(max-width:1000px){.armix-ribbon-window-controls button{width:30px}.armix-ribbon-nav-tools{display:none}}
+@media(prefers-reduced-motion:reduce){.armix-ribbon-window-controls button{transition:none}}
