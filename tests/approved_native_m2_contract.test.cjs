@@ -8435,3 +8435,45 @@ test("I/O input choice projection scans physical inventory once, preserves custo
     deviceVM.physicalInputChoice(duplicate,"MONO",1,-1),
     deviceVM.physicalInputChoice(duplicate,"STEREO",0,1)]);
 });
+
+
+test("One synchronous input-label resolver per projection preserves exact choices and fresh remaps",()=>{
+  let reads=0;
+  const count=64;
+  const endpoints=Array.from({length:count},(_,port)=>({
+    port,label:"Input "+(port+1),get active(){reads++;return true;}
+  }));
+  const snapshot={device:{inputEndpoints:endpoints,enabledInputs:Array.from({length:count},(_,i)=>i)},
+    admitted:true,graph:{channels:[{source:{sourceFormat:"STEREO",portId:"in:63",portIdRight:"in:0"}},
+      {source:{sourceFormat:"STEREO",portId:"in:5",portIdRight:"in:8",bindingState:"NEEDS_REMAP"}}]}};
+  const rows=[null,{mode:"NONE"},{mode:"BUS"},{mode:"STEREO",left:63,right:0},
+    {mode:"STEREO",left:0,right:63},{mode:"STEREO",left:5,right:8},
+    {mode:"STEREO",left:0,right:1},{mode:"MONO",left:0,right:-1},
+    {mode:"MONO",left:"0",right:-1},{mode:"PLAYER"},...Array.from({length:24},(_,left)=>({mode:"MONO",left,right:-1}))];
+  for(const state of [snapshot,{...snapshot,retained:true},{...snapshot,admitted:false,
+    raw:{mixerSession:{authority:"M4",channels:[{source:{mode:"STEREO",left:0,right:63}}]}}}]){
+    const expected=rows.map(row=>deviceVM.inputLabel(state,row));
+    reads=0;
+    const resolve=deviceVM.inputLabelResolver(state);
+    assert.equal(reads,0);
+    assert.deepEqual(rows.slice(0,3).map(resolve),expected.slice(0,3));
+    assert.equal(reads,0,"no scan for unpatched, None or BUS-only passes");
+    assert.deepEqual(rows.map(resolve),expected);
+    assert.equal(reads,count,"one inventory scan per synchronous presentation pass");
+  }
+  snapshot.device.enabledInputs=snapshot.device.enabledInputs.filter(p=>p!==63);
+  endpoints[0].label="Renamed input";
+  reads=0;
+  const fresh=deviceVM.inputLabelResolver(snapshot);
+  assert.equal(fresh({mode:"STEREO",left:63,right:0}),"None");
+  assert.equal(fresh({mode:"MONO",left:0,right:-1}),"Mono · Renamed input [IN 1]");
+  assert.equal(reads,count);
+  const source=read("web/approved-native-bridge.js");
+  for(const name of ["projection(native)","refreshRealM4Inputs(next)"]){
+    const start=source.indexOf("function "+name);
+    assert.ok(start>=0);
+    assert.match(source.slice(start,start+2500),/const resolveInputLabel=deviceVM\.inputLabelResolver\(hardware\)/);
+  }
+  assert.match(source,/inputLabel:resolveInputLabel/);
+  assert.match(source,/t\.input=resolveInputLabel\(row\)/);
+});

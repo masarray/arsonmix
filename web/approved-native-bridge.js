@@ -892,6 +892,7 @@
     const previous = new Map(scope.tracks.concat(scope.master).map(t=>[t.id,t]));
     const nextTracks = [], localByNative = new Map(), nextNativeByUi = new Map();
     let nextMaster = null, inputOrdinal=0;
+    const resolveInputLabel=deviceVM.inputLabelResolver(hardware);
     // Reserve surviving ChannelIds before assigning any new ordinal. A new
     // first row must never steal the DOM/model ID of a later surviving row.
     const reserved=new Set(accepted.channels.map(ch=>uiByNativeId.get(ch.id)).filter(id=>id!==undefined));
@@ -936,7 +937,7 @@
       const labels=stripVM.readbackBindings({native,channel:ch,
         channels:accepted.channels,
         targets:nativeOutputTargets(t,accepted.channels),
-        inputLabel:inputLabelFor});
+        inputLabel:resolveInputLabel});
       if(labels.input!==undefined)t.input=labels.input;
       if(labels.output!==undefined)t.output=labels.output;
       const direct=Array.isArray(native.raw?.externalOutputs)?
@@ -1432,7 +1433,6 @@
     return physical.some(p=>p?.mode==="PLAYER")?physical:[...physical,
       {label:"Music Player",mode:"PLAYER",left:-1,right:-1,deckId:"1"}];
   };
-  const inputLabelFor=row=>deviceVM.inputLabel(hardware,row);
   // ChannelId and the existing M4 use the SAME ten native input ordinals.
   // GUI track reorder must never silently repatch a different physical lane.
   const m4TrackIds=Array.isArray(scope?.tracks)?
@@ -2645,6 +2645,7 @@
       m4?.active,m4?.routingRevision,rows]);
     if(signature===lastM4UiSignature)return;
     lastM4UiSignature=signature;
+    const resolveInputLabel=deviceVM.inputLabelResolver(hardware);
     for(let i=0;i<10;++i){
       const t=scope.tracks.find(x=>x.id===m4TrackIds[i]);
       if(t?.kind!=="audio")continue;
@@ -2653,7 +2654,7 @@
       // selection. Do not borrow source/OUT data from the demo or a prior
       // device session.
       const row=acceptedM4?rows[i]:null;
-      t.input=inputLabelFor(row);
+      t.input=resolveInputLabel(row);
       if(row && typeof row.main==="boolean")
         t.output=row.main?"Master":"SOURCE ONLY (No Main)";
       if(row && ["MONO","STEREO"].includes(row.channelFormat)){

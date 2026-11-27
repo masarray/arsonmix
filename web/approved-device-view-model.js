@@ -221,12 +221,21 @@
       roster:live?snapshot.graph?.rosterRevision:"",
       pins,rows,choices};
   }
-  function inputLabel(snapshot,row) {
+  function inputLabel(snapshot,row,choices) {
     if(!row||row.mode==="NONE")return "None";
     if(row.mode==="BUS")return INTERNAL_BUS;
-    const found=inputChoices(snapshot).find(x=>x.mode===row.mode &&
+    const found=(choices??inputChoices(snapshot)).find(x=>x.mode===row.mode &&
       x.left===row.left && x.right===row.right);
     return found?.label||"None";
+  }
+  // A resolver belongs to ONE synchronous presentation pass only. Lazy so
+  // unpatched / BUS-only passes do not enumerate any physical choices.
+  function inputLabelResolver(snapshot) {
+    let choices;
+    return row=>{
+      if(!row||row.mode==="NONE"||row.mode==="BUS")return inputLabel(snapshot,row);
+      return inputLabel(snapshot,row,choices??=inputChoices(snapshot));
+    };
   }
   // The installed route and new assignment are different views of the
   // same physical inventory; reserved ports must remain visible in readback.
@@ -794,7 +803,7 @@
     }
     return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,inputLabelResolver,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,
