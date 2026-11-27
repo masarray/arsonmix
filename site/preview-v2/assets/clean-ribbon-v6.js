@@ -106,8 +106,8 @@ function install(){
  // or browser close simulation. Only the native host can admit these actions.
  const caption=document.createElement('div');caption.className='armix-ribbon-window-controls';
  caption.setAttribute('role','group');caption.setAttribute('aria-label','Window controls');
- const maxGlyph=icon('<rect x="5" y="5" width="14" height="14" rx="1"/>');
- const restoreGlyph=icon('<path d="M8 5h11v11M5 8h11v11H5z"/>');
+ const maxGlyph=icon('<rect x="5" y="5" width="14" height="14" rx=".5"/>');
+ const restoreGlyph=icon('<path d="M9 5h10v10h-4"/><rect x="5" y="9" width="10" height="10" rx=".5"/>');
  caption.innerHTML=button('ribbonWinMin','Minimize',icon('<path d="M5 12h14"/>'))+
    button('ribbonWinMax','Maximize',maxGlyph)+button('ribbonWinClose','Close',icon('<path d="m6 6 12 12M18 6 6 18"/>'));
  header.append(caption);

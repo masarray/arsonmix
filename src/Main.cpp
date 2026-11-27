@@ -830,7 +830,8 @@ public:
         if(!ribbonChromeActive_) {
             ribbonChromeActive_=true;
             setTitleBarHeight(0);
-            setTitleBarButtonsRequired(0,false);
+            // Keep allButtons flags and JUCE's Alt+F4 shortcut. Native
+            // buttons receive zero-height bounds from the existing LookAndFeel.
             browser_.resized();
         }
         const bool maximised=isFullScreen() || operatorFullscreen_;

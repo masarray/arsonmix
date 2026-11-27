@@ -102,7 +102,7 @@ def main():
             page.evaluate("()=>window.__nativeListeners.get('arMixRibbonWindowState')({active:true,maximised:false,fullscreen:false,minimised:false})")
             assert page.locator("#ribbonWinMax").get_attribute("aria-label")=="Maximize"
             page.locator("#ribbonWinClose").hover()
-            assert page.locator("#ribbonWinClose").evaluate("e=>getComputedStyle(e).backgroundColor") in ("rgb(180, 66, 72)","rgba(180, 66, 72, 1)") or page.locator("#ribbonWinClose").evaluate("e=>e.matches(':hover')")
+            page.wait_for_function("""()=>getComputedStyle(document.getElementById('ribbonWinClose')).backgroundColor==='rgb(180, 66, 72)'""")
             page.mouse.move(10,100)
             if width==1366:
                 page.screenshot(path="operator-ux-toolbar-window-controls-1366.png",clip={"x":width-400,"y":0,"width":400,"height":80})
@@ -203,6 +203,7 @@ def main():
             assert page.locator("#ribbonEmergency").is_disabled()  # no hardware in this fixture
             assert page.locator("[data-native-emergency-output]").get_attribute("data-emergency-mode")=="stop"
             assert page.locator("#pluginsButton").evaluate("el=>getComputedStyle(el,'::before').maskImage")!="none"
+            assert page.locator("#mixContext").evaluate("el=>getComputedStyle(el,'::before').maskImage")!="none"
             if width==1366:
                 page.screenshot(path="operator-ux-toolbar-mixer-1366.png")
             for a, b in zip(visible, visible[1:]):

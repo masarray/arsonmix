@@ -33,7 +33,7 @@ assert.match(main, /setTitleBarHeight \(31\)/); // fallback until ribbon handsha
 const windowChrome=main.slice(main.indexOf('void publishRibbonWindowState()'),main.indexOf('void activeWindowStatusChanged() override'));
 assert.match(windowChrome,/!ribbonChromeRequested_ \|\| !browser_\.loaded \|\| !browser_\.isShowing\(\)/);
 assert.match(windowChrome,/setTitleBarHeight\(0\)/);
-assert.match(windowChrome,/setTitleBarButtonsRequired\(0,false\)/);
+assert.doesNotMatch(windowChrome,/setTitleBarButtonsRequired\(0/); // preserve desktop style flags and Alt+F4
 assert.match(windowChrome,/setMinimised\(true\)/);
 assert.match(windowChrome,/setFullScreen\(!isFullScreen\(\)\)/);
 assert.match(windowChrome,/safe->closeButtonPressed\(\)/);
