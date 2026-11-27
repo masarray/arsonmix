@@ -8039,7 +8039,9 @@ test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction ev
  assert.match(f,/workspaceGeneration/);assert.match(f,/operatorOutputMuted/);
  assert.match(f,/const lease=ioConfirmationLease\(\)/);
  assert.match(f,/await confirmArson/);assert.match(f,/lease!==ioConfirmationLease\(\)/);
- assert.equal((b.match(/await confirmIo\(/g)||[]).length,7);
+ assert.equal((b.match(/await confirmIo\(/g)||[]).length,8);
+ assert.match(b,/await confirmIo\("Mute hardware outputs"/);
+ assert.match(b,/backend\.emitEvent\("arMixAction",\{action:"monitor",value:false\}\)/);
  });
 
 test("FX Return creation requires prepared wet processor and exact independent readback",()=>{
