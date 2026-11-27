@@ -119,6 +119,9 @@ def main():
             # V6 menu belongs to the navigation row, not the command row.
             assert metrics['nav']['height']==34 and abs(metrics['more']['bottom']-metrics['nav']['bottom'])<=3,(width,metrics)
             assert page.locator('.armix-ribbon-tabs [role=tab]').count()==6
+            assert page.locator('.armix-ribbon-nav .logo').is_hidden()
+            assert page.locator('.armix-ribbon-nav .file-name').is_hidden()
+            assert page.locator('.armix-ribbon-nav #trackCount').is_hidden()
             right=visible[-2:]
             assert [x["id"] for x in right]==["addTrack","Audio I/O"], (width,right)
             assert abs(right[1]["left"]-right[0]["right"]-metrics["gap"])<=1.5, (width,right)

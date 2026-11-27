@@ -1,6 +1,6 @@
 /* Owner-approved Clean Ribbon V6: only header presentation, never strip hardware. */
 html .app .window-title.armix-ribbon-nav,html.armix-native-desktop .app > .window-title.armix-ribbon-nav{display:flex!important;height:34px!important;min-height:34px!important;flex:0 0 34px!important;gap:0!important;padding:0 0 0 145px!important;background:#1b2b35!important;border-bottom:2px solid #2fa9c8!important;box-shadow:none!important;overflow:hidden!important}
-html .app #armix-ribbon-commands.armix-ribbon-nav>.logo,html .app #armix-ribbon-commands.armix-ribbon-nav>.file-name,html .app #armix-ribbon-commands.armix-ribbon-nav>#trackCount{display:none!important}
+html .app .window-title.armix-ribbon-nav>.logo,html .app .window-title.armix-ribbon-nav>.file-name,html .app .window-title.armix-ribbon-nav>#trackCount{display:none!important}
 .armix-ribbon-tabs{display:flex;align-items:stretch;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding-left:4px}
 .armix-ribbon-tabs::-webkit-scrollbar{display:none}
 .armix-ribbon-tab{isolation:isolate;position:relative;border:0;background:none;color:#e0edf3;font:400 12px/1 "Segoe UI",Arial,sans-serif;flex:0 0 126px;height:32px;margin-left:-22px;padding:0 20px 0 7px;cursor:pointer}
