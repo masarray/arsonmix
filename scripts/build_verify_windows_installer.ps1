@@ -57,6 +57,7 @@ try {
     # Official standard VB-CABLE archive must be downloaded, exact-SHA
     # verified and staged BEFORE compiling Setup. Fatal if it changed.
     & ./scripts/prepare_vbcable_package.ps1 -StageDirectory $stage
+    & ./scripts/prepare_update_verifier.ps1 -StageDirectory $stage
     $vendor=Get-Content -LiteralPath "config/vbcable-official-package.json" -Raw -Encoding UTF8 | ConvertFrom-Json
     & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=$appVersion" "/DVBCableSha256=$($vendor.sha256)" "installer/ArSonMix.iss"
     $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
@@ -74,6 +75,11 @@ try {
     }
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
+    foreach($item in @("gh.exe","verifier.json","LICENSE.txt","THIRD-PARTY-LICENSES.txt")){
+        $staged=Join-Path (Join-Path $stage "UpdateVerifier") $item
+        $actual=Join-Path (Join-Path $install "UpdateVerifier") $item
+        if((Get-FileHash -LiteralPath $staged).Hash -cne (Get-FileHash -LiteralPath $actual).Hash){throw "Installed update verifier payload differs: $item"}
+    }
     $diagnosticHelper=Join-Path $install "ArSonMixStartupDiagnostics.ps1"
     if ((Get-FileHash -LiteralPath $diagnosticHelper -Algorithm SHA256).Hash.ToLowerInvariant() -ne
         $manifest.startupDiagnosticsSha256) {

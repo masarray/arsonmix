@@ -1,0 +1,7 @@
+# Smart Autonomous Update V2 — 27 Nov 2026
+
+Base canonical #899 d0d40ace87ce9d122f81b05d768af1f4e6a41cbe. Scope: eliminate manual verifier install/login while preserving strict ZBSH-08 installer attestation, staged previous installer, post-normal-exit consent, health/rollback and real-time separation. No DSP/ASIO changes, no public release/RC.
+
+Design: build-side pinned official gh 2.106.0 Windows x64 ZIP (d406f442ca0baa3d3e9c695e9cded1aa48e67dad3294b8947e5ab84f980b4844, 15265298 bytes), exact EXE receipt, MIT and dependency license inventory; only installer contains verifier. No runtime dependency installation or GitHub user credentials. Public versioned attestation API supplies bounded inline bundles (reject wrong repository ID); verifier obtains fresh TUF roots, validates exact publisher workflow, ref, source/signer digest, hosted runner and signed repository ID. No hash-only fallback. Network/auth failure defers updates safely. Same-user compromise out of scope. Public release must prove anonymous API still serves inline bundle and two actual attested installers can upgrade/rollback; no retrospective attestation. Existing alpha.32 can potentially bootstrap via its legacy updater but not yet tested.
+
+Tests: extend offline PS policy and Node contracts; install smoke uses same pinned intake and installed file hash checks. No full RC/FAT requested. Deferred: native Update Center/periodic scheduler, resumable transfer, portable transactions (not safe to imply in-place update). Exact source CI and real two-release tests required before promotion.

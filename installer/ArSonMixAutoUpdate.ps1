@@ -188,18 +188,27 @@ function Download-Verified([object]$asset,[string]$destination) {
         if(Test-Path -LiteralPath $part){Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue}
     }
 }
-# Independent signature trust; never download a verifier or fall back to hash-only.
-function Get-AttestationVerifier {
-    $programFiles=[Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
-    if([string]::IsNullOrWhiteSpace($programFiles)){return $null}
-    $folder=Join-Path $programFiles 'GitHub CLI'
+# Independent signature trust. The installer ships a pinned upstream verifier;
+# runtime never searches PATH, installs tools, uses user credentials or accepts
+# a hash in place of an attestation. Same-user executable tampering is outside
+# the per-user installation trust boundary.
+function Get-AttestationVerifier([string]$installRoot=$PSScriptRoot) {
+    $folder=Join-Path $installRoot 'UpdateVerifier'
     $path=Join-Path $folder 'gh.exe'
+    $manifest=Join-Path $folder 'verifier.json'
     try {
-        foreach($item in @($programFiles,$folder,$path)){
+        foreach($item in @($installRoot,$folder,$path,$manifest)){
             $info=Get-Item -LiteralPath $item -Force -ErrorAction Stop
             if(($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $null}
         }
         if(-not (Test-Path -LiteralPath $path -PathType Leaf)){return $null}
+        $pin=Read-Json $manifest
+        if($pin.version -cne '2.106.0' -or
+           $pin.archiveSha256 -cne 'd406f442ca0baa3d3e9c695e9cded1aa48e67dad3294b8947e5ab84f980b4844' -or
+           [string]$pin.exeSha256 -cnotmatch '^[a-f0-9]{64}$' -or
+           [long]$pin.exeBytes -lt 1MB -or [long]$pin.exeBytes -gt 100MB -or
+           (Get-Item -LiteralPath $path).Length -ne [long]$pin.exeBytes -or
+           (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $pin.exeSha256){return $null}
         return $path
     } catch {return $null}
 }
@@ -213,31 +222,116 @@ function Get-AttestationArguments([string]$path,[string]$tag,[string]$sha) {
         ' --source-ref refs/heads/releases/alpha/'+$tag+
         ' --source-digest '+$sha+' --signer-digest '+$sha+' --deny-self-hosted-runners')
 }
-function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha) {
-    $arguments=Get-AttestationArguments $path $tag $sha
-    $verifier=Get-AttestationVerifier
-    if($null -eq $arguments){Fail 'Invalid attestation subject identity'}
-    if($null -eq $verifier){Fail 'Trusted GitHub CLI missing; use manually verified official installer'}
+function Convert-AttestationResponse([object]$response,[string]$destination) {
+    # The versioned public API (2022-11-28) returns inline Sigstore bundles.
+    # Never execute data, follow a supplied URL or accept a foreign repository.
+    $rows=@($response.attestations)
+    if($rows.Count -lt 1 -or $rows.Count -gt 30){throw 'No bounded public attestation bundle'}
+    $lines=[Collections.Generic.List[string]]::new()
+    foreach($row in $rows){
+        if([string]$row.repository_id -cne '1432648251' -or
+           $null -eq $row.PSObject.Properties['bundle'] -or $null -eq $row.bundle){continue}
+        $line=ConvertTo-Json -InputObject $row.bundle -Depth 60 -Compress
+        if($line.Length -gt 262144){throw 'Oversized attestation bundle'}
+        $lines.Add($line)
+    }
+    if($lines.Count -eq 0){throw 'No inline attestation from the expected repository'}
+    [IO.File]::WriteAllLines($destination,$lines.ToArray(),[Text.UTF8Encoding]::new($false))
+}
+function Read-PublicAttestation([string]$digest,[string]$destination) {
+    if($digest -cnotmatch '^[a-f0-9]{64}$'){throw 'Invalid attestation subject digest'}
+    $request=[Net.HttpWebRequest]::Create("https://api.github.com/repos/masarray/arsonmix/attestations/sha256:$($digest)?per_page=30")
+    $request.AllowAutoRedirect=$false
+    $request.Timeout=25000
+    $request.ReadWriteTimeout=25000
+    $request.UserAgent='ArSonMix-SmartUpdater/2'
+    $request.Accept='application/vnd.github+json'
+    $request.Headers['X-GitHub-Api-Version']='2022-11-28'
+    $response=$request.GetResponse()
+    try {
+        if([int]$response.StatusCode -ne 200 -or $response.ContentLength -gt 2MB){throw 'Unexpected public attestation response'}
+        $stream=$response.GetResponseStream()
+        $memory=[IO.MemoryStream]::new()
+        try {
+            $buffer=New-Object byte[] 16384
+            while(($count=$stream.Read($buffer,0,$buffer.Length)) -gt 0){
+                if($memory.Length+$count -gt 2MB){throw 'Public attestation exceeds 2MiB'}
+                $memory.Write($buffer,0,$count)
+            }
+            $json=[Text.UTF8Encoding]::new($false,$true).GetString($memory.ToArray())
+            Convert-AttestationResponse ($json | ConvertFrom-Json) $destination
+        } finally {$memory.Dispose();$stream.Dispose()}
+    } finally {$response.Dispose()}
+}
+function Invoke-IsolatedVerifier([string]$verifier,[string]$arguments,[string]$privateConfig) {
     $info=[Diagnostics.ProcessStartInfo]::new()
     $info.FileName=$verifier
     $info.Arguments=$arguments
-    $info.WorkingDirectory=[IO.Path]::GetDirectoryName($verifier)
+    $info.WorkingDirectory=$privateConfig
     $info.UseShellExecute=$false
     $info.CreateNoWindow=$true
+    $info.RedirectStandardOutput=$true
+    $info.RedirectStandardError=$true
+    foreach($key in @('GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN','GITHUB_ENTERPRISE_TOKEN','GH_DEBUG','GH_REPO','GH_BROWSER','GH_PAGER','PAGER')){
+        $info.EnvironmentVariables.Remove($key)
+    }
+    $info.EnvironmentVariables['GH_CONFIG_DIR']=$privateConfig
     $info.EnvironmentVariables['GH_HOST']='github.com'
     $info.EnvironmentVariables['GH_PROMPT_DISABLED']='1'
     $info.EnvironmentVariables['GH_NO_UPDATE_NOTIFIER']='1'
     $info.EnvironmentVariables['GH_NO_EXTENSION_UPDATE_NOTIFIER']='1'
-    $info.EnvironmentVariables.Remove('GH_DEBUG')
     $child=[Diagnostics.Process]::Start($info)
-    if($null -eq $child){Fail 'Cannot start attestation verifier'}
+    if($null -eq $child){throw 'Cannot start bundled attestation verifier'}
     try {
+        try {$child.PriorityClass=[Diagnostics.ProcessPriorityClass]::BelowNormal} catch {}
+        $out=$child.StandardOutput.ReadToEndAsync()
+        $err=$child.StandardError.ReadToEndAsync()
         if(-not $child.WaitForExit(60000)){
             try {$child.Kill()} catch {}
-            Fail 'Attestation verifier timed out; update deferred'
+            throw 'Attestation verifier timed out; update deferred'
         }
-        if($child.ExitCode -ne 0){Fail 'Installer cryptographic provenance not verified; update deferred'}
+        if($child.ExitCode -ne 0){throw 'Installer cryptographic provenance not verified; update deferred'}
+        $result=$out.GetAwaiter().GetResult()
+        if($result.Length -gt 2MB){throw 'Oversized verifier output'}
+        return $result
     } finally {$child.Dispose()}
+}
+function Test-VerifiedRepositoryIdentity([object]$results) {
+    $rows=@($results)
+    if($rows.Count -lt 1 -or $rows.Count -gt 30){return $false}
+    foreach($row in $rows){
+        try {
+            if([string]$row.verificationResult.signature.certificate.sourceRepositoryIdentifier -ceq '1432648251'){return $true}
+        } catch {}
+    }
+    return $false
+}
+function Assert-InstallerAttestation([string]$path,[string]$tag,[string]$sha) {
+    $arguments=Get-AttestationArguments $path $tag $sha
+    if($null -eq $arguments){Fail 'Invalid attestation subject identity'}
+    $verifier=Get-AttestationVerifier
+    if($null -eq $verifier){Fail 'Bundled update verifier missing or damaged; repair required'}
+    # Private working directory prevents use of an existing gh config or token.
+    # TUF refreshes the trusted roots through the pinned verifier, not through
+    # the candidate release. Recheck the verifier while holding its file lease.
+    $private=Join-Path $root ('verify-'+[guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($private) | Out-Null
+    $lease=[IO.File]::Open($verifier,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        if((Get-AttestationVerifier) -cne $verifier){Fail 'Bundled verifier changed before execution'}
+        $bundle=Join-Path $private 'bundle.jsonl'
+        $trusted=Join-Path $private 'trusted_root.jsonl'
+        $digest=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        Read-PublicAttestation $digest $bundle
+        $roots=Invoke-IsolatedVerifier $verifier 'attestation trusted-root --hostname github.com' $private
+        if([string]::IsNullOrWhiteSpace($roots)){Fail 'No verified Sigstore trust roots'}
+        [IO.File]::WriteAllText($trusted,$roots,[Text.UTF8Encoding]::new($false))
+        $json=Invoke-IsolatedVerifier $verifier ($arguments+' --hostname github.com --bundle "'+$bundle+'" --custom-trusted-root "'+$trusted+'" --format json') $private
+        if(-not (Test-VerifiedRepositoryIdentity ($json | ConvertFrom-Json))){Fail 'Attestation repository identity mismatch'}
+    } finally {
+        $lease.Dispose()
+        Remove-Item -LiteralPath $private -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 function Test-ReleaseTransition([string]$operation,[object]$previous,[object]$candidate) {
     try {
@@ -551,6 +645,27 @@ if($PolicySelfTest) {
        (Test-ReleaseTransition 'upgrade' $candidate $previous) -or
        (Test-ReleaseTransition 'repair' $previous $candidate) -or
        -not (Test-ReleaseTransition 'repair' $previous $previous)){throw 'Unsafe release transition accepted'}
+    $cert=[pscustomobject]@{verificationResult=[pscustomobject]@{signature=[pscustomobject]@{certificate=[pscustomobject]@{sourceRepositoryIdentifier='1432648251'}}}}
+    if(-not (Test-VerifiedRepositoryIdentity @($cert)) -or
+       (Test-VerifiedRepositoryIdentity @()) -or
+       (Test-VerifiedRepositoryIdentity @([pscustomobject]@{verificationResult=$null}))){throw 'Repository ID policy failed'}
+    $cert.verificationResult.signature.certificate.sourceRepositoryIdentifier='1'
+    if(Test-VerifiedRepositoryIdentity @($cert)){throw 'Foreign repository identity accepted'}
+    $fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) ('armix-verifier-policy-'+[guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($fixtureRoot)|Out-Null
+    try {
+        if($null -ne (Get-AttestationVerifier $fixtureRoot)){throw 'Missing verifier accepted'}
+        $bundlePath=Join-Path $fixtureRoot 'bundle.jsonl'
+        $bundle=[pscustomobject]@{mediaType='test-only';verificationMaterial=[pscustomobject]@{}}
+        $response=[pscustomobject]@{attestations=@([pscustomobject]@{repository_id=1432648251;bundle=$bundle})}
+        Convert-AttestationResponse $response $bundlePath
+        if((Get-Content -LiteralPath $bundlePath -Raw | ConvertFrom-Json).mediaType -cne 'test-only'){throw 'Bundle conversion failed'}
+        $response.attestations[0].repository_id=1
+        $rejected=$false
+        try {Convert-AttestationResponse $response $bundlePath} catch {$rejected=$true}
+        if(-not $rejected){throw 'Foreign API bundle accepted'}
+    } finally {Remove-Item -LiteralPath $fixtureRoot -Recurse -Force}
+    Write-Output 'ARSONMIX_UPDATER_AUTONOMOUS_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS'
     # Positive and negative staged binary integrity tests. These execute
     # under synthetic TEMP; never use or modify the installed program.

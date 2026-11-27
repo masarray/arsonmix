@@ -12,6 +12,7 @@ if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_P
    $policyOutput -notcontains 'ARSONMIX_UPDATER_RETRY_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_AUTONOMOUS_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS'){
     throw "Smart updater offline version/origin/duplicate-asset policy failed: $policyOutput"
 }
@@ -172,6 +173,7 @@ try {
     [IO.File]::WriteAllBytes((Join-Path $stage "VBCABLE_Driver_Pack45.zip"),
         [Text.Encoding]::ASCII.GetBytes("TEST_FIXTURE_ONLY_NOT_A_VB_AUDIO_DRIVER"))
     Copy-Item -LiteralPath (Join-Path $root "installer/VB-CABLE-NOTICE.txt") -Destination (Join-Path $stage "VB-CABLE-NOTICE.txt")
+    & ./scripts/prepare_update_verifier.ps1 -StageDirectory $stage
     $found=Get-Command ISCC.exe -ErrorAction SilentlyContinue
     $iscc=if($found){$found.Source}else{"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"}
     Assert-Condition (Test-Path -LiteralPath $iscc -PathType Leaf) "ISCC.exe missing"
@@ -184,6 +186,11 @@ try {
     Assert-Condition ($first.ExitCode -eq 0) ("First test install exit="+$first.ExitCode)
     $installedExe=Join-Path $install "ArSonMix.exe"
     Assert-Condition (Test-Path -LiteralPath $installedExe -PathType Leaf) "Installed fixture missing"
+    foreach($item in @("gh.exe","verifier.json","LICENSE.txt","THIRD-PARTY-LICENSES.txt")){
+        $staged=Join-Path (Join-Path $stage "UpdateVerifier") $item
+        $actual=Join-Path (Join-Path $install "UpdateVerifier") $item
+        Assert-Condition ((Get-FileHash -LiteralPath $staged).Hash -ceq (Get-FileHash -LiteralPath $actual).Hash) "Installed verifier payload differs: $item"
+    }
     # No top-level loose legal documents should be installed. The real FAT
     # separately scans the actual JUCE PE for the seven full embedded texts.
     foreach($name in @("LICENSE","LICENSE-NOTICE.txt",

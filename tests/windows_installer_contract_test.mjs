@@ -614,3 +614,26 @@ test("cold-start mixer archive requires confirmation and bypasses normal startup
   assert.doesNotMatch(method,/deleteRecursively|deleteFile|commit\(/);
   assert.match(iss,/Parameters: "--archive-mixer-session"/);
 });
+
+test('Autonomous updater bundles a pinned verifier and never uses user GitHub credentials', () => {
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const iss=read('installer/ArSonMix.iss');
+  const build=read('scripts/build_verify_windows_installer.ps1');
+  const intake=read('scripts/prepare_update_verifier.ps1');
+  const pin=JSON.parse(read('config/update-verifier-package.json'));
+  assert.equal(pin.version,'2.106.0');
+  assert.equal(pin.sha256,'d406f442ca0baa3d3e9c695e9cded1aa48e67dad3294b8947e5ab84f980b4844');
+  assert.ok(u.includes(pin.sha256));
+  assert.match(u,/function Read-PublicAttestation/);
+  assert.match(u,/sourceRepositoryIdentifier/);
+  assert.match(u,/--custom-trusted-root/);
+  assert.match(u,/GH_CONFIG_DIR/);
+  assert.match(u,/EnvironmentVariables\.Remove\(\$key\)/);
+  assert.doesNotMatch(u,/ProgramFiles|Get-Command gh|Trusted GitHub CLI missing/);
+  assert.match(u,/ARSONMIX_UPDATER_AUTONOMOUS_POLICY_PASS/);
+  assert.match(iss,/UpdateVerifier\\gh\.exe/);
+  assert.match(iss,/UpdateVerifier\\THIRD-PARTY-LICENSES\.txt/);
+  assert.match(build,/prepare_update_verifier\.ps1/);
+  assert.match(intake,/Get-FileHash/);
+  assert.match(intake,/\.ExtractToFile|::ExtractToFile/);
+});

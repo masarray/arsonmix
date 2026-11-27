@@ -1,0 +1,8 @@
+{
+  "version": "2.106.0",
+  "url": "https://github.com/cli/cli/releases/download/v2.106.0/gh_2.106.0_windows_amd64.zip",
+  "sha256": "d406f442ca0baa3d3e9c695e9cded1aa48e67dad3294b8947e5ab84f980b4844",
+  "bytes": 15265298,
+  "license": "MIT",
+  "source": "https://github.com/cli/cli/tree/v2.106.0"
+}

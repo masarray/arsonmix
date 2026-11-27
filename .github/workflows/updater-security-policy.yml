@@ -26,6 +26,7 @@ jobs:
           $output = & powershell.exe -NoLogo -NoProfile -NonInteractive -File installer/ArSonMixAutoUpdate.ps1 -PolicySelfTest
           $output | Write-Host
           if ($LASTEXITCODE -ne 0 -or $output -notcontains 'ARSONMIX_UPDATER_POLICY_PASS' -or
+              $output -notcontains 'ARSONMIX_UPDATER_AUTONOMOUS_POLICY_PASS' -or
               $output -notcontains 'ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS' -or
               $output -notcontains 'ARSONMIX_UPDATER_LAST_MILE_PAIR_PASS') {
             throw 'Updater security policy failed'
