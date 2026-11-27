@@ -17,3 +17,17 @@ Live and retained output state parity verified, including fixed primary, editabl
 - #995 exact 0392830 7/7 scoped workflows pass, full app/picker hardware not run.
 - #992 latest 76dfd7e updater policy FAIL 46029612034. #993 latest 3bf9514 scoped CI running. #994 10e2334 real ribbon Chromium FAIL 46024818058. Do not merge failing/moving peer branches or bypass gates.
 - Final production gate: one integrated exact SHA, full MSVC/CTest, full approved Chromium, session/VST3/PCM/FX/I/O/security/updater/recovery/distribution qualification, then attended physical ASIO, WASAPI, loopback/listening and actual release-pair update rollback. NOT RUN for latest source. No installer build until exact candidate and owner-authorized path. No public release.
+
+
+## Reconciliation and real DOM A/B timing (27 Nov follow-up)
+#996 exact ae9cf49: 3/3 workflows PASS, including actual assembled WIRE + Audio I/O Chromium (46030172587/job 140611918452), fast native and security. Canonical f7bd360 includes #993 and #995; 8/8 scoped combined workflows passed. Common-base WIRE projection fragment byte-identical on canonical; apply only this fragment, append independent source regression, preserve all current peer workflow clauses and add WIRE regression to canonical existing scoped Chromium lane. No DSP/engine changes. Canonical FIELD run 46030631550 active at audit; no duplicate Windows build.
+
+Local headless Chromium 144.0.7559.96 on Linux, isolated actual old/new WIRE projection source copied from GitHub, same 24 strips × 50 inert DOM spans plus mounted controls. 200 warm-up iterations per variant, nine alternating 1000-call batches per variant; median batch mean in microseconds. MutationObserver separate from timed run, live/retained output state parity checked. Not Windows WebView2 or full mixer timing.
+
+| Edges | Mounted | Before µs | After µs | Ratio | aria-label mutations /120 snapshots |
+|---:|---:|---:|---:|---:|---:|
+| 12 | 0 | 5.0 | 0.2 | 25.0 | 0 → 0 |
+| 48 | 12 | 144.1 | 13.0 | 11.08 | 1440 → 0 |
+| 96 | 24 | 500.2 | 25.5 | 19.62 | 2880 → 0 |
+
+Reproduce: from a clone containing baseline d0d40ac, install Python Playwright and Chromium, then `python scripts/profile_wire_readback.py`. Optional CHROMIUM_EXECUTABLE overrides executable. No wall-clock pass threshold on shared CI; correctness and operation-count gates remain deterministic. Raw medians from one local environment only; no system CPU/audio speedup claim. Peer updater still active; #994 ribbon regression remains separate. Physical exact-source profiling, full qualification and release NOT RUN.

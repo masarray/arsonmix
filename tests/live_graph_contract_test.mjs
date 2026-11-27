@@ -100,7 +100,10 @@ test('R0B CH1 MOVE inside routed 10CH graph uses the same callback-boundary de-c
   const analysis=routed.indexOf('masterLoudness_.publish(measured,2,samples)');
   const transition=routed.indexOf('NativeOutputTransition::apply');
   assert.ok(transition>=0&&analysis>transition);
-  assert.match(routed,/audibleLeft=\(routedFxMove!=0\|\|cycle\.fadeOut\|\|cycle\.fadeIn\)\?movedPeakL:left/);
+  assert.match(routed,/const bool transitioning=routedFxMove!=0\|\|cycle\.fadeOut\|\|cycle\.fadeIn\|\|\s*patchFade\.phase!=armix::mixer::BusPatchEnvelope::idle/);
+  assert.match(routed,/audibleLeft=transitioning\?movedPeakL:left/);
+  assert.match(routed,/audibleRight=transitioning\?movedPeakR:right/);
+  assert.ok(routed.indexOf('busPatchEnvelope_.process')<analysis);
   assert.doesNotMatch(routed,/detach\(|attach\(|prepareToPlay|releaseResources/);
 });
 

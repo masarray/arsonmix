@@ -1367,6 +1367,20 @@
     const choices=deviceVM.outputChoices(next,true);
     const availableChoices=hardwareOutputPairs();
     const named=stripNamedChoices("output").map(p=>p.label);
+    // Settle every accepted ChannelId, including channels not projected
+    // into a visible mixer bank. The strip is presentation only.
+    for(const [id,pending] of pendingExternal){
+      const row=assignments.find(p=>p.channelId===id);
+      const {state,value}=deviceVM.externalPresentation(next,row,choices);
+      const result=stripVM.externalPending(pending,next?.device?.epoch,state,row);
+      if(result==="STALE")pendingExternal.delete(id);
+      else if(result==="CONFIRMED"){
+        pendingExternal.delete(id);
+        const name=next?.graph?.channels?.find(c=>c.id===id)?.name||"Channel "+id;
+        status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
+          "EXTERNAL OUT verified · "+name+" → "+value);
+      }
+    }
     for(const t of scope?.tracks||[]) {
       const id=nativeIdFor(t);
       const row=assignments.find(p=>p.channelId===id);
@@ -1395,14 +1409,6 @@
         marker.dataset.status=state;
       }
       select.title=projected.title;
-      const pending=pendingExternal.get(id);
-      const result=stripVM.externalPending(pending,next?.device?.epoch,state,row);
-      if(result==="STALE")pendingExternal.delete(id);
-      else if(result==="CONFIRMED"){
-        pendingExternal.delete(id);
-        status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
-          "EXTERNAL OUT verified · "+t.name+" → "+value);
-      }
       if(!pendingExternal.has(id))select.removeAttribute("aria-busy");
     }
   };
@@ -2689,8 +2695,12 @@
   }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
-  async function requestExternalOutput(t,label,el=null){
-        const previous=t.externalOutput||"None";
+  async function requestExternalOutput(t,label,el=null,matrixChannelId=null){
+        // Matrix owns ChannelId selection, not the mounted strip/bank.
+        const id=matrixChannelId??nativeIdFor(t);
+        const acceptedLabel=()=>deviceVM.externalPresentation(hardware,
+          hardware?.raw?.externalOutputs?.find(p=>p.channelId===id)).value;
+        const previous=matrixChannelId!==null?acceptedLabel():t.externalOutput||"None";
         if(busOutputPending){
           if(el)el.value=previous;
           nativeToast("Wait for bus mapping readback");return true;
@@ -2700,14 +2710,15 @@
           if(!alias){if(el)el.value=previous;nativeToast("I/O preset unavailable");return true;}
           label=alias.choice.label;
         }
-        const id=nativeIdFor(t);
+        const channelName=matrixChannelId!==null?
+          controller?.state()?.current?.graph?.channels?.find(c=>c.id===id)?.name:t.name;
         // One pure Channel Strip preflight for ASIO port identity and
         // shared-output confirmation; only this bridge dispatches native.
         const plan=stripVM.externalOutputPlan({
           native:controller?.state()?.current,hardware,channelId:id,
           selectedLabel:label,currentLabel:previous,
           choices:hardwareOutputPairs(),pending:pendingExternal.has(id),
-          channelName:t.name
+          channelName
         });
         if(plan.kind==="UNAVAILABLE"){
           if(el)el.value=previous;
@@ -2720,14 +2731,19 @@
         if(el)el.value=previous;
         if(plan.requiresConfirmation&&!await confirmIo("External output",plan.confirmation,"Enable output"))return true;
         const freshTrack=scope?.tracks?.find(x=>nativeIdFor(x)===id);
-        if(!freshTrack||(freshTrack.externalOutput||"None")!==previous)return true;
+        if(matrixChannelId!==null?
+          (!matrixReady(hardware)||matrixBusy()||namedPatchPending||acceptedLabel()!==previous):
+          (!freshTrack||(freshTrack.externalOutput||"None")!==previous))return true;
+        const freshName=matrixChannelId!==null?
+          controller?.state()?.current?.graph?.channels?.find(c=>c.id===id)?.name:freshTrack.name;
         const freshPlan=stripVM.externalOutputPlan({native:controller?.state()?.current,
           hardware,channelId:id,selectedLabel:label,currentLabel:previous,
-          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),channelName:freshTrack.name});
+          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),channelName:freshName});
         if(JSON.stringify(freshPlan)!==JSON.stringify(plan)){
           nativeToast("Routing changed · review external output again");return true;
         }
         const requestId="out-o-"+(++externalSerial);
+        if(matrixChannelId!==null)outputMatrixDrafts.delete(id);
         pendingExternal.set(id,{requestId,channelId:id,left,right,
           epoch,revision,acked:false});
         if(el)el.value=previous;el?.setAttribute("aria-busy","true");
@@ -2852,12 +2868,15 @@
       if(!requested||JSON.stringify(row.pair)!==lease.busPairs?.[id])return;
       const choice=row.choices.find(x=>x.label===label&&x.left===requested.left&&x.right===requested.right);
       if(!choice||choice.label===row.selected||
-         !await confirmIo("Remap bus output","Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO.","Remap output"))return;
-      if(!matrixReady(hardware))return;
+         !await confirmIo("Remap bus output","Remap "+row.name+" to "+choice.label+"? Audio may pause briefly. Previously active outputs resume only after native verification.","Remap output"))return;
+      if(!matrixReady(hardware)||matrixBusy()||namedPatchPending||
+         hardware.device.epoch!==lease.epoch||hardware.hardwareConfiguration!==lease.config||
+         hardware.graph?.revision!==lease.revision||hardware.graph?.rosterRevision!==lease.roster)return;
       const fresh=deviceVM.patchMatrix(hardware,side).rows.find(x=>x.id===id&&x.editable);
       if(!fresh||JSON.stringify(fresh.pair)!==JSON.stringify(row.pair)||
          !fresh.choices.some(x=>x.label===label&&x.left===choice.left&&x.right===choice.right))return;
       const requestId="bus-out-"+(++busOutputSerial);
+      outputMatrixDrafts.delete(id);
       busOutputPending={requestId,id,epoch:lease.epoch,config:lease.config,revision:lease.revision,
         left:choice.left,right:choice.right,acked:false};
       backend.emitEvent("arMixAction",{action:"routingPhysicalBusOutput",requestId,
@@ -2871,9 +2890,8 @@
         paintPhysicalOutputs(hardware);
       },5000);
     }else{
-      const track=scope?.tracks?.find(t=>nativeIdFor(t)===id);
-      if(!track||!current?.admitted)return;
-      requestExternalOutput(track,label);
+      if(!current?.admitted)return;
+      await requestExternalOutput(null,label,null,id);
     }
     paintPhysicalOutputs(hardware);
   }
@@ -2887,7 +2905,7 @@
     const pair=next.raw?.[p.id];
     if(!p.acked||next.raw?.physicalBusOutputObserved!==true||
        pair?.[0]!==p.left||pair?.[1]!==p.right)return;
-    busOutputPending=null;nativeToast("Bus mapping verified · output remains muted");
+    busOutputPending=null;nativeToast("Bus mapping verified · output follows previous intent");
     backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
   }
   function pollBusOutput(requestId,attempt=0){
@@ -3391,6 +3409,7 @@
     }
     host.append(section);
   }
+  const outputMatrixDrafts=new Map();
   function paintRouteMatrix(next,side){
     const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
     if(!host)return;
@@ -3399,9 +3418,11 @@
     const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch,
       deviceInventory?.namedPatches,namedPatchPending,side==="input"?next?.raw?.logicalInputRegistry:next?.raw?.logicalOutputRegistry,
       next?.raw?.operatorOutputMuted,next?.device?.outputArmed,next?.raw?.physicalBusSecondaryArmed,
-      next?.raw?.ioDefaults,next?.raw?.logicalInputRegistry?.revision,next?.raw?.logicalOutputRegistry?.revision]);
+      next?.raw?.ioDefaults,next?.raw?.logicalInputRegistry?.revision,next?.raw?.logicalOutputRegistry?.revision,
+      side==="output"?[protocol.secondaryOutputView(next,extraLive),extraPreferred,extraHasSaved]:null]);
     const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
       revision:model.revision,roster:model.roster,
+      externalRevision:next?.raw?.externalRevision,
       busPairs:Object.fromEntries(model.rows.filter(r=>r.bus).map(r=>[r.id,JSON.stringify(r.pair)]))};
     if(host.dataset.signature===signature)return;
     host.dataset.signature=signature;
@@ -3410,11 +3431,21 @@
     const scrollTop=previousMatrix?.scrollTop??0,scrollLeft=previousMatrix?.scrollLeft??0;
     host.replaceChildren();
     if(!ready||!model.live||!model.pins.length){
+      if(side==="output")outputMatrixDrafts.clear();
       host.textContent=!ready?"Apply device and pin changes first.":
         "Open a verified mixer with enabled "+side+" pins.";
       return;
     }
     const aliases=namedPatchChoices(side,model,next);
+    if(side==="output"){
+      const note=document.createElement("div");note.className="armix-matrix-hint";
+      const text=document.createElement("span");
+      text.textContent="Select stereo pair · click again to clear CH/AUX · Apply. MAIN / ASIO MON remap pauses and restores previously active outputs after verification.";
+      note.append(text);
+      host.append(note);
+      const ids=new Set(model.rows.map(r=>r.id));
+      for(const id of outputMatrixDrafts.keys())if(!ids.has(id))outputMatrixDrafts.delete(id);
+    }
     const table=document.createElement("table");table.className="armix-patch-grid";
     const head=table.createTHead().insertRow();
     const th=label=>{const e=document.createElement("th");e.textContent=label;head.append(e);};
@@ -3461,6 +3492,21 @@
       if(side==="input"&&row.editable&&model.pins.length>1)
         select.append(new Option("Custom stereo L/R…",customValue));
       select.value=row.selected??"";
+      // Preserve only a draft tied to exactly the same physical identity,
+      // graph, accepted row and available pair list. Unrelated named preset
+      // or busy-state repaints do not silently erase the user's selection.
+      const draftKey=side==="output"?JSON.stringify([lease.config,lease.epoch,lease.authority,
+        lease.revision,lease.roster,lease.externalRevision,row.selected,row.cells,
+        model.pins,candidates,aliases]):null;
+      const saved=side==="output"?outputMatrixDrafts.get(row.id):null;
+      if(saved&&saved.key===draftKey&&row.editable&&[...select.options].some(o=>o.value===saved.value&&!o.disabled))
+        select.value=saved.value;
+      else if(side==="output")outputMatrixDrafts.delete(row.id);
+      const remember=()=>{
+        if(side!=="output")return;
+        if(select.value===row.selected)outputMatrixDrafts.delete(row.id);
+        else outputMatrixDrafts.set(row.id,{key:draftKey,value:select.value});
+      };
       const selectedChoice=()=>select.value===customValue?
         deviceVM.physicalInputChoice(next,"STEREO",Number(customLeft.value),Number(customRight.value)):
         select.value.startsWith("preset:")?aliases.find(p=>"preset:"+p.id===select.value)?.choice:
@@ -3481,8 +3527,13 @@
         const cell=tr.insertCell(),button=document.createElement("button");
         button.type="button";button.className="armix-patch-cell";
         button.setAttribute("aria-label",row.name+" / "+pin.label);
-        button.title=row.name+" / "+pin.label+" · select, then Apply";
-        button.disabled=busy||!row.editable;
+        const pinChoice=side==="output"?candidates.find(x=>x.left===pin.port||x.right===pin.port):null;
+        const blocked=side==="output"&&!pinChoice;
+        button.title=row.name+" / "+pin.label+" · "+(!row.editable?(row.state||"Read-only"):
+          blocked?"Unavailable pair · reserved, disabled or incomplete":busy?"Waiting for native readback":
+          side==="output"&&!row.bus?"Select / clear pair, then Apply":"Select, then Apply");
+        if(side==="output")button.dataset.unavailable=String(blocked||!row.editable);
+        button.disabled=busy||!row.editable||blocked;
         button.onclick=()=>{
           if(select.value===customValue){
             const pinValue=String(pin.port);
@@ -3494,13 +3545,18 @@
             (current?.mode==="NONE"&&row.format==="STEREO");
           const choice=candidates.find(x=>(side==="output"||x.mode===(stereo?"STEREO":"MONO"))&&
             (x.left===pin.port||(stereo&&x.right===pin.port)));
-          if(choice){select.value=choice.label;update();}
+          if(choice){
+            // A second click on either half of an external stereo pair
+            // selects None; Apply removes the actual native assignment.
+            const clear=side==="output"&&!row.bus&&current?.left===choice.left&&current?.right===choice.right;
+            select.value=clear?"None":choice.label;remember();update();
+          }
         };
         cell.append(button);controls.push({button,pin,index});
       }
       const pick=tr.insertCell(),action=tr.insertCell();
       if(row.editable){
-        select.disabled=busy;select.onchange=update;pick.append(select);
+        select.disabled=busy;select.onchange=()=>{remember();update();};pick.append(select);
         if(side==="input"){
           customLeft.onchange=customRight.onchange=update;
           pick.append(custom);
@@ -3512,6 +3568,20 @@
         action.append(apply);
       }else pick.textContent=row.state||"Read-only";
       update();
+    }
+    if(side==="output"){
+      const mon=protocol.secondaryOutputView(next,extraLive);
+      const tr=body.insertRow();tr.dataset.secondaryEndpoint="true";
+      const name=tr.insertCell();name.textContent="MON / STREAM";
+      const pins=tr.insertCell();pins.colSpan=model.pins.length;
+      pins.textContent=(mon.name||extraPreferred||(extraHasSaved?"Saved endpoint unavailable":"None"))+
+        " · WASAPI · "+(mon.state==="DISCONNECTED"&&extraHasSaved?"SAVED / OFF":mon.state);
+      pins.title="Separate Windows playback endpoint, not an ASIO hardware pin";
+      const mode=tr.insertCell();mode.textContent=mon.split?"MAIN (separate mix)":"MAIN mirror";
+      const action=tr.insertCell(),settings=document.createElement("button");
+      settings.type="button";settings.textContent="MON settings";settings.disabled=busy||!!extraPending;
+      settings.onclick=()=>openAdditionalOutput();
+      action.append(settings);
     }
     const matrix=document.createElement("div");matrix.className="armix-matrix-scroll";
     matrix.tabIndex=0;matrix.setAttribute("role","region");
@@ -3826,7 +3896,19 @@
   // Snapshot the actual initiating action; never infer it from a later tab.
   let closeAfterVerifiedPinApply=false;
   const deviceBusy=()=>Boolean(deviceState.pending);
-  let toastTimer=0;
+  let toastTimer=0,rackFileSerial=0,rackFilePending=null,rackFileReadbackTimer=0;
+  function readRackFileReceipt(){
+    if(rackFilePending&&document.visibilityState!=="hidden")
+      backend.emitEvent("arMixAction",{action:"fxRackFileReadback",...rackFilePending});
+  }
+  function scheduleRackFileReadback(){
+    window.clearTimeout(rackFileReadbackTimer);
+    if(!rackFilePending)return;
+    rackFileReadbackTimer=window.setTimeout(()=>{
+      readRackFileReceipt();
+      scheduleRackFileReadback();
+    },2000);
+  }
   function nativeToast(message){
     let element=document.getElementById("armixNativeToast");
     if(!element){
@@ -4235,6 +4317,7 @@
     loopbackField("confirmed").checked=false;
     for(const side of ["input","output"])loopbackField(side).disabled=false;
     devicePanel.hidden=true;
+    outputMatrixDrafts.clear();
     syncNamedOptions();
     for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
       delete host.dataset.signature;
@@ -4387,6 +4470,7 @@
          .armix-audio-dialog .armix-patch-cell:focus-visible{outline:2px solid #9de4fa;outline-offset:-2px}
          .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
          .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
+         .armix-audio-dialog .armix-patch-cell[data-unavailable="true"][data-mark=""]{background:#15222a;border-color:#293943;color:#52636c;cursor:not-allowed}
          .armix-patch-grid select{max-width:180px;font-size:11px}
          .armix-audio-dialog [data-io-matrix-tools]{margin:8px 0 0;padding:8px 0 0}
          .armix-audio-dialog [data-io-matrix-tools] details{margin:0}
@@ -6019,6 +6103,7 @@
       extraInventoryRetryAt=performance.now()+5000;
       if(inventory.error)extraError=String(inventory.error);
       paintAdditionalOutput();
+      paintPhysicalOutputs(hardware);
     });
     backend.addEventListener("arMixSecondaryOutputAck",ack=>{
       if(!extraPending||ack?.requestId!==extraPending.requestId||ack.action!==extraPending.action)return;
@@ -6049,6 +6134,7 @@
         settleAdditionalOutput(extraLive);
       }
       paintAdditionalOutput();
+      paintPhysicalOutputs(hardware);
     });
     backend.addEventListener("arMixStatus", live=>{
       const previous=protocol.secondaryOutputView(hardware,extraLive);
@@ -6072,7 +6158,7 @@
         refreshAdditionalInventory();
       }
       if(previous.name!==current.name||previous.state!==current.state||previous.split!==current.split)
-        paintOutputOverview(hardware);
+        paintPhysicalOutputs(hardware);
       const health=protocol.footerHealthFromLive(live);
       if(!health || health.sequence===lastFooterHealth?.sequence)return;
       lastFooterHealth=health;
@@ -6313,6 +6399,23 @@
         "Native VST3 scan finished; results from JUCE catalog";
     });
     backend.addEventListener("arMixOpenAudioIO",()=>openNativeAudioIO());
+    backend.addEventListener("arMixFxRackFileResult",receipt=>{
+      const pending=rackFilePending;
+      if(!pending||receipt?.requestId!==pending.requestId||
+         receipt.operation!==pending.operation||receipt.channelId!==pending.channelId||
+         !["CHOOSER","CANCELLED","FAILED","COMPLETED","UNKNOWN"].includes(receipt.phase)||
+         typeof receipt.message!=="string"||!receipt.message.startsWith("FX rack file:"))return;
+      status(receipt.message);
+      if(receipt.phase==="CHOOSER")return; // not success, no toast
+      rackFilePending=null;
+      window.clearTimeout(rackFileReadbackTimer);
+      rackFileReadbackTimer=0;
+      if(receipt.phase==="COMPLETED"&&!["SAVE","SAVE_SINGLE"].includes(pending.operation)){
+        retirePendingRackEditor([pending.channelId]);
+        inlineFxClip?.closeRackEditors([pending.channelId]);
+      }
+      if(receipt.phase!=="CANCELLED")nativeToast(receipt.message);
+    });
     backend.addEventListener("arMixNotice",notice=>{
       // ConsoleWindow::emitNotice publishes {text,error}, never {message}.
       // The mismatched field hid native VST3 layout/latency, driver and
@@ -6376,21 +6479,22 @@
   function requestRackFile(track,operation,slot,token){
     const target=rackFileTarget(track);
     if(!target||!["SAVE","SAVE_SINGLE","OPEN","INSERT","DEACTIVATE"].includes(operation)){
-      nativeToast("FX rack file unavailable · verify current native rack");return false;
+      nativeToast("FX rack file: Rack unavailable; refresh mixer");return false;
     }
     const {channel,...identity}=target;
     const single=operation==="DEACTIVATE"||operation==="SAVE_SINGLE";
     if(single&&(!Number.isInteger(slot)||channel.inserts?.[slot]?.id!==token)){
       nativeToast("FX changed · reopen rack menu");return false;
     }
-    // Rack topology may replace or shift slot-relative inline editor leases.
-    if(operation!=="SAVE"&&operation!=="SAVE_SINGLE"){
-      retirePendingRackEditor([identity.channelId]);
-      inlineFxClip?.closeRackEditors([identity.channelId]);
-    }
-    backend.emitEvent("arMixAction",{action:"fxRackFile",operation,...identity,
+    if(rackFilePending){nativeToast("FX rack file: Finish the current file operation first");return false;}
+    // Preserve existing editors and rack on chooser cancel/failure. A
+    // terminal native receipt (not the click) retires changed editor leases.
+    const requestId="fx-rack-file-"+Date.now()+"-"+(++rackFileSerial);
+    rackFilePending={requestId,operation,channelId:identity.channelId};
+    status("FX rack file: Opening file dialog…");
+    scheduleRackFileReadback();
+    backend.emitEvent("arMixAction",{action:"fxRackFile",requestId,operation,...identity,
       slot:single?slot:-1,instanceId:single?token:""});
-    status("JUCE · FX rack file requested");
     return true;
   }
   const nativeHooks=Object.freeze({
