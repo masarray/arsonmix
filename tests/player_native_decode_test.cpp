@@ -405,8 +405,35 @@ int main() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             assert(rejected && !badCue.snapshot().outputReady);
+            badCue.stop();
+            // STOP must remain silent and clear old decoder errors, even
+            // after the worker has had time to process its new generation.
+            std::array<float,256> stopL{},stopR{};
+            for(int i=0;i<25;++i) {
+                const auto stopped=badCue.snapshot();
+                assert(stopped.state==armix::player::NativePlayerDeck::State::stopped);
+                assert(stopped.error.isEmpty() && !stopped.outputReady);
+                assert(!badCue.isPlayingRequested());
+                badCue.pull(stopL.data(),stopR.data(),256);
+                assert(stopL[0]==0.f && stopR[0]==0.f);
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            // Explicit Play is a genuine retry; invalid media still reports
+            // a fresh error, not a permanently hidden or silent rejection.
+            badCue.play();
+            bool retried=false;
+            for(int i=0;i<600;++i) {
+                const auto state=badCue.snapshot();
+                if(state.state==armix::player::NativePlayerDeck::State::error) {
+                    assert(state.error.containsIgnoreCase("IN marker"));
+                    retried=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            assert(retried);
+            badCue.stop();
             assert(badCue.setCueRange(1.0,4.0));
-            badCue.load(longFile,true);
+            badCue.play();
             bool recovered=false;
             for(int i=0;i<600;++i) {
                 if(badCue.isPlayingRequested()){recovered=true;break;}

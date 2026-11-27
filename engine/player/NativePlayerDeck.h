@@ -55,6 +55,7 @@ public:
     // earlier generation. Worker atomically invalidates that generation.
     void deviceRate(double hz) noexcept {
         const auto rounded=static_cast<int>(std::lround(hz));
+        explicitlyStopped_.store(false,std::memory_order_release);
         // Every aboutToStart/stopped callback is a new device epoch, even
         // when the sample rate is unchanged. Never replay stale decoded PCM
         // or silently resume a singer's backing track on hardware reopen.
@@ -89,6 +90,7 @@ public:
         return true; // accepted intent; actual DSP readback in snapshot()
     }
     void load(const juce::File& file,bool autoPlay=true) {
+        explicitlyStopped_.store(false,std::memory_order_release);
         ready_.store(false,std::memory_order_release);
         wantedPlay_.store(autoPlay,std::memory_order_release);
         {
@@ -113,6 +115,8 @@ public:
         if(!std::isfinite(seconds) || seconds<0. ||
            !hasFile_.load(std::memory_order_acquire) ||
            rate_.load(std::memory_order_acquire)<=0)return false;
+        explicitlyStopped_.store(false,std::memory_order_release);
+        error_.store(0,std::memory_order_release);
         requestedSeekSeconds_.store(seconds,std::memory_order_release);
         ready_.store(false,std::memory_order_release);
         state_.store(State::loading,std::memory_order_release);
@@ -121,10 +125,22 @@ public:
         return true;
     }
     bool isPlayingRequested() const noexcept {
-        return ready_.load(std::memory_order_acquire) &&
+        return !explicitlyStopped_.load(std::memory_order_acquire) &&
+               ready_.load(std::memory_order_acquire) &&
                wantedPlay_.load(std::memory_order_acquire);
     }
     void play() noexcept {
+        const bool wasStopped=explicitlyStopped_.exchange(false,std::memory_order_acq_rel);
+        if(wasStopped || state_.load(std::memory_order_acquire)==State::error) {
+            if(!hasFile_.load(std::memory_order_acquire) ||
+               rate_.load(std::memory_order_acquire)<=0) {
+                explicitlyStopped_.store(wasStopped,std::memory_order_release);
+                return;
+            }
+            wantedPlay_.store(true,std::memory_order_release);
+            restart(); // fresh explicit retry, never a silent parked worker
+            return;
+        }
         wantedPlay_.store(true,std::memory_order_release);
         if(ready_.load(std::memory_order_acquire)) {
             if(state_.load(std::memory_order_relaxed)==State::ended)restart();
@@ -137,8 +153,10 @@ public:
             state_.store(State::paused,std::memory_order_release);
     }
     void stop() noexcept {
-        // Stop is an immediate fail-silent transport state. The worker owns
-        // the next seek-to-start; never reset/reallocate a ring from RT.
+        // STOP parks the worker instead of reopening corrupt/retired media.
+        // A fresh Play restarts the decoder at IN; standby preload is separate.
+        // Intent also fences stale decoder error/readback after STOP.
+        explicitlyStopped_.store(true,std::memory_order_release);
         ready_.store(false,std::memory_order_release);
         wantedPlay_.store(false,std::memory_order_release);
         requestedSeekSeconds_.store(cueInSeconds_.load(
@@ -182,6 +200,13 @@ public:
         }
         {std::lock_guard<std::mutex> lock(commandMutex_);
             s.title=selectedFile_.getFileNameWithoutExtension();}
+        if(explicitlyStopped_.load(std::memory_order_acquire)) {
+            s.state=State::stopped;
+            s.error.clear();
+            s.outputReady=false;
+            s.played=0;s.mediaPlayed=0;
+            s.processingChangePending=false;
+        }
         return s;
     }
 
@@ -193,14 +218,12 @@ public:
         const auto silence=[&]() noexcept {
             std::fill_n(left,frames,0.f);std::fill_n(right,frames,0.f);
         };
-        if(!ready_.load(std::memory_order_acquire) ||
-           !wantedPlay_.load(std::memory_order_acquire)) {
+        if(!isPlayingRequested()) {
             gain_.reset(0.f); // reset only by AUDIO when inactive
             silence();return;
         }
         readers_.fetch_add(1,std::memory_order_acq_rel);
-        if(!ready_.load(std::memory_order_acquire) ||
-           !wantedPlay_.load(std::memory_order_acquire)) {
+        if(!isPlayingRequested()) {
             readers_.fetch_sub(1,std::memory_order_release);
             silence();return;
         }
@@ -259,6 +282,7 @@ private:
                 static_cast<int>((bits>>8)&255u)};
     }
     void restart() noexcept {
+        error_.store(0,std::memory_order_release);
         requestedSeekSeconds_.store(cueInSeconds_.load(
             std::memory_order_acquire),std::memory_order_release);
         ready_.store(false,std::memory_order_release);
@@ -297,6 +321,7 @@ private:
             ring_.resetQuiescent();
             eof_.store(false,std::memory_order_release);
             length_.store(0,std::memory_order_relaxed);
+            if(explicitlyStopped_.load(std::memory_order_acquire))continue;
             juce::File file;
             {std::lock_guard<std::mutex> lock(commandMutex_);
                 file=selectedFile_;}
@@ -555,6 +580,7 @@ private:
     mutable std::mutex commandMutex_; // CONTROL/worker only, NEVER RT
     juce::File selectedFile_;
     std::atomic<bool> exit_{false},ready_{false},wantedPlay_{false},eof_{false};
+    std::atomic<bool> explicitlyStopped_{false}; // park until explicit Play/load/seek
     std::atomic<bool> hasFile_{false}; // lifecycle read: no control mutex
     std::atomic<std::uint64_t> generation_{0},played_{0},length_{0};
     std::atomic<std::uint64_t> mediaPlayed_{0},mediaDuration_{0};

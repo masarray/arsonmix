@@ -7507,7 +7507,9 @@ private:
                             settings.key,settings.tempo,
                             settings.cueIn,settings.cueOut);
                     }
-                    emitPlayerState(true);
+                    // Selection changes only transport/selection, not library
+                    // identity. Preserve browser rows, focus and double-click.
+                    emitPlayerState();
                 }
             }
             return;

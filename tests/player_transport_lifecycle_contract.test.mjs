@@ -49,3 +49,14 @@ assert.match(source,/playerFolderBusy_,&playerCatalogueIds_,\s*playerMediaRefres
 assert.match(readFileSync("src/PlayerStateProjection.h","utf8"),/setProperty\("mediaRefreshQueued",s.mediaRefreshQueued\)/);
 assert.doesNotMatch(source.slice(source.indexOf("void emitPlayerState("),source.indexOf("void choosePlayerFiles()")),/setProperty/);
 console.log("P1 loop EOF fallback, pending cancel and refresh readback contracts PASS");
+
+const selectAction=source.slice(source.indexOf('if(action=="playerSelect" || action=="playerPlayNow")'),source.indexOf('// User may adjust live levels'));
+assert.match(selectAction,/emitPlayerState\(\);/);
+assert.doesNotMatch(selectAction,/emitPlayerState\(true/);
+assert.match(source,/playerQueue_\.size\(\)>=128[\s\S]*?Queue is full \(128 songs\)/);
+const stop=source.slice(source.indexOf('if(action=="playerStop")'),source.indexOf('if(action=="playerNext")'));
+assert.match(stop,/playerError_\.clear\(\);\s*engine_\.playerStop\(\)/);
+const deck=readFileSync("engine/player/NativePlayerDeck.h","utf8");
+assert.match(deck,/if\(explicitlyStopped_\.load\(std::memory_order_acquire\)\)continue;/);
+assert.match(deck,/if\(wasStopped \|\| state_\.load\(std::memory_order_acquire\)==State::error\)/);
+console.log("P2 selection-only readback, queue feedback and parked STOP contracts PASS");

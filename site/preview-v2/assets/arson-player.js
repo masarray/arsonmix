@@ -113,12 +113,13 @@
  });
  $("playerStop").addEventListener("click",()=>send("playerStop"));
  for(const id of ["playerCueIn","playerCueOut","playerCueGoIn","playerCueClear"])
-   $(id).addEventListener("click",()=>send(id));
+   $(id).addEventListener("click",()=>{if(canEditCue())send(id);});
  $("playerLoopAB").addEventListener("click",()=>
    send("playerLoopToggle",!Boolean(model.loopAB)));
  const seek=$("playerSeek"),waveCanvas=$("playerWaveform");
  const canSeek=()=>native&&model.pending<0&&!model.transport?.crossfading&&
    Number(model.transport?.durationSeconds)>0;
+ const canEditCue=()=>canSeek()&&model.current>=0&&model.selected===model.current;
  let draggingSeek=false,seekOrigin=null,seekCancelled=false;
  const seekIdentity=()=>[model.activeSetlist,model.current,libraryRevision,Number(model.transport?.durationSeconds)||0].join("|");
  seek.addEventListener("pointerdown",()=>{draggingSeek=true;seekCancelled=false;seekOrigin=seekIdentity();});
@@ -335,7 +336,7 @@
  contextBind(waveCanvas,event=>{
    const current=model.current,revision=libraryRevision;
    const valid=()=>canSeek()&&model.current===current&&libraryRevision===revision;
-   const editable=()=>valid()&&current>=0&&model.selected===current&&Number(model.transport?.durationSeconds)>0;
+   const editable=()=>valid()&&canEditCue();
    const cue=id=>()=>{if(editable())send(id);};
    showContext(waveCanvas,"Waveform",[
      ["Set IN at playhead",cue("playerCueIn"),false,!editable()],["Set OUT at playhead",cue("playerCueOut"),false,!editable()],["Go to IN",cue("playerCueGoIn"),false,!editable()],["Clear markers",cue("playerCueClear"),true,!editable()],["Song details",()=>setDetails(true)]
@@ -568,7 +569,7 @@
        if(event.altKey||event.metaKey||event.shiftKey||!valid())return;
        if(event.key==="Enter"){
          event.preventDefault();event.stopPropagation?.();if(event.repeat)return;
-         if(event.ctrlKey){if(activeId>=0&&!song.missing&&model.queue.length<128)send("playerQueueAppend",activeId);}
+         if(event.ctrlKey){if(activeId>=0&&!song.missing)send("playerQueueAppend",activeId);}
          else playNow();
        }else if(!event.ctrlKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){
          event.preventDefault();event.stopPropagation?.();
@@ -645,8 +646,7 @@
    const outPoint=Number(currentSong?.cueOut)||0;
    $("playerCueSummary").textContent="IN "+duration(inPoint)+
      " · OUT "+(outPoint>0?duration(outPoint):"end");
-   const editable=native && model.current>=0 && model.pending<0 &&
-     !t.crossfading && model.selected===model.current && +t.durationSeconds>0;
+   const editable=canEditCue();
    $("playerCueIn").disabled=!editable;
    $("playerCueOut").disabled=!editable;
    $("playerCueGoIn").disabled=!editable;
@@ -735,7 +735,7 @@
  search.addEventListener("keydown",event=>{
    if(event.key==="Escape"&&search.value){event.preventDefault();event.stopPropagation?.();search.value="";renderTracks();return;}
    if(event.key==="ArrowDown"&&filtered.length){event.preventDefault();event.stopPropagation?.();focusTrack(0);}
-   if(event.key==="Enter"&&!event.repeat&&!event.altKey&&!event.metaKey&&!event.shiftKey&&filtered.length){event.preventDefault();event.stopPropagation?.();const song=filtered[0],id=catalogView()?(activeCatalogueIndex.get(song.catalogId)??-1):song.id;if(native&&id>=0){if(event.ctrlKey){if(!song.missing&&model.queue.length<128)send("playerQueueAppend",id);}else send("playerSelect",id);}focusTrack(0);}
+   if(event.key==="Enter"&&!event.repeat&&!event.altKey&&!event.metaKey&&!event.shiftKey&&filtered.length){event.preventDefault();event.stopPropagation?.();const song=filtered[0],id=catalogView()?(activeCatalogueIndex.get(song.catalogId)??-1):song.id;if(native&&id>=0){if(event.ctrlKey){if(!song.missing)send("playerQueueAppend",id);}else send("playerSelect",id);}focusTrack(0);}
  });
  // Focus-induced/delayed scroll must not dismiss a header menu.
  list.addEventListener("scroll",()=>{if(listOwnsMenu())closeSongMenu(false);renderTracks();positionContext();},{passive:true});
