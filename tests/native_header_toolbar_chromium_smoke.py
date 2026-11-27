@@ -96,6 +96,113 @@ def assert_menu_color_role(page, workflow, opened):
     assert (state["closedGlyph"]!="none")== (not opened),state
     return state
 
+def assert_bank_arrows(page, *, pixels=False, expected_disabled=None):
+    """Validate actual CSS cascade and painted vector, including disabled state."""
+    page.mouse.move(10, 100)
+    data = page.evaluate("""()=>{
+      return ['bankPrev','bankNext'].map(id=>{
+        const e=document.getElementById(id),svg=e.querySelector('svg'),p=svg.querySelector('path');
+        const a=e.getBoundingClientRect(),b=svg.getBoundingClientRect(),g=p.getBBox();
+        const s=getComputedStyle(e),v=getComputedStyle(svg),ink=getComputedStyle(p);
+        return {id,disabled:e.disabled,w:a.width,h:a.height,x:a.x,y:a.y,
+          dx:b.x+b.width/2-a.x-a.width/2,dy:b.y+b.height/2-a.y-a.height/2,
+          svgW:b.width,svgH:b.height,path:g.width+'x'+g.height,d:p.getAttribute('d'),
+          bg:s.backgroundColor,border:s.borderTopColor,stroke:ink.stroke,fill:ink.fill,
+          opacity:s.opacity,svgOpacity:v.opacity,pathOpacity:ink.opacity,strokeWidth:ink.strokeWidth};
+      });
+    }""")
+    def rgb(s):
+        return tuple(int(v) for v in s.removeprefix("rgb(").removesuffix(")").split(","))
+    def luminance(c):
+        v=[n/255 for n in c]
+        return sum(w*(x/12.92 if x<=.04045 else ((x+.055)/1.055)**2.4)
+                   for w,x in zip((.2126,.7152,.0722),v))
+    for i,a in enumerate(data):
+        assert a["w"]==a["h"]==28 and a["svgW"]==a["svgH"]==18,a
+        assert abs(a["dx"])<=.5 and abs(a["dy"])<=.5,a
+        assert a["path"]=="7x14" and a["d"]==["M15 5L8 12l7 7","M9 5l7 7-7 7"][i],a
+        assert a["fill"]=="none" and a["strokeWidth"]=="2.5px",a
+        assert a["opacity"]==a["svgOpacity"]==a["pathOpacity"]=="1",a
+        if expected_disabled is not None:
+            assert a["disabled"]==expected_disabled,a
+        ink,bg=rgb(a["stroke"]),rgb(a["bg"])
+        assert (luminance(ink)+.05)/(luminance(bg)+.05)>=3,a
+        if pixels:
+            # Actual rendered pixels in the center, not merely a nonempty SVG.
+            png=page.locator("#"+a["id"]).screenshot(scale="css")
+            count=page.evaluate("""async ({png,ink})=>{
+              const im=new Image();im.src='data:image/png;base64,'+png;await im.decode();
+              const c=document.createElement('canvas');c.width=im.width;c.height=im.height;
+              const ctx=c.getContext('2d');ctx.drawImage(im,0,0);
+              const d=ctx.getImageData(5,5,c.width-10,c.height-10).data;
+              let n=0;for(let i=0;i<d.length;i+=4)
+                if(Math.abs(d[i]-ink[0])+Math.abs(d[i+1]-ink[1])+Math.abs(d[i+2]-ink[2])<=72)n++;
+              return n;
+            }""",{"png":base64.b64encode(png).decode("ascii"),"ink":ink})
+            assert count>=12,(a,count)
+    assert data[0]["disabled"]==data[1]["disabled"],data
+    for key in ("bg","border","stroke","opacity","w","h"):
+        assert data[0][key]==data[1][key],(key,data)
+    assert abs(data[0]["y"]-data[1]["y"])<=.5,data
+
+
+def verify_bank_navigation(page, width):
+    from approved_native_wire_gain_smoke import snapshot, emit, MAIN
+    import copy
+    state=snapshot()
+    emit(page,"arMixConsoleSnapshot",state)
+    bank=page.locator("#bankSelect")
+    assert bank.locator("option").count()==1
+    assert_bank_arrows(page,pixels=True,expected_disabled=True)
+    # One real bank: retain discoverability but prevent keyboard/pointer paging.
+    before=bank.input_value()
+    page.locator("#bankNext").evaluate("e=>e.click()")
+    assert bank.input_value()==before
+    if width==1366:
+        page.screenshot(path="operator-ux-toolbar-bank-disabled-1366.png",clip={"x":0,"y":40,"width":310,"height":42})
+    multi=copy.deepcopy(state)
+    multi["workspaceGeneration"]="2"
+    g=multi["graph"]
+    g["revision"]=g["rosterRevision"]="3"
+    base=g["channels"][0]
+    rows=[]
+    for i in range(24):
+        row=copy.deepcopy(base)
+        row.update(id=str(9007199254741100+i),name=f"Bank {i+1:02d}")
+        rows.append(row)
+    g["channels"]=rows+[g["channels"][-1]]
+    g["edges"]=[dict(edgeId=str(9223372036854775900+i),tap="POST_FADER",
+        enabled=True,signalKind="AUDIO",primaryOutput=True,gainLinear=1,
+        **{"from":row["id"],"to":MAIN}) for i,row in enumerate(rows)]
+    g["destinations"]=[{k:row[k] for k in ("id","role","name")} for row in g["channels"]]
+    multi["mixerSession"].update(channels=copy.deepcopy(g["channels"]),routeRevision="3",rosterRevision="3")
+    emit(page,"arMixConsoleSnapshot",multi)
+    count=bank.locator("option").count()
+    assert count>1,(width,count)
+    bank.select_option("0")
+    assert_bank_arrows(page,pixels=True,expected_disabled=False)
+    if width==1366:
+        page.screenshot(path="operator-ux-toolbar-bank-enabled-1366.png",clip={"x":0,"y":40,"width":310,"height":42})
+    event_count=page.evaluate("()=>window.__events.filter(e=>e.name==='arMixConsoleIntent'||e.name==='arMixLogicalIntent'||e.payload?.action==='routingM4Control').length")
+    names=lambda:page.locator("#tracks .strip .identity-name").all_text_contents()
+    first=names()
+    assert first and first[0]=="Bank 01",first
+    page.locator("#bankNext").click()
+    assert bank.input_value()=="1" and names()!=first,(width,names())
+    page.locator("#bankPrev").click()
+    assert bank.input_value()=="0" and names()==first
+    page.locator("#bankPrev").focus()
+    page.keyboard.press("Enter")
+    assert bank.input_value()==str(count-1)
+    page.locator("#bankNext").click()
+    assert bank.input_value()=="0" and names()==first
+    page.locator("#bankNext").focus()
+    page.keyboard.press("Space")
+    assert bank.input_value()=="1"
+    assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixConsoleIntent'||e.name==='arMixLogicalIntent'||e.payload?.action==='routingM4Control').length")==event_count
+    print("PASS bank arrow visual contrast, single/multi bank, pointer, keyboard and wrap",width,flush=True)
+
+
 def main():
     spec = importlib.util.spec_from_file_location(
         "native_bundle", ROOT / "scripts/build_approved_native_gui.py")
@@ -235,6 +342,7 @@ def main():
             assert page.locator('.armix-ribbon-nav #trackCount').is_hidden()
             ids=[x["id"] for x in visible]
             assert ids.index("bankPrev")<ids.index("bankSelect")<ids.index("bankNext")<ids.index("viewFilter")<ids.index("addTrack")<ids.index("pluginsButton"),(width,ids)
+            assert_bank_arrows(page,pixels=True)
             assert not page.locator("#playerToggle").is_visible()
             segment=page.locator(".strip-view-switch")
             assert segment.is_visible()
@@ -417,6 +525,20 @@ def main():
             assert_ribbon_seam(page,1366)
             page.screenshot(path=f"operator-ux-toolbar-seam-dpi-{scale}.png",
                             clip={"x":0,"y":0,"width":310,"height":44})
+            assert_bank_arrows(page,pixels=True)
+            page.close()
+        # Dedicated native roster fixture: do not perturb existing toolbar tests.
+        for width,height in ((1366,768),(1084,634)):
+            page=browser.new_page(viewport={"width":width,"height":height})
+            errors=[]
+            page.on("pageerror",lambda err:errors.append(str(err)))
+            page.add_init_script(NATIVE_EVENTS+"""window.__events=[];window.__JUCE__={backend:{
+                emitEvent(name,payload){window.__events.push({name,payload})},
+                ...window.__nativeListenerMethods}};""")
+            page.goto((dst/"index.html").as_uri())
+            page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled && !!document.getElementById('ribbon-tab-mixer')")
+            verify_bank_navigation(page,width)
+            assert not errors,errors
             page.close()
         browser.close()
     print("PASS native toolbar: spacing, group borders, actions, four viewports and ribbon seam DPI checks")
