@@ -4060,7 +4060,8 @@ private:
     void serviceAutomaticMain() {
         if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
         if(engine_.hasRuntimeFxFault()){autoMainEpoch_=0;return;}
-        if(pendingRetainedFxCapture_ || retainedOfflineFxActive_ || mixerSessionRecoveryPending_)return; // never arm stale retained PCM
+        if(pendingRetainedFxCapture_ || retainedOfflineFxActive_)return; // never arm stale retained PCM
+        if(mixerSessionRecoveryPending_)return; // saved session has not been restored
         if(operatorOutputMuted_){autoMainEpoch_=0;return;} // explicit emergency stop
         // Only an explicit, verified CONTROL transaction may schedule MAIN
         // recovery. A generic desired flag cannot prove output-pair continuity.

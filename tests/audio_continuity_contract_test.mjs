@@ -153,5 +153,5 @@ test('last saved MAIN mute and previous-generation recovery remain muted after r
  const s=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
  assert.match(s,/const bool holdMain=usedPrevious\|\|\(doc.resumeMain.has_value\(\)&&!doc.resumeMain.value\(\)\)/);
  assert.match(s,/if\(holdMain\)\s*\{\s*operatorOutputMuted_=true;\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
- assert.match(main,/retainedOfflineFxActive_ \|\| mixerSessionRecoveryPending_\)return/);
+ assert.match(main,/if\(mixerSessionRecoveryPending_\)return; \/\/ saved session has not been restored/);
 });
