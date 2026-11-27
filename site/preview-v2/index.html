@@ -32,35 +32,15 @@
 <div class="app">
   <header class="window-title"><span class="logo">ArSonMix</span><span class="file-name">Mixer · Reference Session</span><span class="study">OPERATOR-FIRST · SINGLE LIVE CONSOLE REFERENCE</span></header>
   <div class="command-bar" role="toolbar" aria-label="Live mixer controls">
-    <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
-    <button class="tool wire-command" id="wireNavigatorToggle" type="button" aria-expanded="false" aria-controls="wireWorkspace" title="Open floating WIRE Routes navigator">Routes</button>
-    <button class="tool wire-command" id="wireMatrixToggle" type="button" aria-expanded="false" aria-controls="wireWorkspace" title="Open floating routing matrix">Matrix</button>
-    <button class="tool wire-command" id="wireConfigToggle" type="button" aria-expanded="false" aria-controls="wireConfigWindow" title="Open WIRE routing and display configuration">Wire Setup</button>
-    <span class="sep"></span>
-    <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank" aria-label="Previous channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg></button>
-    <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="0">CH 01–10</option></select>
-    <button class="tool bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button>
-    <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
-    <span class="sep"></span>
-    <span class="toolbar-label">STRIP</span>
-    <div class="strip-view-switch" role="group" aria-label="Channel processing view">
-      <button class="tool" type="button" id="gainView" aria-pressed="false" title="Show digital input gain knobs in the FX rack area">GAIN</button>
-      <button class="tool active" type="button" id="fxView" aria-pressed="true" title="Show original channel FX rack">FX RACK</button>
-    </div>
-    <button class="tool global-fx-toggle active" type="button" id="globalFxToggle" aria-label="Bypass all mixer FX" aria-pressed="true" title="A/B all channel, BUS, FX return and MAIN inserts without changing individual rack or slot power"><span class="global-fx-label">FX</span><svg class="global-fx-power-icon mi-svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" focusable="false" aria-hidden="true"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.88 19 9.82 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.18 1.01-4.12 2.59-5.41L6.17 5.17C4.23 6.82 3 9.27 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.73-1.23-5.18-3.17-6.83z"/></svg></button>
-    <span class="sep"></span>
-    <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">Sends on Faders</button>
-    <select class="toolbar-select" id="sofTarget" aria-label="Send target"><option value="Bus A">Bus A</option></select>
-    <span class="mix-context" id="mixContext" role="status" aria-live="off">MAIN MIX</span>
-    <button type="button" id="clearCue" hidden disabled aria-hidden="true" tabindex="-1" style="display:none"></button>
-    <span class="sep"></span>
-    <label class="toolbar-label" for="sceneSelect">SNAPSHOT</label>
-    <select id="sceneSelect" class="toolbar-select" aria-label="Saved live mixer snapshots"><option value="">Current</option></select>
-    <button class="tool" id="saveScene" title="Store a live mixer snapshot locally">Save</button>
-    <button class="tool" id="recallScene" title="Recall snapshot · Snapshot Safe channels protected">Recall</button>
     <details class="more-tools" id="moreTools">
-      <summary class="tool" title="Less-frequent mixer operations">More ···</summary>
-      <div class="more-tools-panel">
+      <summary class="tool" title="Application menu" aria-label="Application menu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></summary>
+      <div class="more-tools-panel" aria-label="Application commands">
+        <div class="reference-file-menu">
+          <span class="more-tools-caption">REFERENCE SESSION · NO AUDIO</span>
+          <button class="tool reference-file-item" id="referenceMenuNew" type="button" title="Reset reference mixer"><img src="assets/mixer-new.svg" width="16" height="16" alt="">New</button>
+          <button class="tool reference-file-item" id="referenceMenuSave" type="button" title="Store a local reference snapshot"><img src="assets/mixer-save.svg" width="16" height="16" alt="">Save snapshot</button>
+          <button class="tool reference-file-item" id="referenceMenuOpen" type="button" title="Recall the selected reference snapshot"><img src="assets/mixer-open.svg" width="16" height="16" alt="">Open snapshot</button>
+        </div>
         <span class="more-tools-caption">CHANNEL SETUP</span>
         <button class="tool" id="addTrack" title="Create mono or stereo input channel">+ Audio</button>
         <button class="tool" id="addBus" title="Use a universal receiving channel" hidden>+ Bus</button>
@@ -76,12 +56,39 @@
         <span class="more-tools-caption wire-overflow">WIRE TOOLS</span>
         <button class="tool wire-overflow" type="button" data-wire-open="routes" title="Open WIRE Routes window">Routes</button>
         <button class="tool wire-overflow" type="button" data-wire-open="matrix" title="Open WIRE Matrix window">Matrix</button>
-        <button class="tool wire-overflow" type="button" data-wire-open="config" title="Open WIRE Configuration window">Wire Setup</button>
+        <button class="tool wire-overflow app-wire-setup" type="button" data-wire-open="config" title="Open WIRE Configuration window">Wire Setup</button>
         <span class="more-tools-caption">REFERENCE TOOLS</span>
         <button class="tool" id="preview" aria-pressed="false" title="Show fake metering movement; no hardware audio"><svg class="mi-svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg> Demo Meters</button>
         <button class="tool" id="reset" title="Reset UI reference mixer controls">Reset Demo</button>
       </div>
     </details>
+    <button class="tool primary" id="pluginsButton" title="Search and assign FX plugins (F8)" aria-controls="pluginBrowser" aria-expanded="false">Plugins · F8</button>
+    <button class="tool wire-command" id="wireNavigatorToggle" type="button" aria-expanded="false" aria-controls="wireWorkspace" title="Open floating WIRE Routes navigator">Routes</button>
+    <button class="tool wire-command" id="wireMatrixToggle" type="button" aria-expanded="false" aria-controls="wireWorkspace" title="Open floating routing matrix">Matrix</button>
+    <button class="tool wire-command" id="wireConfigToggle" type="button" hidden aria-expanded="false" aria-controls="wireConfigWindow" title="Open WIRE routing and display configuration">Wire Setup</button>
+    <span class="sep"></span>
+    <span class="toolbar-label">BANK</span><button class="tool bank-arrow" id="bankPrev" title="Previous bank" aria-label="Previous channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M14,17L9,12l5-5V17Z"/></svg></button>
+    <select class="toolbar-select" id="bankSelect" aria-label="Mixer bank"><option value="0">CH 01–10</option></select>
+    <button class="tool bank-arrow" id="bankNext" title="Next bank" aria-label="Next channel bank"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="#1f1f1f" aria-hidden="true"><path d="M10,17V7l5,5l-5,5Z"/></svg></button>
+    <label class="toolbar-label" for="densitySelect">VIEW</label><select id="densitySelect" class="density-select" aria-label="Channel strip size"><option value="comfort" selected>Comfort</option><option value="standard">Standard</option><option value="compact">Compact</option></select>
+    <span class="sep"></span>
+    <span class="toolbar-label">STRIP</span>
+    <div class="strip-view-switch" role="group" aria-label="Channel processing view">
+      <button class="tool" type="button" id="gainView" aria-pressed="false" title="Show digital input gain knobs in the FX rack area">GAIN</button>
+      <button class="tool active" type="button" id="fxView" aria-pressed="true" title="Show original channel FX rack">FX RACK</button>
+    </div>
+    <button class="tool global-fx-toggle active" type="button" id="globalFxToggle" aria-label="Bypass all mixer FX" aria-pressed="true" title="A/B all channel, BUS, FX return and MAIN inserts without changing individual rack or slot power"><span class="global-fx-label">FX</span><svg class="global-fx-power-icon mi-svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" focusable="false" aria-hidden="true"><path d="M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42C17.99 7.88 19 9.82 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.18 1.01-4.12 2.59-5.41L6.17 5.17C4.23 6.82 3 9.27 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.73-1.23-5.18-3.17-6.83z"/></svg></button>
+    <span class="sep"></span>
+    <button class="tool" id="sofToggle" title="Mix Aux and FX sends using the channel faders" aria-pressed="false">SOF</button>
+    <select class="toolbar-select" id="sofTarget" aria-label="Send target"><option value="Bus A">Bus A</option></select>
+    <span class="mix-context" id="mixContext" role="status" aria-live="off">MAIN MIX</span>
+    <button type="button" id="clearCue" hidden disabled aria-hidden="true" tabindex="-1" style="display:none"></button>
+    <span class="sep"></span>
+    <label class="toolbar-label" for="sceneSelect">SNAPSHOT</label>
+    <select id="sceneSelect" class="toolbar-select" aria-label="Saved live mixer snapshots"><option value="">Current</option></select>
+    <button class="tool" id="saveScene" title="Store a live mixer snapshot locally">Save</button>
+    <button class="tool" id="recallScene" title="Recall snapshot · Snapshot Safe channels protected">Recall</button>
+
   </div>
   <main class="console-pane">
     <div class="mixer-title"><span class="accent"></span><span class="panel-name">Live Mixer</span><span class="panel-sub" aria-hidden="true"><svg class="mi-svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M3 5v14h18V5H3zm8 12H5V7h6v10zm8 0h-6v-4h6v4zm0-6h-6V7h6v4z"/></svg></span><span class="right" id="trackCount">10 audio tracks · 1 bus · master</span></div>
@@ -384,8 +391,8 @@ function sectionSof(t){
  const visual=!send?'idle':tap==='preFader'||tap==='preFx'?'pre':'post';
  const badge=!edge?'NO SEND':edge.kind!=='send'?'PRIMARY OUT':
    tap==='preFader'?'PRE-FADER':tap==='preFx'?'PRE-FX':'POST-FADER';
- const assignable=native&&!edge&&!!dest&&t.id!==dest.id&&t.nativeTapAvailable===true;
- const status=!dest?'Select a BUS/FX':!edge?(assignable?'Assign a silent send':'Patch with WIRE'):
+ const assignable=canDraftSof(t);
+ const status=!dest?'Select a BUS/FX':!edge?(assignable?(t.sofDraft?.target===dest.id?'DRAFT '+wireDbText(t.sofDraft.db)+' · assign':'Assign + PRE / + POST'):'Patch with WIRE'):
    !send?'PRIMARY ROUTE · no send level':
    send.sendEnabled===false?'OFF · saved '+wireDbText(send.levelDb):
    'LEVEL '+wireDbText(send.levelDb);
@@ -396,7 +403,7 @@ function sectionSof(t){
   '<div class="subhead"><span class="sym">↗</span><span class="hint">SEND TO '+escapeHtml(sofTarget||'—')+'</span></div>'+
   '<div class="sof-view-body"><div class="sof-info"><span class="sof-badge">'+badge+'</span>'+
   '<small>'+escapeHtml(status)+'</small></div>'+
-  '<div class="sof-actions">'+(assignable?'<button type="button" class="mx-sof-on-key" data-action="sofAssignPre" title="Assign PRE-fader send at zero gain" aria-label="Assign PRE send">+ PRE</button><button type="button" class="mx-sof-tap-key" data-action="sofAssignPost" title="Assign POST-fader send at zero gain" aria-label="Assign POST send">+ POST</button>':'<button type="button" class="mx-sof-on-key" data-action="sofOn"'+
+  '<div class="sof-actions">'+(assignable?'<button type="button" class="mx-sof-on-key" data-action="sofAssignPre" title="Assign PRE send at selected draft level" aria-label="Assign PRE send">+ PRE</button><button type="button" class="mx-sof-tap-key" data-action="sofAssignPost" title="Assign POST send at selected draft level" aria-label="Assign POST send">+ POST</button>':'<button type="button" class="mx-sof-on-key" data-action="sofOn"'+
   ' aria-label="'+escapeHtml(t.name+' send '+(enabled?'on':'off')+' to '+sofTarget)+'"'+
   ' title="'+escapeHtml('Send '+(enabled?'ON':'OFF')+' · '+sofTarget)+'" aria-pressed="'+enabled+'"'+
   (onEditable?'':' disabled')+'>'+(enabled?'ON':'OFF')+'</button>'+
@@ -807,7 +814,7 @@ function sectionFader(t){
  return '<div class="fader-section"><div class="fader-head"><output class="fader-readout" aria-label="'+escapeHtml(t.name)+' level">'+(isSend?'SEND ':'')+formatDb(value)+' dB</output><button type="button" class="clip-indicator '+(t.clip?'clipping':'')+'" data-action="resetClip" aria-label="Reset '+escapeHtml(t.name)+' clip latch" title="Reset latched peak indication (demo)">CLIP</button></div>'
  +'<div class="fader-workspace">'
  +'<div class="meter-box '+(t.format==='mono'?'mono':'stereo')+'" aria-label="Simulated '+(t.format==='mono'?'mono':'stereo')+' dBFS meter"><div class="vu-bars"><div class="meter-lane"><div class="meter-fill left"></div><span class="meter-peak-hold" aria-hidden="true"></span></div>'+(t.format==='mono'?'':'<div class="meter-lane"><div class="meter-fill right"></div><span class="meter-peak-hold" aria-hidden="true"></span></div>')+'</div><div class="vu-scale"><div class="vu-scale-travel">'+vuScale+'</div></div><div class="peak '+(t.clip?'clipping':'')+'" aria-hidden="true"><span class="peak-led"></span>'+(t.format==='mono'?'':'<span class="peak-led"></span>')+'</div></div>'
- +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-y:'+(100-percent)+'%;--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+(isSend?' send level':' channel level')+'"'+(isSend&&!getSofEdge(t)?' disabled':'')+'></div>'
+ +'<div class="fader-box" style="--fader-fill:'+percent+'%;--fader-lit:'+(percent/100)+';--fader-y:'+(100-percent)+'%;--fader-frac:'+(percent/100)+'"><div class="fader-travel"><div class="cap" aria-hidden="true"></div></div><input class="fader" type="range" min="-60" max="'+gainMax+'" value="'+value+'" step=".1" data-field="level" title="'+(isSend?'SEND to '+escapeHtml(sofTarget):'Main level')+'" aria-label="'+escapeHtml(t.name)+(isSend?' send level':' channel level')+'"'+(isSend&&!getSofEdge(t)&&!canDraftSof(t)?' disabled':'')+'></div>'
  +'<div class="fader-scale"><div class="gain-scale-travel">'+gainScale+'</div></div></div></div>';
 }
 function strip(t){
@@ -995,18 +1002,26 @@ function getSofEdge(t){
  const edge=dest&&wireFor(t.id,dest.id);
  return edge&&edge.kind==='send'?edge:null;
 }
-function getSofLevel(t){const edge=getSofEdge(t);return edge?edge.levelDb:-60;}
+function canDraftSof(t){
+ const dest=selectedSofDestination();
+ if(!dest||!isSofSource(t)||t.id===dest.id||wireFor(t.id,dest.id))return false;
+ return window.__JUCE__?.backend?t.nativeTapAvailable===true:!wireIsCycle(t.id,dest.id);
+}
+function getSofLevel(t){const edge=getSofEdge(t);return edge?edge.levelDb:
+ (t.sofDraft?.target===sofTargetId?t.sofDraft.db:-60);}
+function clearSofDrafts(){for(const t of tracks)t.sofDraft=null;}
 function setSofLevel(t,newLevel){
  const dest=selectedSofDestination();
  if(!dest||!isSofSource(t)||dest.id===t.id)return false;
  const level=Math.round(Math.max(-60,Math.min(6,newLevel))*10)/10;
  const edge=getSofEdge(t);
- // Never auto-patch or remove a WIRE at minimum send level.
- if(!edge)return false;
+ // Unassigned faders are intentional drafts, never audio routes.
+ if(!edge){if(!canDraftSof(t))return false;t.sofDraft={target:dest.id,db:level};return true;}
  return wireGraphCommit([{type:'GAIN',sourceId:t.id,edgeId:edge.id,levelDb:level}],{record:false});
 }
 function toggleSof(force){
  sofEnabled=typeof force==='boolean'?force:!sofEnabled;
+ clearSofDrafts();
  updateSofTargets();
  if(sofEnabled&&!selectedSofDestination()){sofEnabled=false;say('Select a Bus, FX Return or Monitor to use Sends on Faders');return;}
  // PFL visual selection remains stable when switching between MAIN and SOF.
@@ -2102,7 +2117,7 @@ function handleField(event){
  if(field==='fx'){t.fx[Number(el.dataset.slot)]=el.value;t.slotBypass[Number(el.dataset.slot)]=false;say(t.name+' · FX '+(Number(el.dataset.slot)+1)+': '+el.value);refreshStrip(t);}
  else if(field==='level'){
  if(sofEnabled&&isSofSource(t)){
-  if(setSofLevel(t,Number(el.value))){const readout=el.closest('.strip')?.querySelector('.db-value');if(readout)readout.textContent='S '+formatDb(getSofLevel(t));syncFaderVisual(t,el.closest('.strip'));if(event.type==='change')say(t.name+' → '+sofTarget+' send '+formatDb(getSofLevel(t))+' dB');}
+  if(setSofLevel(t,Number(el.value))){const root=el.closest('.strip');const readout=root?.querySelector('.db-value');if(readout)readout.textContent='S '+formatDb(getSofLevel(t));syncFaderVisual(t,root);if(!getSofEdge(t)){const label=root?.querySelector('.sof-info small');if(label)label.textContent='DRAFT '+wireDbText(getSofLevel(t))+' · assign';}if(event.type==='change')say(t.name+' → '+sofTarget+(getSofEdge(t)?' send ':' draft ')+formatDb(getSofLevel(t))+' dB');}
   else el.value=getSofLevel(t);
   return;
  }
@@ -2202,7 +2217,7 @@ function cancelCapturedFader(){
  const g=faderGesture;if(!g)return;
  faderGesture=null;
  if(g.box?.hasPointerCapture?.(g.pointerId))g.box.releasePointerCapture(g.pointerId);
- const t=findTrack(g.input);if(t)syncFaderVisual(t);
+ const t=findTrack(g.input);if(t){if(sofEnabled&&!getSofEdge(t))t.sofDraft=null;syncFaderVisual(t);}
 }
 const consoleBody=document.querySelector('.console-body');
 /* Hardware unity detent measures physical distance, never an arbitrary
@@ -2514,6 +2529,14 @@ document.querySelector('.console-body').addEventListener('click',e=>{
  if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);return;}
  if(a==='removeFx'){if(deferNativeFxIntent('Remove FX insert'))return;const i=Number(btn.dataset.slot);t.fx[i]='None';t.slotBypass[i]=false;if(t.fxInsertIds)t.fxInsertIds[i]=null;fxReorderUndo=null;refreshStrip(t);say(t.name+' · cleared FX insert '+(i+1));return;}
  if(a==='slotPower'){if(deferNativeFxIntent('FX insert bypass'))return;const slot=Number(btn.dataset.slot);if(t.fx[slot]==='None'){say(t.name+': choose an effect before toggling bypass');return;}t.slotBypass[slot]=!t.slotBypass[slot];refreshStrip(t);say(t.name+': FX '+(slot+1)+(t.slotBypass[slot]?' bypassed':' enabled'));return;}
+ if(a==='sofAssignPre'||a==='sofAssignPost'){
+  if(window.__JUCE__?.backend||!canDraftSof(t))return;
+  const dest=selectedSofDestination(),db=getSofLevel(t);
+  if(wireGraphCommit([{type:'CONNECT',sourceId:t.id,destId:dest.id,mode:a==='sofAssignPre'?'split':'send',levelDb:db}])){
+   t.sofDraft=null;refreshStrip(t);renderWireRouting();say('SEND assigned · GUI reference only');
+  }
+  return;
+ }
  if(a==='sofOn'){
   if(!sofEnabled||!isSofSource(t))return;
   if(window.__JUCE__?.backend)return; // native bridge owns accepted send gate
@@ -2912,6 +2935,13 @@ document.getElementById('densitySelect').addEventListener('change',()=>{
  say('Mixer density: '+value+' · Master remains pinned');
 });
 const moreTools=document.getElementById('moreTools');
+for(const [id,action] of [['referenceMenuNew','reset'],['referenceMenuSave','saveScene'],['referenceMenuOpen','recallScene']]){
+ document.getElementById(id).addEventListener('click',()=>{
+  if(window.__JUCE__?.backend)return;
+  moreTools.open=false;document.getElementById(action).click();
+ });
+}
+moreTools.addEventListener('toggle',()=>moreTools.querySelector('summary').setAttribute('aria-expanded',String(moreTools.open)));
 document.addEventListener('pointerdown',e=>{
  if(moreTools.open&&!moreTools.contains(e.target))moreTools.open=false;
 },true);
@@ -3149,6 +3179,7 @@ document.getElementById('sofTarget').addEventListener('change',()=>{
  const id=Number(document.getElementById('sofTarget').value);
  const target=tracks.find(t=>t.id===id&&isSofTarget(t));
  if(!target){updateSofTargets();say('Invalid SEND target · selection unchanged');return;}
+ clearSofDrafts();
  sofTargetId=target.id;sofTarget=target.name;
  render();say('SEND MIX → '+sofTarget+' · MAIN faders protected');
 });

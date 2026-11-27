@@ -510,6 +510,28 @@
   // Disk-backed offline edits are release-only; retain one newest released
   // value per ChannelId while the single durable logical transaction is busy.
   const latestLogicalInputGains=new Map();
+  const latestLogicalSendGains=new Map();
+  function flushLogicalSendGains(){
+    if(!logicalView||pendingLogical)return;
+    for(const [edgeId,edit] of latestLogicalSendGains){
+      latestLogicalSendGains.delete(edgeId);
+      const edge=wireVM.parallelEdge(logicalView.graph,edit.source,edgeId,edit.to);
+      if(edit.workspaceToken!==logicalView.workspaceToken||!edge)continue;
+      if(Math.abs(edge.gainLinear-edit.gain)<0.00001)continue;
+      if(logicalIntent("SET_WIRE_GAIN",edit.source,{edgeId,gainLinear:edit.gain}).ok)return;
+      latestLogicalSendGains.clear();
+      status("Offline SEND not saved · refreshing accepted settings");controller?.subscribe();return;
+    }
+  }
+  function queueLogicalSendGain(edge,db,final){
+    if(!logicalView||logicalView.readOnly||!edge||!logicalView.graph.capabilities.supportedOps.includes("SET_WIRE_GAIN")||!Number.isFinite(db)||db< -60||db>6)return false;
+    if(final){
+      latestLogicalSendGains.set(edge.edgeId,{source:edge.from,to:edge.to,workspaceToken:logicalView.workspaceToken,
+        gain:db<=-60?0:Math.pow(10,db/20),db});
+      flushLogicalSendGains();
+    }
+    return true;
+  }
   // Retained requests prepare a control-only .smix FX editor after ACK, never
   // authorize PCM or silently rebind disconnected hardware.
   let pendingRetainedEditor=null,retainedEditorSerial=0;
@@ -635,7 +657,7 @@
     window.setTimeout(()=>{
       if(pendingLogical?.requestId!==requestId)return;
       pendingLogical=null;
-      latestLogicalInputGains.clear(); // unknown commit outcome: never blindly replay
+      latestLogicalInputGains.clear();latestLogicalSendGains.clear(); // unknown commit outcome: never blindly replay
       lastPaintedSignature="";lastNativeTopologySignature="";
       status("Mixer edit not confirmed · refreshing saved settings");
       controller?.subscribe();
@@ -753,7 +775,7 @@
       }
       const result=logicalIntent("SET_INPUT_GAIN",id,{valueDb:edit.db});
       if(result.ok)return; // one durable ACK + independent readback at a time
-      latestLogicalInputGains.clear();
+      latestLogicalInputGains.clear();latestLogicalSendGains.clear();
       lastPaintedSignature="";lastNativeTopologySignature="";
       status("Offline GAIN not saved · refreshing accepted settings");
       controller?.subscribe();
@@ -825,7 +847,7 @@
   }
   function selectedNativeSofEdge(t) {
     if(!scope?.sofEnabled||!nativeSofSource(t))return null;
-    const current=controller?.state()?.current;
+    const current=activeView();
     const matches=scope?.tracks?.filter(x=>x.id===scope.sofTargetId&&
       (x.nativeRole?wireVM.sofTargetRole(x.nativeRole):x.kind==="bus"||x.kind==="fx"))||[];
     if(matches.length!==1)return null;
@@ -833,11 +855,10 @@
       destinationId:nativeIdFor(matches[0])});
   }
   function sofAssignmentPlan(t){
-    const current=controller?.state()?.current;
+    const current=activeView();
     const target=scope?.tracks?.find(x=>x.id===scope.sofTargetId);
-    if(!scope?.sofEnabled||!flags.acceptedGraphConnected||!current?.admitted||
-       current.retained||!nativeSofSource(t)||!target||
-       !current.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION"))return null;
+    if(!scope?.sofEnabled||!wireVM.sofAvailable(current,true)||
+       current.retained||!nativeSofSource(t)||!target)return null;
     const from=nativeIdFor(t),to=nativeIdFor(target);
     if(!from||!to||from===to)return null;
     const source=current.graph.channels.find(ch=>ch.id===from);
@@ -847,13 +868,13 @@
     return {from,to};
   }
   function syncNativeSofAvailability(next=controller?.state()?.current) {
-    const admitted=wireVM.sofAvailable(next,!!scope?.toggleSof);
+    const admitted=wireVM.sofAvailable(logicalView||next,!!scope?.toggleSof);
     const toggle=document.getElementById("sofToggle"),target=document.getElementById("sofTarget");
     for(const el of [toggle,target])if(el){
       el.style?.setProperty?.("display",el===toggle||admitted?"":"none","important");
       el.disabled=!admitted;
       el.title=admitted?"Flip channel faders to selected SEND levels":
-        "Sends on Faders requires installed PCM WIRE gain, enable and tap ACK";
+        "Sends on Faders awaits an editable mixer workspace";
     }
     if(!admitted&&scope?.sofEnabled)scope.toggleSof(false);
   }
@@ -901,9 +922,9 @@
       t.nativeGainAvailable=(native.admitted===true||native.logical===true) && kind==="audio" &&
         native.graph.capabilities.supportedOps.includes("SET_INPUT_GAIN") &&
         Number.isFinite(ch.controls.inputGainDb);
-      t.nativeTapAvailable=native.admitted===true&&nativeSofSource(t)&&
-        native.graph.capabilities.supportedOps.includes("APPLY_WIRE_TRANSACTION");
-      t.nativeSendAvailable=native.admitted===true&&nativeSofSource(t)&&
+      t.nativeTapAvailable=(native.admitted===true||native.logical===true&&!native.readOnly)&&nativeSofSource(t)&&
+        native.graph.capabilities.supportedOps.includes(native.logical?"SET_SEND_TAP":"APPLY_WIRE_TRANSACTION");
+      t.nativeSendAvailable=(native.admitted===true||native.logical===true&&!native.readOnly)&&nativeSofSource(t)&&
         native.graph.capabilities.supportedOps.includes("SET_SEND_ENABLED");
       // Native PAN is normalized [-1,+1]; approved fader console uses [-100,+100].
       t.pan=ch.controls.pan*100;
@@ -965,7 +986,7 @@
     uiByWireId.clear();for(const [id,ui] of newUiByWire)uiByWireId.set(id,ui);
     meterElements.clear(); // installGraph() replaces strip HTML and meter nodes
     // Retain object identity for surviving strips only after validation.
-    const commitTrack=t=>previous.has(t.id)?Object.assign(previous.get(t.id),t):t;
+    const commitTrack=t=>previous.has(t.id)?Object.assign(previous.get(t.id),t,{sofDraft:null}):t;
     scope.installGraph(nextTracks.map(commitTrack),commitTrack(nextMaster),edges);
     syncNativeSofAvailability(native);
     return true;
@@ -1125,6 +1146,7 @@
     // Rack/slot bypass is applied in-place from independent readback below.
     const structure=JSON.stringify([
       appearanceRevision, // cosmetic readback invalidates DOM projection
+      next.logical,next.admitted,next.readOnly,next.graph.capabilities.supportedOps,
       next.graph.channels.map(ch=>[ch.id,ch.role,ch.name,
         ch.processingFormat,ch.source,ch.primaryOutId,
         ch.inserts?.map(fx=>[fx.id,fx.catalogId,fx.name])]),
@@ -1160,7 +1182,11 @@
         }
         if(t&&slider&&scope.activeFaderId!==t.id){
           const draft=wireGainVisualTargets.get(edge.edgeId);
-          scope.syncFaderVisual?.(t,root,draft?.identity===next.identity?draft.db:undefined);
+          const queued=next.logical?latestLogicalSendGains.get(edge.edgeId):null;
+          const pending=next.logical&&pendingLogical?.operation==="SET_WIRE_GAIN"&&pendingLogical.payload.edgeId===edge.edgeId?pendingLogical.payload.gainLinear:null;
+          const preview=queued&&queued.workspaceToken===next.workspaceToken?queued.db:
+            pending!==null?(pending<=0?-60:Math.max(-60,20*Math.log10(pending))):undefined;
+          scope.syncFaderVisual?.(t,root,preview??(draft?.identity===next.identity?draft.db:undefined));
         }
       }
     }
@@ -5273,7 +5299,8 @@
     // The existing More entry remains a shortcut to THIS SAME panel.
     const toolbar=document.querySelector(".command-bar");
     if(toolbar && !toolbar.querySelector("[data-native-io]")){
-      const firstTool=toolbar.firstElementChild;
+      const more=document.getElementById("moreTools");
+      const firstTool=menu.firstElementChild;
       for(const [caption,action,icon] of [
         ["Save","nativeMixerFileSave","mixer-save.svg"],
         ["Open","nativeMixerFileOpen","mixer-open.svg"]
@@ -5287,7 +5314,7 @@
         image.width=image.height=16;
         button.prepend(image);
         button.addEventListener("click",()=>backend.emitEvent("arMixAction",{action}));
-        toolbar.insertBefore(button,firstTool);
+        menu.insertBefore(button,firstTool);
       }
       // New leads the file group; reuse the same durable live/offline transaction.
       // Never implement reset by wiping UI state or removing a saved checkpoint.
@@ -5301,14 +5328,15 @@
       newIcon.width=newIcon.height=16;
       newProject.prepend(newIcon);
       newProject.addEventListener("click",()=>newSessionButtons[0].click());
-      toolbar.prepend(newProject);
+      menu.prepend(newProject);
+      menu.prepend(item("span","more-tools-caption","PROJECT · MIXER SESSION"));
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
-      const more=document.getElementById("moreTools");
-      // The three channel/device commands are the last contiguous DOM group.
-      toolbar.append(io,more);
+      // The application menu is always the first toolbar item.
+      toolbar.prepend(more);
+      toolbar.append(io);
       const player=document.getElementById("playerToggle"),plugins=document.getElementById("pluginsButton");
       if(player?.parentElement===toolbar&&plugins?.parentElement===toolbar)
         plugins.after(player);
@@ -5321,7 +5349,7 @@
       // Fixed groups, not extra controls. Placement is DOM-only at startup;
       // no resize listeners, repaint loops or menu reparenting.
       for(const [name,element] of [
-        ["files",document.getElementById("pluginsButton")],
+        ["workspace",document.getElementById("pluginsButton")],
         ["routing",document.getElementById("wireNavigatorToggle")],
         ["channels",addTrack]
       ]){
@@ -5383,7 +5411,7 @@
     pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
     pendingFxEditorAck=null; // expire old native HWND on device owner change
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
-    latestInputGainDrafts.clear();latestLogicalInputGains.clear();
+    latestInputGainDrafts.clear();latestLogicalInputGains.clear();latestLogicalSendGains.clear();
     pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
     pendingWireGains.clear();wireGainVisualTargets.clear();pendingNativeControl.clear();
     liveFaderVisualTargets.clear();lastNativeControlSent.clear();
@@ -5481,8 +5509,9 @@
     if(readModel.kind==="LOGICAL_ONLY"||readModel.kind==="RETAINED_OFFLINE") {
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
-      if(logicalView&&logicalView.workspaceToken!==offline.workspaceToken)
-        latestLogicalInputGains.clear();
+      if(logicalView&&logicalView.workspaceToken!==offline.workspaceToken){
+        latestLogicalInputGains.clear();latestLogicalSendGains.clear();
+      }
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
         pendingLogical=null;
       let justInsertedLogicalFx=null;
@@ -5493,7 +5522,7 @@
         // A later unrelated revision cannot prove THIS request's exact edit.
         if(!protocol.logicalReadbackProves(p,offline.graph)){
           pendingLogical=null;
-          latestLogicalInputGains.clear();
+          latestLogicalInputGains.clear();latestLogicalSendGains.clear();
           lastPaintedSignature="";lastNativeTopologySignature="";
           status("Mixer change not verified · refreshing saved session");
           controller?.subscribe();
@@ -5520,7 +5549,7 @@
         "|"+JSON.stringify(offline.graph.edges);
       if(signature!==lastPaintedSignature) {
         if(!projectNativeGraphWithoutFocusLoss(staged)){
-          logicalView=null;latestLogicalInputGains.clear();
+          logicalView=null;latestLogicalInputGains.clear();latestLogicalSendGains.clear();
           status("Saved logical mixer readback invalid · controls unchanged");
           return;
         }
@@ -5584,11 +5613,12 @@
       // Never use the prior revision from the just-settled transaction.
       if(!pendingLogical){
         flushLogicalInputGains();
+        flushLogicalSendGains();
         if(pendingNativeControl.size)window.queueMicrotask(flushLiveScalars);
       }
       return;
     }
-    logicalView=null;latestLogicalInputGains.clear();
+    logicalView=null;latestLogicalInputGains.clear();latestLogicalSendGains.clear();
     if(pendingRetainedEditor && readModel.kind!=="NEEDS_REMAP"){
       pendingRetainedEditor=null; // never follow a newly admitted PCM owner
     }
@@ -5686,7 +5716,7 @@
     // GLOBAL A/B is a realtime SCALAR with unchanged graph revision and
     // unchanged saved insert flags. Include its accepted PCM readback so
     // bypassing every FX repaints each mounted rack without rebuilding DOM.
-    const signature=next.identity+"|"+String(next.raw?.globalFxBypassed)+"|"+
+    const signature=next.identity+"|"+JSON.stringify(caps.supportedOps)+"|"+String(next.raw?.globalFxBypassed)+"|"+
       JSON.stringify(next.graph.channels.map(ch=>[
       ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+
       JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
@@ -5934,7 +5964,7 @@
          protocol.decimal(ack.revision)===null ||
          BigInt(ack.revision)<=BigInt(pending.beforeRevision)){
         pendingLogical=null;
-        latestLogicalInputGains.clear();
+        latestLogicalInputGains.clear();latestLogicalSendGains.clear();
         lastPaintedSignature="";lastNativeTopologySignature="";
         status("Mixer edit rejected · previous saved settings retained");
         controller?.subscribe();
@@ -6298,11 +6328,18 @@
         if(!el.isConnected||el.disabled)return true;
         const edge=selectedNativeSofEdge(t),db=Number(el.value);
         const uiId=edge&&uiByWireId.get(edge.edgeId);
-        if(!edge||uiId===undefined||!Number.isFinite(db)||db< -60||db>6){
-          status("SENDS ON FADERS · patch a selected WIRE destination first");
-          scope?.syncFaderVisual?.(t);return true;
+        if(!Number.isFinite(db)||db< -60||db>6)return true;
+        if(!edge||uiId===undefined){
+          if(sofAssignmentPlan(t)){
+            t.sofDraft={target:scope.sofTargetId,db};
+            previewFaderWithoutModelMutation(t,db);
+            const label=el.closest(".strip")?.querySelector(".sof-info small");
+            if(label)label.textContent="DRAFT "+(db<=-60?"−∞":db.toFixed(1))+" dB · assign";
+            status("SEND draft · choose + PRE or + POST to connect");
+          }else scope?.syncFaderVisual?.(t);
+          return true;
         }
-        if(!requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db})){
+        if(!(logicalView?queueLogicalSendGain(edge,db,event.type==="change"):requestWireGain({sourceId:t.id,edgeId:uiId,levelDb:db}))){
           status("SEND LEVEL rejected · accepted WIRE identity changed");
           scope?.syncFaderVisual?.(t);
           return true;
@@ -6325,7 +6362,8 @@
       }
       if(field==="wireGain"){
         const edge=scope?.wireEdges?.find(e=>e.id===Number(el.dataset.wireId)&&e.destId===t.id);
-        if(!edge||!requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)}))
+        const logicalEdge=logicalView&&edge?wireVM.parallelEdge(logicalView.graph,nativeByUiId.get(edge.sourceId),wireByUiId.get(edge.id)):null;
+        if(!edge||!(logicalView?queueLogicalSendGain(logicalEdge,Number(el.value),event.type==="change"):requestWireGain({sourceId:edge.sourceId,edgeId:edge.id,levelDb:Number(el.value)})))
           status("WIRE gain unavailable · accepted parallel send required");
         else scope.paintWireKnob?.(el,Number(el.value));
         return true;
@@ -6453,8 +6491,11 @@
         if(!plan||controller?.state()?.pending){nativeToast("SEND assignment unavailable · wait for accepted routing");return true;}
         const {from,to}=plan;
         const tap=action==="sofAssignPre"?"PRE_FADER":"POST_FADER";
-        const result=controller.intent("APPLY_WIRE_TRANSACTION",from,{changes:[{op:"CONNECT",from,to,tap,gainLinear:0}]});
-        if(result.ok){status("Assigning silent SEND · native readback pending");window.setTimeout(()=>controller?.expire(result.requestId),8000);}
+        const db=t.sofDraft?.target===scope.sofTargetId?t.sofDraft.db:-60;
+        const gainLinear=db<=-60?0:Math.pow(10,Math.min(6,db)/20);
+        const changes=[{op:"CONNECT",from,to,tap,gainLinear}];
+        const result=logicalView?logicalIntent("WIRE_TRANSACTION",from,{changes}):controller.intent("APPLY_WIRE_TRANSACTION",from,{changes});
+        if(result.ok){status("Assigning SEND · readback pending");if(!logicalView)window.setTimeout(()=>controller?.expire(result.requestId),8000);}
         else nativeToast("SEND assignment rejected · "+result.error);
         return true;
       }
@@ -6472,12 +6513,14 @@
           status("Select one outgoing parallel SEND WIRE to change PRE/POST");
           return true;
         }
-        const target=edge.tap==="PRE_FADER"?"POST_FADER":"PRE_FADER";
-        requestNativeTap(source,edge.edgeId,target);
+        const target=(edge.tapStage||edge.tap)==="PRE_FADER"?"POST_FADER":"PRE_FADER";
+        if(logicalView)logicalIntent("SET_SEND_TAP",source,{edgeId:edge.edgeId,tap:target});
+        else requestNativeTap(source,edge.edgeId,target);
         return true;
       }
       if(action==="sofOn"){
         const edge=selectedNativeSofEdge(t),state=controller?.state();
+        if(logicalView){if(edge)logicalIntent("SET_SEND_ENABLED",edge.from,{edgeId:edge.edgeId,enabled:edge.sendEnabled===false});return true;}
         const plan=wireVM.nativeSendTogglePlan(state?.current,{
           sourceId:nativeIdFor(t),edgeId:edge?.edgeId,
           projected:flags.acceptedGraphConnected,pending:!!state?.pending});
@@ -6703,6 +6746,8 @@
         flags.acceptedGraphConnected,id,Number(row?.controls?.wireSumGainDb)).kind==="READY";
     },
     canWireGain(uiEdgeId,uiSourceId){
+      if(logicalView)return !logicalView.readOnly&&logicalView.graph.capabilities.supportedOps.includes("SET_WIRE_GAIN")&&
+        !!wireVM.parallelEdge(logicalView.graph,nativeByUiId.get(uiSourceId),wireByUiId.get(uiEdgeId));
       return !!admittedParallelWire(uiSourceId,uiEdgeId,"SET_WIRE_GAIN");
     },
     canWireTap(uiEdgeId,uiSourceId){
@@ -6762,7 +6807,9 @@
         }
         const op=ops[0];
         if(op.type==="GAIN"){
-          nativeToast("Send gain editing requires the connected mixer");return true;
+          const edge=wireVM.parallelEdge(logicalView.graph,nativeByUiId.get(op.sourceId),wireByUiId.get(op.edgeId));
+          if(!queueLogicalSendGain(edge,Number(op.levelDb),true))status("Select a saved parallel SEND");
+          return true;
         }
         const from=nativeByUiId.get(op.sourceId);
         const to=op.destId===undefined?null:nativeByUiId.get(op.destId);

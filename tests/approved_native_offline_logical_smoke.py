@@ -47,7 +47,7 @@ def logical_graph(revision="1", extra=False, source_only=False):
             "supportedOps":["CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
                 "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN",
                 "SET_MUTE","SET_SOLO","SET_PROCESSING_FORMAT",
-                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP",
+                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP","SET_WIRE_GAIN",
                 "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
                 "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"],
             "dynamicChannels":True,"groups":True,
@@ -67,6 +67,7 @@ def snapshot(revision="1",extra=False,source_only=False,workspace_token="workspa
     raw["productionCallbackLive"]=False
     raw["mixerSession"]={"authority":"NONE","deviceEpoch":"0"}
     graph=logical_graph(revision,extra,source_only)
+    raw["globalFxBypassed"]=False  # Published on every native mixer snapshot.
     raw["logicalMixer"]={"schema":"arsonmix.native.logical-mixer.v1",
         "authority":"LOGICAL_ONLY","workspaceToken":workspace_token,
         "revision":revision,"graph":graph,
@@ -212,26 +213,33 @@ def main():
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
         state["offlineNewSessionAvailable"]=True
         emit(page,"arMixConsoleSnapshot",state)
-        page.once("dialog",lambda dialog:dialog.dismiss())
-        archive.click()
+        def open_menu():
+            menu = page.locator("#moreTools")
+            if menu.get_attribute("open") is None:
+                menu.locator(":scope > summary").click()
+
+        def confirm_menu_action(button, choice):
+            open_menu()
+            button.click()
+            page.get_by_role("dialog").get_by_role("button", name=choice, exact=True).click()
+
+        confirm_menu_action(archive, "Cancel")
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
-        page.once("dialog",lambda dialog:dialog.accept())
-        archive.click()
+        confirm_menu_action(archive, "Open archive")
         event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerOpenArchive')?.payload")
         assert event["confirmed"] is True and event["workspaceToken"]=="workspace-a" and event["baseRevision"]=="1", event
         new_project=page.get_by_role("button",name="New Project · empty mixer",exact=True)
+        open_menu()
         assert new_project.is_visible()
-        page.once("dialog",lambda dialog:dialog.dismiss())
-        new_project.click()
+        confirm_menu_action(new_project, "Cancel")
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
         # The leftmost New shortcut delegates to exactly the same transaction.
-        toolbar_new=page.locator(".command-bar > [data-native-new-project]")
+        toolbar_new=page.locator("#moreTools [data-native-new-project]")
+        open_menu()
         assert toolbar_new.inner_text()=="New" and toolbar_new.is_visible()
-        page.once("dialog",lambda dialog:dialog.dismiss())
-        toolbar_new.click()
+        confirm_menu_action(toolbar_new, "Cancel")
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
-        page.once("dialog",lambda dialog:dialog.accept())
-        toolbar_new.click()
+        confirm_menu_action(toolbar_new, "Continue")
         assert page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='nativeMixerNewOffline').length")==1
         new_event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerNewOffline')?.payload")
         assert new_event["mode"]=="EMPTY" and new_event["confirmed"] is True, new_event
