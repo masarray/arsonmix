@@ -9,6 +9,7 @@
 #include "../src/LiveDryRoutingLab.h"
 #include "../src/NativeMixerSessionFxRestore.h"
 #include "../src/NativeLogicalMixerControl.h"
+#include "../engine/core/NativeOutputPairTap.h"
 
 using namespace armix::mixer;
 using namespace armix::session;
@@ -2537,7 +2538,103 @@ static void verifyDetachedPendingEqCapture(){
     std::cout<<"DETACHED_PENDING_EQ_CAPTURE_PASS\n";
 }
 
+// FIELD 7bbb3d6: ordinary inserts must work on an armed aligned MAIN
+// graph while its post-FX PCM is also exposed to the secondary sink.
+// No actual driver or WASAPI endpoint is opened by this fixture.
+static void verifyLiveInsertWithSecondaryMainTap(){
+    using namespace armix::mixer;
+    FixtureDevice device(true);device.outputMask.clear();device.outputMask.setRange(0,2,true);
+    auto storage=std::make_unique<LiveDryRoutingLab>();
+    auto& mixer=*storage;mixer.prepareDevice(&device);
+    armix::device::JuceActivePortSnapshot pins;
+    armix::device::JuceActivePortSnapshot::Fault fault{};
+    assert(armix::device::JuceActivePortSnapshot::capture(&device,mixer.epoch(),pins,fault));
+    auto doc=makeSession();
+    doc.binding={"ASIO","Verified ASIO","Verified ASIO","3","3",48000.,480,
+        device.getInputChannelNames(),device.getOutputChannelNames()};
+    doc.request.maxFrames=480;doc.rackBypassed.clear();
+    juce::AudioPluginFormatManager formats;
+    std::shared_ptr<DynamicChannelFxLeaseBank> bank;
+    assert(NativeMixerSessionFxRestore::prepare(doc,{},formats,48000.,480,pins.epoch,
+        mixer.nativeGraphRevisionForRestore(),bank).isEmpty());
+    assert(mixer.restoreNativeMixerSession(doc,std::move(bank),pins,true).isEmpty());
+    std::array<float,480> inL{},inR{},outL{},outR{};
+    inL.fill(.1f);inR.fill(.1f);
+    const float* in[]={inL.data(),inR.data()};float* out[]={outL.data(),outR.data()};
+    auto render=[&]{
+        std::array<float*,2> splitTap{};
+        std::array<int,2> mainPair{};
+        const auto lease=mixer.captureNativeOutputLease();
+        assert(mixer.process(in,2,out,2,480,1.f,false,nullptr,nullptr,false,
+            &mainPair,nullptr,false,{},false,&lease,false,&splitTap));
+        // FIELD is aligned MAIN, not separate headphone/stream mode.
+        // Match the production callback's NativeOutputPairTap fallback.
+        assert(!splitTap[0]&&!splitTap[1]);
+        assert((mainPair==std::array<int,2>{0,1}));
+        const auto tap=NativeOutputPairTap::select(out,2,mainPair);
+        assert(tap[0]==outL.data()&&tap[1]==outR.data());
+        for(int i=0;i<480;++i)
+            assert(std::isfinite(tap[0][i])&&std::isfinite(tap[1][i]));
+        return outL.back();
+    };
+    render();const float baseline=render();assert(baseline>.01f);
+    auto revisions=[&]{
+        const auto state=mixer.nativeBusStatus();std::uint64_t rev=0,roster=0;
+        assert(parseDecimal(state.getProperty("graphRevision",{}),rev));
+        assert(parseDecimal(state.getProperty("rosterRevision",{}),roster));
+        return std::array<std::uint64_t,2>{rev,roster};
+    };
+    auto add=[&](const char* id,ChannelId target,std::array<std::uint64_t,2> base){
+        const auto* fx=armix::builtin_fx::findNativeBuiltInFx(id);assert(fx);
+        auto proc=fx->prepare(48000.,480,nullptr,0);assert(proc);
+        auto owner=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(proc),
+            fx->id,fx->name,LiveDryRoutingLab::Block::hardFrameLimit);
+        // Explicitly not disarmed: use the real live internal-FX publication.
+        return mixer.attachNativeInsert(pins.epoch,base[0],base[1],target,
+            fx->id,std::move(owner),true,false);
+    };
+    const auto before=revisions();
+    auto ducker=add("armix.builtin.auto-ducker.v1",{16},before);
+    assert(ducker.accepted&&ducker.pcmRevision==before[0]+1);
+    render();assert(render()>.01f);
+    const auto after=revisions();
+    assert(!add("armix.builtin.channel-eq.v1",{16},before).accepted);
+    assert(revisions()==after); // stale attempt cannot replace accepted rack
+    auto eq=add("armix.builtin.channel-eq.v1",{16},after);
+    assert(eq.accepted&&eq.pcmRevision==after[0]+1);
+    render();assert(render()>.01f);
+    const auto state=mixer.nativeBusStatus();
+    const auto channels=state.getProperty("channels",{});assert(channels.isArray());
+    const auto rackFor=[](const juce::var& rows,std::uint64_t channel){
+        const juce::String id(std::to_string(channel));
+        for(const auto& row:*rows.getArray())
+            if(row.getProperty("id","").toString()==id)
+                return row.getProperty("inserts",{});
+        return juce::var{};
+    };
+    const auto rack=rackFor(channels,16);
+    assert(rack.isArray()&&rack.size()==2);
+    assert(rack[0].getProperty("id",{}).toString()=="armix.builtin.auto-ducker.v1");
+    assert(rack[1].getProperty("id",{}).toString()=="armix.builtin.channel-eq.v1");
+    const auto token=rack[0].getProperty("instanceId",{}).toString();
+    const auto ready=revisions();
+    assert(mixer.bypassNativeInsert(pins.epoch,ready[0],{16},0,token,true));
+    assert(!mixer.editNativeFxRack(pins.epoch,ready[0],ready[1],{16},0,
+        "obsolete-token",{2},0).accepted);
+    assert(revisions()==ready);
+    assert(mixer.editNativeFxRack(pins.epoch,ready[0],ready[1],{16},0,
+        token,{2},0).accepted);
+    const auto movedRows=mixer.nativeBusStatus().getProperty("channels",{});
+    const auto destination=rackFor(movedRows,2);
+    assert(destination.isArray()&&destination.size()==1);
+    assert(destination[0].getProperty("instanceId",{}).toString()==token);
+    assert(bool(destination[0].getProperty("bypassed",false)));
+    assert(rackFor(movedRows,16).size()==1);
+    render();assert(render()>.01f);
+    std::cout<<"LIVE_INSERT_SECONDARY_MAIN_TAP_PASS\n";
+}
 int main(){
+    verifyLiveInsertWithSecondaryMainTap();
     verifyDetachedPendingEqCapture();
     verifyCreatedWetReturnPcmAndRecovery();
     for(const auto& fx:armix::builtin_fx::nativeBuiltInFx)

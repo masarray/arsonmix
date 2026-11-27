@@ -502,7 +502,9 @@
   // B-stage: attached-node-only meter caches; a structural render invalidates
   // them atomically. Never retain detached WebView2 strips or stale channel IDs.
   const meterElements = new Map();
-  let nativeFxPowerSerial=0,pendingNativeFxPower=null;
+  let nativeFxPowerSerial=0;
+  const pendingNativeFxPowers=new Map();
+  let activeNativeFxEdit=null,lastRollbackError=null;
   let globalFxSerial=0,pendingGlobalFx=null;
   const pendingM4RackPowers=new Map();
   let controller = null;
@@ -2128,7 +2130,12 @@
       hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
     if(decision.kind!=="READY"){
       if(decision.kind!=="NO_CHANGE")
-        status("FX edit unavailable · refresh accepted native instance");
+        nativeToast(target?"Effect could not be moved. Check the destination rack and try again.":
+          "Effect could not be removed. Try again from its current slot.");
+      return false;
+    }
+    if(controller.state().pending){
+      nativeToast("Wait for the current mixer change to finish.");
       return false;
     }
     // Close affected slot-bound panels before MOVE/REMOVE invalidates their
@@ -2239,19 +2246,22 @@
   function requestAdmittedFxPower(t,action,button){
     if(mixerSession()?.authority!=="CHANNEL_ID")return false;
     const current=controller?.state()?.current;
+    const channelId=nativeIdFor(t);
+    const slot=action==="fxOn"?null:Number(button?.dataset?.slot);
+    const insertId=button?.closest?.(".fxslot-row")?.dataset?.insertId;
+    const key=JSON.stringify([channelId,action,insertId??slot]);
+    if(pendingNativeFxPowers.has(key))return true;
     const plan=fxRackVM.nativePowerPlan(current,{
-      channelId:nativeIdFor(t),action,
-      slot:action==="fxOn"?null:Number(button?.dataset?.slot),
-      pending:!!pendingNativeFxPower,
+      channelId,action,slot,insertId,
       hardwareConfiguration:protocol.nativeHardwareConfiguration(current?.device)});
     if(plan.kind!=="READY")return false;
     const requestId="native-rack-"+(++nativeFxPowerSerial);
-    pendingNativeFxPower={requestId,...plan.pending};
+    pendingNativeFxPowers.set(key,{requestId,...plan.pending});
     backend.emitEvent("arMixAction",{action:plan.action,requestId,...plan.payload});
     window.setTimeout(()=>{
-      if(pendingNativeFxPower?.requestId!==requestId)return;
-      pendingNativeFxPower=null;
-      status("Native FX power timed out · accepted state preserved");
+      if(pendingNativeFxPowers.get(key)?.requestId!==requestId)return;
+      pendingNativeFxPowers.delete(key);
+      nativeToast("Effect power change timed out. Try again from the rack.");
       controller?.subscribe();
     },8000);
     return true;
@@ -5407,7 +5417,7 @@
   function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {
     pendingNativeSources.clear();pendingSourceQueue.clear();
     activeNativeSource=null;nativeUiSourcePending=null;pendingSourceId=0;
-    pendingOutputPatch=null;pendingNativeFxPower=null;pendingGlobalFx=null;
+    pendingOutputPatch=null;pendingNativeFxPowers.clear();pendingGlobalFx=null;
     pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
     pendingFxEditorAck=null; // expire old native HWND on device owner change
     startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
@@ -5766,10 +5776,6 @@
         fxInsert.catalogId,fxInsert.instanceId);
       status("VST3 loaded · "+fxInsert.name+" · native PCM readback verified");
     }
-    const fxSettlement=fxRackVM.nativePowerSettlement(pendingNativeFxPower,next,
-      protocol.nativeHardwareConfiguration(next?.device));
-    if(fxSettlement==="CONFIRMED"||fxSettlement==="STALE")
-      pendingNativeFxPower=null;
     if(startupWire)window.queueMicrotask(flushStartupWire);
     if(next.raw?.retainedOfflineFxPending)
       status("Saved offline FX changes pending · Apply Audio I/O before output");
@@ -5779,6 +5785,13 @@
     controller = protocol.createController({
       emit:(name,payload)=>backend.emitEvent(name,payload),
       onAccepted:(next,confirmed)=>{
+        if(pendingNativeFxPowers.size){
+          const hardwareConfiguration=protocol.nativeHardwareConfiguration(next.device);
+          for(const [key,pending] of pendingNativeFxPowers){
+            const result=fxRackVM.nativePowerSettlement(pending,next,hardwareConfiguration);
+            if(result==="CONFIRMED"||result==="STALE")pendingNativeFxPowers.delete(key);
+          }
+        }
         onNativeReadback(next,confirmed);
         if(confirmed?.operation==="SET_WIRE_GAIN")paintSofGainReadback(next);
         const accepted=controller?.state()?.current;
@@ -5799,6 +5812,26 @@
         inlineFxClip?.syncBypass(activeView());
       },
       onStatus:state=>{
+        if(state.pending){
+          lastRollbackError=null;
+          if(["LOAD_INSERT","MOVE_INSERT","REMOVE_INSERT"].includes(state.pending.operation))
+            activeNativeFxEdit=state.pending.operation;
+        }else if(activeNativeFxEdit){
+          const operation=activeNativeFxEdit;
+          activeNativeFxEdit=null;
+          if(state.lastError!=="ACCEPTED_READBACK"){
+            if(operation==="LOAD_INSERT")pendingFxInsert=null;
+            lastRollbackError=state.lastError;
+            status("Mixer ready");
+            const message=operation==="LOAD_INSERT"?
+              "Effect could not be added. Choose an effect to try again.":
+              operation==="MOVE_INSERT"?
+                "Effect could not be moved. Check the destination rack and try again.":
+                "Effect could not be removed. Try again from its current slot.";
+            nativeToast(message);
+            return; // FX edits never optimistically change the strip model.
+          }
+        }
         const settledGain=pendingNativeGainIntent&&!state.pending;
         if(settledGain){
           pendingNativeGainIntent=false;
@@ -5818,6 +5851,7 @@
         // Pure ViewModel decides retry/rollback; one native controller.
         const recovery=wireVM.nativeRecoveryPlan(
           state,activeWireAttempt,startupWire);
+        if(recovery.kind==="ACCEPTED"||recovery.kind==="IDLE")lastRollbackError=null;
         if(recovery.kind==="ACCEPTED"&&startupWire)
           window.queueMicrotask(flushStartupWire);
         if(recovery.kind==="ACCEPTED")activeWireAttempt=null;
@@ -5831,6 +5865,8 @@
         }
         if(recovery.kind==="ROLLBACK"||
            recovery.kind==="REBASE_CONNECTION"){
+          if(state.lastError===lastRollbackError)return;
+          lastRollbackError=state.lastError;
           pendingNativeWireRetract=null; // rejected routing must never reel
           activeWireAttempt=null;
           startupWire=null;
@@ -5841,10 +5877,6 @@
           // admitted PCM readback, without a new intent, timer or graph edit.
           if(state.current)
             scope?.rollbackNativeWireInspector?.(nativeWireGainReadback(state.current));
-          if(pendingFxInsert?.authority==="CHANNEL_ID"){
-            pendingFxInsert=null;
-            nativeToast("VST3 insert rejected · "+state.lastError);
-          }
           for(const [key,edit] of pendingNativeControl)
             if(edit.authority==="CHANNEL_ID")pendingNativeControl.delete(key);
           for(const [key,edit] of liveFaderVisualTargets)
@@ -6032,13 +6064,16 @@
       controller?.subscribe(); // ACK alone never establishes physical bypass.
     });
     backend.addEventListener("arMixNativeFxPowerAck",ack=>{
-      const verdict=fxRackVM.nativePowerAckResult(pendingNativeFxPower,ack);
-      if(verdict==="IGNORE")return;
-      if(verdict==="REJECTED"){
-        pendingNativeFxPower=null;
-        status("NATIVE FX rejected · "+(ack?.error||"stale epoch or insert"));
-      }else pendingNativeFxPower.acked=true;
-      controller.subscribe(); // ACK is not independently observed PCM state
+      for(const [key,pending] of pendingNativeFxPowers){
+        const verdict=fxRackVM.nativePowerAckResult(pending,ack);
+        if(verdict==="IGNORE")continue;
+        if(verdict==="REJECTED"){
+          pendingNativeFxPowers.delete(key);
+          nativeToast("Effect power could not be changed. Try again from its current slot.");
+        }else pending.acked=true;
+        controller.subscribe(); // ACK is not independently observed PCM state
+        break;
+      }
     });
     backend.addEventListener("arMixRoutingFxRackAck",ack=>{
       const p=pendingM4RackPowers.get(ack?.channel);
@@ -6983,13 +7018,8 @@
         pendingFxInsert={authority:"CHANNEL_ID",requestId:request.requestId,
                          id,channelId:plan.channelId,slot,
                          epoch:accepted.device.epoch,hardwareConfiguration};
-        status(track.name+" · preparing VST3 without stopping MAIN");
-        window.setTimeout(()=>{
-          if(pendingFxInsert?.requestId!==request.requestId)return;
-          pendingFxInsert=null;
-          status("Native VST3 timed out · accepted audio left unchanged");
-          controller.subscribe();
-        },15000);
+        status(track.name+" · preparing "+plugin.name);
+        window.setTimeout(()=>controller?.expire(request.requestId),15000);
         return true;
       }
       if(id==="armix.builtin.auto-ducker.v1"){status("Auto Ducker requires native ChannelId routing");return true;}
