@@ -15,7 +15,7 @@ import tempfile
 
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
-from approved_native_wire_gain_smoke import MAIN, RECEIVER, SEND, SOURCE, ack, emit, snapshot
+from approved_native_wire_gain_smoke import MAIN, RECEIVER, SEND, SOURCE, ack, emit, snapshot, select_ribbon_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -380,8 +380,11 @@ def exercise_create_fx_return(browser,out):
     graph=state["graph"]
     graph["capabilities"]["supportedOps"].append("CREATE_GROUP")
     emit(page,"arMixConsoleSnapshot",state)
-    page.locator("#moreTools > summary").click()
-    page.locator("#addFx").click()
+    # V6 moves native CREATE_GROUP controls into the Routing ribbon.
+    select_ribbon_workflow(page, "routing")
+    add_fx=page.locator("#addFx")
+    assert add_fx.is_visible() and add_fx.is_enabled()
+    add_fx.click()
     request=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeBusCreate').at(-1)")
     assert request and request["purpose"]=="FX" and request["graphRevision"]=="2"
     wet_id="9007199254740999"
@@ -420,10 +423,12 @@ def exercise_offline_sof(browser,out):
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     state=offline_snapshot()
     graph=state["logicalMixer"]["graph"]
-    graph["capabilities"]["supportedOps"].append("SET_WIRE_GAIN")
-    graph["edges"].append({"edgeId":"123456","from":"1","to":"11","signalKind":"AUDIO",
+    assert "SET_WIRE_GAIN" in graph["capabilities"]["supportedOps"]
+    send={"edgeId":"123456","from":"1","to":"11","signalKind":"AUDIO",
         "enabled":True,"primaryOutput":False,"tap":"POST_FADER","tapStage":"POST_FADER",
-        "sendEnabled":True,"gainLinear":.5})
+        "sendEnabled":True,"gainLinear":.5}
+    graph["edges"].append(send)
+    graph["channels"][0]["sends"].append(copy.deepcopy(send))
     emit(page,"arMixConsoleSnapshot",state)
     page.wait_for_function("()=>document.documentElement.dataset.armixNativeAuthority==='logical-editable'")
     page.locator("#sofToggle").click()
@@ -445,11 +450,14 @@ def exercise_offline_sof(browser,out):
     assert len(sent())==1, "durable commit remains serialized, pointer does not block"
     assert abs(float(fader.input_value())+3)<.05
     def accept(request,revision):
+        count=len(sent())
         emit(page,"arMixLogicalAck",{"requestId":request["requestId"],"status":"ACCEPTED",
             "errorCode":"NONE","revision":revision,"physicalOutputAdmitted":False})
+        assert len(sent())==count, "ACK alone must not drain a queued write"
         graph.update(revision=revision,rosterRevision=revision)
         state["logicalMixer"]["revision"]=revision
         graph["edges"][-1]["gainLinear"]=request["payload"]["gainLinear"]
+        graph["channels"][0]["sends"][-1]["gainLinear"]=request["payload"]["gainLinear"]
         emit(page,"arMixConsoleSnapshot",state)
     accept(first,"2")
     page.wait_for_function("()=>window.__events.filter(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN').length===2")

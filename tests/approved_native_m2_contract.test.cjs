@@ -3821,6 +3821,17 @@ test("M5 logical-only editor proves the exact ACK revision and full FX/WIRE effe
  assert.equal(proves(sendPending("SET_SEND_ENABLED",{edgeId:"102",enabled:true}),g),false);
  assert.equal(proves(sendPending("SET_SEND_ENABLED",{edgeId:"101",enabled:false}),g),false,
    "primary output power is not a SEND ON/OFF command");
+ g=next();g.edges.push({...send,gainLinear:.25});
+ assert.equal(proves(sendPending("SET_WIRE_GAIN",{edgeId:"102",gainLinear:.25}),g),true);
+ assert.equal(proves(sendPending("SET_WIRE_GAIN",{edgeId:"101",gainLinear:1}),g),false);
+ assert.equal(proves(sendPending("SET_WIRE_GAIN",{edgeId:"102",gainLinear:.5}),g),false);
+ for(const change of [{sendEnabled:false},{tapStage:"PRE_FADER"},{to:main},{gainLinear:-1},{gainLinear:3}]){
+   g=next();g.edges.push({...send,gainLinear:.25,...change});
+   assert.equal(proves(sendPending("SET_WIRE_GAIN",{edgeId:"102",gainLinear:change.gainLinear??.25}),g),false);
+ }
+ g=next();g.edges.push({...send,gainLinear:0,sendEnabled:false});
+ assert.equal(proves(pending("SET_WIRE_GAIN",{edgeId:"102",gainLinear:0},
+   {beforeEdges:[...beforeEdges,{...send,sendEnabled:false}]}),g),true);
  g=next();g.channels.push({id:"9007199254740995",role:"GROUP"});
  assert.equal(proves(pending("CREATE_GROUP",{},{
    channelId:null,createdId:"9007199254740995"}),g),true);
