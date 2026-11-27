@@ -18,10 +18,3 @@ def apply_rounded_micro_keys(assets: Path) -> None:
         css = css.replace(before, after)
     css = css.replace("V20 true-square metal faces", "Rounded rectangular metal faces")
     path.write_text(css, encoding="utf-8")
-    # Drag grip is a separate CSS owner; keep its existing footprint/gesture.
-    grip = assets / "mixer-fx-rack.css"
-    source = grip.read_text(encoding="utf-8")
-    anchor = "padding:0;border:1px solid #415d69;border-radius:2px;"
-    if source.count(anchor) != 1:
-        raise ValueError("Rounded FX grip CSS anchor drift")
-    grip.write_text(source.replace(anchor, anchor.replace("2px;", "4px;")), encoding="utf-8")

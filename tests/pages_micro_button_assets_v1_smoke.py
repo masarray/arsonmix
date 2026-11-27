@@ -28,7 +28,7 @@ def source_gate():
     # Cross-owner ID-level V6 selectors used to override the micro cap.
     # The contextual owner may supply only the existing hit envelope/focus;
     # the actual cap dimensions and PNG paint remain in the utility owner.
-    assert '.console-body .strip button.mx-util-key' not in context
+    assert not any('button.mx-util-key' in line and ('width:' in line or 'border-radius:' in line or 'background-image:' in line) for line in context.splitlines())
     assert '.mx-util-key[data-util-kind=' not in context
 
 def pixel_geometry_gate():
