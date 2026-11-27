@@ -34,7 +34,7 @@ def main():
                 }};""")
             page.goto((dst / "index.html").as_uri())
             page.wait_for_function("""()=>document.documentElement.classList.contains('armix-native-desktop') &&
-                document.querySelectorAll('.command-bar .mixer-file-tool').length===2 &&
+                document.querySelectorAll('.command-bar .mixer-file-tool').length===3 &&
                 document.querySelectorAll('.command-bar .armix-toolbar-divider').length===3 &&
                 !document.querySelector('.command-bar [data-native-monitor]') &&
                 !!document.querySelector('[data-native-emergency-output]') &&
@@ -117,6 +117,18 @@ def main():
             for item in visible:
                 assert item["left"] >= -1 and item["right"] <= width+1, (
                     width, "toolbar control outside viewport", item)
+            # Real file group, not CSS visual reordering: tab order follows DOM.
+            file_group = page.locator(".command-bar > .mixer-file-tool")
+            assert file_group.all_text_contents() == ["New", "Save", "Open"], width
+            new = page.locator(".command-bar > [data-native-new-project]")
+            assert new.count() == 1 and new.is_visible(), width
+            assert new.evaluate("(el)=>el===el.parentElement.firstElementChild"), width
+            assert new.get_by_role("img").count() == 0  # decorative icon
+            image = new.locator("img")
+            assert image.get_attribute("alt") == ""
+            assert image.get_attribute("src") == "assets/mixer-new.svg"
+            page.wait_for_function("()=>{const i=document.querySelector('[data-native-new-project] img');return i.complete&&i.naturalWidth>0}")
+            assert image.bounding_box()["width"] == 16 and image.bounding_box()["height"] == 16, width
             for caption in ("Save", "Open"):
                 button = page.locator('.command-bar .mixer-file-tool').filter(has_text=caption)
                 assert button.count() == 1 and button.is_visible(), (

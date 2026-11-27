@@ -5152,14 +5152,19 @@
         button.addEventListener("click",()=>backend.emitEvent("arMixAction",{action}));
         toolbar.insertBefore(button,firstTool);
       }
-      // Prominent New Project entry invokes the existing durable offline transaction.
+      // New leads the file group; reuse the same durable live/offline transaction.
       // Never implement reset by wiping UI state or removing a saved checkpoint.
-      const newProject=item("button","tool","New Project");
+      const newProject=item("button","tool mixer-file-tool","New");
       newProject.type="button";
-      newProject.title="Create a fresh offline mixer; archive the previous session";
+      newProject.title="Create a new mixer; archive the previous session";
       newProject.dataset.nativeNewProject="true";
+      const newIcon=document.createElement("img");
+      newIcon.src="assets/mixer-new.svg";
+      newIcon.alt="";
+      newIcon.width=newIcon.height=16;
+      newProject.prepend(newIcon);
       newProject.addEventListener("click",()=>newSessionButtons[0].click());
-      toolbar.insertBefore(newProject,firstTool);
+      toolbar.prepend(newProject);
       const extraOutput=item("button","tool","Output");
       extraOutput.type="button";
       extraOutput.title="Configure secondary playback output and separate mix";
