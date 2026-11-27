@@ -6,11 +6,17 @@ import subprocess
 import tempfile
 import tarfile
 import io
+import sys
 from immersib_p102_geometry_cache_probe import MACROS, ROOT
 BASE="379e867985bb6bab8e07297ba7a8c44925b22b2d"
+MSVC=sys.argv[1:]==["--msvc"]
+if sys.argv[1:] and not MSVC: raise SystemExit("unsupported option")
 def run(root,out):
-    exe=out.with_suffix(".bin")
-    subprocess.run(["g++","-std=c++20","-O2","-ffp-contract=off","-Wall","-Wextra","-Werror",*["-D"+m+"=1" for m in MACROS],str(root/"tools/immersib_p102_fullcore_ab.cpp"),"-o",str(exe)],check=True)
+    exe=out.with_suffix(".exe" if MSVC else ".bin")
+    source=str(root/"tools/immersib_p102_fullcore_ab.cpp")
+    cmd=(["cl.exe","/nologo","/std:c++20","/O2","/EHsc","/fp:precise","/W3","/utf-8",*["/D"+m+"=1" for m in MACROS],source,"/Fe:"+str(exe)]
+         if MSVC else ["g++","-std=c++20","-O2","-ffp-contract=off","-Wall","-Wextra","-Werror",*["-D"+m+"=1" for m in MACROS],source,"-o",str(exe)])
+    subprocess.run(cmd,check=True,cwd=out.parent,timeout=180)
     subprocess.run([str(exe),"--pcm",str(out)],check=True,timeout=180)
     return out.read_bytes()
 with tempfile.TemporaryDirectory() as td:

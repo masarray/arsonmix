@@ -124,10 +124,60 @@ static void partition(int rate){
         }
     }
 }
+// One complete 12-second orbit + one second of tail/room history on
+// each sample rate. Compare the actual retargeting DSP across every azimuth.
+static void fullOrbit(int rate){
+    constexpr int block=64;
+    auto s=p99::DefaultOrbitStage::settings();
+    auto ref=make(rate,false,false,s),fast=make(rate,true,false,s);
+    auto musical=make(rate,true,true,s);
+    std::vector<double> a,b,c;
+    const int blocks=(13*rate)/block;
+    a.reserve(blocks);b.reserve(blocks);c.reserve(blocks);
+    double error=0.,energy=0.,musicalEnergy=0.;float maximum=0.f;
+    for(int n=0;n<blocks;++n){
+        std::array<float,block> l{},r{};
+        for(int i=0;i<block;++i){
+            const double t=double(n*block+i)/rate;
+            const float mid=float(.08*std::sin(2*pi*86*t)+.06*std::sin(2*pi*330*t)+.035*std::sin(2*pi*2050*t));
+            const float side=float(.04*std::sin(2*pi*3700*t)+.02*std::sin(2*pi*6500*t));
+            l[i]=mid+side;r[i]=mid-side;
+        }
+        auto ll=l,rr=r,ml=l,mr=r;
+        auto run=[&](auto& dsp,auto& x,auto& y,auto& timing){
+            const auto start=Clock::now();
+            dsp->process(x.data(),y.data(),block);
+            const double us=std::chrono::duration<double,std::micro>(Clock::now()-start).count();
+            if(n>=32)timing.push_back(us);
+        };
+        if(n%2){run(fast,ll,rr,b);run(ref,l,r,a);}
+        else{run(ref,l,r,a);run(fast,ll,rr,b);}
+        run(musical,ml,mr,c);
+        for(int i=0;i<block;++i){
+            const float dl=l[i]-ll[i],dr=r[i]-rr[i];
+            maximum=std::max({maximum,std::abs(dl),std::abs(dr)});
+            error+=double(dl)*dl+double(dr)*dr;
+            energy+=double(l[i])*l[i]+double(r[i])*r[i];
+            assert(std::isfinite(ml[i])&&std::isfinite(mr[i]));
+            assert(std::abs(ml[i])<=.98001f&&std::abs(mr[i])<=.98001f);
+            musicalEnergy+=double(ml[i])*ml[i]+double(mr[i])*mr[i];
+        }
+    }
+    assert(energy>0.&&musicalEnergy>0.);
+    assert(maximum<2.e-4f&&error/energy<1.e-10);
+    const double expected=std::fmod(double(blocks*block)*360./(rate*12.),360.);
+    assert(std::abs(fast->azimuthDegrees()-expected)<.01);
+    assert(std::abs(musical->azimuthDegrees()-expected)<.01);
+    std::printf("SONKU_P106_ORBIT rate=%d blocks=%d max_error=%.9g relative_error_power=%.9g musical_rms_ratio=%.6f\n",
+        rate,blocks,maximum,error/energy,std::sqrt(musicalEnergy/energy));
+    report(a,rate,block,"full_orbit_reference");
+    report(b,rate,block,"full_orbit_fir_only");
+    report(c,rate,block,"full_orbit_fir_and_voicing");
+}
 int main(){
     for(int rate:{44100,48000}){
         voicing(rate);for(int block:{64,128,256})parity(rate,block);
-        partition(rate);
+        partition(rate);fullOrbit(rate);
     }
     std::puts("SONKU_P106_CANDIDATE_PASS (DSP only; not ASIO hardware)");
 }
