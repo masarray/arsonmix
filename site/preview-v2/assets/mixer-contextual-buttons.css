@@ -298,14 +298,14 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-remaining{text-align:right;min-width:64px}
 #arsonPlayer .ap-remaining output{font-size:17px;font-weight:400;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
 #arsonPlayer .ap-remaining span{display:block;font-size:11.5px;color:#c0cbd2;margin-top:5px}
-#arsonPlayer .ap-waveform{display:block;width:100%;height:70px;background:var(--ap-recess);border-radius:5px;cursor:crosshair}
+#arsonPlayer .ap-waveform{display:block;width:100%;height:70px;background:var(--ap-recess);border-radius:5px;cursor:crosshair;box-shadow:inset 0 1px 3px #02080c99,0 1px #d0eaff13;border:1px solid #57717d30}
 #arsonPlayer .ap-time{display:flex;align-items:center;gap:8px;color:#a8b8c3;font-size:11px;font-variant-numeric:tabular-nums;margin:12px 0 8px}
 #arsonPlayer #playerSeek,#arsonPlayer #playerVolume{appearance:none;width:100%;min-width:0;height:18px;background:transparent;cursor:pointer;margin:0}
 #arsonPlayer #playerSeek::-webkit-slider-runnable-track,#arsonPlayer #playerVolume::-webkit-slider-runnable-track{height:3px;border-radius:5px;background:linear-gradient(90deg,var(--ap-mint) 0 var(--ap-fill,0%),#303e47 var(--ap-fill,0%) 100%)}
 #arsonPlayer #playerSeek::-webkit-slider-thumb,#arsonPlayer #playerVolume::-webkit-slider-thumb{appearance:none;width:9px;height:9px;border-radius:50%;background:var(--ap-mint);margin-top:-3px}
 /* Skin/geometry comes from the shared Clean Ribbon transport rule. */
 #arsonPlayer .ap-transport{height:49px;display:grid;grid-template-columns:32px 32px 44px 32px 32px;align-items:center;justify-content:center;justify-items:center;gap:15px;margin-bottom:9px}
-#arsonPlayer .ap-pitchtempo{height:64px;border-radius:8px;background:#11181c;display:grid;grid-template-columns:1fr 1fr 26px;align-items:center;padding:8px;gap:5px}
+#arsonPlayer .ap-pitchtempo{height:64px;border-radius:8px;background:#11181c;display:grid;grid-template-columns:1fr 1fr 26px;align-items:center;padding:8px;gap:5px;box-shadow:inset 0 1px 3px #02080c99,0 1px #d0eaff13;border:1px solid #57717d30}
 #arsonPlayer .ap-pitch-section{display:grid;grid-template-rows:16px 26px;min-width:0}
 #arsonPlayer .ap-pitch-section:first-child{border-right:1px solid #2c3941;padding-right:6px}
 #arsonPlayer .ap-pitch-section>span{font-size:10.5px;color:#96adba;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -323,14 +323,14 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-mode svg{width:11px;height:11px}
 #arsonPlayer .ap-recovery{display:flex;gap:6px;flex-wrap:wrap}
 #arsonPlayer .ap-recovery button{padding:4px 8px;background:#26343c;border-radius:4px;margin-bottom:6px;font-size:11px}
-#arsonPlayer .ap-upnext{min-height:56px;width:100%;display:flex;align-items:center;gap:9px;padding:8px;background:#202b32;border-radius:6px;text-align:left;justify-content:flex-start;color:var(--ap-ink)}
+#arsonPlayer .ap-upnext{min-height:56px;width:100%;display:flex;align-items:center;gap:9px;padding:8px;background:linear-gradient(#283945,#1a272f);box-shadow:inset 0 1px #cce6f21a,0 1px 2px #050a0e66;border:1px solid #516a763d;border-radius:6px;text-align:left;justify-content:flex-start;color:var(--ap-ink)}
 #arsonPlayer .ap-upnext:hover{background:#26343c;color:var(--ap-ink)}
 #arsonPlayer .ap-nextname{flex:1;min-width:0;display:grid;gap:4px}
 #arsonPlayer #playerNextLabel{font-size:10.5px;color:#a2b8c8}
 #arsonPlayer #playerUpNext{font-size:13px;font-weight:450;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #arsonPlayer .ap-nextmeta,#arsonPlayer #playerTransitionStatus{font-size:11px;color:#a5b9c6;white-space:nowrap}
 #arsonPlayer .ap-upnext>svg{width:12px;height:12px;color:#a1b2bd}
-#arsonPlayer .ap-listhead{border-top:1px solid var(--ap-border);display:flex;align-items:center;gap:4px;padding:13px 12px 4px}
+#arsonPlayer .ap-listhead{border-top:1px solid #7d99a32c;display:flex;align-items:center;gap:4px;padding:13px 12px 4px}
 #arsonPlayer .ap-view-switch{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
 #arsonPlayer .ap-view-switch button{height:28px;font-size:13px;color:#90a3af;white-space:nowrap}
 #arsonPlayer .ap-view-switch button[aria-pressed="true"]{color:var(--ap-mint)}
@@ -342,7 +342,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-library-note{padding:0 12px 4px}
 #arsonPlayer .ap-searchwrap{position:relative;height:36px;margin:0 12px 5px;color:#8da1af}
 #arsonPlayer .ap-searchwrap svg{position:absolute;left:9px;top:11px;width:14px;height:14px;pointer-events:none}
-#arsonPlayer #playerSearch{height:100%;width:100%;background:#10161a;border:0;border-radius:6px;padding:0 10px 0 30px;font-size:12px}
+#arsonPlayer #playerSearch{height:100%;width:100%;background:#10161a;border:1px solid #57717d30;border-radius:6px;padding:0 10px 0 30px;font-size:12px;box-shadow:inset 0 1px 3px #02080c99,0 1px #d0eaff13}
 #arsonPlayer #playerSearch::placeholder{color:#94a7b4}
 #arsonPlayer .ap-columns{display:grid;grid-template-columns:24px minmax(0,1fr) 36px 43px 24px;align-items:center;gap:3px;margin:0 12px;padding:0 7px;height:29px;font-size:11.5px;color:#bdc9d0}
 #arsonPlayer .ap-columns span:nth-child(3),#arsonPlayer .ap-columns span:nth-child(4){text-align:center}
@@ -367,7 +367,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer .ap-row-actions{display:flex;align-items:center;gap:2px;flex:none}
 #arsonPlayer .ap-row-action{width:26px;height:28px;color:#9badb8}
 #arsonPlayer .ap-songrow[draggable="true"],#arsonPlayer .ap-queue-row[draggable="true"]{cursor:grab}
-#arsonPlayer .ap-foot{border-top:1px solid #2b353d;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;color:#8296a4;font-size:10.5px}
+#arsonPlayer .ap-foot{border-top:1px solid #7d99a32c;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;color:#8296a4;font-size:10.5px}
 #arsonPlayer .ap-foot button{color:#a7b7c2;font-size:11px}
 #arsonPlayer .ap-foot svg{width:11px;height:11px}
 #arsonPlayer .ap-details{padding:11px 12px;border-top:1px solid var(--ap-border);font-size:11px;color:var(--ap-muted);background:#12181d}
@@ -380,7 +380,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #arsonPlayer #playerCueSummary{flex:1 0 100%}
 #arsonPlayer .ap-details .ap-settools{padding:4px 0}
 #arsonPlayer .ap-disclosure summary{cursor:pointer;padding:5px 0}
-#arsonPlayer .ap-song-menu{position:fixed;z-index:5;width:190px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;background:#222b32;border:1px solid #414e59;border-radius:7px;padding:4px;box-shadow:0 12px 28px #0008}
+#arsonPlayer .ap-song-menu{position:fixed;z-index:5;width:190px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow:auto;scrollbar-width:none;background:#222b32;border:1px solid #414e59;border-radius:7px;padding:4px;box-shadow:0 12px 28px #0008}
 #arsonPlayer .ap-song-menu button{display:flex;width:100%;justify-content:flex-start;text-align:left;padding:7px 10px;color:var(--ap-ink);border-radius:4px;font-size:12px}
 #arsonPlayer .ap-song-menu button:hover:not(:disabled),#arsonPlayer .ap-song-menu button:focus-visible{background:#34434d;color:var(--ap-mint)}
 #arsonPlayer .ap-song-menu button[data-danger="true"]{color:#e7aea9;border-top:1px solid #39434d}
@@ -533,9 +533,4 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 
 /* Tempered-glass chassis: static material only, no overlay stealing clicks,
    no blur/filter/animation on the panel, keep all native scrolling semantics. */
-#arsonPlayer :is(#playerList,.ap-queue,.ap-song-menu){scrollbar-width:none}
 #arsonPlayer::-webkit-scrollbar,#arsonPlayer :is(#playerList,.ap-queue,.ap-song-menu)::-webkit-scrollbar{display:none;width:0;height:0}
-#arsonPlayer :is(.ap-waveform,.ap-pitchtempo,#playerSearch){box-shadow:inset 0 1px 3px #02080c99,0 1px #d0eaff13;border:1px solid #57717d30}
-#arsonPlayer .ap-upnext{background:linear-gradient(#283945,#1a272f);box-shadow:inset 0 1px #cce6f21a,0 1px 2px #050a0e66;border:1px solid #516a763d}
-#arsonPlayer .ap-listhead{border-top-color:#7d99a32c}
-#arsonPlayer .ap-foot{border-top-color:#7d99a32c}
