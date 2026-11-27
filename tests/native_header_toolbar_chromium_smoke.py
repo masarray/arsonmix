@@ -99,8 +99,12 @@ def main():
               }).map(el=>({id:el.id||el.textContent.trim().slice(0,12),
                   left:el.getBoundingClientRect().left,
                   right:el.getBoundingClientRect().right}));
+              const tail=[...bar.children].slice(-3).map(el=>el.id||
+                (el.hasAttribute('data-native-io')?'audioIO':'unknown'));
+              const css=getComputedStyle(bar);
               return {bar:{height:b.height,left:b.left,right:b.right},
-                more:{left:more.left,right:more.right},
+                gap:parseFloat(css.columnGap),paddingRight:parseFloat(css.paddingRight),
+                tail,more:{left:more.left,right:more.right},
                 visible,dividers:[...bar.querySelectorAll('.armix-toolbar-divider')]
                  .map(el=>({hidden:getComputedStyle(el).display==='none',
                            height:el.getBoundingClientRect().height}))};
@@ -111,6 +115,15 @@ def main():
             assert metrics["dividers"][0]["height"] in (0, 21), (
                 width, "divider layout changed", metrics)
             visible = metrics["visible"]
+            # Owner reference: one contiguous group aligned to the right edge.
+            assert metrics["tail"] == ["addTrack","audioIO","moreTools"], (width, metrics)
+            right = visible[-3:]
+            assert [x["id"] for x in right] == ["addTrack","Audio I/O","moreTools"], (width, right)
+            for a, b in zip(right,right[1:]):
+                assert abs(b["left"]-a["right"]-metrics["gap"]) <= 1.5, (width, right)
+            assert abs(metrics["bar"]["right"]-metrics["more"]["right"]-metrics["paddingRight"]) <= 2, (width, metrics)
+            ids=[x["id"] for x in visible]
+            assert ids.index("playerToggle") == ids.index("pluginsButton")+1, (width, ids)
             for a, b in zip(visible, visible[1:]):
                 # More can be pushed to the far right, never overlaid on controls.
                 assert a["right"] <= b["left"] + 1, (

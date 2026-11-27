@@ -5103,7 +5103,12 @@
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
-      toolbar.insertBefore(io,document.getElementById("moreTools"));
+      const more=document.getElementById("moreTools");
+      // The three channel/device commands are the last contiguous DOM group.
+      toolbar.append(io,more);
+      const player=document.getElementById("playerToggle"),plugins=document.getElementById("pluginsButton");
+      if(player?.parentElement===toolbar&&plugins?.parentElement===toolbar)
+        plugins.after(player);
       const addTrack=document.getElementById("addTrack");
       if(addTrack){
         addTrack.textContent="+ Audio Track";

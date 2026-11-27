@@ -1532,6 +1532,14 @@ html.armix-native-desktop .app .command-bar>.tool:not(.bank-arrow),
 html.armix-native-desktop .app .command-bar>.more-tools>summary.tool{
  padding-inline:10px!important;
 }
+/* Right-hand channel/device group owns all remaining flexible space.
+   More never separates itself from Audio Track and Audio I/O. */
+html.armix-native-desktop .app .command-bar>#moreTools{
+ margin-left:0!important;
+}
+html.armix-native-desktop .app .command-bar>.armix-toolbar-divider[data-native-toolbar-group="channels"]{
+ margin-left:auto!important;
+}
 html.armix-native-desktop .app .command-bar>.mixer-file-tool{
  gap:6px!important;
 }
@@ -1546,6 +1554,7 @@ html.armix-native-desktop .app .command-bar>.toolbar-label{
   column-gap:5px!important;padding-inline:7px!important;
  }
  html.armix-native-desktop .app .command-bar>.armix-toolbar-divider{display:none!important}
+ html.armix-native-desktop .app .command-bar>#addTrack{margin-left:auto!important}
  html.armix-native-desktop .app .command-bar>.tool:not(.bank-arrow),
  html.armix-native-desktop .app .command-bar>.more-tools>summary.tool{
   padding-inline:7px!important;
@@ -1555,8 +1564,8 @@ html.armix-native-desktop .app .command-bar>.toolbar-label{
  html.armix-native-desktop .app .command-bar{
   column-gap:2px!important;padding-inline:4px!important;
  }
- /* The added Output and New Project commands need room at 1100px.
-    Keep all commands visible, the 43px bar and 29px key height unchanged. */
+ /* Keep the right-hand channel/device group visible at 1100px.
+    Preserve the 43px bar and 29px key height. */
  html.armix-native-desktop .app .command-bar>.tool:not(.bank-arrow),
  html.armix-native-desktop .app .command-bar>.more-tools>summary.tool{
   padding-inline:4px!important;
