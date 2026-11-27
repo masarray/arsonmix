@@ -1,0 +1,36 @@
+name: FactoryFX pinned candidate archive evidence
+on:
+  pull_request:
+    paths:
+      - 'config/factoryfx-qualification-candidates.json'
+      - 'scripts/factoryfx_candidate_probe.py'
+      - 'scripts/factoryfx_release_bundle.py'
+      - 'scripts/tests/test_factoryfx_candidate_probe.py'
+      - '.github/workflows/factoryfx-candidate-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: factoryfx-candidates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  archive-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Offline candidate and strict package contract tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_factoryfx*.py' -v
+      - name: Download exact pinned public archives and inspect without executing DLLs
+        run: python3 scripts/factoryfx_candidate_probe.py --output factoryfx-evidence.json
+      - name: Retain candidate evidence, never an approved lock or binary package
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: FactoryFX-candidate-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: factoryfx-evidence.json
+          if-no-files-found: warn
+          retention-days: 14

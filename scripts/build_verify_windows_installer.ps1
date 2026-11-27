@@ -44,6 +44,15 @@ $fixtureClosed=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-closed-"+[guid]::Ne
 # expected inventory; the installed tree must independently validate.
 function Assert-InstalledFactoryFx([string]$Phase) {
     $receipt = Join-Path $install "FACTORYFX_STAGE_REPORT.json"
+    $portableManifest = Join-Path $dist "FactoryFX/factoryfx-manifest.json"
+    $installedFxManifest = Join-Path $install "FactoryFX/factoryfx-manifest.json"
+    if (Test-Path -LiteralPath $portableManifest -PathType Leaf) {
+        if (-not (Test-Path -LiteralPath $installedFxManifest -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $portableManifest -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath $installedFxManifest -Algorithm SHA256).Hash) {
+            throw "Installed FactoryFX manifest differs from portable: $Phase"
+        }
+    }
     try {
         Copy-Item -LiteralPath (Join-Path $dist "FACTORYFX_STAGE_REPORT.json") -Destination $receipt
         & python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output $install --best-effort

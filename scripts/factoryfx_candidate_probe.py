@@ -4,7 +4,9 @@ Optional Windows probe uses an explicitly built JUCE test executable, isolated
 one supplier per process with timeout. Metadata only on other platforms.
 """
 import argparse
+import hashlib
 import json
+import re
 import shutil
 import struct
 import subprocess
@@ -67,10 +69,16 @@ def inspect_candidate(p, work, host=None):
                 shutil.copyfileobj(src, dst, 1024 * 1024)
         # Root build/licence metadata is evidence only, not copied to dist.
         evidence = []
+        commit_mentions = set()
         for info in z.infolist():
             if not info.is_dir() and info.file_size <= 256 * 1024 and any(
                     x in info.filename.lower() for x in ("build", "license", "licence", "eula", "notice", "provenance")):
-                evidence.append({"path": info.filename, "sha256": __import__("hashlib").sha256(z.read(info)).hexdigest()})
+                if len(evidence) >= 64:
+                    raise ValueError("too many candidate provenance/notice files")
+                raw = z.read(info)
+                evidence.append({"path": info.filename, "sha256": hashlib.sha256(raw).hexdigest()})
+                if any(x in info.filename.lower() for x in ("build", "provenance")):
+                    commit_mentions.update(re.findall(r"(?i)\b[0-9a-f]{40}\b", raw.decode("utf-8", errors="replace")))
     binary = target / "Contents" / "x86_64-win" / name
     check_pe(binary)
     classes = []
@@ -81,7 +89,10 @@ def inspect_candidate(p, work, host=None):
                    if c.get("Category") == "Audio Module Class" and bundle.HEX(c.get("CID"), 32)]
     result = {"productId": pid, "artifactSha256": bundle.sha256(archive), "archiveStatus": "verified-x64",
               "sourceCommitClaim": p["sourceCommit"], "moduleSha256": bundle.sha256(binary),
-              "moduleInfoAudioClasses": classes, "archiveEvidence": evidence, "hostStatus": "not-run",
+              "moduleInfoAudioClasses": classes, "archiveEvidence": evidence,
+              "archiveBuildCommitMentions": sorted(commit_mentions),
+              "sourceCommitMentioned": p["sourceCommit"].lower() in {v.lower() for v in commit_mentions},
+              "hostStatus": "not-run",
               "approval": "not-approved"}
     if host:
         receipt = work / (pid + "-host.json")
