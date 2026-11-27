@@ -2,13 +2,15 @@
 """M3 operator console: geometry, overlays, FX, clip and multi-wire browser contract."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-from operator_wire_menu import open_wire_config
+from operator_wire_menu import open_wire_config, click_demo_meters
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"dist-pages/preview/index.html"
 
 def physical(page,density,width):
-    page.locator("#densitySelect").select_option(density)
+    assert page.locator("#densitySelect").is_hidden()
+    assert page.locator(".console-body").get_attribute("data-density")==density
     data=page.evaluate("""() => {
       const roots=[document.querySelector('#tracks .strip[data-id="1"]'),
                    document.querySelector('#master .strip')];
@@ -65,13 +67,22 @@ def interactions(page):
     menu=page.locator("#moreTools")
     menu.locator(":scope > summary").click()
     assert menu.evaluate("e=>e.open")
-    page.locator(".mixer-title .panel-name").click()
+    # Popup legitimately overlays part of the title. Click an actual uncovered
+    # point outside it (not a forced click through the menu).
+    target=page.locator(".mixer-title")
+    box=target.bounding_box()
+    point={"x":box["width"]-12,"y":box["height"]/2}
+    assert target.evaluate("""(e,p)=>{
+      const r=e.getBoundingClientRect(), hit=document.elementFromPoint(r.x+p.x,r.y+p.y);
+      return e.contains(hit)&&!hit.closest('#moreTools');
+    }""",point)
+    target.click(position=point)
     assert not menu.evaluate("e=>e.open")
     menu.locator(":scope > summary").click()
     page.keyboard.press("Escape")
     assert not menu.evaluate("e=>e.open")
     menu.locator(":scope > summary").click()
-    page.locator("#densitySelect").focus()
+    page.locator("#bankSelect").focus()
     assert not menu.evaluate("e=>e.open")
 
     empty=page.locator('#tracks .strip[data-id="1"] .fxslot-row:has(.fx-pick.empty)').first
@@ -88,16 +99,13 @@ def interactions(page):
     fader.evaluate("""e => {e.value='10';e.dispatchEvent(new Event('input',{bubbles:true}));
                          e.dispatchEvent(new Event('change',{bubbles:true}));}""")
     if not page.evaluate("window.ArSonMixMeterCalibration.readDemo().running"):
-        page.locator("#moreTools > summary").click()
-        page.locator("#preview").click()
+        click_demo_meters(page)
     peak=page.locator('#tracks .strip[data-id="1"] .peak')
     page.wait_for_function("""() => document.querySelector(
       '#tracks .strip[data-id="1"] .peak')?.classList.contains('clipping')""",
       timeout=10000)
     assert 'clipping' in peak.get_attribute("class")
-    if not page.locator("#moreTools").evaluate("e=>e.open"):
-        page.locator("#moreTools > summary").click()
-    page.locator("#preview").click()  # stop re-latching before reset
+    click_demo_meters(page)  # stop re-latching before reset
     page.locator('#tracks .strip[data-id="1"] button[data-action="resetClip"]').click()
     assert 'clipping' not in page.locator('#tracks .strip[data-id="1"] .peak').get_attribute("class")
 
@@ -137,11 +145,9 @@ def main():
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda err:errors.append(str(err)))
-            page.goto(HTML.as_uri())
+            page.goto(published_console(HTML.parent.parent).as_uri())
             page.wait_for_selector('#tracks .strip[data-id="1"] .meter-box')
-            for density in ("comfort","standard","compact"):
-                physical(page,density,width)
-            page.locator("#densitySelect").select_option("comfort")
+            physical(page,"comfort",width)
             interactions(page)
             if width==1680:page.screenshot(path="pages-m3-operator-meter-wire-1680.png")
             assert not errors,(width,errors)

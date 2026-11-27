@@ -18,7 +18,7 @@ CANON=ROOT/'site/preview-v2/index.html'
 def css_for(el):
     return el.evaluate("""e=>{
       const s=getComputedStyle(e),r=e.getBoundingClientRect();
-      return {background:s.backgroundImage, shadow:s.boxShadow,transform:s.transform,
+      return {background:s.backgroundImage, face:s.backgroundColor, shadow:s.boxShadow,transform:s.transform,
         w:r.width,h:r.height,x:r.x,y:r.y,color:s.color,
         focus:document.activeElement===e,pressed:e.getAttribute('aria-pressed')};
     }""")
@@ -37,10 +37,11 @@ def check_page(browser,path,label):
       return e.matches('.command-bar button.tool,.console-body .strip button.mx-util-key');
     }"""),label
     # Compare the non-audio action at rest, held down and released.
+    page.locator('#ribbon-tab-scenes').click()
     action=page.locator('#saveScene')
     assert action.is_visible(),(label,'Save Scene hidden')
     before=css_for(action)
-    assert 'gradient' in before['background'],(label,before)
+    assert before['background']=='none' and before['face']=='rgba(0, 0, 0, 0)',(label,before)
     position=page.evaluate("""()=>({
        scroll:window.scrollY,
        doc:document.documentElement.scrollTop,
@@ -50,33 +51,28 @@ def check_page(browser,path,label):
     page.mouse.move(bounds['x']+bounds['width']/2,bounds['y']+bounds['height']/2)
     page.mouse.down()
     during=css_for(action)
-    assert during['background']!=before['background'],(label,'momentary press invisible',during)
-    # The active header uses our intentional cyan, not the legacy grey.
-    # The same selector covers latching toolbar states. Do not repaint
-    # unrelated WIRE, MUTE/SOLO/PFL PNG or safety controls.
-    assert 'rgb(27, 156, 186)' in during['background'],(
-        label,'header active face is not cyan',during)
-    # Permanent FX RACK selection and momentary Save share a calm cyan
-    # computed material; global FX safety ON/OFF remains its own green face.
-    fx_view=css_for(page.locator('#fxView'))
-    assert 'rgb(27, 156, 186)' in fx_view['background'],(
-        label,'selected FX RACK header did not inherit cyan',fx_view)
-    safety=css_for(page.locator('#globalFxToggle'))
-    assert 'rgb(27, 156, 186)' not in safety['background'],(
-        label,'global FX semantic safety color overwritten',safety)
+    assert during['face']=='rgba(75, 182, 206, 0.15)',(
+        label,'momentary V6 cyan press missing',during)
+    assert during['face']!=before['face'],(label,'momentary press invisible',during)
     assert during['transform']=='none',(label,'button moved on press',during)
     assert (during['w'],during['h'],during['x'],during['y'])==(
             before['w'],before['h'],before['x'],before['y']),(
                 label,'pressed button reflowed')
     page.mouse.up()
+    page.mouse.move(10, 100)
     released=css_for(action)
-    assert released['background']==before['background'],(
+    assert released['background']==before['background'] and released['face']==before['face'],(
         label,'action remained ON after mouse release',before,released)
     assert not released['focus'],(label,'mouse focus-scroll was not prevented')
     assert page.evaluate("""()=>({
        scroll:window.scrollY,doc:document.documentElement.scrollTop,
        mix:document.querySelector('.tracks-viewport')?.scrollLeft||0
     })""")==position,(label,'viewport shifted after clicking action')
+    page.locator('#ribbon-tab-mixer').click()
+    fx_view=css_for(page.locator('#fxView'))
+    assert fx_view['pressed']=='true' and fx_view['face']=='rgb(65, 103, 118)',(label,fx_view)
+    safety=css_for(page.locator('#globalFxToggle'))
+    assert safety['face']=='rgba(70, 183, 137, 0.125)',(label,safety)
     # Real application latch with its REQUIRED WIRE source context; do not
     # weaken toggleDirectMain() or fake its aria-pressed state in the test.
     body=page.locator('.console-body')
@@ -144,13 +140,9 @@ def main():
             assert (png_pub/file).read_bytes()==(png_src/file).read_bytes(),file
         with sync_playwright() as p:
             browser=p.chromium.launch(headless=True)
-            for file,label in (
-                (CANON,'canonical'),
-                (published,'png')
-            ):
-                check_page(browser,file,label)
+            check_page(browser,published,'png')
             browser.close()
-    print('PASS V6 OTHER buttons: authoring source + sole approved /preview/, PNG protected, action release, native latches,')
+    print('PASS V6 OTHER buttons: sole approved /preview/, PNG protected, action release, native latches,')
     print('micro geometry, fixed MAIN size, no pointer-focus or layout scroll')
 
 

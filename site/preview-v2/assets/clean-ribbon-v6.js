@@ -109,6 +109,11 @@ function installCompactMenu(more){
      e.preventDefault();items[next].focus({preventScroll:true});
    }
  },true);
+ // Demo metering is a momentary View command; release the overlay so
+ // the operator can immediately use the physical mixer controls.
+ more.addEventListener('click',e=>{
+   if(e.target.closest?.('#preview'))more.open=false;
+ });
  document.addEventListener('pointerdown',e=>{if(more.open&&!more.contains(e.target))more.open=false;},true);
  window.addEventListener('resize',position);
  // A Show list/readback may add rows after opening. Observe only the five

@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
 from native_event_fixture import NATIVE_EVENTS
+from operator_wire_menu import open_application_menu
 from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -202,10 +203,11 @@ def main():
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
         # The approved Pages tool tray is a real collapsible <details>.
         # Open it as the operator would; never assert hidden children visible.
-        page.locator("#moreTools > summary.tool").click()
         assert page.locator("#addTrack").is_visible()
         assert page.locator("#addTrack").is_enabled()
+        open_application_menu(page, "channel")
         assert page.locator("#addBus").is_visible()
+        open_application_menu(page, "session")
         # Archive action requires accepted offline authority and confirmation.
         archive=page.get_by_role("button",name="Open session archive",exact=True)
         assert archive.is_visible()
@@ -213,13 +215,11 @@ def main():
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
         state["offlineNewSessionAvailable"]=True
         emit(page,"arMixConsoleSnapshot",state)
-        def open_menu():
-            menu = page.locator("#moreTools")
-            if menu.get_attribute("open") is None:
-                menu.locator(":scope > summary").click()
+        def open_menu(category="session"):
+            open_application_menu(page, category)
 
-        def confirm_menu_action(button, choice):
-            open_menu()
+        def confirm_menu_action(button, choice, category="session"):
+            open_menu(category)
             button.click()
             page.get_by_role("dialog").get_by_role("button", name=choice, exact=True).click()
 
@@ -235,11 +235,11 @@ def main():
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
         # The leftmost New shortcut delegates to exactly the same transaction.
         toolbar_new=page.locator("#moreTools [data-native-new-project]")
-        open_menu()
+        open_menu(None)
         assert toolbar_new.inner_text()=="New" and toolbar_new.is_visible()
-        confirm_menu_action(toolbar_new, "Cancel")
+        confirm_menu_action(toolbar_new, "Cancel", None)
         assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
-        confirm_menu_action(toolbar_new, "Continue")
+        confirm_menu_action(toolbar_new, "Continue", None)
         assert page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='nativeMixerNewOffline').length")==1
         new_event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerNewOffline')?.payload")
         assert new_event["mode"]=="EMPTY" and new_event["confirmed"] is True, new_event
