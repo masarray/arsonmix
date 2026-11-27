@@ -71,6 +71,19 @@ def main():
         readback(page,[])
         editor.screenshot(path=str(ROOT/"auto-ducker-native-initial.png"))
         assert editor.locator(".mx-ducker-dial").count()==8
+        assert (out/"assets"/"mixer-gain-knob-brushed-steel.png").is_file()
+        assert (out/"assets"/"auto-ducker-brushed-v6.png").is_file()
+        assert editor.locator(".lcd-glass").count()==2
+        assert editor.locator(".lcd-glass").evaluate_all("""els=>els.every(e=>
+            getComputedStyle(e,'::before').pointerEvents==='none' &&
+            getComputedStyle(e,'::after').pointerEvents==='none' &&
+            getComputedStyle(e,'::before').backgroundImage.includes('gradient'))""")
+        assert editor.locator(".mx-ducker-body").evaluate_all("""els=>els.every(e=>{
+            const c=getComputedStyle(e);
+            return c.backgroundImage.includes('mixer-gain-knob-brushed-steel.png') &&
+                c.transform==='none' && c.filter.includes('brightness');
+        })""")
+        assert editor.evaluate("e=>getComputedStyle(e).backgroundImage.includes('auto-ducker-brushed-v6.png')")
         editor.get_by_role("button",name="Edit sources").click()
         editor.screenshot(path=str(ROOT/"auto-ducker-native-initial-picker.png"))
         main_option=editor.locator(f'.mx-ducker-option[data-source-id="{MAIN}"]')
@@ -109,12 +122,19 @@ def main():
         readback(page,[SOURCE,MIC2],settings=final["settings"],serial="5")
         # Each frame cell must be wider than it is high, not a portrait LED.
         assert editor.locator(".mx-ducker-led-cell").count()>20
-        assert editor.locator(".mx-ducker-led-cell").evaluate_all("els=>els.every(e=>{const r=e.getBoundingClientRect();return r.width>r.height})")
+        page.wait_for_function("""()=>[...document.querySelectorAll('#mxNativeDucker .mx-ducker-led-cell')]
+            .every(e=>{const r=e.getBoundingClientRect();return r.height>2 &&
+                Math.abs((r.width-2)/(r.height-2)-2)<.08})""")
+        # Ensure no simulated peak/clip state is shown, and the glass never intercepts the picker.
+        assert editor.locator(".mx-ducker-led-cell[data-peak=true],.mx-ducker-led-cell[data-clip=true]").count()==0
         editor.screenshot(path=str(ROOT/"auto-ducker-native-editor.png"))
         editor.get_by_role("button",name="Edit sources").click()
         editor.get_by_label("Search trigger sources").fill("MIC 2")
         assert editor.get_by_text("MIC 2",exact=True).count()>=1
         editor.screenshot(path=str(ROOT/"auto-ducker-native-picker.png"))
+        page.set_viewport_size({"width":500,"height":740})
+        assert editor.evaluate("e=>e.scrollWidth<=e.clientWidth+1")
+        page.set_viewport_size({"width":1366,"height":768})
         editor.get_by_role("button",name="Cancel",exact=True).click()
         editor.get_by_role("button",name="Close Auto Ducker").click()
         assert editor.is_hidden()

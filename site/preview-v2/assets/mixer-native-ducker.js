@@ -41,8 +41,8 @@ const style=dom("style");style.textContent=`
 .mx-ducker-control:last-child{border-right:none}.mx-ducker-control>span:first-child{font-size:10px;letter-spacing:.07em;color:#e0e9eb;text-transform:uppercase;white-space:nowrap}
 .mx-ducker-dial{position:relative;width:65px;height:65px;display:block;pointer-events:none;border-radius:50%;grid-row:2}
 .mx-ducker-body,.mx-ducker-pointer{position:absolute;inset:11%;border-radius:50%;background-size:100% 100%;background-position:center;background-repeat:no-repeat}
-.mx-ducker-body{background-image:var(--ducker-body);box-shadow:0 3px 5px #0008}
-.mx-ducker-pointer{background-image:var(--ducker-pointer);transform:rotate(var(--angle,-135deg));transform-origin:50% 50%}
+
+
 .mx-ducker-dial svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .mx-ducker-arc-track,.mx-ducker-arc-progress{fill:none;stroke-linecap:round;stroke-width:4}.mx-ducker-arc-track{stroke:#20383e}.mx-ducker-arc-progress{stroke:#6ce7c5}
 #mxNativeDucker .mx-ducker-control input[type=range]{position:absolute;top:18px;left:50%;transform:translateX(-50%);width:65px;height:65px;opacity:0;margin:0;cursor:ns-resize;touch-action:none;z-index:1}
@@ -62,20 +62,54 @@ const style=dom("style");style.textContent=`
 .mx-ducker-led-cell{min-width:0;border:1px solid #071015;box-shadow:inset 0 1px #e8f6f54a,inset 0 -1px #0008;background:linear-gradient(#ffffff22,#ffffff04 48%,#00000044)}
 #mxNativeDucker .mx-ducker-control input[type=number],#mxNativeDucker .mx-ducker-gr{background:linear-gradient(145deg,#10242b,#0c171d);border:1px solid #14232c;border-radius:3px;box-shadow:inset 0 2px 5px #000a,0 1px #9cb0b777;color:#a1f2d8}
 #mxNativeDucker .mx-ducker-gr{padding:2px 8px;width:max-content;min-width:110px}
-.mx-ducker-body{background-image:radial-gradient(circle at 40% 30%,#ffffff18,transparent 50%),conic-gradient(from 25deg,#536169,#202b30,#626d74,#242d32,#536169),var(--ducker-body);background-blend-mode:screen,multiply,normal;border:1px solid #a0aeb2;box-shadow:0 3px 5px #0008,inset 0 0 0 3px #111b20,inset 0 0 0 5px #7d8e9666}
+
+
+/* V6 owner-approved hardware finish. Static light, separate rotating pointer.
+   Shared FX chrome is deliberately excluded. */
+#mxNativeDucker{background-image:var(--ducker-brushed),linear-gradient(180deg,#556671,#34454f 45%,#2b3942);background-size:384px 192px,100% 100%;border-color:#778b95}
+#mxNativeDucker .mx-ducker-head{background-image:var(--ducker-brushed),linear-gradient(#303d46,#1d2931);background-size:384px 192px,100% 100%}
+#mxNativeDucker .mx-ducker-content>.mx-ducker-timing,#mxNativeDucker .mx-ducker-advanced{background-image:var(--ducker-brushed),linear-gradient(180deg,#526570,#435660 70%,#40525d);background-size:384px 192px,100% 100%}
+#mxNativeDucker .mx-ducker-channel{padding-left:7px;border-left:1px solid #4d606b}
+#mxNativeDucker .mx-ducker-content>.lcd-glass{position:relative;isolation:isolate;overflow:hidden;border:1px solid #09151c;border-radius:6px;padding:11px 10px 10px;min-height:132px;background:radial-gradient(ellipse at 48% 115%,#1a363d 0%,transparent 75%),linear-gradient(160deg,#10262e,#0a171d 85%);box-shadow:inset 0 0 0 3px #071318,inset 0 3px 11px #000c,0 1px 0 #99aeb970,0 -1px 0 #1a282e}
+#mxNativeDucker .lcd-glass::before{content:"";position:absolute;z-index:2;inset:3px;border-radius:3px;pointer-events:none;background:linear-gradient(155deg,#c6e9f50e 0%,#acd5e809 29%,#b8e2f506 44%,transparent 44.4%,transparent 77%,#bad9ec06 100%);box-shadow:inset 0 0 0 1px #a9d6e022,inset 0 1px 0 #e2f5ff32,inset 1px 0 0 #9bc9dc26,inset -1px -1px 0 #8fb6c42b,inset 0 -3px 6px #c9f3ff07}
+#mxNativeDucker .lcd-glass::after{content:"";position:absolute;z-index:3;inset:3px;border-radius:3px;pointer-events:none;background:radial-gradient(ellipse 34% 1.4px at 28% 0%,#d5f5ff92 0%,#d5f5ff22 65%,transparent 100%),radial-gradient(ellipse 27% 1.4px at 76% 100%,#c5e9f06e,transparent 100%)}
+#mxNativeDucker .lcd-glass .mx-ducker-title{color:#b5d0d6}
+#mxNativeDucker .lcd-glass .mx-ducker-lcd-note{color:#9bbbc4}
+#mxNativeDucker .lcd-glass .mx-ducker-gr{width:max-content;min-width:110px;padding:2px 10px;font-size:23px;border-color:#526f78;box-shadow:inset 0 0 0 1px #b1d3d01a,inset 0 2px 6px #000b,0 1px 0 #a7c5c12b;background:linear-gradient(145deg,#153239,#0b1d24 52%,#122c30);text-shadow:0 0 6px #8bf0d52a}
+#mxNativeDucker .mx-ducker-control input[type=number]{border-radius:2px;border-color:#718894;background:linear-gradient(155deg,#142c32,#08191f 48%,#10292b);box-shadow:inset 0 0 0 1px #cae9e311,inset 0 2px 4px #000a,0 1px 0 #a7c5c12a}
+#mxNativeDucker .mx-ducker-body{inset:7%;background:var(--ducker-body) center/100% 100% no-repeat,radial-gradient(circle,#243039 55%,#101a21 65%,#6a7980 69%,#152029 73%);background-blend-mode:normal;border:none;box-shadow:none;filter:brightness(.69) contrast(1.14) drop-shadow(0 3px 2px #0009);transform:none}
+#mxNativeDucker .mx-ducker-pointer{inset:11%;background:none;transform:rotate(var(--angle,-135deg));transform-origin:50% 50%}
+#mxNativeDucker .mx-ducker-pointer::after{content:"";position:absolute;box-sizing:border-box;width:3px;height:12px;left:calc(50% - 1.5px);top:4px;background:#70f3d4;border:1px solid #123e3e;box-shadow:0 0 2px #0c1b20,0 0 3px #56ffce60;border-radius:1px}
+#mxNativeDucker .mx-ducker-source{grid-template-columns:minmax(0,1fr) minmax(0,168px) 49px;gap:6px;min-height:28px}
+#mxNativeDucker .mx-ducker-rail{padding:3px;border-color:#52717d;border-radius:2px;background:#081319;box-shadow:inset 0 1px 3px #000,0 1px 0 #7292a329}
+#mxNativeDucker .mx-ducker-rail[data-kind=gr]{margin-top:4px}
+#mxNativeDucker .mx-ducker-fill{background:linear-gradient(90deg,#119c49 0%,#22cc40 25%,#8bea25 60%,#e6ee3b 75%,#ffc338 88%,#ff5144 100%);background-size:var(--full-width,140px) 100%}
+#mxNativeDucker .mx-ducker-rail[data-kind=gr] .mx-ducker-fill{background:linear-gradient(90deg,#e8b951,#ffd36e 75%,#f1ad3f);background-size:var(--full-width,140px) 100%}
+@media(max-width:600px){#mxNativeDucker .mx-ducker-content{grid-template-columns:1fr}#mxNativeDucker .mx-ducker-timing{grid-template-columns:repeat(3,minmax(0,1fr))}#mxNativeDucker .mx-ducker-source{grid-template-columns:minmax(0,1fr) minmax(0,126px) 45px}}
+@media(max-width:400px){#mxNativeDucker .mx-ducker-source{grid-template-columns:minmax(0,1fr) minmax(0,100px) 43px}#mxNativeDucker .mx-ducker-control>span:first-child{font-size:9px;letter-spacing:0}}
 `;document.head.append(style);
 const panel=dom("section");panel.id="mxNativeDucker";panel.hidden=true;panel.setAttribute("role","dialog");panel.setAttribute("aria-modal","false");panel.setAttribute("aria-label","Auto Ducker");
 const assetRoot=new URL(".",document.currentScript.src);
-panel.style.setProperty("--ducker-body",`url("${new URL("compressor-knob-plastic-body.svg",assetRoot)}")`);
-panel.style.setProperty("--ducker-pointer",`url("${new URL("compressor-knob-plastic-pointer.svg",assetRoot)}")`);
+panel.style.setProperty("--ducker-body",`url("${new URL("mixer-gain-knob-brushed-steel.png",assetRoot)}")`);
+panel.style.setProperty("--ducker-brushed",`url("${new URL("auto-ducker-brushed-v6.png",assetRoot)}")`);
 const head=dom("header","mx-ducker-head"),target=dom("span","mx-ducker-channel"),preset=dom("select");preset.setAttribute("aria-label","Ducking preset");
 for(const name of ["Custom",...Object.keys(presets)]){const op=dom("option","",name);op.value=name;preset.append(op);}
 const power=button("⏻",()=>{if(current&&context())api()?.consumeAction?.(current.track,"slotPower",{dataset:{slot:String(current.slot)}});});power.classList.add("armix-builtin-fx-power");power.dataset.fxState="unknown";power.disabled=true;power.setAttribute("aria-pressed","false");power.setAttribute("aria-label","Auto Ducker power");
 const close=button("×",hide);close.classList.add("armix-builtin-fx-close");close.title="Close Auto Ducker";close.setAttribute("aria-label","Close Auto Ducker");
 head.append(dom("span","mx-ducker-brand","ARSONMIX"),dom("strong","","Auto Ducker"),target,preset,power,close);panel.append(head);
-const content=dom("div","mx-ducker-content"),src=dom("div","mx-ducker-box"),srcTitle=dom("div","mx-ducker-title"),srcCount=dom("span","","TRIGGERS · 0"),edit=button("Edit sources",openPicker),sourceList=dom("div","mx-ducker-list");srcTitle.append(srcCount,edit);src.append(srcTitle,sourceList,dom("div","mx-ducker-note","Any selected source above threshold triggers one shared reduction."));
-const grBox=dom("div","mx-ducker-box"),phase=dom("span","mx-ducker-phase","Waiting"),grTitle=dom("div","mx-ducker-title");grTitle.append(dom("span","","GAIN REDUCTION"),phase);
-const meterObserver=new ResizeObserver(entries=>{for(const entry of entries){const f=entry.target.firstElementChild;if(f)f.style.setProperty("--full-width",entry.contentRect.width+"px");}});
+const content=dom("div","mx-ducker-content"),src=dom("div","mx-ducker-box lcd-glass"),srcTitle=dom("div","mx-ducker-title"),srcCount=dom("span","","TRIGGERS · 0"),edit=button("Edit sources",openPicker),sourceList=dom("div","mx-ducker-list");srcTitle.append(srcCount,edit);src.append(srcTitle,sourceList,dom("div","mx-ducker-note","Any selected source above threshold triggers one shared reduction."));
+const grBox=dom("div","mx-ducker-box lcd-glass"),phase=dom("span","mx-ducker-phase","Waiting"),grTitle=dom("div","mx-ducker-title");grTitle.append(dom("span","","GAIN REDUCTION"),phase);
+const meterObserver=new ResizeObserver(entries=>{
+ for(const entry of entries){
+  const bed=entry.target,w=entry.contentRect.width;
+  if(w<=0)continue;
+  const cells=Number(bed.parentElement.dataset.cells);
+  const height=(Math.max(1,(w/cells-2)/2)+2)+"px";
+  if(bed.style.height!==height)bed.style.height=height;
+  const f=bed.firstElementChild;
+  if(f)f.style.setProperty("--full-width",w+"px");
+ }
+});
 const meterSteps=new WeakMap();
 function makeMeter(rail,kind,cells){
  rail.dataset.kind=kind;
@@ -148,7 +182,7 @@ function putText(el,text){if(el.textContent!==text)el.textContent=text;}
 function putValue(el,value){if(el.value!==value)el.value=value;}
 function paint(){const n=view(),c=context(),byId=new Map((n?.graph?.channels||[]).map(ch=>[ch.id,ch])),row=byId.get(current?.id),insert=row?.inserts?.[current?.slot],live=!!c&&!n?.logical,fresh=live&&Date.now()-meterTime<700,bypassed=!!(n?.raw?.globalFxBypassed||row?.fxRackBypassed||insert?.bypassed);putText(target,row?.name||"Target unavailable");power.dataset.fxState=!c?"unknown":(n?.raw?.globalFxBypassed||row?.fxRackBypassed)?"rack-off":insert?.bypassed?"off":"on";power.disabled=!c||power.dataset.fxState==="rack-off";power.setAttribute("aria-pressed",String(power.dataset.fxState==="on"));power.title=power.dataset.fxState==="on"?"AUTO DUCKER ON · click to bypass":power.dataset.fxState==="off"?"AUTO DUCKER BYPASSED · click to enable":power.dataset.fxState==="rack-off"?"FX RACK BYPASSED · enable rack first":"FX STATE UNAVAILABLE";power.setAttribute("aria-label",power.title);preset.disabled=!accepted||!c;edit.disabled=!accepted||!c||!!pending||dirty;
 for(const {num,range} of Object.values(controls)){num.disabled=range.disabled=!accepted||!c;}
-const signature=JSON.stringify(sources.map(id=>[id,byId.get(id)?.name]));if(signature!==sourceSignature){sourceSignature=signature;for(const old of sourceList.querySelectorAll(".mx-ducker-led-bed"))meterObserver.unobserve(old);sourceList.replaceChildren();for(const id of sources){const lane=byId.get(id),item=dom("div","mx-ducker-source"),name=dom("span","",lane?.name||"Missing "+id),r=dom("div","mx-ducker-rail"),o=dom("output","mx-ducker-read","—");makeMeter(r,"source",12);item.append(name,r,o);item.dataset.sourceId=id;sourceList.append(item);}if(!sources.length)sourceList.append(dom("div","mx-ducker-note","No source selected · target stays unchanged."));}
+const signature=JSON.stringify(sources.map(id=>[id,byId.get(id)?.name]));if(signature!==sourceSignature){sourceSignature=signature;for(const old of sourceList.querySelectorAll(".mx-ducker-led-bed"))meterObserver.unobserve(old);sourceList.replaceChildren();for(const id of sources){const lane=byId.get(id),item=dom("div","mx-ducker-source"),name=dom("span","",lane?.name||"Missing "+id),r=dom("div","mx-ducker-rail"),o=dom("output","mx-ducker-read","—");makeMeter(r,"source",16);item.append(name,r,o);item.dataset.sourceId=id;sourceList.append(item);}if(!sources.length)sourceList.append(dom("div","mx-ducker-note","No source selected · target stays unchanged."));}
 putText(srcCount,"TRIGGERS · "+sources.length);for(const item of sourceList.querySelectorAll("[data-source-id]")){const id=item.dataset.sourceId,m=meters.get(id),lane=byId.get(id),on=fresh&&m?.available&&Number.isFinite(m.dbfs)&&!!lane&&!lane.controls?.mute;const active=String(!!on&&m.dbfs>=(accepted?.thresholdDb??-34));if(item.dataset.active!==active)item.dataset.active=active;meterLevel(item.querySelector(".mx-ducker-fill"),on?clamp((m.dbfs+72)/72,0,1):0);putValue(item.querySelector("output"),!lane?"Missing":lane.controls?.mute?"Muted":!fresh?"—":on?m.dbfs.toFixed(0)+" dB":"Unavailable");}
 const value=fresh&&!bypassed&&Number.isFinite(meterFrame?.gainReductionDb)?meterFrame.gainReductionDb:null;putValue(gr,value===null?"— dB":(-value).toFixed(1)+" dB");meterLevel(fill,value===null?0:clamp(value/36,0,1));putText(phase,!c?"Unavailable":n.logical?"Offline":bypassed?"Bypassed":!fresh?"Waiting for audio":!sources.length?"No triggers":["Ready","Attack","Ducking","Hold","Release"][meterFrame?.phase]||"Ready");
 putText(status,error||(!c?"Native instance unavailable — reopen from FX rack.":pending?"Waiting for native "+(pending.ack?"readback":"acknowledgement")+"…":dirty?"Applying settings…":n.logical?"Offline workspace · settings saved without live audio meters.":""));if(!picker.hidden)apply.disabled=!!pending||!c||sameSources([...selection],sources);}
