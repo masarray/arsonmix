@@ -218,7 +218,17 @@ def main():
         page.once("dialog",lambda dialog:dialog.accept())
         archive.click()
         event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerOpenArchive')?.payload")
-        assert event["confirmed"] is True and event["workspaceToken"]=="workspace-a" and event["baseRevision"]=="1"
+        assert event["confirmed"] is True and event["workspaceToken"]=="workspace-a" and event["baseRevision"]=="1", event
+        new_project=page.get_by_role("button",name="New Project · empty mixer",exact=True)
+        assert new_project.is_visible()
+        page.once("dialog",lambda dialog:dialog.dismiss())
+        new_project.click()
+        assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
+        page.once("dialog",lambda dialog:dialog.accept())
+        new_project.click()
+        new_event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerNewOffline')?.payload")
+        assert new_event["mode"]=="EMPTY" and new_event["confirmed"] is True, new_event
+        assert new_event["workspaceToken"]=="workspace-a" and new_event["baseRevision"]=="1", new_event
         assert page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixConsoleIntent').length""")==0
         page.locator("#addTrack").click()

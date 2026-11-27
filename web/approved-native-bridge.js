@@ -5058,7 +5058,7 @@
           "Replace only logical I/O port definitions? Mixer, FX and shortcuts are retained; a backup is archived.":
           "Create a new offline mixer? The current saved session is archived. No audio output will be armed."))return;
         backend.emitEvent("arMixAction",{action:"nativeMixerNewOffline",mode,confirmed:true,
-          workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.revision});
+          workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
       });
       return button;
     });
@@ -5070,7 +5070,7 @@
       }
       if(window.confirm("Open an archived session? Current saved mixer is archived first; output remains muted."))
         backend.emitEvent("arMixAction",{action:"nativeMixerOpenArchive",confirmed:true,
-          workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.revision});
+          workspaceToken:logicalView.workspaceToken,baseRevision:logicalView.graph.revision});
     });
     menu.append(caption,setup,muteBtn,hardwareNote,...newSessionButtons,archiveButton,
       healthTitle,tone,mark,report,advanced,
