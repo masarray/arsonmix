@@ -15,7 +15,7 @@ class AutoDuckerProcessor final : public juce::AudioProcessor,
 public:
     static constexpr const char* catalogIdentity="armix.builtin.auto-ducker.v1";
     struct Settings {std::uint64_t source=0;AutoDuckerSettings dynamics{};};
-    struct Completion {std::uint64_t requestId=0;Settings settings{};};
+    struct Completion {std::uint64_t requestId=0;Settings settings{};bool applied=false;};
     AutoDuckerProcessor():juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
         .withOutput("Output",juce::AudioChannelSet::stereo(),true)){
@@ -62,10 +62,10 @@ public:
         if(!ready_||!completion_.canPush()||!queue_.pop(e))return;
         // Recalculate on the CONTROL producer, never on audio. A pending
         // packet from an older device rate is rejected by a fresh request.
-        if(e.rate!=rate_){(void)completion_.push({e.request,applied_});return;}
+        if(e.rate!=rate_){(void)completion_.push({e.request,applied_,false});return;}
         if(e.settings.source!=applied_.source)core_.clearKey();
         core_.applyPrepared(e.prepared);applied_=e.settings;
-        (void)completion_.push({e.request,applied_});
+        (void)completion_.push({e.request,applied_,true});
     }
     bool queueSettings(const Settings& s,std::uint64_t request) noexcept {
         Edit e{};e.settings=s;e.request=request;e.rate=rate_;
@@ -73,7 +73,8 @@ public:
     }
     bool pollCompletion(Completion& out) noexcept {
         if(!completion_.pop(out))return false;
-        accepted_=out.settings;return true;
+        if(out.applied)accepted_=out.settings;
+        return true;
     }
     Settings acceptedSettings() const noexcept {return accepted_;}
     float observedGain() const noexcept {return gain_.load(std::memory_order_relaxed);}

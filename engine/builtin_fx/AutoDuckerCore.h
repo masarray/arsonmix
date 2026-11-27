@@ -56,7 +56,7 @@ public:
     }
     void clearKey() noexcept {a_={};b_={};power_=0;hold_=0;active_=false;}
     void reset() noexcept {clearKey();gain_=1;}
-    float gain() const noexcept {return gain_;}
+    float gain() const noexcept {return static_cast<float>(gain_);}
     bool active() const noexcept {return active_;}
     void process(float* left,float* right,int frames,AutoDuckerKey key) noexcept {
         if(!ready_||!left||!right||left==right||frames<=0)return;
@@ -75,11 +75,12 @@ public:
                     else active_=false;
                 }else if(power_>=p_.onPower){active_=true;hold_=p_.hold;}
             }
-            const float target=active_?p_.floor:1.f;
-            const float pole=target<gain_?p_.attack:p_.release;
+            const double target=active_?p_.floor:1.;
+            const double pole=target<gain_?p_.attack:p_.release;
             gain_=target+pole*(gain_-target);
             if(std::abs(gain_-target)<1.e-6f)gain_=target;
-            left[i]*=gain_;right[i]*=gain_;
+            const float linkedGain=static_cast<float>(gain_);
+            left[i]*=linkedGain;right[i]*=linkedGain;
         }
     }
 private:
@@ -94,7 +95,8 @@ private:
     }
     Prepared p_{};
     Filter a_{},b_{};
-    float power_=0,gain_=1;
+    float power_=0;
+    double gain_=1; // avoid float convergence stall at high rates/long release
     std::uint32_t hold_=0;
     bool ready_=false,active_=false;
 };

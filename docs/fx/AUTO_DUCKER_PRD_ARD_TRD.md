@@ -25,3 +25,5 @@ Core AutoDuckerCore: prepared coefficients/control-side validation; two independ
 
 ## Candidate host seam (not release admission)
 The native graph now snapshots raw physical key views before the FX traversal, with shared physical patch targets, and scopes the views to one FX invocation. The native registry contains a hidden adapter with versioned state and bounded edit/ACK queues; it has no editor and must not be advertised. The pure C++ graph fixture checks stable key lookup, self/unknown key rejection, mute and physical repatch. Current key is raw pre-trim (not post-FX); group, player and FX-return sources are not supported. No exact-head Windows/physical validation yet.
+
+The standalone DSP cases are also invoked by the existing logical-mixer fast C++20 suite, avoiding a parallel CI workflow. Gain integration uses double precision to avoid high-rate/long-release float convergence stalls.

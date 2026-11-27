@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/DynamicAcceptedSession.h"
+#include "auto_ducker_core_cases.h"
 #include "../engine/core/RealtimeSlew64.h"
 #include <array>
 #if defined(NDEBUG)
@@ -1080,6 +1081,7 @@ static void verifyAutoDuckerKeyScope() {
 }
 
 int main() {
+    armix::ducker_test::run(); // same standalone core cases in existing fast CI
     verifyAutoDuckerKeyScope();
     verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm();
     verifyNativeDeleteTrackRetainsUnrelatedWires();
