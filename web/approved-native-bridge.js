@@ -2588,7 +2588,7 @@
   }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
-  function requestExternalOutput(t,label,el=null){
+  async function requestExternalOutput(t,label,el=null){
         const previous=t.externalOutput||"None";
         if(busOutputPending){
           if(el)el.value=previous;
@@ -2615,9 +2615,17 @@
         }
         if(plan.kind==="NO_CHANGE"){if(el)el.value=previous;return true;}
         const {left,right,epoch,revision}=plan;
-        const confirmed=!plan.requiresConfirmation || window.confirm(
-          plan.confirmation);
-        if(!confirmed){if(el)el.value=previous;return true;}
+        // Restore installed selection before asynchronous confirmation.
+        if(el)el.value=previous;
+        if(plan.requiresConfirmation&&!await confirmIo("External output",plan.confirmation,"Enable output"))return true;
+        const freshTrack=scope?.tracks?.find(x=>nativeIdFor(x)===id);
+        if(!freshTrack||(freshTrack.externalOutput||"None")!==previous)return true;
+        const freshPlan=stripVM.externalOutputPlan({native:controller?.state()?.current,
+          hardware,channelId:id,selectedLabel:label,currentLabel:previous,
+          choices:hardwareOutputPairs(),pending:pendingExternal.has(id),channelName:freshTrack.name});
+        if(JSON.stringify(freshPlan)!==JSON.stringify(plan)){
+          nativeToast("Routing changed · review external output again");return true;
+        }
         const requestId="out-o-"+(++externalSerial);
         pendingExternal.set(id,{requestId,channelId:id,left,right,
           epoch,revision,acked:false});
@@ -2653,14 +2661,15 @@
     if(value.textContent!==summary)value.textContent=summary;
     toggle.textContent=busy?"Applying…":p.policy==="INDEPENDENT_MONITOR"?"Use aligned":"Use singer low latency";
     toggle.disabled=busy||!p.editable||matrixBusy()||!matrixReady(next);
-    toggle.onclick=()=>{
+    toggle.onclick=async()=>{
       const live=protocol.monitorTimingView(hardware);
       if(!live?.editable||live.revision!==p.revision||live.epoch!==p.epoch||matrixBusy()||!matrixReady(hardware))return;
       const policy=live.policy==="GLOBAL_ALIGNED"?"INDEPENDENT_MONITOR":"GLOBAL_ALIGNED";
       const warning=policy==="INDEPENDENT_MONITOR"?
         "Use a separate singer monitor only. MAIN and MONITOR may have different timing; do not sum them acoustically or electrically. Removes up to "+ms(live.potentialSaving)+" of graph alignment, not hardware or insert latency.":
         "Restore global MAIN/MONITOR alignment?";
-      if(!window.confirm(warning+" Outputs remain disarmed. Session only."))return;
+      if(!await confirmIo("Monitor timing",warning+" Outputs remain disarmed. Session only.","Apply timing"))return;
+      if(!matrixReady(hardware)||JSON.stringify(protocol.monitorTimingView(hardware))!==JSON.stringify(live))return;
       const requestId="monitor-timing-"+(++monitorTimingSerial);
       monitorTimingPending={requestId,epoch:live.epoch,roster:live.rosterRevision,
         base:live.revision,policy,config:hardware.hardwareConfiguration,main:live.main,monitor:live.monitor,ack:null};
@@ -2707,7 +2716,7 @@
       deviceVM.setupPinsApplied(deviceInventory,deviceChoice)&&
       deviceVM.setupMatrixDeviceMatches(deviceInventory,snapshot);
   }
-  function applyMatrixRow(side,id,label,lease,requested=null){
+  async function applyMatrixRow(side,id,label,lease,requested=null){
     const current=controller?.state()?.current;
     const view=deviceVM.patchMatrix(hardware,side);
     const row=view.rows.find(x=>x.id===id&&x.editable);
@@ -2742,7 +2751,11 @@
       if(!requested||JSON.stringify(row.pair)!==lease.busPairs?.[id])return;
       const choice=row.choices.find(x=>x.label===label&&x.left===requested.left&&x.right===requested.right);
       if(!choice||choice.label===row.selected||
-         !window.confirm("Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO."))return;
+         !await confirmIo("Remap bus output","Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO.","Remap output"))return;
+      if(!matrixReady(hardware))return;
+      const fresh=deviceVM.patchMatrix(hardware,side).rows.find(x=>x.id===id&&x.editable);
+      if(!fresh||JSON.stringify(fresh.pair)!==JSON.stringify(row.pair)||
+         !fresh.choices.some(x=>x.label===label&&x.left===choice.left&&x.right===choice.right))return;
       const requestId="bus-out-"+(++busOutputSerial);
       busOutputPending={requestId,id,epoch:lease.epoch,config:lease.config,revision:lease.revision,
         left:choice.left,right:choice.right,acked:false};
@@ -2972,7 +2985,10 @@
       },5000);
     };
     save.onclick=()=>send("SAVE");
-    remove.onclick=()=>{if(existing.value&&window.confirm("Remove this routing preset? Installed routes are unchanged."))send("REMOVE");};
+    remove.onclick=async()=>{
+      const id=existing.value;
+      if(id&&await confirmIo("Remove routing preset","Remove this routing preset? Installed routes are unchanged.","Remove preset")&&existing.value===id)send("REMOVE");
+    };
     importProfile.onclick=()=>{
       if(locked)return;
       let profile;
@@ -3094,13 +3110,16 @@
     port.onchange=loadPort;
     name.oninput=format.onchange=left.onchange=right.onchange=update;
     channel.onchange=()=>{logicalIoChannel=channel.value;update();};
-    const send=operation=>{
+    const send=async operation=>{
       if(buttons[operation].disabled||busy||logicalIoPending||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
          hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
          hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
          hardware.raw?.logicalInputRegistry?.revision!==data.revision)return;
+      const draft=()=>JSON.stringify([port.value,channel.value,name.value,format.value,left.value,right.value]);
+      const before=draft();
       if((operation==="BIND"||operation==="UNBIND")&&used()&&
-         !window.confirm("Update every mixer channel using this logical input?"))return;
+         !await confirmIo("Logical input","Update every mixer channel using this logical input?","Update input"))return;
+      if(before!==draft()||!matrixReady(hardware))return;
       const l=currentPin(left),r=format.value==="STEREO"?currentPin(right):null;
       const requestId="logical-io-"+(++logicalIoSerial);
       const payload={action:"routingLogicalInputEdit",requestId,operation,
@@ -3180,14 +3199,17 @@
     };
     port.onchange=loadPort;name.oninput=pair.onchange=update;
     channel.onchange=()=>{logicalOutChannel=channel.value;update();};
-    const send=operation=>{
+    const send=async operation=>{
       if(buttons[operation].disabled||busy||logicalIoPending||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
          hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
          hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
          hardware.raw?.logicalOutputRegistry?.revision!==data.revision||hardware.raw?.operatorOutputMuted!==true||
          hardware.device.outputArmed!==false||hardware.raw?.physicalBusSecondaryArmed!==false)return;
       const confirmed=["BIND","UNBIND","ASSIGN","CLEAR"].includes(operation);
-      if(confirmed&&!window.confirm("Confirm logical output change? Verify the exact hardware destination. MAIN and STREAM must remain muted."))return;
+      const draft=()=>JSON.stringify([port.value,channel.value,name.value,pair.value]);
+      const before=draft();
+      if(confirmed&&!await confirmIo("Logical output","Confirm logical output change? Verify the exact hardware destination. MAIN and STREAM must remain muted.","Apply output"))return;
+      if(before!==draft()||!matrixReady(hardware))return;
       const selectedPair=pairs.find(q=>String(q.l.port)===pair.value);
       const requestId="logical-io-"+(++logicalIoSerial);
       const payload={action:"routingLogicalOutputEdit",requestId,operation,confirmed,
@@ -3239,7 +3261,7 @@
     for(const [op,label,unavailable] of buttons){
       const button=document.createElement("button");button.type="button";button.textContent=label;
       button.disabled=busy||!!ioDefaultsPending||data.readOnly||unavailable;
-      button.onclick=()=>{
+      button.onclick=async()=>{
         if(button.disabled||matrixBusy()||namedPatchPending||!matrixReady(hardware)||
            hardware.device.epoch!==next.device.epoch||hardware.hardwareConfiguration!==next.hardwareConfiguration||
            hardware.graph?.revision!==model.revision||hardware.graph?.rosterRevision!==model.roster||
@@ -3249,7 +3271,7 @@
            (op==="LOAD"&&hardware.raw?.ioDefaults?.canLoad!==true))return;
         const message=op==="SAVE"?"Use the current logical input and output port definitions for future empty mixers? Channel assignments, FX and output arm are not saved.":
           op==="LOAD"?"Load default port definitions into this empty muted mixer? No channel will be assigned or armed.":"Clear the saved I/O default? The current mixer will not change.";
-        if(!window.confirm(message))return;
+        if(!await confirmIo("I/O defaults",message,label)||!matrixReady(hardware))return;
         const requestId="io-default-"+(++ioDefaultsSerial);
         ioDefaultsPending={requestId,op,epoch:next.device.epoch,config:next.hardwareConfiguration,
           revision:data.revision,inputRevision:ins.revision,outputRevision:outs.revision,
@@ -3689,6 +3711,28 @@
     element.textContent=operatorMessage(message);element.hidden=false;
     window.clearTimeout(toastTimer);
     toastTimer=window.setTimeout(()=>{element.hidden=true;},3400);
+  }
+  // Async confirmation must not rely on the old synchronous modal freeze.
+  // Capture authority and routing state, never continuously changing meters.
+  function ioConfirmationLease(){
+    const h=hardware,d=h?.device,g=h?.graph,r=h?.raw,a=deviceInventory?.active;
+    return JSON.stringify([h?.admitted,h?.retained,h?.identity,h?.hardwareConfiguration,
+      r?.workspaceGeneration,d?.epoch,d?.backend,d?.captureDevice,d?.playbackDevice,
+      d?.enabledInputs,d?.enabledOutputs,d?.outputArmed,g?.revision,g?.rosterRevision,
+      r?.operatorOutputMuted,r?.physicalBusSecondaryArmed,r?.physicalBusOutputObserved,
+      r?.physicalMainOutputs,r?.physicalMonitorOutputs,r?.externalRevision,r?.externalOutputs,
+      r?.logicalInputRegistry?.revision,r?.logicalOutputRegistry?.revision,
+      r?.ioDefaults?.revision,r?.ioDefaults?.canLoad,
+      a?.deviceGeneration,deviceInventory?.namedPatches?.revision]);
+  }
+  async function confirmIo(title,message,actionLabel){
+    if(matrixBusy()||namedPatchPending||!hardware?.admitted||hardware.retained)return false;
+    const lease=ioConfirmationLease();
+    if(!await confirmArson(title,message,actionLabel))return false;
+    if(matrixBusy()||namedPatchPending||lease!==ioConfirmationLease()){
+      nativeToast("Audio I/O changed · review and confirm again");return false;
+    }
+    return true;
   }
   let arsonConfirmation=null;
   function confirmArson(title,message,actionLabel="Continue"){
@@ -6301,7 +6345,7 @@
       }
       if(field==="external"){
         if(event.type!=="change")return true;
-        return requestExternalOutput(t,el.value,el);
+        void requestExternalOutput(t,el.value,el);return true;
       }
       if(field==="output"){
         if(event.type!=="change")return true;

@@ -7964,3 +7964,13 @@ test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction ev
  assert.match(block,/arMixOpenAudioIO/);assert.doesNotMatch(block,/showDeviceSetup\(/);
  assert.match(bridge,/backend.addEventListener\("arMixOpenAudioIO",\(\)=>openNativeAudioIO\(\)\)/);
  });
+
+ test("custom Audio I/O confirmation is asynchronous and fenced against stale native authority",()=>{
+ const b=read("web/approved-native-bridge.js");
+ assert.doesNotMatch(b,/window\.confirm\s*\(/);
+ const f=b.slice(b.indexOf("function ioConfirmationLease()"),b.indexOf("let arsonConfirmation=null;"));
+ assert.match(f,/workspaceGeneration/);assert.match(f,/operatorOutputMuted/);
+ assert.match(f,/const lease=ioConfirmationLease\(\)/);
+ assert.match(f,/await confirmArson/);assert.match(f,/lease!==ioConfirmationLease\(\)/);
+ assert.equal((b.match(/await confirmIo\(/g)||[]).length,7);
+ });
