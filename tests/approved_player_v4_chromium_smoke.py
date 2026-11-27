@@ -427,6 +427,7 @@ def main():
         assert child.evaluate("()=>window.__windowEvents.at(-1).payload.action")=="playerPause"
         child.locator("#playerClose").click()
         assert child.evaluate("()=>window.__windowEvents.at(-1).name")=="arMixPlayerWindowHide"
+        assert child.evaluate("()=>window.__windowEvents.filter(e=>e.name==='arMixAction').map(e=>e.payload.action)")==["playerPause"]
         assert not errors,errors
         child.close()
         # Mixer capability negotiation: no clipped drawer on native OPEN,

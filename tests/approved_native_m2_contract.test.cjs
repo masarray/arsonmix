@@ -8168,3 +8168,20 @@ test("V6 native window resize keeps WebView out of the eight-direction grip",()=
  assert.equal((geometry.match(/static_assert\(/g)||[]).length,14);
  assert.match(chrome,/drawResizableWindowBorder[\s\S]*g\.drawRect \(0, 0, w, h, 1\)/);
 });
+
+
+test("V6 Player window owns only desktop presentation, never another player engine",()=>{
+ const native=read("src/Main.cpp"),js=read("site/preview-v2/assets/arson-player.js"),bundle=read("scripts/build_approved_native_gui.py");
+ const start=native.indexOf("class PlayerDesktopWindow final"),end=native.indexOf("// A post-install GUI probe",start);
+ const window=native.slice(start,end);
+ assert.match(window,/public juce::TopLevelWindow/);
+ assert.match(window,/attachOwnedFloatingWindow\(\*this,mixer_\)/);
+ assert.match(window,/placeFloatingEditor\(\*this,mixer_,!everPresented_\)/);
+ assert.match(window,/WM_SYSCOMMAND,SC_MOVE\|HTCAPTION/);
+ assert.match(window,/arMixPlayerWindowHide/);
+ assert.doesNotMatch(window,/activeWindowStatusChanged|focusLost|setAlwaysOnTop|LiveAudioEngine|AudioDeviceManager|playerStop|playerPause/);
+ assert.match(native,/std::unique_ptr<PlayerDesktopWindow> playerWindow_/);
+ assert.match(native,/if\(playerWindow_\)playerWindow_->emit\(event,payload\)/);
+ assert.match(js,/if\(desktopAvailable&&!desktopChild\)\{if\(visible\)windowCommand\("OPEN"\);return;\}/);
+ assert.match(bundle,/player-window\.html/);
+});

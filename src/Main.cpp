@@ -602,10 +602,7 @@ public:
                 if(browser_.loaded&&isVisible()&&request.getProperty("action","").toString().startsWith("player")&&intent)
                     intent(request);
             })
-            .withEventListener("arMixPlayerWindowHide",[this](juce::var){
-                setVisible(false);
-                if(hidden_)hidden_();
-            })
+            .withEventListener("arMixPlayerWindowHide",[this](juce::var){hide();})
             .withEventListener("arMixPlayerWindowDrag",[this](juce::var){
 #if JUCE_WINDOWS
                 if(!isVisible()||!(GetAsyncKeyState(VK_LBUTTON)&0x8000))return;
@@ -632,6 +629,12 @@ public:
         browser_.goToURL(juce::WebBrowserComponent::getResourceProviderRoot()+"player-window.html");
     }
     void resized() override { browser_.setBounds(getLocalBounds()); }
+    void userTriedToCloseWindow() override { hide(); }
+    void hide() {
+        if(!isVisible())return;
+        setVisible(false);
+        if(hidden_)hidden_();
+    }
     bool present() {
         if(!armix::ui::attachOwnedFloatingWindow(*this,mixer_))return false;
         const bool wasVisible=isVisible();
@@ -1193,6 +1196,7 @@ private:
     bool studioBackupBusy_ = false;
     std::unique_ptr<juce::FileChooser> chooser_;
     std::unique_ptr<PlayerDesktopWindow> playerWindow_;
+    bool playerWindowCapabilityPublished_=false;
     std::unique_ptr<juce::FileChooser> playerFileChooser_;
     // PlayerShow v3: one active setlist projects into the existing native
     // library/controls so decoder bindings and FX routing do not change.
@@ -7020,10 +7024,14 @@ private:
     }
     void publishPlayerWindowState(){
 #if JUCE_WINDOWS
+        if(!browser_.loaded||!browser_.isShowing())return;
+        playerWindowCapabilityPublished_=true;
         auto state=std::make_unique<juce::DynamicObject>();
         state->setProperty("available",true);
         state->setProperty("visible",playerWindow_&&playerWindow_->isVisible());
         browser_.emitEventIfBrowserIsVisible("arMixPlayerWindowState",juce::var(state.release()));
+#else
+        playerWindowCapabilityPublished_=true;
 #endif
     }
     void subscribePlayerPresentation(){
@@ -7044,7 +7052,13 @@ private:
         if(!playerWindow_){
             playerWindow_=std::make_unique<PlayerDesktopWindow>(*this,
                 [this](const juce::var& request){onAction(request);},
-                [this]{subscribePlayerPresentation();if(playerCatalogueRequested_)emitPlayerCatalogue();},
+                [this]{
+                    // The hidden child may have missed a media reset; clear
+                    // only its cache before replaying the accepted projection.
+                    if(playerWindow_)playerWindow_->emit("arMixPlayerMediaReset",juce::var(true));
+                    subscribePlayerPresentation();
+                    if(playerCatalogueRequested_)emitPlayerCatalogue();
+                },
                 [this]{publishPlayerWindowState();});
         }
         if(!playerWindow_->present())emitNotice("Unable to attach Player desktop window",true);
@@ -12408,6 +12422,10 @@ private:
             browser_.resized(); // first visible HWND, not its pre-splash size
         }
         publishRibbonWindowState();
+        // Startup navigation may have queried while the WebView was hidden.
+        // Retry once on the existing tick after real GUI readiness, not per frame.
+        if(!playerWindowCapabilityPublished_&&browser_.loaded&&browser_.isShowing())
+            publishPlayerWindowState();
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.
         if (!browser_.loaded && !webViewStartupNoticeSent_ &&
