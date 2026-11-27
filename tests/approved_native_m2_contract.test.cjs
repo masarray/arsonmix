@@ -3891,6 +3891,8 @@ test("M5 native operator status renders useful actions without exposing internal
   ["FAT PENDING; output muted","Output muted"],
   ["FAT FAILED; output enabled","Output enabled"],
   ["DEVICE_DISCONNECTED","Audio device unavailable · Open Audio I/O"],
+  ["Recall rejected: DEVICE_REBIND_REQUIRED","Change not applied · Open Audio I/O and rebind the device"],
+  ["Change not applied · Open Audio I/O and rebind the device","Change not applied · Open Audio I/O and rebind the device"],
   ["Native routing rejected","Routing not changed · Check the connection and try again"],
   ["NATIVE: STALE_NATIVE_WIRE_GRAPH","Routing not changed · Check the connection and try again"],
   ["Native routing failed","Routing not changed · Check the connection and try again"],

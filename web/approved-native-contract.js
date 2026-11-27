@@ -48,6 +48,8 @@
     // File-operation receipts are already truthful, operator-facing text.
     // Never infer success from a rack filename, native identity or "FX".
     if(/^FX rack file:|^FX rack request invalid|^FX rack unchanged:|^FX saved; deactivation rejected:/i.test(raw))return raw;
+    if(/\bDEVICE_REBIND_REQUIRED\b/.test(raw))
+      return "Change not applied · Open Audio I/O and rebind the device";
     if(raw.includes("DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"))
       return "Delete not applied · Mute outputs before changing this routing";
     if(raw.includes("DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED"))

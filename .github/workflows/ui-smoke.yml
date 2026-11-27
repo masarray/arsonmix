@@ -405,7 +405,7 @@ jobs:
   studio-audio-io:
     name: Studio Audio I/O real Chromium routing interaction
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/operator-workflow-reconciliation-20261128' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-live-fx-rack-file-dialog-20261127' || github.head_ref == 'fix/p0-asio-panel-main-sof-recovery-20261127' || github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'fix/production-profile-wire-readback-20261127') }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/operator-workflow-reconciliation-20261128' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-live-fx-rack-file-dialog-20261127' || github.head_ref == 'fix/p0-asio-panel-main-sof-recovery-20261127' || github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'fix/production-profile-wire-readback-20261127' || startsWith(github.head_ref, 'perf/io-')) }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -452,7 +452,7 @@ jobs:
           python tests/approved_native_offline_logical_smoke.py
           python tests/sof_contextual_console_smoke.py
       - name: P0 live-ops exact assembled workspace restore
-        if: ${{ !cancelled() && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'staging/io-reverb-integrated-global-20261125' || github.head_ref == 'feat/arson-player-tempered-glass-20261127') }}
+        if: ${{ !cancelled() && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'staging/io-reverb-integrated-global-20261125' || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || startsWith(github.head_ref, 'perf/io-')) }}
         env:
           EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
