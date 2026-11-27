@@ -399,10 +399,19 @@ def main():
                 ratio_arc=ratio_dial.locator(".mx-comp-arc-progress")
                 old_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
                 ratio.hover()
+                page.evaluate("""()=>{window.__compWheelProbe=[];
+                    document.addEventListener('wheel',e=>window.__compWheelProbe.push({
+                       x:e.deltaX,y:e.deltaY,shift:e.shiftKey,target:e.target.className}),true);
+                }""")
                 page.keyboard.down("Shift")
-                page.mouse.wheel(0,-120)
-                page.wait_for_function("""()=>window.__actions.some(a=>a.action==='nativeCompSet' && Math.abs(a.settings.ratio-3.1)<.0001)""")
-                page.keyboard.up("Shift")
+                try:
+                    page.mouse.wheel(0,-120)
+                    page.wait_for_function("""()=>window.__actions.some(a=>a.action==='nativeCompSet' && Math.abs(a.settings.ratio-3.1)<.0001)""",timeout=3000)
+                except Exception as exc:
+                    raise AssertionError(("Compressor Shift wheel",page.evaluate("()=>window.__compWheelProbe"),
+                        page.evaluate("()=>window.__actions.filter(a=>a.action==='nativeCompSet').slice(-3)"))) from exc
+                finally:
+                    page.keyboard.up("Shift")
                 new_pointer=ratio_pointer.evaluate("el=>getComputedStyle(el).transform")
                 new_dash=float(ratio_arc.get_attribute("stroke-dasharray").split()[0])
                 assert ratio_body.evaluate("el=>getComputedStyle(el).transform")==old_body=="none",\

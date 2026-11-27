@@ -475,9 +475,9 @@ controls.forEach((c,i)=>{
   activeSlider=-1;requestSnapshot(true);
  });
  c.cell.addEventListener("wheel",event=>{
-  if(!artworkLoaded||!window.ArMixFxGesture.direction(event)||(!context()&&native()))return;
+  const dir=window.ArMixFxGesture.direction(event);if(!artworkLoaded||!dir||(!context()&&native()))return;
   event.preventDefault();event.stopPropagation();
-  const cur=draft.bands[i],target=clamp(cur-Math.sign(event.deltaY)*(event.shiftKey?.1:.5),-12,12);
+  const cur=draft.bands[i],target=clamp(cur+dir*(event.shiftKey?.1:.5),-12,12);
   updateBand(i,wheelZeroSnap(cur,target,1.1,c.cell));
  },{passive:false});
  c.cell.addEventListener("dblclick",event=>{event.preventDefault();updateBand(i,0);});

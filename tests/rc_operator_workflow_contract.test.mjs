@@ -116,6 +116,8 @@ test('shared FX wheel helper clamps, preserves fine steps, ignores zoom and disa
  const fire=(deltaY,extra={})=>{const e={deltaY,deltaX:0,preventDefault(){this.defaultPrevented=true;},stopPropagation(){this.stopped=true;},...extra};handlers.wheel(e);return e;};
  assert.equal(fire(-120).stopped,true);assert.equal(edits.at(-1),6.5);
  fire(120,{shiftKey:true});assert.equal(edits.at(-1),6);
+ fire(0,{deltaX:-120,shiftKey:true});assert.equal(edits.at(-1),6.5);
+ fire(0,{deltaX:120,shiftKey:true});assert.equal(edits.at(-1),6);
  const count=edits.length;
  assert.equal(fire(-120,{ctrlKey:true}).defaultPrevented,undefined);
  assert.equal(fire(-120,{deltaX:200}).defaultPrevented,undefined);

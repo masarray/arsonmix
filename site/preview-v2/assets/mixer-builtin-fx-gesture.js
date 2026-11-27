@@ -5,9 +5,14 @@
 // One quantized step for fine; normal uses a bounded number of steps.
 // Native ACK/coalescing remains the responsibility of the existing editor.
 function direction(e){
- if(e.defaultPrevented||e.ctrlKey||e.metaKey||!Number.isFinite(e.deltaY)||
-    e.deltaY===0||Math.abs(e.deltaX||0)>Math.abs(e.deltaY))return 0;
- return e.deltaY<0?1:-1;
+ if(e.defaultPrevented||e.ctrlKey||e.metaKey||!Number.isFinite(e.deltaY))return 0;
+ const dx=Number.isFinite(e.deltaX)?e.deltaX:0;
+ // Chromium/Windows can transpose vertical wheel to horizontal while
+ // Shift is held. On a parameter hit target only, treat it as fine wheel.
+ // Unmodified horizontal scrolling and pinch/zoom still pass through.
+ const dy=e.deltaY;
+ const delta=e.shiftKey&&dy===0?dx:Math.abs(dx)>Math.abs(dy)?0:dy;
+ return delta===0?0:delta<0?1:-1;
 }
 function bindRange(input,{get=()=>Number(input.value),enabled=()=>true,
                          normalSteps=3,onChange=null,target=input}={}){
