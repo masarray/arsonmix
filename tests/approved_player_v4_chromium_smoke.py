@@ -24,6 +24,24 @@ def main():
             tracks=[dict(id=i,catalogId=i,title="Track "+str(i+1),keySemitones=0,tempoPercent=100,cueIn=0,cueOut=0,missing=False) for i in range(30)]
             state=dict(schema="arsonmix.player.v1",tracks=tracks,queue=[dict(id=0,title="Track 2")],setlists=[dict(id=0,name="Acoustic Session",count=30)],activeSetlist=0,current=0,selected=0,pending=-1,queueRevision=1,autoNext=False,transport=dict(state="PLAYING",title="Track 1",durationSeconds=240,currentSeconds=102,routeAudible=True,waveform=[(i*1729)%65536 for i in range(256)]))
             page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
+            page.locator("#ribbon-tab-player").click()
+            assert page.locator("#ribbon-tab-player").get_attribute("aria-selected")=="true"
+            assert page.locator(".armix-ribbon-player img").count()==0
+            for ident,size in [("ribbonPrevious",28),("ribbonPlay",32),("ribbonNext",28),("ribbonStop",22)]:
+                g=page.locator("#"+ident).evaluate("e=>({w:e.offsetWidth,h:e.offsetHeight,r:getComputedStyle(e).borderRadius})")
+                assert g==dict(w=size,h=size,r="50%"),(ident,g)
+            assert page.locator("#ribbonTrack").inner_text()=="Track 1"
+            assert page.locator("#ribbonPlay").get_attribute("aria-pressed")=="true"
+            if width>=900:
+                page.locator("#ribbonPlay").click()
+                assert page.evaluate("()=>window.__playerActions.at(-1).action")=="playerPause"
+                page.locator("#ribbonStop").click()
+                assert page.evaluate("()=>window.__playerActions.at(-1).action")=="playerStop"
+                page.locator("#ribbonSeek").evaluate("e=>{e.value='500';e.dispatchEvent(new Event('change',{bubbles:true}))}")
+                assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerSeek","value":120}
+                page.locator("#ribbonVolume").evaluate("e=>{e.value='67';e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))}")
+                assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerVolume","value":67}
+                page.screenshot(path=str(evidence/f"ribbon-v6-{width}-{height}.png"))
             page.locator("#playerToggle").click()
             panel=page.locator("#arsonPlayer")
             panel.wait_for(state="visible")
@@ -150,10 +168,11 @@ def main():
                 print("64k Chromium catalogue search seconds",time.perf_counter()-start,flush=True)
             page.locator("#playerSetlistView").click()
             page.locator("#playerClose").click()
+            page.locator("#ribbon-tab-mixer").click()
             mini=page.locator("#playerMini")
             mini.wait_for(state="visible")
             assert page.locator("#playerMiniArtworkFallback").get_attribute("data-art")==fallback.get_attribute("data-art")
-            assert page.locator("#playerMiniArtworkFallback").is_visible()
+            assert page.locator("#playerMiniArtworkFallback").is_hidden()  # Ribbon has no cover
             page.locator("#playerMiniPlay").click()
             assert page.evaluate("()=>window.__playerActions.at(-1).action")=="playerPause"
             page.locator("#playerMiniExpand").click()

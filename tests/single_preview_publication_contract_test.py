@@ -7,6 +7,8 @@ from approved_fx_rack_power import apply_authoritative_fx_power
 from approved_fx_rack_interaction import apply_fx_rack_interaction
 from compose_native_peq import apply_native_peq
 from compose_operator_ux import apply_operator_ux
+from compose_clean_ribbon import apply_clean_ribbon
+from compose_rounded_micro_keys import apply_rounded_micro_keys
 ROOT=Path(__file__).resolve().parents[1]
 DST=Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/'dist-pages'
 gui=DST/'preview'
@@ -48,13 +50,15 @@ expected=apply_native_peq(expected)
 # the source repository or the already optimized distribution.
 with tempfile.TemporaryDirectory(prefix="armix-operator-contract-") as td:
     owned=Path(td)
-    owners=("mixer-chrome-material.css","mixer-plugin-browser.css","mixer-fx-rack.css")
+    owners=("mixer-chrome-material.css","mixer-plugin-browser.css","mixer-fx-rack.css","mixer-utility-controls.css")
     for name in owners:
         shutil.copy2(ROOT/"site/preview-v2/assets"/name,owned/name)
     # Recreate the SAME handle-free FX CSS owner as the production assembler,
     # then run the existing operator composer. Historic V28 assets stay locked.
     apply_fx_rack_interaction((ROOT/"site/preview-v2/index.html").read_text(encoding="utf-8"),owned)
     expected=apply_operator_ux(expected,owned)
+    expected=apply_clean_ribbon(expected,owned)
+    apply_rounded_micro_keys(owned)
     composed_css={name:(owned/name).read_text(encoding="utf-8") for name in owners}
 # Stage C: the source HTML remains byte-exact, but the 18 deployed CSS files
 # contain only proven cascade winners. Verify every *generated* byte and query
@@ -103,6 +107,7 @@ expected=link_runtime_bundle(expected,digest)
 shipped=list(LINK.finditer(html))
 require(len(shipped)==1 and shipped[0].group(2)==RUNTIME_CSS,
         'Only the single compiled runtime CSS is allowed to load')
+require((gui/'assets/clean-ribbon-v6.js').read_bytes()==(ROOT/'site/preview-v2/assets/clean-ribbon-v6.js').read_bytes(),'ribbon JS provenance mismatch')
 require(html==expected,'rendered /preview/ DOM differs from source + approved buttons + one runtime CSS + nonvisual profiler')
 for name in ('mixer-wire-dots.css','knob-ICON.svg'):
     require((gui/'assets'/name).read_bytes()==(ROOT/'site/preview-v2/assets'/name).read_bytes(),'WIRE source drift: '+name)

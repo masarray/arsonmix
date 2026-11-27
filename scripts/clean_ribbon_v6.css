@@ -1,0 +1,81 @@
+/* Owner-approved Clean Ribbon V6: only header presentation, never strip hardware. */
+html .app .window-title.armix-ribbon-nav,html.armix-native-desktop .app > .window-title.armix-ribbon-nav{display:flex!important;height:34px!important;min-height:34px!important;flex:0 0 34px!important;gap:0!important;padding:0 0 0 145px!important;background:#1b2b35!important;border-bottom:2px solid #2fa9c8!important;box-shadow:none!important;overflow:hidden!important}
+html .app .window-title.armix-ribbon-nav>.logo,html .app .window-title.armix-ribbon-nav>.file-name,html .app .window-title.armix-ribbon-nav>#trackCount{display:none!important}
+.armix-ribbon-tabs{display:flex;align-items:stretch;flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;padding-left:4px}
+.armix-ribbon-tabs::-webkit-scrollbar{display:none}
+.armix-ribbon-tab{isolation:isolate;position:relative;border:0;background:none;color:#e0edf3;font:400 12px/1 "Segoe UI",Arial,sans-serif;flex:0 0 126px;height:32px;margin-left:-22px;padding:0 20px 0 7px;cursor:pointer}
+.armix-ribbon-tab:first-child{margin-left:0}
+.armix-ribbon-tab svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:-1}
+.armix-ribbon-tab path{stroke:#657580;stroke-width:.5;vector-effect:non-scaling-stroke}
+.armix-ribbon-tab:hover path{fill:#425867}
+.armix-ribbon-tab[aria-selected=true] path{fill:url(#armix-ribbon-active)}
+.armix-ribbon-tab:focus-visible{outline:1px solid #a8e9ff;outline-offset:-4px}
+html .app #armix-ribbon-commands.command-bar.armix-ribbon{height:43px!important;min-height:43px!important;max-height:43px!important;flex:0 0 43px!important;gap:8px!important;padding:0 8px!important;background:linear-gradient(#263d49,#203541)!important;border-top:0!important;box-shadow:none!important;overflow:visible!important}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools{position:absolute!important;left:0!important;top:-34px!important;width:146px!important;height:32px!important;min-width:0!important;margin:0!important;z-index:4!important}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool{height:32px!important;min-width:146px!important;width:146px!important;max-width:146px!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:linear-gradient(#374d5e,#14232e)!important;color:#dceaf0!important;font:400 12px "Segoe UI",Arial,sans-serif!important;justify-content:flex-start!important;gap:9px!important;padding:0 12px!important;list-style:none}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool::before,html .app #armix-ribbon-commands.armix-ribbon>#moreTools>summary.tool::after{content:none!important}
+html .app #armix-ribbon-commands.armix-ribbon>#moreTools[open]>summary.tool{background:linear-gradient(#36b8da,#087f9f)!important}
+.armix-ribbon-menu-icon{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5}
+html .app #armix-ribbon-commands.armix-ribbon .more-tools-panel{position:absolute!important;left:5px!important;right:auto!important;top:34px!important;max-height:calc(100dvh - 48px)!important;overflow:auto!important;border:1px solid #526977!important;border-radius:5px!important;background:#192b36!important;box-shadow:0 5px 12px #0006!important}
+html .app #armix-ribbon-commands.command-bar.armix-ribbon>button.tool,html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool,html .app #armix-ribbon-commands.armix-ribbon .more-tools-panel button.tool{height:27px!important;min-height:27px!important;max-height:27px!important;padding:0 10px!important;min-width:0!important;border:1px solid transparent!important;border-radius:15px!important;background:transparent!important;box-shadow:none!important;color:#c8dce5!important;text-shadow:none!important;font:400 11px "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important}
+html .app #armix-ribbon-commands.armix-ribbon .tool::before,html .app #armix-ribbon-commands.armix-ribbon .tool::after{content:none!important}
+html .app #armix-ribbon-commands.armix-ribbon .tool:hover:not(:disabled){background:#9abccb19!important;border-color:#93b5c22b!important;color:#f1f8fb!important}
+html .app #armix-ribbon-commands.armix-ribbon .tool:is(.active,[aria-pressed=true],[aria-expanded=true]){background:#4bb6ce26!important;border-color:#62b9cb56!important;color:#9ce8f4!important}
+html .app #armix-ribbon-commands.armix-ribbon #globalFxToggle[aria-pressed=true]{background:#46b78920!important;border-color:#6ac89b48!important;color:#a6e7ca!important}
+html .app #armix-ribbon-commands.armix-ribbon .toolbar-select{border:1px solid #83a6b42e!important;border-radius:14px!important;background-color:#0d202a!important;color:#d2e2e9!important;box-shadow:none!important;height:25px!important;min-height:25px!important;max-height:25px!important}
+html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch{display:flex;gap:2px;padding:1px 2px;border:1px solid #819eac30;border-radius:16px;background:#10232d66}
+html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool{height:23px!important;min-height:23px!important;max-height:23px!important;padding:0 9px!important}
+html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool[aria-pressed=true]{background:#405c6a!important;color:#e6f5fa!important;border-color:transparent!important}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow{width:25px!important;min-width:25px!important;max-width:25px!important;height:25px!important;min-height:25px!important;padding:0!important;border-radius:50%!important}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow svg{width:18px!important;height:18px!important}
+html .app #armix-ribbon-commands.armix-ribbon>.sep,html .app #armix-ribbon-commands.armix-ribbon>.armix-toolbar-divider,html .app #armix-ribbon-commands.armix-ribbon>.toolbar-label{display:none!important}
+html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-hidden=true]{display:none!important;position:absolute!important;visibility:hidden!important;pointer-events:none!important}
+html .app #armix-ribbon-commands.armix-ribbon[data-ribbon-tab=routing]>:is(#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle):not([hidden]){display:inline-flex!important}
+html .app #armix-ribbon-commands.armix-ribbon>#mixContext{margin-left:auto!important}
+html .app #armix-ribbon-commands.armix-ribbon>.tool[data-native-io],html .app #armix-ribbon-commands.armix-ribbon>#addTrack{margin-left:0!important}
+html .app #armix-ribbon-commands.armix-ribbon .more-tools-panel button.tool{justify-content:flex-start!important;border-radius:4px!important;width:100%!important}
+html .app #armix-ribbon-commands.armix-ribbon #playerToggle{height:30px!important;min-height:30px!important;border-radius:18px!important;padding:0 12px!important;color:#ecfaff!important;border:1px solid #42d9e8!important;background:linear-gradient(#3a6975,#224651)!important;box-shadow:inset 0 0 6px #42d9e82a,0 0 7px #23cbe64a!important}
+html .app #armix-ribbon-commands.armix-ribbon:not([data-ribbon-tab=player]) #playerToggle{height:27px!important;min-height:27px!important;border-color:#83c7d344!important;background:#78c8d514!important;box-shadow:none!important;color:#b6edf6!important}
+.armix-ribbon-player{display:flex;align-items:center;gap:8px;flex:1;min-width:0;white-space:nowrap;font:400 11px "Segoe UI",Arial,sans-serif;color:#dce9ef}
+.armix-ribbon-player[hidden]{display:none!important}
+.armix-ribbon-track{min-width:90px;max-width:210px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.armix-ribbon-time{color:#a3bfca;font-variant-numeric:tabular-nums;flex:none}
+.armix-ribbon-transport,.armix-ribbon-options,.armix-ribbon-volume{display:flex;align-items:center;gap:7px;flex:none}
+.armix-ribbon-player button{font:inherit;display:grid;place-items:center;padding:0;cursor:pointer;color:#f3f9fb}
+.armix-ribbon-player button:disabled{opacity:.44;cursor:not-allowed}
+.armix-ribbon-player button:focus-visible,.armix-ribbon-player input:focus-visible{outline:2px solid #73d6e6;outline-offset:1px}
+.armix-ribbon-player button svg{width:16px;height:16px;pointer-events:none}
+.armix-ribbon-transport button{--face-top:#49606c;--face-bottom:#293f4a;--ring-top:#d5e5ea;--ring-bottom:#849aa5;position:relative;isolation:isolate;border:1px solid transparent;border-radius:50%;width:28px;height:28px;background:linear-gradient(155deg,var(--face-top),var(--face-bottom)) padding-box,linear-gradient(145deg,var(--ring-top) 5%,#aabfc9 33%,var(--ring-bottom) 72%,#d6e3e8 100%) border-box;box-shadow:inset 0 1px 1px #f0faff20,inset 0 -1px 1px #0c1e272c,0 1px 2px #08151d50}
+.armix-ribbon-transport button::after{content:"";position:absolute;inset:1px;border-radius:inherit;background:radial-gradient(ellipse at 37% 10%,#e9f7ff1e,transparent 67%);pointer-events:none}
+.armix-ribbon-transport button svg{fill:currentColor;stroke:none;z-index:1;width:15px;height:15px}
+.armix-ribbon-transport #ribbonPlay{width:32px;height:32px;--face-top:#61737e;--face-bottom:#344b57;--ring-top:#e5f0f3;--ring-bottom:#a1b3bd}
+.armix-ribbon-transport #ribbonPlay svg{width:19px;height:19px}
+.armix-ribbon-transport #ribbonPlay[aria-pressed=true]{--face-top:#367f8b;--face-bottom:#23515e;--ring-top:#acf0f4;--ring-bottom:#64aab9}
+.armix-ribbon-transport #ribbonStop{width:22px;height:22px;margin-left:5px;--ring-top:#849ca8;--ring-bottom:#536f7b;--face-top:#3a515e;--face-bottom:#283e49}
+.armix-ribbon-transport #ribbonStop svg{width:12px;height:12px}
+.armix-ribbon-transport button:hover:not(:disabled){filter:brightness(1.17)}
+.armix-ribbon-transport button:active:not(:disabled){transform:scale(.94)}
+.armix-ribbon-options{height:29px;gap:2px;padding:2px 4px;border:1px solid #7796a45e;border-radius:18px;background:linear-gradient(#a3c1cd0e,#11262f26)}
+.armix-ribbon-options button{height:23px;width:29px;border:1px solid transparent;border-radius:12px;background:transparent;color:#d8e7ed}
+.armix-ribbon-options button[aria-pressed=true]{background:linear-gradient(165deg,#329da8,#0e6a7b);color:#f2fdff}
+.armix-ribbon-options button:hover:not(:disabled){background-color:#a4c4d326;color:#fff}
+.armix-ribbon-player input[type=range]{appearance:none;-webkit-appearance:none;height:5px;min-width:45px;border:0;background:linear-gradient(90deg,#21cde7 var(--ribbon-fill,0%),#536c79 var(--ribbon-fill,0%));border-radius:9px;box-shadow:inset 0 1px #e3f8ff17;cursor:pointer;margin:0}
+.armix-ribbon-player input[type=range]::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:13px;height:13px;background:linear-gradient(#f7ffff,#d0e5ed);border:1px solid #78c5d6;border-radius:50%;box-shadow:0 0 4px #5bdcf64d}
+.armix-ribbon-player #ribbonSeek{flex:1;max-width:225px}
+.armix-ribbon-player #ribbonVolume{width:90px}
+.armix-ribbon-volume>svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.65}
+.armix-ribbon-scene{display:flex;gap:6px;align-items:center}
+.armix-ribbon-scene[hidden]{display:none!important}
+.armix-ribbon-scene button{border:1px solid #83c7d344;border-radius:15px;background:#78c8d514;padding:5px 10px;color:#b6edf6;font:400 11px "Segoe UI",Arial,sans-serif}
+.armix-ribbon-scene button:disabled{opacity:.44}
+html .app #armix-ribbon-commands.armix-ribbon #playerMini .ap-mini-cover{display:none!important}
+html .app #armix-ribbon-commands.armix-ribbon #playerMini{background:transparent;border:0}
+@media(max-width:1200px){.armix-ribbon-tab{flex-basis:112px}.armix-ribbon-player{gap:5px}.armix-ribbon-player #ribbonVolume{width:65px}html .app #armix-ribbon-commands.command-bar.armix-ribbon{gap:5px!important}}
+@media(max-width:760px){.armix-ribbon-tab{flex-basis:102px}.armix-ribbon-player{overflow-x:auto;scrollbar-width:thin}.armix-ribbon-player #ribbonSeek{flex:0 0 65px}.armix-ribbon-player .armix-ribbon-track{flex:0 0 115px}.armix-ribbon-player #ribbonVolume{width:55px}}
+
+/* Preserve access at the narrowest desktop widths without clipping transport. */
+html .app #armix-ribbon-commands>#ribbonMainMix[hidden]{display:none!important}
+@media(max-width:760px){html .app #armix-ribbon-commands[data-ribbon-tab=player]>#mixContext{display:none!important}html .app #armix-ribbon-commands[data-ribbon-tab=player] .armix-ribbon-player{overflow-x:auto;min-width:0;flex:1 1 0}.armix-ribbon-player>*{flex-shrink:0}}
+
+html .app #armix-ribbon-commands.command-bar.armix-ribbon{position:relative!important}
+@media(max-width:1100px){html .app #armix-ribbon-commands[data-ribbon-tab=player] .armix-ribbon-player{overflow-x:auto;min-width:0;flex:1 1 0}.armix-ribbon-player>*{flex-shrink:0}}

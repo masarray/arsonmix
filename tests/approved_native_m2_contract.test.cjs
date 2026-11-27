@@ -5089,7 +5089,7 @@ test("MV-9B bridge uses only accepted native snapshots for global FX, fences M4 
 });
 
 test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value race",()=>{
- const vm=require("node:vm"),listeners=new Map(),sent=[];
+ const vm=require("node:vm"),listeners=new Map(),sent=[],timers=[];
  let seq=101,wire=300,viewCalls=0;
  const scope={
    tracks:[],master:{id:1,name:"Master"},colors:["#456789"],
@@ -5114,7 +5114,7 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
    ArSonApprovedFxRackViewModel:fxRackVM,
    ArSonApprovedWireViewModel:wireVM,
    __ARMIX_NATIVE_SCOPE__:scope,addEventListener(){},
-   setTimeout(){return 0},clearTimeout(){},
+   setTimeout(fn,ms){timers.push({fn,ms});return timers.length},clearTimeout(){},
    queueMicrotask(fn){fn();},
    __ARMIX_SET_GLOBAL_FX_VIEW__(){viewCalls++;}
  };
@@ -5197,6 +5197,29 @@ test("MV-9B Global FX ignores rejected post-ACK snapshot after a pre-ACK value r
  assert.equal(button.getAttribute("aria-busy"),"false");
  hooks.consumeAction(track,"globalFxOn",action);
  assert.equal(requests().length,2,"stale enable click must not bypass FX again");
+ // Transport failure must release only this transaction without waiting for
+ // another snapshot or replaying a toggle against an unconfirmed state.
+ assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
+ const rejected=requests().at(-1).payload;
+ listeners.get("arMixGlobalFxAck")({requestId:rejected.requestId,ok:false,error:"busy"});
+ assert.equal(button.disabled,false,"rejection must immediately unlock the control");
+ assert.equal(button.getAttribute("aria-busy"),"false");
+ assert.equal(requests().length,3,"never replay rejected intent");
+ assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
+ const timeout=requests().at(-1).payload;
+ const expire=timers.filter(x=>x.ms===8000).at(-1).fn;
+ expire();
+ assert.equal(button.disabled,false,"timeout must not depend on another snapshot");
+ assert.equal(button.getAttribute("aria-busy"),"false");
+ assert.equal(requests().length,4);
+ assert.equal(win.__ARMIX_NATIVE_GLOBAL_FX__.toggle(),true);
+ const retry=requests().at(-1).payload;
+ assert.notEqual(retry.requestId,timeout.requestId);
+ expire();
+ listeners.get("arMixGlobalFxAck")({requestId:timeout.requestId,ok:false});
+ assert.equal(button.disabled,true,"obsolete timeout/ACK must not unlock newer request");
+ listeners.get("arMixGlobalFxAck")({requestId:retry.requestId,ok:false});
+ assert.equal(button.disabled,false);
 });
 
 test("MV-11 channel appearance projection rejects partial, stale and forged identities",()=>{
@@ -8056,4 +8079,43 @@ test("startup recovery and update use branded non-modal native notice, not stock
  const update=host.slice(host.indexOf("class ArSonMixUpdateNotice"),host.indexOf("class ConsoleApp"));
  assert.match(update,/MixerCaptionLookAndFeel/);assert.match(update,/ArSonNoticeButton/);
  assert.match(update,/onAccept_ && onAccept_\(\)/);
+});
+
+test("P0 owned floating FX retries an asset failure, coalesces opens and fences disconnected load",async()=>{
+ const vm=require("node:vm"),listeners=new Map(),sent=[],scripts=[];
+ const catalog="armix.builtin.auto-ducker.v1",channelId="1",instanceId="fx-one";
+ const banner={hidden:true},abort={hidden:true,addEventListener(){}};
+ let root=null,opens=0,observerCount=0;
+ const makeSnapshot=(instance=instanceId)=>({admitted:true,retained:false,device:{epoch:"1"},
+   graph:{channels:[{id:channelId,name:"Voice",inserts:[{id:instance,catalogId:catalog,bypassed:false}]}]},
+   raw:{globalFxBypassed:false}});
+ const payload={snapshot:makeSnapshot(),channelId,instanceId,catalogId:catalog,slot:0};
+ const backend={addEventListener:(name,fn)=>listeners.set(name,fn),emitEvent:(name,payload)=>sent.push({name,payload})};
+ const win={__JUCE__:{backend},ArSonApprovedNativeContract:{
+   normalizeSnapshot:s=>s,selectNativeReadModel:s=>({kind:"CHANNEL_ID",view:s}),
+   nativeHardwareConfiguration:()=>"hardware-A"},addEventListener(){}};
+ const doc={getElementById:id=>id==="fxWindowStatus"?banner:abort,addEventListener(){},
+   querySelector:()=>root,createElement:()=>({remove(){this.removed=true;}}),
+   head:{append:s=>scripts.push(s)}};
+ vm.runInNewContext(read("web/approved-floating-fx-bridge.js"),{
+   window:win,document:doc,MutationObserver:class{observe(){observerCount++;}},
+   requestAnimationFrame:()=>0,console},{timeout:1500});
+ const open=()=>listeners.get("arMixFloatingOpen")(payload);
+ const flush=()=>new Promise(resolve=>setImmediate(resolve));
+ open();open();assert.equal(scripts.length,1);
+ scripts[0].onerror();await flush();
+ assert.equal(scripts[0].removed,true);
+ assert.match(banner.textContent,/unavailable/);
+ open();open();assert.equal(scripts.length,2,"explicit retry creates one fresh request");
+ win.ArSonMixNativeDucker={open(){opens++;root={hidden:false,addEventListener(){},
+   getBoundingClientRect:()=>({width:400,height:300})};}};
+ listeners.get("arMixConsoleSnapshot")(makeSnapshot("replaced"));
+ scripts[1].onload();await flush();
+ assert.equal(opens,0,"must not open disconnected instance");
+ open();await flush();
+ assert.equal(scripts.length,2,"reuse successfully loaded allowlisted module");
+ assert.equal(opens,1);
+ assert.equal(observerCount,1);
+ assert.equal(sent.filter(x=>x.name==="arMixFloatingMounted").length,1);
+ open();await flush();assert.equal(opens,1,"duplicate focus does not recreate the editor");
 });
