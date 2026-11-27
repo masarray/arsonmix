@@ -112,3 +112,84 @@ test('bounded retry + callback watchdog cannot spin in realtime PCM',()=>{
   assert.match(main,/AudioContinuityRetry wasapiRecovery_/);
   assert.match(cmake,/P0DisplayIdlePreservesAudioAndDeviceRecoveryIntent/);
 });
+
+test('approved machine profile remains pending on IO failure and flushes on normal exit',()=>{
+  const persistence=main.split('void persistApprovedAudioSettings(bool shutdown)')[1]
+    .split('void timerCallback() override')[0];
+  assert.match(persistence,/if\(!shutdown&&now<deviceSettingsRetryAt_\)return/);
+  assert.match(persistence,/deviceSettingsRetryAt_=now\+5000/);
+  assert.ok(persistence.indexOf('return; // keep dirty')<persistence.indexOf('deviceSettingsDirty_ = false'));
+  assert.ok(persistence.indexOf('lastAudioXml_=text')<persistence.indexOf('deviceSettingsDirty_ = false'));
+  assert.match(main,/if\(!updaterProbeMode_\)persistApprovedAudioSettings\(true\)/);
+  assert.match(main,/mixerSessionWorker_\.finishForShutdown\(true\);\s*engine_\.stop\(\)/);
+});
+
+test('cold MON preparation is separate from ARM and waits for verified restored graph',()=>{
+ const s=main.split('void serviceStartupSecondaryPreparation()')[1].split('// Same-session, same-graph recovery only')[0];
+ assert.match(s,/mixerSessionRecoveryPending_\|\|startupFxGuard_/);
+ assert.match(s,/!engine_\.secondaryResumeReady\(\)/);
+ assert.match(s,/!engine_\.hasBoundMixerRoute\(\)/);
+ assert.match(s,/current.selection.id!=wanted.id/);
+ assert.match(s,/engine_\.connectSecondaryOutput\(wanted.name,wanted.id\)/);
+ assert.doesNotMatch(s,/enableSecondaryOutput\(|armSecondaryOutput\(true\)|setMonitorEnabled/);
+ assert.match(s,/generation!=startupSecondaryRetry_\.generation\(\)/);
+ assert.match(s,/epoch!=engine_\.dryRoutingLabEpoch\(\)/);
+ assert.match(s,/startupSecondaryRetry_\.failed\(now\)/);
+ assert.match(main,/cancelSecondaryContinuity\(\);\s*cancelStartupSecondaryPreparation\(\)/);
+ assert.match(main,/serviceSecondaryContinuity\(\);\s*serviceStartupSecondaryPreparation\(\)/);
+});
+
+test('saved ASIO cold-open retries are bounded, exact-registration and single-callback',()=>{
+ const s=main.split('void serviceStartupAsioRetry()')[1].split('void rememberSavedWasapiProfile(')[0];
+ assert.match(s,/engine_\.start\(&settings,true\)/);
+ assert.match(s,/startupAsioRetry_\.attempts\(\)>=3/);
+ assert.match(s,/generation!=startupAsioRetry_\.generation\(\)/);
+ assert.match(s,/!engine_\.savedAsioStartupRetryAvailable\(\)/);
+ assert.match(engine,/if\(!attached_\)\s*\{\s*deviceManager_\.addAudioCallback \(this\)/);
+ assert.match(engine,/startupAsioRetryIdentity_->sameDriverClass\(\*savedAsioPreflight\)/);
+ assert.match(main,/!mixerSessionStartupInspected_ && !pendingStartupAsioSettings_/);
+});
+test('last saved MAIN mute and previous-generation recovery remain muted after restore',()=>{
+ const s=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
+ assert.match(s,/const bool holdMain=usedPrevious\|\|\(doc.resumeMain.has_value\(\)&&!doc.resumeMain.value\(\)\)/);
+ assert.match(s,/if\(holdMain\)\s*\{\s*operatorOutputMuted_=true;\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
+ assert.match(main,/if\(mixerSessionRecoveryPending_\)return; \/\/ saved session has not been restored/);
+});
+
+test('smart idle checkpoint observes actual controls, debounces, and never captures armed audio',()=>{
+ const h=read('src/SessionCheckpointCadence.h');
+ const roster=read('engine/core/DynamicChannelRoster.h');
+ assert.match(h,/if\(!disarmed\) \{wasDisarmed_=false;return false;\}/);
+ assert.match(h,/quietMs=2000, retryMs=5000, refreshMs=60000/);
+ assert.match(h,/stamp!=stamp_/);
+ assert.match(h,/now-lastAttempt_<refreshMs/);
+ assert.match(roster,/if\(row.faderLinear!=gain\|\|row.pan!=pan\)\+\+liveStateRevision_/);
+ assert.match(engine,/dryRoutingLab_\.sessionLiveControlRevision\(\)/);
+ assert.match(main,/sessionCheckpointCadence_\.observe\(checkpointNow,engine_\.allOutputsDisarmed\(\)/);
+ assert.match(main,/sessionCheckpointCadence_\.failed\(monotonicMilliseconds\(\)\)/);
+ assert.doesNotMatch(main,/timerTicks_%720==0/);
+});
+test('recovered checkpoint is durably muted before atomic HEAD publication',()=>{
+ const s=read('src/NativeMixerSessionStore.h');
+ const recover=s.split('juce::String recoverPrevious(MixerSessionDocument& out')[1].split('private:')[0];
+ assert.ok(recover.indexOf('writePointer(marker,pointer)')<recover.indexOf('writePointer(head,pointer)'));
+ assert.match(recover,/verified.resumeMain=false/);
+ assert.match(s,/if\(recovered.isEmpty\(\)\|\|recovered==pointer\)doc.resumeMain=false/);
+});
+
+test('late WASAPI cold startup binds the device before one guarded FX restore',()=>{
+ const s=main.split('void serviceWasapiDeviceContinuity()')[1].split('void protectKnownFeedbackLoop(')[0];
+ assert.match(s,/else if\(pendingStartupWasapi_\)\s*\{[\s\S]*?if\(!engine_\.finishManualAudioSetup\(\)\)/);
+ assert.match(s,/pendingStartupWasapi_=false;\s*startupError_\.clear\(\)/);
+ assert.match(main,/!pendingStartupAsioSettings_ && !pendingStartupWasapi_ && !catalog_\.busy\(\)/);
+ assert.match(main,/pendingStartupWasapi_=saved&&startupError_\.isNotEmpty\(\)/);
+});
+test('MON persistence retries newest accepted intent without reusing stale preference',()=>{
+ const p=main.split('bool persistSecondaryPreference(')[1].split('bool forgetSecondaryStartupSelection(')[0];
+ assert.match(p,/if\(!immediate&&now<secondaryPreferenceRetryAt_\)return false/);
+ assert.match(p,/secondaryPreferenceRetryAt_=now\+5000/);
+ assert.ok(p.indexOf('secondaryPreference_=std::move(next)')<p.indexOf('secondaryPreferenceDirty_=true'));
+ assert.match(p,/return persistSecondaryPreference\(true\)/);
+ assert.match(main,/if\(!updaterProbeMode_\)\(void\)persistSecondaryPreference\(true\)/);
+ assert.match(main,/serviceSecondaryInventory\(\);\s*\(void\)persistSecondaryPreference\(\)/);
+});

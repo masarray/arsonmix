@@ -653,6 +653,9 @@ public:
               .withEventListener ("arMixHotkeyIntent", [this] (juce::var args) {
                   handleNativeHotkeyIntent(args);
               })
+              .withEventListener ("arMixRibbonWindow", [this] (juce::var args) {
+                  handleRibbonWindowCommand(args);
+              })
               .withEventListener ("arMixWindowFullscreen", [this] (juce::var args) {
                   // WebView2 forwards plain F11; JUCE owns native geometry.
                   if(args.getProperty("operation","").toString()=="TOGGLE")
@@ -805,14 +808,82 @@ public:
             setAlwaysOnTop(topmostBeforeOperatorFullscreen_);
             if(!maximisedBeforeOperatorFullscreen_)setFullScreen(false);
             else setFullScreen(true);
-            setTitleBarHeight(31);
+            setTitleBarHeight(ribbonChromeActive_ ? 0 : 31);
         }
         operatorFullscreen_=entering;
+        publishRibbonWindowState();
         if(browser_.isShowing())browser_.resized();
         auto reply=std::make_unique<juce::DynamicObject>();
         reply->setProperty("active",operatorFullscreen_);
         browser_.emitEventIfBrowserIsVisible("arMixWindowFullscreenState",
                                              juce::var(reply.release()));
+#endif
+    }
+
+    // Main window only. Retain the real native caption until the embedded
+    // ribbon has installed its controls and the existing GUI handshake succeeds.
+    // The existing message-thread tick also observes external OS state changes.
+    void publishRibbonWindowState()
+    {
+#if defined(_WIN32)
+        if(!ribbonChromeRequested_ || !browser_.loaded || !browser_.isShowing())return;
+        if(!ribbonChromeActive_) {
+            ribbonChromeActive_=true;
+            setTitleBarHeight(0);
+            // Keep allButtons flags and JUCE's Alt+F4 shortcut. Native
+            // buttons receive zero-height bounds from the existing LookAndFeel.
+            browser_.resized();
+        }
+        const bool maximised=isFullScreen() || operatorFullscreen_;
+        const int state=(maximised?1:0)|(operatorFullscreen_?2:0)|(isMinimised()?4:0);
+        if(state==lastRibbonWindowState_)return;
+        lastRibbonWindowState_=state;
+        auto reply=std::make_unique<juce::DynamicObject>();
+        reply->setProperty("active",true);
+        reply->setProperty("maximised",maximised);
+        reply->setProperty("fullscreen",operatorFullscreen_);
+        reply->setProperty("minimised",isMinimised());
+        browser_.emitEventIfBrowserIsVisible("arMixRibbonWindowState",juce::var(reply.release()));
+#endif
+    }
+
+    void handleRibbonWindowCommand(const juce::var& args)
+    {
+#if defined(_WIN32)
+        const auto operation=args.getProperty("operation","").toString();
+        if(operation=="READY") {
+            ribbonChromeRequested_=true;
+            lastRibbonWindowState_=-1;
+            publishRibbonWindowState();
+            return;
+        }
+        if(!ribbonChromeActive_ || !browser_.loaded || !isEnabled())return;
+        if(operation=="MINIMISE") {
+            if(operatorFullscreen_)toggleOperatorFullscreen();
+            setMinimised(true);
+        } else if(operation=="TOGGLE_MAXIMISE") {
+            if(operatorFullscreen_)toggleOperatorFullscreen();
+            else setFullScreen(!isFullScreen());
+        } else if(operation=="CLOSE") {
+            // Same application quit path as the native caption, Alt+F4 and
+            // normal shutdown: session checkpoint, plug-in teardown, audio stop.
+            juce::MessageManager::callAsync([safe=juce::Component::SafePointer<ConsoleWindow>(this)] {
+                if(safe)safe->closeButtonPressed();
+            });
+            return;
+        } else if(operation=="BEGIN_MOVE") {
+            // Never start an OS move from a tab/button or a released pointer.
+            // JS sends only after a threshold on the empty ribbon drag region.
+            if(isFullScreen() || operatorFullscreen_ || !(GetAsyncKeyState(VK_LBUTTON)&0x8000))return;
+            if(auto* peer=getPeer()) {
+                auto hwnd=static_cast<HWND>(peer->getNativeHandle());
+                ReleaseCapture();
+                PostMessageW(hwnd,WM_SYSCOMMAND,SC_MOVE|HTCAPTION,0);
+            }
+        } else return;
+        publishRibbonWindowState();
+#else
+        juce::ignoreUnused(args);
 #endif
     }
 
@@ -859,6 +930,9 @@ public:
         // lose DSP ACK/readback. Do not unregister it until final teardown.
         browser_.onNativeEvent=nullptr;
         engine_.devices().removeChangeListener (this);
+        // Flush the last verified machine profile before the driver is closed.
+        if(!updaterProbeMode_)persistApprovedAudioSettings(true);
+        if(!updaterProbeMode_)(void)persistSecondaryPreference(true);
         // An in-flight durable HEAD must finish and adopt its workspace.
         // Only an incomplete CONTROL capture may be abandoned.
         if(pendingRetainedFxCapture_ && !pendingRetainedFxCapture_->committing)
@@ -883,6 +957,9 @@ public:
             if(error.isNotEmpty())
                 diagnostics_.record("DYNAMIC_MIXER_EXIT_SAVE_REJECTED",error);
         }
+        // Wait for the final checkpoint result while CONTROL is still valid.
+        // The worker owns only immutable bytes and never waits for audio/UI.
+        mixerSessionWorker_.finishForShutdown(true);
         engine_.stop();
         // No UI/engine capture in the read-only worker. Join after audio
         // teardown so a slow endpoint enumeration cannot keep sound alive.
@@ -898,6 +975,9 @@ public:
 
 private:
     armix::ui::MixerCaptionLookAndFeel mixerCaption_;
+    bool ribbonChromeRequested_=false;
+    bool ribbonChromeActive_=false;
+    int lastRibbonWindowState_=-1;
     bool operatorFullscreen_=false;
     bool maximisedBeforeOperatorFullscreen_=false;
     bool topmostBeforeOperatorFullscreen_=false;
@@ -949,7 +1029,11 @@ private:
     juce::String mixerSessionId_,mixerSessionStatus_="NO_SAVED_SESSION";
     std::uint64_t workspaceGeneration_=0; // message-thread committed workspace identity
     juce::String mixerSessionError_,lastMixerSessionFingerprint_;
+    armix::session::SessionCheckpointCadence sessionCheckpointCadence_;
     bool mixerSessionStartupInspected_=false;
+    std::unique_ptr<juce::XmlElement> pendingStartupAsioSettings_;
+    bool pendingStartupWasapi_=false;
+    armix::device::AudioContinuityRetry startupAsioRetry_;
     bool sessionLifecycleShuttingDown_=false;
     bool mixerSessionRecoveryPending_=false;
     bool runtimeFxFaultNoticeSent_=false;
@@ -1198,6 +1282,7 @@ private:
         }
     }
     bool deviceSettingsDirty_ = false;
+    std::uint64_t deviceSettingsRetryAt_=0;
     // P0: last verified DIRECT WASAPI profile survives missing hardware;
     // never replace it with JUCE's incidental default after hotplug.
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> verifiedWasapiSetup_;
@@ -4053,6 +4138,7 @@ private:
         if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
         if(engine_.hasRuntimeFxFault()){autoMainEpoch_=0;return;}
         if(pendingRetainedFxCapture_ || retainedOfflineFxActive_)return; // never arm stale retained PCM
+        if(mixerSessionRecoveryPending_)return; // saved session has not been restored
         if(operatorOutputMuted_){autoMainEpoch_=0;return;} // explicit emergency stop
         // Only an explicit, verified CONTROL transaction may schedule MAIN
         // recovery. A generic desired flag cannot prove output-pair continuity.
@@ -4315,9 +4401,13 @@ private:
     std::optional<PendingVendorStream> pendingVendorStream_;
     // Machine-local preference is NOT ARM authority. Endpoint ID never leaves
     // native control. A portable show cannot silently select a different PC's sink.
-    struct SecondaryPreference { juce::String name; std::wstring id; };
+    struct SecondaryPreference { juce::String name; std::wstring id; bool prepare=true; };
     std::optional<SecondaryPreference> secondaryPreference_;
     bool secondaryPreferenceLoaded_=false;
+    bool secondaryPreferenceDirty_=false;
+    std::uint64_t secondaryPreferenceRetryAt_=0;
+    bool startupSecondaryPending_=true;
+    armix::device::AudioContinuityRetry startupSecondaryRetry_;
     juce::File secondaryPreferenceFile() const {
         return machineSettingsDirectory().getChildFile("secondary-output.json");
     }
@@ -4331,20 +4421,54 @@ private:
         if(data.getProperty("version",{})!=juce::var(1)||!name.isString()||!id.isString())return;
         const auto label=name.toString(),identity=id.toString();
         if(label.isEmpty()||label.length()>240||identity.isEmpty()||identity.length()>2048)return;
-        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer())};
+        const auto prepare=data.getProperty("prepareOnStartup",true); // migrate existing v1 preferences
+        if(!prepare.isBool())return;
+        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer()),bool(prepare)};
     }
-    void rememberSecondaryPreference(const LiveAudioEngine::SecondaryResumeIntent& intent) {
-        loadSecondaryPreference();
-        if(secondaryPreference_&&secondaryPreference_->name==intent.name&&
-           secondaryPreference_->id==intent.endpointId)return;
+    bool persistSecondaryPreference(bool immediate=false) {
+        if(!secondaryPreferenceDirty_)return true;
+        const auto now=monotonicMilliseconds();
+        if(!immediate&&now<secondaryPreferenceRetryAt_)return false;
+        const auto& wanted=*secondaryPreference_;
         auto data=std::make_unique<juce::DynamicObject>();
         data->setProperty("version",1);
-        data->setProperty("name",intent.name);
-        data->setProperty("endpointId",juce::String(intent.endpointId.c_str()));
+        data->setProperty("name",wanted.name);
+        data->setProperty("endpointId",juce::String(wanted.id.c_str()));
+        data->setProperty("prepareOnStartup",wanted.prepare);
         if(machineSettingsDirectory().createDirectory().wasOk()&&
            secondaryPreferenceFile().replaceWithText(juce::JSON::toString(juce::var(data.release()),true)))
-            secondaryPreference_=SecondaryPreference{intent.name,intent.endpointId};
-        else diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Output active; machine-local preference not saved");
+        {
+            secondaryPreferenceDirty_=false;
+            secondaryPreferenceRetryAt_=0;
+            return true;
+        }
+        if(secondaryPreferenceRetryAt_==0||immediate)
+            diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Machine-local preference not saved; retry pending");
+        secondaryPreferenceRetryAt_=now+5000;
+        return false;
+    }
+    bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true) {
+        loadSecondaryPreference();
+        if(name.isEmpty()||name.length()>240||endpointId.empty()||endpointId.size()>2048)return false;
+        if(secondaryPreference_&&secondaryPreference_->name==name&&
+           secondaryPreference_->id==endpointId&&secondaryPreference_->prepare==prepare)
+            return persistSecondaryPreference(true);
+        // The accepted operator intent changes immediately even if disk is
+        // temporarily unavailable. Never resurrect the old selection in
+        // this process, and retain the newest value for bounded retry.
+        SecondaryPreference next{name,endpointId,prepare};
+        secondaryPreference_=std::move(next);
+        secondaryPreferenceDirty_=true;
+        secondaryPreferenceRetryAt_=0;
+        return persistSecondaryPreference(true);
+    }
+    bool forgetSecondaryStartupSelection() {
+        loadSecondaryPreference();
+        return !secondaryPreference_||rememberSecondaryPreference(secondaryPreference_->name,secondaryPreference_->id,false);
+    }
+    void cancelStartupSecondaryPreparation() noexcept {
+        startupSecondaryPending_=false;
+        startupSecondaryRetry_.cancel();
     }
     // One bounded discovery flight for both output surfaces. Worker owns
     // only read-only MMDevice enumeration, never engine, GUI or audio objects.
@@ -4375,14 +4499,14 @@ private:
                label.length()>240||label==directName)continue;
             outputs.add(label);
             secondaryPublishedIds_.emplace(label,ep.id);
-            if(secondaryPreference_&&label==secondaryPreference_->name&&ep.id==secondaryPreference_->id)
+            if(secondaryPreference_&&secondaryPreference_->prepare&&label==secondaryPreference_->name&&ep.id==secondaryPreference_->id)
                 preferred=label;
         }
         auto result=std::make_unique<juce::DynamicObject>();
         result->setProperty("requestId",request);
         result->setProperty("outputs",juce::var(outputs));
         result->setProperty("preferredOutput",preferred);
-        result->setProperty("hasSavedOutput",secondaryPreference_.has_value());
+        result->setProperty("hasSavedOutput",secondaryPreference_&&secondaryPreference_->prepare);
         result->setProperty("error",inventory.error);
         if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputInventory",juce::var(result.release()));
     }
@@ -4414,6 +4538,55 @@ private:
         catch(...) {secondaryInventoryCache_=SecondaryInventory{{},"Cannot read playback devices"};}
         secondaryInventoryAt_=static_cast<std::uint64_t>(monotonicMilliseconds());
         emitSecondaryInventory();
+    }
+    // Cold-start preparation is intentionally separate from same-process ARM
+    // continuity. Only the existing secondary sink is opened; never arm it.
+    // Wait for the accepted restored graph and healthy primary callback.
+    void serviceStartupSecondaryPreparation() {
+        if(!startupSecondaryPending_||!audioEngineStarted_||!mixerSessionStartupInspected_)return;
+        loadSecondaryPreference();
+        if(!secondaryPreference_||!secondaryPreference_->prepare||vendorSafeRecoveryActive()||
+           engine_.hasRuntimeFxFault()) {cancelStartupSecondaryPreparation();return;}
+        if(mixerSessionRecoveryPending_||startupFxGuard_||deviceApply_.busy()||catalog_.busy()||
+           nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||logicalVendorEditor_||
+           pendingRetainedFxCapture_||retainedOfflineFxActive_||directCallbackStalled_||
+           pendingSecondaryStop_||engine_.hasPendingDirectRestore()||!engine_.secondaryResumeReady()||
+           !engine_.hasBoundMixerRoute())return;
+        if(engine_.secondaryArmed()) {cancelStartupSecondaryPreparation();return;}
+        const auto wanted=*secondaryPreference_;
+        if(engine_.secondarySelectedEndpointId()==wanted.id) {
+            cancelStartupSecondaryPreparation();return;
+        }
+        const auto now=monotonicMilliseconds();
+        startupSecondaryRetry_.fault(now);
+        if(!startupSecondaryRetry_.due(now))return;
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
+        if(!lease)return;
+        const auto generation=startupSecondaryRetry_.generation();
+        const auto epoch=engine_.dryRoutingLabEpoch(),revision=engine_.outputArmRevision();
+        const auto current=armix::device::WasapiEndpointIdentityGuard::resolveRender(wanted.name);
+        if(current.ok()&&current.selection.id!=wanted.id) {
+            diagnostics_.record("SECONDARY_STARTUP_IDENTITY_CHANGED","Saved MON endpoint replaced; explicit selection required");
+            cancelStartupSecondaryPreparation();
+            return;
+        }
+        if(generation!=startupSecondaryRetry_.generation())return;
+        const auto error=current.ok()?engine_.connectSecondaryOutput(wanted.name,wanted.id):current.error;
+        if(generation!=startupSecondaryRetry_.generation()||pendingSecondaryStop_||
+           epoch!=engine_.dryRoutingLabEpoch()||revision!=engine_.outputArmRevision()) {
+            engine_.disconnectSecondaryOutput();
+            cancelStartupSecondaryPreparation();
+            return;
+        }
+        if(error.isEmpty()&&!engine_.secondaryArmed()&&engine_.secondarySelectedEndpointId()==wanted.id) {
+            diagnostics_.record("SECONDARY_STARTUP_PREPARED","Verified MON connected; output remains disarmed");
+            cancelStartupSecondaryPreparation();
+            return;
+        }
+        if(error.isEmpty())engine_.disconnectSecondaryOutput();
+        startupSecondaryRetry_.failed(now);
+        if(startupSecondaryRetry_.attempts()==1)
+            diagnostics_.record("SECONDARY_STARTUP_WAITING",error.isNotEmpty()?error:juce::String("Endpoint readback incomplete"));
     }
     // Same-session, same-graph recovery only. Never carries ARM permission
     // across process restart, explicit disconnect, driver or route change.
@@ -5911,6 +6084,9 @@ private:
             mixerSessionStatus_="LIVE_MIXER_UNCHANGED";
             return "Live native mixer already edited; refusing to replace it";
         }
+        // A saved explicit MUTE or previous-generation recovery must not be
+        // undone by a later ordinary input/FX edit scheduling automatic MAIN.
+        const bool holdMain=usedPrevious||(doc.resumeMain.has_value()&&!doc.resumeMain.value());
         error=engine_.restoreNativeMixerSession(std::move(doc),states,
             plan.replacePristineStartup,nullptr,plan.bindingMode);
         if(error.isNotEmpty()) {
@@ -5922,6 +6098,11 @@ private:
         }
         mixerSessionRecoveryPending_=false;
         acceptSessionIdentity();
+        if(holdMain) {
+            operatorOutputMuted_=true;
+            autoMainEpoch_=0;
+            engine_.setMonitorEnabled(false);
+        }
         if(plan.resumeMain)
             requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
@@ -6038,6 +6219,7 @@ private:
                 safe->diagnostics_.record("DYNAMIC_MIXER_SAVED",
                     "AUTO_CHECKPOINT");
             }else{
+                safe->sessionCheckpointCadence_.failed(monotonicMilliseconds());
                 safe->mixerSessionStatus_="SAVE_REJECTED";
                 safe->mixerSessionError_=failure;
                 safe->diagnostics_.record("DYNAMIC_MIXER_SAVE_REJECTED",failure);
@@ -6200,12 +6382,13 @@ private:
     }
     void chooseFxRackFile(const juce::var& args) {
         const auto op=args.getProperty("operation",{}).toString();
-        const bool deactivate=op=="DEACTIVATE",save=op=="SAVE"||deactivate,append=op=="INSERT";
+        const bool deactivate=op=="DEACTIVATE",single=op=="SAVE_SINGLE"||deactivate;
+        const bool save=op=="SAVE"||single,append=op=="INSERT";
         const auto token=args.getProperty("instanceId",{}).toString();
         const auto slotValue=args.getProperty("slot",{});
-        const int slot=deactivate&&slotValue.isInt()?static_cast<int>(slotValue):-1;
+        const int slot=single&&slotValue.isInt()?static_cast<int>(slotValue):-1;
         std::uint64_t ep=0,rev=0,roster=0,id=0;
-        if((!save&&!append&&op!="OPEN")||(deactivate&&(slot<0||slot>=8||token.isEmpty()))||
+        if((!save&&!append&&op!="OPEN")||(single&&(slot<0||slot>=8||token.isEmpty()))||
            !armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)||
            !armix::console::approvedNativeId(args.getProperty("graphRevision",{}),rev)||
            !armix::console::approvedNativeId(args.getProperty("rosterRevision",{}),roster)||
@@ -6217,9 +6400,9 @@ private:
            catalog_.busy()||logicalVendorEditor_||!engine_.rackFileAllowed(ep,rev,roster,channel))
             return emitNotice("FX rack file: disarm MAIN and STREAM; use a current native rack",true);
         auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-        if(save)start=start.getChildFile(deactivate?"Saved-FX.arfx":"Vocal-Rack.arfx");
+        if(save)start=start.getChildFile(single?"Saved-FX.arfx":"Vocal-Rack.arfx");
         fxRackFileChooser_=std::make_unique<juce::FileChooser>(
-            deactivate?"Deactivate and save FX":save?"Save FX Rack":append?
+            deactivate?"Deactivate and save FX":single?"Save FX":save?"Save FX Rack":append?
                 "Insert saved FX":"Open FX Rack (replace)",start,"*.arfx",true);
         using Flags=juce::FileBrowserComponent;
         fxRackFileChooser_->launchAsync(Flags::canSelectFiles|
@@ -6227,12 +6410,19 @@ private:
             [safe=juce::Component::SafePointer<ConsoleWindow>(this),ep,rev,roster,channel,
              token,slot,save,deactivate,append](const juce::FileChooser& picker){
                 if(!safe)return;
-                const auto file=picker.getResult();
+                auto file=picker.getResult();
                 juce::String error;
+                if(save&&file!=juce::File{}&&file.getFileExtension().isEmpty()) {
+                    file=file.withFileExtension(".arfx");
+                    // The chooser may have confirmed a different path. Never
+                    // overwrite the normalized name without explicit consent.
+                    if(file.exists())error="Choose the existing .arfx file explicitly to overwrite it";
+                }
                 bool archived=false;
                 if(file!=juce::File{}){
                     try{
-                        if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
+                        if(error.isNotEmpty()){} // preserve the file-name rejection
+                        else if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
                            safe->mixerSessionWorker_.busy()||safe->catalog_.busy()||safe->logicalVendorEditor_||
                            !safe->engine_.rackFileAllowed(ep,rev,roster,channel))
                             error="Device or rack changed; retry";
@@ -6259,11 +6449,11 @@ private:
                             safe->emitApprovedNativeSnapshot();
                         }
                         safe->emitNotice(deactivate?"FX saved and deactivated; latency plan rebuilt. MAIN/STREAM remain disarmed.":
-                            save?"FX Rack saved":append?"Saved FX inserted; output remains disarmed":
+                            save?(slot>=0?"FX saved":"FX Rack saved"):append?"Saved FX inserted; output remains disarmed":
                             "FX Rack opened; output remains disarmed");
                     }else safe->emitNotice((archived?juce::String("FX saved; deactivation rejected: "):
                         juce::String("FX rack unchanged: "))+error,true);
-                }
+                }else safe->emitNotice("FX rack file operation cancelled");
                 juce::MessageManager::callAsync([safe]{if(safe)safe->fxRackFileChooser_.reset();});
             });
     }
@@ -7155,7 +7345,19 @@ private:
            (action=="monitor"&&args.getProperty("value",{}).isBool()&&!bool(args.getProperty("value",{})))) {
             pendingVendorStream_.reset();
             cancelSecondaryContinuity();
+            cancelStartupSecondaryPreparation();
         }
+        if(action=="audioDeviceApply"||action=="audioSetup"||action=="audioDriverPanel"||
+           action=="nativeMixerNewLive"||action=="nativeMixerNewOffline"||
+           action=="nativeMixerFileOpen"||action=="nativeMixerOpenArchive") {
+            cancelStartupAsioRetry();
+            pendingStartupWasapi_=false;
+        }
+        if(action=="nativeMixerNewLive"||action=="nativeMixerNewOffline"||
+           action=="nativeMixerFileOpen"||action=="nativeMixerOpenArchive"||
+           action=="routingDryStop"||action=="routingDryApply"||
+           action=="routingDryShowRecall"||action=="routingDryShowRecover")
+            cancelStartupSecondaryPreparation();
         if(deviceApply_.busy()&&action=="secondaryOutputStop") {
             // STOP supersedes even an in-flight vendor open. Close the PCM
             // gate now; defer native object destruction until lease release.
@@ -10703,9 +10905,22 @@ private:
                 if(auto intent=engine_.captureSecondaryResumeIntent()) {
                     if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
                         secondaryContinuity_=SecondaryContinuity{*intent,engine_.dryRoutingLabEpoch(),engine_.outputArmRevision()};
-                    rememberSecondaryPreference(*intent);
                 }
+            // Persist the verified selection on CONNECT as well as ENABLE/ARM.
+            // STOP/disarm never turns a saved preference into startup ARM consent.
+            bool preferenceSaved=true;
+            if(error.isEmpty()&&(action=="secondaryOutputConnect"||action=="secondaryOutputEnable"||
+               (action=="secondaryOutputArm"&&bool(value)))) {
+                const auto name=engine_.status().getProperty("secondaryOutputName","").toString();
+                preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId());
+                if(!preferenceSaved)emitNotice("Output changed, but MON selection could not be saved. Check settings folder permissions.",true);
+            }
+            if(error.isEmpty()&&action=="secondaryOutputStop") {
+                preferenceSaved=forgetSecondaryStartupSelection();
+                if(!preferenceSaved)emitNotice("MON disconnected, but startup preference could not be saved. Check settings folder permissions.",true);
+            }
             auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("preferenceSaved",preferenceSaved);
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
             const auto latest=engine_.status();
@@ -11633,6 +11848,48 @@ private:
 
     // Load only the previously committed device XML, even when hardware
     // is absent at cold start. A JUCE default is never an approved profile.
+    void cancelStartupAsioRetry() noexcept {
+        pendingStartupAsioSettings_.reset();
+        startupAsioRetry_.cancel();
+    }
+    // A cold-open retry is not a device switch. Preserve the exact XML and
+    // registered class verified on the initial failed attempt. No new
+    // callback registration, fallback backend, or graph mutation while waiting.
+    void serviceStartupAsioRetry() {
+        if(!pendingStartupAsioSettings_)return;
+        if(vendorSafeRecoveryActive()||engine_.hasRuntimeFxFault()||
+           !engine_.savedAsioStartupRetryAvailable()||engine_.directRouteAuthorized()||
+           engine_.hasRetainedNativeSession()) {cancelStartupAsioRetry();return;}
+        if(deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||
+           mixerSessionWorker_.busy()||logicalVendorEditor_||catalog_.busy())return;
+        const auto now=monotonicMilliseconds();
+        if(!startupAsioRetry_.due(now))return;
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::asioRecovery);
+        if(!lease)return;
+        const auto generation=startupAsioRetry_.generation();
+        // Keep a local copy across any nested vendor message-loop callback.
+        const auto settings=*pendingStartupAsioSettings_;
+        const auto error=engine_.start(&settings,true);
+        if(generation!=startupAsioRetry_.generation()) {
+            // No output was armed. Never let a superseded cold start resume.
+            engine_.beginManualAudioSetup();
+            return;
+        }
+        startupError_=error;
+        if(error.isEmpty()) {
+            deviceSettingsDirty_=true;
+            cancelStartupAsioRetry();
+            diagnostics_.record("SAVED_ASIO_STARTUP_RESTORED","Exact saved registration and device reopened");
+            return;
+        }
+        startupAsioRetry_.failed(now);
+        if(!engine_.savedAsioStartupRetryAvailable()||startupAsioRetry_.attempts()>=3) {
+            cancelStartupAsioRetry();
+            diagnostics_.record("SAVED_ASIO_STARTUP_WAIT_EXHAUSTED",error);
+            emitNotice("Saved ASIO not ready. Session preserved; check Audio I/O.",true);
+        }
+    }
+
     void rememberSavedWasapiProfile(const juce::XmlElement* saved) {
         if(!saved || saved->getTagName()!="DEVICESETUP" ||
            saved->getStringAttribute("deviceType")!="Windows Audio")return;
@@ -11770,6 +12027,11 @@ private:
             matchesPinnedWasapiReadback(*verifiedWasapiSetup_,live,device);
         if(expected && !directCallbackStalled_) {
             wasapiRecovery_.recovered();
+            if(pendingStartupWasapi_&&engine_.hasBoundMixerRoute()) {
+                pendingStartupWasapi_=false;
+                startupError_.clear();
+                deviceSettingsDirty_=true;
+            }
             // A short JUCE STOP/START must not leave MAIN latched off.
             if(engine_.mainInterruptedByDevice() && engine_.wantsMainContinuation() &&
                !operatorOutputMuted_)requestAutomaticMain(false);
@@ -11800,10 +12062,22 @@ private:
                actual.outputDeviceName!=wanted.outputDeviceName ||
                !matchesPinnedWasapiReadback(wanted,actual,opened))
                 error="Previously verified WASAPI endpoints are not available";
-            else if(!finishAudioSetupAndRecoverMixer())
+            else if(pendingStartupWasapi_) {
+                // Do not call restoreSavedMixerSession from the retry loop:
+                // next CONTROL tick runs the normal VST3 startup crash guard
+                // once, after exact device verification and silent binding.
+                if(!engine_.finishManualAudioSetup())
+                    error="WASAPI reopened, but silent native mixer is not ready";
+            } else if(!finishAudioSetupAndRecoverMixer())
                 error="WASAPI reopened, but retained native mixer binding is not ready";
         }
         if(error.isEmpty()) {
+            if(pendingStartupWasapi_) {
+                pendingStartupWasapi_=false;
+                startupError_.clear();
+                deviceSettingsDirty_=true;
+                diagnostics_.record("WASAPI_STARTUP_DEVICE_READY","Saved pair verified; guarded mixer restore scheduled");
+            }
             wasapiRecovery_.recovered();
             directCallbackStalled_=false;
             callbackProgressMs_=monotonicMilliseconds();
@@ -11854,6 +12128,39 @@ private:
         }
     }
 
+    // CONTROL only. A failed disk write remains pending, with bounded retry;
+    // never serialize an absent/temporary/unverified driver.
+    void persistApprovedAudioSettings(bool shutdown) {
+        if (deviceSettingsDirty_) {
+            const auto now=monotonicMilliseconds();
+            if(!shutdown&&now<deviceSettingsRetryAt_)return;
+            auto* activeDevice=engine_.devices().getCurrentAudioDevice();
+            const bool verified=!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
+                engine_.directRouteAuthorized() && !engine_.hasRetainedUnboundMixer() &&
+                !deviceApply_.busy() && activeDevice != nullptr && activeDevice->isOpen();
+            if(!verified)return;
+            auto xml=engine_.devices().createStateXml();
+            if(!xml)return;
+            const auto text=xml->toString();
+            if(text!=lastAudioXml_) {
+                const auto machineFolder=machineSettingsDirectory();
+                if(machineFolder.createDirectory().failed()||
+                   !machineFolder.getChildFile("audio-devices.xml").replaceWithText(text)) {
+                    const bool firstFailure=deviceSettingsRetryAt_==0;
+                    deviceSettingsRetryAt_=now+5000;
+                    if(firstFailure||shutdown) {
+                        diagnostics_.record("DEVICE_SAVE_FAIL","Cannot persist audio setup in machine AppData");
+                        emitNotice("Audio setup is active but could not be saved on this PC. Check AppData folder permissions.",true);
+                    }
+                    return; // keep dirty and retain the prior verified file
+                }
+                lastAudioXml_=text;
+            }
+            deviceSettingsDirty_ = false;
+            deviceSettingsRetryAt_=0;
+        }
+    }
+
     void timerCallback() override
     {
 #if defined(_WIN32)
@@ -11872,6 +12179,7 @@ private:
             onAction(stop);
         }
         serviceSecondaryInventory();
+        (void)persistSecondaryPreference();
         servicePhysicalLoopback();
         // Always disabled unless the user explicitly starts a bounded trace.
         const bool timing = guiPerf_.active;
@@ -11905,6 +12213,7 @@ private:
             setVisible (true);
             browser_.resized(); // first visible HWND, not its pre-splash size
         }
+        publishRibbonWindowState();
         // Existing message-thread 12 Hz timer: no extra worker or DSP work.
         // Never allow a hidden broken GUI to continue unattended audio.
         if (!browser_.loaded && !webViewStartupNoticeSent_ &&
@@ -11948,6 +12257,17 @@ private:
             rememberSavedWasapiProfile(saved.get());
             startupError_ = engine_.start (saved.get());
             engine_.devices().addChangeListener (this);
+            if(saved&&startupError_.isNotEmpty()&&engine_.savedAsioStartupRetryAvailable()&&
+               !vendorSafeRecoveryActive()) {
+                pendingStartupAsioSettings_=std::make_unique<juce::XmlElement>(*saved);
+                startupAsioRetry_.fault(monotonicMilliseconds());
+            }
+            // A missing saved WASAPI endpoint must not instantiate vendor FX
+            // against an unverified route. Existing endpoint continuity
+            // opens only the pinned pair, then the normal guarded startup
+            // path owns the single checkpoint restore.
+            pendingStartupWasapi_=saved&&startupError_.isNotEmpty()&&
+                verifiedWasapiSetup_.has_value()&&!vendorSafeRecoveryActive();
             diagnostics_.record ("STARTUP",
                 startupError_.isEmpty() ? "Audio device initialized" : startupError_);
             // Only pristine Windows first runs are candidates. Saved sessions,
@@ -11961,7 +12281,10 @@ private:
         // Factory entries are published only after asynchronous manifest
         // verification. Restore once they are visible, never reject a saved
         // factory insert simply because the startup catalog is still busy.
-        if(!mixerSessionStartupInspected_ && !catalog_.busy()) {
+        serviceStartupAsioRetry();
+        if(!mixerSessionStartupInspected_ && !pendingStartupAsioSettings_ && !pendingStartupWasapi_ && !catalog_.busy() &&
+           !deviceApply_.busy()&&!mixerSessionWorker_.busy()&&!logicalVendorEditor_&&
+           !nativeShowBusy_&&!studioBackupBusy_&&!engine_.isGraphSwitchPending()) {
             mixerSessionStartupInspected_=true;
             if(armix::session::NativeMixerSessionStore(settingsDirectory()).exists()){
                 mixerSessionRecoveryPending_=true;
@@ -12070,15 +12393,23 @@ private:
         serviceAutomaticMain();
         serviceVendorStreamRecovery();
         serviceSecondaryContinuity();
-        // Autosave only while ALL outputs are muted. Vendor-state reads
-        // happen on CONTROL; disk commits run on ONE serialized IO worker.
-        // A performance with armed speakers/stream is never interrupted for
-        // snapshot capture. One bounded attempt per 60 seconds of idle UI.
-        if(audioEngineStarted_ && timerTicks_%720==0 &&
-           engine_.allOutputsDisarmed() && !mixerSessionWorker_.busy() &&
-           !nativeShowBusy_ && !studioBackupBusy_ && !catalog_.busy() &&
-           !engine_.isGraphSwitchPending() && !engine_.hasTemporaryDiagnosticDevice())
-            (void)saveMixerSession(false);
+        serviceStartupSecondaryPreparation();
+        // Autosave only while ALL outputs are muted. Detect actual accepted
+        // mixer-control changes without hashing or calling vendor code on
+        // every timer tick. Unknown vendor edits still get periodic capture.
+        // Disk commits stay on the existing serialized IO worker.
+        const bool checkpointReady=audioEngineStarted_&&mixerSessionStartupInspected_&&
+            !mixerSessionRecoveryPending_&&!startupFxGuard_&&!vendorSafeRecoveryActive()&&
+            !engine_.hasRuntimeFxFault()&&!retainedOfflineFxActive_&&!pendingRetainedFxCapture_&&
+            engine_.directRouteAuthorized()&&engine_.hasBoundMixerRoute()&&
+            !mixerSessionWorker_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!catalog_.busy()&&
+            !logicalVendorEditor_&&!engine_.isGraphSwitchPending()&&!engine_.hasTemporaryDiagnosticDevice();
+        const auto checkpointNow=monotonicMilliseconds();
+        if(sessionCheckpointCadence_.observe(checkpointNow,engine_.allOutputsDisarmed(),
+                 checkpointReady,engine_.sessionCheckpointStamp())) {
+            const auto error=saveMixerSession(false);
+            if(error.isNotEmpty())sessionCheckpointCadence_.failed(checkpointNow);
+        }
         if (engine_.finalizeGraphSwitch())
         {
             ++fxGraphRevision_;
@@ -12138,38 +12469,7 @@ private:
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (health,evidence.memory), true));
         }
 
-        if (deviceSettingsDirty_)
-        {
-            // Keep a newly approved device selection pending while the
-            // driver is temporarily closed; never serialize JUCE's empty
-            // default and never silently discard the unsaved user binding.
-            auto* activeDevice=engine_.devices().getCurrentAudioDevice();
-            if (!engine_.hasTemporaryDiagnosticDevice() && !engine_.independentClockActive() &&
-                engine_.directRouteAuthorized() && !engine_.hasRetainedUnboundMixer() &&
-                !deviceApply_.busy() &&
-                activeDevice != nullptr && activeDevice->isOpen())
-            if (auto xml = engine_.devices().createStateXml())
-            {
-                deviceSettingsDirty_ = false;
-                const auto text = xml->toString();
-                if (text != lastAudioXml_)
-                {
-                    // A clean portable PC has no AppData/AR-MIX-Studio
-                    // directory yet. Create the machine-local parent before
-                    // writing the approved ASIO/WASAPI device XML.
-                    const auto machineFolder = machineSettingsDirectory();
-                    const auto folderReady = machineFolder.createDirectory().wasOk();
-                    if (!folderReady ||
-                        !machineFolder.getChildFile ("audio-devices.xml").replaceWithText (text))
-                    {
-                        diagnostics_.record ("DEVICE_SAVE_FAIL",
-                            "Cannot persist audio setup in machine AppData");
-                        emitNotice ("Audio setup is active but could not be saved on this PC. Check AppData folder permissions.", true);
-                    }
-                    else lastAudioXml_ = text;
-                }
-            }
-        }
+        persistApprovedAudioSettings(false);
         // A hidden/reloading WebView MUST NOT suspend the native player's
         // control-thread ACK, Auto Next, or A-B loop. Browser events are
         // optional observers; JUCE transport is the authority.

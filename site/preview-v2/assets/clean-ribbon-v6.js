@@ -8,22 +8,147 @@ const icon=(path,fill=false)=>'<svg viewBox="0 0 24 24" aria-hidden="true" '+(fi
 const play=icon('<path d="M8 4.5a1 1 0 0 1 1.5-.85l12 7.5a1 1 0 0 1 0 1.7l-12 7.5A1 1 0 0 1 8 19.5z"/>',true);
 const pause=icon('<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',true);
 const button=(id,label,glyph)=>'<button type="button" id="'+id+'" title="'+label+'" aria-label="'+label+'">'+glyph+'</button>';
+// Keep original command nodes and listeners. Only their presentation page changes.
+function installCompactMenu(more){
+ const panel=more.querySelector('.more-tools-panel');
+ if(!panel)return null;
+ const glyphs={
+ channel:'<path d="M5 3v18M12 3v18M19 3v18M3 9h4m3 7h4m3-9h4"/>',
+ view:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+ scenes:'<path d="m12 3 10 5-10 5L2 8zM2 12l10 5 10-5M2 16l10 5 10-5"/>',
+ settings:'<circle cx="12" cy="12" r="3"/><path d="m12 2 2 3 3-.1 1.5 2.6-1.4 2.7 1.4 2.8 3 .9-1 3-3 .5-2 2.5-3-1-3 1-2-2.5-3-.5-1-3 3-.9L7 10 5.5 7.5 7 5l3 .1z"/>',
+ diagnostics:'<path d="M2 12h4l3-7 4 14 3-7h6"/>'
+ };
+ const groups=[['channel','Channel'],['view','View'],['scenes','Scenes & Shows'],['settings','Settings'],['diagnostics','Diagnostics']];
+ const nav=new Map();
+ const back=document.createElement('button');back.type='button';back.className='armix-menu-back';
+ back.innerHTML=icon('<path d="m15 5-7 7 7 7"/>')+'<span>Back</span>';
+ panel.prepend(back);
+ for(const [id,label] of groups){
+   const row=document.createElement('button');row.type='button';row.className='armix-menu-category';row.dataset.menuCategory=id;
+   row.innerHTML=icon(glyphs[id])+'<span>'+label+'</span>'+icon('<path d="m9 5 7 7-7 7"/>');
+   row.addEventListener('click',()=>show(id,true));nav.set(id,row);panel.append(row);
+ }
+ let page='root';
+ const channelIds=new Set(['addTrack','addBus','addFx','addGroupBus','addGroupSelected','convertSelectedReverb','copy','paste','group','ungroup']);
+ const viewIds=new Set(['mode','viewFilter','ribbonFilterMenu']);
+ const sceneIds=new Set(['sceneSafe','sceneSelect','saveScene','recallScene']);
+ const headings=new Map([['PROJECT · MIXER SESSION','root'],['CHANNEL SETUP','channel'],['VIEW & SELECTION','channel'],['WIRE TOOLS','settings'],['REFERENCE TOOLS','diagnostics'],['AUDIO / SAFETY','settings'],['AUDIO HEALTH','diagnostics'],['STUDIO / VERIFIED SHOWS','scenes']]);
+ function classify(){
+   let section='diagnostics';
+   for(const el of panel.children){
+     if(el===back||el.classList.contains('armix-menu-category'))continue;
+     const label=el.textContent.trim();
+     if(el.matches('.more-tools-caption')&&headings.has(label)){
+       section=headings.get(label);el.dataset.armixMenuHeading='true';el.dataset.armixMenuActive='false';continue;
+     }
+     let group=section;
+     if(el.matches('.mixer-file-tool,.reference-file-menu,[data-native-emergency-output]'))group='root';
+     else if(channelIds.has(el.id))group='channel';
+     else if(viewIds.has(el.id))group='view';
+     else if(sceneIds.has(el.id))group='scenes';
+     else if(el.matches('[data-wire-open],.arNativeAdvancedRecovery'))group='settings';
+     // Unknown commands are retained in their original section (or Diagnostics).
+     el.dataset.armixMenuPage=group;el.dataset.armixMenuActive=String(group===page);
+   }
+   for(const [id,row] of nav){
+     row.hidden=page!=='root'||!Array.from(panel.children).some(el=>el.dataset.armixMenuPage===id&&!el.hidden);
+   }
+   back.hidden=page==='root';
+   back.querySelector('span').textContent=page==='root'?'Back':groups.find(g=>g[0]===page)[1];
+   panel.dataset.armixMenuPage=page;
+ }
+ function show(id,focus=false){
+   page=id;classify();panel.scrollTop=0;
+   if(focus)(id==='root'?nav.get(lastPage):back)?.focus({preventScroll:true});
+ }
+ let lastPage='channel';
+ for(const [id,row] of nav)row.addEventListener('click',()=>{lastPage=id;});
+ back.addEventListener('click',()=>show('root',true));
+ more.addEventListener('toggle',()=>{if(!more.open)show('root');});
+ more.addEventListener('keydown',e=>{
+   if(e.key!=='Escape'||!more.open)return;
+   e.preventDefault();e.stopPropagation();
+   if(page!=='root')show('root',true);else{more.open=false;more.querySelector('summary').focus();}
+ });
+ // Direct insertions only: native bridge installs the real commands at startup.
+ new MutationObserver(classify).observe(panel,{childList:true});
+ classify();
+ return {show};
+}
+
 function install(){
  const header=document.querySelector('.app > .window-title'),bar=document.querySelector('.app > .command-bar');
  const more=$('moreTools'),summary=more?.querySelector('summary');
  if(!header||!bar||!summary||bar.classList.contains('armix-ribbon'))return;
  header.classList.add('armix-ribbon-nav');bar.classList.add('armix-ribbon');
  const tabs=document.createElement('div');tabs.className='armix-ribbon-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Mixer workflows');
- tabs.innerHTML='<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><linearGradient id="armix-ribbon-normal" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#516471"/><stop offset=".45" stop-color="#344651"/><stop offset="1" stop-color="#25343f"/></linearGradient><linearGradient id="armix-ribbon-active" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#36b8da"/><stop offset="1" stop-color="#087f9f"/></linearGradient></defs></svg>';
+ const shape=(id,w,cls='')=>{const end=w-24;return '<svg class="'+cls+'" viewBox="0 0 '+w+' 32" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="armix-shape-'+id+'" x1="0" y1="0" x2="0" y2="1"><stop style="stop-color:var(--tab-top)"/><stop offset=".45" style="stop-color:var(--tab-mid)"/><stop offset="1" style="stop-color:var(--tab-bottom)"/></linearGradient></defs><path d="M0 0 H'+end+' Q'+(end+7)+' 0 '+(end+13)+' 12 L'+w+' 32 H0 Z" fill="url(#armix-shape-'+id+')"/></svg>';};
  const names=[['mixer','Mixer'],['player','Player'],['fx','FX Rack'],['routing','Routing'],['scenes','Scenes'],['io','Audio I/O']];
  for(const [id,name] of names){
-   const tab=document.createElement('button');tab.type='button';tab.id='ribbon-tab-'+id;tab.className='armix-ribbon-tab';tab.dataset.workflow=id;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','armix-ribbon-commands');tab.innerHTML='<svg viewBox="0 0 126 32" preserveAspectRatio="none" aria-hidden="true"><path fill="url(#armix-ribbon-normal)" d="M0 .5 H99 Q106 .5 112 12 L126 31.5 H0 Z"/></svg><span>'+name+'</span>';tabs.append(tab);
+   const tab=document.createElement('button');tab.type='button';tab.id='ribbon-tab-'+id;tab.className='armix-ribbon-tab';tab.dataset.workflow=id;tab.setAttribute('role','tab');tab.setAttribute('aria-controls','armix-ribbon-commands');tab.style.zIndex=String(6-names.findIndex(n=>n[0]===id));tab.innerHTML=shape(id,126)+'<span>'+name+'</span>';tabs.append(tab);
  }
  header.append(tabs);bar.id='armix-ribbon-commands';
- summary.innerHTML='<svg class="armix-ribbon-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>ArSon<span style="color:#51d4ef">Mix</span></span>';
+ summary.innerHTML=shape('menu',151,'armix-ribbon-menu-shape')+'<svg class="armix-ribbon-menu-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="armix-menu-icon-closed" d="M4 6h16M4 12h16M4 18h16"/><path class="armix-menu-icon-open" d="m6 15 6-6 6 6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>ArSon<span class="armix-menu-brand-accent">Mix</span></span>';
  summary.setAttribute('aria-label','ArSonMix application menu');
+ const compactMenu=installCompactMenu(more);
+ const filter=$('viewFilter');
+ if(filter){
+   const jump=document.createElement('button');jump.type='button';jump.id='ribbonFilterMenu';jump.className='tool';jump.textContent='Channel filter…';
+   jump.addEventListener('click',()=>{more.open=false;select('mixer');filter.focus();});
+   filter.before(jump);bar.append(filter);
+   delete filter.dataset.armixMenuActive;delete filter.dataset.armixMenuPage;
+ }
+ const navTools=document.createElement('div');navTools.className='armix-ribbon-nav-tools';
+ navTools.innerHTML='<span class="armix-ribbon-nav-status" id="ribbonPlayerStatus"></span>'+button('ribbonQuickPlayer','Open Player',icon('<path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/>'));
+ header.append(navTools);
+ // Exact V6 right-hand caption: independent from the tablist, no web fullscreen
+ // or browser close simulation. Only the native host can admit these actions.
+ const caption=document.createElement('div');caption.className='armix-ribbon-window-controls';
+ caption.setAttribute('role','group');caption.setAttribute('aria-label','Window controls');
+ const maxGlyph=icon('<rect x="5" y="5" width="14" height="14" rx=".5"/>');
+ const restoreGlyph=icon('<path d="M9 5h10v10h-4"/><rect x="5" y="9" width="10" height="10" rx=".5"/>');
+ caption.innerHTML=button('ribbonWinMin','Minimize',icon('<path d="M5 12h14"/>'))+
+   button('ribbonWinMax','Maximize',maxGlyph)+button('ribbonWinClose','Close',icon('<path d="m6 6 12 12M18 6 6 18"/>'));
+ header.append(caption);
+ const windowBackend=window.__JUCE__?.backend;
+ const windowSend=operation=>windowBackend?.emitEvent?.('arMixRibbonWindow',{operation});
+ let windowAdmitted=false,windowMaximised=false;
+ for(const b of caption.querySelectorAll('button'))b.disabled=true;
+ if(windowBackend?.emitEvent&&windowBackend?.addEventListener){
+   windowBackend.addEventListener('arMixRibbonWindowState',state=>{
+     if(state?.active!==true||typeof state.maximised!=='boolean')return;
+     windowAdmitted=true;windowMaximised=state.maximised;
+     for(const b of caption.querySelectorAll('button'))b.disabled=false;
+     const max=$('ribbonWinMax'),label=windowMaximised?'Restore':'Maximize';
+     if(max.title!==label){max.innerHTML=windowMaximised?restoreGlyph:maxGlyph;max.title=label;max.setAttribute('aria-label',label);}
+   });
+   for(const [id,operation] of [['ribbonWinMin','MINIMISE'],['ribbonWinMax','TOGGLE_MAXIMISE'],['ribbonWinClose','CLOSE']])
+     $(id).addEventListener('click',()=>{if(windowAdmitted)windowSend(operation);});
+   // Blank space only; tabs, quick Player and caption never initiate drag.
+   let start=null;
+   tabs.addEventListener('pointerdown',e=>{if(windowAdmitted&&!windowMaximised&&e.target===tabs&&e.button===0)start={x:e.clientX,y:e.clientY};});
+   tabs.addEventListener('pointermove',e=>{if(!start)return;if(!(e.buttons&1)){start=null;return;}
+     if(Math.hypot(e.clientX-start.x,e.clientY-start.y)>=5){start=null;windowSend('BEGIN_MOVE');}});
+   for(const event of ['pointerup','pointercancel','pointerleave'])tabs.addEventListener(event,()=>{start=null;});
+   tabs.addEventListener('dblclick',e=>{if(windowAdmitted&&e.target===tabs)windowSend('TOGGLE_MAXIMISE');});
+   windowSend('READY');
+ } else {
+   for(const b of caption.querySelectorAll('button'))b.title+=' (desktop application only)';
+ }
  const player=document.createElement('div');player.className='armix-ribbon-player';player.hidden=true;player.setAttribute('role','group');player.setAttribute('aria-label','Player transport');
  player.innerHTML='<span class="armix-ribbon-track" id="ribbonTrack">No music loaded</span><input type="range" id="ribbonSeek" min="0" max="1000" step="1" value="0" aria-label="Seek through current song"><span class="armix-ribbon-time" id="ribbonTime">00:00 / 00:00</span><div class="armix-ribbon-transport">'+button('ribbonPrevious','Previous',icon('<rect x="4" y="5" width="3.5" height="14" rx="1"/><path d="M19 5 8 12l11 7z"/>',true))+button('ribbonPlay','Play',play)+button('ribbonNext','Next',icon('<rect x="16.5" y="5" width="3.5" height="14" rx="1"/><path d="m5 5 11 7-11 7z"/>',true))+button('ribbonStop','Stop',icon('<rect x="5" y="5" width="14" height="14" rx="2"/>',true))+'</div><div class="armix-ribbon-options">'+button('ribbonLoop','Loop A–B',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/>'))+button('ribbonMode','Playback mode / repeat',icon('<path d="m17 3 4 4-4 4m4-4H8a5 5 0 0 0-5 5m4 9-4-4 4-4m-4 4h13a5 5 0 0 0 5-5"/><path d="M10 12h4"/>'))+button('ribbonQueue','Queue',icon('<path d="M3 5h17M3 10h17M3 15h10m3 0 5 3-5 3z"/>'))+'</div><label class="armix-ribbon-volume">'+icon('<path d="M3 9v6h4l5 4V5L7 9H3zm13 0a4 4 0 0 1 0 6m3-9a8 8 0 0 1 0 12"/>')+'<input type="range" id="ribbonVolume" min="0" max="100" step="1" value="50" aria-label="Player level before channel FX"></label>';
+ // Restore local V6 order with the same native action controls.
+ const sep=()=>{const el=document.createElement('span');el.className='armix-ribbon-separator';el.setAttribute('aria-hidden','true');return el;};
+ const readout=document.createElement('div');readout.className='armix-ribbon-readout';
+ readout.innerHTML=icon('<path d="M9 18V5l12-2v13M9 18c0 2-3 3-4.5 2S3 17 5 16s4-1 4 2zm12-2c0 2-3 3-4.5 2S15 15 17 14s4-1 4 2z"/>');
+ const transport=player.querySelector('.armix-ribbon-transport'),options=player.querySelector('.armix-ribbon-options'),volume=player.querySelector('.armix-ribbon-volume');
+ const track=player.querySelector('#ribbonTrack'),seek=player.querySelector('#ribbonSeek'),time=player.querySelector('#ribbonTime');
+ readout.append(track,time);
+ const divider=document.createElement('span');divider.className='armix-ribbon-option-divider';divider.setAttribute('aria-hidden','true');
+ options.insertBefore(divider,options.querySelector('#ribbonQueue'));
+ options.insertAdjacentHTML('beforeend',button('ribbonAdd','Open audio files',icon('<path d="M3 6h7l2 2h9v11H3z"/>')));
+ player.replaceChildren(transport,sep(),readout,seek,sep(),options,sep(),volume,sep());
  bar.insertBefore(player,$('playerToggle')||bar.firstElementChild);
  const scene=document.createElement('div');scene.className='armix-ribbon-scene';scene.hidden=true;scene.innerHTML='<button type="button" id="ribbonShowSave">Save Show</button><button type="button" id="ribbonShowBrowse">Browse Shows</button>';
  bar.insertBefore(scene,player);
@@ -38,12 +163,40 @@ function install(){
  if($('sofToggle'))new MutationObserver(syncMix).observe($('sofToggle'),{attributes:true,attributeFilter:['aria-pressed','disabled']});
  syncMix();
  const openPlayer=()=>{if($('arsonPlayer')?.hidden)click('playerToggle');};
+ $('ribbonQuickPlayer').addEventListener('click',openPlayer);
+ function syncQuickPlayer(){
+   const status=$('ribbonPlayerStatus'),playing=source('playerPlay')?.dataset.playing==='true';
+   const value=playing?'Playing':'Player';
+   if(status.textContent!==value)status.textContent=value;
+   status.classList.toggle('is-playing',playing);
+   $('ribbonQuickPlayer').disabled=!source('playerToggle')||source('playerToggle').disabled;
+ }
+ const panicShortcut=document.createElement('button');panicShortcut.type='button';panicShortcut.id='ribbonEmergency';panicShortcut.className='tool';panicShortcut.disabled=true;
+ panicShortcut.innerHTML=icon('<circle cx="12" cy="12" r="9"/><path d="M12 7v6m0 4h.01"/>');
+ panicShortcut.title='Emergency stop audio';panicShortcut.setAttribute('aria-label',panicShortcut.title);
+ bar.append(panicShortcut);
+ const emergency=()=>more.querySelector('[data-native-emergency-output]');
+ function syncEmergency(){
+   const action=emergency(),mode=action?.dataset.emergencyMode;
+   panicShortcut.hidden=!native||!action;
+   panicShortcut.disabled=!action||action.disabled||mode!=='stop';
+   panicShortcut.title=mode==='resume'?'Output stopped · resume from ArSonMix menu':'Emergency stop audio';
+   panicShortcut.setAttribute('aria-label',panicShortcut.title);
+   panicShortcut.classList.toggle('is-stopped',mode==='resume');
+ }
+ panicShortcut.addEventListener('click',()=>{const action=emergency();if(action?.dataset.emergencyMode==='stop'&&!action.disabled)action.click();});
+ const emergencyObserver=new MutationObserver(syncEmergency);
+ let watchedEmergency=null;
+ function bindEmergency(){const action=emergency();if(action!==watchedEmergency){emergencyObserver.disconnect();watchedEmergency=action;if(action)emergencyObserver.observe(action,{attributes:true,attributeFilter:['disabled','data-emergency-mode']});}syncEmergency();}
+ new MutationObserver(bindEmergency).observe(more.querySelector('.more-tools-panel'),{childList:true});
+ bindEmergency();
  const mappings={ribbonPrevious:'playerPrevious',ribbonPlay:'playerPlay',ribbonNext:'playerNext',ribbonStop:'playerStop',ribbonLoop:'playerLoopAB'};
  Object.entries(mappings).forEach(([id,target])=>$(id).addEventListener('click',()=>click(target)));
  $('ribbonMode').addEventListener('click',()=>{openPlayer();click('playerAutoNext');});
  $('ribbonQueue').addEventListener('click',()=>{openPlayer();click('playerQueueView');});
+ $('ribbonAdd').addEventListener('click',()=>click('playerAdd'));
  const findShow=label=>Array.from(more.querySelectorAll('button')).find(e=>e.textContent.trim()===label);
- for(const [id,label] of [['ribbonShowSave','Save Show'],['ribbonShowBrowse','Browse Shows']])$(id).addEventListener('click',()=>{const el=findShow(label);if(el&&!el.disabled){more.open=true;el.click();}});
+ for(const [id,label] of [['ribbonShowSave','Save Show'],['ribbonShowBrowse','Browse Shows']])$(id).addEventListener('click',()=>{const el=findShow(label);if(el&&!el.disabled){more.open=true;compactMenu?.show('scenes');el.click();}});
  const controls=new Map();
  function range(proxyId,originalId,max){
    const proxy=$(proxyId),original=source(originalId);if(!original)return;
@@ -70,33 +223,52 @@ function install(){
    for(const [id,target] of Object.entries(mappings)){const el=source(target);$(id).disabled=!native||!playerReady()||!el||el.disabled;}
    $('ribbonMode').disabled=!native||!playerReady()||!source('playerAutoNext')||source('playerAutoNext').disabled;
    $('ribbonQueue').disabled=!playerReady()||!source('playerQueueView')||source('playerQueueView').disabled;
+   $('ribbonAdd').disabled=!native||!source('playerAdd')||source('playerAdd').disabled;
    $('ribbonLoop').setAttribute('aria-pressed',source('playerLoopAB')?.getAttribute('aria-pressed')||'false');
    $('ribbonMode').setAttribute('aria-pressed',source('playerAutoNext')?.getAttribute('aria-pressed')||'false');
    const title=source('playerNow')?.textContent||'No music loaded';setText($('ribbonTrack'),title);$('ribbonTrack').title=title;
    setText($('ribbonTime'),(source('playerElapsed')?.textContent||'00:00')+' / '+(source('playerDuration')?.textContent||'00:00'));
    controls.forEach(c=>c.sync());
  }
- function schedule(){if(active!=='player'||queued)return;queued=true;queueMicrotask(()=>{queued=false;syncPlayer();});}
- const observed=['playerPlay','playerPrevious','playerNext','playerStop','playerLoopAB','playerAutoNext','playerNow','playerElapsed','playerDuration','playerSeek','playerVolume'];
+ function schedule(){syncQuickPlayer();if(active!=='player'||queued)return;queued=true;queueMicrotask(()=>{queued=false;syncPlayer();});}
+ const observed=['playerPlay','playerPrevious','playerNext','playerStop','playerLoopAB','playerAutoNext','playerAdd','playerQueueView','playerNow','playerElapsed','playerDuration','playerSeek','playerVolume'];
  const playerObserver=new MutationObserver(schedule);
  for(const id of observed){const el=source(id);if(el)playerObserver.observe(el,{attributes:true,attributeFilter:['disabled','aria-pressed','data-playing','style'],childList:true,characterData:true,subtree:true});}
  // Presentation follows the already accepted Player DOM; no second state stream.
  const group={
-   bankPrev:'mixer',bankSelect:'mixer',bankNext:'mixer',densitySelect:'mixer',
-   pluginsButton:'mixer fx',gainView:'mixer',fxView:'mixer fx',globalFxToggle:'mixer fx',
+   bankPrev:'mixer',bankSelect:'mixer',bankNext:'mixer',densitySelect:'mixer',viewFilter:'mixer',
+   pluginsButton:'mixer fx',gainView:'mixer',fxView:'mixer',globalFxToggle:'mixer fx',
    sofToggle:'mixer routing',sofTarget:'mixer routing',clearCue:'mixer routing',
    wireNavigatorToggle:'routing',wireMatrixToggle:'routing',wireConfigToggle:'routing',
    sceneSelect:'scenes',saveScene:'scenes',recallScene:'scenes',addTrack:'mixer routing',
-   playerMini:'mixer',playerToggle:'all',moreTools:'all',mixContext:'all'
+   playerMini:'mixer',playerToggle:'player',moreTools:'all',mixContext:'all',ribbonEmergency:'all'
  };
+ function orderCommands(){
+   // Maintain a single native command per action. DOM order also defines keyboard order.
+   const io=bar.querySelector(':scope > [data-native-io]');
+   const preferred=[more,$('bankPrev'),$('bankSelect'),$('bankNext'),$('densitySelect'),
+     bar.querySelector(':scope > .strip-view-switch'),$('globalFxToggle'),$('wireNavigatorToggle'),
+     $('wireMatrixToggle'),$('wireConfigToggle'),$('sofToggle'),$('sofTarget'),$('clearCue'),$('viewFilter'),
+     $('sceneSelect'),$('recallScene'),$('saveScene'),scene,$('addTrack'),$('pluginsButton'),
+     player,$('playerToggle'),$('playerMini'),bar.querySelector(':scope > [data-ribbon-audio-summary]'),io,$('ribbonMainMix')].filter(el=>el?.parentElement===bar);
+   const known=new Set([...preferred,panicShortcut]),context=$('mixContext');
+   const wanted=[...preferred,...Array.from(bar.children).filter(el=>!known.has(el)&&el!==context)];
+   if(context?.parentElement===bar)wanted.push(context);
+   wanted.push(panicShortcut);
+   // Move only when needed; a second child-list callback is a no-op.
+   let cursor=bar.firstElementChild;
+   for(const el of wanted){if(el===cursor)cursor=cursor.nextElementSibling;else bar.insertBefore(el,cursor);}
+ }
  function apply(){
+   orderCommands();
    for(const el of bar.children){
      if(el===player||el===scene)continue;
-     const scope=el.classList.contains('strip-view-switch')?'mixer fx':el.matches('[data-native-io]')?'mixer io':group[el.id]||'all';
+     const scope=el.classList.contains('strip-view-switch')?'mixer':el.matches('[data-native-io],[data-ribbon-audio-summary]')?'io':group[el.id]||'all';
      el.dataset.ribbonHidden=String(scope!=='all'&&!scope.split(' ').includes(active));
    }
    player.hidden=active!=='player';scene.hidden=active!=='scenes'||!native;
-   const trigger=$('playerToggle');if(trigger){const label=active==='player'?'Open Player':'♫ Player';if(trigger.textContent!==label)trigger.textContent=label;}
+   syncQuickPlayer();bindEmergency();
+   const trigger=$('playerToggle');if(trigger){const label='Open Player';if(trigger.dataset.ribbonLabel!==label){trigger.dataset.ribbonLabel=label;trigger.replaceChildren();{trigger.insertAdjacentHTML('beforeend',icon('<path d="M14 3h7v7m0-7-11 11M21 14v7H3V3h7"/>'));trigger.firstElementChild.classList.add('armix-ribbon-open-icon');}trigger.append(document.createTextNode(label));}}
    for(const [id,label] of [['ribbonShowSave','Save Show'],['ribbonShowBrowse','Browse Shows']]){const el=findShow(label);$(id).disabled=!el||el.disabled;}
  }
  function select(id,focus=false){

@@ -4051,6 +4051,9 @@ public:
         return ready()&&channelIdPhysicalPcmActive()&&
             nativeAccepted_.matches(nativePublisher_,ep,rev);
     }
+    std::uint64_t sessionLiveControlRevision() const noexcept {
+        return nativeAccepted_.graph.roster.liveStateRevision();
+    }
     std::uint64_t controlRevision() const noexcept {
         return channelIdPhysicalPcmActive() && nativeStructureLive_
             ?nativeAccepted_.pcmRevision:revision();

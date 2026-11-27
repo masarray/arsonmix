@@ -32,6 +32,14 @@ def main():
                 g=page.locator("#"+ident).evaluate("e=>({w:e.offsetWidth,h:e.offsetHeight,r:getComputedStyle(e).borderRadius})")
                 assert g==dict(w=size,h=size,r="50%"),(ident,g)
             assert page.locator("#ribbonTrack").inner_text()=="Track 1"
+            if width>=1255:
+                layout=page.evaluate("""()=>{const ids=['ribbonPrevious','ribbonPlay','ribbonNext','ribbonStop','ribbonTrack','ribbonTime','ribbonSeek','ribbonLoop','ribbonAdd','ribbonVolume','playerToggle'];return ids.map(id=>{const r=document.getElementById(id).getBoundingClientRect();return {id,x:r.x,right:r.right}})}""")
+                assert layout[0]["x"]<30,(width,layout)
+                assert all(a["right"]<=b["x"]+1 for a,b in zip(layout,layout[1:])),(width,layout)
+                assert layout[-1]["right"]<width-150,(width,layout)
+                assert page.locator('.armix-ribbon-player .armix-ribbon-separator').count()==4
+                assert page.locator('#playerToggle .armix-ribbon-open-icon').count()==1
+                page.screenshot(path=str(evidence/f"ribbon-parity-{width}-{height}.png"))
             assert page.locator("#ribbonPlay").get_attribute("aria-pressed")=="true"
             if width>=900:
                 page.locator("#ribbonPlay").click()

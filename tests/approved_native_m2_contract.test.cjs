@@ -8119,3 +8119,35 @@ test("P0 owned floating FX retries an asset failure, coalesces opens and fences 
  assert.equal(sent.filter(x=>x.name==="arMixFloatingMounted").length,1);
  open();await flush();assert.equal(opens,1,"duplicate focus does not recreate the editor");
 });
+
+test("Session MON retains verified preference without implying output ARM",()=>{
+ const pick=protocol.mainMonitorPreference;
+ assert.deepEqual(pick(["Speakers"],"Speakers",true),{value:"__armix_saved__",label:"Speakers · saved / off",endpoint:"Speakers"});
+ assert.deepEqual(pick(["Other"],"Speakers",true),{value:"__armix_saved_missing__",label:"Saved device unavailable · off",endpoint:""});
+ assert.equal(pick(["CABLE Input"],"",false).value,"");
+ const n=read("src/Main.cpp"), b=read("web/approved-native-bridge.js");
+ assert.match(n,/preferenceSaved=rememberSecondaryPreference\(name,engine_\.secondarySelectedEndpointId\(\)\)/);
+ assert.match(b,/active&&v\.name\?v\.name:saved\.value/);
+ assert.match(b,/value==="__armix_saved__"\|\|value==="__armix_saved_missing__"\)return/);
+});
+test("Channel context menu exposes non-destructive FX save and real native receipts",()=>{
+ const menu=read("web/approved-native-context-menu.js"), b=read("web/approved-native-bridge.js"), n=read("src/Main.cpp");
+ assert.match(menu,/"rack-save-single":"SAVE_SINGLE"/);
+ assert.match(b,/const single=operation==="DEACTIVATE"\|\|operation==="SAVE_SINGLE"/);
+ assert.match(b,/operation!=="SAVE"&&operation!=="SAVE_SINGLE"/);
+ assert.match(n,/if\(archived&&deactivate\)/);
+ assert.match(n,/file=file\.withFileExtension\("\.arfx"\)/);
+ assert.match(b,/notice\?\.error===true\|\|rackReceipt/);
+});
+
+test("Cold restart MON projects actual prepared muted endpoint, not invented ARM",()=>{
+ const pick=protocol.mainMonitorPreference;
+ assert.equal(pick(["Broadcast"],"Broadcast",true,true).label,"Broadcast · ready / off");
+ assert.equal(pick(["Other"],"Broadcast",true,true).endpoint,"");
+ assert.equal(pick(["Broadcast"],"",false,true).value,"");
+ const n=read("src/Main.cpp"),b=read("web/approved-native-bridge.js");
+ assert.match(n,/prepareOnStartup/);
+ assert.match(n,/preferenceSaved=forgetSecondaryStartupSelection\(\)/);
+ assert.match(b,/ack.action==="secondaryOutputStop"&&ack.preferenceSaved===true/);
+ assert.match(b,/v.ready&&!v.fault&&!active&&v.name===extraPreferred/);
+});

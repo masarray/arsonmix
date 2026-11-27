@@ -1318,7 +1318,7 @@
   // Native-only operator controls in the EXISTING approved More menu:
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
-  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null;
+  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null, ribbonAudioSummary=null;
   let lastM4Performance=null,m4PaintKey="";
   let externalSerial=0;
   const pendingExternal=new Map(); // each ChannelId independent; no mixer-wide lock
@@ -2669,7 +2669,9 @@
   function syncEmergencyOutputControl(d) {
     if(!muteBtn)return;
     const panic=hardware?.raw?.operatorOutputMuted===true;
-    muteBtn.textContent=panic?"Resume after emergency stop":"Emergency stop audio";
+    muteBtn.dataset.emergencyMode=panic?"resume":"stop";
+    const label=panic?"Resume after emergency stop":"Emergency stop audio";
+    if(muteBtn.textContent!==label)muteBtn.textContent=label;
     muteBtn.disabled=panic?!deviceReady():d?.outputArmed!==true;
     muteBtn.title=panic?"Resume only the verified native route":
       "Emergency stop · normal device recovery is automatic";
@@ -3725,6 +3727,14 @@
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
     syncEmergencyOutputControl(d);
+    if(ribbonAudioSummary){
+      const values=deviceOpen?[String(d.backend),String(d.playbackDevice||"Unknown output"),
+        String(d.sampleRate/1000)+" kHz",String(d.bufferFrames)+" samples"]:["No device","—","—","—"];
+      ribbonAudioSummary.querySelectorAll("span[data-audio-value]").forEach((el,index)=>{
+        if(el.textContent!==values[index])el.textContent=values[index];
+        if(el.title!==values[index])el.title=values[index];
+      });
+    }
     paintPhysicalOutputs(next);
     // Keep the SAME verified playback device for mixer master projection.
     // Footer display is independent; device identity must never be dropped.
@@ -3954,16 +3964,19 @@
     const active=v.armed||v.recovering;
     const primary=String(hardware?.device?.playbackDevice||"").toLowerCase();
     const names=extraInventory.filter(n=>n.toLowerCase()!==primary);
+    const prepared=v.ready&&!v.fault&&!active&&v.name===extraPreferred;
+    const saved=protocol.mainMonitorPreference(names,extraPreferred,extraHasSaved,prepared);
     const opts=[["","None"+(extraPending?" · applying":v.fault?" · fault":v.ready&&!active?" · muted":"")]];
+    if(!active&&!v.split&&saved.value)opts.push([saved.value,saved.label]);
     if(active&&v.name)opts.push([v.name,v.name+(v.recovering?" · reconnecting":"")]);
     else if(!v.split&&mainMonitorAllowed()&&extraInventoryKnown&&!extraInventoryPending)
-      for(const name of names)opts.push([name,name]);
+      for(const name of names)opts.push([name,name===saved.endpoint?"Enable "+name:name]);
     if(!active&&!v.split)opts.push(["__armix_refresh__","Refresh devices…"]);
-    if(!active&&!v.split&&(v.fault||v.ready||v.name))
+    if(!active&&!v.split&&(v.fault||v.ready||v.name||extraHasSaved))
       opts.push(["__armix_stop__","Disconnect"]);
     if(v.split)opts.push(["__armix_split__","Separate mix"]);
     opts.push(["__armix_settings__","MON settings…"]);
-    const value=v.split?"__armix_split__":active&&v.name?v.name:"";
+    const value=v.split?"__armix_split__":active&&v.name?v.name:saved.value;
     const sig=JSON.stringify(opts);
     if(select.dataset.signature!==sig){
       select.replaceChildren(...opts.map(([value,label])=>new Option(label,value)));
@@ -3989,10 +4002,10 @@
     paintMainMonitor();
     if(extraPending||deviceBusy())return;
     if(value==="__armix_settings__"){openAdditionalOutput();return;}
-    if(v.split)return;
+    if(v.split||value==="__armix_saved__"||value==="__armix_saved_missing__")return;
     if(value==="__armix_refresh__"){refreshAdditionalInventory(true);return;}
     if(value===""||value==="__armix_stop__"){
-      if(v.ready||v.fault||v.recovering||v.name)
+      if(v.ready||v.fault||v.recovering||v.name||extraHasSaved)
         requestAdditionalOutput("secondaryOutputStop",null,true);
       return;
     }
@@ -4025,7 +4038,7 @@
     extraField("refresh").disabled=busy||extraInventoryPending;
     extraField("connect").disabled=busy||!allowed||armed||recovering||!extraInventoryKnown||!options.includes(select.value);
     extraField("stop").disabled=extraPending?.action==="secondaryOutputStop"||
-      (!ready&&!fault&&!name&&!recovering&&extraPending?.action!=="secondaryOutputEnable");
+      (!ready&&!fault&&!name&&!recovering&&!extraHasSaved&&extraPending?.action!=="secondaryOutputEnable");
     extraField("repair").hidden=!live||allowed||busy||armed||recovering;
     const mode=split?"Separate headphone mix":"Same mix";
     if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
@@ -5362,7 +5375,17 @@
       io.addEventListener("click",openNativeAudioIO);
       // The application menu is always the first toolbar item.
       toolbar.prepend(more);
-      toolbar.append(io);
+      ribbonAudioSummary=document.createElement("div");
+      ribbonAudioSummary.dataset.ribbonAudioSummary="true";
+      ribbonAudioSummary.setAttribute("role","group");
+      ribbonAudioSummary.setAttribute("aria-label","Current verified audio configuration");
+      for(const label of ["Driver","Output","Rate","Buffer"]){
+        const caption=item("span","armix-ribbon-audio-label",label);
+        const value=item("span","armix-ribbon-audio-value","—");
+        value.dataset.audioValue=label.toLowerCase();
+        ribbonAudioSummary.append(caption,value);
+      }
+      toolbar.append(ribbonAudioSummary,io);
       const player=document.getElementById("playerToggle"),plugins=document.getElementById("pluginsButton");
       if(player?.parentElement===toolbar&&plugins?.parentElement===toolbar)
         plugins.after(player);
@@ -5948,6 +5971,15 @@
         }
       }else {
         extraPending.acked=true;
+        if(["secondaryOutputEnable","secondaryOutputConnect","secondaryOutputArm"].includes(ack.action)&&ack.preferenceSaved===true&&ack.endpoint){
+          extraPreferred=ack.endpoint;extraHasSaved=true;
+        }
+        if(ack.action==="secondaryOutputStop"&&ack.preferenceSaved===true){
+          extraPreferred="";extraHasSaved=false;extraSelected="";
+        }
+        // Native memory already reflects the newest choice while disk
+        // persistence retries. Refresh actual inventory, never paint old MON.
+        if(ack.preferenceSaved===false)refreshAdditionalInventory(true);
         if(extraPending.action==="secondaryMonitorStarter"||extraPending.action==="secondaryOutputSplit")
           extraPending.ackRevision=String(ack.graphRevision||"");
         // A fresh status and accepted graph may already have arrived while
@@ -5962,10 +5994,14 @@
       settleAdditionalOutput(live);
       paintAdditionalOutput();
       const current=protocol.secondaryOutputView(hardware,live);
-      if(!extraAutoInventoryStarted&&mainMonitorAllowed()&&document.querySelector("[data-main-monitor]")){
+      // Read saved identity even when audio is offline; discovery has no ARM side effect.
+      if(!extraAutoInventoryStarted&&document.querySelector("[data-main-monitor]")){
         extraAutoInventoryStarted=true;
         if(!extraInventoryKnown&&!extraInventoryPending)refreshAdditionalInventory();
       }
+      // Refresh once when native cold-start preparation discovers a returned endpoint.
+      if(current.ready&&!previous.ready&&current.name&&!extraInventory.includes(current.name)&&!extraInventoryPending)
+        refreshAdditionalInventory(true);
       // Reuse existing status cadence, no interval or hidden-window scan.
       if(extraSurfaceOpen()&&!extraInventoryPending&&!extraPending&&!current.armed&&!current.recovering&&
          (!extraInventoryKnown||!extraInventory.length||(extraHasSaved&&!extraPreferred))&&
@@ -6220,7 +6256,8 @@
       // The mismatched field hid native VST3 layout/latency, driver and
       // routing failures behind rapid meter/readback status updates.
       const message=notice?.text;
-      if(notice?.error===true && typeof message==="string" && message.length){
+      const rackReceipt=typeof message==="string"&&/^(FX Rack saved|FX saved|Saved FX inserted|FX Rack opened|FX rack file operation cancelled)/.test(message);
+      if((notice?.error===true||rackReceipt) && typeof message==="string" && message.length){
         nativeToast(message); // physical FX/driver failures remain visible
         status("JUCE · "+message);
       }
@@ -6276,20 +6313,22 @@
   }
   function requestRackFile(track,operation,slot,token){
     const target=rackFileTarget(track);
-    if(!target||!["SAVE","OPEN","INSERT","DEACTIVATE"].includes(operation)){
+    if(!target||!["SAVE","SAVE_SINGLE","OPEN","INSERT","DEACTIVATE"].includes(operation)){
       nativeToast("FX rack file unavailable · verify current native rack");return false;
     }
     const {channel,...identity}=target;
-    if(operation==="DEACTIVATE"&&(!Number.isInteger(slot)||channel.inserts?.[slot]?.id!==token)){
+    const single=operation==="DEACTIVATE"||operation==="SAVE_SINGLE";
+    if(single&&(!Number.isInteger(slot)||channel.inserts?.[slot]?.id!==token)){
       nativeToast("FX changed · reopen rack menu");return false;
     }
     // Rack topology may replace or shift slot-relative inline editor leases.
-    if(operation!=="SAVE"){
+    if(operation!=="SAVE"&&operation!=="SAVE_SINGLE"){
       retirePendingRackEditor([identity.channelId]);
       inlineFxClip?.closeRackEditors([identity.channelId]);
     }
     backend.emitEvent("arMixAction",{action:"fxRackFile",operation,...identity,
-      slot:operation==="DEACTIVATE"?slot:-1,instanceId:operation==="DEACTIVATE"?token:""});
+      slot:single?slot:-1,instanceId:single?token:""});
+    status("JUCE · FX rack file requested");
     return true;
   }
   const nativeHooks=Object.freeze({

@@ -107,6 +107,8 @@ class DynamicChannelRoster final {
 public:
     explicit DynamicChannelRoster(ChannelRosterBudget budget={}) : budget_(budget) {}
     std::uint64_t revision() const noexcept {return revision_;}
+    // Separate persistence hint: live controls must NOT invalidate graph/ACK identity.
+    std::uint64_t liveStateRevision() const noexcept {return liveStateRevision_;}
     std::size_t size() const noexcept {return channels_.size();}
     const std::vector<ChannelStripDefinition>& channels() const noexcept {return channels_;}
     const ChannelStripDefinition* find(ChannelId id) const noexcept {
@@ -124,6 +126,7 @@ public:
         const auto it=index_.find(id.value);
         if(it==index_.end())return false;
         auto& row=channels_[it->second];
+        if(row.faderLinear!=gain||row.pan!=pan)++liveStateRevision_;
         row.faderLinear=gain;row.pan=pan;
         return true;
     }
@@ -132,6 +135,7 @@ public:
         if(!id.value || !std::isfinite(gain) || gain<0.f || gain>16.f)return false;
         const auto it=index_.find(id.value);
         if(it==index_.end() || channels_[it->second].role!=ChannelRole::input)return false;
+        if(channels_[it->second].inputGainLinear!=gain)++liveStateRevision_;
         channels_[it->second].inputGainLinear=gain;
         return true;
     }
@@ -139,6 +143,7 @@ public:
         if(!id.value || !std::isfinite(gain) || gain<0.f || gain>2.f)return false;
         const auto it=index_.find(id.value);
         if(it==index_.end() || (channels_[it->second].role!=ChannelRole::input && channels_[it->second].role!=ChannelRole::group && channels_[it->second].role!=ChannelRole::fxReturn))return false;
+        if(channels_[it->second].wireSumGainLinear!=gain)++liveStateRevision_;
         channels_[it->second].wireSumGainLinear=gain;
         return true;
     }
@@ -146,13 +151,17 @@ public:
         const auto it=index_.find(id.value);
         if(!id.value||!edgeId||it==index_.end())return false;
         for(auto& edge:channels_[it->second].sends)
-            if(edge.edgeId==edgeId&&!edge.primaryOutput){edge.enabled=enabled;return true;}
+            if(edge.edgeId==edgeId&&!edge.primaryOutput){
+                if(edge.enabled!=enabled)++liveStateRevision_;
+                edge.enabled=enabled;return true;
+            }
         return false;
     }
     bool rememberLiveMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
         const auto it=index_.find(id.value);
         if(!id.value||it==index_.end())return false;
         auto& row=channels_[it->second];
+        if(row.mute!=mute||row.solo!=solo)++liveStateRevision_;
         row.mute=mute;row.solo=solo;
         return true;
     }
@@ -165,6 +174,7 @@ public:
         for(auto& link:channels_[it->second].sends)
             if(link.destination==destination &&
                link.preFader==preFader && !link.primaryOutput) {
+                if(link.gain!=gain)++liveStateRevision_;
                 link.gain=gain;return true;
             }
         return false;
@@ -939,6 +949,7 @@ private:
     std::vector<ChannelStripDefinition> channels_;
     std::unordered_map<std::uint64_t,std::size_t> index_; // CONTROL ONLY
     std::uint64_t revision_=0, nextId_=1, nextEdgeId_=1;
+    std::uint64_t liveStateRevision_=0; // CONTROL only, not serialized
 };
 
 // CONTROL only. Build the first monitor mix from the last stage of each
