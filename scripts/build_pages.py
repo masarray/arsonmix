@@ -8,6 +8,7 @@ from approved_fx_rack_power import apply_authoritative_fx_power
 from approved_fx_rack_interaction import apply_fx_rack_interaction
 from compose_native_peq import apply_native_peq
 from compose_operator_ux import apply_operator_ux
+from compose_clean_ribbon import apply_clean_ribbon
 ROOT=Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser()
 p.add_argument('--out',default='dist-pages')
@@ -96,16 +97,7 @@ canonical_html=apply_authoritative_fx_power(canonical_html)
 canonical_html=apply_fx_rack_interaction(canonical_html,buttons_dest/'assets')
 canonical_html=apply_native_peq(canonical_html)
 canonical_html=apply_operator_ux(canonical_html,buttons_dest/'assets')
-# V6 owner-approved ribbon material is compiled into the existing CSS owner.
-# The historical locked seed remains unchanged; both native and Pages get it.
-ribbon_css=(ROOT/'scripts/clean_ribbon_v6.css').read_text(encoding='utf-8')
-chrome=buttons_dest/'assets/mixer-chrome-material.css'
-chrome.write_text(chrome.read_text(encoding='utf-8')+'\n'+ribbon_css+'\n',encoding='utf-8')
-ribbon_tag='<script defer src="assets/clean-ribbon-v6.js"></script>'
-if canonical_html.count('</body>')!=1 or ribbon_tag in canonical_html:
-    raise SystemExit('Clean Ribbon V6 assembly anchor drift')
-canonical_html=canonical_html.replace('</body>',ribbon_tag+'\n</body>',1)
-
+canonical_html=apply_clean_ribbon(canonical_html,buttons_dest/'assets')
 # The shipped UI is composed from inline JS as well as owner assets. Check all
 # inline code BEFORE packaging or deployment: a single unterminated string
 # otherwise leaves an empty mixer despite green source/PNG contract tests.

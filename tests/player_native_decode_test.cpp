@@ -405,8 +405,35 @@ int main() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             assert(rejected && !badCue.snapshot().outputReady);
+            badCue.stop();
+            // STOP must remain silent and clear old decoder errors, even
+            // after the worker has had time to process its new generation.
+            std::array<float,256> stopL{},stopR{};
+            for(int i=0;i<25;++i) {
+                const auto stopped=badCue.snapshot();
+                assert(stopped.state==armix::player::NativePlayerDeck::State::stopped);
+                assert(stopped.error.isEmpty() && !stopped.outputReady);
+                assert(!badCue.isPlayingRequested());
+                badCue.pull(stopL.data(),stopR.data(),256);
+                assert(stopL[0]==0.f && stopR[0]==0.f);
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            // Explicit Play is a genuine retry; invalid media still reports
+            // a fresh error, not a permanently hidden or silent rejection.
+            badCue.play();
+            bool retried=false;
+            for(int i=0;i<600;++i) {
+                const auto state=badCue.snapshot();
+                if(state.state==armix::player::NativePlayerDeck::State::error) {
+                    assert(state.error.containsIgnoreCase("IN marker"));
+                    retried=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            assert(retried);
+            badCue.stop();
             assert(badCue.setCueRange(1.0,4.0));
-            badCue.load(longFile,true);
+            badCue.play();
             bool recovered=false;
             for(int i=0;i<600;++i) {
                 if(badCue.isPlayingRequested()){recovered=true;break;}
@@ -546,6 +573,9 @@ int main() {
                                std::isfinite(right[i]));
                         energy+=left[i]*left[i];
                     }
+                    // 256 frames at 48 kHz is 5.33 ms. Do not exhaust
+                    // the 250ms FIFO in a tight synthetic CPU loop.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 }
                 assert(energy>0.01);
                 assert(!loop.transitionActive());
@@ -554,6 +584,39 @@ int main() {
                 assert(now.mediaDuration<=4*48000+1);
                 assert(now.title==longFile.getFileNameWithoutExtension());
             }
+            // Cancel only unarmed standby; retain current playback and generation.
+            assert(loop.queueTransition(longFile,0,100,180,1.,4.));
+            assert(loop.transitionPending());
+            const auto beforeCancel=loop.snapshot();
+            assert(loop.cancelPendingTransition());
+            assert(!loop.transitionPending());
+            assert(!loop.cancelPendingTransition());
+            assert(!loop.service());
+            assert(loop.isPlayingRequested());
+            // A prebuffer boundary may legitimately underrun a single
+            // block. Test real PCM progress at callback cadence, not the
+            // scheduling order of two workers on the CI runner.
+            bool resumedPcm=false;
+            for(int b=0;b<40;++b) {
+                assert(!loop.service());
+                assert(!loop.transitionPending() && !loop.transitionActive());
+                assert(loop.isPlayingRequested());
+                loop.pull(left.data(),right.data(),256);
+                const auto afterCancel=loop.snapshot();
+                assert(afterCancel.generation==beforeCancel.generation);
+                assert(afterCancel.mediaPlayed>=beforeCancel.mediaPlayed);
+                assert(afterCancel.error.isEmpty());
+                double energy=0.;
+                for(int i=0;i<256;++i) {
+                    assert(std::isfinite(left[i]) && std::isfinite(right[i]));
+                    energy+=left[i]*left[i]+right[i]*right[i];
+                }
+                if(afterCancel.mediaPlayed>beforeCancel.mediaPlayed && energy>0.001) {
+                    resumedPcm=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(resumedPcm); // bounded ~200 ms; not an unconditional PASS
             // A user STOP during standby must prevent any stale queue from
             // becoming a different current after the decoder completes.
             assert(loop.queueTransition(longFile,0,100,180,1.,4.));

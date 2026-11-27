@@ -41,3 +41,22 @@ assert.match(timer,/playerLibrary_\[static_cast<std::size_t>\(playerCurrent_\)\]
 assert.match(source,/if\(playerMediaRefreshRequested_\)\{\s*if\(playerMediaBusy_\|\|playerCoverBusy_\)return;/);
 assert.doesNotMatch(source,/playerError_="Media scan is in progress"/,"refresh should coalesce, not reject while scanning");
 console.log("Queued song identity and coalesced refresh contracts PASS");
+
+assert.match(timer,/loopDue\(phase=="PLAYING",phase=="ENDED"/);
+assert.match(timer,/playerError_="Loop standby failed; press Play or Next to retry";\s*playerLoopCurrent_=false;\s*\(void\)playerAutoAdvanceGate_\.claim\(\)/);
+assert.match(source,/playerLoopCurrent_ && playerPendingIndex_>=0 &&\s*playerPendingIndex_==playerCurrent_ &&\s*engine_\.cancelPlayerPendingTransition\(\)/);
+assert.match(source,/playerFolderBusy_,&playerCatalogueIds_,\s*playerMediaRefreshRequested_/);
+assert.match(readFileSync("src/PlayerStateProjection.h","utf8"),/setProperty\("mediaRefreshQueued",s.mediaRefreshQueued\)/);
+assert.doesNotMatch(source.slice(source.indexOf("void emitPlayerState("),source.indexOf("void choosePlayerFiles()")),/setProperty/);
+console.log("P1 loop EOF fallback, pending cancel and refresh readback contracts PASS");
+
+const selectAction=source.slice(source.indexOf('if(action=="playerSelect" || action=="playerPlayNow")'),source.indexOf('// User may adjust live levels'));
+assert.match(selectAction,/emitPlayerState\(\);/);
+assert.doesNotMatch(selectAction,/emitPlayerState\(true/);
+assert.match(source,/playerQueue_\.size\(\)>=128[\s\S]*?Queue is full \(128 songs\)/);
+const stop=source.slice(source.indexOf('if(action=="playerStop")'),source.indexOf('if(action=="playerNext")'));
+assert.match(stop,/playerError_\.clear\(\);\s*engine_\.playerStop\(\)/);
+const deck=readFileSync("engine/player/NativePlayerDeck.h","utf8");
+assert.match(deck,/if\(explicitlyStopped_\.load\(std::memory_order_acquire\)\)continue;/);
+assert.match(deck,/if\(wasStopped \|\| state_\.load\(std::memory_order_acquire\)==State::error\)/);
+console.log("P2 selection-only readback, queue feedback and parked STOP contracts PASS");

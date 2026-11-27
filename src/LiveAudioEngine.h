@@ -2210,6 +2210,11 @@ public:
         playerPendingFile_=file;
         return true;
     }
+    bool cancelPlayerPendingTransition() noexcept {
+        if(!playerDeck_.cancelPendingTransition())return false;
+        playerPendingFile_={};
+        return true;
+    }
     bool playerTransitionFailed() const noexcept {
         return playerDeck_.transitionFailed();
     }

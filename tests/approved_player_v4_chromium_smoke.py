@@ -87,10 +87,42 @@ def main():
             search.fill("Track 2")
             search.press("Enter")
             assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerSelect","value":1}
+            # P1/P2: native readback must preserve click target and focus.
+            # Queue-full Ctrl+Enter is still sent to the authoritative host;
+            # simulate its rejection and confirm actionable feedback.
+            publish=lambda delta: page.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')({schema:'arsonmix.player.v1',...s})",delta)
+            publish(dict(queue=[dict(id=i,title="Queued "+str(i)) for i in range(128)],queueRevision=2))
+            page.evaluate("()=>window.__playerActions.length=0")
+            search.press("Control+Enter")
+            assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerQueueAppend","value":1}
+            publish(dict(error="Queue is full (128 songs); remove an entry first"))
+            assert "128 songs" in page.locator("#playerFeedback").inner_text()
+            publish(dict(queue=state["queue"],queueRevision=3,error=""))
             search.fill("")
-
             row=page.locator('.ap-songrow[data-song-id="1"] .ap-song')
             row.scroll_into_view_if_needed()
+            row.click()
+            row.evaluate("el=>window.__playerRowBefore=el")
+            publish(dict(selected=1))
+            assert row.evaluate("el=>el===window.__playerRowBefore && document.activeElement===el")
+            page.evaluate("()=>window.__playerActions.length=0")
+            row.dblclick()
+            assert page.evaluate("()=>window.__playerActions.at(-1)")=={"action":"playerPlayNow","value":1}
+            publish(dict(selected=0,pending=-1,transport={**state["transport"],"crossfading":True}))
+            assert page.locator("#playerSeek").is_disabled()
+            assert page.locator("#playerCueIn").is_disabled()
+            assert page.locator("#playerCueGoIn").is_disabled()
+            publish(dict(transport=state["transport"],mediaRefreshQueued=True))
+            assert page.locator("#playerSeek").is_enabled()
+            assert page.locator("#playerCueIn").is_enabled()
+            assert "Metadata refresh queued" in page.locator("#playerFeedback").inner_text()
+            publish(dict(mediaRefreshQueued=False,chooseOutput=True,error="Choose a verified MAIN output"))
+            page.evaluate("()=>window.__playerActions.length=0")
+            page.locator("#playerChooseOutput").click()
+            # Playwright serializes the JS value:undefined as Python None;
+            # validate the actual native command and its absence of arguments.
+            assert page.evaluate("()=>window.__playerActions.length===1 && window.__playerActions[0].action==='playerChooseOutput' && window.__playerActions[0].value===undefined")
+            publish(dict(chooseOutput=False,error=""))
             page.evaluate("()=>window.__playerActions.length=0")
             row.click(button="right")
             menu=page.locator("#playerSongMenu")
@@ -140,7 +172,7 @@ def main():
             mini=page.locator("#playerMini")
             mini.wait_for(state="visible")
             assert page.locator("#playerMiniArtworkFallback").get_attribute("data-art")==fallback.get_attribute("data-art")
-            assert page.locator("#playerMiniArtworkFallback").is_hidden()  # V6: no artwork in ribbon
+            assert page.locator("#playerMiniArtworkFallback").is_hidden()  # Ribbon has no cover
             page.locator("#playerMiniPlay").click()
             assert page.evaluate("()=>window.__playerActions.at(-1).action")=="playerPause"
             page.locator("#playerMiniExpand").click()

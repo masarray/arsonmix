@@ -101,6 +101,10 @@ int main() {
     }
     // Loop A-B is only allowed for real segments, with enough source
     // material on both sides of the selected equal-power overlap.
+    assert(P::loopDue(true,false,15.9,16.,180,.085,100));
+    assert(P::loopDue(false,true,16.,16.,180,.085,100));
+    assert(!P::loopDue(false,false,16.,16.,180,.085,100));
+    assert(!P::loopDue(true,false,12.,16.,180,.085,100));
     assert(P::validLoop(12.,16.,180));
     assert(P::validLoop(0.,2.,1500));
     assert(P::validLoop(0.,1.5,0));

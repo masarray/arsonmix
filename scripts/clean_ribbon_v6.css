@@ -30,7 +30,7 @@ html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow{width:25px!impor
 html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow svg{width:18px!important;height:18px!important}
 html .app #armix-ribbon-commands.armix-ribbon>.sep,html .app #armix-ribbon-commands.armix-ribbon>.armix-toolbar-divider,html .app #armix-ribbon-commands.armix-ribbon>.toolbar-label{display:none!important}
 html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-hidden=true]{display:none!important;position:absolute!important;visibility:hidden!important;pointer-events:none!important}
-html .app #armix-ribbon-commands.armix-ribbon[data-ribbon-tab=routing]>:is(#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle){display:inline-flex!important}
+html .app #armix-ribbon-commands.armix-ribbon[data-ribbon-tab=routing]>:is(#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle):not([hidden]){display:inline-flex!important}
 html .app #armix-ribbon-commands.armix-ribbon>#mixContext{margin-left:auto!important}
 html .app #armix-ribbon-commands.armix-ribbon>.tool[data-native-io],html .app #armix-ribbon-commands.armix-ribbon>#addTrack{margin-left:0!important}
 html .app #armix-ribbon-commands.armix-ribbon .more-tools-panel button.tool{justify-content:flex-start!important;border-radius:4px!important;width:100%!important}
@@ -76,3 +76,6 @@ html .app #armix-ribbon-commands.armix-ribbon #playerMini{background:transparent
 /* Preserve access at the narrowest desktop widths without clipping transport. */
 html .app #armix-ribbon-commands>#ribbonMainMix[hidden]{display:none!important}
 @media(max-width:760px){html .app #armix-ribbon-commands[data-ribbon-tab=player]>#mixContext{display:none!important}html .app #armix-ribbon-commands[data-ribbon-tab=player] .armix-ribbon-player{overflow-x:auto;min-width:0;flex:1 1 0}.armix-ribbon-player>*{flex-shrink:0}}
+
+html .app #armix-ribbon-commands.command-bar.armix-ribbon{position:relative!important}
+@media(max-width:1100px){html .app #armix-ribbon-commands[data-ribbon-tab=player] .armix-ribbon-player{overflow-x:auto;min-width:0;flex:1 1 0}.armix-ribbon-player>*{flex-shrink:0}}

@@ -91,6 +91,16 @@ def main():
                 state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
                 emit(page,"arMixConsoleSnapshot",state)
 
+            # Native title stripping must not fight stable FX rack repaint.
+            page.evaluate("""()=>{window.__rackPowerMutations=[];
+              const rack=document.querySelector('#tracks .strip[data-id="1"] .fx-section');
+              window.__rackObserver=new MutationObserver(rs=>window.__rackPowerMutations.push(...rs.map(r=>r.attributeName)));
+              window.__rackObserver.observe(rack,{subtree:true,attributes:true,
+                attributeFilter:['title','aria-pressed','aria-label','aria-description','data-fx-chain-enabled','data-global-fx-enabled','data-fx-slot-enabled','data-fx-effective','class']});}""")
+            for _ in range(3):
+                emit(page,"arMixConsoleSnapshot",state)
+            assert page.evaluate("()=>window.__rackPowerMutations")==[]
+            assert row(1,0).locator('[data-action="slotPower"]').get_attribute("title") is None
             # A different slot remains editable before the first slot is
             # confirmed. Deliver first slot snapshot before its ACK.
             power=click_power(0)

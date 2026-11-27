@@ -83,7 +83,7 @@ function install(){
  // Presentation follows the already accepted Player DOM; no second state stream.
  const group={
    bankPrev:'mixer',bankSelect:'mixer',bankNext:'mixer',densitySelect:'mixer',
-   pluginsButton:'mixer fx',gainView:'mixer',fxView:'mixer fx',globalFxToggle:'fx',
+   pluginsButton:'mixer fx',gainView:'mixer',fxView:'mixer fx',globalFxToggle:'mixer fx',
    sofToggle:'mixer routing',sofTarget:'mixer routing',clearCue:'mixer routing',
    wireNavigatorToggle:'routing',wireMatrixToggle:'routing',wireConfigToggle:'routing',
    sceneSelect:'scenes',saveScene:'scenes',recallScene:'scenes',addTrack:'mixer routing',

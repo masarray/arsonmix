@@ -13,6 +13,8 @@ on:
       - 'tests/player_crossfade_curve_test.cpp'
       - 'tests/player_show_transition_policy_test.cpp'
       - 'tests/player_transport_lifecycle_contract.test.mjs'
+      - 'tests/player_live_show_ui_workflow.test.mjs'
+      - 'tests/approved_player_v4_chromium_smoke.py'
       - '.github/workflows/player-show-fast.yml'
   workflow_dispatch:
 permissions:
@@ -54,7 +56,7 @@ jobs:
 
   player-browser:
     name: Player actual assembled Chromium interaction and visual evidence
-    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/arson-player-v4-') }}
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feat/arson-player-') }}
     needs: portable
     runs-on: ubuntu-latest
     timeout-minutes: 10

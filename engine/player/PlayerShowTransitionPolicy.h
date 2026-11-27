@@ -117,6 +117,12 @@ struct PlayerShowTransitionPolicy final {
                             tickSeconds)*speed;
         return remaining<=early && remaining>=-tickSeconds*speed;
     }
+    // An armed loop may recover a late control tick at EOF, never from pause/stop.
+    static bool loopDue(bool playing,bool ended,double seconds,double duration,
+                        int fadeMilliseconds,double tickSeconds,int tempoPercent) noexcept {
+        return ended || (playing && armBeforeEnd(seconds,duration,fadeMilliseconds,
+                                                  tickSeconds,tempoPercent));
+    }
     // Loop A-B is a rehearsal-only opt-in. Never attempt microscopic
     // segments or a fade longer than the segment: require a real period of
     // audible music and a bounded overlap. CUT uses a 40ms de-click loop.

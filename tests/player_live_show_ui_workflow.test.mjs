@@ -301,3 +301,44 @@ publish({pending:-1,transport:{state:"STOPPED"}});
 assert.equal($("playerCueIn").disabled,false);
 assert.equal($("playerNext").disabled,false);
 console.log("Player output recovery, STOP during pending and cue re-enable PASS");
+
+// Do not emit seek commands during crossfade, show native queued refresh.
+publish({pending:-1,transport:{state:"PLAYING",crossfading:true}});
+assert.equal($("playerSeek").disabled,true);
+assert.equal($("playerCueIn").disabled,true);
+actions.length=0;$("playerSeek").fire("keydown");$("playerSeek").value="500";$("playerSeek").fire("change");
+assert.equal(actions.length,0);
+publish({transport:{state:"PLAYING",crossfading:false},mediaRefreshQueued:true});
+assert.equal($("playerSeek").disabled,false);
+assert.equal($("playerFeedback").textContent,"Metadata refresh queued…");
+publish({mediaRefreshQueued:false});
+assert.notEqual($("playerFeedback").textContent,"Metadata refresh queued…");
+console.log("P1 crossfade seek suppression and metadata refresh readback PASS");
+
+// P2: keyboard queue-full must reach native authority, just like context menu.
+publish({tracks:songs,queue,current:0,selected:0,pending:-1,error:"",transport:{state:"PLAYING"}});
+search.value="Song 0000";search.fire("input");
+actions.length=0;search.fire("keydown",{key:"Enter",ctrlKey:true,preventDefault(){}});
+assert.equal(actions.at(-1).detail.action,"playerQueueAppend");
+actions.length=0;songRows()[0].children[0].fire("keydown",{key:"Enter",ctrlKey:true,preventDefault(){}});
+assert.equal(actions.at(-1).detail.action,"playerQueueAppend");
+publish({error:"Queue is full (128 songs); remove an entry first"});
+assert.match($("playerFeedback").textContent,/128 songs/);
+assert.equal($("playerFeedback").dataset.error,"true");
+const selectedButton=songRows()[0].children[0];
+selectedButton.focus();actions.length=0;selectedButton.click();
+publish({selected:0,current:0,error:""});
+assert.strictEqual(songRows()[0].children[0],selectedButton);
+assert.equal(document.activeElement,selectedButton);
+for(const transport of [{state:"PLAYING",crossfading:true},{state:"PLAYING",crossfading:false}]){
+  publish({pending:transport.crossfading?-1:1,transport});
+  actions.length=0;
+  for(const id of ["playerCueIn","playerCueOut","playerCueGoIn","playerCueClear"])$(id).click();
+  assert.equal(actions.length,0,"stale cue gestures must not be emitted");
+}
+publish({pending:-1,error:"Music file is missing",transport:{state:"ERROR",error:"File missing or unreadable"}});
+actions.length=0;$("playerStop").click();assert.equal(actions.at(-1).detail.action,"playerStop");
+publish({error:"",transport:{state:"STOPPED",error:""}});
+assert.equal($("playerFeedback").dataset.error,"false");
+assert.doesNotMatch($("playerFeedback").textContent,/missing|error/i);
+console.log("P2 queue-full shortcuts, stable selection and STOP/cue readback PASS");

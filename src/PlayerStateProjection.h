@@ -31,6 +31,7 @@ public:
         bool loopAB=false;
         bool libraryBusy=false;
         const std::map<juce::File,int>* catalogueIds=nullptr;
+        bool mediaRefreshQueued=false;
     };
     static juce::var build(const Source& s,bool includeLibrary,
                            bool includeTracks) {
@@ -52,6 +53,7 @@ public:
             PlayerSetlistArchive::canUndoRemove(
                 s.active,s.undoSet,s.undoIndex,s.files.size(),s.controls.size()));
         obj->setProperty("libraryBusy",s.libraryBusy);
+        obj->setProperty("mediaRefreshQueued",s.mediaRefreshQueued);
         obj->setProperty("error",s.error);
         obj->setProperty("chooseOutput",
             s.error.containsIgnoreCase("Choose a verified MAIN output") ||
