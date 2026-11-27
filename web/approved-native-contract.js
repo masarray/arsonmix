@@ -381,6 +381,13 @@
     const cables=options.filter(n=>/^CABLE Input(?:\s|\(|$)/i.test(n));
     return cables.length===1?cables[0]:"";
   }
+  // A saved endpoint is a selection, never proof of PCM or permission to ARM.
+  function mainMonitorPreference(names,preferred,hasSaved) {
+    if(typeof preferred==="string"&&preferred&&names.includes(preferred))
+      return {value:"__armix_saved__",label:preferred+" · saved / off",endpoint:preferred};
+    if(hasSaved)return {value:"__armix_saved_missing__",label:"Saved device unavailable · off",endpoint:""};
+    return {value:"",label:"None",endpoint:""};
+  }
   function secondaryOutputView(snapshot,live) {
     const raw=snapshot?.raw;
     const liveEpoch=live?.dryRoutingLab?.epoch, snapshotEpoch=snapshot?.device?.epoch;
@@ -1236,5 +1243,5 @@
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,firstSoundPlan,diagnoseFirstSound,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,secondaryOutputView,secondaryOutputRow,secondaryOutputSettlement,monitorTimingView});
+    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,mainMonitorPreference,secondaryOutputView,secondaryOutputRow,secondaryOutputSettlement,monitorTimingView});
 });

@@ -434,6 +434,10 @@ public:
     }
     void disarmSecondaryOutput() noexcept {secondaryOutput_.disarm();}
     void disconnectSecondaryOutput(){secondaryOutput_.stop();}
+    // Verified endpoint identity is a machine preference, not ARM authority.
+    std::wstring secondarySelectedEndpointId() const {
+        return secondaryOutput_.ready()&&!secondaryOutput_.faulted()?secondaryOutput_.endpointId():std::wstring{};
+    }
     bool secondaryArmed() const noexcept{return secondaryOutput_.armed();}
     bool secondaryFaulted() const noexcept{return secondaryOutput_.faulted();}
 

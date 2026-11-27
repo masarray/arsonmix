@@ -3954,16 +3954,18 @@
     const active=v.armed||v.recovering;
     const primary=String(hardware?.device?.playbackDevice||"").toLowerCase();
     const names=extraInventory.filter(n=>n.toLowerCase()!==primary);
+    const saved=protocol.mainMonitorPreference(names,extraPreferred,extraHasSaved);
     const opts=[["","None"+(extraPending?" · applying":v.fault?" · fault":v.ready&&!active?" · muted":"")]];
+    if(!active&&!v.split&&saved.value)opts.push([saved.value,saved.label]);
     if(active&&v.name)opts.push([v.name,v.name+(v.recovering?" · reconnecting":"")]);
     else if(!v.split&&mainMonitorAllowed()&&extraInventoryKnown&&!extraInventoryPending)
-      for(const name of names)opts.push([name,name]);
+      for(const name of names)opts.push([name,name===saved.endpoint?"Enable "+name:name]);
     if(!active&&!v.split)opts.push(["__armix_refresh__","Refresh devices…"]);
     if(!active&&!v.split&&(v.fault||v.ready||v.name))
       opts.push(["__armix_stop__","Disconnect"]);
     if(v.split)opts.push(["__armix_split__","Separate mix"]);
     opts.push(["__armix_settings__","MON settings…"]);
-    const value=v.split?"__armix_split__":active&&v.name?v.name:"";
+    const value=v.split?"__armix_split__":active&&v.name?v.name:saved.value;
     const sig=JSON.stringify(opts);
     if(select.dataset.signature!==sig){
       select.replaceChildren(...opts.map(([value,label])=>new Option(label,value)));
@@ -3989,7 +3991,7 @@
     paintMainMonitor();
     if(extraPending||deviceBusy())return;
     if(value==="__armix_settings__"){openAdditionalOutput();return;}
-    if(v.split)return;
+    if(v.split||value==="__armix_saved__"||value==="__armix_saved_missing__")return;
     if(value==="__armix_refresh__"){refreshAdditionalInventory(true);return;}
     if(value===""||value==="__armix_stop__"){
       if(v.ready||v.fault||v.recovering||v.name)
@@ -5948,6 +5950,9 @@
         }
       }else {
         extraPending.acked=true;
+        if(["secondaryOutputEnable","secondaryOutputConnect","secondaryOutputArm"].includes(ack.action)&&ack.preferenceSaved===true&&ack.endpoint){
+          extraPreferred=ack.endpoint;extraHasSaved=true;
+        }
         if(extraPending.action==="secondaryMonitorStarter"||extraPending.action==="secondaryOutputSplit")
           extraPending.ackRevision=String(ack.graphRevision||"");
         // A fresh status and accepted graph may already have arrived while
@@ -6220,7 +6225,8 @@
       // The mismatched field hid native VST3 layout/latency, driver and
       // routing failures behind rapid meter/readback status updates.
       const message=notice?.text;
-      if(notice?.error===true && typeof message==="string" && message.length){
+      const rackReceipt=typeof message==="string"&&/^(FX Rack saved|FX saved|Saved FX inserted|FX Rack opened|FX rack file operation cancelled)/.test(message);
+      if((notice?.error===true||rackReceipt) && typeof message==="string" && message.length){
         nativeToast(message); // physical FX/driver failures remain visible
         status("JUCE · "+message);
       }
@@ -6276,20 +6282,22 @@
   }
   function requestRackFile(track,operation,slot,token){
     const target=rackFileTarget(track);
-    if(!target||!["SAVE","OPEN","INSERT","DEACTIVATE"].includes(operation)){
+    if(!target||!["SAVE","SAVE_SINGLE","OPEN","INSERT","DEACTIVATE"].includes(operation)){
       nativeToast("FX rack file unavailable · verify current native rack");return false;
     }
     const {channel,...identity}=target;
-    if(operation==="DEACTIVATE"&&(!Number.isInteger(slot)||channel.inserts?.[slot]?.id!==token)){
+    const single=operation==="DEACTIVATE"||operation==="SAVE_SINGLE";
+    if(single&&(!Number.isInteger(slot)||channel.inserts?.[slot]?.id!==token)){
       nativeToast("FX changed · reopen rack menu");return false;
     }
     // Rack topology may replace or shift slot-relative inline editor leases.
-    if(operation!=="SAVE"){
+    if(operation!=="SAVE"&&operation!=="SAVE_SINGLE"){
       retirePendingRackEditor([identity.channelId]);
       inlineFxClip?.closeRackEditors([identity.channelId]);
     }
     backend.emitEvent("arMixAction",{action:"fxRackFile",operation,...identity,
-      slot:operation==="DEACTIVATE"?slot:-1,instanceId:operation==="DEACTIVATE"?token:""});
+      slot:single?slot:-1,instanceId:single?token:""});
+    status("JUCE · FX rack file requested");
     return true;
   }
   const nativeHooks=Object.freeze({

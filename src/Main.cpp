@@ -4333,18 +4333,23 @@ private:
         if(label.isEmpty()||label.length()>240||identity.isEmpty()||identity.length()>2048)return;
         secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer())};
     }
-    void rememberSecondaryPreference(const LiveAudioEngine::SecondaryResumeIntent& intent) {
+    bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId) {
         loadSecondaryPreference();
-        if(secondaryPreference_&&secondaryPreference_->name==intent.name&&
-           secondaryPreference_->id==intent.endpointId)return;
+        if(name.isEmpty()||name.length()>240||endpointId.empty()||endpointId.size()>2048)return false;
+        if(secondaryPreference_&&secondaryPreference_->name==name&&
+           secondaryPreference_->id==endpointId)return true;
         auto data=std::make_unique<juce::DynamicObject>();
         data->setProperty("version",1);
-        data->setProperty("name",intent.name);
-        data->setProperty("endpointId",juce::String(intent.endpointId.c_str()));
+        data->setProperty("name",name);
+        data->setProperty("endpointId",juce::String(endpointId.c_str()));
         if(machineSettingsDirectory().createDirectory().wasOk()&&
            secondaryPreferenceFile().replaceWithText(juce::JSON::toString(juce::var(data.release()),true)))
-            secondaryPreference_=SecondaryPreference{intent.name,intent.endpointId};
-        else diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Output active; machine-local preference not saved");
+        {
+            secondaryPreference_=SecondaryPreference{name,endpointId};
+            return true;
+        }
+        diagnostics_.record("SECONDARY_PREFERENCE_SAVE_FAIL","Machine-local preference not saved");
+        return false;
     }
     // One bounded discovery flight for both output surfaces. Worker owns
     // only read-only MMDevice enumeration, never engine, GUI or audio objects.
@@ -6200,12 +6205,13 @@ private:
     }
     void chooseFxRackFile(const juce::var& args) {
         const auto op=args.getProperty("operation",{}).toString();
-        const bool deactivate=op=="DEACTIVATE",save=op=="SAVE"||deactivate,append=op=="INSERT";
+        const bool deactivate=op=="DEACTIVATE",single=op=="SAVE_SINGLE"||deactivate;
+        const bool save=op=="SAVE"||single,append=op=="INSERT";
         const auto token=args.getProperty("instanceId",{}).toString();
         const auto slotValue=args.getProperty("slot",{});
-        const int slot=deactivate&&slotValue.isInt()?static_cast<int>(slotValue):-1;
+        const int slot=single&&slotValue.isInt()?static_cast<int>(slotValue):-1;
         std::uint64_t ep=0,rev=0,roster=0,id=0;
-        if((!save&&!append&&op!="OPEN")||(deactivate&&(slot<0||slot>=8||token.isEmpty()))||
+        if((!save&&!append&&op!="OPEN")||(single&&(slot<0||slot>=8||token.isEmpty()))||
            !armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)||
            !armix::console::approvedNativeId(args.getProperty("graphRevision",{}),rev)||
            !armix::console::approvedNativeId(args.getProperty("rosterRevision",{}),roster)||
@@ -6217,9 +6223,9 @@ private:
            catalog_.busy()||logicalVendorEditor_||!engine_.rackFileAllowed(ep,rev,roster,channel))
             return emitNotice("FX rack file: disarm MAIN and STREAM; use a current native rack",true);
         auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
-        if(save)start=start.getChildFile(deactivate?"Saved-FX.arfx":"Vocal-Rack.arfx");
+        if(save)start=start.getChildFile(single?"Saved-FX.arfx":"Vocal-Rack.arfx");
         fxRackFileChooser_=std::make_unique<juce::FileChooser>(
-            deactivate?"Deactivate and save FX":save?"Save FX Rack":append?
+            deactivate?"Deactivate and save FX":single?"Save FX":save?"Save FX Rack":append?
                 "Insert saved FX":"Open FX Rack (replace)",start,"*.arfx",true);
         using Flags=juce::FileBrowserComponent;
         fxRackFileChooser_->launchAsync(Flags::canSelectFiles|
@@ -6227,7 +6233,8 @@ private:
             [safe=juce::Component::SafePointer<ConsoleWindow>(this),ep,rev,roster,channel,
              token,slot,save,deactivate,append](const juce::FileChooser& picker){
                 if(!safe)return;
-                const auto file=picker.getResult();
+                auto file=picker.getResult();
+                if(save&&file!=juce::File{}&&file.getFileExtension().isEmpty())file=file.withFileExtension(".arfx");
                 juce::String error;
                 bool archived=false;
                 if(file!=juce::File{}){
@@ -6259,11 +6266,11 @@ private:
                             safe->emitApprovedNativeSnapshot();
                         }
                         safe->emitNotice(deactivate?"FX saved and deactivated; latency plan rebuilt. MAIN/STREAM remain disarmed.":
-                            save?"FX Rack saved":append?"Saved FX inserted; output remains disarmed":
+                            save?(slot>=0?"FX saved":"FX Rack saved"):append?"Saved FX inserted; output remains disarmed":
                             "FX Rack opened; output remains disarmed");
                     }else safe->emitNotice((archived?juce::String("FX saved; deactivation rejected: "):
                         juce::String("FX rack unchanged: "))+error,true);
-                }
+                }else safe->emitNotice("FX rack file operation cancelled");
                 juce::MessageManager::callAsync([safe]{if(safe)safe->fxRackFileChooser_.reset();});
             });
     }
@@ -10703,9 +10710,18 @@ private:
                 if(auto intent=engine_.captureSecondaryResumeIntent()) {
                     if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
                         secondaryContinuity_=SecondaryContinuity{*intent,engine_.dryRoutingLabEpoch(),engine_.outputArmRevision()};
-                    rememberSecondaryPreference(*intent);
                 }
+            // Persist the verified selection on CONNECT as well as ENABLE/ARM.
+            // STOP/disarm never turns a saved preference into startup ARM consent.
+            bool preferenceSaved=true;
+            if(error.isEmpty()&&(action=="secondaryOutputConnect"||action=="secondaryOutputEnable"||
+               (action=="secondaryOutputArm"&&bool(value)))) {
+                const auto name=engine_.status().getProperty("secondaryOutputName","").toString();
+                preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId());
+                if(!preferenceSaved)emitNotice("Output changed, but MON selection could not be saved. Check settings folder permissions.",true);
+            }
             auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("preferenceSaved",preferenceSaved);
             ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
             const auto latest=engine_.status();
