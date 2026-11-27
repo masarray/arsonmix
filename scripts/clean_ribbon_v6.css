@@ -277,3 +277,22 @@ html .app #armix-ribbon-commands .armix-ribbon-scene button{letter-spacing:0!imp
 /* Local V6 Main Mix indicator: thin mixer glyph on the left. */
 html .app #armix-ribbon-commands.armix-ribbon>#mixContext{display:flex!important;align-items:center;gap:6px}
 html .app #armix-ribbon-commands.armix-ribbon>#mixContext::before{content:"";display:inline-block;width:13px;height:13px;flex:0 0 13px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M5%203v18M12%203v18M19%203v18M3%209h4m3%207h4m3-9h4%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat}
+
+/* Public touch ribbon: the command strip scrolls independently of the
+   application disclosure. A viewport-fixed menu escapes that scroll clip.
+   Keep native desktop and the single approved hardware/CSS owner unchanged. */
+@media(max-width:640px){
+ html:not(.armix-native-desktop) .app #armix-ribbon-commands.command-bar.armix-ribbon{
+   overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:none;overscroll-behavior-x:contain;
+ }
+ html:not(.armix-native-desktop) .app #armix-ribbon-commands.command-bar.armix-ribbon::-webkit-scrollbar{display:none}
+ html:not(.armix-native-desktop) .app #armix-ribbon-commands.armix-ribbon>#moreTools{
+   position:fixed!important;top:5px!important;left:8px!important;
+ }
+ html:not(.armix-native-desktop) .app #armix-ribbon-commands.armix-ribbon>#moreTools>.more-tools-panel{
+   position:fixed!important;top:40px!important;left:8px!important;right:auto!important;
+ }
+ /* The public browser cannot operate native window captions; reclaim their
+    narrow-screen space for the real workflow tab scroller. */
+ html:not(.armix-native-desktop) .app .armix-ribbon-window-controls{display:none!important}
+}

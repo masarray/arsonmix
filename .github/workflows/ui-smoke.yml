@@ -481,7 +481,7 @@ jobs:
   clean-ribbon-v6:
     name: Clean Ribbon V6 exact-head native assembly Chromium
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || startsWith(github.head_ref, 'feat/clean-ribbon-v6-') || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'feat/autonomous-updater-v2-20261127') }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || github.head_ref == 'fix/v6-mobile-ribbon-ownership-20261128' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || startsWith(github.head_ref, 'feat/clean-ribbon-v6-') || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'feat/autonomous-updater-v2-20261127') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -503,6 +503,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
           python tests/native_header_toolbar_chromium_smoke.py
           python tests/approved_player_v4_chromium_smoke.py
+      - name: Exact public touch ribbon and cascading menu
+        if: ${{ github.head_ref == 'fix/v6-mobile-ribbon-ownership-20261128' }}
+        run: |
+          python scripts/build_pages.py --out dist-pages --sha "${{ github.event.pull_request.head.sha }}" --branch main
+          python tests/approved_preview_mobile_navigation_smoke.py
       - name: Production layout exact public geometry preflight
         if: ${{ github.head_ref == 'feat/clean-ribbon-v6-production-layout-20261127' }}
         run: python tests/preview_v2_v7_visual_smoke.py
