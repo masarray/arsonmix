@@ -2608,14 +2608,20 @@ public:
             fail.error="NATIVE_VST3_VENDOR_PREPARE_FAILED";return fail;
         }
     }
-    bool rackFileAllowed(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+    // Browsing a file is non-mutating. The original stricter admission is
+    // still required before capturing plugin state or publishing a rack.
+    bool rackFileTargetAvailable(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId target) {
-        return allOutputsDisarmed()&&!independent_.active()&&attached_&&directFence_.permitted()&&
-            !wantsMainContinuation()&&!handoff_.busy()&&
+        return !independent_.active()&&attached_&&directFence_.permitted()&&!handoff_.busy()&&
             fxMovePhase_.load(std::memory_order_acquire)==0&&
             !routeReconfiguring_.load(std::memory_order_acquire)&&
             diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal&&
             dryRoutingLab_.rackFileTargetCurrent(ep,rev,roster,target);
+    }
+    bool rackFileAllowed(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId target) {
+        return allOutputsDisarmed()&&!wantsMainContinuation()&&
+            rackFileTargetAvailable(ep,rev,roster,target);
     }
     juce::String captureRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId target,int slot,const juce::String& token,

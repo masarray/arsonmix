@@ -309,9 +309,10 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('change.op==="DISCONNECT"',bridge)
         self.assertIn("scope?.animateAcceptedWireRetract?.(held.uiSource,held.point)",bridge)
         self.assertIn("return false; // Native ACK+readback, NEVER the browser reducer",bridge)
-        import subprocess
+        import os, subprocess
         # Execute the real bridge method in bounded Node, not just strings.
-        done=subprocess.run(["node",str(ROOT/"tests/native_wire_replug_identity_node_test.js")],
+        node=os.environ.get("ARMIX_WIRE_TEST_NODE", "node")
+        done=subprocess.run([node,str(ROOT/"tests/native_wire_replug_identity_node_test.js")],
                             capture_output=True,text=True,timeout=15)
         self.assertEqual(done.returncode,0,done.stdout+"\n"+done.stderr)
 

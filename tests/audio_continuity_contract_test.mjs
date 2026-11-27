@@ -269,3 +269,16 @@ test('physical bus remap waits for AUDIO fade receipt with bounded CONTROL lease
  assert.ok(engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
  assert.match(main,/servicePendingPhysicalBusPatch\(\);\s*if\(deviceApply_\.busy\(\)\)return/);
 });
+
+test('integrated FIELD serializes physical bus remap with FX rack file operations',()=>{
+ const rack=main.split('bool rackFileOperationBusy() const')[1].split('void chooseNamedIoProfile(')[0];
+ assert.match(rack,/deviceApply_\.busy\(\)/);
+ assert.match(rack,/if\(!current\(\)\)return finish\("FAILED"/);
+ assert.match(rack,/safe->engine_\.rackFileTargetAvailable\(ep,rev,roster,channel\)/);
+ const bus=main.split('void handlePhysicalBusOutput(')[1].split('void serviceSecondaryContinuity()')[0];
+ assert.match(bus,/Purpose::busOutputPatch/);
+ assert.match(bus,/!deviceApply_\.busy\(\)/);
+ const actions=main.split('void onAction (const juce::var& args)')[1];
+ assert.match(actions,/if\(action=="fxRackFileReadback"\)return readFxRackFileResult\(args\)/);
+ assert.match(actions,/cancelPendingPhysicalBusPatch\("BUS OUTPUT: superseded by operator action"\)/);
+});
