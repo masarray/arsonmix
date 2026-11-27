@@ -573,17 +573,39 @@ function Download-PortableVerified([object]$release,[object]$asset,[string]$dest
     Download-Verified $asset $destination
     Assert-InstallerAttestation $destination $tag $sha -PortableZip
 }
+# A ZIP is exposed to the operator only after the cryptographic check.
+# The private stage keeps its exact release filename for signer policy.
+function Publish-VerifiedPortableDownload([string]$stageFile,[string]$destination,[object]$asset) {
+    if(-not (Test-RegularUpdateFile $stageFile) -or -not (Test-StagedAsset $stageFile $asset)){Fail 'Portable staged bytes changed'}
+    $parent=[IO.Path]::GetDirectoryName($destination)
+    [IO.Directory]::CreateDirectory($parent)|Out-Null
+    if(((Get-Item -LiteralPath $parent -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){Fail 'Unsafe portable download folder'}
+    if(Test-Path -LiteralPath $destination){
+        if(-not (Test-RegularUpdateFile $destination)){Fail 'Unsafe portable download destination'}
+        if(Test-StagedAsset $destination $asset){return}
+        # A previous ZIP could contain user changes. Never overwrite it.
+        Fail 'Portable download destination already exists with different bytes'
+    }
+    [IO.File]::Move($stageFile,$destination)
+}
+function Test-PortableCacheLayout {
+    foreach($folder in @($PSScriptRoot,$root,(Join-Path $root 'stage'),(Join-Path $root 'downloads'))){
+        if(Test-Path -LiteralPath $folder){
+            $info=Get-Item -LiteralPath $folder -Force
+            if(-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return $false}
+        }
+    }
+    foreach($path in @($statePath,($statePath+'.new'),$logPath)){
+        if((Test-Path -LiteralPath $path) -and -not (Test-RegularUpdateFile $path)){return $false}
+    }
+    return $true
+}
 function Invoke-PortableUpdateCheck {
     if($ApplyStaged -or $RecoveryMode -or -not (Owns-Exe $OwnerProcessId)){return}
     $marker=Join-Path $PSScriptRoot 'portable_mode.txt'
     if(-not (Test-RegularUpdateFile $marker) -or
        (Get-Content -LiteralPath $marker -Raw).Trim() -cne 'ARSONMIX_PORTABLE_WORKSPACE_V1'){return}
-    foreach($folder in @($PSScriptRoot,$root)){
-        if(Test-Path -LiteralPath $folder){
-            $info=Get-Item -LiteralPath $folder -Force
-            if(-not $info.PSIsContainer -or ($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0){return}
-        }
-    }
+    if(-not (Test-PortableCacheLayout)){return}
     [IO.Directory]::CreateDirectory($root)|Out-Null
     $file=Read-Json $provenance
     if([string]$file.sourceCommit -cnotmatch '^[a-f0-9]{40}$' -or
@@ -619,7 +641,15 @@ function Invoke-PortableUpdateCheck {
     $state.phase='downloading';$state.candidateTag=[string]$candidate.tag_name;$state.candidateSha=[string]$candidate.target_commitish;Write-State $state
     Log-Result 'DOWNLOADING_VERIFIED_UPDATE'
     $destination=Join-Path (Join-Path $root 'downloads') ([string]$asset.name)
-    Download-PortableVerified $candidate $asset $destination
+    $stageFile=Join-Path (Join-Path $root 'stage') ([string]$asset.name)
+    # Reuse already downloaded exact ZIP, but recheck current publisher
+    # identity before marking it ready. Never overwrite a user-modified ZIP.
+    if((Test-RegularUpdateFile $destination) -and (Test-StagedAsset $destination $asset)){
+        Assert-InstallerAttestation $destination ([string]$candidate.tag_name) ([string]$candidate.target_commitish) -PortableZip
+    } else {
+        Download-PortableVerified $candidate $asset $stageFile
+        Publish-VerifiedPortableDownload $stageFile $destination $asset
+    }
     $state.phase='portable-ready';$state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
     $state.newAsset=[pscustomobject]@{name=$asset.name;digest=$asset.digest;size=$asset.size}
     Write-State $state
@@ -1124,6 +1154,24 @@ if($PolicySelfTest) {
     $candidate.assets=@($candidate.assets | Where-Object {$_.name -cne 'RELEASE_TRUST-windows.json'})
     if($null -ne (Select-PortableRelease @($baseline,$candidate) ('a'*40)).candidate){throw 'Portable release without trust manifest accepted'}
     if($null -ne (Select-PortableRelease @($baseline) ('c'*40)).baseline){throw 'Unknown portable baseline accepted'}
+    $priorLogPath=$logPath
+    $priorRoot=$root
+    $portableFixture=Join-Path ([IO.Path]::GetTempPath()) ('armix-portable-'+[guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($portableFixture)|Out-Null
+    $root=$portableFixture;$logPath=Join-Path $portableFixture 'test.log'
+    try {
+        $source=Join-Path $portableFixture 'stage.zip'
+        $destination=Join-Path $portableFixture 'downloads\ready.zip'
+        [IO.File]::WriteAllBytes($source,(New-Object byte[] 2097152))
+        $asset=[pscustomobject]@{size=2097152;digest='sha256:'+(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()}
+        Publish-VerifiedPortableDownload $source $destination $asset
+        if(-not (Test-StagedAsset $destination $asset) -or (Test-Path -LiteralPath $source)){throw 'Portable promotion failed'}
+        [IO.File]::WriteAllBytes($source,(New-Object byte[] 2097152))
+        [IO.File]::WriteAllText($destination,'private modified file')
+        $rejected=$false
+        try {Publish-VerifiedPortableDownload $source $destination $asset} catch {$rejected=$true}
+        if(-not $rejected -or [IO.File]::ReadAllText($destination) -cne 'private modified file'){throw 'Portable promotion overwrote existing data'}
+    } finally {$root=$priorRoot;$logPath=$priorLogPath;Remove-Item -LiteralPath $portableFixture -Recurse -Force}
     Write-Output 'ARSONMIX_PORTABLE_DOWNLOAD_POLICY_PASS'
     Write-Output 'ARSONMIX_UPDATER_RESUME_POLICY_PASS'
     $leaseDir=Join-Path ([IO.Path]::GetTempPath()) ('armix-rollback-'+[guid]::NewGuid().ToString('N'))
@@ -1153,6 +1201,7 @@ if($PolicySelfTest) {
 }
 
 try {
+    if($portable -and (-not (Test-PortableCacheLayout) -or $ApplyStaged -or $RecoveryMode)){exit 0}
     if($RecoveryMode -and -not (Test-Path -LiteralPath $provenance -PathType Leaf)) {
         Show-RecoveryFailure 'Installation version metadata is missing'
         exit 0
@@ -1523,7 +1572,7 @@ try {
             Write-State $state
         }
     } catch { }
-    Log-Result ('FAIL_CLOSED '+$_.Exception.Message)
+    if(-not $portable -or (Test-PortableCacheLayout)){Log-Result ('FAIL_CLOSED '+$_.Exception.Message)}
 } finally {
     if($null -ne $rollbackGuard){$rollbackGuard.Dispose()}
     if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}

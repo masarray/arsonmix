@@ -688,6 +688,8 @@ test('Portable release handoff downloads an attested ZIP but cannot apply or mod
   const u=read('installer/ArSonMixAutoUpdate.ps1'),n=read('src/Main.cpp'),bridge=read('web/approved-native-bridge.js');
   const work=u.slice(u.indexOf('function Invoke-PortableUpdateCheck'),u.indexOf('function Test-StagedAsset'));
   assert.match(work,/Download-PortableVerified/);
+  assert.ok(work.indexOf('Download-PortableVerified $candidate $asset $stageFile')<work.indexOf('Publish-VerifiedPortableDownload $stageFile $destination $asset'));
+  assert.match(u,/Portable download destination already exists with different bytes/);
   assert.doesNotMatch(work,/Run-Installer|Expand-Archive|Start-Process|Remove-Item|Studio/);
   assert.match(u,/if\(\$portable -and \(\$ApplyStaged -or \$RecoveryMode\)\)\{exit 0\}/);
   assert.match(u,/Assert-InstallerAttestation \$destination \$tag \$sha -PortableZip/);

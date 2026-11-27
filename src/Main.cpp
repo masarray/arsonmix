@@ -13465,7 +13465,7 @@ private:
     {
         // The separately running updater has already staged and SHA-checked
         // both packages. Never claim a prompt can validate publisher identity.
-        if (!window_ || smartUpdaterPortableEligible())
+        if (!window_ || armix::storage::PortableWorkspace::isPortableAt(armix::storage::PortableWorkspace::executableDirectory()))
             return;
         const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
         if (local.isEmpty())
@@ -13485,6 +13485,7 @@ private:
         const auto previous = object->getProperty ("previousSha").toString();
         if (tag.length() > 60 || !tag.startsWith ("v")
             || candidate.length() != 40 || previous.length() != 40
+            || previous != juce::String(ARMIX_BUILD_SOURCE_SHA)
             || !candidate.containsOnly ("0123456789abcdef")
             || !previous.containsOnly ("0123456789abcdef"))
             return;
