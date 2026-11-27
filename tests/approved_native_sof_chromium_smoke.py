@@ -85,7 +85,7 @@ def exercise(browser, out, width, height):
     toggle.click()
     target.select_option(label=next(label for label in options if "STAGE BUS" in label))
     assert page.locator("#mixContext").inner_text() == "SEND MIX → STAGE BUS"
-    receiver=page.locator("#tracks .strip").filter(has_text="STAGE BUS").locator(".fader")
+    receiver=page.locator(f'#tracks .strip[data-id="{target.input_value()}"] .fader')
     assert receiver.is_enabled(), "Selected destination retains its own bus master fader"
     assert abs(float(receiver.input_value()))<.01
     on = source.locator('[data-action="sofOn"]')
