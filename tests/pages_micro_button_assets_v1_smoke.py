@@ -26,6 +26,8 @@ def source_gate():
     assert 'micro-hardware-17x17-2x4.png?v=fx-green-v21' in css
     assert 'format-hardware-25x15-2x1.png?v=fx-green-v21' in css
     # Cross-owner ID-level V6 selectors used to override the micro cap.
+    # The contextual owner may supply only the existing hit envelope/focus;
+    # the actual cap dimensions and PNG paint remain in the utility owner.
     assert '.console-body .strip button.mx-util-key' not in context
     assert '.mx-util-key[data-util-kind=' not in context
 
@@ -74,7 +76,7 @@ def state(el):
        return {x:r.x,y:r.y,w:r.width,h:r.height,
          bg:s.backgroundImage,pos:s.backgroundPosition,size:s.backgroundSize,
          color:s.color,shadow:s.boxShadow,transform:s.transform,
-         duration:s.transitionDuration,alpha:s.backgroundColor,
+         duration:s.transitionDuration,alpha:s.backgroundColor,radius:s.borderRadius,
          pressed:el.getAttribute('aria-pressed')};
     }""")
 
@@ -100,7 +102,8 @@ def test_page(browser,url,label):
             assert s['transform']=='none' and s['duration']=='0s',(label,kind,s)
             assert s['shadow']=='none',(label,kind,s)
             assert s['h']==(15 if kind=='format' else 17),(label,kind,s)
-            assert s['w']==(25 if kind=='format' else 17),(label,kind,s)
+            assert s['w']==(25 if kind=='format' else (21 if label=='approved-png' else 17)),(label,kind,s)
+            assert s['radius']==('4px' if label=='approved-png' else '0px'),(label,kind,s)
             assert s['pos'].startswith(('100%' if s['pressed']=='true' else '0%')+' '),(label,kind,s)
             before[kind]=s
             if kind in ('fx-main','fx-slot') and s['pressed']=='true':
