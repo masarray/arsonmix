@@ -392,7 +392,7 @@ function sectionSof(t){
  const badge=!edge?'NO SEND':edge.kind!=='send'?'PRIMARY OUT':
    tap==='preFader'?'PRE-FADER':tap==='preFx'?'PRE-FX':'POST-FADER';
  const assignable=canDraftSof(t);
- const status=!dest?'Select a BUS/FX':!edge?(assignable?(t.sofDraft?.target===dest.id?'Draft '+wireDbText(t.sofDraft.db):'Choose send tap'):'Route unavailable'):
+ const status=!dest?'Select a BUS/FX':!edge?(assignable?(t.sofDraft?.target===dest.id?'DRAFT '+wireDbText(t.sofDraft.db):'Choose send tap'):'Route unavailable'):
    !send?'PRIMARY ROUTE · no send level':
    send.sendEnabled===false?'OFF · saved '+wireDbText(send.levelDb):
    'LEVEL '+wireDbText(send.levelDb);
