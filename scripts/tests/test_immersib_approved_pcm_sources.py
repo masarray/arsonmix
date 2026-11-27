@@ -139,6 +139,14 @@ class ApprovedImmerSIBSourceLockTests(unittest.TestCase):
             entry["blob"] = github_blob_hash(p.read_bytes().replace(b"\r\n", b"\n"))
             with self.assertRaisesRegex(ValueError, "SONKU_FIELD_VARIANT_SET_INCOMPLETE"):
                 validate(temp_root, mixed)
+            # Even resealing ALL four candidate blobs, eliminating the
+            # candidate variant branch entirely, cannot bless changed PCM.
+            resealed = copy.deepcopy(self.manifest)
+            for entry in resealed["files"]:
+                if entry["path"] in SONKU_FIELD_PINS:
+                    entry["blob"] = SONKU_FIELD_PINS[entry["path"]][1]
+            with self.assertRaisesRegex(ValueError, "HISTORICAL_PINSET_CHANGED"):
+                validate(temp_root, resealed)
 
 
 if __name__ == "__main__":

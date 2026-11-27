@@ -24,6 +24,9 @@ import sys
 SCHEMA = "arsonmix.approved-spatial-pcm-source-lock.v1"
 APPROVED_SHA = "3095af08b817d59a3e14874dab404bf6e243f38a"
 APPROVED_FILE_COUNT = 30
+# Digest of the sorted historical path<TAB>blob<LF> map (Git blob framing).
+# Reject a simultaneous source+manifest reseal, not only source mutations.
+APPROVED_PINSET_BLOB = "c334e0e1944b0250067db98f222f38fc6a0c808f"
 REQUIRED_ROOTS = {
     "engine/builtin_fx/ImerSipP92Processor.h",
     "engine/builtin_fx/ImerSipP92Scene.h",
@@ -113,6 +116,7 @@ def validate(root: Path, manifest: dict) -> int:
         raise ValueError("IMMERSIB_APPROVED_SOURCE_LOCK_INCOMPLETE")
     declared: set[str] = set()
     field_variants: set[str] = set()
+    historical_pins: list[str] = []
     for entry in files:
         if not isinstance(entry, dict):
             raise ValueError("IMMERSIB_APPROVED_SOURCE_LOCK_BAD_ENTRY")
@@ -130,6 +134,7 @@ def validate(root: Path, manifest: dict) -> int:
         if path in declared:
             raise ValueError(f"IMMERSIB_APPROVED_SOURCE_LOCK_DUPLICATE:{path}")
         declared.add(path)
+        historical_pins.append(f"{path}\t{expected}\n")
         data = (root / path).read_bytes().replace(b"\r\n", b"\n")
         actual = github_blob_hash(data)
         if actual != expected:
@@ -156,6 +161,8 @@ def validate(root: Path, manifest: dict) -> int:
         if field_variants != set(SONKU_FIELD_PINS):
             raise ValueError("SONKU_FIELD_VARIANT_SET_INCOMPLETE")
         verify_sonku_field_provenance(root)
+    if github_blob_hash("".join(sorted(historical_pins)).encode("utf-8")) != APPROVED_PINSET_BLOB:
+        raise ValueError("IMMERSIB_APPROVED_SOURCE_LOCK_HISTORICAL_PINSET_CHANGED")
     actual_files = REQUIRED_ROOTS | {
         p.relative_to(root).as_posix()
         for p in (root / SONKU_DIRECTORY).glob("*.h")

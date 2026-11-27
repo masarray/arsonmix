@@ -27,6 +27,7 @@ jobs:
           PY
           python3 scripts/verify_immersib_approved_pcm_sources.py
           python3 -m unittest scripts/tests/test_immersib_approved_pcm_sources.py
+          python3 -m unittest discover -s tests -p imersip_p92_authority_contract_test.py -v
           /tmp/sonku-p106
       - name: Historical main versus candidate — ImmerSIB full PCM isolation
         run: python3 tools/sonku_p106_immersib_isolation.py
