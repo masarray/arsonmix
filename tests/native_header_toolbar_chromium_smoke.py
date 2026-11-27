@@ -39,6 +39,7 @@ def main():
                 !document.querySelector('.command-bar [data-native-monitor]') &&
                 !!document.querySelector('[data-native-emergency-output]') &&
                 !!document.getElementById('playerToggle')""")
+            assert page.locator(".command-bar [data-native-extra-output], .command-bar [data-native-first-sound]").count() == 0
             assert page.locator(".command-bar").get_by_text("Mute Output", exact=True).count() == 0
             assert page.locator(".command-bar").get_by_text("Resume Output", exact=True).count() == 0
             # UX-1 visual regression: evaluate the ACTUAL native assembled

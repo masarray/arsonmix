@@ -2065,7 +2065,8 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
  assert.match(menu,/Confirm Delete AUX/);
  assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
- assert.match(bridge,/extraOutput\.addEventListener\("click",openAdditionalOutput\)/);
+ assert.match(bridge,/if\(value==="__armix_settings__"\)\{openAdditionalOutput\(\);return;\}/);
+ assert.doesNotMatch(bridge,/nativeExtraOutput|nativeFirstSound/);
  assert.match(bridge,/if\(page==="routing"\)mountInlineAdditionalOutput\(\)/);
  assert.match(bridge,/host\.append\(extraControls\)/);
  assert.doesNotMatch(bridge,/__arMixOpenAdditionalOutput/);
@@ -7812,7 +7813,7 @@ test("U4 starter mix is an atomic native WIRE transaction, no overwrite of autho
 });
 
 
-test("U5 first sound is a contextual shortcut to a verified empty ChannelId input",()=>{
+test("U5 first sound uses the ordinary verified ChannelId input selector",()=>{
  const s={admitted:true,hardwareConfiguration:"lease",device:{epoch:"17",enabledInputs:[2],inputEndpoints:[{port:2,label:"Mic",active:true}]},graph:{revision:"19",mainChannelId:"5",channels:[{id:"3",role:"INPUT",name:"Vocal",controls:{mute:false}}],edges:[{from:"3",to:"5",primaryOutput:true,enabled:true}]},raw:{mixerSession:{authority:"CHANNEL_ID",deviceEpoch:"17"}}};
  assert.deepEqual(protocol.firstSoundPlan(s),{channelId:"3",channelName:"Vocal",epoch:"17",revision:"19",config:"lease",pins:[{port:2,label:"Mic"}]});
  assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,operatorOutputMuted:true}}),null);
@@ -7820,7 +7821,8 @@ test("U5 first sound is a contextual shortcut to a verified empty ChannelId inpu
  assert.equal(protocol.firstSoundPlan({...s,graph:{...s.graph,channels:[{...s.graph.channels[0],source:{sourceFormat:"PLAYER"}}]}}),null);
  assert.equal(protocol.firstSoundPlan({...s,device:{...s.device,enabledInputs:[]}}),null);
  const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp");
- const f=b.slice(b.indexOf("function connectFirstSound("),b.indexOf("function openFirstSound("));
+ const f=b.slice(b.indexOf('if(field==="input"){\n        // Input selection'),b.indexOf('if(field==="external"){\n        if(event.type!=="change")return true;',b.indexOf('// Input selection is independent')));
+ assert.ok(f.length>0);
  assert.match(f,/pendingNativeSources.set/);assert.match(f,/dispatchNativeSource/);assert.doesNotMatch(f,/emitEvent/);
  const h=n.slice(n.indexOf('if(action=="routingNativeSourcePatch"){',n.indexOf('if(action=="routingNativeSourcePatch"){')+1),n.indexOf('if(action=="routingNativeBusCreate"'));
  assert.match(h,/withNativeTopologyContinuity/);assert.match(h,/engine_.patchNativeInputSource/);

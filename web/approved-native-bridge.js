@@ -3310,7 +3310,6 @@
     host.append(table);
   }
   function paintPhysicalOutputs(next) {
-    paintFirstSound(next);
     if(devicePanel&&!devicePanel.hidden){
       paintMonitorTiming(next);
       const page=devicePanel.querySelector(".armix-audio-dialog")?.dataset.audioTab;
@@ -3442,7 +3441,7 @@
       !d.enabledInputs?.length?(next.admitted?"NO ACTIVE CAPTURE PINS · AUDIO I/O":
         "CHECK AUDIO I/O SETTINGS"):
       next?.raw?.operatorOutputMuted===true?"EMERGENCY STOP · MORE → RESUME":
-      protocol.firstSoundPlan(next)?"CONNECT MICROPHONE · CHOOSE INPUT":
+      protocol.firstSoundPlan(next)?"SELECT CHANNEL IN":
       legacy()?.routeAccepted||next?.admitted?"OUTPUT RECOVERING · CHECK AUDIO I/O":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
       "NO VERIFIED INPUT ROUTE · OPEN AUDIO I/O";
@@ -3728,7 +3727,8 @@
     if(!active&&!v.split)opts.push(["__armix_refresh__","Refresh devices…"]);
     if(!active&&!v.split&&(v.fault||v.ready||v.name))
       opts.push(["__armix_stop__","Disconnect"]);
-    if(v.split)opts.push(["__armix_split__","Separate mix · settings"]);
+    if(v.split)opts.push(["__armix_split__","Separate mix"]);
+    opts.push(["__armix_settings__","MON settings…"]);
     const value=v.split?"__armix_split__":active&&v.name?v.name:"";
     const sig=JSON.stringify(opts);
     if(select.dataset.signature!==sig){
@@ -3736,10 +3736,11 @@
       select.dataset.signature=sig;
     }
     if(select.value!==value)select.value=value;
-    select.disabled=Boolean(extraPending)||deviceBusy()||v.split||extraInventoryPending||
-      (!active&&!v.fault&&!mainMonitorAllowed());
+    // Settings remains reachable in Separate mix and before a device is ready.
+    // Actual routing still passes the existing native admission checks below.
+    select.disabled=Boolean(extraPending)||deviceBusy()||Boolean(extraInventoryPending);
     select.dataset.status=extraPending?"PENDING":v.state;
-    const title=extraError||(v.split?"Separate mix is configured in Output settings.":
+    const title=extraError||(v.split?"Separate mix · choose MON settings to configure.":
       v.fault?"Secondary output fault · select endpoint to retry or Disconnect.":
       active?"Secondary output "+v.state+" · choose None before switching devices.":
       !mainMonitorAllowed()?"Configure the primary audio device and mixer route first.":
@@ -3752,7 +3753,9 @@
     const value=select.value;
     const v=protocol.secondaryOutputView(hardware,extraLive);
     paintMainMonitor();
-    if(extraPending||deviceBusy()||v.split)return;
+    if(extraPending||deviceBusy())return;
+    if(value==="__armix_settings__"){openAdditionalOutput();return;}
+    if(v.split)return;
     if(value==="__armix_refresh__"){refreshAdditionalInventory(true);return;}
     if(value===""||value==="__armix_stop__"){
       if(v.ready||v.fault||v.recovering||v.name)
@@ -4754,75 +4757,6 @@
     });
   }
 
-  let firstSoundButton=null,firstSoundDialog=null,firstSoundLease=null;
-  const firstSoundBusy=()=>matrixBusy()||Boolean(controller?.state()?.pending||pendingBusCreate||pendingTrackDelete);
-  function paintFirstSound(next){
-    if(!firstSoundButton)return;
-    const plan=protocol.firstSoundPlan(next);
-    const busy=firstSoundBusy();
-    // The shared premium .tool style uses display:inline-flex!important.
-    // Keep semantic hidden AND remove the actual hitbox from the toolbar.
-    if(firstSoundButton.hidden!==!plan){
-      firstSoundButton.hidden=!plan;
-      if(plan)firstSoundButton.style.removeProperty("display");
-      else firstSoundButton.style.setProperty("display","none","important");
-    }
-    const disabled=busy||!deviceReady();
-    if(firstSoundButton.disabled!==disabled)firstSoundButton.disabled=disabled;
-    const label=plan?.pins.length===1?"Connect input":"Connect microphone";
-    if(firstSoundButton.textContent!==label)firstSoundButton.textContent=label;
-    if(firstSoundDialog?.open){
-      const stale=!plan||plan.epoch!==firstSoundLease?.epoch||plan.revision!==firstSoundLease?.revision||
-        plan.config!==firstSoundLease?.config;
-      if(stale)firstSoundDialog.close();
-      else firstSoundDialog.querySelector("[data-first-connect]").disabled=disabled||
-        firstSoundDialog.querySelector("select").value==="";
-    }
-  }
-  function connectFirstSound(plan,port){
-    const current=protocol.firstSoundPlan(hardware);
-    if(!current||current.channelId!==plan.channelId||current.epoch!==plan.epoch||
-       current.revision!==plan.revision||current.config!==plan.config||
-       !current.pins.some(p=>p.port===port)||firstSoundBusy()||!deviceReady())return;
-    const choices=sourceChoicesFor(),choice=choices.find(p=>p.mode==="MONO"&&p.left===port);
-    const decision=stripVM.sourceQueueSelection({choice,choices,epoch:current.epoch,
-      acceptedLabel:"None",hardwareConfiguration:current.config});
-    if(decision.kind!=="QUEUE"){
-      nativeToast("Input selection changed · choose an available input again");
-      paintFirstSound(hardware);return;
-    }
-    firstSoundDialog?.close();
-    pendingNativeSources.set(current.channelId,decision.entry);
-    dispatchNativeSource(); // the SAME native ChannelId queue and ACK owner
-    paintFirstSound(hardware);
-  }
-  function openFirstSound(){
-    const plan=protocol.firstSoundPlan(hardware);
-    if(!plan||firstSoundBusy()||!deviceReady())return;
-    if(plan.pins.length===1)return connectFirstSound(plan,plan.pins[0].port);
-    if(!firstSoundDialog){
-      const dialog=document.createElement("dialog");
-      dialog.className="armix-stream-dialog";dialog.setAttribute("aria-label","Connect microphone");
-      dialog.style.cssText="width:min(380px,92vw);padding:0;border:1px solid #506778;border-radius:8px;background:#192b35;color:#e3eff4;font:12px system-ui,sans-serif";
-      dialog.innerHTML='<div style="display:grid;gap:10px;padding:14px"><div style="display:flex;justify-content:space-between;align-items:center"><strong style="font-weight:550">Connect microphone</strong><button type="button" data-first-cancel aria-label="Close microphone setup">×</button></div><label style="display:grid;gap:5px">Audio input<select aria-label="Microphone input" style="min-height:30px;background:#102631;color:#e1eff6;border:1px solid #527889;border-radius:4px"></select></label><span data-first-note style="color:#a9c5d2"></span><button type="button" data-first-connect style="min-height:30px;background:#2c5268;color:#e1eff6;border:1px solid #527889;border-radius:4px">Connect</button></div>';
-      document.body.append(dialog);firstSoundDialog=dialog;
-      dialog.querySelector("[data-first-cancel]").onclick=()=>dialog.close();
-      dialog.querySelector("select").onchange=()=>paintFirstSound(hardware);
-      dialog.querySelector("[data-first-connect]").onclick=()=>{
-        const selected=dialog.querySelector("select").value;
-        if(firstSoundLease&&selected!=="")connectFirstSound(firstSoundLease,Number(selected));
-      };
-    }
-    firstSoundLease=plan;
-    const select=firstSoundDialog.querySelector("select");
-    select.replaceChildren(new Option("Choose your input…",""),
-      ...plan.pins.map(p=>new Option(p.label+" · IN "+(p.port+1),String(p.port))));
-    firstSoundDialog.querySelector("[data-first-note]").textContent=
-      "Connect to "+plan.channelName+". Start with low headphone volume; output is verified automatically.";
-    if(!firstSoundDialog.open)firstSoundDialog.showModal();
-    paintFirstSound(hardware);
-  }
-
   function installFirstSoundMenu() {
     const menu=document.querySelector?.("#moreTools .more-tools-panel");
     if(!menu || typeof document.createElement!=="function")return;
@@ -5165,24 +5099,11 @@
       newProject.prepend(newIcon);
       newProject.addEventListener("click",()=>newSessionButtons[0].click());
       toolbar.prepend(newProject);
-      const extraOutput=item("button","tool","Output");
-      extraOutput.type="button";
-      extraOutput.title="Configure secondary playback output and separate mix";
-      extraOutput.dataset.nativeExtraOutput="true";
-      extraOutput.addEventListener("click",openAdditionalOutput);
-      toolbar.insertBefore(extraOutput,document.getElementById("moreTools"));
       const io=item("button","tool","Audio I/O");
       io.dataset.nativeIo="true";
       io.title="Select ASIO/WASAPI driver and capture/playback device";
       io.addEventListener("click",openNativeAudioIO);
       toolbar.insertBefore(io,document.getElementById("moreTools"));
-      firstSoundButton=item("button","tool","Connect microphone");
-      firstSoundButton.dataset.nativeFirstSound="true";
-      firstSoundButton.hidden=true;
-      firstSoundButton.style.cssText="border-color:#638994;color:#b9e2ed;display:none!important";
-      firstSoundButton.title="Connect a microphone to an unused native mixer";
-      firstSoundButton.addEventListener("click",openFirstSound);
-      toolbar.insertBefore(firstSoundButton,io);
       const addTrack=document.getElementById("addTrack");
       if(addTrack){
         addTrack.textContent="+ Audio Track";
@@ -5312,7 +5233,6 @@
         // A same-device workspace restore also retires old I/O UI leases.
         // Never send compensating commands; native readback owns the actual output.
         extraPending=null;extraError="";
-        if(firstSoundDialog?.open)firstSoundDialog.close();
         pendingRetainedEditor=null;
         lastPaintedSignature="";lastNativeTopologySignature="";lastM4Controls="";
         lastM4UiSignature="";lastM4PortSignature="";
@@ -5569,7 +5489,6 @@
       // expired/rejected edit with unchanged graph values must not strand its
       // LCD at a speculative value; error status settles that separately.
       finishNativeTrack(next);finishNativeTrackDelete(next);
-      paintFirstSound(next);
       if(extraPending){settleAdditionalOutput(extraLive);paintAdditionalOutput();}
       // Telemetry often advances without a structural graph revision.
       paintNativeMeters(next);
@@ -5578,7 +5497,7 @@
     }
     if (!projectNativeGraphWithoutFocusLoss(next)) {
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
-      paintFirstSound(next);paintAdditionalOutput();
+      paintAdditionalOutput();
       stopDemo();status("NATIVE READBACK INVALID · existing GUI controls unchanged");
       return;
     }
@@ -5592,7 +5511,6 @@
     syncAddTrack(next);
     syncEmergencyOutputControl(next.device);
     // Refresh source/output shortcuts only after authoritative projection.
-    paintFirstSound(next);
     settleAdditionalOutput(extraLive);
     paintAdditionalOutput();
     lastPaintedSignature=signature;stopDemo();paintNativeMeters(next);
@@ -6101,11 +6019,12 @@
       return t?.kind!=="master"?[...labels,...stripNamedChoices("output").map(p=>p.label)]:labels;
     },
     outputChoices(t) {
-      return stripVM.primaryChoices({track:t,logical:Boolean(logicalView),
+      const choices=stripVM.primaryChoices({track:t,logical:Boolean(logicalView),
         retained:Boolean(hardware?.retained),
         playbackDevice:hardware?.device?.playbackDevice,
         authority:mixerSession()?.authority,
         targets:nativeOutputTargets(t)});
+      return t?.kind==="master"?[...choices,"Configure audio output…"]:choices;
     },
     consumeField(event) {
       if (!connected)return false;

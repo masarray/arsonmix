@@ -27,6 +27,7 @@ def verify_custom_input(page,out):
     # document-plus icon and no extra word in the visible/accessibility label.
     new=page.locator(".command-bar > [data-native-new-project]")
     assert new.is_visible() and new.inner_text()=="New"
+    assert page.locator(".command-bar [data-native-extra-output], .command-bar [data-native-first-sound]").count()==0
     assert new.evaluate("(el)=>el===el.parentElement.firstElementChild")
     assert page.locator(".command-bar > .mixer-file-tool").all_text_contents()==["New","Save","Open"]
     page.wait_for_function("()=>{const i=document.querySelector('[data-native-new-project] img');return i&&i.complete&&i.naturalWidth>0}")
@@ -479,7 +480,7 @@ def verify_additional_output(page,out):
           "diagnosticRoute":"NORMAL","dryRoutingLab":{"hasAcceptedRoute":True},
           "secondaryOutputReady":False,"secondaryOutputArmed":False}
     emit(page,"arMixStatus",live)
-    page.locator("[data-native-extra-output]").click()
+    page.get_by_label("MAIN secondary monitor output").select_option("__armix_settings__")
     panel=page.get_by_role("dialog",name="Additional Output")
     assert panel.is_visible()
     assert page.evaluate("()=>typeof window.__arMixOpenAdditionalOutput")== "undefined"
@@ -664,7 +665,7 @@ def verify_independent_output(page,out,legacy_empty=False):
           "secondaryMainOnly":False,"epoch":state["device"]["epoch"],"nativeBus":{"graphRevision":"2"}},
           "secondaryOutputReady":True,"secondaryOutputArmed":True,"secondaryOutputName":"CABLE Input"}
     emit(page,"arMixStatus",live)
-    page.locator("[data-native-extra-output]").click()
+    page.get_by_label("MAIN secondary monitor output").select_option("__armix_settings__")
     panel=page.get_by_role("dialog",name="Additional Output")
     req=page.evaluate("()=>window.__actions.at(-1)")
     emit(page,"arMixSecondaryOutputInventory",{"requestId":req["requestId"],"outputs":["CABLE Input"]})
@@ -739,7 +740,7 @@ def verify_independent_output(page,out,legacy_empty=False):
     assert page.evaluate("()=>window.__actions.length")==before
     page.locator("#sofToggle").click()
     assert page.locator("#mixContext").inner_text()=="MAIN MIX"
-    page.locator("[data-native-extra-output]").click()
+    page.get_by_label("MAIN secondary monitor output").select_option("__armix_settings__")
     panel.get_by_role("button",name="Use same mix").click()
     same=page.evaluate("()=>window.__actions.at(-1)")
     assert same["action"]=="secondaryOutputSplit" and same["value"]["enabled"] is False
@@ -791,31 +792,25 @@ def verify_first_sound(page,out,single=False):
             {"id":"in:"+str(i),"port":i,"callback":j,"label":"Mic "+str(i+1),"active":True}
             for j,i in enumerate(pins)])
     emit(page,"arMixConsoleSnapshot",state)
-    button=page.locator("[data-native-first-sound]")
-    assert button.is_visible()
-    assert button.is_enabled(), "First accepted projection must enable input without a second snapshot"
-    # Opening the mixer must not automatically patch a microphone.
+    assert page.locator(".command-bar [data-native-first-sound]").count()==0
+    direct=page.locator('#tracks .strip[data-id="1"] select[data-field="input"]')
+    assert direct.is_visible() and direct.is_enabled(), "First accepted projection enables channel IN"
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').length")==0
-    button.click()
-    dialog=page.get_by_role("dialog",name="Connect microphone")
-    if single:
-        assert not dialog.is_visible(), "Unambiguous input is one explicit click, no extra wizard"
-    else:
-        connect=dialog.get_by_role("button",name="Connect",exact=True)
-        assert connect.is_disabled()
-        dialog.get_by_label("Microphone input").select_option("2")
-        connect.click()
+    assert direct.input_value()=="None"
+    label="Mono · Mic 3 [IN 3]"
+    assert direct.locator("option").filter(has_text=label).count()==1
+    direct.select_option(label)
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').length")==1
     req=page.evaluate("()=>window.__actions.filter(a=>a.action==='routingNativeSourcePatch').at(-1)")
     assert req["channelId"]==SOURCE and req["left"]==2 and req["mode"]=="MONO"
-    assert button.is_disabled()
+    assert direct.input_value()=="None", "request alone must not change accepted route"
     emit(page,"arMixNativeSourceAck",{"requestId":req["requestId"],"channelId":SOURCE,"ok":True,"graphRevision":"3"})
     state["graph"].update(revision="3")
     state["graph"]["channels"][0]["source"]={"sourceFormat":"MONO","portId":"in:2"}
     state["mixerSession"].update(routeRevision="3",channels=copy.deepcopy(state["graph"]["channels"]))
     emit(page,"arMixConsoleSnapshot",state)
-    assert button.get_attribute("hidden") is not None, "Native source readback must retire first-sound plan"
-    assert not button.is_visible(), "Hidden action must not occupy a premium toolbar hitbox"
+    assert direct.input_value()==label, "Installed native source readback owns IN"
+    assert page.locator(".command-bar [data-native-first-sound]").count()==0
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='monitor').length")==0
 
 
