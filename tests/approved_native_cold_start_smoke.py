@@ -629,6 +629,7 @@ def main():
             emit(page,'arMixConsoleSnapshot',rebound)
             assert page.locator('.armix-audio-shade').is_hidden()
             assert page.evaluate('()=>window.__events.filter(e=>e.payload?.action==="monitor").length')==monitor_events
+            select_ribbon_workflow(page,"mixer")
             add_track.click()
             request=page.evaluate(create)[-1]['payload']
             assert (request['deviceEpoch'],request['graphRevision'],request['rosterRevision'])==(
