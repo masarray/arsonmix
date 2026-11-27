@@ -4530,7 +4530,7 @@ private:
     std::optional<PendingVendorStream> pendingVendorStream_;
     // Machine-local preference is NOT ARM authority. Endpoint ID never leaves
     // native control. A portable show cannot silently select a different PC's sink.
-    struct SecondaryPreference { juce::String name; std::wstring id; bool prepare=true; };
+    struct SecondaryPreference { juce::String name; std::wstring id; bool prepare=true,autoResume=false; };
     std::optional<SecondaryPreference> secondaryPreference_;
     bool secondaryPreferenceLoaded_=false;
     bool secondaryPreferenceDirty_=false;
@@ -4547,12 +4547,17 @@ private:
         if(!file.existsAsFile()||file.getSize()<=0||file.getSize()>16384)return;
         const auto data=juce::JSON::parse(file.loadFileAsString());
         const auto name=data.getProperty("name",{}),id=data.getProperty("endpointId",{});
-        if(data.getProperty("version",{})!=juce::var(1)||!name.isString()||!id.isString())return;
+        const auto version=data.getProperty("version",{});
+        if((version!=juce::var(1)&&version!=juce::var(2))||!name.isString()||!id.isString())return;
         const auto label=name.toString(),identity=id.toString();
         if(label.isEmpty()||label.length()>240||identity.isEmpty()||identity.length()>2048)return;
         const auto prepare=data.getProperty("prepareOnStartup",true); // migrate existing v1 preferences
         if(!prepare.isBool())return;
-        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer()),bool(prepare)};
+        // Owner's 27 Nov policy: existing selected MON resumes with a
+        // verified running MAIN. v2 records explicit connect/disarm as off.
+        const auto resume=data.getProperty("autoResume",version==juce::var(1)&&bool(prepare));
+        if(!resume.isBool())return;
+        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer()),bool(prepare),bool(prepare)&&bool(resume)};
     }
     bool persistSecondaryPreference(bool immediate=false) {
         if(!secondaryPreferenceDirty_)return true;
@@ -4560,7 +4565,8 @@ private:
         if(!immediate&&now<secondaryPreferenceRetryAt_)return false;
         const auto& wanted=*secondaryPreference_;
         auto data=std::make_unique<juce::DynamicObject>();
-        data->setProperty("version",1);
+        data->setProperty("version",2);
+        data->setProperty("autoResume",wanted.autoResume);
         data->setProperty("name",wanted.name);
         data->setProperty("endpointId",juce::String(wanted.id.c_str()));
         data->setProperty("prepareOnStartup",wanted.prepare);
@@ -4576,16 +4582,17 @@ private:
         secondaryPreferenceRetryAt_=now+5000;
         return false;
     }
-    bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true) {
+    bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true,bool autoResume=false) {
         loadSecondaryPreference();
         if(name.isEmpty()||name.length()>240||endpointId.empty()||endpointId.size()>2048)return false;
         if(secondaryPreference_&&secondaryPreference_->name==name&&
-           secondaryPreference_->id==endpointId&&secondaryPreference_->prepare==prepare)
+           secondaryPreference_->id==endpointId&&secondaryPreference_->prepare==prepare&&
+           secondaryPreference_->autoResume==(prepare&&autoResume))
             return persistSecondaryPreference(true);
         // The accepted operator intent changes immediately even if disk is
         // temporarily unavailable. Never resurrect the old selection in
         // this process, and retain the newest value for bounded retry.
-        SecondaryPreference next{name,endpointId,prepare};
+        SecondaryPreference next{name,endpointId,prepare,prepare&&autoResume};
         secondaryPreference_=std::move(next);
         secondaryPreferenceDirty_=true;
         secondaryPreferenceRetryAt_=0;
@@ -4668,9 +4675,9 @@ private:
         secondaryInventoryAt_=static_cast<std::uint64_t>(monotonicMilliseconds());
         emitSecondaryInventory();
     }
-    // Cold-start preparation is intentionally separate from same-process ARM
-    // continuity. Only the existing secondary sink is opened; never arm it.
-    // Wait for the accepted restored graph and healthy primary callback.
+    // Cold-start preparation and requested continuation share one endpoint
+    // owner. Restore exact endpoint only after verified MAIN is running;
+    // a saved name is not evidence of an active sink.
     void serviceStartupSecondaryPreparation() {
         if(!startupSecondaryPending_||!audioEngineStarted_||!mixerSessionStartupInspected_)return;
         loadSecondaryPreference();
@@ -4683,7 +4690,9 @@ private:
            !engine_.hasBoundMixerRoute())return;
         if(engine_.secondaryArmed()) {cancelStartupSecondaryPreparation();return;}
         const auto wanted=*secondaryPreference_;
-        if(engine_.secondarySelectedEndpointId()==wanted.id) {
+        const bool resume=wanted.autoResume&&!operatorOutputMuted_;
+        if(resume&&!engine_.isMonitorEnabled())return;
+        if(engine_.secondarySelectedEndpointId()==wanted.id&&!resume) {
             cancelStartupSecondaryPreparation();return;
         }
         const auto now=monotonicMilliseconds();
@@ -4700,15 +4709,18 @@ private:
             return;
         }
         if(generation!=startupSecondaryRetry_.generation())return;
-        const auto error=current.ok()?engine_.connectSecondaryOutput(wanted.name,wanted.id):current.error;
+        const auto error=current.ok()?(resume?engine_.enableSecondaryOutput(wanted.name,wanted.id):
+            engine_.connectSecondaryOutput(wanted.name,wanted.id)):current.error;
         if(generation!=startupSecondaryRetry_.generation()||pendingSecondaryStop_||
-           epoch!=engine_.dryRoutingLabEpoch()||revision!=engine_.outputArmRevision()) {
+           epoch!=engine_.dryRoutingLabEpoch()||revision!=engine_.outputArmRevision()||
+           (resume&&(operatorOutputMuted_||!engine_.isMonitorEnabled()))) {
             engine_.disconnectSecondaryOutput();
             cancelStartupSecondaryPreparation();
             return;
         }
-        if(error.isEmpty()&&!engine_.secondaryArmed()&&engine_.secondarySelectedEndpointId()==wanted.id) {
-            diagnostics_.record("SECONDARY_STARTUP_PREPARED","Verified MON connected; output remains disarmed");
+        if(error.isEmpty()&&engine_.secondaryArmed()==resume&&engine_.secondarySelectedEndpointId()==wanted.id) {
+            diagnostics_.record(resume?"SECONDARY_STARTUP_RESUMED":"SECONDARY_STARTUP_PREPARED",
+                resume?"Verified saved MON enabled":"Verified MON connected; output remains disarmed");
             cancelStartupSecondaryPreparation();
             return;
         }
@@ -9155,26 +9167,46 @@ private:
             const auto confirmed=args.getProperty("confirmed",{});
             const auto status=engine_.status().getProperty("dryRoutingLab",{});
             const auto native=status.getProperty("nativeBus",{});
-            juce::String error="BUS OUTPUT: invalid/stale request or output not explicitly muted";
+            juce::String error="BUS OUTPUT: invalid/stale request or audio transaction busy";
             if(id.startsWith("bus-out-")&&id.length()<=64&&(bus=="MAIN"||bus=="MONITOR")&&
-               operatorOutputMuted_&&!deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&
+               !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !pendingVendorStream_&&!secondaryRetry_.pending()&&!pendingSecondaryStop_&&
+               !pendingRetainedFxCapture_&&!retainedOfflineFxActive_&&!engine_.hasRuntimeFxFault()&&
+               engine_.secondaryResumeReady()&&engine_.hasBoundMixerRoute()&&
                confirmed.isBool()&&static_cast<bool>(confirmed)&&
                left.isInt()&&right.isInt()&&oldL.isInt()&&oldR.isInt()&&
                leftName.isString()&&rightName.isString()&&
                armix::console::nativeSessionTokenMatches(ep,status.getProperty("epoch",{}))&&
-               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{})))
+               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{}))) {
+                const bool resumeMain=engine_.isMonitorEnabled()&&!operatorOutputMuted_;
+                const auto stream=engine_.captureSecondaryResumeIntent();
+                // Temporary control transaction, not an operator emergency stop.
+                // Existing physical output lease fences a callback using the old pair.
+                autoMainEpoch_=0;
+                cancelSecondaryContinuity();
+                engine_.setMonitorEnabled(false);
+                engine_.disarmSecondaryOutput();
                 error=engine_.patchPhysicalBusOutput(
                     armix::console::nativeSessionTokenValue(ep),armix::console::nativeSessionTokenValue(rv),
                     bus=="MONITOR",{static_cast<int>(oldL),static_cast<int>(oldR)},
                     {static_cast<int>(left),static_cast<int>(right)},leftName.toString(),rightName.toString());
+                if(error.isEmpty()) {
+                    if(resumeMain)requestAutomaticMain(false);
+                    if(stream)pendingVendorStream_=PendingVendorStream{*stream,
+                        engine_.dryRoutingLabEpoch(),engine_.outputArmRevision(),
+                        static_cast<std::uint64_t>(monotonicMilliseconds())+5000,resumeMain};
+                } else if(resumeMain||stream) {
+                    // Failure stays safely muted; never guess a destination.
+                    operatorOutputMuted_=true;
+                    diagnostics_.record("OUTPUT_MUTE","ON | bus remap rejected");
+                }
+            }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",id);ack->setProperty("ok",error.isEmpty());
             ack->setProperty("error",error);
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPhysicalBusOutputAck",juce::var(ack.release()));
-            if(error.isEmpty()){
-                autoMainEpoch_=0;engine_.cancelAsioResetMonitorIntent();
-                emitApprovedNativeSnapshot();
-            }else emitNotice(error,true);
+            if(error.isEmpty())emitApprovedNativeSnapshot();
+            else {emitNotice(error,true);emitApprovedNativeSnapshot();}
             return;
         }
         if(action=="routingExternalOutput") {
@@ -11141,13 +11173,13 @@ private:
                     if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
                         secondaryContinuity_=SecondaryContinuity{*intent,engine_.dryRoutingLabEpoch(),engine_.outputArmRevision()};
                 }
-            // Persist the verified selection on CONNECT as well as ENABLE/ARM.
-            // STOP/disarm never turns a saved preference into startup ARM consent.
+            // Persist desired playback separately from the saved identity.
+            // CONNECT and explicit disarm must remain off on future startup.
             bool preferenceSaved=true;
             if(error.isEmpty()&&(action=="secondaryOutputConnect"||action=="secondaryOutputEnable"||
-               (action=="secondaryOutputArm"&&bool(value)))) {
+               action=="secondaryOutputArm")) {
                 const auto name=engine_.status().getProperty("secondaryOutputName","").toString();
-                preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId());
+                preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId(),true,engine_.secondaryArmed());
                 if(!preferenceSaved)emitNotice("Output changed, but MON selection could not be saved. Check settings folder permissions.",true);
             }
             if(error.isEmpty()&&action=="secondaryOutputStop") {

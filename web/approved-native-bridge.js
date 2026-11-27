@@ -2856,7 +2856,7 @@
       if(!requested||JSON.stringify(row.pair)!==lease.busPairs?.[id])return;
       const choice=row.choices.find(x=>x.label===label&&x.left===requested.left&&x.right===requested.right);
       if(!choice||choice.label===row.selected||
-         !await confirmIo("Remap bus output","Remap "+row.name+" to "+choice.label+"? Outputs stay muted until START AUDIO.","Remap output"))return;
+         !await confirmIo("Remap bus output","Remap "+row.name+" to "+choice.label+"? Audio may pause briefly. Previously active outputs resume only after native verification.","Remap output"))return;
       if(!matrixReady(hardware)||matrixBusy()||namedPatchPending||
          hardware.device.epoch!==lease.epoch||hardware.hardwareConfiguration!==lease.config||
          hardware.graph?.revision!==lease.revision||hardware.graph?.rosterRevision!==lease.roster)return;
@@ -2892,7 +2892,7 @@
     const pair=next.raw?.[p.id];
     if(!p.acked||next.raw?.physicalBusOutputObserved!==true||
        pair?.[0]!==p.left||pair?.[1]!==p.right)return;
-    busOutputPending=null;nativeToast("Bus mapping verified · output remains muted");
+    busOutputPending=null;nativeToast("Bus mapping verified · output follows previous intent");
     backend.emitEvent("arMixAction",{action:"audioDeviceInventory"});
   }
   function pollBusOutput(requestId,attempt=0){
@@ -3405,7 +3405,8 @@
     const signature=JSON.stringify([model,busy,ready,next?.hardwareConfiguration,next?.device?.epoch,
       deviceInventory?.namedPatches,namedPatchPending,side==="input"?next?.raw?.logicalInputRegistry:next?.raw?.logicalOutputRegistry,
       next?.raw?.operatorOutputMuted,next?.device?.outputArmed,next?.raw?.physicalBusSecondaryArmed,
-      next?.raw?.ioDefaults,next?.raw?.logicalInputRegistry?.revision,next?.raw?.logicalOutputRegistry?.revision]);
+      next?.raw?.ioDefaults,next?.raw?.logicalInputRegistry?.revision,next?.raw?.logicalOutputRegistry?.revision,
+      side==="output"?[protocol.secondaryOutputView(next,extraLive),extraPreferred,extraHasSaved]:null]);
     const lease={config:next?.hardwareConfiguration,epoch:next?.device?.epoch,authority:model.authority,
       revision:model.revision,roster:model.roster,
       externalRevision:next?.raw?.externalRevision,
@@ -3426,20 +3427,8 @@
     if(side==="output"){
       const note=document.createElement("div");note.className="armix-matrix-hint";
       const text=document.createElement("span");
-      const muted=next.raw?.operatorOutputMuted===true&&next.device?.outputArmed===false&&next.raw?.physicalBusSecondaryArmed===false;
-      text.textContent=muted?"Outputs disarmed · apply a verified pair; resume explicitly when ready. ":
-        "CH/AUX: select a free or shared stereo pair. MAIN/MONITOR: mute outputs before remapping. ";
+      text.textContent="Select stereo pair · click again to clear CH/AUX · Apply. MAIN / ASIO MON remap pauses and restores previously active outputs after verification.";
       note.append(text);
-      if(!muted&&next.device?.backend==="ASIO"){
-        const stop=document.createElement("button");stop.type="button";stop.textContent="Mute MAIN & STREAM";
-        stop.disabled=busy;
-        stop.onclick=async()=>{
-          if(matrixBusy()||!await confirmIo("Mute hardware outputs","Stop MAIN and STREAM before bus remapping? Audio will remain muted until you explicitly resume.","Mute outputs"))return;
-          backend.emitEvent("arMixAction",{action:"monitor",value:false});
-          status("Output mute requested · waiting for native readback");
-        };
-        note.append(stop);
-      }
       host.append(note);
       const ids=new Set(model.rows.map(r=>r.id));
       for(const id of outputMatrixDrafts.keys())if(!ids.has(id))outputMatrixDrafts.delete(id);
@@ -3542,7 +3531,12 @@
             (current?.mode==="NONE"&&row.format==="STEREO");
           const choice=candidates.find(x=>(side==="output"||x.mode===(stereo?"STEREO":"MONO"))&&
             (x.left===pin.port||(stereo&&x.right===pin.port)));
-          if(choice){select.value=choice.label;remember();update();}
+          if(choice){
+            // A second click on either half of an external stereo pair
+            // selects None; Apply removes the actual native assignment.
+            const clear=side==="output"&&!row.bus&&current?.left===choice.left&&current?.right===choice.right;
+            select.value=clear?"None":choice.label;remember();update();
+          }
         };
         cell.append(button);controls.push({button,pin,index});
       }
@@ -3560,6 +3554,20 @@
         action.append(apply);
       }else pick.textContent=row.state||"Read-only";
       update();
+    }
+    if(side==="output"){
+      const mon=protocol.secondaryOutputView(next,extraLive);
+      const tr=body.insertRow();tr.dataset.secondaryEndpoint="true";
+      const name=tr.insertCell();name.textContent="MON / STREAM";
+      const pins=tr.insertCell();pins.colSpan=model.pins.length;
+      pins.textContent=(mon.name||extraPreferred||(extraHasSaved?"Saved endpoint unavailable":"None"))+
+        " · WASAPI · "+(mon.state==="DISCONNECTED"&&extraHasSaved?"SAVED / OFF":mon.state);
+      pins.title="Separate Windows playback endpoint, not an ASIO hardware pin";
+      const mode=tr.insertCell();mode.textContent=mon.split?"MAIN (separate mix)":"MAIN mirror";
+      const action=tr.insertCell(),settings=document.createElement("button");
+      settings.type="button";settings.textContent="MON settings";settings.disabled=busy||!!extraPending;
+      settings.onclick=()=>openAdditionalOutput();
+      action.append(settings);
     }
     const matrix=document.createElement("div");matrix.className="armix-matrix-scroll";
     matrix.tabIndex=0;matrix.setAttribute("role","region");
@@ -6122,7 +6130,7 @@
         refreshAdditionalInventory();
       }
       if(previous.name!==current.name||previous.state!==current.state||previous.split!==current.split)
-        paintOutputOverview(hardware);
+        paintPhysicalOutputs(hardware);
       const health=protocol.footerHealthFromLive(live);
       if(!health || health.sequence===lastFooterHealth?.sequence)return;
       lastFooterHealth=health;

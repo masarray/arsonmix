@@ -8039,9 +8039,8 @@ test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction ev
  assert.match(f,/workspaceGeneration/);assert.match(f,/operatorOutputMuted/);
  assert.match(f,/const lease=ioConfirmationLease\(\)/);
  assert.match(f,/await confirmArson/);assert.match(f,/lease!==ioConfirmationLease\(\)/);
- assert.equal((b.match(/await confirmIo\(/g)||[]).length,8);
- assert.match(b,/await confirmIo\("Mute hardware outputs"/);
- assert.match(b,/backend\.emitEvent\("arMixAction",\{action:"monitor",value:false\}\)/);
+ assert.equal((b.match(/await confirmIo\(/g)||[]).length,7);
+ assert.match(b,/await confirmIo\("Remap bus output"/);
  });
 
 test("FX Return creation requires prepared wet processor and exact independent readback",()=>{
@@ -8150,7 +8149,7 @@ test("Session MON retains verified preference without implying output ARM",()=>{
  assert.deepEqual(pick(["Other"],"Speakers",true),{value:"__armix_saved_missing__",label:"Saved device unavailable · off",endpoint:""});
  assert.equal(pick(["CABLE Input"],"",false).value,"");
  const n=read("src/Main.cpp"), b=read("web/approved-native-bridge.js");
- assert.match(n,/preferenceSaved=rememberSecondaryPreference\(name,engine_\.secondarySelectedEndpointId\(\)\)/);
+ assert.match(n,/preferenceSaved=rememberSecondaryPreference\(name,engine_\.secondarySelectedEndpointId\(\),true,engine_\.secondaryArmed\(\)\)/);
  assert.match(b,/active&&v\.name\?v\.name:saved\.value/);
  assert.match(b,/value==="__armix_saved__"\|\|value==="__armix_saved_missing__"\)return/);
 });

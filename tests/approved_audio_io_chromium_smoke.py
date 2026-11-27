@@ -275,7 +275,7 @@ def verify_bus_remap(page,out):
     assert page.locator("[data-audio-hardware-routing]").evaluate("(e)=>e.open")
     rows=page.locator("[data-audio-output-grid] tbody tr")
     main=rows.nth(0);monitor=rows.nth(1)
-    assert main.get_by_label("MAIN assignment",exact=True).count()==0
+    assert main.get_by_label("MAIN assignment",exact=True).is_enabled()
     assert main.locator(".armix-patch-cell").nth(0).get_attribute("data-mark")=="L"
     state["device"]["outputArmed"]=False
     state["operatorOutputMuted"]=True
@@ -353,13 +353,9 @@ def verify_output_matrix_direct_patch(page,out):
     emit(page,"arMixConsoleSnapshot",state)
     inventory=open_verified_audio_io(page,state,"routing")
     grid=page.locator("[data-audio-output-grid]")
-    stop=grid.get_by_role("button",name="Mute MAIN & STREAM")
-    assert stop.is_enabled()
-    stop.click()
-    dialog=page.get_by_role("dialog",name="Mute hardware outputs")
-    assert dialog.is_visible()
-    dialog.get_by_role("button",name="Cancel",exact=True).click()
-    assert not page.evaluate("()=>window.__actions.some(x=>x.action==='monitor')")
+    emit(page,"arMixStatus",{"secondaryOutputReady":True,"secondaryOutputArmed":True,
+        "secondaryOutputName":"Realtek HD Audio","secondaryOutputFault":False})
+    assert "Realtek HD Audio" in grid.locator("[data-secondary-endpoint]").inner_text()
     row=grid.locator("tbody tr").filter(has=page.get_by_label("CH03 assignment",exact=True))
     cells=row.locator(".armix-patch-cell")
     assert cells.nth(0).is_disabled() and cells.nth(1).is_disabled()
@@ -368,6 +364,10 @@ def verify_output_matrix_direct_patch(page,out):
     assert cells.nth(2).get_attribute("data-mark")=="L"
     assert cells.nth(3).get_attribute("data-mark")=="R"
     assert cells.nth(2).get_attribute("data-draft")=="true"
+    cells.nth(2).click()
+    assert row.get_by_label("CH03 assignment").input_value()=="None"
+    assert not row.get_by_role("button",name="Apply",exact=True).is_enabled()
+    cells.nth(3).click()
     assert row.get_by_role("button",name="Apply",exact=True).is_enabled()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingExternalOutput')")
     # Independent preset metadata redraw must not lose a physical draft.
@@ -385,6 +385,15 @@ def verify_output_matrix_direct_patch(page,out):
     emit(page,"arMixConsoleSnapshot",state)
     assert cells.nth(2).get_attribute("data-mark")=="L"
     assert cells.nth(2).get_attribute("data-draft")=="false"
+    cells.nth(3).click()
+    assert row.get_by_label("CH03 assignment").input_value()=="None"
+    row.get_by_role("button",name="Apply",exact=True).click()
+    remove=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingExternalOutput').at(-1)")
+    assert (remove["left"],remove["right"])==(-1,-1),remove
+    emit(page,"arMixExternalOutputAck",{"requestId":remove["requestId"],"ok":True})
+    state["externalOutputs"]=[]
+    emit(page,"arMixConsoleSnapshot",state)
+    assert cells.nth(2).get_attribute("data-mark")==""
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='audioDeviceApply'||(x.action==='monitor'&&x.value===true))")
     assert not errors,errors
 
