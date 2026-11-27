@@ -189,7 +189,20 @@ try{
     [IO.File]::WriteAllText((Join-Path $payload 'ArSonMixAutoUpdate.ps1'),'fixture')
     [IO.File]::WriteAllText((Join-Path $payload 'UpdateVerifier/gh.exe'),'fixture')
     [IO.File]::WriteAllText((Join-Path $payload 'UpdateVerifier/verifier.json'),'{}')
-    [IO.Compression.ZipFile]::CreateFromDirectory($payload,$archive,[IO.Compression.CompressionLevel]::NoCompression,$false)
+    # .NET Framework's CreateFromDirectory uses backslashes under Windows
+    # PowerShell 5.1. Explicit portable ZIP names are forward-slash only.
+    $zipStream=[IO.File]::Open($archive,[IO.FileMode]::CreateNew)
+    try{
+        $zip=[IO.Compression.ZipArchive]::new($zipStream,[IO.Compression.ZipArchiveMode]::Create,$true)
+        try{
+            foreach($file in Get-ChildItem -LiteralPath $payload -File -Recurse){
+                $relative=$file.FullName.Substring($payload.Length+1).Replace('\','/')
+                $entry=$zip.CreateEntry($relative,[IO.Compression.CompressionLevel]::NoCompression)
+                $source=[IO.File]::OpenRead($file.FullName)
+                try{$dest=$entry.Open();try{$source.CopyTo($dest)}finally{$dest.Dispose()}}finally{$source.Dispose()}
+            }
+        }finally{$zip.Dispose()}
+    }finally{$zipStream.Dispose()}
     # Warm both paths, then alternate order to reduce file-cache/order bias.
     [void](Measure-Variant 'before' $archive $payload $sha)
     [void](Measure-Variant 'after' $archive $payload $sha)
@@ -213,7 +226,7 @@ try{
     try{Expand-PortablePayload $stream $payload ('b'*40) -VerifyOnly}catch{$rejected=$true}finally{$stream.Dispose()}
     if(-not $rejected){throw 'Optimized path accepted incorrect source provenance'}
     $stream=[IO.File]::Open($binary,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
-    try{$stream.WriteByte(0)}finally{$stream.Dispose()}
+    try{$stream.WriteByte([byte]($block[0] -bxor 255))}finally{$stream.Dispose()}
     $rejected=$false;$stream=[IO.File]::OpenRead($archive)
     try{Expand-PortablePayload $stream $payload $sha -VerifyOnly}catch{$rejected=$true}finally{$stream.Dispose()}
     if(-not $rejected){throw 'Optimized path accepted same-size binary modification'}
