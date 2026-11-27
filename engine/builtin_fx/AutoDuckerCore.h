@@ -64,6 +64,13 @@ public:
     void reset() noexcept {clearKey();gain_=1;}
     float gain() const noexcept {return static_cast<float>(gain_);}
     bool active() const noexcept {return active_;}
+    float sourcePower(std::size_t k) const noexcept {return k<detectors_.size()?detectors_[k].power:0.f;}
+    int phase() const noexcept {
+        if(!active_)return gain_<.99999?4:0; // release / ready
+        float maximum=0;for(const auto& d:detectors_)maximum=std::max(maximum,d.power);
+        if(maximum<p_.offPower)return 3; // hold
+        return std::abs(gain_-p_.floor)>1.e-4?1:2; // attack / duck
+    }
     void process(float* left,float* right,int frames,AutoDuckerKey key) noexcept {
         const AutoDuckerSource source{1,key};
         processSources(left,right,frames,std::span<const AutoDuckerSource>(&source,1));

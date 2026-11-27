@@ -41,6 +41,14 @@ public:
             return true;
         }
     };
+    struct Meter final {
+        std::uint64_t serial=0;
+        float gain=1.f;
+        int phase=0;
+        std::array<std::uint64_t,AutoDuckerCore::maxSources> ids{};
+        std::array<float,AutoDuckerCore::maxSources> power{};
+        std::array<bool,AutoDuckerCore::maxSources> available{};
+    };
     struct Completion {std::uint64_t requestId=0;Settings settings{};bool applied=false;};
     AutoDuckerProcessor():juce::AudioProcessor(BusesProperties()
         .withInput("Input",juce::AudioChannelSet::stereo(),true)
@@ -89,6 +97,16 @@ public:
                             {keys.data(),count});
         gain_.store(core_.gain(),std::memory_order_relaxed);
         keyValid_.store(valid,std::memory_order_release);
+        // Atomic block summary. No GUI allocation, locks, log/exp on RT.
+        meterSerial_.fetch_add(1,std::memory_order_acq_rel); // odd while writing
+        meterGain_.store(core_.gain(),std::memory_order_relaxed);
+        meterPhase_.store(core_.phase(),std::memory_order_relaxed);
+        for(std::size_t i=0;i<keys.size();++i){
+            meterIds_[i].store(i<count?keys[i].id:0,std::memory_order_relaxed);
+            meterPower_[i].store(i<count?core_.sourcePower(i):0.f,std::memory_order_relaxed);
+            meterAvailable_[i].store(i<count&&keys[i].key.valid(),std::memory_order_relaxed);
+        }
+        meterSerial_.fetch_add(1,std::memory_order_release);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
     bool requiresContinuousBypassProcessing() const noexcept override {return true;}
@@ -121,6 +139,22 @@ public:
     }
     float observedGain() const noexcept {return gain_.load(std::memory_order_relaxed);}
     bool observedKeyValid() const noexcept {return keyValid_.load(std::memory_order_acquire);}
+    bool readMeter(Meter& out) const noexcept {
+        for(int attempt=0;attempt<3;++attempt){
+            const auto a=meterSerial_.load(std::memory_order_acquire);
+            if(!a||(a&1))continue;
+            Meter frame;frame.serial=a;frame.gain=meterGain_.load(std::memory_order_relaxed);
+            frame.phase=meterPhase_.load(std::memory_order_relaxed);
+            for(std::size_t i=0;i<frame.ids.size();++i){
+                frame.ids[i]=meterIds_[i].load(std::memory_order_relaxed);
+                frame.power[i]=meterPower_[i].load(std::memory_order_relaxed);
+                frame.available[i]=meterAvailable_[i].load(std::memory_order_relaxed);
+            }
+            std::atomic_thread_fence(std::memory_order_acquire);
+            if(a==meterSerial_.load(std::memory_order_relaxed)){out=frame;return true;}
+        }
+        return false;
+    }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {return queue_.empty()&&completion_.empty();}
     void getStateInformation(juce::MemoryBlock& out) override {
@@ -170,6 +204,15 @@ private:
     Settings applied_{},accepted_{};
     std::atomic<float> gain_{1.f};
     std::atomic<bool> keyValid_{false};
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free&&
+                  std::atomic<float>::is_always_lock_free&&std::atomic<int>::is_always_lock_free&&
+                  std::atomic<bool>::is_always_lock_free);
+    std::atomic<std::uint64_t> meterSerial_{0};
+    std::atomic<float> meterGain_{1.f};
+    std::atomic<int> meterPhase_{0};
+    std::array<std::atomic<std::uint64_t>,AutoDuckerCore::maxSources> meterIds_{};
+    std::array<std::atomic<float>,AutoDuckerCore::maxSources> meterPower_{};
+    std::array<std::atomic<bool>,AutoDuckerCore::maxSources> meterAvailable_{};
     double rate_=0.;
     bool ready_=false,published_=false;
 };
