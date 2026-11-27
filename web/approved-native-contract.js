@@ -45,6 +45,9 @@
   const operatorMessage = message => {
     const raw=String(message??"").trim();
     if(!raw)return "";
+    // File-operation receipts are already truthful, operator-facing text.
+    // Never infer success from a rack filename, native identity or "FX".
+    if(/^FX rack file:|^FX rack request invalid|^FX rack unchanged:|^FX saved; deactivation rejected:/i.test(raw))return raw;
     if(raw.includes("DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"))
       return "Delete not applied · Mute outputs before changing this routing";
     if(raw.includes("DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED"))

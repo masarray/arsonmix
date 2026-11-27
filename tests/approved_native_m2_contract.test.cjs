@@ -8142,7 +8142,14 @@ test("Channel context menu exposes non-destructive FX save and real native recei
  const menu=read("web/approved-native-context-menu.js"), b=read("web/approved-native-bridge.js"), n=read("src/Main.cpp");
  assert.match(menu,/"rack-save-single":"SAVE_SINGLE"/);
  assert.match(b,/const single=operation==="DEACTIVATE"\|\|operation==="SAVE_SINGLE"/);
- assert.match(b,/operation!=="SAVE"&&operation!=="SAVE_SINGLE"/);
+ assert.match(b,/receipt\.phase==="COMPLETED"&&!\["SAVE","SAVE_SINGLE"\]\.includes\(pending\.operation\)/);
+ assert.match(b,/arMixFxRackFileResult/);
+ assert.match(n,/emitFxRackFileResult\(args,"CHOOSER"/);
+ assert.match(n,/rackFileTargetAvailable\(ep,rev,roster,channel\)/);
+ assert.match(n,/AlertWindow::showOkCancelBox/);
+ assert.match(n,/if\(choice==1\)perform\(true\)/);
+ assert.equal(protocol.operatorMessage("FX rack file: Disarm MAIN and STREAM; use a current native rack"),"FX rack file: Disarm MAIN and STREAM; use a current native rack");
+ assert.equal(protocol.operatorMessage("FX rack file: Opening file dialog…"),"FX rack file: Opening file dialog…");
  assert.match(n,/if\(archived&&deactivate\)/);
  assert.match(n,/file=file\.withFileExtension\("\.arfx"\)/);
  assert.match(b,/notice\?\.error===true\|\|rackReceipt/);

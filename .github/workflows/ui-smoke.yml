@@ -405,7 +405,7 @@ jobs:
   studio-audio-io:
     name: Studio Audio I/O real Chromium routing interaction
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-asio-panel-main-sof-recovery-20261127' || github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127') }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-live-fx-rack-file-dialog-20261127' || github.head_ref == 'fix/p0-asio-panel-main-sof-recovery-20261127' || github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127') }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -431,7 +431,7 @@ jobs:
         if: ${{ github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
         run: python tests/v6_operator_io_plugin_sof_smoke.py
       - name: FX rack recovery after a failed insert, power and transfer
-        if: github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127'
+        if: ${{ github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-live-fx-rack-file-dialog-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
         run: python tests/approved_native_fx_edit_smoke.py
       - name: Unified routing actual held SOF gesture and assignment
         if: ${{ (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') }}

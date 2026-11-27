@@ -6571,81 +6571,150 @@ private:
         }
         return {};
     }
+    void emitFxRackFileResult(const juce::var& args,const juce::String& phase,
+                              const juce::String& message) {
+        auto receipt=std::make_unique<juce::DynamicObject>();
+        receipt->setProperty("requestId",args.getProperty("requestId",{}));
+        receipt->setProperty("operation",args.getProperty("operation",{}));
+        receipt->setProperty("channelId",args.getProperty("channelId",{}));
+        receipt->setProperty("phase",phase);
+        receipt->setProperty("message",message);
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixFxRackFileResult",juce::var(receipt.release()));
+    }
+    bool rackFileOperationBusy() const {
+        return sessionLifecycleShuttingDown_||namedIoFileChooser_||mixerFileDialogOpen_||
+            playerFileChooser_||deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||
+            mixerSessionWorker_.busy()||catalog_.busy()||logicalVendorEditor_||
+            pendingSecondaryStop_||pendingRetainedFxCapture_||retainedOfflineFxActive_;
+    }
     void chooseFxRackFile(const juce::var& args) {
         const auto op=args.getProperty("operation",{}).toString();
+        const auto request=args.getProperty("requestId",{}).toString();
         const bool deactivate=op=="DEACTIVATE",single=op=="SAVE_SINGLE"||deactivate;
         const bool save=op=="SAVE"||single,append=op=="INSERT";
         const auto token=args.getProperty("instanceId",{}).toString();
         const auto slotValue=args.getProperty("slot",{});
         const int slot=single&&slotValue.isInt()?static_cast<int>(slotValue):-1;
         std::uint64_t ep=0,rev=0,roster=0,id=0;
-        if((!save&&!append&&op!="OPEN")||(single&&(slot<0||slot>=8||token.isEmpty()))||
+        if(!request.startsWith("fx-rack-file-")||request.length()>64||
+           (!save&&!append&&op!="OPEN")||(single&&(slot<0||slot>=8||token.isEmpty()))||
            !armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)||
            !armix::console::approvedNativeId(args.getProperty("graphRevision",{}),rev)||
            !armix::console::approvedNativeId(args.getProperty("rosterRevision",{}),roster)||
            !armix::console::approvedNativeId(args.getProperty("channelId",{}),id))
-            return emitNotice("FX rack request invalid; refresh rack",true);
+            return emitFxRackFileResult(args,"FAILED","FX rack file: Invalid request; reopen rack menu");
         const armix::mixer::ChannelId channel{id};
-        if(fxRackFileChooser_||namedIoFileChooser_||mixerFileDialogOpen_||
-           deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
-           catalog_.busy()||logicalVendorEditor_||!engine_.rackFileAllowed(ep,rev,roster,channel))
-            return emitNotice("FX rack file: disarm MAIN and STREAM; use a current native rack",true);
+        if(fxRackFileChooser_||rackFileOperationBusy())
+            return emitFxRackFileResult(args,"FAILED","FX rack file: Finish the current dialog or audio operation first");
+        if(!engine_.rackFileTargetAvailable(ep,rev,roster,channel))
+            return emitFxRackFileResult(args,"FAILED","FX rack file: Rack is unavailable or changed; refresh mixer");
         auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
         if(save)start=start.getChildFile(single?"Saved-FX.arfx":"Vocal-Rack.arfx");
         fxRackFileChooser_=std::make_unique<juce::FileChooser>(
-            deactivate?"Deactivate and save FX":single?"Save FX":save?"Save FX Rack":append?
-                "Insert saved FX":"Open FX Rack (replace)",start,"*.arfx",true);
+            deactivate?"Deactivate and save FX":single?"Save FX":save?"Save FX Rack As":append?
+                "Insert saved FX":"Open FX Rack (replace)",start,"*.arfx",true,false,this);
         using Flags=juce::FileBrowserComponent;
+        emitFxRackFileResult(args,"CHOOSER","FX rack file: Choose a .arfx file");
         fxRackFileChooser_->launchAsync(Flags::canSelectFiles|
             (save?(Flags::saveMode|Flags::warnAboutOverwriting):Flags::openMode),
-            [safe=juce::Component::SafePointer<ConsoleWindow>(this),ep,rev,roster,channel,
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this),args,ep,rev,roster,channel,
              token,slot,save,deactivate,append](const juce::FileChooser& picker){
                 if(!safe)return;
-                auto file=picker.getResult();
-                juce::String error;
-                if(save&&file!=juce::File{}&&file.getFileExtension().isEmpty()) {
-                    file=file.withFileExtension(".arfx");
-                    // The chooser may have confirmed a different path. Never
-                    // overwrite the normalized name without explicit consent.
-                    if(file.exists())error="Choose the existing .arfx file explicitly to overwrite it";
-                }
-                bool archived=false;
-                if(file!=juce::File{}){
-                    try{
-                        if(error.isNotEmpty()){} // preserve the file-name rejection
-                        else if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
-                           safe->mixerSessionWorker_.busy()||safe->catalog_.busy()||safe->logicalVendorEditor_||
-                           !safe->engine_.rackFileAllowed(ep,rev,roster,channel))
-                            error="Device or rack changed; retry";
-                        else{
-                            armix::storage::FxRackFile rack;
+                const auto selected=picker.getResult();
+                // Exit the OS picker callback before starting a confirmation
+                // or touching the graph. Keep the chooser lease until terminal.
+                juce::MessageManager::callAsync([safe,args,ep,rev,roster,channel,token,slot,save,deactivate,append,selected]{
+                    if(!safe||safe->sessionLifecycleShuttingDown_)return;
+                    const auto finish=[safe,args](const juce::String& phase,const juce::String& message){
+                        if(!safe)return;
+                        safe->fxRackFileChooser_.reset();
+                        safe->emitFxRackFileResult(args,phase,message);
+                    };
+                    if(selected==juce::File{})
+                        return finish("CANCELLED","FX rack file: Cancelled; rack unchanged");
+                    auto file=selected;
+                    if(save&&file.getFileExtension().isEmpty()){
+                        file=file.withFileExtension(".arfx");
+                        if(file.exists())return finish("FAILED","FX rack file: Select the existing .arfx file explicitly to overwrite it");
+                    }
+                    if(!file.hasFileExtension("arfx"))
+                        return finish("FAILED","FX rack file: Use the .arfx file extension");
+                    const auto current=[safe,ep,rev,roster,channel]{
+                        return safe&&!safe->rackFileOperationBusy()&&
+                            safe->engine_.rackFileTargetAvailable(ep,rev,roster,channel);
+                    };
+                    if(!current())return finish("FAILED","FX rack file: Device or rack changed; retry");
+                    // Decode and verify catalog BEFORE asking to interrupt live
+                    // sound. Invalid/missing plugins never cause a mute.
+                    auto rack=std::make_shared<armix::storage::FxRackFile>();
+                    if(!save){
+                        juce::String error;
+                        try{
+                            error=armix::storage::NativeFxRackArchive::load(file,*rack);
+                            if(error.isEmpty())error=safe->resolveRackFileCatalog(*rack,false);
+                            if(error.isEmpty()&&rack->single!=append)
+                                error="Choose matching rack or single FX file";
+                        }catch(...){error="FX rack read failed";}
+                        if(error.isNotEmpty())return finish("FAILED","FX rack file: "+error+"; rack unchanged");
+                    }
+                    const auto perform=[safe,finish,current,ep,rev,roster,channel,token,slot,save,deactivate,append,file,rack](bool consent){
+                        if(!safe)return;
+                        if(!current())return finish("FAILED","FX rack file: Device or rack changed; retry");
+                        if(consent){
+                            // An explicit operator choice, not implicit mute
+                            // from a context-menu click; never auto-resume.
+                            safe->pendingVendorStream_.reset();
+                            safe->cancelSecondaryContinuity();
+                            safe->cancelStartupSecondaryPreparation();
+                            safe->operatorOutputMuted_=true;
+                            safe->autoMainEpoch_=0;
+                            safe->engine_.cancelAsioResetMonitorIntent();
+                            safe->engine_.setMonitorEnabled(false);
+                            safe->engine_.disarmSecondaryOutput();
+                            safe->diagnostics_.record("OUTPUT_MUTE","ON | FX rack file confirmation");
+                            safe->emitApprovedNativeSnapshot();
+                        }
+                        if(!safe->engine_.rackFileAllowed(ep,rev,roster,channel))
+                            return finish("FAILED","FX rack file: Mute MAIN and additional output, then retry; rack unchanged");
+                        juce::String error;
+                        bool archived=false;
+                        try{
                             if(save){
-                                error=safe->engine_.captureRackFile(ep,rev,roster,channel,slot,token,rack);
-                                if(error.isEmpty())error=safe->resolveRackFileCatalog(rack,true);
-                                if(error.isEmpty())error=armix::storage::NativeFxRackArchive::save(file,rack);
+                                error=safe->engine_.captureRackFile(ep,rev,roster,channel,slot,token,*rack);
+                                if(error.isEmpty())error=safe->resolveRackFileCatalog(*rack,true);
+                                if(error.isEmpty())error=armix::storage::NativeFxRackArchive::save(file,*rack);
                                 archived=error.isEmpty();
                                 if(archived&&deactivate)
-                                    error=safe->engine_.applyRackFile(ep,rev,roster,channel,rack,false,slot,token);
-                            }else{
-                                error=armix::storage::NativeFxRackArchive::load(file,rack);
-                                if(error.isEmpty())error=safe->resolveRackFileCatalog(rack,false);
-                                if(error.isEmpty())error=safe->engine_.applyRackFile(ep,rev,roster,channel,rack,append);
-                            }
-                        }
-                    }catch(...){error="FX rack file operation failed";}
-                    if(error.isEmpty()){
+                                    error=safe->engine_.applyRackFile(ep,rev,roster,channel,*rack,false,slot,token);
+                            }else error=safe->engine_.applyRackFile(ep,rev,roster,channel,*rack,append);
+                        }catch(...){error="FX rack file operation failed";}
+                        if(error.isNotEmpty())return finish("FAILED",
+                            (archived?juce::String("FX rack file: File saved; deactivation rejected: "):
+                                juce::String("FX rack file: Rack unchanged: "))+error);
                         if(!save||deactivate){
                             safe->stopOrbit();
                             safe->closeAllPluginEditors();
                             safe->emitApprovedNativeSnapshot();
                         }
-                        safe->emitNotice(deactivate?"FX saved and deactivated; latency plan rebuilt. MAIN/STREAM remain disarmed.":
-                            save?(slot>=0?"FX saved":"FX Rack saved"):append?"Saved FX inserted; output remains disarmed":
-                            "FX Rack opened; output remains disarmed");
-                    }else safe->emitNotice((archived?juce::String("FX saved; deactivation rejected: "):
-                        juce::String("FX rack unchanged: "))+error,true);
-                }else safe->emitNotice("FX rack file operation cancelled");
-                juce::MessageManager::callAsync([safe]{if(safe)safe->fxRackFileChooser_.reset();});
+                        finish("COMPLETED","FX rack file: "+(deactivate?juce::String("Saved and deactivated "):
+                            save?juce::String("Saved "):append?juce::String("Inserted "):juce::String("Opened "))+
+                            file.getFileName()+"; MAIN and additional output remain muted until you Resume");
+                    };
+                    if(safe->engine_.rackFileAllowed(ep,rev,roster,channel))return perform(false);
+                    if(safe->engine_.allOutputsDisarmed()&&!safe->engine_.wantsMainContinuation())
+                        return finish("FAILED","FX rack file: Audio configuration is not ready; retry");
+                    // File picker is already closed. Cancel leaves audio and rack
+                    // unchanged. An explicit OK is required to disarm both outputs.
+                    juce::AlertWindow::showOkCancelBox(juce::MessageBoxIconType::QuestionIcon,
+                        "FX rack file",
+                        "MAIN and additional playback output must be muted briefly to safely save or restore FX state. They will stay muted until you explicitly Resume. Continue?",
+                        "Mute & continue","Cancel",safe.getComponent(),
+                        juce::ModalCallbackFunction::create([perform,finish](int choice){
+                            if(choice==1)perform(true);
+                            else finish("CANCELLED","FX rack file: Cancelled; rack unchanged");
+                        }));
+                });
             });
     }
 
@@ -6660,7 +6729,7 @@ private:
             result->setProperty("ok",false);result->setProperty("error",error);
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNamedProfileFileResult",juce::var(result.release()));
         };
-        if((!save&&op!="OPEN")||namedIoFileChooser_||mixerFileDialogOpen_||
+        if((!save&&op!="OPEN")||namedIoFileChooser_||mixerFileDialogOpen_||fxRackFileChooser_||
            nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
            engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
            !namedPatches_.fileLease(args,currentDeviceSnapshot())){
@@ -6718,7 +6787,7 @@ private:
         const auto archiveRevision=logicalMixer_.workspace().revision();
         if(logicalVendorEditor_)return emitMixerSessionAck(save?"SAVE":"OPEN",
             "Close the vendor FX editor to save its settings first");
-        if(mixerFileDialogOpen_)return;
+        if(mixerFileDialogOpen_||fxRackFileChooser_)return;
         const auto operation=archived?"ARCHIVE":save?"SAVE":"OPEN";
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_)
             return emitMixerSessionAck(operation,"Mixer file operation already in progress");

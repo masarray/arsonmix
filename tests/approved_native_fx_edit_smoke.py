@@ -35,6 +35,34 @@ def main():
             state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
             emit(page,'arMixConsoleSnapshot',state)
             def row(channel,slot):return page.locator(f'#tracks .strip[data-id="{channel}"] .fxslot-row[data-slot="{slot}"]')
+            # Real right-click menu -> correlated request -> native receipt.
+            # The OS dialog/engine transaction is not emulated as a success.
+            def rack_request(channel,action,operation):
+                rack=page.locator(f'#tracks .strip[data-id="{channel}"] .fx-section')
+                rack.locator(".fxslot-row.is-empty").first.click(button="right")
+                page.locator("#armixContext [data-menu='"+action+"']").click()
+                intent=page.evaluate("()=>window.__actions.at(-1)")
+                assert intent["action"]=="fxRackFile" and intent["operation"]==operation,intent
+                assert intent["channelId"]==(SOURCE if channel==1 else RECEIVER),intent
+                assert intent["requestId"].startswith("fx-rack-file-")
+                assert "Effect settings updated" not in page.locator(".status-bar").inner_text()
+                return intent
+            def rack_result(intent,phase,message):
+                emit(page,"arMixFxRackFileResult",dict(requestId=intent["requestId"],
+                    operation=intent["operation"],channelId=intent["channelId"],phase=phase,message=message))
+            saved=rack_request(1,"rack-save","SAVE")
+            rack_result(saved,"CHOOSER","FX rack file: Choose a .arfx file")
+            rack_result(saved,"CANCELLED","FX rack file: Cancelled; rack unchanged")
+            opened=rack_request(2,"rack-open","OPEN")
+            rack_result(opened,"CHOOSER","FX rack file: Choose a .arfx file")
+            rack_result(saved,"COMPLETED","FX rack file: Stale receipt")
+            rack_result(opened,"FAILED","FX rack file: Registered VST3 unavailable: Test; rack unchanged")
+            assert page.locator("#armixNativeToast").inner_text()=="FX rack file: Registered VST3 unavailable: Test; rack unchanged"
+            assert row(1,0).locator(".fx-pick").inner_text().strip()=="ArSonEQ"
+            saved=rack_request(1,"rack-save","SAVE")
+            rack_result(saved,"COMPLETED","FX rack file: Saved Vocal-Rack.arfx")
+            assert page.locator("#armixNativeToast").inner_text()=="FX rack file: Saved Vocal-Rack.arfx"
+            page.locator("#armixNativeToast").evaluate("(el)=>el.hidden=true")
             def move(source,slot,destination,target_slot,after=False):
                 surface=row(source,slot).locator('.fx-pick').bounding_box();target=row(destination,target_slot).bounding_box()
                 assert surface and target
