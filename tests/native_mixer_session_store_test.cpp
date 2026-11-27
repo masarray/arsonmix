@@ -1087,6 +1087,26 @@ static void verifyOfflineLogicalSessionAndFile() {
     assert(workspace.storedFx(trackId,0)&&workspace.states().size()==1);
     assert(workspace.apply(command("REMOVE_FX_REFERENCE",slot,track)).accepted);
     assert(!workspace.storedFx(trackId,0)&&workspace.states().empty());
+    // Offline new return plans the same mandatory wet catalog, and cannot
+    // lose it through the offline remove path even before a SEND exists.
+    auto wetPayload=juce::var(new juce::DynamicObject());
+    wetPayload.getDynamicObject()->setProperty("purpose","FX");
+    wetPayload.getDynamicObject()->setProperty("name","Offline wet return");
+    wetPayload.getDynamicObject()->setProperty("connectMain",true);
+    const auto newReturn=workspace.apply(command("CREATE_GROUP",wetPayload));
+    assert(newReturn.accepted);
+    const ChannelId returnId{static_cast<std::uint64_t>(newReturn.createdId.getLargeIntValue())};
+    const auto* wetRow=workspace.document().roster.find(returnId);
+    assert(wetRow&&wetRow->role==ChannelRole::fxReturn&&wetRow->insertCatalogIds.size()==1&&
+        isWetReturnCatalog(wetRow->insertCatalogIds.front()));
+    const auto beforeRemove=Codec::encode(workspace.document());
+    const auto rejectedReturn=workspace.apply(command("REMOVE_FX_REFERENCE",slot,newReturn.createdId));
+    assert(!rejectedReturn.accepted&&rejectedReturn.error=="FX_RETURN_REQUIRES_WET_PROCESSOR");
+    assert(Codec::encode(workspace.document())==beforeRemove);
+    assert(liveStore.commit(workspace.document(),workspace.states()).isEmpty());
+    assert(liveStore.load(verifiedHead,headStates).isEmpty());
+    assert(verifiedHead.roster.find(returnId)->insertCatalogIds==wetRow->insertCatalogIds);
+    assert(workspace.apply(command("REMOVE_BUS",{},newReturn.createdId)).accepted);
     // No source comes from the borrowed MAIN pair. A deleted legacy strip
     // stays deleted, while its compatibility entry is explicitly absent.
     assert(workspace.apply(command("DELETE_CHANNEL",{},"1")).accepted);

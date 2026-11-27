@@ -6462,6 +6462,13 @@
       if (["wireExpand","wireSource","wireRoute"].includes(action))
         return false;
       if(action==="removeFx") {
+        const row=activeView()?.graph?.channels?.find(ch=>ch.id===nativeIdFor(t));
+        const slotToRemove=Number(btn?.dataset.slot);
+        const isWet=fx=>["armix.builtin.vocal-reverb-return.v1","armix.builtin.vocal-delay-return.v1"].includes(fx?.catalogId);
+        if(row?.role==="FX_RETURN"&&isWet(row.inserts?.[slotToRemove])&&row.inserts.filter(isWet).length===1){
+          nativeToast("FX Return requires a wet-only processor · delete the return channel or replace its wet FX");
+          return true;
+        }
         if(logicalView){
           const id=nativeIdFor(t),row=logicalView.graph.channels.find(ch=>ch.id===id);
           const slot=Number(btn?.dataset.slot);

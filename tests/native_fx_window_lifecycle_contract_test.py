@@ -392,7 +392,9 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("prepared.processor->getName(),std::move(editor),*this)",HOST)
         self.assertIn("owner->processor->getName(),std::move(ownedEditor),*this)",HOST)
         self.assertIn("processor->getName(), std::move(editor), *this",HOST)
-        self.assertIn("std::make_unique<AudioSetupWindow>",HOST)
-        self.assertIn("}, *safe);",HOST)
+        self.assertNotIn("std::make_unique<AudioSetupWindow>",HOST)
+        self.assertNotIn("AudioDeviceSelectorComponent",HOST)
+        self.assertIn('emitEventIfBrowserIsVisible("arMixOpenAudioIO"',HOST)
+        self.assertIn("device->showControlPanel()",HOST)
 if __name__=="__main__":unittest.main()
 

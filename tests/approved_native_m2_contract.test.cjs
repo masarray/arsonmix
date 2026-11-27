@@ -8020,3 +8020,18 @@ test("no stock JUCE device selector survives in the production host",()=>{
  assert.match(a,/arMixOpenAudioIO/);
  assert.match(host,/deviceApply_\.busy\(\)/);
 });
+
+test("startup recovery and update use branded non-modal native notice, not stock JUCE",()=>{
+ const host=read("src/Main.cpp");
+ assert.doesNotMatch(host,/juce::NativeMessageBox::showAsync|juce::AlertWindow/);
+ const recovery=host.slice(host.indexOf("class ArSonRecoveryNotice"),host.indexOf("class Browser final"));
+ assert.match(recovery,/MixerCaptionLookAndFeel/);assert.match(recovery,/ArSonNoticeButton/);
+ assert.match(recovery,/clearContentComponent\(\)/);assert.match(recovery,/MessageManager::callAsync/);
+ assert.match(recovery,/if\(accepted\)juce::URL/);
+ const archive=host.slice(host.indexOf('if(commandLine.trim()=="--archive-mixer-session"'),host.indexOf("// Paint the approved dark native splash"));
+ assert.match(archive,/if\(!accepted\)\{systemRequestedQuit\(\);return;\}/);
+ assert.match(archive,/quarantineForStartupRecovery/);
+ const update=host.slice(host.indexOf("class ArSonMixUpdateNotice"),host.indexOf("class ConsoleApp"));
+ assert.match(update,/MixerCaptionLookAndFeel/);assert.match(update,/ArSonNoticeButton/);
+ assert.match(update,/onAccept_ && onAccept_\(\)/);
+});

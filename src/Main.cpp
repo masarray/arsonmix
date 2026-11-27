@@ -177,41 +177,126 @@ void writeStartupDiagnostic(const juce::String& phase,const juce::String& detail
 #endif
 }
 
+// Emergency-only presentation: WebView is absent, so the native peer must
+// explain recovery without loading another renderer or opening an audio device.
+// Reuse the approved caption and low-glare palette; no nested modal loop.
+class ArSonNoticeButton final : public juce::TextButton
+{
+public:
+    ArSonNoticeButton(const juce::String& text,bool primary)
+        : juce::TextButton(text),primary_(primary) {}
+    void paintButton(juce::Graphics& g,bool over,bool down) override {
+        const auto bounds=getLocalBounds().toFloat().reduced(1.f);
+        g.setColour(juce::Colour(primary_?(down?0xff236077:over?0xff225066:0xff193c4c):
+            (down?0xff344752:over?0xff283c48:0xff1a2932)));
+        g.fillRoundedRectangle(bounds,4.f);
+        g.setColour(juce::Colour(hasKeyboardFocus(true)?0xff68d9f2:primary_?0xff4593ad:0xff405662));
+        g.drawRoundedRectangle(bounds,4.f,1.f);
+        g.setColour(juce::Colour(0xffe5edf7));
+        g.setFont(juce::FontOptions(13.f));
+        g.drawFittedText(getButtonText(),getLocalBounds().reduced(7,0),
+            juce::Justification::centred,1);
+    }
+private:
+    bool primary_;
+};
+
+class ArSonRecoveryNotice final : public juce::DocumentWindow
+{
+public:
+    ArSonRecoveryNotice(const juce::String& title,const juce::String& message,
+            const juce::String& primary,const juce::String& cancel,std::function<void(bool)> onChoice)
+        : DocumentWindow("ArSonMix recovery",juce::Colour(0xff101921),closeButton),
+          panel_(title,message,primary,cancel),onChoice_(std::move(onChoice))
+    {
+        setLookAndFeel(&caption_);
+        setUsingNativeTitleBar(false);
+        setTitleBarButtonsRequired(closeButton,false);
+        setTitleBarHeight(31);
+        setIcon(approvedAppIcon());
+        setResizable(false,false);
+        setContentNonOwned(&panel_,false);
+        panel_.primary.onClick=[this]{finish(true);};
+        panel_.cancel.onClick=[this]{finish(false);};
+        centreWithSize(560,330);
+        setVisible(true);
+        toFront(true);
+    }
+    ~ArSonRecoveryNotice() override {
+        clearContentComponent();
+        setLookAndFeel(nullptr);
+    }
+    void closeButtonPressed() override {finish(false);}
+private:
+    struct Panel final : juce::Component {
+        juce::String title,message;
+        ArSonNoticeButton primary,cancel;
+        Panel(const juce::String& t,const juce::String& m,
+              const juce::String& p,const juce::String& c)
+            : title(t),message(m),primary(p,true),cancel(c,false) {
+            addAndMakeVisible(primary);
+            if(c.isNotEmpty())addAndMakeVisible(cancel);
+        }
+        void resized() override {
+            auto buttons=getLocalBounds().reduced(20).removeFromBottom(32);
+            primary.setBounds(buttons.removeFromRight(208));
+            buttons.removeFromRight(8);
+            cancel.setBounds(buttons.removeFromRight(90));
+        }
+        void paint(juce::Graphics& g) override {
+            g.fillAll(juce::Colour(0xff101921));
+            auto area=getLocalBounds().reduced(20);
+            g.setColour(juce::Colour(0xff68d9f2));
+            g.setFont(juce::FontOptions(18.f));
+            g.drawFittedText(title,area.removeFromTop(30),juce::Justification::centredLeft,1);
+            area.removeFromTop(8);area.removeFromBottom(48);
+            g.setColour(juce::Colour(0xffd0dce3));
+            g.setFont(juce::FontOptions(13.f));
+            g.drawFittedText(message,area,juce::Justification::topLeft,14);
+        }
+    };
+    void finish(bool accepted) {
+        if(!onChoice_)return;
+        auto callback=std::move(onChoice_);
+        setVisible(false);
+        // The callback may replace this window (archive result) or quit.
+        // Defer until the originating Button/Window event has unwound.
+        juce::MessageManager::callAsync([callback=std::move(callback),accepted]{
+            callback(accepted);
+        });
+    }
+    armix::ui::MixerCaptionLookAndFeel caption_;
+    Panel panel_;
+    std::function<void(bool)> onChoice_;
+};
+std::unique_ptr<ArSonRecoveryNotice> recoveryNotice;
+void showRecoveryNotice(const juce::String& title,const juce::String& message,
+        const juce::String& primary,const juce::String& cancel,std::function<void(bool)> callback) {
+    recoveryNotice.reset();
+    recoveryNotice=std::make_unique<ArSonRecoveryNotice>(title,message,primary,cancel,std::move(callback));
+}
+
 void showWebViewStartupError (const juce::String& detail)
 {
     writeStartupDiagnostic("WEBVIEW_STARTUP_FAILED",detail);
-    juce::NativeMessageBox::showAsync (
-        juce::MessageBoxOptions{}
-            .withIconType (juce::MessageBoxIconType::WarningIcon)
 #if defined(_WIN32)
-            .withTitle ("ArSonMix - Windows GUI cannot start")
-            .withMessage ("The offline ArSonMix mixer needs Microsoft Edge WebView2 Runtime.\n\n"
-                          + detail + "\n\nDownload / repair from Microsoft:\n"
-                          "https://developer.microsoft.com/en-us/microsoft-edge/webview2/\n\n"
-                          "Use Start ArSonMix with Recovery Profile from the Start menu to use a separate browser profile.\n"
-                          "Local diagnostic: %LOCALAPPDATA%\\ArSonMix\\diagnostics\\startup-failure.txt")
-#else
-            .withTitle ("ArSonMix - native WebKit unavailable")
-            .withMessage ("ArSonMix requires the system WebKit browser backend "
-                          "(WKWebView on macOS, WebKitGTK on Linux).\n\n"
-                          + detail + "\n\nNo Show, plugin or preset data were deleted.")
-#endif
-#if defined(_WIN32)
-            .withButton ("Download / Repair WebView2")
-#endif
-            .withButton ("Close"),
-        [] (int result)
-        {
-#if defined(_WIN32)
-            // JUCE 8 pinned NativeMessageBox uses 0-based button indices.
-            // Only an explicit click opens the signed vendor download page.
-            // No driver installation, audio output or private data mutation.
-            if (result == 0)
-                juce::URL ("https://developer.microsoft.com/en-us/microsoft-edge/webview2/")
-                    .launchInDefaultBrowser();
-#endif
+    showRecoveryNotice("Mixer interface unavailable",
+        "The offline mixer needs Microsoft Edge WebView2 Runtime.\n\n"+detail+
+        "\n\nChoose Repair WebView2 to open the official Microsoft download. "
+        "You can also use Start ArSonMix with Recovery Profile or the --safe-webview-profile option.\n"
+        "Diagnostic: %LOCALAPPDATA%\\ArSonMix\\diagnostics\\startup-failure.txt",
+        "Repair WebView2","Close",[](bool accepted){
+            if(accepted)juce::URL("https://developer.microsoft.com/en-us/microsoft-edge/webview2/")
+                .launchInDefaultBrowser();
             juce::JUCEApplication::getInstance()->systemRequestedQuit();
         });
+#else
+    showRecoveryNotice("Mixer interface unavailable",
+        "ArSonMix requires the system WebKit browser backend "
+        "(WKWebView on macOS, WebKitGTK on Linux).\n\n"+detail+
+        "\n\nNo Show, plugin or preset data were deleted.",
+        "Close",{},[](bool){juce::JUCEApplication::getInstance()->systemRequestedQuit();});
+#endif
 }
 
 class Browser final : public juce::WebBrowserComponent
@@ -11792,26 +11877,32 @@ public:
             panel_.ok.setButtonText ("Retry");
             panel_.repaint();
         };
+        setLookAndFeel(&caption_);
         setUsingNativeTitleBar (false);
+        setTitleBarButtonsRequired(closeButton,false);
         setTitleBarHeight (31);
+        setIcon(approvedAppIcon());
         setResizable (false, false);
         setContentNonOwned (&panel_, false);
         centreWithSize (428, 185);
         setVisible (true);
         toFront (true);
     }
+    ~ArSonMixUpdateNotice() override {
+        clearContentComponent();
+        setLookAndFeel(nullptr);
+    }
     void closeButtonPressed() override { setVisible (false); }
 
 private:
+    armix::ui::MixerCaptionLookAndFeel caption_;
     struct Panel final : juce::Component
     {
         juce::String message;
-        juce::TextButton ok {"OK"};
+        ArSonNoticeButton ok {"OK",true};
         Panel()
         {
             addAndMakeVisible (ok);
-            ok.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff377bc7));
-            ok.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         }
         void resized() override { ok.setBounds (getWidth() - 106, getHeight() - 43, 88, 29); }
         void paint (juce::Graphics& g) override
@@ -11838,6 +11929,9 @@ public:
     }
     void anotherInstanceStarted (const juce::String&) override
     {
+        if (recoveryNotice&&recoveryNotice->isVisible()) {
+            recoveryNotice->toFront(true);return;
+        }
         if (window_)
         {
             window_->setMinimised (false);
@@ -11876,23 +11970,18 @@ public:
         // No implicit destructive reset or auto-updater after this invocation.
         if(commandLine.trim()=="--archive-mixer-session" && !isAutoUpdateHealthProbe()) {
             recoveryOnly_=true;
-            juce::NativeMessageBox::showAsync(
-                juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::WarningIcon)
-                    .withTitle("ArSonMix - recover mixer session")
-                    .withMessage("Archive the saved mixer checkpoint, including any corrupt FX state? The original files are preserved. No audio device opens. Restart ArSonMix normally after recovery.")
-                    .withButton("Cancel").withButton("Archive session"),
-                [this](int choice) {
-                    if(choice!=1){systemRequestedQuit();return;}
+            showRecoveryNotice("Recover mixer session",
+                "Archive the saved mixer checkpoint, including any corrupt FX state? The original files are preserved. No audio device opens. Restart ArSonMix normally after recovery.",
+                "Archive session","Cancel",[this](bool accepted) {
+                    if(!accepted){systemRequestedQuit();return;}
                     juce::File archived;
                     const auto error=armix::session::NativeMixerSessionStore(settingsDirectory()).quarantineForStartupRecovery(archived);
                     const juce::String message=error.isNotEmpty()?error:
                         archived.exists()?"Saved mixer archived: "+archived.getFullPathName()+"\nStart ArSonMix normally.":
                         juce::String("No saved mixer checkpoint found.");
                     writeStartupDiagnostic(error.isEmpty()?"MIXER_SESSION_ARCHIVED":"MIXER_SESSION_ARCHIVE_FAILED",message);
-                    juce::NativeMessageBox::showAsync(
-                        juce::MessageBoxOptions{}.withIconType(juce::MessageBoxIconType::InfoIcon)
-                            .withTitle("ArSonMix - recovery result").withMessage(message).withButton("Close"),
-                        [this](int){systemRequestedQuit();});
+                    showRecoveryNotice("Recovery result",message,"Close",{},
+                        [this](bool){systemRequestedQuit();});
                 });
             return;
         }
@@ -12021,6 +12110,7 @@ public:
         if (scanWorkerMode_) return; // no mixer session or updater on worker exit
         stopTimer();
         const bool hadMixerWindow=window_!=nullptr;
+        recoveryNotice.reset();
 #if defined(_WIN32)
         updateNotice_.reset();
 #endif
@@ -12039,7 +12129,7 @@ public:
         // Avoid starting setup while Windows is signing out/shutting down:
         // Windows may terminate installer midway through file replacement.
         // A staged transaction remains available on the next normal exit.
-        if (!recoveryOnly_ && !innoIsClosing && !isAutoUpdateHealthProbe() &&
+        if (hadMixerWindow && !recoveryOnly_ && !innoIsClosing && !isAutoUpdateHealthProbe() &&
             ::GetSystemMetrics (SM_SHUTTINGDOWN) == 0)
             launchSmartUpdater (true);
         if (installerShutdownEvent_ != nullptr)
@@ -12134,7 +12224,7 @@ private:
             return; // Do not open another notice over a currently visible one.
         lastUpdatePromptedSha_ = candidate;
         // The approved user need not see download progress or installer flags.
-        // Unlike NativeMessageBox::showAsync, this floating notice is NON-modal:
+        // This branded floating notice is NON-modal:
         // a performer can still move faders or patch WIRE during a live session.
         updateNotice_ = std::make_unique<ArSonMixUpdateNotice> (tag,
             [approvalFile, tag, candidate, previous]
