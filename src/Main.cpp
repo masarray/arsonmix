@@ -676,13 +676,15 @@ static bool isAutoUpdateHealthProbe()
 class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, private juce::ChangeListener
 {
 public:
-    explicit ConsoleWindow (std::function<void(int)> onStartupStage)
+    explicit ConsoleWindow (std::function<void(int)> onStartupStage,
+                            std::function<juce::var(const juce::var&)> onUpdateCenter)
         : DocumentWindow ("ArSonMiX — Native Mixer",
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
           presets_ (settingsDirectory().getChildFile ("presets"), settingsDirectory()),
           onStartupStage_ (std::move (onStartupStage)),
+          onUpdateCenter_ (std::move (onUpdateCenter)),
           browser_ (webViewOptions()
               .withNativeIntegrationEnabled()
               .withEventListener ("arMixGuiReady", [this] (juce::var ready)
@@ -766,6 +768,12 @@ public:
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
               .withEventListener ("arMixPlayerWindow", [this] (juce::var args) { handlePlayerWindow(args); })
+              .withEventListener ("arMixUpdateCenterIntent", [this] (juce::var args) {
+                  // Update control is presentation-only; do not pass through
+                  // onAction (which owns audio/device transactions).
+                  if(browser_.loaded && !updaterProbeMode_ && onUpdateCenter_)
+                      browser_.emitEventIfBrowserIsVisible("arMixUpdateCenterState",onUpdateCenter_(args));
+              })
               .withEventListener ("arMixOpenLegalSource", [] (juce::var)
               {
                   // Exact source for this *binary*; open only on user request,
@@ -1125,6 +1133,7 @@ private:
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
+    std::function<juce::var(const juce::var&)> onUpdateCenter_;
     Browser browser_;
     armix::hotkey::Registry hotkeys_{settingsDirectory()};
     juce::StringArray consumedHotkeyRequests_;
@@ -13165,7 +13174,15 @@ public:
                 }
             }
             else if (++updatePromptTicks_ % 40 == 0)
+            {
                 serviceSmartUpdateAcknowledgement();
+                // Long-running live sessions also discover releases. This
+                // existing message-thread timer launches only a throttled
+                // independent checker, never downloads or installs here.
+                if (window_ && startupMixerPresented_ &&
+                    juce::Time::getMillisecondCounter() - lastSmartUpdateCheckTick_ >= 6u * 60u * 60u * 1000u)
+                    launchSmartUpdater (false);
+            }
 #endif
             return;
         }
@@ -13238,7 +13255,7 @@ public:
                 else if (stage == 2)
                     presentMixerOnStartup();
             }
-        });
+        }, [this] (const juce::var& intent) { return serviceUpdateCenter(intent); });
 #if defined(_WIN32)
         if (!isAutoUpdateHealthProbe())
             launchSmartUpdater (false);
@@ -13326,8 +13343,99 @@ private:
     bool startupMixerPresented_ = false;
     bool recoveryOnly_ = false;
 
+    juce::var serviceUpdateCenter(const juce::var& intent)
+    {
+        const auto requestId=intent.getProperty("requestId",{}).toString();
+        const auto operation=intent.getProperty("operation",{}).toString();
+        if(requestId.isEmpty()||requestId.length()>18||!requestId.containsOnly("0123456789")||
+           (operation!="QUERY"&&operation!="CHECK"&&operation!="REVIEW"))return {};
+        juce::DynamicObject::Ptr response(new juce::DynamicObject());
+        response->setProperty("requestId",requestId);
+        response->setProperty("version",juce::String(JUCE_APPLICATION_VERSION_STRING));
+        response->setProperty("supported",false);
+        response->setProperty("manualAllowed",false);
+        response->setProperty("status","UNAVAILABLE");
 #if defined(_WIN32)
-    void serviceSmartUpdateAcknowledgement()
+        const auto installDir=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
+        const auto local=juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{});
+        const bool eligible=smartUpdaterInstallEligible()&&local.isNotEmpty()&&
+            installDir.getChildFile("UpdateVerifier").getChildFile("gh.exe").existsAsFile()&&
+            installDir.getChildFile("UpdateVerifier").getChildFile("verifier.json").existsAsFile();
+        response->setProperty("supported",eligible);
+        if(!eligible)return juce::var(response.get());
+        const auto elapsed=juce::Time::getMillisecondCounter()-lastSmartUpdateCheckTick_;
+        response->setProperty("manualAllowed",elapsed>=60000u);
+        if(operation=="CHECK"){
+            if(elapsed<60000u)
+                response->setProperty("notice","A recent check was requested. Try again in one minute.");
+            else {
+                const bool started=launchSmartUpdater(false,true);
+                response->setProperty("notice",started?"Check requested. The updater will report its result.":"Unable to start the update checker.");
+                response->setProperty("manualAllowed",false);
+            }
+        }
+        const auto folder=juce::File(local).getChildFile("ArSonMix").getChildFile("Updates");
+        const auto stateFile=folder.getChildFile("state.json");
+        const auto approvalFile=folder.getChildFile("approved.json");
+        const auto logFile=folder.getChildFile("last-result.txt");
+        const auto smallText=[](const juce::File& file,juce::int64 limit){
+            if(!file.existsAsFile()||file.getSize()>limit)return juce::String{};
+            juce::FileInputStream stream(file);
+            if(!stream.openedOk())return juce::String{};
+            juce::MemoryBlock bytes;
+            stream.readIntoMemoryBlock(bytes,static_cast<ssize_t>(limit+1));
+            if(bytes.getSize()>static_cast<size_t>(limit))return juce::String{};
+            return bytes.toString();
+        };
+        const auto state=juce::JSON::parse(smallText(stateFile,8192));
+        const auto phase=state.getProperty("phase",{}).toString();
+        const auto tag=state.getProperty("candidateTag",{}).toString();
+        const auto checked=state.getProperty("lastCheckUtc",{}).toString();
+        if(checked.length()<=60)response->setProperty("lastCheckUtc",checked);
+        if(tag.startsWith("v")&&tag.length()<=60)response->setProperty("candidateTag",tag);
+        const auto log=smallText(logFile,8192).trim().fromFirstOccurrenceOf(" ",false,false);
+        juce::String status="IDLE";
+        if(log.startsWith("UP_TO_DATE"))status="UP_TO_DATE";
+        else if(log.startsWith("CHECKING_FOR_UPDATES"))status="CHECKING";
+        else if(log.startsWith("DOWNLOADING_VERIFIED_UPDATE")||log.startsWith("STAGING_VERIFIED_SAME_VERSION_REPAIR"))status="DOWNLOADING";
+        else if(log.startsWith("NO_MATCHING_PUBLISHED_BASELINE"))status="BASELINE_UNAVAILABLE";
+        else if(log.startsWith("ROLLED_BACK"))status="ROLLED_BACK";
+        else if(log.startsWith("HEALTHY")||log.startsWith("REPAIRED"))status="HEALTHY";
+        else if(log.startsWith("FAIL_CLOSED")||log.startsWith("RECOVERY_FAILED")||
+                log.startsWith("RELEASE_REVOKED")||log.startsWith("ROLLBACK_RELEASE_UNAVAILABLE")||
+                log.startsWith("PREVIOUS_FAILURE_BLOCKED")||log.startsWith("INSTALLER_BYTES_CHANGED"))status="DEFERRED";
+        // A checker may have crashed after its last progress report. Never
+        // leave the UI claiming a live transfer indefinitely.
+        if((status=="CHECKING"||status=="DOWNLOADING")&&
+           juce::Time::getCurrentTime().toMilliseconds()-logFile.getLastModificationTime().toMilliseconds()>20*60*1000)
+            status="DEFERRED";
+        if(phase=="staged"){
+            if(state.getProperty("operation",{}).toString()=="repair")status="REPAIR_READY";
+            else {
+                const auto approval=juce::JSON::parse(smallText(approvalFile,2048));
+                const bool approved=tag.isNotEmpty()&&approval.getProperty("candidateTag",{}).toString()==tag&&
+                    state.getProperty("candidateSha",{}).toString().length()==40&&
+                    approval.getProperty("candidateSha",{})==state.getProperty("candidateSha",{})&&
+                    approval.getProperty("previousSha",{})==state.getProperty("previousSha",{});
+                status=approved?"APPROVED":"READY";
+                if(operation=="REVIEW"&&!approved)serviceSmartUpdateAcknowledgement(true);
+            }
+        }
+        response->setProperty("status",status);
+#endif
+        return juce::var(response.get());
+    }
+#if defined(_WIN32)
+    bool smartUpdaterInstallEligible() const
+    {
+        const auto installedExe=juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        const auto installDir=installedExe.getParentDirectory();
+        return installedExe.getFileName().equalsIgnoreCase("ArSonMix.exe") &&
+            installDir.getChildFile("ArSonMixAutoUpdate.ps1").existsAsFile() &&
+            installDir.getChildFile("BUILD_PROVENANCE.json").existsAsFile() &&
+            !installDir.getChildFile("portable_mode.txt").exists();
+    }
+    void serviceSmartUpdateAcknowledgement(bool explicitReview=false)
     {
         // The separately running updater has already staged and SHA-checked
         // both packages. Never claim a prompt can validate publisher identity.
@@ -13364,7 +13472,7 @@ private:
                     && ack->getProperty ("previousSha").toString() == previous)
                     return; // Already acknowledged; no repeat dialog.
         }
-        if (lastUpdatePromptedSha_ == candidate)
+        if (!explicitReview && lastUpdatePromptedSha_ == candidate)
             return; // Never nag during one mixer session.
         if (updateNotice_ && updateNotice_->isVisible())
             return; // Do not open another notice over a currently visible one.
@@ -13385,8 +13493,9 @@ private:
                     juce::JSON::toString (juce::var (approval.get()), false));
             });
     }
-    void launchSmartUpdater (bool applyStaged)
+    bool launchSmartUpdater (bool applyStaged,bool checkNow=false)
     {
+        if(!applyStaged)lastSmartUpdateCheckTick_=juce::Time::getMillisecondCounter();
         // Windows per-user installation only: independent updater process.
         // On normal exit, apply only a previously prepared transaction.
         // No audio callback, router or plugin operation.
@@ -13410,12 +13519,15 @@ private:
                 "-OwnerProcessId", juce::String (static_cast<int> (::GetCurrentProcessId())) };
             if (applyStaged)
                 command.add ("-ApplyStaged");
+            else if(checkNow)
+                command.add ("-CheckNow");
             juce::ChildProcess supervisor;
             // The supervisor is detached from the mixing lifecycle. If it
             // cannot start, the GUI still operates normally; updates are
             // optional and never a reason to lose the live session.
-            supervisor.start (command, 0);
+            return supervisor.start (command, 0);
         }
+        return false;
     }
 #endif
     bool startupAttempted_ = false;
@@ -13423,6 +13535,7 @@ private:
     HANDLE updateRunningMutex_ = nullptr;
     HANDLE installerShutdownEvent_ = nullptr;
     int updatePromptTicks_ = 0;
+    juce::uint32 lastSmartUpdateCheckTick_=0;
     std::unique_ptr<ArSonMixUpdateNotice> updateNotice_;
     juce::uint32 updateProbeCompleteTick_ = 0;
     juce::String lastUpdatePromptedSha_;

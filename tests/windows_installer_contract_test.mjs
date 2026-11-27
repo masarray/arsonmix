@@ -640,3 +640,22 @@ test('Autonomous updater bundles a pinned verifier and never uses user GitHub cr
   assert.match(intake,/Get-FileHash/);
   assert.match(intake,/\.ExtractToFile|::ExtractToFile/);
 });
+
+test('Update Center is a bounded message-thread presentation and scheduler, never audio intent',()=>{
+  const native=read('src/Main.cpp'), bridge=read('web/approved-native-bridge.js'), u=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(native,/withEventListener \("arMixUpdateCenterIntent"/);
+  assert.match(native,/lastSmartUpdateCheckTick_ >= 6u \* 60u \* 60u \* 1000u/);
+  assert.match(native,/launchSmartUpdater\(false,true\)/);
+  assert.match(native,/serviceSmartUpdateAcknowledgement\(true\)/);
+  assert.match(native,/!explicitReview && lastUpdatePromptedSha_ == candidate/);
+  assert.match(native,/command\.add \("-CheckNow"\)/);
+  assert.match(u,/\[switch\]\$CheckNow/);
+  assert.match(u,/if\(\$CheckNow -and \(\$ApplyStaged -or \$RecoveryMode -or \$PolicySelfTest\)\)/);
+  assert.match(u,/\$attemptCooldown=if\(\$CheckNow\)\{1\}else\{20\}/);
+  assert.match(u,/if\(-not \$CheckNow -and \$imageStatus/);
+  const center=bridge.slice(bridge.indexOf('function installUpdateCenter('),bridge.indexOf('function installFirstSoundMenu('));
+  assert.match(center,/dialog\.show\(\)/);
+  assert.doesNotMatch(center,/showModal|arMixAction|arMixConsoleIntent|fetch\(/);
+  assert.match(center,/window\.clearInterval\(poll\)/);
+  assert.match(center,/state\?\.requestId!==latest/);
+});

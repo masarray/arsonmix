@@ -5,9 +5,11 @@
 param([ValidateRange(0,2147483647)][int]$OwnerProcessId=0,
       [switch]$PolicySelfTest,
       [switch]$ApplyStaged,
-      [switch]$RecoveryMode)
+      [switch]$RecoveryMode,
+      [switch]$CheckNow)
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
+if($CheckNow -and ($ApplyStaged -or $RecoveryMode -or $PolicySelfTest)){throw 'CheckNow is check-only'}
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
 
 $repo='masarray/arsonmix'
@@ -925,11 +927,12 @@ try {
     $imageStatus=Get-InstalledImageStatus $file
     $now=[DateTime]::UtcNow
     $attempt=[DateTime]::MinValue
+    $attemptCooldown=if($CheckNow){1}else{20}
     if($state.lastAttemptUtc -and [DateTime]::TryParse([string]$state.lastAttemptUtc,[ref]$attempt) -and
        $now -ge $attempt.ToUniversalTime() -and
-       $now.Subtract($attempt.ToUniversalTime()).TotalMinutes -lt 20){exit 0}
+       $now.Subtract($attempt.ToUniversalTime()).TotalMinutes -lt $attemptCooldown){exit 0}
     $checked=[DateTime]::MinValue
-    if($imageStatus -cne 'damaged' -and $state.lastCheckUtc -and
+    if(-not $CheckNow -and $imageStatus -cne 'damaged' -and $state.lastCheckUtc -and
        [DateTime]::TryParse([string]$state.lastCheckUtc,[ref]$checked) -and
        $now -ge $checked.ToUniversalTime() -and
        $now.Subtract($checked.ToUniversalTime()).TotalHours -lt 6){exit 0}
@@ -937,6 +940,7 @@ try {
     Write-State $state
     $headers=@{Accept='application/vnd.github+json';'User-Agent'='ArSonMix-SmartUpdater/1';
                'X-GitHub-Api-Version'='2022-11-28'}
+    Log-Result 'CHECKING_FOR_UPDATES'
     $releases=Read-PublishedReleases $headers
     $state.lastCheckUtc=[DateTime]::UtcNow.ToString('o')
     Write-State $state
@@ -981,6 +985,7 @@ try {
     $state.phase='staging-retry'
     $state.lastCheckUtc=''
     Write-State $state
+    Log-Result 'DOWNLOADING_VERIFIED_UPDATE'
     Download-Release-Verified $new $newAsset $newPath
     # Rollback must be possible offline. Do not begin update without a
     # byte-verified previous installer.

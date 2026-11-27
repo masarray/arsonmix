@@ -5047,6 +5047,67 @@
     });
   }
 
+  function installUpdateCenter(menu) {
+    if(!menu||document.getElementById("armixUpdateCenter"))return;
+    const trigger=document.createElement("button");
+    trigger.type="button";trigger.className="tool";trigger.textContent="Update Center";
+    trigger.dataset.armixMenuPage="settings";
+    trigger.title="Check official updates without interrupting the mixer";
+    menu.append(trigger);
+    const dialog=document.createElement("dialog");
+    dialog.id="armixUpdateCenter";dialog.className="armix-update-center";
+    dialog.setAttribute("aria-labelledby","armixUpdateCenterTitle");
+    dialog.innerHTML='<div class="armix-update-heading"><span id="armixUpdateCenterTitle">ArSonMix · Update Center</span><button type="button" data-update-close aria-label="Close Update Center">×</button></div>'+
+      '<div class="armix-update-content"><div data-update-version>Installed version · —</div>'+
+      '<div data-update-status role="status" aria-live="polite">Reading updater status…</div>'+
+      '<div data-update-candidate></div><div data-update-checked></div>'+
+      '<div data-update-notice role="status"></div>'+
+      '<div class="armix-update-safety">Automatic checks · verified updates · installation only after normal close. Live audio stays available.</div>'+
+      '<div class="armix-update-actions"><button type="button" data-update-review hidden>Review update</button><button type="button" data-update-check disabled>Check for updates</button></div></div>';
+    const style=document.createElement("style");
+    style.textContent='.armix-update-center{position:fixed;inset:72px 12px auto auto;width:min(420px,calc(100vw - 24px));max-height:calc(100vh - 84px);overflow:auto;box-sizing:border-box;margin:0;padding:0;border:1px solid #47616f;border-radius:7px;background:#172b36;color:#d1e4ed;font:12px system-ui;box-shadow:0 12px 32px #0007}.armix-update-center:not([open]){display:none}.armix-update-heading{display:flex;align-items:center;justify-content:space-between;background:#223d4b;padding:8px 12px;font-weight:500}.armix-update-center button{font:500 12px system-ui;min-height:29px;padding:5px 10px;color:#cce4ef;background:#284b5c;border:1px solid #527789;border-radius:4px;cursor:pointer}.armix-update-center button:hover:not(:disabled){background:#376476}.armix-update-center button:focus-visible{outline:2px solid #9de4fa;outline-offset:-2px}.armix-update-center button:disabled{opacity:.45;cursor:default}.armix-update-center button[hidden]{display:none}.armix-update-heading button{min-width:26px;padding:0 6px;font-size:17px;line-height:24px}.armix-update-content{display:grid;gap:8px;padding:12px}.armix-update-content [data-update-status]{font-size:13px;color:#d4edf5}.armix-update-content [data-update-version],.armix-update-content [data-update-checked],.armix-update-content [data-update-candidate],.armix-update-content [data-update-notice]{color:#a1bfcd;overflow-wrap:anywhere}.armix-update-content [data-update-notice]:empty,.armix-update-content [data-update-candidate]:empty,.armix-update-content [data-update-checked]:empty{display:none}.armix-update-safety{border-top:1px solid #34505f;padding-top:9px;color:#96b7c6;font-size:11px;line-height:1.45}.armix-update-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}';
+    document.head.append(style);document.body.append(dialog);
+    const q=selector=>dialog.querySelector(selector);
+    const check=q("[data-update-check]"),review=q("[data-update-review]");
+    const messages={UNAVAILABLE:"Automatic updates are not available for this portable or incomplete installation.",
+      IDLE:"No update result yet.",UP_TO_DATE:"Last check found no newer release.",CHECKING:"Checking official releases…",
+      DOWNLOADING:"Downloading and verifying the update…",BASELINE_UNAVAILABLE:"This build is not a published update baseline.",
+      READY:"A verified update is ready to review.",APPROVED:"Approved · will install after normal close.",
+      REPAIR_READY:"Verified repair is ready after normal close.",HEALTHY:"Last update or repair passed the GUI health check.",
+      ROLLED_BACK:"Update failed; the previous version was restored.",DEFERRED:"Update deferred safely. Check again when connectivity or verification is available."};
+    let serial=0,latest="",poll=0;
+    function request(operation){
+      if(!dialog.open)return;
+      latest=String(++serial);
+      backend.emitEvent("arMixUpdateCenterIntent",{operation,requestId:latest});
+    }
+    backend.addEventListener("arMixUpdateCenterState",state=>{
+      if(!dialog.open||state?.requestId!==latest||!Object.hasOwn(messages,state.status))return;
+      q("[data-update-version]").textContent="Installed version · "+String(state.version||"Unknown").slice(0,80);
+      q("[data-update-status]").textContent=messages[state.status];
+      q("[data-update-candidate]").textContent=state.candidateTag?"Candidate · "+String(state.candidateTag).slice(0,60):"";
+      const date=state.lastCheckUtc?new Date(state.lastCheckUtc):null;
+      q("[data-update-checked]").textContent=date&&Number.isFinite(date.getTime())?"Last successful check · "+date.toLocaleString():"";
+      if(typeof state.notice==="string")q("[data-update-notice]").textContent=state.notice.slice(0,200);
+      check.disabled=state.supported!==true||state.manualAllowed!==true||["CHECKING","DOWNLOADING"].includes(state.status);
+      review.hidden=state.supported!==true||state.status!=="READY";
+    });
+    trigger.addEventListener("click",()=>{
+      const more=trigger.closest("details");if(more)more.open=false;
+      if(!dialog.open){
+        dialog.show();q("[data-update-close]").focus();
+        q("[data-update-status]").textContent="Reading updater status…";q("[data-update-notice]").textContent="";
+        check.disabled=true;review.hidden=true;request("QUERY");
+        poll=window.setInterval(()=>request("QUERY"),2000);
+      }
+    });
+    check.addEventListener("click",()=>{check.disabled=true;q("[data-update-notice]").textContent="Requesting a check…";request("CHECK");});
+    review.addEventListener("click",()=>request("REVIEW"));
+    q("[data-update-close]").addEventListener("click",()=>dialog.close());
+    dialog.addEventListener("keydown",event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();dialog.close();}});
+    dialog.addEventListener("close",()=>{window.clearInterval(poll);poll=0;latest="";document.querySelector("#moreTools > summary")?.focus();});
+  }
+
   function installFirstSoundMenu() {
     const menu=document.querySelector?.("#moreTools .more-tools-panel");
     if(!menu || typeof document.createElement!=="function")return;
@@ -5385,6 +5446,7 @@
     if(devicePanel)devicePanel.querySelector(".armix-audio-diagnostics").append(audioDiagnosticTools);
     menu.append(caption,setup,muteBtn,...newSessionButtons,archiveButton,
       showHeading,showSave,showBrowse,showSelect,showUpdate,showRecall,showRecover,showNote);
+    installUpdateCenter(menu);
     // Single discoverable AUDIO I/O button next to ordinary mixer tools.
     // The existing More entry remains a shortcut to THIS SAME panel.
     const toolbar=document.querySelector(".command-bar");
