@@ -55,6 +55,23 @@ def check_release_navigation(page):
     ).count() == 0
 
 
+def check_reflow(page):
+    # Report actual overflowing DOM owners, not just a pixel count.
+    geometry = page.evaluate("""() => {
+        const width = document.documentElement.clientWidth;
+        const offenders = [...document.querySelectorAll('body *')]
+            .filter(el => el.getBoundingClientRect().width > 0)
+            .map(el => ({element: el.tagName + '.' + (typeof el.className === 'string' ? el.className : ''),
+                         right: el.getBoundingClientRect().right,
+                         left: el.getBoundingClientRect().left}))
+            .filter(el => el.right > width + 2 || el.left < -2).slice(0, 20);
+        return {width, overflow: document.documentElement.scrollWidth - width, offenders};
+    }""")
+    assert geometry["overflow"] <= 2, f"Horizontal overflow: {geometry}"
+    assert page.locator(".footer-inner>div").evaluate("el => el.scrollWidth <= el.clientWidth + 2")
+    assert page.locator("#system-requirements").evaluate("el => el.scrollWidth <= el.clientWidth + 2")
+
+
 def browser_check(page):
     assert page.title() == "ArSonMix — Free Open Source Digital Mixer for Windows"
     assert page.locator("h1").count() == 1
@@ -139,8 +156,7 @@ def browser_check(page):
         img.evaluate("img => img.decode()")
     assert all(imgs.evaluate_all(
         "nodes=>nodes.map(n=>n.complete && n.naturalWidth>0)")), "Screenshot/brand broken"
-    overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
-    assert overflow <= 2, "Horizontal overflow (px): " + str(overflow)
+    check_reflow(page)
     check_release_navigation(page)
 
 
@@ -166,6 +182,11 @@ def main():
                     status=200, content_type="application/json", body="[]"))
                 page.goto(site, wait_until="networkidle")
                 browser_check(page)
+                if label == "desktop":
+                    for reflow_width in (320, 360, 768, 960, 1024, 1051, 1180, 1280):
+                        page.set_viewport_size({"width": reflow_width, "height": 900})
+                        check_reflow(page)
+                    page.set_viewport_size({"width": width, "height": height})
                 for slug, scene_count in (("8d-sonku", 0), ("immersib", 6), ("guitar-fx", 0)):
                     detail = browser.new_page(
                         viewport={"width": width, "height": height},
