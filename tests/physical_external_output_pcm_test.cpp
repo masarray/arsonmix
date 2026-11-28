@@ -502,6 +502,14 @@ static void verifyIndependentProgrammeTap() {
     assert(h.render(2,&tap));
     assert(tap.captured()==h.busB&&near(tap.left().back(),.21f)&&near(tap.right().back(),.12f));
     assert(h.callsA==2&&h.callsB==2);
+    assert(h.publisher.setChannelMix(h.epoch,1,h.busB,.5f,0.f));
+    assert(h.render(2,&tap)&&tap.state()==State::rendered);
+    assert(near(tap.left().back(),.105f)&&near(tap.right().back(),.06f));
+    assert(near(h.output[0].back(),.605f)&&near(h.output[1].back(),.26f));
+    assert(h.publisher.setChannelMuteSolo(h.epoch,1,h.busB,true,false));
+    assert(h.render(2,&tap)&&tap.state()==State::rendered);
+    assert(near(tap.left().back(),0.f)&&near(tap.right().back(),0.f));
+    assert(near(h.output[0].back(),.50f)&&near(h.output[1].back(),.20f));
     tap.requested=ChannelId{999};
     assert(h.render(2,&tap));
     assert(tap.state()==State::unavailable&&tap.left().empty()&&tap.right().empty());
@@ -520,6 +528,21 @@ static void verifyIndependentProgrammeTap() {
     for(float v:tap.left())assert(v==0.f);
     for(float v:tap.right())assert(v==0.f);
     assert(dormant.callsA==0&&dormant.callsB==0);
+    // A source added after assignment wakes the same stable ChannelId;
+    // no reassignment, hardware pair, or private audition is required.
+    const std::array<ChannelEdit,1> link{out(dormant.voice,dormant.busA)};
+    assert(dormant.roster.edit(1,link).ok());
+    dormant.request.sources={{dormant.voice,0,1,true}};
+    assert(dormant.publisher.commit(dormant.roster,dormant.request,1,
+        dormant.epoch,dormant.epoch,true).ok());
+    assert(dormant.render(2,&tap)&&tap.state()==State::rendered);
+    assert(tap.captured()==dormant.busA&&near(tap.left().back(),.50f)&&near(tap.right().back(),.20f));
+    assert(near(dormant.output[0].back(),0.f)&&near(dormant.output[1].back(),0.f));
+    assert(dormant.callsA==1&&dormant.callsB==0);
+    // Revoked/stale graph epoch cannot return the previous tap receipt.
+    ++dormant.epoch;
+    assert(!dormant.render(2,&tap)&&tap.state()==State::unavailable);
+    assert(tap.left().empty()&&tap.right().empty());
     std::puts("INDEPENDENT_PROGRAMME_TAP_PCM_PASS");
 }
 int main() {
