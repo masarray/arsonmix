@@ -236,9 +236,21 @@ def exercise(browser,out,width,height,tap,close_reference):
     emit(page,"arMixCatalog",{**catalog,"scanPaths":folders[:1],"scanning":False})
     assert manager.locator("#pluginScan").is_enabled()
     emit(page,"arMixScanProgress",{"reported":True,"active":False,"found":5,"issues":True})
-    expect(manager.locator("#pluginScanStatus")).to_contain_text("Scan finished · 5 found")
-    expect(manager.locator("#pluginScanStatus")).to_contain_text("Diagnostics")
-    assert "JUCE" not in manager.locator("#pluginScanStatus").inner_text()
+    scan_status=manager.locator("#pluginScanStatus")
+    expect(scan_status).to_have_text("Scan needs attention · 5 found · Retry or open Diagnostics for details.")
+    assert "JUCE" not in scan_status.inner_text()
+    # Native worker start failure publishes a terminal issue with zero results.
+    # Neither a partial scan nor a failed start may be presented as success.
+    emit(page,"arMixScanProgress",{"reported":True,"active":False,"done":0,"total":0,"found":0,"issues":True})
+    expect(scan_status).to_have_text("Scan needs attention · 0 found · Retry or open Diagnostics for details.")
+    assert manager.locator("#pluginScan").is_enabled()
+    # A subsequent successful scan must clear the previous issue status.
+    emit(page,"arMixScanProgress",{"reported":True,"active":True,"done":0,"total":0})
+    expect(scan_status).to_have_text("Finding VST3 plug-ins…")
+    emit(page,"arMixScanProgress",{"reported":True,"active":False,"found":5,"issues":False})
+    expect(scan_status).to_have_text("Scan finished · 5 found")
+    emit(page,"arMixScanProgress",{"reported":True,"active":False,"found":0,"issues":False})
+    expect(scan_status).to_have_text("Scan finished · 0 found")
     manager.locator("#pluginSearch").fill("Fixture VST 257")
     assert manager.locator(".plugin-item").count()==1
     assert manager.locator(".plugin-item .plugin-meta").inner_text()=="Fixture Vendor"

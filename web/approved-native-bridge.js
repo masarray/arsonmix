@@ -6665,8 +6665,9 @@
       if(!statusEl||progress?.reported!==true)return;
       const text=progress.active?(progress.total>0?
         "Scanning VST3… "+progress.done+"/"+progress.total:"Finding VST3 plug-ins…"):
-        "Scan finished · "+(progress.found||0)+" found"+
-          (progress.issues?" · Some items need attention. Open Diagnostics for details.":"");
+        (progress.issues?"Scan needs attention · ":"Scan finished · ")+
+        (progress.found||0)+" found"+
+        (progress.issues?" · Retry or open Diagnostics for details.":"");
       if(statusEl.textContent!==text)statusEl.textContent=text;
     });
     backend.addEventListener("arMixOpenAudioIO",()=>openNativeAudioIO());
