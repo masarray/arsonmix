@@ -77,7 +77,7 @@ def state(el):
          bg:s.backgroundImage,pos:s.backgroundPosition,size:s.backgroundSize,
          color:s.color,shadow:s.boxShadow,transform:s.transform,
          duration:s.transitionDuration,alpha:s.backgroundColor,radius:s.borderRadius,
-         pressed:el.getAttribute('aria-pressed')};
+         pressed:el.getAttribute('aria-pressed'),led:s.getPropertyValue('--fx-led').trim(),face:getComputedStyle(el,'::after').backgroundImage,faceRadius:getComputedStyle(el,'::after').borderRadius};
     }""")
 
 def stable(a,b):
@@ -97,16 +97,22 @@ def test_page(browser,url,label):
             loc=row.locator('[data-util-kind="'+kind+'"]').first
             assert loc.count()==1,(label,width,kind)
             s=state(loc)
-            assert (FORMAT if kind=='format' else SQUARE) in s['bg'],(label,kind,s)
+            recessed=label=='approved-png' and kind in ('fx-main','fx-slot')
+            if recessed:
+                assert s['bg']=='none' and 'radial-gradient' in s['face'] and s['faceRadius']=='50%',(label,kind,s)
+                assert s['led']==('#00b6d5' if s['pressed']=='true' else '#34393b'),(label,kind,s)
+            else:
+                assert (FORMAT if kind=='format' else SQUARE) in s['bg'],(label,kind,s)
             assert s['alpha']=='rgba(0, 0, 0, 0)',(label,kind,s)
             assert s['transform']=='none' and s['duration']=='0s',(label,kind,s)
             assert s['shadow']=='none',(label,kind,s)
             assert s['h']==(15 if kind=='format' else 17),(label,kind,s)
             assert s['w']==(25 if kind=='format' else (21 if label=='approved-png' else 17)),(label,kind,s)
             assert s['radius']==('4px' if label=='approved-png' else '0px'),(label,kind,s)
-            assert s['pos'].startswith(('100%' if s['pressed']=='true' else '0%')+' '),(label,kind,s)
+            if not recessed:
+                assert s['pos'].startswith(('100%' if s['pressed']=='true' else '0%')+' '),(label,kind,s)
             before[kind]=s
-            if kind in ('fx-main','fx-slot') and s['pressed']=='true':
+            if not recessed and kind in ('fx-main','fx-slot') and s['pressed']=='true':
                 assert s['color']=='rgb(22, 62, 43)',(label,width,kind,'active glyph must stay dark')
             if kind=='fx-remove':
                 assert s['color']=='rgb(164, 73, 78)',(label,width,'delete OFF must be muted red, not black',s['color'])
@@ -117,9 +123,12 @@ def test_page(browser,url,label):
             loc=row.locator('[data-util-kind="'+kind+'"]').first
             on=state(loc)
             assert on['pressed']!=old,(label,kind,on)
-            assert on['pos'].startswith(('0%' if old=='true' else '100%')+' '),(label,kind,on)
+            if label=='approved-png' and kind=='fx-main':
+                assert on['led']==('#34393b' if old=='true' else '#00b6d5'),(label,kind,on)
+            else:
+                assert on['pos'].startswith(('0%' if old=='true' else '100%')+' '),(label,kind,on)
             assert stable(before[kind],on),(label,kind,'ON displaced physical key')
-            if kind=='fx-main' and on['pressed']=='true':
+            if label!='approved-png' and kind=='fx-main' and on['pressed']=='true':
                 assert on['color']=='rgb(22, 62, 43)',(label,kind,'white icon on green cap',on['color'])
             loc.click()
             off=state(row.locator('[data-util-kind="'+kind+'"]').first)
