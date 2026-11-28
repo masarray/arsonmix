@@ -28,10 +28,11 @@ public:
 
     void setStage (int stage)
     {
-        const auto next = juce::jlimit (0, 2, stage);
-        if (next != stage_)
+        // 3 is the caller's failure/dismissal event, not success.
+        // Ignore duplicates, stale events and invalid states.
+        if (stage > stage_ && stage <= 2)
         {
-            stage_ = next;
+            stage_ = stage;
             repaint();
         }
     }
@@ -48,7 +49,7 @@ public:
             g.drawImageWithin (background_, 0, 0, getWidth(), getHeight(),
                                juce::RectanglePlacement::fillDestination);
         }
-        constexpr float cardWidth = 620.0f, cardHeight = 372.0f;
+        constexpr float cardWidth = 620.0f, cardHeight = 306.0f;
         const float width = static_cast<float> (getWidth());
         const float height = static_cast<float> (getHeight());
 
@@ -83,41 +84,60 @@ public:
                     juce::Justification::centred);
 
         const juce::String status = stage_ == 0 ? "Loading mixer interface..."
-                                 : stage_ == 1 ? "Preparing native audio engine..."
-                                               : "Mixer interface ready";
+                                 : stage_ == 1 ? "Initializing audio device..."
+                                               : "Opening mixer...";
         g.setColour (juce::Colour (0xffd9ebf2));
         g.setFont (juce::FontOptions (15.0f));
         g.drawText (status, 24, 207, 572, 26, juce::Justification::centred);
 
-        // Three discrete startup milestones, not a fabricated percentage.
-        // Completed / active / pending are distinct; no animation or timer.
-        for (int i = 0; i < 3; ++i)
-        {
-            g.setColour (juce::Colour (i < stage_ ? 0xff128f86
-                                    : i == stage_ ? 0xff1edac2 : 0xff283c49));
-            g.fillRoundedRectangle (100.0f + static_cast<float> (i) * 142.0f,
-                                    242.0f, 136.0f, 4.0f, 2.0f);
-        }
+        // Aurora Glass Linear: first paint, authenticated GUI handshake,
+        // and native startup handoff are three equal *checkpoints*, not
+        // measured time or device/session readiness. No timer or fake %.
+        drawAuroraProgress (g, stage_);
 
-        const juce::String labels[] = {
-            "Loading interface", "Preparing native audio engine", "Mixer interface ready"
-        };
-        g.setFont (juce::FontOptions (12.5f));
-        for (int i = 0; i < 3; ++i)
-        {
-            const float y = 268.0f + static_cast<float> (i) * 24.0f;
-            g.setColour (juce::Colour (i <= stage_ ? 0xff1edac2 : 0xff526671));
-            g.drawEllipse (210.0f, y + 3.0f, 10.0f, 10.0f, 1.2f);
-            if (i < stage_)
-                g.fillEllipse (212.5f, y + 5.5f, 5.0f, 5.0f);
-            g.setColour (juce::Colour (i == stage_ ? 0xffe5f1f4
-                                    : i < stage_ ? 0xffa8c5c7 : 0xff8297a2));
-            g.drawText (labels[i], 230, static_cast<int> (y) - 3, 180, 22,
-                        juce::Justification::centredLeft);
-        }
+        g.setFont (juce::FontOptions (11.0f));
+        g.setColour (juce::Colour (0xff92aab9));
+        g.drawText ("STARTUP CHECKPOINTS", 100, 269, 238, 18,
+                    juce::Justification::centredLeft);
+        g.drawText (juce::String (stage_ + 1) + " / 3", 350, 269, 170, 18,
+                    juce::Justification::centredRight);
     }
 
 private:
+    static void drawAuroraProgress (juce::Graphics& g, int stage)
+    {
+        // Keep a fixed optical centre and a slim hardware-like recessed track.
+        const juce::Rectangle<float> track (100.0f, 240.0f, 420.0f, 14.0f);
+        const auto inner = track.reduced (3.0f);
+        g.setGradientFill (juce::ColourGradient (
+            juce::Colour (0xff03090d), track.getX(), track.getY(),
+            juce::Colour (0xff26343e), track.getX(), track.getBottom(), false));
+        g.fillRoundedRectangle (track, 7.0f);
+        g.setColour (juce::Colour (0xff51626e));
+        g.drawRoundedRectangle (track.reduced (0.5f), 6.5f, 0.7f);
+
+        const float fraction = static_cast<float> (stage + 1) / 3.0f;
+        const auto fill = inner.withWidth (inner.getWidth() * fraction);
+        const float radius = juce::jmin (fill.getHeight() * 0.5f, fill.getWidth() * 0.5f);
+        juce::ColourGradient aurora (
+            juce::Colour (0xff167a91), fill.getX(), fill.getCentreY(),
+            juce::Colour (0xffb4efe1), fill.getRight(), fill.getCentreY(), false);
+        aurora.addColour (0.35, juce::Colour (0xff20b3bd));
+        aurora.addColour (0.70, juce::Colour (0xff59ded0));
+        g.setGradientFill (aurora);
+        g.fillRoundedRectangle (fill, radius);
+
+        // A single translucent specular overlay; no offscreen blur, shadow
+        // bitmap, animation, new compositor or per-frame allocation of images.
+        juce::ColourGradient glass (
+            juce::Colour (0xb3ffffff), fill.getX(), fill.getY(),
+            juce::Colour (0x3d00262a), fill.getX(), fill.getBottom(), false);
+        glass.addColour (0.40, juce::Colour (0x1fffffff));
+        glass.addColour (0.50, juce::Colour (0x00ffffff));
+        g.setGradientFill (glass);
+        g.fillRoundedRectangle (fill, radius);
+    }
+
     const juce::Image background_;
     const juce::Image brand_;
     int stage_ = 0;

@@ -159,7 +159,8 @@ test('native splash embeds preblurred JPEG and product PNG, preserves guard and 
  assert.match(splash,/width \/ \(cardWidth \+ 24\.0f\), height \/ \(cardHeight \+ 24\.0f\)/);
  assert.match(splash,/\(width - cardWidth \* scale\) \* 0\.5f,\s*\(height - cardHeight \* scale\) \* 0\.5f/);
  assert.match(splash,/g\.fillAll \(juce::Colour \(0xff0b1823\)\)/);
- assert.doesNotMatch(splash,/ColourGradient|g\.drawText \("Ar",|g\.drawText \("SonMix",/);
+ assert.doesNotMatch(splash,/g\.drawText \("Ar",|g\.drawText \("SonMix",/);
+ assert.doesNotMatch(splash.slice(splash.indexOf('void paint'),splash.indexOf('private:')),/ColourGradient/);
  assert.doesNotMatch(splash.slice(splash.indexOf('void paint')),/loadFrom|ImageCache|startTimer|repaint\(\)|ImageConvolutionKernel|GaussianBlur/);
  assert.ok(artwork.length<=8*1024,'soft startup JPEG size budget');
  assert.equal(artwork[0],0xff);
@@ -190,5 +191,44 @@ test('native splash embeds preblurred JPEG and product PNG, preserves guard and 
    assert.ok(s>0 && x>=0 && y>=0 && x+cw*s<=w && y+ch*s<=h);
    assert.ok(Math.abs(x+cw*s/2-w/2)<1e-7);
    assert.ok(Math.abs(y+ch*s/2-h/2)<1e-7);
+ }
+});
+
+test('Aurora Glass Linear uses actual checkpoints, not elapsed time or false audio readiness',()=>{
+ const splash=read('src/ArSonMixStartupSplash.h');
+ const setStage=splash.slice(splash.indexOf('void setStage'),splash.indexOf('void paint'));
+ assert.match(setStage,/if \(stage > stage_ && stage <= 2\)/);
+ assert.match(setStage,/stage_ = stage;\s*repaint\(\);/);
+ assert.doesNotMatch(setStage,/jlimit|clamp/);
+ assert.match(splash,/int stage_ = 0;/);
+ assert.match(splash,/drawAuroraProgress \(g, stage_\);/);
+ assert.match(splash,/static_cast<float> \(stage \+ 1\) \/ 3\.0f/);
+ assert.match(splash,/juce::String \(stage_ \+ 1\) \+ " \/ 3"/);
+ assert.match(splash,/STARTUP CHECKPOINTS/);
+ assert.match(splash,/"Loading mixer interface\.\.\."/);
+ assert.match(splash,/"Initializing audio device\.\.\."/);
+ assert.match(splash,/"Opening mixer\.\.\."/);
+ assert.doesNotMatch(splash,/Mixer interface ready|Ready mixer layout|drawEllipse|startTimer|Timer::|sleep|ImageConvolutionKernel|GaussianBlur/);
+ assert.match(splash,/juce::ColourGradient aurora/);
+ assert.match(splash,/juce::ColourGradient glass/);
+ for(const colour of ['167a91','20b3bd','59ded0','b4efe1']) assert.ok(splash.includes('0xff'+colour));
+ assert.match(splash,/inner\.withWidth \(inner\.getWidth\(\) \* fraction\)/);
+ assert.match(splash,/juce::jmin \(fill\.getHeight\(\) \* 0\.5f, fill\.getWidth\(\) \* 0\.5f\)/);
+ // Real lifecycle still owns all progression and immediate dismissal.
+ assert.match(main,/if \(onStartupStage_\) onStartupStage_ \(1\)/);
+ assert.match(main,/if \(onStartupStage_\) onStartupStage_ \(3\)/);
+ assert.match(main,/if \(splash_\) splash_->setStage \(stage\);\s*if \(stage >= 2\)/);
+ assert.match(main,/splash_\.reset\(\); \/\/ no overlay over live mixer/);
+ const track=splash.match(/track \(([\d.]+)f, ([\d.]+)f, ([\d.]+)f, ([\d.]+)f\)/);
+ const card=splash.match(/cardWidth = ([\d.]+)f, cardHeight = ([\d.]+)f/);
+ assert.ok(track && card);
+ const [x,y,w,h]=track.slice(1).map(Number),[cw,ch]=card.slice(1).map(Number);
+ assert.equal(x+w/2,cw/2);
+ assert.ok(y>=233 && y+h<269 && 287<ch);
+ assert.ok(w>6 && h>6);
+ for(let stage=0;stage<=2;stage++){
+   const width=(w-6)*(stage+1)/3;
+   assert.ok(width>0 && width<=w-6);
+   assert.ok(x+3+width<=x+w-3);
  }
 });
