@@ -1307,6 +1307,34 @@ static void verifyPrivatePflCapturePcm() {
     assert(!render(&pfl,64,epoch+1)&&pfl.left().empty()&&!pfl.captured().value);
     assert(render(&pfl)&&pfl.captured()==voice);
     assert(!render(&pfl,64,epoch,true)&&pfl.left().empty()&&!pfl.captured().value);
+    // End-to-end publisher cue: only MONITOR changes, after actual render.
+    constexpr std::uint64_t routeKey=0x1234;
+    const auto listen=[&](std::uint64_t key=0x1234,bool muted=false){
+        return session.render(epoch,pins,4,mL.data(),mR.data(),64,muted,fx,
+            nL.data(),nR.data(),{},{},{},false,nullptr,key);
+    };
+    assert(!session.selectPfl(epoch,2,routeKey,main));
+    assert(!session.selectPfl(epoch,2,routeKey,monitor));
+    assert(!session.selectPfl(epoch,2,routeKey,ChannelId{999999}));
+    assert(!session.selectPfl(epoch+1,2,routeKey,voice));
+    assert(session.selectPfl(epoch,2,routeKey,voice));
+    assert(session.pflState(epoch,2,routeKey).requested==voice);
+    assert(!session.pflState(epoch,2,routeKey).applied.value);
+    assert(listen()&&near(nL[63],.1f)&&near(nR[63],.05f)&&near(mL[63],0.f));
+    assert(session.pflState(epoch,2,routeKey).applied==voice);
+    assert(session.selectPfl(epoch,2,routeKey,source));
+    assert(listen()&&near(nL[63],.0625f)&&near(nR[63],.03125f)&&near(mL[63],0.f));
+    assert(session.pflState(epoch,2,routeKey).applied==source);
+    assert(session.selectPfl(epoch,2,routeKey,ChannelId{}));
+    assert(listen()&&near(nL[63],0.f)&&near(nR[63],0.f));
+    assert(!session.pflState(epoch,2,routeKey).requested.value);
+    assert(session.selectPfl(epoch,2,routeKey,voice));
+    assert(listen(routeKey+1)&&near(nL[63],0.f));
+    assert(!session.pflState(epoch,2,routeKey).requested.value);
+    assert(listen()&&near(nL[63],0.f)); // cannot silently rearm after rebind
+    assert(session.selectPfl(epoch,2,routeKey,voice));
+    assert(!listen(routeKey,true)&&!session.pflState(epoch,2,routeKey).requested.value);
+    assert(listen()&&near(nL[63],0.f)); // cannot silently rearm after mute
     assert(session.acceptedGraphRevision()==2);
     session.unpublish();session.pollRetirement();
     std::puts("PRIVATE_PFL_CAPTURE_PCM_PASS post FX, pre fader/mute, source-only, bus, unchanged MAIN/MONITOR, stale/muted readback");
