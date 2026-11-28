@@ -85,6 +85,8 @@ static void verifyBusyCommandReceipts() {
             {"routingM4Control","arMixM4ControlAck"},
             {"routingChannelPatch","arMixChannelPatchAck"},
             {"routingSourceSwitch","arMixSourceSwitchAck"},
+            {"routingFxInsert","arMixRoutingFxInsertAck"},
+            {"routingFxBypass","arMixRoutingFxBypassAck"},
             {"routingFxRackBypass","arMixRoutingFxRackAck"},
             {"routingGlobalFxBypass","arMixGlobalFxAck"},
         };
@@ -106,6 +108,9 @@ static void verifyBusyCommandReceipts() {
         const auto patch=owner.busyCommandReceipt("routingChannelPatch",numeric).payload;
         assert(patch.getProperty("requestId",{}).isInt()&&int(patch.getProperty("requestId",{}))==42);
         assert(int(patch.getProperty("channel",{}))==2);
+        const auto slotRequest=config(R"({"requestId":"fx-1","channel":2,"slot":3})");
+        const auto slot=owner.busyCommandReceipt("routingFxBypass",slotRequest).payload;
+        assert(int(slot.getProperty("channel",{}))==2&&int(slot.getProperty("slot",{}))==3);
         assert(!owner.busyCommandReceipt("monitor",args).event);
         assert(!owner.busyCommandReceipt("secondaryOutputStop",args).event);
         assert(!owner.busyCommandReceipt("audioDeviceApply",args).event);

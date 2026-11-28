@@ -8546,6 +8546,8 @@ test("Busy native device transaction sends correlated terminal NACKs without tou
  assert.ok(receipt.includes('if(action=="routingM4Control")event="arMixM4ControlAck";'));
  assert.ok(receipt.includes('if(action=="routingChannelPatch")event="arMixChannelPatchAck";'));
  assert.ok(receipt.includes('if(action=="routingSourceSwitch")event="arMixSourceSwitchAck";'));
+ assert.ok(receipt.includes('if(action=="routingFxInsert")event="arMixRoutingFxInsertAck";'));
+ assert.ok(receipt.includes('if(action=="routingFxBypass")event="arMixRoutingFxBypassAck";'));
  assert.ok(receipt.includes('if(action=="routingFxRackBypass")event="arMixRoutingFxRackAck";'));
  assert.ok(receipt.includes('if(action=="routingGlobalFxBypass")event="arMixGlobalFxAck";'));
  assert.doesNotMatch(receipt,/engine_|getAudioDeviceSetup|currentDeviceSnapshot|tryBegin\(/);

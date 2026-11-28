@@ -65,6 +65,8 @@ public:
         else if(action=="routingM4Control")event="arMixM4ControlAck";
         else if(action=="routingChannelPatch")event="arMixChannelPatchAck";
         else if(action=="routingSourceSwitch")event="arMixSourceSwitchAck";
+        else if(action=="routingFxInsert")event="arMixRoutingFxInsertAck";
+        else if(action=="routingFxBypass")event="arMixRoutingFxBypassAck";
         else if(action=="routingFxRackBypass")event="arMixRoutingFxRackAck";
         else if(action=="routingGlobalFxBypass")event="arMixGlobalFxAck";
         if(!event)return {};
@@ -80,6 +82,10 @@ public:
         }else if(action=="routingNativeFxRackBypass"||action=="routingNativeFxInsertBypass"){
             ack->setProperty("channelId",args.getProperty("channelId",{}));
             ack->setProperty("bypassed",args.getProperty("value",{}));
+        }else if(action=="routingFxInsert"||action=="routingFxBypass"){
+            // The bridge indexes a pending legacy slot-power request by channel:slot.
+            ack->setProperty("channel",args.getProperty("channel",-1));
+            ack->setProperty("slot",args.getProperty("slot",-1));
         }else if(action=="routingM4Control"||action=="routingChannelPatch"||
                  action=="routingSourceSwitch"||action=="routingFxRackBypass"){
             ack->setProperty("channel",args.getProperty("channel",-1));
