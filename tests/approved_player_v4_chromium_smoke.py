@@ -99,6 +99,7 @@ def main():
                     pointer:coat.pointerEvents,layer:Number(coat.zIndex),screenLayer:Number(screen.zIndex),
                     menuLayer:Number(menu.zIndex),isolation:s.isolation,filter:coat.filter,
                     backdrop:coat.backdropFilter,animation:coat.animationName,
+                    reflection:coat.backgroundImage,edge:coat.boxShadow,rimColor:s.borderTopColor,
                     radius:coat.borderRadius,panelRadius:s.borderRadius,screenRadius:screen.borderRadius,
                     rim:s.borderTopWidth, corners:[s.borderTopLeftRadius,s.borderTopRightRadius,s.borderBottomRightRadius,s.borderBottomLeftRadius],
                     overflow:s.overflowY};
@@ -108,6 +109,16 @@ def main():
             assert glass["inset"]==["0px"]*4 and glass["pointer"]=="none",glass
             assert glass["layer"]>glass["menuLayer"]>glass["screenLayer"] and glass["isolation"]=="isolate",glass
             assert glass["filter"]==glass["backdrop"]==glass["animation"]=="none",glass
+            # Verify actual composited style rather than a source-string match.
+            # Both reflective planes are clearer, and the white rim is not opaque.
+            import re
+            alphas=[float(x) for x in re.findall(r"rgba\([^)]*,\s*([\d.]+)\)",glass["reflection"])]
+            assert len(alphas)==4 and all(abs(a-b)<0.005 for a,b in zip(alphas,[41/255,41/255,11/255,11/255])),glass
+            rim_alpha=float(glass["rimColor"].rsplit(",",1)[1].rstrip(") "))
+            assert abs(rim_alpha-184/255)<0.005,glass
+            edge_alpha=float(re.findall(r"rgba\([^)]*,\s*([\d.]+)\)",glass["edge"])[0])
+            assert abs(edge_alpha-128/255)<0.005,glass
+            print("PLAYER_CLEAR_GLASS_ALPHA_PASS",width,alphas,rim_alpha,edge_alpha,flush=True)
             outer=11 if width<=640 else 14
             inner=outer-1
             assert glass["panelRadius"]==f"{outer}px" and glass["rim"]=="1px",glass
@@ -438,6 +449,13 @@ def main():
         assert panel.is_visible() and panel.bounding_box()==dict(x=0,y=0,width=410,height=720)
         assert child.locator("#tracks").count()==0
         assert child.locator("#playerMini").is_hidden()
+        # The native-only desktop surface must retain the very same optical
+        # coat and translucent rim, not a duplicate or opaque frame theme.
+        native_glass=panel.evaluate("""e=>({reflection:getComputedStyle(e,'::after').backgroundImage,
+          edge:getComputedStyle(e,'::after').boxShadow,rim:getComputedStyle(e).borderTopColor,
+          pointer:getComputedStyle(e,'::after').pointerEvents})""")
+        assert native_glass==dict(reflection=glass["reflection"],edge=glass["edge"],
+                                  rim=glass["rimColor"],pointer="none"),native_glass
         child.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
         child.locator("#playerSearch").focus()
         child.keyboard.press("Escape")
