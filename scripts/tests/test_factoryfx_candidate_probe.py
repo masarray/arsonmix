@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 import copy
+import hashlib
 import json
 import struct
 import sys
@@ -66,3 +67,27 @@ class CandidateTests(unittest.TestCase):
         path.write_text('{"bad": unquoted}')
         with self.assertRaises(json.JSONDecodeError):
             probe.read_module_info(path)
+
+    def test_exact_upstream_checksum_sidecar_and_duplicate_rejection(self):
+        row = probe.read_candidates(self.path)[2]
+        raw = (row["artifactSha256"] + "  " + row["assetName"] + "\n").encode()
+        def spec(data):
+            return {"name": "SHA256SUMS.txt", "kind": "checksums",
+                    "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        self.assertTrue(probe.verify_sidecar(row, spec(raw), raw)["archiveChecksumMatched"])
+        for invalid in (raw + raw, raw.replace(row["assetName"].encode(), b"other.zip")):
+            with self.assertRaises(ValueError):
+                probe.verify_sidecar(row, spec(invalid), invalid)
+        with self.assertRaises(ValueError):
+            probe.verify_sidecar(row, spec(raw), raw + b"x")
+
+    def test_exact_upstream_buildinfo_source_claim(self):
+        row = probe.read_candidates(self.path)[3]
+        raw = json.dumps({"sourceCommit": row["sourceCommit"]}).encode()
+        spec = {"name": "BUILDINFO-Windows.json", "kind": "buildinfo",
+                "bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
+        self.assertTrue(probe.verify_sidecar(row, spec, raw)["sourceCommitMentioned"])
+        wrong = json.dumps({"sourceCommit": "a" * 40}).encode()
+        spec.update(bytes=len(wrong), sha256=hashlib.sha256(wrong).hexdigest())
+        with self.assertRaises(ValueError):
+            probe.verify_sidecar(row, spec, wrong)

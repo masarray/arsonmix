@@ -38,7 +38,15 @@
       "assetBytes": 3752480,
       "sourceRepo": "masarray/arsonverb",
       "sourceCommit": "4c65f369348790bb6da7465deaffc2b3921fdeee",
-      "reviewNote": "AGPL-3.0-only; verify corresponding source and notices"
+      "reviewNote": "AGPL-3.0-only; verify corresponding source and notices",
+      "upstreamEvidence": [
+        {
+          "name": "SHA256SUMS.txt",
+          "sha256": "b0e8c4f0b059e7d37dcf7b9007ce7b165c11fd3e83ec276494f1d1d647f6afdc",
+          "bytes": 763,
+          "kind": "checksums"
+        }
+      ]
     },
     {
       "productId": "arsonkupik-enhancer",
@@ -51,7 +59,21 @@
       "assetBytes": 2662932,
       "sourceRepo": "masarray/askp-vst",
       "sourceCommit": "cc4efecd766b71b2a032d8c7fb2035b0d63f3ebb",
-      "reviewNote": "Proprietary; separate evaluation/activation; redistribution approval pending"
+      "reviewNote": "Proprietary; separate evaluation/activation; redistribution approval pending",
+      "upstreamEvidence": [
+        {
+          "name": "SHA256SUMS-Windows.txt",
+          "sha256": "788118412520efc801fab112fd3c8e7b9481d1ddaed0928465d52db27f26546b",
+          "bytes": 418,
+          "kind": "checksums"
+        },
+        {
+          "name": "BUILDINFO-Windows.json",
+          "sha256": "723606b923237b3ab91df6a46159c484fb7120c919cdd573dc947ac86f1da5e8",
+          "bytes": 704,
+          "kind": "buildinfo"
+        }
+      ]
     }
   ]
 }

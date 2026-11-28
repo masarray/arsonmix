@@ -12,6 +12,7 @@ import struct
 import subprocess
 import tempfile
 import zipfile
+import urllib.request
 from pathlib import Path
 import factoryfx_release_bundle as bundle
 
@@ -36,6 +37,12 @@ def read_candidates(path):
             raise ValueError("candidate must be Windows x64 VST3 ZIP")
         if type(p["assetBytes"]) is not int or not 0 < p["assetBytes"] <= bundle.MAX_UNPACKED:
             raise ValueError("invalid candidate byte count")
+        for sidecar in p.get("upstreamEvidence", []):
+            if (set(sidecar) != {"name", "sha256", "bytes", "kind"} or
+                    not bundle.TOKEN.fullmatch(sidecar["name"]) or not bundle.HEX(sidecar["sha256"], 64) or
+                    type(sidecar["bytes"]) is not int or not 0 < sidecar["bytes"] <= 256 * 1024 or
+                    sidecar["kind"] not in ("checksums", "buildinfo")):
+                raise ValueError("invalid upstream sidecar pin")
     return rows
 
 def check_pe(path):
@@ -64,6 +71,46 @@ def read_module_info(path):
         normal = re.sub(r'("(?:\\.|[^"\\])*")|,(?=\s*[}\]])',
                         lambda m: m.group(1) or "", raw)
         return json.loads(normal)
+
+
+def verify_sidecar(p, spec, raw):
+    if len(raw) != spec["bytes"] or hashlib.sha256(raw).hexdigest() != spec["sha256"]:
+        raise ValueError("upstream evidence digest/size mismatch")
+    text = raw.decode("utf-8-sig")
+    result = {"name": spec["name"], "sha256": spec["sha256"], "kind": spec["kind"]}
+    if spec["kind"] == "checksums":
+        matching = []
+        for line in text.splitlines():
+            m = re.fullmatch(r"([0-9a-fA-F]{64})\s+\*?(.+)", line.strip())
+            if m and m.group(2).removeprefix("./") == p["assetName"]:
+                matching.append(m.group(1).lower())
+        if matching != [p["artifactSha256"].lower()]:
+            raise ValueError("upstream checksum inventory does not uniquely attest exact VST3 ZIP")
+        result["archiveChecksumMatched"] = True
+    else:
+        info = json.loads(text)
+        if not isinstance(info, dict):
+            raise ValueError("invalid upstream buildinfo")
+        # Report the exact pinned source claim from structured published metadata.
+        # Do not interpret a checksum sidecar or this claim as independent build attestation.
+        mentions = set(re.findall(r"(?i)\b[0-9a-f]{40}\b", text))
+        result["sourceCommitMentioned"] = p["sourceCommit"].lower() in {v.lower() for v in mentions}
+        if not result["sourceCommitMentioned"]:
+            raise ValueError("upstream buildinfo does not identify pinned source commit")
+    return result
+
+
+def fetch_sidecars(p):
+    results = []
+    for spec in p.get("upstreamEvidence", []):
+        url = "https://github.com/" + p["distributionRepo"] + "/releases/download/" + p["releaseTag"] + "/" + spec["name"]
+        request = urllib.request.Request(url, headers={"User-Agent": "ArSonMix-FactoryFx-Evidence/1"})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            if response.geturl().split("/")[2] not in ("github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"):
+                raise ValueError("untrusted evidence redirect")
+            raw = response.read(spec["bytes"] + 1)
+        results.append(verify_sidecar(p, spec, raw))
+    return results
 
 
 def inspect_candidate(p, work, host=None):
@@ -113,6 +160,7 @@ def inspect_candidate(p, work, host=None):
               "sourceCommitMentioned": p["sourceCommit"].lower() in {v.lower() for v in commit_mentions},
               "hostStatus": "not-run",
               "approval": "not-approved"}
+    result["upstreamEvidence"] = fetch_sidecars(p)
     if host:
         receipt = work / (pid + "-host.json")
         subprocess.run([str(host), str(target), str(receipt)], check=True, timeout=90)
@@ -148,7 +196,7 @@ def main():
     args.output.write_text(json.dumps({"schemaVersion": 1, "candidates": results}, indent=2) + "\n", encoding="utf-8")
     for row in results:
         # Visible bounded evidence, no credentials or arbitrary remote text.
-        print(json.dumps({k: row[k] for k in ("productId", "archiveStatus", "error", "moduleInfoAudioClasses", "sourceCommitMentioned", "archiveBuildCommitMentions", "sourceLayout") if k in row}, ensure_ascii=True))
+        print(json.dumps({k: row[k] for k in ("productId", "archiveStatus", "error", "moduleInfoAudioClasses", "sourceCommitMentioned", "archiveBuildCommitMentions", "sourceLayout", "upstreamEvidence") if k in row}, ensure_ascii=True))
     return 1 if any(r["archiveStatus"] == "failed" for r in results) else 0
 
 if __name__ == "__main__":
