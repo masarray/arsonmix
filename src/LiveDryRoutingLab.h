@@ -1924,7 +1924,8 @@ public:
                   armix::mixer::ChannelId remove={},
                   bool outputsDisarmed=false,
                   const std::function<void()>& beforePublish={},bool connectMain=true,
-                  armix::mixer::DynamicChannelFxLeaseBank::Lease wetReturn={}) {
+                  armix::mixer::DynamicChannelFxLeaseBank::Lease wetReturn={},bool dormantAddition=false,
+                  const std::function<bool()>& stillValid={}) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1935,7 +1936,10 @@ public:
            expectedPcmRevision!=nativeAccepted_.pcmRevision ||
            expectedRosterRevision!=nativeAccepted_.graph.roster.revision())
             return reply;
-        if(!outputsDisarmed) {
+        if(dormantAddition&&(remove.value||role!=ChannelRole::group||!selection.empty()||wetReturn)){
+            reply.error="INVALID_DORMANT_BUS_ADDITION";return reply;
+        }
+        if(!outputsDisarmed&&!dormantAddition) {
             reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
         }
         // Require a prepared, independently owned wet-only processor.
@@ -2008,9 +2012,10 @@ public:
             if(beforePublish)beforePublish();
             const auto published=nativePublisher_.commit(
                 next,nativeAccepted_.graph.request,expectedPcmRevision,
-                expectedEpoch,epoch(),true,std::move(fx));
+                expectedEpoch,epoch(),outputsDisarmed,std::move(fx),false,false,nullptr,nullptr,
+                false,{},0,stillValid,dormantAddition);
             if(!published.ok()) {
-                reply.error="NATIVE_PCM_COMMIT_REJECTED";return reply;
+                reply.error=dormantAddition?"SILENT_BUS_CONTINUITY_NOT_VERIFIED":"NATIVE_PCM_COMMIT_REJECTED";return reply;
             }
             nativeAccepted_.graph.roster=std::move(next);
             nativeAccepted_.fxOwners=std::move(owner);
@@ -2186,7 +2191,8 @@ public:
             const std::string& name,armix::mixer::ProcessingFormat format,
             bool outputsDisarmed=false,
             const std::function<void()>& beforePublish={},
-            std::uint64_t playerDeckId=0,bool trustedExistingMain=false) {
+            std::uint64_t playerDeckId=0,bool trustedExistingMain=false,
+            bool dormantAddition=false,const std::function<bool()>& stillValid={}) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -2194,7 +2200,8 @@ public:
         // Adding a purely internal music source and its owned MAIN wire
         // changes no physical device pins. The host MUST attest the same
         // already-authorized MAIN and matching epoch before taking this path.
-        if(!outputsDisarmed && !(playerDeckId && trustedExistingMain)) {
+        if(dormantAddition&&playerDeckId){reply.error="INVALID_DORMANT_TRACK_ADDITION";return reply;}
+        if(!outputsDisarmed && !dormantAddition && !(playerDeckId && trustedExistingMain)) {
             reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
         }
         if(!channelIdPhysicalPcmActive()||!ready()||
@@ -2274,9 +2281,10 @@ public:
             const auto published=nativePublisher_.commit(
                 roster,request,expectedPcmRevision,
                 expectedEpoch,epoch(),outputsDisarmed,std::move(fx),
-                playerDeckId!=0 && trustedExistingMain);
+                playerDeckId!=0 && trustedExistingMain,false,nullptr,nullptr,
+                false,{},0,stillValid,dormantAddition);
             if(!published.ok()) {
-                reply.error="CHANNEL_PCM_COMMIT_REJECTED";return reply;
+                reply.error=dormantAddition?"SILENT_TRACK_CONTINUITY_NOT_VERIFIED":"CHANNEL_PCM_COMMIT_REJECTED";return reply;
             }
             nativeAccepted_.graph.roster=std::move(roster);
             nativeAccepted_.graph.request=std::move(request);

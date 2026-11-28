@@ -102,7 +102,7 @@ public:
                         const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr,
                         const InitialExternalPlan* initialExternal=nullptr,
                         bool continuousFx=false,ChannelId retiring={},int fadeFrames=0,
-                        const std::function<bool()>& stillValid={}) {
+                        const std::function<bool()>& stillValid={},bool dormantAddition=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -128,7 +128,11 @@ public:
         // live WIRE/FX exceptions. While independent monitoring is active,
         // even rebuilding the same policy requires an explicit disarm:
         // fan-in changes can otherwise change the singer's delay mid-note.
-        if(!allOutputsDisarmed &&
+        if(dormantAddition&&(retiring.value||continuousFx||verifiedInternalWireOnly||
+                            verifiedInternalFxOnly||initialExternal)){
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        if(!allOutputsDisarmed && !dormantAddition &&
            (independentMonitorPublished_ ||
             request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned ||
             (!verifiedInternalWireOnly && !verifiedInternalFxOnly && !retiring.value))) {
@@ -246,12 +250,12 @@ public:
           roster.channels().end(),[](const ChannelStripDefinition& row) {
               return row.role==ChannelRole::monitor;
           });
-        const bool continuous=continuousFx||retiring.value!=0;
+        const bool continuous=continuousFx||retiring.value!=0||dormantAddition;
         const auto* previous=continuous?publisher_.controlPrepared(proposedDeviceEpoch,expectedRevision):nullptr;
         if(continuous){
             if(!previous||!previous->adopted.load(std::memory_order_acquire)||
                previous->inputMap||qualifiedInputMap||initialExternal||
-               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity)){
+               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity,dormantAddition)){
                 report.fault=Fault::continuityUnavailable;return report;
             }
             prepared->predecessor=previous->graph;

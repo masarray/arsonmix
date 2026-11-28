@@ -1340,7 +1340,80 @@ static void verifyPrivatePflCapturePcm() {
     std::puts("PRIVATE_PFL_CAPTURE_PCM_PASS post FX, pre fader/mute, source-only, bus, unchanged MAIN/MONITOR, stale/muted readback");
 }
 
+
+static void verifyDormantRosterAdditionContinuity() {
+    constexpr std::uint64_t epoch=9603;
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,3> create{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(2,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    const auto made=roster.edit(0,create);assert(made.ok());
+    const auto voice=made.createdIds[0],main=made.createdIds[1],monitor=made.createdIds[2];
+    const std::array<ChannelEdit,2> links{output(voice,main),send(voice,monitor,.25f,true)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=64;
+    req.sources={{voice,0,1,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher live,reference;
+    for(auto* p:{&live,&reference}){
+        assert(p->commit(roster,req,0,epoch,epoch,true).ok());
+        assert(p->setExternalOutput(epoch,1,voice,2,3,4));
+    }
+    struct Buffers {std::array<float,64> l{},r{},nl{},nr{},xl{},xr{};};
+    Buffers actual,expected;
+    std::array<float,64> inputL{},inputR{};
+    inputL.fill(.25f);inputR.fill(.125f);
+    const float* pins[]{inputL.data(),inputR.data()};
+    const auto fx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&](DynamicNativeSessionPublisher& p,Buffers& b,int frames){
+        float* outputs[]{b.l.data(),b.r.data(),b.xl.data(),b.xr.data()};
+        assert(p.render(epoch,pins,2,b.l.data(),b.r.data(),frames,false,fx,
+            b.nl.data(),b.nr.data(),{},{},{},outputs,4));
+    };
+    const auto equal=[&](int n){
+        for(int i=0;i<n;++i)
+            assert(actual.l[i]==expected.l[i]&&actual.r[i]==expected.r[i]&&
+                   actual.nl[i]==expected.nl[i]&&actual.nr[i]==expected.nr[i]&&
+                   actual.xl[i]==expected.xl[i]&&actual.xr[i]==expected.xr[i]);
+    };
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    assert(actual.l[63]>.1f&&actual.nl[63]>.01f&&actual.xl[63]>.1f);
+    assert(roster.rememberLiveMix(voice,.5f,0.f));
+    assert(live.setChannelMix(epoch,1,voice,.5f,0.f));
+    assert(reference.setChannelMix(epoch,1,voice,.5f,0.f));
+    render(live,actual,7);render(reference,expected,7);equal(7);
+    auto next=roster;
+    auto track=add(1,ChannelRole::input,"EMPTY",ProcessingFormat::stereo);
+    track.connectMainOnCreate=true;
+    const auto added=next.edit(2,std::span<const ChannelEdit>(&track,1));assert(added.ok());
+    const auto empty=added.createdIds[0];
+    const auto publish=[&](const DynamicChannelRoster& candidate,const DynamicGraphRequest& request,
+                           std::uint64_t revision){
+        return live.commit(candidate,request,revision,epoch,epoch,false,
+            {},false,false,nullptr,nullptr,false,{},0,{},true);
+    };
+    auto sourced=req;sourced.sources.push_back({empty,0,1,true});
+    assert(!publish(next,sourced,1).ok()&&live.acceptedRevision()==1);
+    assert(publish(next,req,1).ok());
+    render(live,actual,57);render(reference,expected,57);equal(57);
+    assert(live.appliedExternalOutput(epoch,2,voice)==(std::pair<int,int>{2,3}));
+    auto bus=add(2,ChannelRole::group,"EMPTY AUX",ProcessingFormat::stereo);
+    assert(next.edit(3,std::span<const ChannelEdit>(&bus,1)).ok());
+    assert(publish(next,req,2).ok());
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    assert(live.acceptedRevision()==3&&actual.l[63]>.05f&&actual.xl[63]>.05f);
+    assert(!publish(next,req,3).ok());
+    auto changed=req;changed.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
+    auto extra=add(3,ChannelRole::input,"MORE");
+    assert(next.edit(4,std::span<const ChannelEdit>(&extra,1)).ok());
+    assert(!publish(next,changed,3).ok()&&live.acceptedRevision()==3);
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    std::puts("DORMANT_ROSTER_CONTINUITY_PCM_PASS track/AUX, exact MAIN/MONITOR/EXT, in-flight slew, independent policy, unsafe edit rejected");
+}
+
 int main() {
+    verifyDormantRosterAdditionContinuity();
     verifyPrivatePflCapturePcm();
     armix::ducker_test::run(); // same standalone core cases in existing fast CI
     verifyAutoDuckerKeyScope();

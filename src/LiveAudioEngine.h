@@ -2396,15 +2396,33 @@ public:
     // One native ChannelId bus transaction on the installed DIRECT device.
     // The GUI only obtains accepted state after successful native publisher
     // commit; no speculative UI role or second audio engine.
+    // An unchanged scheduled graph needs neither physical mute nor an
+    // ASRC reset. The native publisher proves the old PCM histories first.
+    bool dormantAdditionReady(std::uint64_t ep,std::uint64_t rev) const noexcept {
+        return attached_&&directFence_.permitted()&&!independent_.active()&&
+            dryRoutingLab_.nativeTopologyMatches(ep,rev)&&
+            !dryRoutingLab_.nativeBusPatchAwaitingCallback()&&
+            !routeReconfiguring_.load(std::memory_order_acquire)&&
+            !topologyPublicationMute_.load(std::memory_order_acquire)&&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal&&
+            !handoff_.busy()&&fxMovePhase_.load(std::memory_order_acquire)==0;
+    }
     LiveDryRoutingLab::NativeBusResult editNativeBus(
            std::uint64_t epoch,std::uint64_t pcmRevision,
            std::uint64_t rosterRevision,
            armix::mixer::ChannelRole role,
            std::span<const armix::mixer::ChannelId> selected,
            const std::string& name,float gain,
-           armix::mixer::ChannelId remove={},bool connectMain=true) {
+           armix::mixer::ChannelId remove={},bool connectMain=true,bool silentAddition=false) {
         LiveDryRoutingLab::NativeBusResult rejected;
         rejected.error="NATIVE_BUS_DEVICE_UNAVAILABLE";
+        if(silentAddition&&!allOutputsDisarmed()){
+            if(remove.value||role!=armix::mixer::ChannelRole::group||!selected.empty()||
+               !dormantAdditionReady(epoch,pcmRevision))return rejected;
+            return dryRoutingLab_.editNativeBus(epoch,pcmRevision,rosterRevision,role,
+                selected,name,gain,{},false,{},connectMain,{},true,
+                [&]{return dormantAdditionReady(epoch,pcmRevision);});
+        }
         if(independent_.active() || !attached_ || secondaryOutput_.armed() ||
            !directFence_.permitted() ||
            routeReconfiguring_.load(std::memory_order_acquire) ||
@@ -2843,7 +2861,15 @@ public:
     LiveDryRoutingLab::NativeBusResult createNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,const std::string& name,
-            armix::mixer::ProcessingFormat format) {
+            armix::mixer::ProcessingFormat format,bool silentAddition=false) {
+        if(silentAddition&&!allOutputsDisarmed()){
+            LiveDryRoutingLab::NativeBusResult rejected;
+            rejected.error="NATIVE_TRACK_DEVICE_UNAVAILABLE";
+            if(!dormantAdditionReady(epoch,pcmRevision))return rejected;
+            return dryRoutingLab_.createNativeInputChannel(epoch,pcmRevision,rosterRevision,
+                name,format,false,{},0,false,true,
+                [&]{return dormantAdditionReady(epoch,pcmRevision);});
+        }
         return editNativeInputTopology(epoch,"NATIVE_TRACK_DEVICE_UNAVAILABLE",
             "NATIVE_TRACK_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
                 return dryRoutingLab_.createNativeInputChannel(

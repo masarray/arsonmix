@@ -512,12 +512,19 @@ public:
     // Inbound wires may be removed with their already faded destination;
     // live SOLO topology and changed PDC still require an explicit stopped edit.
     bool prepareContinuity(const DynamicPreparedMixerBlock& old,ChannelId removed,
-                           ContinuityPlan& plan) {
+                           ContinuityPlan& plan,bool dormantAddition=false) {
+        if(dormantAddition&&removed.value)return false;
         if(capacity_!=old.capacity_||physicalInputs_!=old.physicalInputs_||
            mainMonoAfterFx_!=old.mainMonoAfterFx_||
            monitorLatencyPolicy_!=old.monitorLatencyPolicy_||
            latencySamples_!=old.latencySamples_||
-           lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size())return false;
+           lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size()+(dormantAddition?1u:0u))return false;
+        // A silent descriptor must leave even the old summation order intact.
+        if(dormantAddition){
+            if(renderOrder_.size()!=old.renderOrder_.size())return false;
+            for(std::size_t k=0;k<renderOrder_.size();++k)
+                if(lanes_[renderOrder_[k]].id!=old.lanes_[old.renderOrder_[k]].id)return false;
+        }
         if(removed.value){
             const auto found=old.controlIndex_.find(removed.value);
             if(found==old.controlIndex_.end()||controlIndex_.contains(removed.value))return false;
@@ -530,7 +537,13 @@ public:
         };
         for(std::size_t i=0;i<lanes_.size();++i){
             const auto& n=lanes_[i];const auto found=old.controlIndex_.find(n.id.value);
-            if(found==old.controlIndex_.end())return false;
+            if(found==old.controlIndex_.end()){
+                if(!dormantAddition||channelScheduled(n.id)||n.inputL>=0||n.playerDeckId||
+                   (n.role!=ChannelRole::input&&n.role!=ChannelRole::group)||
+                   n.first!=n.last||n.keyFirst!=n.keyLast||
+                   Word::decode(channelTargets_[i].state.load()).solo)return false;
+                continue;
+            }
             const auto j=found->second;const auto& o=old.lanes_[j];
             const bool wasScheduled=old.channelScheduled(n.id),nowScheduled=channelScheduled(n.id);
             if(n.role!=o.role||n.format!=o.format||n.monoPan!=o.monoPan||
@@ -541,6 +554,11 @@ public:
             // A downstream lane which becomes dormant has no physical/player
             // source or FX by compiler construction. Its removed contribution
             // has drained before publication; no live processor tail is lost.
+            if(dormantAddition){
+                if(wasScheduled!=nowScheduled||n.keyLast-n.keyFirst!=o.keyLast-o.keyFirst)return false;
+                for(std::size_t k=0;k<n.keyLast-n.keyFirst;++k)
+                    if(postKeys_[n.keyFirst+k].id!=old.postKeys_[o.keyFirst+k].id)return false;
+            }
             if(!wasScheduled&&nowScheduled&&!removed.value&&n.inputL<0&&!n.playerDeckId)continue;
             if(wasScheduled&&!nowScheduled&&removed.value&&n.inputL<0&&!n.playerDeckId)continue;
             if(wasScheduled!=nowScheduled||

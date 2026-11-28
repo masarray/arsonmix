@@ -333,3 +333,19 @@ test('authorized MAIN rollback and saved explicit resume do not depend on captur
  assert.match(auto,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
  assert.match(auto,/engine_\.liveOutputArmFault\(requireInput\)/);
 });
+
+test('silent track and standalone AUX creation keep both output gates and existing secondary recovery lease',()=>{
+ const wrapper=main.split('LiveDryRoutingLab::NativeBusResult withNativeTopologyContinuity(')[1].split('struct PendingPhysicalBusPatch')[0];
+ const silent=wrapper.split('if(silentAddition){')[1].split('return result;')[0];
+ assert.match(silent,/result=edit\(\)/);
+ assert.match(silent,/pendingVendorStream_->revision=after/);
+ assert.match(silent,/secondaryContinuity_->revision=after/);
+ assert.doesNotMatch(silent,/disarmSecondaryOutput|setOutputMuted|setMonitorEnabled|requestAutomaticMain|cancelSecondaryContinuity/);
+ const track=engine.split('LiveDryRoutingLab::NativeBusResult createNativeInputChannel(')[1].split('LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(')[0];
+ assert.match(track,/if\(silentAddition&&!allOutputsDisarmed\(\)\)/);
+ assert.match(track,/dormantAdditionReady\(epoch,pcmRevision\)/);
+ assert.match(track,/name,format,false,\{\},0,false,true/);
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ assert.match(core,/renderOrder_\.size\(\)!=old\.renderOrder_\.size\(\)/);
+ assert.match(core,/channelScheduled\(n\.id\)\|\|n\.inputL>=0\|\|n\.playerDeckId/);
+});

@@ -4866,7 +4866,8 @@ private:
     // gates, native graph validation and retirement. Do not restart ASIO.
     template<class Edit>
     LiveDryRoutingLab::NativeBusResult withNativeTopologyContinuity(
-            std::uint64_t ep,std::uint64_t rev,bool startOnSuccess,Edit&& edit) {
+            std::uint64_t ep,std::uint64_t rev,bool startOnSuccess,Edit&& edit,
+            bool silentAddition=false) {
         LiveDryRoutingLab::NativeBusResult result;
         result.error="Audio configuration is finishing";
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
@@ -4875,6 +4876,26 @@ private:
            nativeShowBusy_||studioBackupBusy_||ep!=engine_.dryRoutingLabEpoch()||
            !engine_.nativeTopologyMatches(ep,rev))return result;
         const auto beforeControlRevision=engine_.outputArmRevision();
+        if(silentAddition){
+            // Carry the same authorized endpoint lease, never issue a new
+            // ARM, reset FIFO, open a device or restart the primary clock.
+            const auto generation=secondaryRetry_.generation();
+            auto stream=engine_.captureSecondaryResumeIntent();
+            result=edit();
+            if(result.accepted&&engine_.dryRoutingLabEpoch()==ep&&
+               generation==secondaryRetry_.generation()&&!pendingSecondaryStop_){
+                const auto after=engine_.outputArmRevision();
+                if(pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
+                   pendingVendorStream_->revision==beforeControlRevision)
+                    pendingVendorStream_->revision=after;
+                if(secondaryContinuity_&&secondaryContinuity_->epoch==ep&&
+                   secondaryContinuity_->revision==beforeControlRevision)
+                    secondaryContinuity_->revision=after;
+                else if(stream&&engine_.secondarySourceMatches(*stream))
+                    secondaryContinuity_=SecondaryContinuity{*stream,ep,after};
+            }
+            return result;
+        }
         auto stream=engine_.captureSecondaryResumeIntent();
         if(!stream&&pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
            pendingVendorStream_->revision==beforeControlRevision)stream=pendingVendorStream_->intent;
@@ -10312,8 +10333,8 @@ private:
                     while(names.contains(name,true));
                     result=withNativeTopologyContinuity(ep,rev,false,[&]{
                         return engine_.createNativeInputChannel(ep,rev,roster,
-                            name.toStdString(),armix::mixer::ProcessingFormat::stereo);
-                    });
+                            name.toStdString(),armix::mixer::ProcessingFormat::stereo,true);
+                    },true);
                 } else if(!track) {
                     const auto purpose=args.getProperty("purpose","").toString();
                     const bool wet=purpose=="FX";
@@ -10342,12 +10363,15 @@ private:
                         }
                     }
                     if(!selectionValid)result.error="INVALID_GROUP_SELECTION";
-                    else result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                        return engine_.editNativeBus(ep,rev,roster,
-                            wet?armix::mixer::ChannelRole::fxReturn:armix::mixer::ChannelRole::group,
-                            std::span<const armix::mixer::ChannelId>{selection},
-                            name.toStdString(),1.f,{},purpose!="AUX");
-                    });
+                    else {
+                        const bool silentAddition=!wet&&selection.empty();
+                        result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                            return engine_.editNativeBus(ep,rev,roster,
+                                wet?armix::mixer::ChannelRole::fxReturn:armix::mixer::ChannelRole::group,
+                                std::span<const armix::mixer::ChannelId>{selection},
+                                name.toStdString(),1.f,{},purpose!="AUX",silentAddition);
+                        },silentAddition);
+                    }
                 }
             }
             auto ack=std::make_unique<juce::DynamicObject>();
