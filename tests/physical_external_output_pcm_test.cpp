@@ -71,7 +71,7 @@ struct Harness {
         const auto report=publisher.commit(roster,request,0,epoch,epoch,true);
         assert(report.ok()&&report.revision==1);
     }
-    bool render(int activePorts=8) {
+    bool render(int activePorts=8,DynamicProgrammeTap* programme=nullptr) {
         auto fx=[this](ChannelId id,float* l,float* r,int n) noexcept {
             // Native insert once per BLOCK, even with MAIN+EXTERNAL fan-out.
             if(id==busA) {
@@ -86,7 +86,7 @@ struct Harness {
         return publisher.render(epoch,inputPointers.data(),4,
             output[0].data(),output[1].data(),frames,false,fx,
             nullptr,nullptr,{},{},{},
-            outputPointers.data(),activePorts);
+            outputPointers.data(),activePorts,{},0,nullptr,nullptr,false,nullptr,0,programme);
     }
 };
 static void verifyDisconnectedZeroDelayTapThenWake() {
@@ -487,7 +487,43 @@ static void verifyAssignBeforeSourceAndRestore() {
     for(const auto& port:h.output)for(float v:port)assert(near(v,0.f));
 }
 
+static void verifyIndependentProgrammeTap() {
+    Harness h;
+    DynamicProgrammeTap tap;
+    using State=DynamicProgrammeTap::State;
+    tap.requested=h.busA;
+    assert(h.render(2,&tap));
+    assert(tap.state()==State::rendered&&tap.captured()==h.busA);
+    assert(tap.left().size()==64&&tap.right().size()==64);
+    assert(near(tap.left().back(),.50f)&&near(tap.right().back(),.20f));
+    assert(near(h.output[0].back(),.71f)&&near(h.output[1].back(),.32f));
+    assert(h.callsA==1&&h.callsB==1); // no second render
+    tap.requested=h.busB;
+    assert(h.render(2,&tap));
+    assert(tap.captured()==h.busB&&near(tap.left().back(),.21f)&&near(tap.right().back(),.12f));
+    assert(h.callsA==2&&h.callsB==2);
+    tap.requested=ChannelId{999};
+    assert(h.render(2,&tap));
+    assert(tap.state()==State::unavailable&&tap.left().empty()&&tap.right().empty());
+    tap.requested=h.main; // MAIN stays on the existing terminal sink path
+    assert(h.render(2,&tap)&&tap.state()==State::unavailable);
+    tap.requested=h.busA;
+    assert(h.render(2,&tap)&&tap.state()==State::rendered);
+    h.outputPointers[1]=h.outputPointers[0]; // invalid hardware alias
+    assert(!h.render(2,&tap));
+    assert(tap.state()==State::unavailable&&tap.left().empty()&&tap.right().empty());
+
+    Harness dormant(true,false);
+    tap.requested=dormant.busA;
+    assert(dormant.render(2,&tap)&&tap.state()==State::dormant);
+    assert(tap.captured()==dormant.busA&&tap.left().size()==64);
+    for(float v:tap.left())assert(v==0.f);
+    for(float v:tap.right())assert(v==0.f);
+    assert(dormant.callsA==0&&dormant.callsB==0);
+    std::puts("INDEPENDENT_PROGRAMME_TAP_PCM_PASS");
+}
 int main() {
+    verifyIndependentProgrammeTap();
     verifyAssignBeforeSourceAndRestore();
     verifyRackTransitionKeepsExternalAndSecondaryPcm();
     verifyLogicalPairReservations();

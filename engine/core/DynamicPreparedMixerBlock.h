@@ -68,6 +68,41 @@ private:
     int frames_=0;
     std::array<float,capacity> left_{},right_{};
 };
+// Optional host-owned programme tap for an independent sink. This is NOT
+// PFL: it observes the causal post-insert, post-mute/solo/fader/pan lane,
+// before terminal/physical output alignment and host output envelopes.
+// No borrowed scratch pointer can escape the render lease. A known dormant
+// channel produces explicit silence; a missing/invalid request has no receipt.
+class DynamicProgrammeTap final {
+public:
+    static constexpr int capacity=4096;
+    enum class State : std::uint8_t { unavailable, dormant, rendered };
+    ChannelId requested{};
+    void reset() noexcept {captured_={};frames_=0;state_=State::unavailable;}
+    static bool eligible(ChannelRole role) noexcept {
+        return role==ChannelRole::input||role==ChannelRole::group||
+               role==ChannelRole::fxReturn;
+    }
+    void capture(ChannelId id,const float* l,const float* r,int frames) noexcept {
+        if(!requested.value||id!=requested||frames<1||frames>capacity||!l||!r)return;
+        std::copy_n(l,frames,left_.data());std::copy_n(r,frames,right_.data());
+        captured_=id;frames_=frames;state_=State::rendered;
+    }
+    void silence(ChannelId id,int frames) noexcept {
+        if(!requested.value||id!=requested||frames<1||frames>capacity)return;
+        std::fill_n(left_.data(),frames,0.f);std::fill_n(right_.data(),frames,0.f);
+        captured_=id;frames_=frames;state_=State::dormant;
+    }
+    ChannelId captured() const noexcept {return captured_;}
+    State state() const noexcept {return state_;}
+    std::span<const float> left() const noexcept {return {left_.data(),static_cast<std::size_t>(frames_)};}
+    std::span<const float> right() const noexcept {return {right_.data(),static_cast<std::size_t>(frames_)};}
+private:
+    ChannelId captured_{};
+    State state_=State::unavailable;
+    int frames_=0;
+    std::array<float,capacity> left_{},right_{};
+};
 // Default keeps all physical buses time-aligned. Independent monitoring
 // removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
 // This is an explicit prepared-graph policy, not a realtime control.
@@ -989,8 +1024,10 @@ public:
                  std::span<const DynamicPlayerPcmBlock> playerPcm={},
                  float* const* hardwareOutputs=nullptr,
                  int hardwareOutputCount=0,bool allowUnmappedMonitor=false,
-                 DynamicPflCapture* pfl=nullptr) noexcept {
+                 DynamicPflCapture* pfl=nullptr,
+                 DynamicProgrammeTap* programme=nullptr) noexcept {
         if(pfl)pfl->reset();
+        if(programme)programme->reset();
         if(frames<=0 || !outputL || !outputR)return false;
         // The physical 10CH/4AUX callback requests only the stable
         // legacy prefix of an expanded ChannelId roster. Dynamic extra
@@ -1419,6 +1456,11 @@ public:
             // Receipt for a completed physical crossfade, never a null
             // capture pair or an unrendered request. Same loop as retirement.
             const auto& lane=lanes_[i];
+            if(programme&&programme->requested==lane.id&&
+               DynamicProgrammeTap::eligible(lane.role)){
+                const float* const l=scratch_.data()+lane.slot*2*block;
+                programme->capture(lane.id,l,l+block,frames);
+            }
             if(lane.inputL>=0){
                 const auto target=sourceBlockTargets_[i];
                 const auto pair=static_cast<std::uint32_t>(target);
@@ -1435,6 +1477,14 @@ public:
                (hardwareOutputs||externalTargets_[i].load(std::memory_order_acquire)==noExternal))
                 t.retireDone.store(true,std::memory_order_release);
         }
+        // A dormant descriptor has no scratch slot. Resolve only when
+        // explicitly requested and not rendered; no DSP wake or fake PCM.
+        if(programme&&programme->requested.value&&
+           programme->state()==DynamicProgrammeTap::State::unavailable)
+            for(const auto& lane:lanes_)
+                if(lane.id==programme->requested&&DynamicProgrammeTap::eligible(lane.role)){
+                    programme->silence(lane.id,frames);break;
+                }
         return true;
     }
 private:

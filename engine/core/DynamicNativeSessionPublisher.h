@@ -339,8 +339,10 @@ public:
                     qualifiedCaptureBlocks={},std::uint64_t cueRoute=0,
                     std::uint64_t* renderedRevision=nullptr,
                     std::size_t* renderedMeterCount=nullptr,bool allowUnmappedMonitor=false,
-                    DynamicPflCapture* pfl=nullptr,std::uint64_t pflRoute=0) noexcept {
+                    DynamicPflCapture* pfl=nullptr,std::uint64_t pflRoute=0,
+                    DynamicProgrammeTap* programme=nullptr) noexcept {
         if(pfl)pfl->reset();
+        if(programme)programme->reset();
         if(renderedRevision)*renderedRevision=0;
         if(renderedMeterCount)*renderedMeterCount=0;
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
@@ -448,7 +450,7 @@ public:
         const bool ok=snap->prepared->graph->process(
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
-              hardwareOutputs,hardwareOutputCount,allowUnmappedMonitor,pfl?pfl:nativePfl);
+              hardwareOutputs,hardwareOutputCount,allowUnmappedMonitor,pfl?pfl:nativePfl,programme);
         cueBus_.finish(ok,monitorL,monitorR,frames);
         // Never layer two private auditions into one physical monitor.
         pflMonitor_.finish(ok&&!cueBus_.hasPublishedRequest(),monitorL,monitorR,frames);
