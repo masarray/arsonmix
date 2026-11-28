@@ -8518,3 +8518,46 @@ test("Offline SOF unity reset uses the saved SEND path, not admitted PCM",()=>{
  assert.match(reset.slice(a,z),/requestWireGain\(\{sourceId:t.id,edgeId:id,levelDb:0\}\)/);
  assert.doesNotMatch(reset.slice(a,z),/SET_FADER/);
 });
+
+
+test("Busy native device transaction sends correlated terminal NACKs without touching driver or graph",()=>{
+ const native=read("src/Main.cpp"),coordinator=read("src/NativeDeviceApplyCoordinator.h");
+ const start=native.indexOf('if(deviceApply_.busy() && action!="audioDeviceApply" && !outputIntent)');
+ const end=native.indexOf('// Graph/epoch checks also reject stale deferred recovery.',start);
+ assert.ok(start>=0&&end>start);
+ const busy=native.slice(start,end);
+ assert.match(busy,/deviceApply_\.busyCommandReceipt\(action,args\)/);
+ assert.match(busy,/emitEventIfBrowserIsVisible\(receipt\.event,receipt\.payload\)/);
+ const first=coordinator.indexOf('BusyReceipt busyCommandReceipt(');
+ const last=coordinator.indexOf('struct Request {',first);
+ assert.ok(first>=0&&last>first);
+ const receipt=coordinator.slice(first,last);
+ assert.match(receipt,/if\(!busy\(\)\)return \{\}/);
+ assert.match(receipt,/setProperty\("ok",false\)/);
+ assert.match(receipt,/setProperty\("requestId",args\.getProperty\("requestId",\{\}\)\)/);
+ assert.ok(receipt.includes('if(action=="routingExternalOutput")event="arMixExternalOutputAck";'));
+ assert.ok(receipt.includes('if(action=="routingMonitorTiming")event="arMixMonitorTimingAck";'));
+ assert.ok(receipt.includes('if(action=="routingLogicalInputEdit")event="arMixLogicalInputAck";'));
+ assert.ok(receipt.includes('if(action=="routingLogicalOutputEdit")event="arMixLogicalOutputAck";'));
+ assert.ok(receipt.includes('if(action=="audioIoDefaults")event="arMixIoDefaultsAck";'));
+ assert.ok(receipt.includes('if(action=="audioNamedPatchEdit")event="arMixNamedPatchAck";'));
+ assert.ok(receipt.includes('if(action=="routingNativeFxRackBypass")event="arMixNativeFxPowerAck";'));
+ assert.ok(receipt.includes('if(action=="routingNativeFxInsertBypass")event="arMixNativeFxPowerAck";'));
+ assert.ok(receipt.includes('if(action=="routingM4Control")event="arMixM4ControlAck";'));
+ assert.ok(receipt.includes('if(action=="routingChannelPatch")event="arMixChannelPatchAck";'));
+ assert.ok(receipt.includes('if(action=="routingSourceSwitch")event="arMixSourceSwitchAck";'));
+ assert.ok(receipt.includes('if(action=="routingFxInsert")event="arMixRoutingFxInsertAck";'));
+ assert.ok(receipt.includes('if(action=="routingFxBypass")event="arMixRoutingFxBypassAck";'));
+ assert.ok(receipt.includes('if(action=="routingFxRackBypass")event="arMixRoutingFxRackAck";'));
+ assert.ok(receipt.includes('if(action=="routingGlobalFxBypass")event="arMixGlobalFxAck";'));
+ assert.ok(receipt.includes('if(action=="audioNamedProfileFile")event="arMixNamedProfileFileResult";'));
+ assert.ok(receipt.includes('if(action=="routingDryShowSave")event="arMixNativeShowSaveAck";'));
+ assert.ok(receipt.includes('if(action=="routingDryShowList")event="arMixNativeShowListAck";'));
+ assert.ok(receipt.includes('if(action=="routingDryShowRecall")event="arMixNativeShowRecallAck";'));
+ assert.ok(receipt.includes('if(action=="routingDryShowRecover")event="arMixNativeShowRecoverAck";'));
+ assert.match(receipt,/setProperty\("operation",args\.getProperty\("operation",\{\}\)\)/);
+ assert.ok(busy.indexOf('else if(action=="retainedFxOfflineOpen")')<busy.indexOf('else if(editorNavigation)'));
+ assert.match(busy,/emitRetainedFxOfflineAck\(args\.getProperty\("requestId",\{\}\),/);
+ assert.match(busy,/emitMixerSessionAck\(operation,"Audio configuration is finishing/);
+ assert.doesNotMatch(receipt,/engine_|getAudioDeviceSetup|currentDeviceSnapshot|tryBegin\(/);
+});

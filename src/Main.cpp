@@ -7971,12 +7971,29 @@ private:
             // Admission remains closed while hardware Apply owns the graph.
             if(action=="routingFxEditor")
                 emitRoutingFxEditorReceipt(args,false,true,"FX editor unavailable: Audio I/O is applying");
+            else if(action=="retainedFxOfflineOpen")
+                emitRetainedFxOfflineAck(args.getProperty("requestId",{}),
+                    "Audio configuration is finishing. Retry when ready.");
             else if(editorNavigation)
                 emitNotice("FX editor unavailable: Audio I/O is applying",true);
+            else if(action=="nativeMixerFileSave"||action=="nativeMixerFileOpen"||
+                    action=="nativeMixerNewLive"||action=="nativeMixerNewOffline"||
+                    action=="nativeMixerOpenArchive"){
+                const juce::String operation=action=="nativeMixerFileSave"?"SAVE":
+                    action=="nativeMixerFileOpen"?"OPEN":
+                    action=="nativeMixerNewLive"?"NEW_LIVE":
+                    action=="nativeMixerOpenArchive"?"ARCHIVE":
+                    args.getProperty("mode",{}).toString()=="RESET_IO"?"RESET_IO":"NEW";
+                emitMixerSessionAck(operation,"Audio configuration is finishing. Retry when ready.");
+            }
             else if(action=="audioDriverPanel")
                 emitNotice("Audio device is busy · try again",true);
             else if(action=="routingPhysicalBusOutput")
                 emitPhysicalBusOutputAck(args,"BUS OUTPUT: audio transaction busy");
+            else if(const auto receipt=deviceApply_.busyCommandReceipt(action,args);receipt.event){
+                if(browser_.loaded)
+                    browser_.emitEventIfBrowserIsVisible(receipt.event,receipt.payload);
+            }
             else if(action=="routingNativeSourcePatch"){
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("requestId",args.getProperty("requestId",{}));
