@@ -18,3 +18,15 @@ Status at authoring: pinned metadata only; no download or Windows probe result y
 
 ## Release qualification extension — 28 Nov
 Owner accepted FIELD source 0c831e193d936bca4c8234294d4e64dec24a9aa8, which did not contain FactoryFX. Exact first real Windows JUCE smoke at ab8a57b02c197628642d45bfa146447dd256c35d passed all four (run 46085667012, job 140794519096), including two instances, finite PCM and state/editor smoke. Extend the isolated test with runtime factory CID (not just moduleinfo), production stereo layout, automation/state value recall, bypass, 44.1/48/96 kHz × 64/128/256 frames with stereo and duplicated mono inputs and editor recreation. Results remain evidence, not a self-approved lock or a physical full-mixer test. New bundled modules need attended physical integration acceptance; do not treat the earlier core-only FIELD approval as their test. Preserve original KuPik separate EULA/activation.
+
+### Extended host result
+Actual Windows native job [140796031727](https://github.com/masarray/arsonmix/actions/runs/46086138099/job/140796031727) at `67a7f03bb9777fb93bb4259eef13256d2192370f` terminal SUCCESS. All four exact pinned archives loaded two real instances, negotiated production stereo layout, exercised wet PCM, automation/state recall, bypass, 9 rate/buffer combinations with stereo and duplicated-mono inputs, and recreated editors.
+
+| Product | Runtime factory CID | JUCE UID | Tested control |
+|---|---|---:|---|
+| EQ | ABCDEF019182FAEB4172734E41724551 | 2092322125 | Band 1 Gain |
+| Comp | ABCDEF019182FAEB4172536E41724370 | 2092068684 | Makeup |
+| Verb | ABCDEF019182FAEB4172737441727662 | 2092335864 | Mix |
+| KuPik | ABCDEF019182FAEB4D734172416B5673 | -255306549 | Input Gain |
+
+KuPik reported 301/304/352 samples at 44.1/48/96 kHz respectively; other three reported zero plugin samples in this probe. These are plugin-reported latencies, not hardware round trip or full mixer PDC proof. No physical ASIO test, complete mixer graph AUX/PDC/Show rollback, licence review or approved lock is implied. Verb upstream checksum and KuPik BUILDINFO/checksum assets are now pinned for independent sidecar intake. Exact public source provenance, applicable notices, and KuPik recorded redistribution/unchanged separate activation decision remain required. Public publisher must fail closed on empty/incomplete Standard lock before native build. The engineering FIELD path is unchanged.

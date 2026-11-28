@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -315,6 +316,26 @@ class BundleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bundle.read_best_effort_report(records, self.output)
 
+
+    def test_release_preflight_requires_exact_four_and_complete_notices(self):
+        records = [dict(self.approved, productId=pid,
+                        sourceRepo="masarray/askp-vst" if pid=="arsonkupik-enhancer" else bundle.OWNED[pid][0])
+                   for pid in sorted(bundle.FOUR_IDS)]
+        args = ["factoryfx_release_bundle.py", "preflight", "--lock", str(self.lock),
+                "--notices", str(self.notices), "--require", "four"]
+        self.save_lock(*records[:3])
+        with patch.object(sys, "argv", args), self.assertRaisesRegex(ValueError, "Four-FX"):
+            bundle.main()
+        self.save_lock(*records)
+        for p in records[:-1]:
+            (self.notices / (p["productId"] + ".txt")).write_text("reviewed fixture")
+        (self.notices / (records[-1]["productId"] + ".txt")).unlink(missing_ok=True)
+        with patch.object(sys, "argv", args), self.assertRaisesRegex(ValueError, "notice missing"):
+            bundle.main()
+        (self.notices / (records[-1]["productId"] + ".txt")).write_text("reviewed fixture")
+        with patch.object(sys, "argv", args), patch.object(bundle, "download_release") as download:
+            bundle.main()
+            download.assert_not_called()
 
 class WatchTests(unittest.TestCase):
     def test_four_suppliers_are_monitored_and_missing_is_not_approved(self):
