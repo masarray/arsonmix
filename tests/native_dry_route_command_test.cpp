@@ -35,11 +35,11 @@ int main(){
     assert(nativeSessionTokenMatches(juce::var("91"),juce::var("91")));
     // Actual FIELD report: native status epoch is numeric, graphRevision
     // is a string; the matrix sends BOTH as canonical decimal strings.
-    const auto request=juce::JSON::parse(R"({"deviceEpoch":"13","revision":"8"})");
-    assert(nativeSessionTokenMatches(request.getProperty("deviceEpoch",{}),juce::var(13)));
-    assert(nativeSessionTokenMatches(request.getProperty("revision",{}),juce::var("8")));
-    assert(!nativeSessionTokenMatches(request.getProperty("deviceEpoch",{}),juce::var(14)));
-    assert(!nativeSessionTokenMatches(request.getProperty("revision",{}),juce::var("9")));
+    const auto matrixRequest=juce::JSON::parse(R"({"deviceEpoch":"13","revision":"8"})");
+    assert(nativeSessionTokenMatches(matrixRequest.getProperty("deviceEpoch",{}),juce::var(13)));
+    assert(nativeSessionTokenMatches(matrixRequest.getProperty("revision",{}),juce::var("8")));
+    assert(!nativeSessionTokenMatches(matrixRequest.getProperty("deviceEpoch",{}),juce::var(14)));
+    assert(!nativeSessionTokenMatches(matrixRequest.getProperty("revision",{}),juce::var("9")));
     assert(nativeSessionTokenMatches(juce::var("18446744073709551615"),juce::var("18446744073709551615")));
     assert(!nativeSessionTokenMatches(juce::var("9007199254740993"),juce::var(9007199254740992.0)));
     for(const auto* bad:{"","0","01","091","+91","-91"," 91","91 ","91.0","9e1","91x","18446744073709551616"})
