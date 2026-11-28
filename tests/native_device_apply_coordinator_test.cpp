@@ -89,6 +89,11 @@ static void verifyBusyCommandReceipts() {
             {"routingFxBypass","arMixRoutingFxBypassAck"},
             {"routingFxRackBypass","arMixRoutingFxRackAck"},
             {"routingGlobalFxBypass","arMixGlobalFxAck"},
+            {"audioNamedProfileFile","arMixNamedProfileFileResult"},
+            {"routingDryShowSave","arMixNativeShowSaveAck"},
+            {"routingDryShowList","arMixNativeShowListAck"},
+            {"routingDryShowRecall","arMixNativeShowRecallAck"},
+            {"routingDryShowRecover","arMixNativeShowRecoverAck"},
         };
         for(const auto& [action,event]:expected){
             const auto rejected=owner.busyCommandReceipt(action,args);
@@ -111,6 +116,13 @@ static void verifyBusyCommandReceipts() {
         const auto slotRequest=config(R"({"requestId":"fx-1","channel":2,"slot":3})");
         const auto slot=owner.busyCommandReceipt("routingFxBypass",slotRequest).payload;
         assert(int(slot.getProperty("channel",{}))==2&&int(slot.getProperty("slot",{}))==3);
+        for(const auto* operation:{"OPEN","EXPORT"}){
+            auto file=config(R"({"requestId":"io-file-9"})");
+            file.getDynamicObject()->setProperty("operation",operation);
+            const auto rejected=owner.busyCommandReceipt("audioNamedProfileFile",file);
+            assert(rejected.payload.getProperty("requestId",{}).toString()=="io-file-9");
+            assert(rejected.payload.getProperty("operation",{}).toString()==operation);
+        }
         assert(!owner.busyCommandReceipt("monitor",args).event);
         assert(!owner.busyCommandReceipt("secondaryOutputStop",args).event);
         assert(!owner.busyCommandReceipt("audioDeviceApply",args).event);

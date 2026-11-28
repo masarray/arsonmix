@@ -69,6 +69,11 @@ public:
         else if(action=="routingFxBypass")event="arMixRoutingFxBypassAck";
         else if(action=="routingFxRackBypass")event="arMixRoutingFxRackAck";
         else if(action=="routingGlobalFxBypass")event="arMixGlobalFxAck";
+        else if(action=="audioNamedProfileFile")event="arMixNamedProfileFileResult";
+        else if(action=="routingDryShowSave")event="arMixNativeShowSaveAck";
+        else if(action=="routingDryShowList")event="arMixNativeShowListAck";
+        else if(action=="routingDryShowRecall")event="arMixNativeShowRecallAck";
+        else if(action=="routingDryShowRecover")event="arMixNativeShowRecoverAck";
         if(!event)return {};
         auto ack=std::make_unique<juce::DynamicObject>();
         ack->setProperty("requestId",args.getProperty("requestId",{}));
@@ -86,6 +91,9 @@ public:
             // The bridge indexes a pending legacy slot-power request by channel:slot.
             ack->setProperty("channel",args.getProperty("channel",-1));
             ack->setProperty("slot",args.getProperty("slot",-1));
+        }else if(action=="audioNamedProfileFile"){
+            // File-dialog completion is correlated by both request and operation.
+            ack->setProperty("operation",args.getProperty("operation",{}));
         }else if(action=="routingM4Control"||action=="routingChannelPatch"||
                  action=="routingSourceSwitch"||action=="routingFxRackBypass"){
             ack->setProperty("channel",args.getProperty("channel",-1));

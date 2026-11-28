@@ -8550,5 +8550,14 @@ test("Busy native device transaction sends correlated terminal NACKs without tou
  assert.ok(receipt.includes('if(action=="routingFxBypass")event="arMixRoutingFxBypassAck";'));
  assert.ok(receipt.includes('if(action=="routingFxRackBypass")event="arMixRoutingFxRackAck";'));
  assert.ok(receipt.includes('if(action=="routingGlobalFxBypass")event="arMixGlobalFxAck";'));
+ assert.ok(receipt.includes('if(action=="audioNamedProfileFile")event="arMixNamedProfileFileResult";'));
+ assert.ok(receipt.includes('if(action=="routingDryShowSave")event="arMixNativeShowSaveAck";'));
+ assert.ok(receipt.includes('if(action=="routingDryShowList")event="arMixNativeShowListAck";'));
+ assert.ok(receipt.includes('if(action=="routingDryShowRecall")event="arMixNativeShowRecallAck";'));
+ assert.ok(receipt.includes('if(action=="routingDryShowRecover")event="arMixNativeShowRecoverAck";'));
+ assert.match(receipt,/setProperty\("operation",args\.getProperty\("operation",\{\}\)\)/);
+ assert.ok(busy.indexOf('else if(action=="retainedFxOfflineOpen")')<busy.indexOf('else if(editorNavigation)'));
+ assert.match(busy,/emitRetainedFxOfflineAck\(args\.getProperty\("requestId",\{\}\),/);
+ assert.match(busy,/emitMixerSessionAck\(operation,"Audio configuration is finishing/);
  assert.doesNotMatch(receipt,/engine_|getAudioDeviceSetup|currentDeviceSnapshot|tryBegin\(/);
 });
