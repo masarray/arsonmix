@@ -30,9 +30,10 @@ jobs:
         working-directory: .capture-source
         env:
           PYTHONPATH: tests
-          GITHUB_SHA: 213d2a4b861cd592c41c3ce6a4b318bf347b9e7b
+          SONKU_SOURCE_SHA: 213d2a4b861cd592c41c3ce6a4b318bf347b9e7b
         run: |
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SONKU_SOURCE_SHA"
+          export GITHUB_SHA="$SONKU_SOURCE_SHA"
           python - <<'PY'
           from pathlib import Path
           script=Path("scripts/capture_public_fx_gallery.py").resolve()
