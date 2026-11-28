@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">ArSonMix</h1>
-<p align="center"><strong>Your live mix, under your control.</strong><br>A free, open-source digital mixing studio for live vocals, karaoke, streaming and instruments.</p>
+<p align="center"><strong>Your live mix, under your control.</strong><br>A lightweight, free, open-source digital mixing studio for live vocals, karaoke, streaming and instruments.</p>
 <p align="center">
   <a href="https://masarray.github.io/arsonmix/#download"><strong>Download ArSonMix</strong></a> ·
   <a href="https://masarray.github.io/arsonmix/#system-requirements">System requirements</a> ·
@@ -73,24 +73,25 @@ These are genuine owner-supplied Windows editor screenshots, not a verified DSP/
 
 ## System requirements (Windows)
 
-Windows desktop app — estimated hardware guidance for early-access builds; minimum hardware has not yet been qualified across physical test PCs.
+A lightweight native mixer with a compact download. No dedicated GPU or SSD required. Even older PCs are worth trying with a simple mix.
 
-| Component | Minimum (estimated) | Recommended (estimated) |
+Small download: the exact Windows installer ZIP size is shown on the download card. Installed files, temporary extraction, updates and WebView2 (if missing) need additional space.
+
+| Component | Basic mixing (try on older PCs) | More effects / larger sessions |
 | --- | --- | --- |
-| CPU (laptop) | Intel Core i5-8250U / AMD Ryzen 5 3500U or equivalent | Intel Core i5-1235U / AMD Ryzen 5 5600U or equivalent |
-| CPU (desktop) | Intel Core i5-8400 / AMD Ryzen 5 2600 or equivalent | Intel Core i5-12400 / AMD Ryzen 5 5600 or equivalent |
-| RAM | 8 GB | 16 GB or more |
-| Storage | SSD, 5 GB free | NVMe SSD, 10 GB free |
-| Graphics | Integrated graphics; no dedicated GPU required | Integrated graphics; dedicated GPU optional for video streaming |
-| Display | 1366 × 768 | 1920 × 1080 or higher |
-| Operating system | Windows 10/11 x64 | Windows 11 x64 |
+| CPU | Older 64-bit dual-core Intel or AMD CPU (try first) | Modern quad-core or better |
+| RAM | 4 GB (try light sessions); 8 GB preferred | 8 GB or more; 16 GB helpful for streaming |
+| Storage | HDD or SSD; space for download, extraction and installation | Extra space only as needed for recordings, plugins and projects |
+| Graphics | Integrated graphics | Integrated graphics |
+| Display | 1366 × 768 suggested | 1920 × 1080 or higher for more workspace |
+| Operating system | Windows 10 (1809+) / 11 x64 | Windows 11 x64 |
 | Runtime | Microsoft Edge WebView2 Runtime | Microsoft Edge WebView2 Runtime |
-| Audio driver | Compatible WASAPI or ASIO | Audio interface with native ASIO driver |
-| Audio setup (starting point) | 48 kHz, 256–512 samples | 48 kHz, 128–256 samples |
+| Audio driver | Compatible WASAPI or ASIO | Native ASIO driver preferred |
+| Audio setup | 48 kHz, 256–512 samples to start | 48 kHz, 128–256 samples if stable |
 
-Minimum target: karaoke, playback and basic vocal mixing (EQ, compressor, reverb). Recommended: live mixing with more channels, Harmonice, ImmerSIB or external VST3 effects; for OBS or TikTok Live Studio, allow extra CPU/GPU and memory for video encoding.
+Start with karaoke, playback or a few vocal channels. Add EQ, compression and reverb as needed. More channels, Harmonice, ImmerSIB, external VST3 and video streaming can require more CPU and memory.
 
-Actual performance depends on active channels, effects, driver quality, buffer size and cooling. Start at 48 kHz / 256 samples; if audio crackles, try 512 samples or reduce demanding effects. Smaller buffers reduce buffering latency but require more real-time CPU headroom. Older PCs may work with lighter sessions; these estimates are not a guarantee of dropout-free audio.
+These are starting-point suggestions, not certified minimum specifications. Low-spec PCs have not yet been qualified across physical test machines. If audio crackles, try a larger buffer or fewer heavy effects. No guarantee of dropout-free audio on every PC.
 
 [View system requirements on the download page](https://masarray.github.io/arsonmix/#system-requirements).
 

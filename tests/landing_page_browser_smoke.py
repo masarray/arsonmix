@@ -78,8 +78,11 @@ def browser_check(page):
     assert page.locator(".os-card").count() == 3
     requirements = page.locator("#system-requirements")
     assert requirements.is_visible()
-    assert requirements.locator("tbody tr").count() == 10
-    assert "8 GB" in requirements.inner_text() and "16 GB" in requirements.inner_text()
+    assert requirements.locator("tbody tr").count() == 9
+    assert "4 GB" in requirements.inner_text() and "8 GB" in requirements.inner_text()
+    assert "No dedicated GPU or SSD required" in requirements.inner_text()
+    assert "not certified minimum specifications" in requirements.inner_text()
+    assert "Compact installer" in page.locator(".availability-note").inner_text()
     assert page.locator('.hero a[href="#system-requirements"]').is_visible()
     assert requirements.evaluate("el => el.scrollWidth <= el.clientWidth + 2")
     assert requirements.evaluate("el => el.getBoundingClientRect().bottom <= document.querySelector('.os-grid').getBoundingClientRect().top")

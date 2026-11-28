@@ -13,7 +13,7 @@ class LandingReleaseContract(unittest.TestCase):
         md = readme.split("## System requirements (Windows)", 1)[1].split("\n## ", 1)[0]
         expected = [tuple(cell.strip() for cell in line.strip("|").split("|"))
                     for line in md.splitlines() if line.startswith("| ") and not line.startswith("| ---")]
-        self.assertEqual(len(expected), 11)
+        self.assertEqual(len(expected), 10)
         for base in (ROOT / "site", DIST):
             html = (base / "index.html").read_text("utf-8")
             self.assertEqual(html.count('id="system-requirements"'), 1)
@@ -23,9 +23,16 @@ class LandingReleaseContract(unittest.TestCase):
                       for row in re.findall(r"<tr>(.*?)</tr>", block, re.S)]
             self.assertEqual(actual, expected)
             self.assertLess(html.index('id="system-requirements"'), html.index('class="os-grid"'))
-            for phrase in ("minimum hardware has not yet been qualified", "not a guarantee of dropout-free audio"):
+            for phrase in ("No dedicated GPU or SSD required", "4 GB (try light sessions)",
+                           "exact Windows installer ZIP size", "not certified minimum specifications",
+                           "No guarantee of dropout-free audio"):
                 self.assertIn(phrase, block)
                 self.assertIn(phrase, md)
+            for obsolete in ("5 GB free", "10 GB free", "i5-8250U", "i5-1235U"):
+                self.assertNotIn(obsolete, block)
+                self.assertNotIn(obsolete, md)
+            self.assertIn("Compact installer", html)
+            self.assertIn("No dedicated GPU or SSD required", html)
 
     def test_source_and_built_assets(self):
         for base in (ROOT / "site", DIST):
