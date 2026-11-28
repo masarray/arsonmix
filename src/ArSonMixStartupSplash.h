@@ -3,14 +3,17 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <BinaryData.h>
 
-// Native opaque first-paint guard. The official product PNG is embedded in
-// ARMixAssets and decoded once, on construction (never in paint or audio).
-// Keep the existing startup stage/handoff contract; no new timer or disk I/O.
+// Native opaque first-paint guard. Both images are embedded and decoded once.
+// Background blur, colour grading and vignette are baked into the small JPEG.
+// Preserve startup handoff: no runtime convolution, extra timer or disk I/O.
 class ArSonMixStartupSplash final : public juce::Component
 {
 public:
     ArSonMixStartupSplash()
-        : brand_ (juce::ImageFileFormat::loadFrom (
+        : background_ (juce::ImageFileFormat::loadFrom (
+              BinaryData::arsonmixsplashbackground_jpg,
+              static_cast<size_t> (BinaryData::arsonmixsplashbackground_jpgSize))),
+          brand_ (juce::ImageFileFormat::loadFrom (
               BinaryData::arsonmix256_png,
               static_cast<size_t> (BinaryData::arsonmix256_pngSize)))
     {
@@ -35,16 +38,21 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        // The guard can expand to the full mixer HWND. Keep the entire
-        // backdrop opaque, but centre the compact composition as ONE unit.
+        // Fill the entire HWND even if an embedded image fails to decode.
         g.fillAll (juce::Colour (0xff0b1823));
-        constexpr float cardWidth = 448.0f, cardHeight = 312.0f;
+        if (getWidth() <= 0 || getHeight() <= 0)
+            return;
+        if (background_.isValid())
+        {
+            g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
+            g.drawImageWithin (background_, 0, 0, getWidth(), getHeight(),
+                               juce::RectanglePlacement::fillDestination);
+        }
+        constexpr float cardWidth = 620.0f, cardHeight = 372.0f;
         const float width = static_cast<float> (getWidth());
         const float height = static_cast<float> (getHeight());
-        if (width <= 0.0f || height <= 0.0f)
-            return;
 
-        const float scale = juce::jmin (1.0f, juce::jmin (
+        const float scale = juce::jmin (1.20f, juce::jmin (
             width / (cardWidth + 24.0f), height / (cardHeight + 24.0f)));
         juce::Graphics::ScopedSaveState restore (g);
         g.addTransform (juce::AffineTransform::scale (scale).translated (
@@ -52,26 +60,26 @@ public:
             (height - cardHeight * scale) * 0.5f));
 
         const juce::Rectangle<float> card (0.0f, 0.0f, cardWidth, cardHeight);
-        g.setColour (juce::Colour (0xff101f2b));
-        g.fillRoundedRectangle (card, 10.0f);
-        g.setColour (juce::Colour (0xff263b48));
-        g.drawRoundedRectangle (card.reduced (0.5f), 10.0f, 1.0f);
+        g.setColour (juce::Colour (0xe90b171f));
+        g.fillRoundedRectangle (card, 12.0f);
+        g.setColour (juce::Colour (0xff36525b));
+        g.drawRoundedRectangle (card.reduced (0.5f), 12.0f, 1.0f);
 
         // Preserve the source aspect ratio and alpha; never recreate the
         // product artwork from decorative faders or split text.
         if (brand_.isValid())
         {
             g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-            g.drawImageWithin (brand_, 174, 24, 100, 100,
+            g.drawImageWithin (brand_, 265, 22, 90, 90,
                                juce::RectanglePlacement::centred);
         }
 
         g.setColour (juce::Colour (0xffeaf3f7));
-        g.setFont (juce::FontOptions (34.0f));
-        g.drawText ("ArSonMix", 24, 136, 400, 40, juce::Justification::centred);
+        g.setFont (juce::FontOptions (42.0f));
+        g.drawText ("ArSonMix", 24, 116, 572, 50, juce::Justification::centred);
         g.setColour (juce::Colour (0xff92aab9));
         g.setFont (juce::FontOptions (13.0f));
-        g.drawText ("LIVE DIGITAL MIXER  /  NATIVE VST3 HOST", 24, 180, 400, 20,
+        g.drawText ("LIVE DIGITAL MIXER  /  NATIVE VST3 HOST", 24, 169, 572, 22,
                     juce::Justification::centred);
 
         const juce::String status = stage_ == 0 ? "Loading mixer interface..."
@@ -79,7 +87,7 @@ public:
                                                : "Mixer interface ready";
         g.setColour (juce::Colour (0xffd9ebf2));
         g.setFont (juce::FontOptions (15.0f));
-        g.drawText (status, 24, 225, 400, 24, juce::Justification::centred);
+        g.drawText (status, 24, 207, 572, 26, juce::Justification::centred);
 
         // Three discrete startup milestones, not a fabricated percentage.
         // Completed / active / pending are distinct; no animation or timer.
@@ -87,12 +95,30 @@ public:
         {
             g.setColour (juce::Colour (i < stage_ ? 0xff128f86
                                     : i == stage_ ? 0xff1edac2 : 0xff283c49));
-            g.fillRoundedRectangle (70.0f + static_cast<float> (i) * 104.0f,
-                                    262.0f, 100.0f, 4.0f, 2.0f);
+            g.fillRoundedRectangle (100.0f + static_cast<float> (i) * 142.0f,
+                                    242.0f, 136.0f, 4.0f, 2.0f);
+        }
+
+        const juce::String labels[] = {
+            "Loading interface", "Preparing native audio engine", "Mixer interface ready"
+        };
+        g.setFont (juce::FontOptions (12.5f));
+        for (int i = 0; i < 3; ++i)
+        {
+            const float y = 268.0f + static_cast<float> (i) * 24.0f;
+            g.setColour (juce::Colour (i <= stage_ ? 0xff1edac2 : 0xff526671));
+            g.drawEllipse (210.0f, y + 3.0f, 10.0f, 10.0f, 1.2f);
+            if (i < stage_)
+                g.fillEllipse (212.5f, y + 5.5f, 5.0f, 5.0f);
+            g.setColour (juce::Colour (i == stage_ ? 0xffe5f1f4
+                                    : i < stage_ ? 0xffa8c5c7 : 0xff8297a2));
+            g.drawText (labels[i], 230, static_cast<int> (y) - 3, 180, 22,
+                        juce::Justification::centredLeft);
         }
     }
 
 private:
+    const juce::Image background_;
     const juce::Image brand_;
     int stage_ = 0;
 };

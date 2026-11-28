@@ -398,6 +398,7 @@ juce_add_binary_data(ARMixAssets SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/assets/fx/graphic-eq31/geq31_brushed_metal.jpg"
     ${ARMIX_LEGAL_RESOURCE_FILES}
     "${ARMIX_BRAND_DIR}/arsonmix-256.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/assets/startup/arsonmix-splash-background.jpg"
     ${ARMIX_IMERSIB_SCENE_PNG_SOURCES})
 target_include_directories(ARMixConsole PRIVATE "${ARMIX_APPROVED_GUI_DIR}")
 # Only the production GUI embeds the owner's complete grouped EQ31 SVG; isolated native

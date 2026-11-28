@@ -142,19 +142,53 @@ test('startup handoff raises mixer once after splash, without permanent topmost 
  assert.match(app,/if \(isAutoUpdateHealthProbe\(\)\)\s*\{\s*if \(window_\) window_->setVisible \(false\);/);
 });
 
-test('native startup splash uses embedded product PNG and one responsive centre transform',()=>{
+test('native splash embeds preblurred JPEG and product PNG, preserves guard and responsive centering',()=>{
  const splash=read('src/ArSonMixStartupSplash.h');
  const cmake=read('CMakeLists.txt');
+ const artwork=readFileSync('assets/startup/arsonmix-splash-background.jpg');
  assert.match(cmake,/ARMIX_BRAND_DIR\}\/arsonmix-256\.png/);
+ assert.match(cmake,/assets\/startup\/arsonmix-splash-background\.jpg/);
  assert.match(splash,/BinaryData::arsonmix256_png,/);
  assert.match(splash,/BinaryData::arsonmix256_pngSize/);
- assert.match(splash,/juce::ImageFileFormat::loadFrom/);
- assert.match(splash,/g\.drawImageWithin \(brand_, 174, 24, 100, 100,/);
- assert.match(splash,/juce::RectanglePlacement::centred/);
- assert.match(splash,/g\.drawText \("ArSonMix", 24, 136, 400, 40, juce::Justification::centred\)/);
+ assert.match(splash,/BinaryData::arsonmixsplashbackground_jpg,/);
+ assert.match(splash,/BinaryData::arsonmixsplashbackground_jpgSize/);
+ assert.equal((splash.match(/juce::ImageFileFormat::loadFrom/g)||[]).length,2);
+ assert.match(splash,/g\.drawImageWithin \(background_, 0, 0, getWidth\(\), getHeight\(\),\s*juce::RectanglePlacement::fillDestination/);
+ assert.match(splash,/g\.drawImageWithin \(brand_, 265, 22, 90, 90,\s*juce::RectanglePlacement::centred/);
+ assert.match(splash,/g\.drawText \("ArSonMix", 24, 116, 572, 50, juce::Justification::centred\)/);
  assert.match(splash,/width \/ \(cardWidth \+ 24\.0f\), height \/ \(cardHeight \+ 24\.0f\)/);
  assert.match(splash,/\(width - cardWidth \* scale\) \* 0\.5f,\s*\(height - cardHeight \* scale\) \* 0\.5f/);
  assert.match(splash,/g\.fillAll \(juce::Colour \(0xff0b1823\)\)/);
- assert.doesNotMatch(splash,/centredRight|centredLeft|ColourGradient|g\.drawText \("Ar",|g\.drawText \("SonMix",/);
- assert.doesNotMatch(splash.slice(splash.indexOf('void paint')),/loadFrom|ImageCache|startTimer|repaint\(\)/);
+ assert.doesNotMatch(splash,/ColourGradient|g\.drawText \("Ar",|g\.drawText \("SonMix",/);
+ assert.doesNotMatch(splash.slice(splash.indexOf('void paint')),/loadFrom|ImageCache|startTimer|repaint\(\)|ImageConvolutionKernel|GaussianBlur/);
+ assert.ok(artwork.length<=8*1024,'soft startup JPEG size budget');
+ assert.equal(artwork[0],0xff);
+ assert.equal(artwork[1],0xd8);
+ assert.equal(artwork[artwork.length-2],0xff);
+ assert.equal(artwork[artwork.length-1],0xd9);
+ let dimensions;
+ for(let i=2;i+8<artwork.length;){
+   assert.equal(artwork[i],0xff);
+   const marker=artwork[i+1];
+   const length=artwork[i+2]*256+artwork[i+3];
+   assert.ok(length>=2 && i+2+length<=artwork.length);
+   if(marker===0xc0){
+     dimensions=[artwork[i+7]*256+artwork[i+8],artwork[i+5]*256+artwork[i+6]];
+     break;
+   }
+   assert.notEqual(marker,0xda,'SOF precedes scan');
+   i+=2+length;
+ }
+ assert.deepEqual(dimensions,[384,216]);
+ const layout=splash.match(/cardWidth = ([\d.]+)f, cardHeight = ([\d.]+)f/);
+ const cap=splash.match(/const float scale = juce::jmin \(([\d.]+)f/);
+ assert.ok(layout && cap);
+ const cw=Number(layout[1]), ch=Number(layout[2]), maxScale=Number(cap[1]);
+ for(const [w,h] of [[740,420],[1366,768],[1646,928],[1920,1080],[3440,1440],[320,200],[1,1]]){
+   const s=Math.min(maxScale,w/(cw+24),h/(ch+24));
+   const x=(w-cw*s)/2,y=(h-ch*s)/2;
+   assert.ok(s>0 && x>=0 && y>=0 && x+cw*s<=w && y+ch*s<=h);
+   assert.ok(Math.abs(x+cw*s/2-w/2)<1e-7);
+   assert.ok(Math.abs(y+ch*s/2-h/2)<1e-7);
+ }
 });
