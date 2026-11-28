@@ -1108,6 +1108,43 @@ def verify_custom_recovery_routes(page,out):
     assert dialog.is_visible() and dialog.count()==1
     assert not page.evaluate("()=>window.__actions.some(a=>a.action==='audioDeviceApply')")
 
+def verify_startup_audio_setup(page,out,manual=False):
+    page.add_init_script(NATIVE_EVENTS + """window.__events=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){window.__events.push({name,payload});},
+        ...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>document.querySelector('.command-bar > [data-native-io]')")
+    dialog=page.locator(".armix-audio-dialog")
+    emit(page,"arMixStatus",{"startupAudioSetupRequired":False})
+    assert not dialog.is_visible()
+    if manual:
+        emit(page,"arMixOpenAudioIO",True)
+        assert dialog.is_visible()
+        assert page.locator("[data-audio-startup-guide]").is_hidden()
+        page.locator("[data-audio-close]").click()
+    else:
+        page.evaluate("""()=>{const d=document.createElement('dialog');d.id='startup-block';document.body.append(d);d.showModal();}""")
+        emit(page,"arMixStatus",{"startupAudioSetupRequired":True})
+        assert not dialog.is_visible()
+        page.evaluate("()=>document.querySelector('#startup-block').remove()")
+    emit(page,"arMixStatus",{"startupAudioSetupRequired":True})
+    if not manual:
+        assert dialog.is_visible()
+        assert page.locator("[data-audio-startup-guide]").is_visible()
+        assert dialog.locator('[data-audio-tab="device"]').get_attribute("aria-selected")=="true"
+        page.locator("[data-audio-close]").click()
+    for _ in range(3):
+        emit(page,"arMixStatus",{"startupAudioSetupRequired":True})
+        assert not dialog.is_visible()
+    assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixAudioSetupPresented').length")==1
+    assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixAction'&&e.payload.action==='audioDeviceInventory').length")==1
+    assert not page.evaluate("""()=>window.__events.some(e=>e.name==='arMixAction'&&
+      ['audioDeviceApply','monitor','routingNativeSourcePatch','routingExternalOutput'].includes(e.payload.action))""")
+    emit(page,"arMixOpenAudioIO",True)
+    assert dialog.is_visible() and dialog.count()==1
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -1163,6 +1200,10 @@ def main():
         page=browser.new_page(viewport={"width":1366,"height":768})
         verify_custom_recovery_routes(page,out)
         page.close()
+        for manual in (False,True):
+            page=browser.new_page(viewport={"width":1024,"height":576})
+            verify_startup_audio_setup(page,out,manual)
+            page.close()
         browser.close()
     print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output, muted bus remap, logical disclosure race and defaults")
 

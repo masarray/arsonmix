@@ -724,6 +724,10 @@ public:
                   browser_.repaint();
                   if (onStartupStage_) onStartupStage_ (1);
               })
+              .withEventListener ("arMixAudioSetupPresented", [this] (juce::var) {
+                  // Presentation acknowledgement only; no device or audio mutation.
+                  startupAudioSetupPresented_=true;
+              })
               .withEventListener ("arMixChannelIdentitySet", [this] (juce::var args) {
                   handleNativeChannelIdentitySet(args);
               })
@@ -1433,6 +1437,11 @@ private:
         }
     }
     bool deviceSettingsDirty_ = false;
+    // Latched once from the machine profile before automatic discovery can
+    // persist a candidate. A deliberate manual setup also satisfies onboarding.
+    bool startupAudioSetupMissingProfile_=false;
+    bool startupAudioSetupFailed_=false;
+    bool startupAudioSetupPresented_=false;
     std::uint64_t deviceSettingsRetryAt_=0;
     // P0: last verified DIRECT WASAPI profile survives missing hardware;
     // never replace it with JUCE's incidental default after hotplug.
@@ -12914,8 +12923,11 @@ private:
             }
             auto saved = juce::XmlDocument::parse (
                 machineSettingsDirectory().getChildFile ("audio-devices.xml"));
+            startupAudioSetupMissingProfile_=!saved||!saved->hasTagName("DEVICESETUP")||
+                saved->getStringAttribute("deviceType").isEmpty();
             rememberSavedWasapiProfile(saved.get());
             startupError_ = engine_.start (saved.get());
+            startupAudioSetupFailed_=startupError_.isNotEmpty();
             engine_.devices().addChangeListener (this);
             if(saved&&startupError_.isNotEmpty()&&engine_.savedAsioStartupRetryAvailable()&&
                !vendorSafeRecoveryActive()) {
@@ -13366,6 +13378,16 @@ private:
             static_cast<double> (diagnostics_.truncatedRecords()));
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
+        // Reuse the status handshake until the existing GUI has actually
+        // presented Audio I/O. No popup during device/session startup or
+        // vendor safe recovery; never interpret an ordinary hotplug as first run.
+        const bool setupNeeded=!startupAudioSetupPresented_&&mixerSessionStartupInspected_&&
+            !pendingStartupAsioSettings_&&!pendingStartupWasapi_&&!deviceApply_.busy()&&
+            !mixerSessionWorker_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&
+            !startupFxGuard_&&!logicalVendorEditor_&&!vendorSafeRecoveryActive()&&
+            (startupAudioSetupMissingProfile_||
+             (startupAudioSetupFailed_&&startupError_.isNotEmpty()&&!engine_.directRouteAuthorized()));
+        state.getDynamicObject()->setProperty("startupAudioSetupRequired",setupNeeded);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
         // One authoritative 12 Hz console snapshot, NOT a second 1 Hz burst.
         // Keep continuous real meters, safe native ACK/readback, PATCH/ARM,

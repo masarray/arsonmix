@@ -7112,6 +7112,28 @@ test("P0 input GAIN sends bounded latest native intents during pointermove",()=>
 });
 
 
+test("P0 startup Audio I/O presentation is one-shot, native-owned and non-mutating",()=>{
+ const vm=read("web/approved-device-view-model.js");
+ const m={exports:{}};
+ new Function("module",vm)(m);
+ const decide=m.exports.startupAudioSetupDecision;
+ assert.equal(decide({startupAudioSetupRequired:true}),true);
+ for(const state of [{presented:true},{busy:true},{blocked:true}])
+   assert.equal(decide({startupAudioSetupRequired:true},state),false);
+ for(const live of [null,{}, {startupAudioSetupRequired:false},{startupAudioSetupRequired:"true"}])
+   assert.equal(decide(live),false);
+ const host=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ assert.match(host,/startupAudioSetupMissingProfile_=!saved/);
+ assert.match(host,/startupAudioSetupFailed_=startupError_\.isNotEmpty\(\)/);
+ assert.match(host,/!startupAudioSetupPresented_&&mixerSessionStartupInspected_/);
+ assert.match(host,/setProperty\("startupAudioSetupRequired",setupNeeded\)/);
+ assert.match(host,/withEventListener \("arMixAudioSetupPresented"/);
+ assert.match(bridge,/maybePresentStartupAudioSetup\(live\)/);
+ const handler=bridge.slice(bridge.indexOf("function maybePresentStartupAudioSetup"),bridge.indexOf("function closeNativeAudioIO"));
+ assert.match(handler,/openNativeAudioIO\(null,true\)/);
+ assert.doesNotMatch(handler,/emitEvent|sendDeviceApply|monitor\(/);
+ assert.match(bridge,/backend.emitEvent\("arMixAudioSetupPresented",\{\}\)/);
+});
 test("P0 Audio I/O help reacts to explicit failed operator intent without auto-ARM",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/function recommendAudioRepair\(context\)/);

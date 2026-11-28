@@ -299,6 +299,12 @@
 
   // One transient draft for the existing Device Setup dialog. All native
   // inventory and installed PCM remain external readback, never owned here.
+  // Pure presentation policy: only a positive native startup request can
+  // open the existing Audio I/O surface. Closing or manually opening it
+  // consumes the request for this application session.
+  function startupAudioSetupDecision(live,{presented=false,busy=false,blocked=false}={}){
+    return live?.startupAudioSetupRequired===true&&!presented&&!busy&&!blocked;
+  }
   function setupSameEndpoint(active,draft) {
     return active?.open===true&&active.backend===draft?.backend&&
       active.captureDevice===draft.capture&&active.playbackDevice===draft.playback;
@@ -804,7 +810,7 @@
     return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,inputLabelResolver,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
-    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
+    externalPresentation,startupAudioSetupDecision,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,

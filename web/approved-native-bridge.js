@@ -4036,8 +4036,8 @@
   let lastAudioRepairAt=-Infinity;
   function recommendAudioRepair(context) {
     // The user explicitly attempted a live input or FX operation. Avoid
-    // disruptive startup popups, silent driver fallback or repeated overlays
-    // from the 12 Hz status/readback loop.
+    // repeated repair overlays and silent driver fallback. First-run setup
+    // has its own native request and one-shot presentation receipt.
     if(deviceBusy()||deviceReady())return false;
     const now=performance.now();
     if(now-lastAudioRepairAt<1600)return true;
@@ -4051,7 +4051,7 @@
     return true;
   }
   // Disabled physical inputs cannot emit a change event. Their route field
-  // still offers explicit device repair, without opening a modal on startup.
+  // still offers explicit device repair, independently of first-run onboarding.
   document.addEventListener("pointerdown",event=>{
     const field=event.target.closest?.(".route-field");
     if(field?.querySelector('select[data-field="input"]')&&!deviceReady())
@@ -4368,7 +4368,15 @@
     paintAdditionalOutput();
     refreshAdditionalInventory();
   }
-  let audioIoReturnFocus=null;
+  let audioIoReturnFocus=null,startupAudioSetupPresented=false;
+  function maybePresentStartupAudioSetup(live){
+    const blocked=document.visibilityState==="hidden"||
+      [...document.querySelectorAll('[aria-modal="true"],dialog[open]')].some(el=>
+        !el.hidden&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=="hidden");
+    if(deviceVM.startupAudioSetupDecision(live,{presented:startupAudioSetupPresented,
+       busy:deviceBusy(),blocked}))
+      openNativeAudioIO(null,true);
+  }
   function closeNativeAudioIO(){
     if(!devicePanel||devicePanel.hidden)return;
     if(loopbackPending)backend.emitEvent("arMixAction",{action:"audioLoopbackCancel"});
@@ -4440,7 +4448,7 @@
     if(page==="performance")paintSmartPerformance(true);
     if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
   }
-  function openNativeAudioIO(trigger=null){
+  function openNativeAudioIO(trigger=null,startup=false){
     if(!devicePanel){
       const style=document.createElement("style");
       style.textContent=`
@@ -4630,6 +4638,12 @@
         </nav>
         <div class="armix-audio-content" id="armix-audio-tab-content" role="tabpanel" aria-labelledby="armix-audio-tab-device">
         <div class="armix-endpoint-fields">
+          <div class="armix-device-note" data-audio-startup-guide hidden role="status">
+            <strong>Get started with audio</strong> · Select your interface (ASIO) or Windows Audio,
+            choose playback and optional recording, then Apply device.
+            Review Hardware Pins, assign channels in Inputs and destinations in Outputs.
+            You can close this setup and edit the mixer offline.
+          </div>
           <label>Audio driver<select data-audio-field="backend"></select></label>
           <label>Recording / input<select data-audio-field="capture"></select></label>
           <label>Playback / monitor<select data-audio-field="playback"></select></label>
@@ -4715,7 +4729,7 @@
         </div>
         <section class="armix-input-overview">
           <div class="armix-output-heading">Input patch matrix</div>
-          <div class="armix-matrix-hint">Click a pin to assign or clear. Custom / preset sources: select and Apply.</div>
+          <div class="armix-matrix-hint">Click a pin or select a source to assign. Custom stereo: choose L/R, then Set stereo pair.</div>
            <div class="armix-crosspoint-scroll" data-audio-input-grid></div>
         </section>
         <section class="armix-output-overview" data-audio-output-overview>
@@ -4855,7 +4869,14 @@
     const opening=devicePanel.hidden;
     if(opening)audioIoReturnFocus=trigger?.currentTarget||document.activeElement;
     devicePanel.hidden=false;
-    if(opening)devicePanel.querySelector("[data-audio-close]").focus({preventScroll:true});
+    if(opening){
+      devicePanel.querySelector("[data-audio-startup-guide]").hidden=!startup;
+      devicePanel.querySelector("[data-audio-close]").focus({preventScroll:true});
+    }
+    if(!startupAudioSetupPresented){
+      startupAudioSetupPresented=true;
+      backend.emitEvent("arMixAudioSetupPresented",{}); // UI receipt only
+    }
     if(deviceBusy()){
       showDeviceApplyProgress(true);
       return;
@@ -6370,6 +6391,7 @@
       paintPhysicalOutputs(hardware);
     });
     backend.addEventListener("arMixStatus", live=>{
+      maybePresentStartupAudioSetup(live);
       const previous=protocol.secondaryOutputView(hardware,extraLive);
       extraLive=live;++extraStatusSerial;
       settleAdditionalOutput(live);
