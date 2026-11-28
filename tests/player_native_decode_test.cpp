@@ -3,6 +3,7 @@
 #include "../engine/player/NativePlayerShowDeck.h"
 #include "../engine/player/PlayerSetlistPolicy.h"
 #include "../engine/player/PlayerLibraryPolicy.h"
+#include "../src/PlayerMediaMetadata.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -122,6 +123,70 @@ int main() {
         assert(writer->writeFromAudioSampleBuffer(song,0,song.getNumSamples()));
     }
     {
+        using Media=armix::player::PlayerMediaMetadata;
+        juce::AudioFormatManager formats;formats.registerBasicFormats();
+        const auto info=Media::probe(file,formats);
+        assert(!info.missing&&info.channels==2&&info.sampleRate==44100.0);
+        assert(std::abs(info.seconds-16384.0/44100.0)<1e-6);
+        assert(info.title==file.getFileNameWithoutExtension());
+        const auto cache=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("arson-player-cache","",false);
+        bool hit=true;
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&hit);
+        // Version 2 must retain the exact native double, not the rounded GUI JSON.
+        const auto slot=Media::cacheSlot(cache,file);
+        auto record=juce::JSON::parse(slot.loadFileAsString());
+        assert(static_cast<int>(record.getProperty("version",0))==2);
+        auto cachedRow=record.getProperty("metadata",{});
+        assert(cachedRow.getProperty("durationSeconds",{}).isString());
+        assert(cachedRow.getProperty("sampleRate",{}).isString());
+        // Old disposable records and malformed numeric strings are misses,
+        // repaired by a real probe without modifying the source media.
+        record.getDynamicObject()->setProperty("version",1);
+        assert(slot.replaceWithText(juce::JSON::toString(record,true)));
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&hit);
+        record=juce::JSON::parse(slot.loadFileAsString());
+        cachedRow=record.getProperty("metadata",{});
+        cachedRow.getDynamicObject()->setProperty("durationSeconds","0.3invalid");
+        assert(slot.replaceWithText(juce::JSON::toString(record,true)));
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&hit);
+        assert(Media::probeCached(file,formats,cache,true,&hit)==info&&!hit);
+        const auto originalTime=file.getLastModificationTime();
+        assert(file.setLastModificationTime(juce::Time(originalTime.toMilliseconds()-10000)));
+        assert(Media::probeCached(file,formats,cache,false,&hit)==info&&!hit);
+        assert(file.setLastModificationTime(originalTime));
+        assert(cache.deleteRecursively());
+        assert(Media::probe(file.withFileExtension(".missing"),formats).missing);
+        juce::MemoryOutputStream png;
+        assert(juce::Base64::convertFromBase64(png,"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aO1sAAAAASUVORK5CYII="));
+        const auto* bytes=static_cast<const unsigned char*>(png.getData());
+        assert(Media::imageUri(bytes,png.getDataSize()).startsWith("data:image/png;base64,"));
+        auto oversized=juce::MemoryBlock(png.getData(),png.getDataSize());
+        auto* malformed=static_cast<unsigned char*>(oversized.getData());malformed[16]=1;
+        assert(Media::imageUri(malformed,oversized.getSize()).isEmpty());
+        assert(Media::imageUri(bytes,10).isEmpty());
+        const auto coverFile=file.withFileExtension(".png");
+        assert(coverFile.replaceWithData(png.getData(),png.getDataSize()));
+        assert(Media::cover(file).startsWith("data:image/png;base64,"));
+        assert(coverFile.deleteFile());
+        // ID3 APIC fixture is metadata-only; no claim of MP3 audio decoding.
+        const auto id3File=file.withFileExtension(".mp3");
+        juce::MemoryOutputStream apic;
+        apic.writeByte(0);apic.write("image/png",10);apic.writeByte(3);apic.writeByte(0);
+        apic.write(png.getData(),png.getDataSize());
+        juce::MemoryOutputStream frames;frames.write("APIC",4);
+        frames.writeIntBigEndian(static_cast<int>(apic.getDataSize()));frames.writeShortBigEndian(0);
+        frames.write(apic.getData(),apic.getDataSize());
+        const auto n=frames.getDataSize();
+        unsigned char header[10]={'I','D','3',3,0,0,0,0,static_cast<unsigned char>((n>>7)&127),static_cast<unsigned char>(n&127)};
+        juce::MemoryOutputStream tagged;tagged.write(header,10);tagged.write(frames.getData(),n);
+        assert(id3File.replaceWithData(tagged.getData(),tagged.getDataSize()));
+        assert(Media::cover(id3File).startsWith("data:image/png;base64,"));
+        assert(id3File.deleteFile());
+    }
+    {
         armix::player::NativePlayerDeck deck;
         deck.deviceRate(48000.0);
         deck.load(file,true);
@@ -187,6 +252,22 @@ int main() {
         left.fill(9.f);right.fill(9.f);
         deck.pull(left.data(),right.data(),256);
         assert(left[0]==0.f && right[0]==0.f);
+    }
+    // Exercise wake-before-wait and idle/shutdown boundaries repeatedly.
+    // A lost notification used to leave a valid decoder in PREPARING.
+    for(int pass=0;pass<24;++pass) {
+        armix::player::NativePlayerDeck deck;
+        deck.deviceRate(48000.0);
+        deck.load(file,true);
+        for(int n=0;n<600&&!deck.isPlayingRequested();++n)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        assert(deck.isPlayingRequested());
+        deck.stop();
+        deck.play();
+        for(int n=0;n<600&&!deck.isPlayingRequested();++n)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        assert(deck.isPlayingRequested());
+        deck.stop();
     }
     // M2 real JUCE media → sample-rate converter → independent stereo DSP
     // → prepared FIFO; this runs without a physical audio device.
@@ -324,8 +405,35 @@ int main() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             assert(rejected && !badCue.snapshot().outputReady);
+            badCue.stop();
+            // STOP must remain silent and clear old decoder errors, even
+            // after the worker has had time to process its new generation.
+            std::array<float,256> stopL{},stopR{};
+            for(int i=0;i<25;++i) {
+                const auto stopped=badCue.snapshot();
+                assert(stopped.state==armix::player::NativePlayerDeck::State::stopped);
+                assert(stopped.error.isEmpty() && !stopped.outputReady);
+                assert(!badCue.isPlayingRequested());
+                badCue.pull(stopL.data(),stopR.data(),256);
+                assert(stopL[0]==0.f && stopR[0]==0.f);
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            // Explicit Play is a genuine retry; invalid media still reports
+            // a fresh error, not a permanently hidden or silent rejection.
+            badCue.play();
+            bool retried=false;
+            for(int i=0;i<600;++i) {
+                const auto state=badCue.snapshot();
+                if(state.state==armix::player::NativePlayerDeck::State::error) {
+                    assert(state.error.containsIgnoreCase("IN marker"));
+                    retried=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            assert(retried);
+            badCue.stop();
             assert(badCue.setCueRange(1.0,4.0));
-            badCue.load(longFile,true);
+            badCue.play();
             bool recovered=false;
             for(int i=0;i<600;++i) {
                 if(badCue.isPlayingRequested()){recovered=true;break;}
@@ -402,6 +510,28 @@ int main() {
             assert(heardSound && !show.transitionActive());
             show.service(); // retire old decoder off realtime
             assert(show.snapshot().title==file.getFileNameWithoutExtension());
+            const auto corrupt=longFile.withFileExtension(".standby.wav");
+            assert(corrupt.replaceWithText("not a WAV"));
+            assert(show.preload(corrupt,0,100));
+            bool rejected=false;
+            for(int attempt=0;attempt<600;++attempt) {
+                if(!show.preload(corrupt,0,100)){rejected=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            assert(rejected);
+            for(int attempt=0;attempt<8;++attempt)
+                assert(!show.preload(corrupt,0,100));
+            assert(file.copyFileTo(corrupt));
+            // Passive warm-up remains latched; explicit Next retries.
+            assert(!show.preload(corrupt,0,100));
+            assert(show.queueTransition(corrupt,0,100,0));
+            bool recovered=false;
+            for(int attempt=0;attempt<600;++attempt) {
+                if(show.service()){recovered=true;break;}
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            }
+            assert(recovered);
+            show.stop();
             show.deviceRate(0.0);
             assert(!show.isPlayingRequested());
         }
@@ -443,6 +573,9 @@ int main() {
                                std::isfinite(right[i]));
                         energy+=left[i]*left[i];
                     }
+                    // 256 frames at 48 kHz is 5.33 ms. Do not exhaust
+                    // the 250ms FIFO in a tight synthetic CPU loop.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
                 }
                 assert(energy>0.01);
                 assert(!loop.transitionActive());
@@ -451,6 +584,39 @@ int main() {
                 assert(now.mediaDuration<=4*48000+1);
                 assert(now.title==longFile.getFileNameWithoutExtension());
             }
+            // Cancel only unarmed standby; retain current playback and generation.
+            assert(loop.queueTransition(longFile,0,100,180,1.,4.));
+            assert(loop.transitionPending());
+            const auto beforeCancel=loop.snapshot();
+            assert(loop.cancelPendingTransition());
+            assert(!loop.transitionPending());
+            assert(!loop.cancelPendingTransition());
+            assert(!loop.service());
+            assert(loop.isPlayingRequested());
+            // A prebuffer boundary may legitimately underrun a single
+            // block. Test real PCM progress at callback cadence, not the
+            // scheduling order of two workers on the CI runner.
+            bool resumedPcm=false;
+            for(int b=0;b<40;++b) {
+                assert(!loop.service());
+                assert(!loop.transitionPending() && !loop.transitionActive());
+                assert(loop.isPlayingRequested());
+                loop.pull(left.data(),right.data(),256);
+                const auto afterCancel=loop.snapshot();
+                assert(afterCancel.generation==beforeCancel.generation);
+                assert(afterCancel.mediaPlayed>=beforeCancel.mediaPlayed);
+                assert(afterCancel.error.isEmpty());
+                double energy=0.;
+                for(int i=0;i<256;++i) {
+                    assert(std::isfinite(left[i]) && std::isfinite(right[i]));
+                    energy+=left[i]*left[i]+right[i]*right[i];
+                }
+                if(afterCancel.mediaPlayed>beforeCancel.mediaPlayed && energy>0.001) {
+                    resumedPcm=true;break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            assert(resumedPcm); // bounded ~200 ms; not an unconditional PASS
             // A user STOP during standby must prevent any stale queue from
             // becoming a different current after the decoder completes.
             assert(loop.queueTransition(longFile,0,100,180,1.,4.));
@@ -534,6 +700,7 @@ int main() {
             assert(last.mediaPlayed<=last.mediaDuration);
             assert(energy>0.1 && endingEnergy>0.0001);
         }
+        assert(longFile.withFileExtension(".standby.wav").deleteFile());
         assert(longFile.deleteFile());
     }
     assert(file.deleteFile());

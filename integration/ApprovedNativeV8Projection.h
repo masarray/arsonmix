@@ -91,6 +91,13 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
             if(role=="INPUT")controls->setProperty("inputGainDb",
                 inputLinear>0.?20.*std::log10(inputLinear):-144.);
         }
+        const auto sum=row.getProperty("wireSumGain",{});
+        if(!sum.isVoid()) {
+            double gain=0.;
+            const bool eligible=role=="INPUT"||role=="GROUP"||role=="FX_RETURN";
+            if(!nativeV8Number(sum,gain)||gain<0.||gain>2.||(!eligible&&gain!=1.))return false;
+            if(eligible)controls->setProperty("wireSumGainDb",gain>0.?std::max(-60.,20.*std::log10(gain)):-60.);
+        }
         controls->setProperty("pan",p);
         controls->setProperty("mute",mute);controls->setProperty("solo",solo);
         ch->setProperty("controls",juce::var(controls.release()));
@@ -205,6 +212,9 @@ inline bool projectNativeGraph(juce::var& snapshot,const juce::var& bus,
         caps->setProperty("supportedOps",juce::var(ops));
     }
     t->setProperty("channelMeterRmsPeak",juce::var(meters.release()));
+    const auto meterRev=bus.getProperty("meterGraphRevision",{});
+    t->setProperty("channelMeterGraphRevision",
+        installed&&meterRev.isString()&&meterRev.toString()==rev.toString()?rev:juce::var());
     // productionCallbackLive deliberately stays FALSE until full FAT.
     return true;
 }

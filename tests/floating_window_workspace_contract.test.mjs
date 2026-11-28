@@ -10,7 +10,7 @@ const code=read('site/preview-v2/assets/mixer-contextual-buttons.js');
 const css=read('site/preview-v2/assets/mixer-contextual-buttons.css');
 const start=code.indexOf('/* ArSonMiX shared floating-window movement.');
 assert.ok(start>=0,'one modeless pointer controller required');
-const controller=code.slice(start,code.indexOf('/* DAW-standard wheel adjust',start));
+const controller=code.slice(start,code.indexOf('/* Built-in FX wheel gestures are owned',start));
 
 test('All approved modeless tool windows share one drag source',()=>{
   for(const id of ['#fastPicker','#wireConfigWindow','#wireWorkspace','#routeChoice',
@@ -83,16 +83,55 @@ test('Pointer drag clamps viewport, keeps click controls and releases capture',(
   assert.equal(data.get('top'),'62px');
 });
 
-test('All floating closes and compact FX picker actions use one token family',()=>{
+test('Floating closes share one token family; Plugin Manager actions have one local owner',()=>{
   for(const id of ['#identityClose','#pluginClose','#fastClose',
     '#wireConfigClose','#wireWsClose','#routeChoiceClose','#playerClose',
     '[data-audio-close]','[data-io-close]','[data-send-close]',
     '[data-source-close]','.armix-floating-close','.armix-builtin-fx-close'])
     assert.ok(css.includes(id),'close surface missing: '+id);
-  for(const action of ['#fastManage','#pluginImport','#pluginScan','#pluginAddPath'])
-    assert.ok(css.includes(action),'flat picker action not normalized: '+action);
+  assert.ok(css.includes('#fastManage'),'quick picker action missing');
+  const pluginCss=read('site/preview-v2/assets/mixer-plugin-browser.css');
+  for(const action of ['#pluginImport','#pluginScan','#pluginAddPath'])
+    assert.ok(!css.includes(action),'Plugin Manager action leaked into contextual owner: '+action);
+  assert.match(pluginCss,/\.plugin-footer button,\.scan-add button\{background:#203c4b;/);
+  assert.match(pluginCss,/\.plugin-footer button:hover:not\(:disabled\),\.scan-add button:hover:not\(:disabled\)/);
+  assert.match(pluginCss,/min-height:28px/);
   assert.match(css,/--armix-floating-action-bg:/);
   assert.match(css,/--armix-floating-close-face:/);
   assert.match(css,/min-height:28px!important/);
   assert.match(css,/cursor:grab;touch-action:none;user-select:none/);
+});
+
+test('P0-C shared FX workspace raises existing nodes, bounds z-order and closes only active',()=>{
+ const marker='/* FX RACK workstation recovery';
+ const source=code.slice(code.indexOf(marker));
+ const handlers={},winHandlers={},panels=new Map(),closed=[];
+ const roots=['mxNativeComp','mxNativeGeq31','mxNativePeq'];
+ for(const id of roots){
+  const panel={id,hidden:false,dataset:{},style:{zIndex:'0'},
+    getClientRects:()=>[{}],matches:()=>true,closest:()=>null,querySelectorAll:()=>[]};
+  panels.set('#'+id,panel);
+ }
+ const document={querySelector:s=>panels.get(s)||null,querySelectorAll:()=>[],
+   getElementById:id=>panels.get('#'+id),
+   addEventListener:(type,fn)=>handlers[type]=fn};
+ const window={addEventListener:(type,fn)=>winHandlers[type]=fn};
+ for(const [key,id] of [['ArSonMixNativeCompressor',roots[0]],['ArSonMixGraphicEq31',roots[1]],['ArSonMixNativeEq',roots[2]]])
+   window[key]={close(){closed.push(id);panels.get('#'+id).hidden=true;}};
+ vm.runInNewContext(source,{window,document,getComputedStyle:el=>({visibility:'visible',zIndex:el.style.zIndex})});
+ const ws=window.ArSonMixFxWorkspace;
+ const c=panels.get('#'+roots[0]),g=panels.get('#'+roots[1]),e=panels.get('#'+roots[2]);
+ assert.ok(ws.raise(g));assert.ok(ws.raise(c));
+ assert.equal(ws.activeEditor(),c);
+ const pointer=panel=>handlers.pointerdown({isTrusted:true,button:0,isPrimary:true,target:{closest:()=>panel}});
+ const focus=panel=>handlers.focusin({isTrusted:true,target:{closest:()=>panel}});
+ for(let i=0;i<1000;i++){pointer(g);focus(c);}
+ assert.equal(ws.activeEditor(),c);
+ assert.equal(c.style.zIndex,'9002');
+ assert.ok(Number(c.style.zIndex)>Number(g.style.zIndex));
+ let consumed=0;
+ winHandlers.keydown({key:'Escape',preventDefault(){consumed++},stopImmediatePropagation(){consumed++}});
+ assert.deepEqual(closed,[roots[0]]);assert.equal(consumed,2);
+ assert.equal(ws.activeEditor(),g);
+ assert.ok(!g.hidden&&!e.hidden);
 });

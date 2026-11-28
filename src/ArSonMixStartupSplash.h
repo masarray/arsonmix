@@ -1,16 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <BinaryData.h>
+#include "StartupSplashProgress.h"
 
-// Lightweight native first-paint: inspired by the approved ArSonMix loading
-// reference, deliberately vector-only. No WebView2, image decode, animation,
-// blocking timer, disk access or per-frame GPU filters. Owning app paints this
-// before constructing the browser/device engine on its next message-loop tick.
+// Native opaque first-paint guard. Both images are embedded and decoded once.
+// Background blur, colour grading and vignette are baked into the small JPEG.
+// Preserve startup handoff: no runtime convolution, extra timer or disk I/O.
 class ArSonMixStartupSplash final : public juce::Component
 {
 public:
     ArSonMixStartupSplash()
+        : background_ (juce::ImageFileFormat::loadFrom (
+              BinaryData::arsonmixsplashbackground_jpg,
+              static_cast<size_t> (BinaryData::arsonmixsplashbackground_jpgSize))),
+          brand_ (juce::ImageFileFormat::loadFrom (
+              BinaryData::arsonmix256_png,
+              static_cast<size_t> (BinaryData::arsonmix256_pngSize)))
     {
+        progress_.markAssetsDecoded (elapsedMs());
         setName ("ArSonMix loading");
         setOpaque (true);
         setSize (740, 420);
@@ -22,100 +30,134 @@ public:
 
     void setStage (int stage)
     {
-        stage_ = juce::jlimit (0, 2, stage);
-        repaint();
+        if (progress_.advance (stage, elapsedMs()))
+            repaint();
+    }
+
+    // Read once at the existing native handoff diagnostic. All values are
+    // milliseconds from splash construction, not OS process launch.
+    juce::String timingSummary() const
+    {
+        return "Splash timings (ms from construction; -1 = unobserved): assets="
+            + juce::String (progress_.assetsDecodedMs(), 2)
+            + ", paint=" + juce::String (progress_.firstPaintMs(), 2)
+            + ", gui_handshake=" + juce::String (progress_.guiHandshakeMs(), 2)
+            + ", native_handoff=" + juce::String (progress_.handoffMs(), 2);
     }
 
     void paint (juce::Graphics& g) override
     {
-        // Full HWND dark guard + centered, fixed-cost 740×420 vector artwork.
-        // Never reveal the browser's intermediate unpainted region.
+        // Fill the entire HWND even if an embedded image fails to decode.
         g.fillAll (juce::Colour (0xff0b1823));
-        juce::Graphics::ScopedSaveState restore (g);
-        g.addTransform (juce::AffineTransform::translation (
-            float (getWidth() - 740) * 0.5f, float (getHeight() - 420) * 0.5f));
-        const int width = 740, height = 420;
-        g.setGradientFill (juce::ColourGradient (
-            juce::Colour (0xff0c2332), 0.0f, 0.0f,
-            juce::Colour (0xff030c15), (float) width, (float) height, false));
-        g.fillAll();
-        // Mixer strips at the sides are deliberately low-contrast vectors,
-        // not blurry images or animated native/WebView layers.
-        for (int side = 0; side != 2; ++side)
-            for (int i = 0; i != 3; ++i)
-            {
-                const int x = side == 0 ? 13 + i * 51 : width - 59 - i * 51;
-                const auto strip = juce::Rectangle<float> ((float) x, 54.0f, 42.0f, 288.0f);
-                g.setColour (juce::Colour (0xff122c3b).withAlpha (0.55f));
-                g.fillRoundedRectangle (strip, 3.0f);
-                g.setColour (juce::Colour (0xff244657).withAlpha (0.34f));
-                g.drawRoundedRectangle (strip, 3.0f, 1.0f);
-                g.setColour (juce::Colour (0xff030b10));
-                g.fillRoundedRectangle ((float)x + 8.0f, 104.0f, 7.0f, 174.0f, 2.0f);
-                for (int j = 0; j < 16; ++j)
-                {
-                    g.setColour (juce::Colour (j < 12 ? 0xff18c886 : 0xffdfb55c)
-                                     .withAlpha (0.12f));
-                    g.fillRect (x + 9, 272 - j * 9, 5, 5);
-                }
-                g.setColour (juce::Colour (0xff839ba8).withAlpha (0.22f));
-                g.fillRoundedRectangle ((float) x + 21.0f, 183.0f, 16.0f, 25.0f, 3.0f);
-            }
+        if (getWidth() <= 0 || getHeight() <= 0)
+            return;
+        if (background_.isValid())
+        {
+            g.setImageResamplingQuality (juce::Graphics::mediumResamplingQuality);
+            g.drawImageWithin (background_, 0, 0, getWidth(), getHeight(),
+                               juce::RectanglePlacement::fillDestination);
+        }
+        constexpr float cardWidth = 620.0f, cardHeight = 306.0f;
+        const float width = static_cast<float> (getWidth());
+        const float height = static_cast<float> (getHeight());
 
-        g.setColour (juce::Colour (0xff12bed4));
-        g.drawHorizontalLine (366, 26.0f, (float)width - 26.0f);
-        g.setColour (juce::Colour (0xff09d5d5));
-        g.setFont (juce::FontOptions (44.0f));
-        g.drawText ("Ar", 194, 73, 77, 58, juce::Justification::centredRight);
+        const float scale = juce::jmin (1.20f, juce::jmin (
+            width / (cardWidth + 24.0f), height / (cardHeight + 24.0f)));
+        juce::Graphics::ScopedSaveState restore (g);
+        g.addTransform (juce::AffineTransform::scale (scale).translated (
+            (width - cardWidth * scale) * 0.5f,
+            (height - cardHeight * scale) * 0.5f));
+
+        const juce::Rectangle<float> card (0.0f, 0.0f, cardWidth, cardHeight);
+        g.setColour (juce::Colour (0xe90b171f));
+        g.fillRoundedRectangle (card, 12.0f);
+        g.setColour (juce::Colour (0xff36525b));
+        g.drawRoundedRectangle (card.reduced (0.5f), 12.0f, 1.0f);
+
+        // Preserve the source aspect ratio and alpha; never recreate the
+        // product artwork from decorative faders or split text.
+        if (brand_.isValid())
+        {
+            g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+            g.drawImageWithin (brand_, 265, 22, 90, 90,
+                               juce::RectanglePlacement::centred);
+        }
+
         g.setColour (juce::Colour (0xffeaf3f7));
-        g.drawText ("SonMix", 269, 73, 274, 58, juce::Justification::centredLeft);
-        g.setColour (juce::Colour (0xff87a8bd));
-        g.setFont (juce::FontOptions (15.0f));
-        g.drawText ("N A T I V E   V S T 3   F X   H O S T", 176, 132, 388, 30,
+        g.setFont (juce::FontOptions (42.0f));
+        g.drawText ("ArSonMix", 24, 116, 572, 50, juce::Justification::centred);
+        g.setColour (juce::Colour (0xff92aab9));
+        g.setFont (juce::FontOptions (13.0f));
+        g.drawText ("LIVE DIGITAL MIXER  /  NATIVE VST3 HOST", 24, 169, 572, 22,
                     juce::Justification::centred);
 
-        // Static equalizer glyph: a 5-bar detail from the reference image.
-        for (int i = 0; i < 5; ++i)
-        {
-            g.setColour (juce::Colour (0xff1edac2));
-            const int height = 8 + (2 - std::abs (2 - i)) * 8;
-            g.fillRoundedRectangle ((float)(355 + i * 8), (float)(183 - height / 2),
-                                    5.0f, (float)height, 1.5f);
-        }
-
+        const auto stage = progress_.stage();
+        const juce::String status = stage == 0 ? "Loading mixer interface..."
+                                 : stage == 1 ? "Preparing audio device..."
+                                               : "Opening mixer...";
         g.setColour (juce::Colour (0xffd9ebf2));
-        g.setFont (juce::FontOptions (17.0f));
-        const juce::String status = stage_ == 0 ? "Loading mixer interface..."
-                                 : stage_ == 1 ? "Preparing native audio engine..."
-                                               : "Mixer interface ready";
-        g.drawText (status, 145, 213, 450, 28, juce::Justification::centred);
-        g.setColour (juce::Colour (0xff283c49));
-        g.fillRoundedRectangle (179.0f, 255.0f, 382.0f, 9.0f, 4.0f);
-        g.setColour (juce::Colour (0xff17d7b1));
-        g.fillRoundedRectangle (179.0f, 255.0f, stage_ == 0 ? 105.0f :
-                                stage_ == 1 ? 273.0f : 382.0f, 9.0f, 4.0f);
-        const juce::String labels[] = {
-            "Loading interface", "Preparing audio engine", "Ready mixer layout"
-        };
-        for (int i = 0; i < 3; ++i)
-        {
-            const int y = 282 + i * 24;
-            g.setColour (juce::Colour (i <= stage_ ? 0xff16dbb0 : 0xff506878));
-            g.drawEllipse (229.0f, (float)y + 5.0f, 11.0f, 11.0f, 1.3f);
-            if (i < stage_)
-                g.fillEllipse (232.0f, (float)y + 8.0f, 5.0f, 5.0f);
-            g.setColour (juce::Colour (i <= stage_ ? 0xffe1f1f6 : 0xff819aac));
-            g.setFont (juce::FontOptions (12.0f));
-            g.drawText (labels[i], 251, y, 286, 23, juce::Justification::centredLeft);
-        }
-        g.setColour (juce::Colour (0xff8aaabb));
+        g.setFont (juce::FontOptions (15.0f));
+        g.drawText (status, 24, 207, 572, 26, juce::Justification::centred);
+
+        // Aurora Glass Linear: first paint, authenticated GUI handshake,
+        // and native startup handoff are three equal *checkpoints*, not
+        // measured time or device/session readiness. No timer or fake %.
+        drawAuroraProgress (g, progress_.fraction());
+
         g.setFont (juce::FontOptions (11.0f));
-        g.drawText ("ArSonMix  |  Native VST3 FX Host", 25, 380, 350, 24,
+        g.setColour (juce::Colour (0xff92aab9));
+        g.drawText ("STARTUP CHECKPOINTS", 100, 269, 238, 18,
                     juce::Justification::centredLeft);
-        g.drawText ("Initializing locally", 470, 380, 245, 24,
+        g.drawText (juce::String (stage + 1) + " / 3", 350, 269, 170, 18,
                     juce::Justification::centredRight);
+
+        // This is the first completed JUCE paint, not compositor presentation.
+        if (progress_.firstPaintMs() < 0.0)
+            progress_.markFirstPaint (elapsedMs());
     }
 
 private:
-    int stage_ = 0;
+    double elapsedMs() const noexcept
+    {
+        return juce::Time::getMillisecondCounterHiRes() - startedMs_;
+    }
+
+    static void drawAuroraProgress (juce::Graphics& g, float fraction)
+    {
+        // Keep a fixed optical centre and a slim hardware-like recessed track.
+        const juce::Rectangle<float> track (100.0f, 240.0f, 420.0f, 14.0f);
+        const auto inner = track.reduced (3.0f);
+        g.setGradientFill (juce::ColourGradient (
+            juce::Colour (0xff03090d), track.getX(), track.getY(),
+            juce::Colour (0xff26343e), track.getX(), track.getBottom(), false));
+        g.fillRoundedRectangle (track, 7.0f);
+        g.setColour (juce::Colour (0xff51626e));
+        g.drawRoundedRectangle (track.reduced (0.5f), 6.5f, 0.7f);
+
+        const auto fill = inner.withWidth (inner.getWidth() * fraction);
+        const float radius = juce::jmin (fill.getHeight() * 0.5f, fill.getWidth() * 0.5f);
+        juce::ColourGradient aurora (
+            juce::Colour (0xff167a91), fill.getX(), fill.getCentreY(),
+            juce::Colour (0xffb4efe1), fill.getRight(), fill.getCentreY(), false);
+        aurora.addColour (0.35, juce::Colour (0xff20b3bd));
+        aurora.addColour (0.70, juce::Colour (0xff59ded0));
+        g.setGradientFill (aurora);
+        g.fillRoundedRectangle (fill, radius);
+
+        // A single translucent specular overlay; no offscreen blur, shadow
+        // bitmap, animation, new compositor or per-frame allocation of images.
+        juce::ColourGradient glass (
+            juce::Colour (0xb3ffffff), fill.getX(), fill.getY(),
+            juce::Colour (0x3d00262a), fill.getX(), fill.getBottom(), false);
+        glass.addColour (0.40, juce::Colour (0x1fffffff));
+        glass.addColour (0.50, juce::Colour (0x00ffffff));
+        g.setGradientFill (glass);
+        g.fillRoundedRectangle (fill, radius);
+    }
+
+    // Declaration order deliberately timestamps before embedded image decode.
+    const double startedMs_ = juce::Time::getMillisecondCounterHiRes();
+    const juce::Image background_;
+    const juce::Image brand_;
+    armix::startup::SplashProgress progress_;
 };

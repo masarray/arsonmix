@@ -86,7 +86,11 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
         // Set once, OFF the callback: branded product instances inherit
         // P9.8 core without unrequested P9.9 vocal processing.
-        if(p99ForSonKuProduct_)core_.optInP99ForSonKuInsert();
+        if(p99ForSonKuProduct_){
+            core_.optInP99ForSonKuInsert();
+            // P106 field candidate; derived ImmerSIB never opts in.
+            core_.optInSonKuP106(true,true);
+        }
 #endif
         ready_=core_.prepare(rate,profile);
         observedAzimuthDegrees_.store(accepted_.startAzimuthDegrees,std::memory_order_relaxed);
@@ -144,6 +148,17 @@ public:
         if(modePhase_!=ModePhase::Stable)return;
 #endif
         if(!queue_.pop(next))return;
+        // Transport intent captures actual phase on the audio owner.
+        if(next.holdOrbitPhase){
+            const bool moving=next.settings.moving;
+            next.settings=core_.settings();
+            if(moving==next.settings.moving){
+                complete_.push({next.requestId,next.settings,true});
+                return;
+            }
+            next.settings.moving=moving;
+            next.settings.startAzimuthDegrees=static_cast<float>(core_.azimuthDegrees());
+        }
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
         // Logical/unpublished FX has NO callback: apply directly so
         // an offline .smix edit can be saved instead of hanging in fade.
@@ -151,7 +166,9 @@ public:
            (next.settings.renderMode!=audioSettings_.renderMode ||
             next.settings.musicCompatibleLowFrequency!=
                 audioSettings_.musicCompatibleLowFrequency ||
-            next.settings.headYawDegrees!=audioSettings_.headYawDegrees)){
+            (next.settings.headYawDegrees!=audioSettings_.headYawDegrees &&
+             // P90 already slews FIR targets. SonKu yaw is a geometry edit.
+             !(sonkuProduct_ && next.settings.renderMode==9)))){
             stagedModeEdit_=next;
             modeTransitionPending_.store(true,std::memory_order_release);
             modePhase_=ModePhase::FadingOut;
@@ -162,13 +179,20 @@ public:
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
         if(ok)audioSettings_=next.settings;
 #endif
+        if(ok&&next.holdOrbitPhase)
+            observedAzimuthDegrees_.store(static_cast<float>(core_.azimuthDegrees()),std::memory_order_relaxed);
         complete_.push({next.requestId,next.settings,ok});
     }
     // Control thread: returns QUEUED, not accepted/applied. Host native ACK
     // is permitted only after corresponding completion/readback.
-    bool queueSettings(const armix::sonku::Settings& next,std::uint64_t requestId) noexcept {
-        return ready_&&requestId&&armix::sonku::valid(next)
-            &&admitQueuedScene(next)&&queue_.push(Edit{requestId,next});
+    bool queueSettings(const armix::sonku::Settings& next,std::uint64_t requestId,
+                       bool holdOrbitPhase=false) noexcept {
+        if(!ready_||!requestId||!armix::sonku::valid(next)||!admitQueuedScene(next)||
+           (holdOrbitPhase&&!sonkuProduct_))
+            return false;
+        auto canonical=next;
+        if(sonkuProduct_)canonical.spatialMix=1.f;
+        return queue_.push(Edit{requestId,canonical,holdOrbitPhase});
     }
     bool pollCompletion(Completion& done) noexcept {
         if(!complete_.pop(done))return false;
@@ -448,8 +472,16 @@ public:
         // Never accept a partial or malformed native FX state.
         if(!in.isExhausted())return false;
         if(!armix::sonku::valid(next)||!admitQueuedScene(next))return false;
+        // Preserve SONK v1..v12 layout; migrate only a valid legacy mix.
+        if(sonkuProduct_)next.spatialMix=1.f;
         if(ready_&&!core_.setSettings(next))return false;
         accepted_=next;
+        if(sonkuProduct_){
+#if defined(ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT) && ARMIX_SONKU_EXPERIMENTAL_P83_NATIVE_RT
+            audioSettings_=next;
+#endif
+            observedAzimuthDegrees_.store(next.startAzimuthDegrees,std::memory_order_relaxed);
+        }
         return true;
     }
     void setStateInformation(const void* data,int size) override {
@@ -484,7 +516,7 @@ protected:
         : juce::AudioProcessor(BusesProperties()
             .withInput("Input",juce::AudioChannelSet::stereo(),true)
             .withOutput("Output",juce::AudioChannelSet::stereo(),true)),
-          accepted_(initial) {}
+          accepted_(initial), sonkuProduct_(false) {}
 
     // Only unpublished native instances may restore their own branded
     // state; never overwrite an active PCM graph or queued transaction.
@@ -502,7 +534,7 @@ protected:
         return true;
     }
 private:
-    struct Edit {std::uint64_t requestId=0;armix::sonku::Settings settings{};};
+    struct Edit {std::uint64_t requestId=0;armix::sonku::Settings settings{};bool holdOrbitPhase=false;};
     armix::sonku::SonKuSpatialCore core_{};
 #if defined(ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH) && ARMIX_SONKU_EXPERIMENTAL_P99_VOCAL_DEPTH
     bool p99ForSonKuProduct_=false; // no shared-core vocal leak
@@ -519,6 +551,8 @@ private:
     std::atomic<bool> modeTransitionPending_{false};
     float modeFade_=1.f,modeStep_=0.f;
 #endif
+    // Derived branded products keep their existing mix and yaw policy.
+    const bool sonkuProduct_=true;
     bool ready_=false;
     bool published_=false;
 };

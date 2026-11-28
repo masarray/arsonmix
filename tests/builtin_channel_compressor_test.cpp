@@ -386,7 +386,32 @@ static void testColdShowSeedAndRealtimeRestart() {
     check(core.prepare(48000.));
     check(core.settingsForOfflineTests().mix==0.f);
 }
+static void testExactIdle(){
+    for(double rate:{44100.,48000.,96000.}){
+        ChannelCompressor c,reference;
+        check(c.prepare(rate)&&reference.prepare(rate));
+        std::array<float,64> l{},r{},a{},b{};
+        for(int n:{1,16,31,64}){
+            check(c.tryExactIdle(l.data(),r.data(),n));
+            reference.processStereo(a.data(),b.data(),n);
+            check(l==a&&r==b&&c.gainReductionDb()==reference.gainReductionDb());
+        }
+        l[0]=std::numeric_limits<float>::denorm_min();
+        check(!c.tryExactIdle(l.data(),r.data(),64));
+        l[0]=-0.f;check(!c.tryExactIdle(l.data(),r.data(),64));
+        l[0]=std::numeric_limits<float>::quiet_NaN();check(!c.tryExactIdle(l.data(),r.data(),64));
+        l.fill(.9f);r.fill(.5f);a=l;b=r;
+        c.processStereo(l.data(),r.data(),64);reference.processStereo(a.data(),b.data(),64);
+        check(l==a&&r==b);
+        l.fill(0);r.fill(0);check(!c.tryExactIdle(l.data(),r.data(),64));
+        CompressorSettings s{};s.makeupDb=5;
+        ChannelCompressor::PreparedEdit edit{};
+        check(c.prepare(rate)&&ChannelCompressor::prepareEdit(s,rate,edit)&&c.applyPrepared(edit));
+        check(!c.tryExactIdle(l.data(),r.data(),64));
+    }
+}
 int main(){
+    testExactIdle();
     testColdShowSeedAndRealtimeRestart();
     testMeasuredPeakDbfs();
     testFirstSampleAndNoHeapInCallback();

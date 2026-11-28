@@ -5,6 +5,7 @@
 param([string] $OutputDir = "dist")
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "windows_zip_member_paths.ps1")
 
 $expected = @(
     "ArSonMix-GUI10CH-P012-Windows-x64.exe",
@@ -213,7 +214,6 @@ try {
     Add-Type -AssemblyName System.IO.Compression
     $zip = [System.IO.Compression.ZipFile]::OpenRead($archivePath)
     try {
-        $names = @($zip.Entries | ForEach-Object FullName)
         # ZIP includes VST3 directories. Compare actual FILE entries to all
         # reviewed FactoryFX files; directory entries themselves are harmless.
         $expectedZipFiles = @($expected)
@@ -221,16 +221,12 @@ try {
         if (Test-Path -LiteralPath $factoryPath -PathType Container) {
             $distRoot = (Resolve-Path -LiteralPath $OutputDir).Path
             foreach ($file in Get-ChildItem -LiteralPath $factoryPath -File -Recurse) {
-                $rel = [IO.Path]::GetRelativePath($distRoot, $file.FullName).Replace('\\', '/')
+                $rel = Get-ArSonMixZipRelativePath $distRoot $file.FullName
                 $expectedZipFiles += $rel
                 $factoryZipFiles += $rel
             }
         }
-        $names = @($zip.Entries | Where-Object { -not $_.FullName.EndsWith('/') } |
-            ForEach-Object { $_.FullName.Replace('\\', '/') })
-        if (@(Compare-Object -ReferenceObject $expectedZipFiles -DifferenceObject $names).Count -ne 0) {
-            throw "ZIP does not contain exactly the verified distribution files"
-        }
+        Assert-ArSonMixZipFileSet $zip $expectedZipFiles
         $entry = $zip.GetEntry("ArSonMix-GUI10CH-P012-Windows-x64.exe")
         if ($null -eq $entry -or $entry.Length -ne $bytes.Length) {
             throw "Wrong/truncated GUI executable inside ZIP"

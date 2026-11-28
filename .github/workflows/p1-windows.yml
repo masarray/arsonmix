@@ -202,6 +202,9 @@ jobs:
           # fast runner so a stale device-persistence assertion cannot waste
           # a complete JUCE/MSVC job again.
           node --test tests/direct_restore_recovery_contract_test.mjs
+          # RTR contracts also run on Windows; catch stale source anchors
+          # before spending a JUCE/Windows runner on an integrated candidate.
+          node --test tests/main_v08_native_integration_test.mjs tests/p0_diagnostic_contract_test.mjs tests/smart_audio_diagnostic_contract_test.mjs
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/audio_continuity_policy_test.cpp -o "$RUNNER_TEMP/armix-audio-continuity"
           "$RUNNER_TEMP/armix-audio-continuity"
           # SonKu has >192 KiB acoustic rings per DSP instance. Prove the
@@ -228,6 +231,33 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -Werror tests/mixer_routing_plan_test.cpp -o "$RUNNER_TEMP/armix-native-routing-pcm"
           "$RUNNER_TEMP/armix-native-routing-pcm"
+      - name: Reverb-Sis portable wet return / mono fold regression (no JUCE)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Historical pre-Reverb snapshots have no vendored source. A
+          # current adapter must always carry its corresponding core test.
+          if [[ -f engine/builtin_fx/VocalReverbProcessor.h ]]; then
+            g++ -std=c++17 -O2 -fno-fast-math -Ithird_party/arsonverb/include \
+              third_party/arsonverb/src/Reverb.cpp third_party/arsonverb/src/Presets.cpp \
+              third_party/arsonverb/tests/test_mix_air.cpp -o "$RUNNER_TEMP/armix-reverb-mix-air"
+            "$RUNNER_TEMP/armix-reverb-mix-air"
+            # Run density/phrase and both-profile RT stress in the same
+            # cheap portable job; CTest remains the full Windows authority.
+            for test in test_sonic_structure test_audio_regression test_stress test_rt60_tail; do
+              g++ -std=c++17 -O2 -fno-fast-math -Ithird_party/arsonverb/include \
+                third_party/arsonverb/src/Reverb.cpp third_party/arsonverb/src/Presets.cpp \
+                "third_party/arsonverb/tests/${test}.cpp" -o "$RUNNER_TEMP/armix-${test}"
+              "$RUNNER_TEMP/armix-${test}"
+            done
+          fi
+      - name: Reverb-Sis same-runner core CPU A/B (non-gating timing)
+        if: ${{ github.event_name == 'pull_request' }}
+        shell: bash
+        run: |
+          if [[ -f scripts/benchmark_reverb_sis_ab.py ]]; then
+            python scripts/benchmark_reverb_sis_ab.py --reference d1091783a5fc6cab9e8dd1653ec2ee27b0b538f5 --verify-pcm --signature --preserve-signature --anchor --studio --singer
+          fi
       - name: WaveShell JUCE 8 class-index regression (source-aware)
         shell: bash
         run: |
@@ -490,6 +520,22 @@ jobs:
              -not (Test-Path -LiteralPath $setup -PathType Leaf) -or
              (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $provenance.exeSha256){
             throw 'FAT_HANDOFF_PROVENANCE_INVALID'
+          }
+          # Real CTest editor PNGs are QA evidence, not runtime package bytes.
+          # Include them in the existing retryable installer artifact, AFTER
+          # installer verification and BEFORE sealing the file/hash receipt.
+          if(Test-Path -LiteralPath 'tests/native_vocal_reverb_test.cpp') {
+            $qa=New-Item -ItemType Directory -Force -Path 'installer-output/qa/reverb-sis'
+            foreach($name in @('ArSonMix_Vocal_Reverb_Native_MIX_100.png',
+                              'ArSonMix_Vocal_Reverb_Native_BYPASSED_100.png',
+                              'ArSonMix_Vocal_Reverb_Native_MOTION_150.png')) {
+              $png=Join-Path 'build' $name
+              if(!(Test-Path -LiteralPath $png -PathType Leaf) -or
+                 (Get-Item -LiteralPath $png).Length -lt 10000) {
+                throw "REVERB_NATIVE_PNG_MISSING_OR_INVALID: $name"
+              }
+              Copy-Item -LiteralPath $png -Destination $qa.FullName
+            }
           }
           $root=(Resolve-Path '.').Path
           $files=@(Get-ChildItem -LiteralPath 'dist','installer-output' -Recurse -File |

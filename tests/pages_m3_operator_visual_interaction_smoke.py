@@ -2,12 +2,15 @@
 """M3 operator console: geometry, overlays, FX, clip and multi-wire browser contract."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config, click_demo_meters
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"dist-pages/preview/index.html"
 
 def physical(page,density,width):
-    page.locator("#densitySelect").select_option(density)
+    assert page.locator("#densitySelect").is_hidden()
+    assert page.locator(".console-body").get_attribute("data-density")==density
     data=page.evaluate("""() => {
       const roots=[document.querySelector('#tracks .strip[data-id="1"]'),
                    document.querySelector('#master .strip')];
@@ -45,12 +48,15 @@ def physical(page,density,width):
     assert stereo.count()>=2,(width,density,"stereo lamps")
 
 def interactions(page):
-    # V50 operator workflow: formerly two-row M3 controls are in WIRE Setup.
-    title=page.locator(".mixer-title")
-    assert abs(title.bounding_box()["height"]-27)<=2,("V50 status title height",page.viewport_size)
+    # The approved compact ribbon replaces the redundant legacy mixer title.
+    assert page.locator(".mixer-title").count()==0
     assert page.locator("#mixerTitleToggle").count()==0
+    bar=page.locator("#armix-ribbon-commands")
+    assert abs(bar.bounding_box()["height"]-42)<=1,("approved ribbon height",page.viewport_size)
+    assert page.locator("#mixContext").is_visible()
+    assert page.locator("#ribbon-tab-mixer").get_attribute("aria-selected")=="true"
     config_button=page.locator("#wireConfigToggle")
-    config_button.click()
+    open_wire_config(page)
     config=page.locator("#wireConfigWindow")
     assert config.is_visible() and config_button.get_attribute("aria-expanded")=="true"
     assert config.locator("#wireMode").count()==1
@@ -62,15 +68,24 @@ def interactions(page):
     assert config.is_hidden() and config_button.get_attribute("aria-expanded")=="false"
 
     menu=page.locator("#moreTools")
-    menu.locator("summary").click()
+    menu.locator(":scope > summary").click()
     assert menu.evaluate("e=>e.open")
-    page.locator(".mixer-title .panel-name").click()
+    # The current status readout is the inert, visible outside target.
+    # Verify the actual hit before clicking; never click through an overlay.
+    target=page.locator("#mixContext")
+    box=target.bounding_box()
+    point={"x":box["width"]/2,"y":box["height"]/2}
+    assert target.evaluate("""(e,p)=>{
+      const r=e.getBoundingClientRect(), hit=document.elementFromPoint(r.x+p.x,r.y+p.y);
+      return e.contains(hit)&&!hit.closest('#moreTools');
+    }""",point)
+    target.click(position=point)
     assert not menu.evaluate("e=>e.open")
-    menu.locator("summary").click()
+    menu.locator(":scope > summary").click()
     page.keyboard.press("Escape")
     assert not menu.evaluate("e=>e.open")
-    menu.locator("summary").click()
-    page.locator("#densitySelect").focus()
+    menu.locator(":scope > summary").click()
+    page.locator("#bankSelect").focus()
     assert not menu.evaluate("e=>e.open")
 
     empty=page.locator('#tracks .strip[data-id="1"] .fxslot-row:has(.fx-pick.empty)').first
@@ -78,8 +93,18 @@ def interactions(page):
     assert empty.locator('button[data-action="slotPower"]').count()==0
     assert empty.locator(".fx-slot-placeholder").count()==1
     assert occupied.locator('button[data-action="slotPower"]').count()==1
-    assert abs(empty.locator('.fx-pick').bounding_box()['x']-
-               occupied.locator('.fx-pick').bounding_box()['x'])<=1.25
+    placeholder=empty.locator(".fx-slot-placeholder")
+    power=occupied.locator('button[data-action="slotPower"]')
+    assert placeholder.get_attribute("aria-hidden")=="true"
+    assert placeholder.evaluate("e=>getComputedStyle(e).visibility")=="hidden"
+    assert placeholder.evaluate("e=>getComputedStyle(e).pointerEvents")=="none"
+    lane=placeholder.bounding_box()
+    key=power.bounding_box()
+    assert lane and key and abs(lane["width"]-21)<.6 and abs(key["width"]-21)<.6, (lane,key)
+    assert abs(lane["height"]-17)<.6 and abs(key["height"]-17)<.6,(lane,key)
+    vacant=empty.locator('.fx-pick').bounding_box()
+    installed=occupied.locator('.fx-pick').bounding_box()
+    assert abs(vacant['x']-installed['x'])<=1.25,(vacant,installed,lane,key)
 
     # Drive the real operator UI, not private IIFE variables. The display
     # preview is simulated; no native audio device or DSP is involved.
@@ -87,16 +112,13 @@ def interactions(page):
     fader.evaluate("""e => {e.value='10';e.dispatchEvent(new Event('input',{bubbles:true}));
                          e.dispatchEvent(new Event('change',{bubbles:true}));}""")
     if not page.evaluate("window.ArSonMixMeterCalibration.readDemo().running"):
-        page.locator("#moreTools summary").click()
-        page.locator("#preview").click()
+        click_demo_meters(page)
     peak=page.locator('#tracks .strip[data-id="1"] .peak')
     page.wait_for_function("""() => document.querySelector(
       '#tracks .strip[data-id="1"] .peak')?.classList.contains('clipping')""",
       timeout=10000)
     assert 'clipping' in peak.get_attribute("class")
-    if not page.locator("#moreTools").evaluate("e=>e.open"):
-        page.locator("#moreTools summary").click()
-    page.locator("#preview").click()  # stop re-latching before reset
+    click_demo_meters(page)  # stop re-latching before reset
     page.locator('#tracks .strip[data-id="1"] button[data-action="resetClip"]').click()
     assert 'clipping' not in page.locator('#tracks .strip[data-id="1"] .peak').get_attribute("class")
 
@@ -136,11 +158,9 @@ def main():
             page=browser.new_page(viewport={"width":width,"height":height})
             errors=[]
             page.on("pageerror",lambda err:errors.append(str(err)))
-            page.goto(HTML.as_uri())
+            page.goto(published_console(HTML.parent.parent).as_uri())
             page.wait_for_selector('#tracks .strip[data-id="1"] .meter-box')
-            for density in ("comfort","standard","compact"):
-                physical(page,density,width)
-            page.locator("#densitySelect").select_option("comfort")
+            physical(page,"comfort",width)
             interactions(page)
             if width==1680:page.screenshot(path="pages-m3-operator-meter-wire-1680.png")
             assert not errors,(width,errors)

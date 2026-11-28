@@ -27,6 +27,7 @@ ADAPTER_MARKER = ('<script defer src="assets/approved-native-contract.js"></scri
                   '<script defer src="assets/approved-fx-rack-view-model.js"></script>\n'
                   '<script defer src="assets/approved-wire-view-model.js"></script>\n'
                   '<script defer src="assets/approved-native-bridge.js"></script>\n'
+                  '<script defer src="assets/anti-noiz-native.js"></script>\n'
                   '<script defer src="assets/approved-native-context-menu.js"></script>\n'
                   '<script defer src="assets/approved-native-legal.js"></script>\n')
 SCHEMA = "arsonmix.approved-native-pages-bundle.v2"
@@ -83,6 +84,14 @@ NATIVE_EVENT_HOOKS = (
      "  return window.__ARMIX_NATIVE_M2__?.inputChoices?.(t)||['None'];\n"
      " if(type==='output'&&window.__JUCE__?.backend)\n"
      "  return window.__ARMIX_NATIVE_M2__?.outputChoices?.(t)||[t.output];\n"),
+    # Rehydrate the MAIN MON selector synchronously after every strip rebuild.
+    # A view/bank/SOF change must never wait for the next hardware telemetry.
+    (" masterEl.innerHTML=strip(master);\n",
+     " masterEl.innerHTML=strip(master);\n"
+     " window.__ARMIX_NATIVE_M2__?.paintMainMonitor?.();\n"),
+    (" old.replaceWith(updated);\n",
+     " old.replaceWith(updated);\n"
+     " if(t.kind==='master')window.__ARMIX_NATIVE_M2__?.paintMainMonitor?.();\n"),
     ("function replugWireEdge(sourceId,oldDestId,nextDestId){\n",
      "function replugWireEdge(sourceId,oldDestId,nextDestId,releasePoint,movingEdgeId){\n"
      " if(window.__JUCE__?.backend && releasePoint!==undefined){\n"
@@ -182,9 +191,9 @@ NATIVE_EVENT_HOOKS = (
      " get wireGainDragging(){return !!sendKnobDrag;},paintWireKnob,\n"
      " syncNativeWireGains(rows){\n"
      "  for(const row of rows){\n"
-     "   const edge=wireEdges.find(e=>e.id===row.id&&e.kind!=='primary');\n"
+     "   const edge=wireEdges.find(e=>e.id===row.id&&e.enabled);\n"
      "   if(!edge||!Number.isFinite(row.levelDb))continue;\n"
-     "   edge.levelDb=row.levelDb;\n"
+     "   if(edge.kind!=='primary')edge.levelDb=row.levelDb;\n"
      "   const input=document.querySelector('.wire-gain[data-wire-id=\"'+edge.id+'\"]');\n"
      "   if(input&&input!==sendKnobDrag?.input&&!row.pending){\n"
      "    input.value=String(row.levelDb);paintWireKnob(input,row.levelDb);\n"
@@ -195,7 +204,7 @@ NATIVE_EVENT_HOOKS = (
      "   if(ws?.dataset.wsGain===String(edge.id)&&!row.pending){\n"
      "    if(document.activeElement!==ws)ws.value=String(row.levelDb);\n"
      "    const value=document.getElementById('wireWsGainText');\n"
-     "    if(value)value.textContent=row.levelDb+' dB';\n"
+     "    if(value)value.textContent=(edge.kind==='primary'?'CH LEVEL · ':'')+row.levelDb+' dB';\n"
      "   }\n"
      "  }\n"
      " },\n"
@@ -206,7 +215,7 @@ NATIVE_EVENT_HOOKS = (
      "  // readback in-place rather than leaving a forever-PENDING inspector.\n"
      "  if(!gain||!text?.textContent?.startsWith('PENDING · '))return false;\n"
      "  const id=Number(gain.dataset.wsGain);\n"
-     "  const edge=wireEdges.find(e=>e.id===id&&e.kind!=='primary'&&e.enabled);\n"
+     "  const edge=wireEdges.find(e=>e.id===id&&e.enabled);\n"
      "  const row=Array.isArray(rows)?rows.find(r=>r.id===id&&Number.isFinite(r.levelDb)):null;\n"
      "  if(!edge||!row){gain.disabled=true;text.textContent='SEND UNAVAILABLE';return true;}\n"
      "  edge.levelDb=row.levelDb;\n"
@@ -245,8 +254,23 @@ NATIVE_EVENT_HOOKS = (
      " openChannelIdentity,closeChannelIdentity,\n"
      " get identityTrackId(){return identityTrackId;},\n"
      " get identityColor(){return identityColor;},get identityIcon(){return identityIcon;},\n"
-     " refreshStrip,syncFaderVisual,openFastPicker,openPluginBrowser,\n"
+     " refreshStrip,syncFaderVisual,faderVisualNeedsSync,openFastPicker,openPluginBrowser,\n"
      " get activeFaderId(){return faderGesture?Number(faderGesture.input.closest('.strip')?.dataset.id):-1;},\n"
+     " cancelNativeSessionGestures(){\n"
+     "  const f=faderGesture,g=gainDialGesture,w=wireGesture;\n"
+     "  faderGesture=null;gainDialGesture=null;wireGesture=null;\n"
+     "  if(f?.box?.hasPointerCapture?.(f.pointerId))f.box.releasePointerCapture?.(f.pointerId);\n"
+     "  if(g){delete g.input.dataset.gainDragging;if(g.dial?.hasPointerCapture?.(g.id))g.dial.releasePointerCapture?.(g.id);}\n"
+     "  if(w){setWireSnapTarget(null);wireSuppressClick=true;consoleBody.classList.remove('wire-dragging');\n"
+     "   consoleBody.querySelectorAll('.is-replug-origin,.is-drag-origin').forEach(el=>el.classList.remove('is-replug-origin','is-drag-origin'));\n"
+     "   const owner=consoleBody.querySelector('.strip[data-id=\"'+(w.originDestId??w.sourceId)+'\"] '+(w.originDestId!=null?'.wire-node-in':'.wire-node-out'));\n"
+     "   if(owner?.hasPointerCapture?.(w.pointerId))owner.releasePointerCapture?.(w.pointerId);}\n"
+     "  ++wireMotion.token;wireMotion.key=null;wireMotion.offset=0;\n"
+     "  // A project replacement must display MAIN gains, not the previous project send mix.\n"
+     "  sofEnabled=false;sofTargetId=null;sofTarget='';\n"
+     "  const sof=document.getElementById('sofToggle');sof?.classList.remove('active');sof?.setAttribute('aria-pressed','false');\n"
+     "  consoleBody.classList.remove('sends-mode');\n"
+     " },\n"
      " setNativeCatalog(rows){\n"
      "  pluginCatalog=rows.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string').map(x=>({\n"
      "   id:x.id,name:x.name,vendor:x.vendor||'Unknown',category:x.category||'Utility',\n"
@@ -275,12 +299,17 @@ NATIVE_EVENT_HOOKS = (
 # A PRIMARY_OUT is unity, a PARALLEL_SEND can target MAIN, and native edits
 # are never accepted by the browser mock before installed PCM readback.
 NATIVE_EVENT_HOOKS += (
+    (" if(edge&&!isMain){\n  const pct=wireGainPercent(edge.levelDb);\n  controls+='<label class=\"wire-pot is-active\" style=\"--wire-pot-fill:'+\n   escapeHtml(t.color)+';--wire-pct:'+pct+'%;--wire-deg:'+(-135+pct*2.7).toFixed(1)+\n   'deg\" title=\"'+escapeHtml((sender?.name||'Source')+' → '+t.name+' · '+\n   wireDbText(edge.levelDb))+'\"><input class=\"wire-gain\" type=\"range\" min=\"-60\" max=\"6\" step=\"0.1\" value=\"'+\n   edge.levelDb+'\" data-field=\"wireGain\" data-wire-id=\"'+edge.id+\n   '\" style=\"--wire-pct:'+pct+'%\" aria-label=\"Wire send level '+\n   escapeHtml((sender?.name||'Source')+' to '+t.name)+\n   '\"><span class=\"wire-gain-caption\" aria-hidden=\"true\">LVL</span></label>';\n",
+     " if(!isMain&&connected){\n  // All arrivals are summed by the receiver's one native PCM channel.\n  // This knob is independent incoming WIRE SUM LEVEL, never a selection-dependent SEND gain.\n  const wireDisplayDb=Math.max(-60,Math.min(6,Number(t.wireSumGainDb)||0));\n  const wireEditable=window.__ARMIX_NATIVE_M2__?.canWireChannelLevel?.(t.id)===true;\n  const pct=wireGainPercent(wireDisplayDb);\n  controls+='<label class=\"wire-pot is-active\" style=\"--wire-pot-fill:'+\n   escapeHtml(t.color)+';--wire-pct:'+pct+'%;--wire-deg:'+(-135+pct*2.7).toFixed(1)+\n   'deg\" title=\"'+escapeHtml(t.name+' · CH LVL after SUM ('+incomingCount+\n   ' incoming) · '+wireDbText(wireDisplayDb))+'\"><input class=\"wire-gain\" type=\"range\" min=\"-60\" max=\"6\" step=\"0.1\" value=\"'+\n   wireDisplayDb+'\" data-field=\"wireChannelLevel\" data-channel-id=\"'+t.id+\n   '\" '+(wireEditable?'':' disabled')+' style=\"--wire-pct:'+pct+'%\" aria-label=\"'+\n   escapeHtml(t.name+' incoming WIRE sum level')+\n   '\"><span class=\"wire-gain-caption\" aria-hidden=\"true\">LVL</span></label>';"),
+)
+
+NATIVE_EVENT_HOOKS += (
     (" const tapEditable=!native||(src.nativeTapAvailable===true&&\n  edge?.kind==='send'&&['PRE_FADER','POST_FADER'].includes(edge.nativeTap));\n",
-     " const gainEditable=edge&&(!native?edge.kind!=='primary':\n  window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)===true);\n const tapEditable=edge&&(!native?edge.kind!=='primary':\n  window.__ARMIX_NATIVE_M2__?.canWireTap?.(edge.id,edge.sourceId)===true);\n"),
+     " const nativePrimaryDb=edge?.kind==='primary'?0:edge?.levelDb;\n const gainEditable=edge&&(!native?edge.kind!=='primary':\n  window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)===true);\n const tapEditable=edge&&(!native?edge.kind!=='primary':\n  window.__ARMIX_NATIVE_M2__?.canWireTap?.(edge.id,edge.sourceId)===true);\n"),
     (" const controls=edge?\n  '<div class=\"wire-ws-controls\"><label for=\"wireWsGain\">SEND LEVEL</label>'+\n  '<input type=\"range\" id=\"wireWsGain\" data-ws-gain=\"'+edge.id+'\" min=\"-60\" max=\"6\" step=\"1\" value=\"'+edge.levelDb+'\" '+(dst.kind==='master'?'disabled':'')+'>'+\n  '<span id=\"wireWsGainText\">'+edge.levelDb+' dB</span>'+\n  '<label for=\"wireWsTap\">TAP</label>'+\n  '<select id=\"wireWsTap\" data-ws-tap=\"'+edge.id+'\" '+\n  (edge.kind==='primary'||!tapEditable?'disabled':'')+\n  (native?' title=\"Change this exact SEND tap after native PCM ACK\"':'')+'>'+\n  '<option value=\"send\" '+(tapValue==='send'?'selected':'')+'>'+\n   (native?'POST FADER':'Follow Fader')+'</option>'+\n  '<option value=\"split\" '+(tapValue==='split'?'selected':'')+'>'+\n   (native?'PRE FADER':'Pre FX')+'</option></select>'+\n  '<button type=\"button\" data-ws-remove=\"'+key+'\">'+(wireWsRemoveConfirm===key?'Confirm remove':'Disconnect')+'</button></div>':\n  '<div class=\"wire-ws-controls\"><span>Managed by existing '+escapeHtml(info.kind.toUpperCase())+' routing. No duplicate WIRE edge.</span></div>';\n",
-     " const controls=edge?\n  '<div class=\"wire-ws-controls\"><label for=\"wireWsGain\">SEND LEVEL</label>'+\n  '<input type=\"range\" id=\"wireWsGain\" data-ws-gain=\"'+edge.id+'\" min=\"-60\" max=\"6\" step=\"1\" value=\"'+edge.levelDb+'\" '+\n   (gainEditable?'':'disabled')+' title=\"'+(edge.kind==='primary'?'PRIMARY OUT · fixed unity':\n     native?'SEND LEVEL · native PCM ACK required':'SEND LEVEL · GUI reference only')+'\">'+\n  '<span id=\"wireWsGainText\">'+(edge.kind==='primary'?'PRIMARY · UNITY':\n    edge.levelDb+' dB')+'</span>'+\n  '<label for=\"wireWsTap\">TAP</label>'+\n  '<select id=\"wireWsTap\" data-ws-tap=\"'+edge.id+'\" '+\n  (edge.kind==='primary'||!tapEditable?'disabled':'')+\n  (native?' title=\"Change this exact SEND tap after native PCM ACK\"':'')+'>'+\n  '<option value=\"send\" '+(tapValue==='send'?'selected':'')+'>'+\n   (native?'POST FADER':'Follow Fader')+'</option>'+\n  '<option value=\"split\" '+(tapValue==='split'?'selected':'')+'>'+\n   (native?'PRE FADER':'Pre FX')+'</option></select>'+\n  '<button type=\"button\" data-ws-remove=\"'+key+'\">'+(wireWsRemoveConfirm===key?'Confirm remove':'Disconnect')+'</button></div>':\n  '<div class=\"wire-ws-controls\"><span>Managed by existing '+escapeHtml(info.kind.toUpperCase())+' routing. No duplicate WIRE edge.</span></div>';\n"),
+     " const controls=edge?\n  '<div class=\"wire-ws-controls\"><label for=\"wireWsGain\">'+(native&&edge.kind==='primary'&&gainEditable?'CH LEVEL':edge.kind==='primary'?'PRIMARY OUT':'SEND LEVEL')+'</label>'+\n  '<input type=\"range\" id=\"wireWsGain\" data-ws-gain=\"'+edge.id+'\" min=\"-60\" max=\"6\" step=\"1\" value=\"'+nativePrimaryDb+'\" '+\n   (gainEditable?'':'disabled')+' title=\"'+(edge.kind==='primary'?'PRIMARY CH LEVEL · controls source channel fader (WIRE stays unity)':\n     native?'SEND LEVEL · native PCM ACK required':'SEND LEVEL · GUI reference only')+'\">'+\n  '<span id=\"wireWsGainText\">'+(edge.kind==='primary'&&native&&gainEditable?'CH LEVEL · '+nativePrimaryDb+' dB':edge.kind==='primary'?'PRIMARY · UNITY':\n    edge.levelDb+' dB')+'</span>'+\n  '<label for=\"wireWsTap\">TAP</label>'+\n  '<select id=\"wireWsTap\" data-ws-tap=\"'+edge.id+'\" '+\n  (edge.kind==='primary'||!tapEditable?'disabled':'')+\n  (native?' title=\"Change this exact SEND tap after native PCM ACK\"':'')+'>'+\n  '<option value=\"send\" '+(tapValue==='send'?'selected':'')+'>'+\n   (native?'POST FADER':'Follow Fader')+'</option>'+\n  '<option value=\"split\" '+(tapValue==='split'?'selected':'')+'>'+\n   (native?'PRE FADER':'Pre FX')+'</option></select>'+\n  '<button type=\"button\" data-ws-remove=\"'+key+'\">'+(wireWsRemoveConfirm===key?'Confirm remove':'Disconnect')+'</button></div>':\n  '<div class=\"wire-ws-controls\"><span>Managed by existing '+escapeHtml(info.kind.toUpperCase())+' routing. No duplicate WIRE edge.</span></div>';\n"),
     ("document.getElementById('wireWsInspector').addEventListener('input',e=>{\n const gain=e.target.closest?.('[data-ws-gain]');\n if(!gain)return;\n const edge=wireEdges.find(x=>x.id===Number(gain.dataset.wsGain)&&x.enabled);\n if(!edge||edge.destId===master.id)return;\n const amount=Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)));\n if(!wireGraphCommit([{type:'GAIN',sourceId:edge.sourceId,edgeId:edge.id,\n  levelDb:amount}],{record:false}))return;\n document.getElementById('wireWsGainText').textContent=amount+' dB';\n});\ndocument.getElementById('wireWsInspector').addEventListener('change',e=>{\n const gain=e.target.closest?.('[data-ws-gain]'),tap=e.target.closest?.('[data-ws-tap]');\n if(tap){\n  const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);\n  if(!edge||!wireGraphCommit([{type:'MODE',sourceId:edge.sourceId,edgeId:edge.id,\n   mode:tap.value==='split'?'split':'send'}],{record:false}))return;\n  const owner=wireSourceTrack(edge.sourceId);if(owner)owner.wireTapMode=tap.value==='split'?'split':'send';\n }\n if(gain||tap){\n  wireWsRecord(wireWsEditBefore);wireWsEditBefore=null;render();renderWireWorkspace();\n  say('WIRE inspector accepted · reference graph only');\n }\n});\n\n",
-     "document.getElementById('wireWsInspector').addEventListener('input',e=>{\n const gain=e.target.closest?.('[data-ws-gain]');\n if(!gain)return;\n const edge=wireEdges.find(x=>x.id===Number(gain.dataset.wsGain)&&x.enabled);\n if(!edge||edge.kind==='primary')return;\n const amount=Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)));\n if(window.__JUCE__?.backend){\n  if(window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)!==true)return;\n  // Coalesce rapid gestures in the existing native control queue. This LCD\n  // shows a pending operation, NEVER a speculative accepted PCM level.\n  window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'GAIN',\n   sourceId:edge.sourceId,edgeId:edge.id,levelDb:amount}]);\n  const readout=document.getElementById('wireWsGainText');\n  if(readout)readout.textContent='PENDING · '+amount+' dB';\n  return;\n }\n if(!wireGraphCommit([{type:'GAIN',sourceId:edge.sourceId,edgeId:edge.id,\n  levelDb:amount}],{record:false}))return;\n document.getElementById('wireWsGainText').textContent=amount+' dB';\n});\ndocument.getElementById('wireWsInspector').addEventListener('change',e=>{\n const gain=e.target.closest?.('[data-ws-gain]'),tap=e.target.closest?.('[data-ws-tap]');\n if(window.__JUCE__?.backend){\n  if(gain){\n   const edge=wireEdges.find(x=>x.id===Number(gain.dataset.wsGain)&&x.enabled);\n   if(edge?.kind!=='primary'&&window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)===true){\n    // Keyboard-only range change may not have emitted 'input'.\n    window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'GAIN',sourceId:edge.sourceId,\n     edgeId:edge.id,levelDb:Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)))}]);\n   }\n  }\n  if(tap){\n   const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);\n   const requested=tap.value==='split'?'split':'send';\n   // Restore the accepted selector position immediately. An independent\n   // structural readback will move it after the engine actually publishes.\n   tap.value=edge?.nativeTap==='PRE_FADER'?'split':'send';\n   if(edge&&window.__ARMIX_NATIVE_M2__?.canWireTap?.(edge.id,edge.sourceId)===true){\n    window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'MODE',sourceId:edge.sourceId,\n     edgeId:edge.id,mode:requested}]);\n    say('WIRE tap requested · awaiting accepted native PCM readback');\n   }else say('WIRE tap unavailable · native graph or EdgeId changed');\n  }\n  wireWsEditBefore=null;return; // native owns state; no demo undo or full repaint\n }\n if(tap){\n  const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);\n  if(!edge||!wireGraphCommit([{type:'MODE',sourceId:edge.sourceId,edgeId:edge.id,\n   mode:tap.value==='split'?'split':'send'}],{record:false}))return;\n  const owner=wireSourceTrack(edge.sourceId);if(owner)owner.wireTapMode=tap.value==='split'?'split':'send';\n }\n if(gain||tap){\n  wireWsRecord(wireWsEditBefore);wireWsEditBefore=null;render();renderWireWorkspace();\n  say('WIRE inspector accepted · reference graph only');\n }\n});\n\n"),
+     "document.getElementById('wireWsInspector').addEventListener('input',e=>{\n const gain=e.target.closest?.('[data-ws-gain]');\n if(!gain)return;\n const edge=wireEdges.find(x=>x.id===Number(gain.dataset.wsGain)&&x.enabled);\n if(!edge)return;\n const amount=Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)));\n if(window.__JUCE__?.backend&&edge.kind==='primary')return; // commit once on change\n if(window.__JUCE__?.backend){\n  if(window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)!==true)return;\n  // Coalesce rapid gestures in the existing native control queue. This LCD\n  // shows a pending operation, NEVER a speculative accepted PCM level.\n  window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'GAIN',\n   sourceId:edge.sourceId,edgeId:edge.id,levelDb:amount}]);\n  const readout=document.getElementById('wireWsGainText');\n  if(readout)readout.textContent='PENDING · '+amount+' dB';\n  return;\n }\n if(!wireGraphCommit([{type:'GAIN',sourceId:edge.sourceId,edgeId:edge.id,\n  levelDb:amount}],{record:false}))return;\n document.getElementById('wireWsGainText').textContent=amount+' dB';\n});\ndocument.getElementById('wireWsInspector').addEventListener('change',e=>{\n const gain=e.target.closest?.('[data-ws-gain]'),tap=e.target.closest?.('[data-ws-tap]');\n if(window.__JUCE__?.backend){\n  if(gain){\n   const edge=wireEdges.find(x=>x.id===Number(gain.dataset.wsGain)&&x.enabled);\n   if(edge&&window.__ARMIX_NATIVE_M2__?.canWireGain?.(edge.id,edge.sourceId)===true){\n    // Keyboard-only range change may not have emitted 'input'.\n    window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'GAIN',sourceId:edge.sourceId,\n     edgeId:edge.id,levelDb:Math.max(-60,Math.min(6,Math.round(Number(gain.value)||0)))}]);\n   }\n  }\n  if(tap){\n   const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);\n   const requested=tap.value==='split'?'split':'send';\n   // Restore the accepted selector position immediately. An independent\n   // structural readback will move it after the engine actually publishes.\n   tap.value=edge?.nativeTap==='PRE_FADER'?'split':'send';\n   if(edge&&window.__ARMIX_NATIVE_M2__?.canWireTap?.(edge.id,edge.sourceId)===true){\n    window.__ARMIX_NATIVE_M2__?.consumeWire?.([{type:'MODE',sourceId:edge.sourceId,\n     edgeId:edge.id,mode:requested}]);\n    say('WIRE tap requested · awaiting accepted native PCM readback');\n   }else say('WIRE tap unavailable · native graph or EdgeId changed');\n  }\n  wireWsEditBefore=null;return; // native owns state; no demo undo or full repaint\n }\n if(tap){\n  const edge=wireEdges.find(x=>x.id===Number(tap.dataset.wsTap)&&x.enabled);\n  if(!edge||!wireGraphCommit([{type:'MODE',sourceId:edge.sourceId,edgeId:edge.id,\n   mode:tap.value==='split'?'split':'send'}],{record:false}))return;\n  const owner=wireSourceTrack(edge.sourceId);if(owner)owner.wireTapMode=tap.value==='split'?'split':'send';\n }\n if(gain||tap){\n  wireWsRecord(wireWsEditBefore);wireWsEditBefore=null;render();renderWireWorkspace();\n  say('WIRE inspector accepted · reference graph only');\n }\n});\n\n"),
 )
 
 
@@ -334,15 +363,38 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;
  background:#273d49;color:#dcf2fc;cursor:pointer;font:16px sans-serif}
 /* Popup HWND itself moves beyond the mixer; DO NOT drag a second fake
    window inside the child WebView's clipped compositing rectangle. */
-body :is(#mxNativePeq,#mxNativeComp,#mxNativeGeq31,#mxNativeHarmony,
+body :is(#mxNativePeq,#mxNativeComp,#mxNativeDucker,#mxNativeGeq31,#mxNativeHarmony,
  #mxNativeVocalThrow,#mxNativeSonKu){left:0!important;top:0!important}
 </style>
 <script defer src="assets/approved-native-contract.js"></script>
+<script defer src="assets/mixer-builtin-fx-gesture.js"></script>
 <script defer src="assets/mixer-builtin-fx-preset-bar.js"></script>
 <script defer src="assets/approved-floating-fx-bridge.js"></script>
 </head><body><output id="fxWindowStatus" role="status">Loading owned FX editor…</output>
 <button id="fxWindowAbort" type="button" aria-label="Close unavailable FX editor"
  title="Close FX editor">×</button></body></html>
+"""
+
+
+def floating_player_html() -> str:
+    """Native-only surface: reuse the approved Player loader and compiled CSS."""
+    return """<!doctype html>
+<html lang="en" data-armix-player-window="true"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ArSon Player</title>
+<link rel="stylesheet" href="assets/arsonmix-approved-runtime.css">
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#101921}
+html[data-armix-player-window] .app{display:contents!important}
+html[data-armix-player-window] .command-bar,html[data-armix-player-window] #playerMini{display:none!important}
+html[data-armix-player-window] #arsonPlayer{position:fixed!important;inset:0!important;width:100%!important;height:100%!important;margin:0!important;transform:none!important;max-width:none!important;max-height:none!important;box-shadow:none!important}
+#playerWindowAbort{position:fixed;right:8px;top:8px;z-index:10000;color:#e0f4fa;background:#263e4b;border:1px solid #526977;border-radius:4px;padding:6px}
+#playerWindowAbort[hidden]{display:none!important}
+</style>
+<script defer src="assets/mixer-contextual-buttons.js"></script>
+</head><body><div class="app"><div class="command-bar" hidden><button id="pluginsButton" type="button">Plugins</button></div></div>
+<button id="playerWindowAbort" type="button" onclick="window.__JUCE__?.backend?.emitEvent('arMixPlayerWindowHide',{})">Close Player</button>
+</body></html>
 """
 
 
@@ -415,12 +467,27 @@ def stage(out: Path) -> dict:
                      out / "assets" / "approved-wire-view-model.js")
         shutil.copy2(ROOT / "web" / "approved-floating-fx-bridge.js",
                      out / "assets" / "approved-floating-fx-bridge.js")
+        # One canonical Anti Noiz editor (also used by its isolated harness).
+        # Bundle ES module exports as a classic script for the native resource
+        # provider. Scope CSS to its panel; never modify approved Pages CSS.
+        an = ROOT / "tools" / "anti-noiz" / "web"
+        sources = [(an / name).read_text("utf-8") for name in
+                   ("editor.mjs", "native_transport.mjs", "native_entry.mjs")]
+        parts = [re.sub(r"^import .*?;\s*$", "", source, flags=re.M)
+                 for source in sources]
+        code = "\n".join(re.sub(r"^export ", "", part, flags=re.M)
+                         for part in parts)
+        style = json.dumps((an / "editor.css").read_text("utf-8"))
+        (out / "assets" / "anti-noiz-native.js").write_text(
+            "(()=>{\n'use strict';\nconst antiNoizStyle=" + style +
+            ";\n" + code + "\n})();\n", encoding="utf-8")
         native = native_html(approved.decode("utf-8")).encode("utf-8")
         (out / "index.html").write_bytes(native)
         (out / "fx-window.html").write_text(floating_fx_html(),encoding="utf-8")
-    files = [out / "index.html", out / "fx-window.html",
+        (out / "player-window.html").write_text(floating_player_html(),encoding="utf-8")
+    files = [out / "index.html", out / "fx-window.html", out / "player-window.html",
              *sorted(p for p in (out / "assets").rglob("*") if p.is_file())]
-    if any(p.is_symlink() or p.relative_to(out).parts[0] not in ("index.html", "fx-window.html", "assets") for p in files):
+    if any(p.is_symlink() or p.relative_to(out).parts[0] not in ("index.html", "fx-window.html", "player-window.html", "assets") for p in files):
         raise ValueError("Unsafe GUI resource input")
     if len(files) != len({f.name for f in files}):
         raise ValueError("Duplicate GUI asset basename would collide in JUCE BinaryData")

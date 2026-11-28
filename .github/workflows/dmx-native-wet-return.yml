@@ -1,0 +1,87 @@
+name: DMX native wet return (scoped Windows)
+on:
+  pull_request:
+    paths:
+      - 'engine/core/LiveChannelFxGraph.h'
+      - 'engine/core/RealtimeNativeFxControl.h'
+      - 'engine/builtin_fx/VocalReverbProcessor.h'
+      - 'engine/builtin_fx/VocalReverbEditor.h'
+      - 'src/NativeBuiltInFx.h'
+      - 'tests/native_vocal_reverb_test.cpp'
+      - 'tests/native_mixer_session_store_test.cpp'
+      - 'src/NativeSessionToken.h'
+      - 'tests/native_dry_route_command_test.cpp'
+      - 'tests/plugin_catalog_persistence_test.cpp'
+      - 'src/PluginCatalog.h'
+      - 'tests/audio_continuity_policy_test.cpp'
+      - 'tests/live_channel_fx_graph_test.cpp'
+      - 'engine/core/LiveChannelFxGraph.h'
+      - 'engine/core/NativeFxRackTransaction.h'
+      - 'src/NativeMixerSessionDocument.h'
+      - 'src/NativeLogicalMixerWorkspace.h'
+      - '.github/workflows/dmx-native-wet-return.yml'
+permissions:
+  contents: read
+concurrency:
+  group: dmx-wet-native-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  native-return:
+    if: github.head_ref == 'feature/dual-mix-experience-20261126' || github.head_ref == 'fix/unified-send-gesture-custom-ux-20261127' || github.head_ref == 'fix/operator-menu-offline-sof-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/rc-contract-reconciliation-20261128' || github.head_ref == 'fix/p0-output-matrix-token-contract-20261128'
+    runs-on: windows-2022
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Pinned WebView2 SDK
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Compile real registry, return lease, editor and graph
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+          if (!$vs) { throw 'MSVC_NOT_FOUND' }
+          Import-Module (Join-Path $vs 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64'
+          if ((& git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'DMX_SOURCE_MISMATCH' }
+          cmake -S . -B dmx-build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:GITHUB_HEAD_REF -eq 'fix/p0-output-matrix-token-contract-20261128') {
+            # Real native routing, retained session, catalog and audio transition
+            # tests. This is a scoped regression suite, not installer FAT.
+            cmake --build dmx-build --parallel 2 --target ARMixNativeDrySendTests ARMixPhysicalExternalOutputTests ARMixLiveChannelFxTests ARMixApprovedRoutingPcmTests ARMixAudioContinuityPolicyTests ARMixPluginCatalogTests ARMixDeviceSessionTransitionTests ARMixDeviceApplyCoordinatorTests ARMixDurableMixerSessionTests
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(LiveNativePrePostSendAndBusContract|O1PhysicalExternalOutputNativePcmAndFailClosedRouting|P1HRealNativePerChannelFxAndSafeRetirement|P0ApprovedDecoderChannelToChannelAndSourceOnlyPCM|P0DisplayIdlePreservesAudioAndDeviceRecoveryIntent|NativePluginCatalogScanFolderPersistence|NonDestructiveAudioSetupRetainsMixerDocument|NativeDeviceApplyPinValidationAndRollbackEvidence|P0DynamicMixerSessionDocumentAndCrashSafeRecovery)$'
+          } elseif ($env:GITHUB_HEAD_REF -in @('fix/unified-send-gesture-custom-ux-20261127','fix/operator-menu-offline-sof-20261127','fix/p0-live-fx-secondary-insert-20261127','fix/rc-contract-reconciliation-20261128')) {
+            # Product routing/persistence regression only; accepted DSP freeze.
+            cmake --build dmx-build --parallel 2 --target ARMixDurableMixerSessionTests
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^P0DynamicMixerSessionDocumentAndCrashSafeRecovery$'
+          } else {
+            cmake --build dmx-build --parallel 2 --target ARMixNativeVocalReverbTests ARMixNativeFxExtensionTests ARMixDurableMixerSessionTests
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(NativeVocalReverbSourcePCMParameterAckAndState|M4NativeFxCatalogExtensionAndStatePreparation|P0DynamicMixerSessionDocumentAndCrashSafeRecovery)$'
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build dmx-build --parallel 2 --target CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "DMX_SCOPED_NATIVE_PASS exact=$env:EXPECTED_SHA (not full FAT)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: dmx-native-ctest
+          path: dmx-build/Testing/Temporary/LastTest.log
+          if-no-files-found: ignore

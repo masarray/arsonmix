@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include "../src/PlayerSetlistArchive.h"
+#include "../src/PlayerFavoritesStore.h"
 #include "../src/PlayerSetlistRepository.h"
 #include "../src/PlayerSetlistEditTransaction.h"
 #include "../src/PlayerLibraryEditPlan.h"
@@ -42,6 +43,33 @@ int main() {
     const auto other=juce::File::getSpecialLocation(
         juce::File::tempDirectory).getChildFile("arsonmix-mv14-other.mp3")
             .getFullPathName();
+    // Restart-style reload of the actual favorite sidecar, plus corruption preservation.
+    using Favorites=armix::player::PlayerFavoritesStore;
+    const auto favoriteFile=juce::File::getSpecialLocation(juce::File::tempDirectory).getNonexistentChildFile("arson-player-favorites",".json",false);
+    assert(Favorites::load(favoriteFile)&&Favorites::load(favoriteFile)->empty());
+    const Favorites::Songs favoriteSongs{juce::File(path),juce::File(other)};
+    assert(Favorites::save(favoriteFile,favoriteSongs));
+    assert(Favorites::load(favoriteFile)==favoriteSongs);
+    assert(favoriteFile.replaceWithText("{invalid"));
+    assert(!Favorites::load(favoriteFile));
+    assert(favoriteFile.deleteFile());
+    // Catalogue survives removal and remains independent of active set.
+    const std::vector<SavedSet> one={{"Show",{juce::File(path)},{Track{}}}};
+    auto withCatalogue=Archive::parse(Archive::serialize(one,0,false,180,{juce::File(other)}));
+    assert(withCatalogue&&withCatalogue->catalogue.size()==2);
+    assert(withCatalogue->catalogue[0]==juce::File(other));
+    auto emptyCatalogueSet=one;emptyCatalogueSet[0].files.clear();emptyCatalogueSet[0].controls.clear();
+    auto retained=Archive::parse(Archive::serialize(emptyCatalogueSet,0,false,180,withCatalogue->catalogue));
+    assert(retained&&retained->catalogue.size()==2&&retained->sets[0].files.empty());
+    auto badCatalogue=Archive::serialize(one,0,false,180);
+    juce::Array<juce::var> relativeCatalogue;relativeCatalogue.add("relative.mp3");
+    badCatalogue.getDynamicObject()->setProperty("catalogue",juce::var(relativeCatalogue));
+    assert(!Archive::parse(badCatalogue));
+    auto autoplaySet=one;autoplaySet[0].controls[0].autoAfter=1;
+    auto autoplay=Archive::parse(Archive::serialize(autoplaySet,0,false,180));
+    assert(autoplay&&autoplay->sets[0].controls[0].autoAfter==1);
+    autoplaySet[0].controls[0].autoAfter=2;
+    assert(!Archive::serialize(autoplaySet,0,false,180).isObject());
     // Invalid document/version never causes disk or player changes.
     assert(!Archive::parse(juce::var{}));
     assert(!Archive::parse(juce::JSON::parse("{\"version\":8}")));

@@ -33,7 +33,7 @@ test('per-user Inno Setup upgrades the same app and retains private Studio data'
   assert.match(iss, /Source: "\.\.\\docs\\THIRD_PARTY_8D_SONKU_HRTF\.md"; Flags: dontcopy/);
 });
 
-test('interactive Setup automatically checks for signed VB-CABLE while mixer launch stays independent', () => {
+test('interactive Setup cannot be held by optional signed VB-CABLE, which remains an opt-in action', () => {
   const m = JSON.parse(read('config/vbcable-official-package.json'));
   const pack = read('scripts/prepare_vbcable_package.ps1');
   const bootstrap = read('installer/ArSonMixVBCableInstall.ps1');
@@ -47,12 +47,13 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
   assert.match(iss, /VBCABLE_Driver_Pack45\.zip/);
   const run = iss.slice(iss.indexOf('[Run]'), iss.indexOf('[Code]'));
   const entries = run.split('\n').filter(line => line.startsWith('Filename:'));
-  assert.equal(entries.length, 3);
+  assert.equal(entries.length, 2);
   assert.match(entries[0], /ArSonMixWebView2Prerequisite\.ps1/);
   assert.match(entries[0], /Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
-  assert.match(entries[1], /ArSonMixVBCableInstall\.ps1/);
-  assert.match(entries[1], /Flags: runasoriginaluser skipifsilent waituntilterminated runhidden/);
-  assert.match(entries[2], /^Filename: "\{app\}\\ArSonMix\.exe"/);
+  assert.match(entries[1], /^Filename: "\{app\}\\ArSonMix\.exe"/);
+  assert.doesNotMatch(run, /ArSonMixVBCableInstall\.ps1/);
+  assert.match(iss, /Install optional VB-CABLE \(Administrator approval required\)/);
+  assert.match(iss, /-File ""\{app\}\\ThirdParty\\VB-Audio\\ArSonMixVBCableInstall\.ps1""/);
   for (const entry of entries) assert.doesNotMatch(entry, /;\s*(Check|Tasks):/i);
   assert.match(iss, /^RestartIfNeededByRun=no$/m);
   assert.doesNotMatch(iss + bootstrap, /VBCableRestart|RestartMarker|CanLaunchMixer|function NeedRestart/);
@@ -97,6 +98,9 @@ test('interactive Setup automatically checks for signed VB-CABLE while mixer lau
             bootstrap.indexOf('Start-Process -FilePath $setups[0].FullName'),
             'pending reboot must be checked before launching a setup that can remove installed cable');
   assert.match(bootstrap, /-Verb RunAs/);
+  assert.match(bootstrap, /WaitForExit\(180000\)/);
+  assert.match(bootstrap, /\$vendorStillRunning/);
+  assert.doesNotMatch(bootstrap, /-Verb RunAs -Wait/);
   assert.match(bootstrap, /PENDING_REBOOT/);
   assert.doesNotMatch(bootstrap + iss, /certutil\s+-addstore|Add-TrustedPublisher\s*\(|SetDefaultEndpoint\s*\(|pnputil\s+\/delete-driver|Uninstall-PnpDevice\s|LocalMachine\\TrustedPublisher/i);
   assert.match(notice, /donationware/i);
@@ -115,6 +119,9 @@ test('WebView2 GUI prerequisite runs only on interactive setup from Microsoft-si
   assert.match(helper, /Microsoft-Signer/);
   assert.match(helper, /Microsoft-Uri \$response\.ResponseUri/);
   assert.match(helper, /-ArgumentList @\('\/silent','\/install'\)/);
+  assert.match(helper, /WaitForExit\(120000\)/);
+  assert.match(helper, /\$bootstrapperStillRunning/);
+  assert.doesNotMatch(helper, /-ArgumentList @\('\/silent','\/install'\) -Wait/);
   assert.match(helper, /ARSONMIX_WEBVIEW2_ALREADY_PRESENT/);
   assert.match(helper, /ARSONMIX_WEBVIEW2_INSTALLED/);
   assert.match(helper, /NEEDS_ATTENTION/);
@@ -311,7 +318,7 @@ test('updater recovers after crash and offers only verified same-version repair'
     'candidate-unverified', 'INVALID_UPDATER_STATE_QUARANTINED',
     "operation='repair'", 'STAGING_VERIFIED_SAME_VERSION_REPAIR',
     'Clear-StagedVendorFiles', 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS',
-    'TotalMinutes -lt 20', 'TotalHours -lt 6'
+    'TotalMinutes -lt $attemptCooldown', 'TotalHours -lt 6'
   ]) assert.ok(s.includes(rule), rule);
   assert.doesNotMatch(s, /Remove-Item -LiteralPath \$stage -Recurse/);
   assert.doesNotMatch(s, /\bunins000\.exe\b/);
@@ -364,6 +371,8 @@ test('updater script has one coherent main try/finally and no duplicated tail', 
   const script = read('installer/ArSonMixAutoUpdate.ps1').replace(/\r\n/g, '\n');
   const tail = [
     '} finally {',
+    '    if($null -ne $portableOwner){$portableOwner.Dispose()}',
+    '    if($null -ne $rollbackGuard){$rollbackGuard.Dispose()}',
     '    if($locked -and $null -ne $mutex){$mutex.ReleaseMutex()}',
     '    if($null -ne $mutex){$mutex.Dispose()}',
     '}',
@@ -450,7 +459,7 @@ test('WebView2 error screen cannot acknowledge healthy GUI; staging retries afte
   assert.match(native,/onStartupStage_ \(3\)/); // error stage must not set marker
   assert.match(script, /\$state\.phase='staging-retry'\s*\n\s*\$state\.lastCheckUtc=''/);
   assert.match(script, /\$state\.phase='staged'\s*\n\s*\$state\.lastCheckUtc=\[DateTime\]::UtcNow\.ToString\('o'\)/);
-  assert.match(script, /TotalMinutes -lt 20/);
+  assert.match(script, /TotalMinutes -lt \$attemptCooldown/);
 });
 
 
@@ -467,10 +476,11 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
     assert.ok(updater.includes('[string]$approval.'+name+' -ceq [string]$transaction.'+name));
   assert.ok(updater.indexOf('UPDATE_WAITING_FOR_USER_OK') < updater.indexOf("    $state.phase='installing'"),
     'consent must gate the installer before any replacement');
-  assert.match(native, /void serviceSmartUpdateAcknowledgement\(\)/);
+  assert.match(native, /void serviceSmartUpdateAcknowledgement\(bool explicitReview=false\)/);
   assert.match(native, /if \(\+\+updatePromptTicks_ % 40 == 0\)/);
   assert.match(native, /class ArSonMixUpdateNotice final : public juce::DocumentWindow/);
-  assert.match(native, /juce::TextButton ok \{"OK"\}/);
+  assert.match(native, /ArSonNoticeButton ok \{"OK",true\}/);
+  assert.match(native, /class ArSonNoticeButton final : public juce::TextButton/);
   assert.match(native, /void closeButtonPressed\(\) override \{ setVisible \(false\); \}/);
   assert.match(native, /std::make_unique<ArSonMixUpdateNotice>/);
   assert.doesNotMatch(native, /juce::NativeMessageBox::showAsync \(options/);
@@ -481,8 +491,11 @@ test('acknowledged one-click upgrade is deferred until the exact candidate is ap
 
 test('GUI-only updater probe does not strand pre-window WebView2 startup failures', () => {
   const native = read('src/Main.cpp');
-  const startup = native.slice(native.indexOf('void initialise (const juce::String&) override'),
-                               native.indexOf('void shutdown() override', native.indexOf('void initialise (const juce::String&) override')));
+  const app=native.indexOf('class ConsoleApp final');
+  const init=native.indexOf('void initialise (const juce::String& commandLine) override',app);
+  const shutdown=native.indexOf('void shutdown() override',init);
+  assert.ok(app>=0&&init>app&&shutdown>init);
+  const startup=native.slice(init,shutdown);
   const failures = [
     'Cannot create the browser-cache folder:',
     'The native browser backend could not be initialized on this machine.'
@@ -506,7 +519,7 @@ test('silent post-install GUI probe cannot automatically arm ASIO or save a user
   assert.match(main.slice(guard,engine), /return;\s*\}\s*auto saved/);
   assert.match(main, /if \(!updaterProbeMode_ &&\s*\(static_cast<bool>\(lab\.getProperty/);
   assert.match(main, /if \(!isAutoUpdateHealthProbe\(\)\)\s*launchSmartUpdater \(false\)/);
-  assert.match(main, /if \(!innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
+  assert.match(main, /if \(hadMixerWindow && !recoveryOnly_ && !innoIsClosing && !isAutoUpdateHealthProbe\(\) &&/);
   assert.match(main, /updateProbeCompleteTick_ >= 3500u/);
   assert.match(updater, /GUI_READY_NO_AUDIO/);
   assert.match(updater, /PREVIOUS_EXE_RETAINED_FOR_NEXT_MANUAL_LAUNCH/);
@@ -549,9 +562,13 @@ test('P0 Windows 10 fresh install needs no VC redistributable and reports missin
   assert.ok(cmake.indexOf('set(CMAKE_MSVC_RUNTIME_LIBRARY')<
     cmake.indexOf('add_subdirectory("${JUCE_ROOT}"'),
     'static CRT must apply to JUCE and app as one ABI');
-  assert.match(native,/Download \/ Repair WebView2/);
-  assert.match(native,/developer\.microsoft\.com\/en-us\/microsoft-edge\/webview2/);
-  assert.match(native,/if \(result == 0\)/);
+  const emergency=native.slice(native.indexOf('class ArSonRecoveryNotice final'),native.indexOf('class ConsoleWindow final'));
+  assert.match(emergency, /"Repair WebView2","Close",\[\]\(bool accepted\)/);
+  assert.match(emergency, /if\(accepted\)juce::URL\("https:\/\/developer\.microsoft\.com\/en-us\/microsoft-edge\/webview2\/"\)\s*\.launchInDefaultBrowser\(\)/);
+  assert.match(emergency, /panel_\.primary\.onClick=\[this\]\{finish\(true\);\}/);
+  assert.match(emergency, /panel_\.cancel\.onClick=\[this\]\{finish\(false\);\}/);
+  assert.match(emergency, /void closeButtonPressed\(\) override \{finish\(false\);\}/);
+  assert.doesNotMatch(emergency.slice(0,emergency.indexOf('void showWebViewStartupError')), /NativeMessageBox|runModalLoop|enterModalState/);
   assert.match(iss,/^RestartIfNeededByRun=no$/m);
   const packaged=read('scripts/build_verify_windows_installer.ps1');
   const pe=read('scripts/verify_win10_pe_runtime.py');
@@ -577,4 +594,214 @@ test('ZBSH08 all installer execution requires independent cryptographic identity
   assert.match(source,/ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS/);
   assert.doesNotMatch(source,/AllowAutoRedirect=\$true/);
   assert.match(source,/Assert-InstallerAttestation \$oldPath/);
+});
+
+
+test("cold-start mixer archive requires confirmation and bypasses normal startup and updater",()=>{
+  const main=read("src/Main.cpp"),store=read("src/NativeMixerSessionStore.h"),iss=read("installer/ArSonMix.iss");
+  const at=main.indexOf('if(commandLine.trim()=="--archive-mixer-session" && !isAutoUpdateHealthProbe())');
+  const end=main.indexOf('// Paint the approved dark native splash',at);
+  assert.ok(at>0&&end>at);
+  const recovery=main.slice(at,end);
+  assert.match(recovery,/recoveryOnly_=true/);
+  assert.match(recovery,/"Archive session","Cancel",\[this\]\(bool accepted\)/);
+  assert.match(recovery,/if\(!accepted\)\{systemRequestedQuit\(\);return;\}/);
+  assert.ok(recovery.indexOf('if(!accepted)') < recovery.indexOf('quarantineForStartupRecovery(archived)'));
+  assert.match(recovery,/quarantineForStartupRecovery\(archived\)/);
+  assert.match(recovery,/\}\);\s*return;\s*\}/);
+  assert.doesNotMatch(recovery,/engine_\.start|startTimer|make_unique<ConsoleWindow>|launchSmartUpdater/);
+  const method=store.slice(store.indexOf("juce::String quarantineForStartupRecovery"),store.indexOf("static constexpr juce::int64 maxJson"));
+  assert.match(method,/root_\.getSiblingFile\("MixerSession-Recovery-"\+id\)/);
+  assert.match(method,/!root_\.moveFileTo\(target\)/);
+  assert.doesNotMatch(method,/deleteRecursively|deleteFile|commit\(/);
+  assert.match(iss,/Parameters: "--archive-mixer-session"/);
+});
+
+test('Autonomous updater bundles a pinned verifier and never uses user GitHub credentials', () => {
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const iss=read('installer/ArSonMix.iss');
+  const build=read('scripts/build_verify_windows_installer.ps1');
+  const intake=read('scripts/prepare_update_verifier.ps1');
+  const pin=JSON.parse(read('config/update-verifier-package.json'));
+  assert.equal(pin.version,'2.106.0');
+  assert.equal(pin.sha256,'d406f442ca0baa3d3e9c695e9cded1aa48e67dad3294b8947e5ab84f980b4844');
+  assert.ok(u.includes(pin.sha256));
+  assert.ok(u.includes(pin.exeSha256));
+  assert.match(intake,/test_public_update_attestation\.ps1/);
+  assert.match(read('scripts/test_public_update_attestation.ps1'),/ARSONMIX_ANONYMOUS_REAL_ATTESTATION_PASS/);
+  assert.match(u,/function Read-PublicAttestation/);
+  assert.match(u,/sourceRepositoryIdentifier/);
+  assert.match(u,/--custom-trusted-root/);
+  assert.match(u,/GH_CONFIG_DIR/);
+  assert.match(u,/EnvironmentVariables\.Remove\(\$key\)/);
+  assert.doesNotMatch(u,/ProgramFiles|Get-Command gh|Trusted GitHub CLI missing/);
+  assert.match(u,/ARSONMIX_UPDATER_AUTONOMOUS_POLICY_PASS/);
+  assert.match(iss,/UpdateVerifier\\gh\.exe/);
+  assert.match(iss,/UpdateVerifier\\THIRD-PARTY-LICENSES\.txt/);
+  assert.match(build,/prepare_update_verifier\.ps1/);
+  assert.match(intake,/Get-FileHash/);
+  assert.match(intake,/\.ExtractToFile|::ExtractToFile/);
+});
+
+test('Update Center is a bounded message-thread presentation and scheduler, never audio intent',()=>{
+  const native=read('src/Main.cpp'), bridge=read('web/approved-native-bridge.js'), u=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(native,/withEventListener \("arMixUpdateCenterIntent"/);
+  assert.match(native,/lastSmartUpdateCheckTick_ >= 6u \* 60u \* 60u \* 1000u/);
+  assert.match(native,/launchSmartUpdater\(false,true\)/);
+  assert.match(native,/serviceSmartUpdateAcknowledgement\(true\)/);
+  assert.match(native,/!explicitReview && lastUpdatePromptedSha_ == candidate/);
+  assert.match(native,/command\.add \("-CheckNow"\)/);
+  assert.match(u,/\[switch\]\$CheckNow/);
+  assert.match(u,/if\(\$CheckNow -and \(\$ApplyStaged -or \$RecoveryMode -or \$PolicySelfTest\)\)/);
+  assert.match(u,/\$attemptCooldown=if\(\$CheckNow\)\{1\}else\{20\}/);
+  assert.match(u,/if\(-not \$CheckNow -and \$imageStatus/);
+  const center=bridge.slice(bridge.indexOf('function installUpdateCenter('),bridge.indexOf('function installFirstSoundMenu('));
+  assert.match(center,/dialog\.show\(\)/);
+  assert.doesNotMatch(center,/showModal|arMixAction|arMixConsoleIntent|fetch\(/);
+  assert.match(center,/window\.clearInterval\(poll\)/);
+  assert.match(center,/state\?\.requestId!==latest/);
+});
+
+test('Resume uses digest-scoped partials, exact HTTP range, and full hash before promotion',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(u,/function Get-ResumeResponseMode/);
+  assert.match(u,/Get-PartialAssetPath \$destination \$expectedHash/);
+  assert.match(u,/\$request\.AddRange\(\$offset\)/);
+  assert.match(u,/Content-Range/);
+  assert.match(u,/if\(\$mode -ceq 'restart'\)/);
+  assert.match(u,/if\(\$hash -cne \$expectedHash\)\{\$discard=\$true;Fail/);
+  assert.match(u,/ARSONMIX_UPDATER_RESUME_POLICY_PASS/);
+});
+test('Rollback survives verifier replacement and offline network only under same-process verified lease',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const at=u.indexOf('$rollbackGuard=[IO.File]::Open($oldPath');
+  const sign=u.indexOf('Assert-InstallerAttestation $oldPath',at);
+  const proof=u.indexOf('$rollbackProof=[pscustomobject]',sign);
+  const install=u.indexOf('$upgradeOK=Run-Installer $newPath',proof);
+  assert.ok(at>0&&sign>at&&proof>sign&&install>proof);
+  assert.match(u,/Run-Installer \$oldPath .* -UseVerifiedRollback/);
+  assert.match(u,/Test-RollbackProof \$rollbackProof \$rollbackGuard/);
+  assert.match(u,/ARSONMIX_UPDATER_OFFLINE_ROLLBACK_LEASE_PASS/);
+  assert.match(u,/if\(\$null -ne \$rollbackGuard\)\{\$rollbackGuard\.Dispose\(\)\}/);
+});
+
+test('Portable release handoff downloads an attested ZIP but cannot apply or modify Studio',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1'),n=read('src/Main.cpp'),bridge=read('web/approved-native-bridge.js');
+  const work=u.slice(u.indexOf('function Invoke-PortableUpdateCheck'),u.indexOf('function Expand-PortablePayload'));
+  assert.match(work,/Download-PortableVerified/);
+  assert.ok(work.indexOf('Download-PortableVerified $candidate $asset $stageFile')<work.indexOf('Publish-VerifiedPortableDownload $stageFile $destination $asset'));
+  assert.match(u,/Portable download destination already exists with different bytes/);
+  assert.doesNotMatch(work,/Run-Installer|Expand-Archive|Start-Process|Remove-Item|Studio/);
+  assert.match(u,/if\(\$portable -and \(\$ApplyStaged -or \$RecoveryMode\)\)\{exit 0\}/);
+  assert.match(u,/Assert-InstallerAttestation \$destination \$tag \$sha -PortableZip/);
+  assert.match(u,/ARSONMIX_PORTABLE_DOWNLOAD_POLICY_PASS/);
+  assert.match(n,/command.add \(portable \? "-PreparePortable" : "-ApplyStaged"\)/);
+  assert.match(bridge,/Portable download only/);
+  assert.match(read('.github/workflows/alpha-preview-publish.yml'),/-IncludePortableUpdater/);
+  assert.match(read('scripts/build_verify_windows_installer.ps1'),/PORTABLE_RELEASE_UPDATE_DOWNLOADER_STAGED/);
+});
+
+
+test('Portable preparation is post-exit, authenticated under a lease, and delegates guarded activation',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const p=u.slice(u.indexOf('function Invoke-PortablePreparation'),u.indexOf('function Test-StagedAsset'));
+  assert.match(p,/WaitForExit\(120000\)/);
+  assert.match(p,/FileShare\]::Read/);
+  assert.ok(p.indexOf('Assert-InstallerAttestation $zipPath')<p.indexOf('Expand-PortablePayload $lease'));
+  assert.ok(p.indexOf('Expand-PortablePayload $lease')<p.indexOf('[IO.Directory]::Move($scratch,$target)'));
+  assert.doesNotMatch(p,/Run-Installer|Start-Process|Launch-WithHealth|Move-Item/);
+  assert.match(u,/Portable archive contains private workspace/);
+  assert.match(u,/Portable file\/directory collision/);
+  assert.match(u,/ARSONMIX_PORTABLE_PAYLOAD_PREPARATION_PASS/);
+});
+
+
+test('cached portable payload cannot be reused without exact archive member revalidation',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(u,/Expand-PortablePayload \$lease \$target \$sha -VerifyOnly/);
+  assert.match(u,/Cached portable member hash mismatch/);
+  assert.match(u,/Unexpected portable file/);
+  assert.match(u,/Unexpected portable directory/);
+  assert.match(u,/Unsafe cached portable tree/);
+  assert.match(u,/Write-AtomicUpdateJson \(Join-Path \$root 'prepared.json'\)/);
+  assert.match(u,/ARSONMIX_PORTABLE_CACHE_REVALIDATION_PASS/);
+});
+
+
+test('all updater state writes use a flushed atomic replacement with a real backup path',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  assert.match(u,/function Write-State\(\[object\]\$value\) \{\s*Write-AtomicUpdateJson \$statePath \$value/);
+  assert.match(u,/\[IO.File\]::Replace\(\$temp,\$path,\$backup\)/);
+  assert.doesNotMatch(u,/\[IO.File\]::Replace\([^\r\n]*,\$null\)/);
+  assert.match(u,/Updater state atomic replacement failed/);
+});
+
+
+test('portable activation requires exact consent, cryptographic proof, clean probe exit and durable selector',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1'),n=read('src/Main.cpp'),w=read('src/PortableWorkspace.h');
+  const activate=u.slice(u.indexOf('function Commit-PortableCandidate'),u.indexOf('function Invoke-PortableLaunch'));
+  assert.match(activate,/Test-PortableApproval/);
+  assert.ok(activate.indexOf('Assert-InstallerAttestation $zipPath')<activate.indexOf('Get-VerifiedPortableImage $version'));
+  assert.ok(activate.indexOf('Test-PortableCandidateHealth $binary')<activate.indexOf('Write-PortableSelection $selected $version'));
+  assert.match(u,/Assert-PortableOfflineProof \$zipPath \$version/);
+  assert.match(u,/--custom-trusted-root/);
+  assert.match(u,/Get-PortableSelection/);
+  assert.match(u,/Write-PortableSelection \$selected \$selected.previous/);
+  assert.match(u,/ARSONMIX_PORTABLE_ACTIVATION_RECOVERY_PASS/);
+  assert.match(n,/"-LaunchPortable","-OwnerProcessId"/);
+  assert.match(w,/getChildFile\("ArSonMix\/Updates\/probes"\)/);
+  assert.match(read('scripts/build_verify_windows_installer.ps1'),/ARSONMIX_PORTABLE_LAUNCHER_V2/);
+});
+
+
+test('normal close receipt recovers vanished PID and interrupted updater without widening trust',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1'),n=read('src/Main.cpp');
+  assert.match(n,/command.add\("-ExitReceipt"\);command.add\(token\)/);
+  assert.match(n,/getChildFile\("normal-exit.json"\)/);
+  assert.match(u,/Test-PortableExitReceipt/);
+  assert.match(u,/Read-PortableExitReceipt \$ExitReceipt \$OwnerProcessId/);
+  assert.match(u,/Invoke-PortablePreparation \$null \$intent/);
+  assert.match(u,/Stale or wrong normal exit receipt accepted/);
+  assert.match(read('tests/portable_launcher_smoke.ps1'),/ARSONMIX_PORTABLE_BOOTSTRAP_LAUNCH_PASS/);
+});
+
+
+test('failed portable image is not offered again and launcher smoke exercises actual rollback',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const check=u.slice(u.indexOf('function Invoke-PortableUpdateCheck'),u.indexOf('function Expand-PortablePayload'));
+  assert.ok(check.indexOf('$selected.blockedDigest -ceq $asset.digest')<check.indexOf('Download-PortableVerified $candidate $asset $stageFile'));
+  assert.match(check,/PREVIOUS_FAILURE_BLOCKED/);
+  assert.match(read('tests/portable_launcher_smoke.ps1'),/ARSONMIX_PORTABLE_ROLLBACK_LAUNCH_PASS/);
+});
+
+
+test('cached executable hash is reused only while the executable read lease remains held',()=>{
+  const u=read('installer/ArSonMixAutoUpdate.ps1');
+  const fn=u.slice(u.indexOf('function Expand-PortablePayload'),u.indexOf('function Write-AtomicUpdateJson'));
+  assert.match(fn,/\$binaryLease=\[IO.File\]::Open\(\$dest,[^\n]*\[IO.FileShare\]::Read\)/);
+  assert.match(fn,/if\(\$actualHash -cne \$expectedHash\)/);
+  assert.match(fn,/if\(\$isBinary\)\{\$binaryHash=\$actualHash\}/);
+  assert.match(fn,/\$binaryHash -cne \$build.exeSha256/);
+  assert.ok(fn.indexOf('$binaryLease.Dispose()')>fn.indexOf('Portable payload provenance mismatch'));
+  assert.match(read('tests/portable_verifier_profile.ps1'),/ARSONMIX_PORTABLE_PROFILE_PASS/);
+});
+
+
+test('FactoryFX installation proves native discovery using the same verified installed executable',()=>{
+  const build=read('scripts/build_verify_windows_installer.ps1');
+  const worker=read('src/Vst3ScanIsolation.h');
+  assert.match(worker,/--arsonmix-vst3-scan-worker/);
+  const scan=build.slice(build.indexOf('function Test-InstalledFactoryFxScanner'),build.indexOf('$fixtureProcess=$null'));
+  assert.match(scan,/--arsonmix-vst3-scan-worker/);
+  assert.match(scan,/\$child\.WaitForExit\(40000\)/);
+  assert.match(scan,/DtdProcessing\]::Prohibit/);
+  assert.match(scan,/ARSONMIX_VST3_SCAN_V1/);
+  assert.match(scan,/GetAttribute\('nonce'\)/);
+  assert.match(scan,/GetAttribute\('path'\)/);
+  assert.match(scan,/\[Convert\]::ToInt32\(\$uid,16\) -eq \[int\]\$row\.hostUniqueId/);
+  assert.match(scan,/GetAttribute\('version'\) -ceq \[string\]\$row\.pluginVersion/);
+  assert.match(scan,/production-three.*\$count -ne 3/);
+  assert.match(scan,/production-four.*\$count -ne 4/);
+  assert.match(build,/Assert-InstalledFactoryFx "fresh-install"\s+\$factoryFxScanCount=Test-InstalledFactoryFxScanner \$installedExe/);
+  assert.match(build,/factoryFxInstalledScanCount=\$factoryFxScanCount/);
 });

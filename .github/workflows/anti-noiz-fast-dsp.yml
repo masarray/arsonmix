@@ -1,0 +1,320 @@
+name: Anti Noiz standalone DSP (fast)
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'engine/builtin_fx/anti_noiz/**'
+      - 'tests/anti_noiz_*.cpp'
+      - 'tests/anti_noiz_approved_chromium_test.py'
+      - 'src/AntiNoizNativeBinding.h'
+      - 'src/AntiNoizPortableSettings.h'
+      - 'tools/anti-noiz/**'
+      - '.github/workflows/anti-noiz-fast-dsp.yml'
+
+permissions:
+  contents: read
+concurrency:
+  group: anti-noiz-fast-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    uses: ./.github/workflows/fx-change-scope.yml
+    with:
+      paths: |
+        engine/builtin_fx/anti_noiz/**
+        tests/anti_noiz_*.cpp
+        tests/anti_noiz_approved_chromium_test.py
+        src/AntiNoizNativeBinding.h
+        src/AntiNoizPortableSettings.h
+        tools/anti-noiz/**
+        .github/workflows/anti-noiz-fast-dsp.yml
+        .github/workflows/fx-change-scope.yml
+  standalone:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    name: Anti Noiz ${{ matrix.lane }} (no JUCE or installer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: GCC Release
+            compiler: g++
+            config: Release
+            sanitizers: 'OFF'
+            benchmark: 'ON'
+          - lane: Clang ASan UBSan
+            compiler: clang++
+            config: RelWithDebInfo
+            sanitizers: 'ON'
+            benchmark: 'OFF'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Preserve exact standalone source for offline reproducibility
+        if: matrix.benchmark == 'ON'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: anti-noiz-pro-product-source
+          path: |
+            engine/builtin_fx/anti_noiz/
+            engine/builtin_fx/FxSpsc.h
+            tests/anti_noiz_*.cpp
+            tools/anti-noiz/
+          if-no-files-found: error
+      - name: Configure isolated standard C++ DSP
+        run: >
+          cmake -S tools/anti-noiz -B "$RUNNER_TEMP/anti-noiz"
+          -DCMAKE_CXX_COMPILER=${{ matrix.compiler }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.config }}
+          -DANTI_NOIZ_SANITIZERS=${{ matrix.sanitizers }}
+          -DANTI_NOIZ_BENCHMARK=${{ matrix.benchmark }}
+      - name: Compile and run regression
+        run: |
+          cmake --build "$RUNNER_TEMP/anti-noiz" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/anti-noiz" --output-on-failure --verbose
+      - name: Record exploratory throughput (not a performance gate)
+        if: matrix.benchmark == 'ON'
+        run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_bench"'
+
+      - name: Opt-in active callback profile (exploratory)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: '"$RUNNER_TEMP/anti-noiz/anti_noiz_rt_profile"'
+      - name: Checkout exact pre-drift reference (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 49e49c47c9e6b291feb74c5593806ffb296ba843
+          path: .anti-noiz-drift-reference
+          persist-credentials: false
+      - name: Matched synthetic drift baseline and candidate (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-drift-reference/tools/anti-noiz tests/anti_noiz_drift_pcm_test.cpp -o "$RUNNER_TEMP/anti-noiz-drift-baseline"
+          echo "Baseline 49e49c47:"
+          "$RUNNER_TEMP/anti-noiz-drift-baseline" --report-only
+          echo "Candidate:"
+          "$RUNNER_TEMP/anti-noiz/anti_noiz_drift_pcm_test" --report-only
+      - name: Checkout exact pre-spectral reference (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 75bcb9e4daf9a91cd57dcbc83a8fda43b0b37d3c
+          path: .anti-noiz-spectral-reference
+          persist-credentials: false
+      - name: Matched spectral drift baseline and candidate (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-spectral-reference/tools/anti-noiz tests/anti_noiz_spectral_pcm_test.cpp -o "$RUNNER_TEMP/anti-noiz-spectral-baseline"
+          echo "Spectral baseline 75bcb9e:"
+          "$RUNNER_TEMP/anti-noiz-spectral-baseline" --report-only
+          echo "Spectral candidate:"
+          "$RUNNER_TEMP/anti-noiz/anti_noiz_spectral_pcm_test" --report-only
+      - name: Checkout exact pre-RT-optimization reference (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 5e70bb38662370e4e6644d075ac61b1bea95289d
+          path: .anti-noiz-rt-reference
+          persist-credentials: false
+      - name: Checkout immediate pre-control reference (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 8adec89d7e9270f46ff25fba54f5431167b55668
+          path: .anti-noiz-control-reference
+          persist-credentials: false
+      - name: Diagnose sample-level PCM differences (opt-in)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I .anti-noiz-control-reference/engine/builtin_fx/anti_noiz tools/anti-noiz/pcm_diff_probe.cpp -o "$RUNNER_TEMP/anti-noiz-pcm-old"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -I engine/builtin_fx/anti_noiz tools/anti-noiz/pcm_diff_probe.cpp -o "$RUNNER_TEMP/anti-noiz-pcm-new"
+          "$RUNNER_TEMP/anti-noiz-pcm-old" "$RUNNER_TEMP/anti-noiz-old"
+          "$RUNNER_TEMP/anti-noiz-pcm-new" "$RUNNER_TEMP/anti-noiz-new"
+          python3 tools/anti-noiz/compare_pcm.py "$RUNNER_TEMP/anti-noiz-old" "$RUNNER_TEMP/anti-noiz-new"
+          rm -f "$RUNNER_TEMP"/anti-noiz-{old,new}-*.f32
+      - name: Historical inline hash report (opt-in, diagnostic only)
+        if: matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')
+        run: |
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -DANTI_NOIZ_ALLOC_PROBE=1 -I .anti-noiz-rt-reference/engine/builtin_fx/anti_noiz tools/anti-noiz/rt_qualify.cpp -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign -o "$RUNNER_TEMP/anti-noiz-rt-baseline"
+          python3 tools/anti-noiz/compare_rt.py "$RUNNER_TEMP/anti-noiz-rt-baseline" "$RUNNER_TEMP/anti-noiz/anti_noiz_rt_qualify" --legacy-hash-report
+      - name: Opt-in recorded audio smoke (local WAVs, no upload)
+        if: ${{ !cancelled() && matrix.benchmark == 'ON' && contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke') }}
+        run: python3 tools/anti-noiz/recorded_smoke.py "$RUNNER_TEMP/anti-noiz/anti_noiz_qualify" "$RUNNER_TEMP/anti-noiz-recorded-smoke" --compare-an03f
+
+  professional-rt:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    name: Anti Noiz professional native-session CPU headroom (Release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Record runner and build exact Release probe
+        run: |
+          mkdir -p "$RUNNER_TEMP/pro-rt"
+          { git rev-parse HEAD; g++ --version; lscpu; } > "$RUNNER_TEMP/pro-rt/environment.txt"
+          g++ -std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror -DANTI_NOIZ_ALLOC_PROBE=1 tests/anti_noiz_pro_rt_test.cpp -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign -o "$RUNNER_TEMP/pro-rt-test"
+      - name: Checkout exact unpacked stereo reference
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: bf4bd81a244d5ea80210c23d31c18a05597b097f
+          path: .anti-noiz-unpacked
+          persist-credentials: false
+      - name: Matched strict FP manual stereo parity against unpacked professional reference
+        run: |
+          flags=(-std=c++20 -O3 -ffp-contract=off -DNDEBUG -Wall -Wextra -Werror)
+          g++ "${flags[@]}" -I .anti-noiz-unpacked/engine/builtin_fx/anti_noiz tests/anti_noiz_stereo_packed_probe.cpp -o "$RUNNER_TEMP/stereo-old"
+          g++ "${flags[@]}" -I engine/builtin_fx/anti_noiz tests/anti_noiz_stereo_packed_probe.cpp -o "$RUNNER_TEMP/stereo-new"
+          "$RUNNER_TEMP/stereo-old" "$RUNNER_TEMP/old.f32"
+          "$RUNNER_TEMP/stereo-new" "$RUNNER_TEMP/new.f32"
+          python3 tools/anti-noiz/compare_stereo_packed.py "$RUNNER_TEMP/old.f32" "$RUNNER_TEMP/new.f32" "$RUNNER_TEMP/pro-rt/stereo-parity.json" --manual-only
+          rm -f "$RUNNER_TEMP/old.f32" "$RUNNER_TEMP/new.f32"
+      - name: Checkout exact canonical automatic DSP reference
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: bf399bfdd6f8739f39bdd226965ef2274e6e2fbc
+          path: .anti-noiz-canonical
+          persist-credentials: false
+      - name: Exact legacy PCM fingerprints across four modes and three noise shapes
+        run: |
+          set -euo pipefail
+          flags=(-std=c++20 -O3 -ffp-contract=off -DNDEBUG -Wall -Wextra -Werror)
+          g++ "${flags[@]}" -I .anti-noiz-canonical/engine/builtin_fx/anti_noiz tests/anti_noiz_legacy_pcm_probe.cpp -o "$RUNNER_TEMP/legacy-old"
+          g++ "${flags[@]}" -I engine/builtin_fx/anti_noiz tests/anti_noiz_legacy_pcm_probe.cpp -o "$RUNNER_TEMP/legacy-new"
+          "$RUNNER_TEMP/legacy-old" > "$RUNNER_TEMP/pro-rt/legacy-old.csv"
+          "$RUNNER_TEMP/legacy-new" > "$RUNNER_TEMP/pro-rt/legacy-new.csv"
+          test "$(wc -l < "$RUNNER_TEMP/pro-rt/legacy-old.csv")" -eq 96
+          cmp "$RUNNER_TEMP/pro-rt/legacy-old.csv" "$RUNNER_TEMP/pro-rt/legacy-new.csv"
+          echo LEGACY_PCM_96_EXACT_PASS
+      # Owner policy: shared-runner CPU timing is advisory, not a product
+      # admission gate. The same probe still fails on PCM, ACK, allocation,
+      # nonfinite output or other correctness errors. Never mask those exits.
+      - name: Native-session correctness and advisory 50 percent CPU headroom
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/pro-rt-test" | tee "$RUNNER_TEMP/pro-rt/native-session.csv"
+          if grep -qx 'PRO_RT_HEADROOM,0' "$RUNNER_TEMP/pro-rt/native-session.csv"; then
+            echo "::warning title=Anti Noiz advisory CPU headroom::P99 exceeded the 50 percent target on this runner; timing evidence retained. Not a product integration blocker."
+            echo "Anti Noiz CPU headroom: advisory target missed; inspect native-session.csv." >> "$GITHUB_STEP_SUMMARY"
+          elif grep -qx 'PRO_RT_HEADROOM,1' "$RUNNER_TEMP/pro-rt/native-session.csv"; then
+            echo "Anti Noiz CPU headroom: advisory target met." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::Missing native-session headroom result"
+            exit 1
+          fi
+      - name: Preserve timing and correctness evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: anti-noiz-professional-rt
+          path: ${{ runner.temp }}/pro-rt/
+          if-no-files-found: error
+
+  numerical-reproducibility:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' && (contains(github.event.pull_request.labels.*.name, 'anti-noiz-corpus-smoke')) }}
+    name: Anti Noiz matched PCM reproducibility (opt-in)
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: 8adec89d7e9270f46ff25fba54f5431167b55668
+          path: .anti-noiz-control-reference
+          persist-credentials: false
+      - name: Build matched drivers and common-object adapter pair
+        id: build_matched
+        run: |
+          set -euo pipefail
+          cd tools/anti-noiz
+          flags=(-std=c++20 -O3 -DNDEBUG -Wall -Wextra -Werror)
+          wrap=(-Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=free,--wrap=aligned_alloc,--wrap=posix_memalign)
+          old=../../.anti-noiz-control-reference/engine/builtin_fx/anti_noiz
+          new=../../engine/builtin_fx/anti_noiz
+          g++ --version
+          g++ "${flags[@]}" -DANTI_NOIZ_ALLOC_PROBE=1 -I "$old" rt_qualify.cpp "${wrap[@]}" -o "$RUNNER_TEMP/rt-old"
+          g++ "${flags[@]}" -DANTI_NOIZ_ALLOC_PROBE=1 -I "$new" rt_qualify.cpp "${wrap[@]}" -o "$RUNNER_TEMP/rt-new"
+          g++ "${flags[@]}" compare_rt_capture.cpp -o "$RUNNER_TEMP/rt-capture-compare"
+          g++ "${flags[@]}" -DANTI_NOIZ_ALLOC_PROBE=1 -DANTI_NOIZ_MATCHED_BRIDGE=1 -c rt_qualify.cpp -o "$RUNNER_TEMP/rt-driver.o"
+          g++ "${flags[@]}" -I "$old" -c RtQualificationBridge.cpp -o "$RUNNER_TEMP/rt-old-bridge.o"
+          g++ "${flags[@]}" -I "$new" -c RtQualificationBridge.cpp -o "$RUNNER_TEMP/rt-new-bridge.o"
+          sha256sum "$RUNNER_TEMP/rt-driver.o"
+          g++ "$RUNNER_TEMP/rt-driver.o" "$RUNNER_TEMP/rt-old-bridge.o" "${wrap[@]}" -o "$RUNNER_TEMP/rt-bridge-old"
+          g++ "$RUNNER_TEMP/rt-driver.o" "$RUNNER_TEMP/rt-new-bridge.o" "${wrap[@]}" -o "$RUNNER_TEMP/rt-bridge-new"
+      - name: Capture actual benchmark input and output
+        run: python3 tools/anti-noiz/diagnose_rt.py "$RUNNER_TEMP/rt-old" "$RUNNER_TEMP/rt-new" "$RUNNER_TEMP/rt-capture-compare" --gate numerical --evidence "$RUNNER_TEMP/rt-direct-evidence.json"
+      - name: Capture same common-object driver linked against both revisions
+        if: ${{ !cancelled() && steps.build_matched.outcome == 'success' }}
+        run: python3 tools/anti-noiz/diagnose_rt.py "$RUNNER_TEMP/rt-bridge-old" "$RUNNER_TEMP/rt-bridge-new" "$RUNNER_TEMP/rt-capture-compare" --gate exact --evidence "$RUNNER_TEMP/rt-exact-evidence.json"
+      - name: Strict common-object PCM and timing gate
+        if: ${{ !cancelled() && steps.build_matched.outcome == 'success' }}
+        run: python3 tools/anti-noiz/compare_rt.py "$RUNNER_TEMP/rt-bridge-old" "$RUNNER_TEMP/rt-bridge-new" --capture-evidence "$RUNNER_TEMP/rt-exact-evidence.json"
+
+  native-host:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' && (contains(github.event.pull_request.labels.*.name, 'anti-noiz-native-smoke')) }}
+    name: Anti Noiz actual JUCE FxInstance (opt-in, no installer)
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: juce-framework/JUCE
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
+          path: third_party/JUCE
+          persist-credentials: false
+      - name: Configure isolated real JUCE adapter and graph fixture
+        shell: pwsh
+        run: cmake -S tools/anti-noiz/native -B build-an-native -G "Visual Studio 17 2022" -A x64 "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE"
+      - name: Build only native fixture
+        run: cmake --build build-an-native --config Release --parallel 2 --target AntiNoizNativeHostTests
+      - name: Run exact native PCM and state gate
+        run: ctest --test-dir build-an-native -C Release --output-on-failure --verbose --no-tests=error
+
+  web-contract:
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    name: Anti Noiz Web UX contract (Node and focused Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: node tools/anti-noiz/web/contract.test.mjs
+      - run: node tools/anti-noiz/web/native_transport.test.mjs
+      - name: Build approved native resource bundle
+        run: |
+          python3 scripts/build_approved_native_gui.py --out "$RUNNER_TEMP/anti-noiz-approved"
+          node --check "$RUNNER_TEMP/anti-noiz-approved/assets/anti-noiz-native.js"
+      - name: Install focused browser fixture dependencies
+        run: |
+          python3 -m pip install playwright
+          python3 -m playwright install --with-deps chromium
+      - name: Actual approved inline editor interaction gate (mock native IPC only)
+        run: python3 tests/anti_noiz_approved_chromium_test.py "$RUNNER_TEMP/anti-noiz-approved"
+      - name: Actual editor screenshot evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: anti-noiz-operator-ui-screenshots
+          path: ${{ runner.temp }}/anti-noiz-operator-*.png
+          if-no-files-found: warn
+

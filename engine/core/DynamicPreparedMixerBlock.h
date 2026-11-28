@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "DynamicChannelRoster.h"
+#include "AutoDuckerKeyContext.h"
 #include "RealtimeSlew64.h"
 #include "StereoLatencyDelay.h"
 #include "RealtimeStereoControlWord.h"
@@ -42,18 +43,31 @@ struct DynamicPlayerPcmBlock final {
     const float* left=nullptr;
     const float* right=nullptr;
 };
+// Default keeps all physical buses time-aligned. Independent monitoring
+// removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
+// This is an explicit prepared-graph policy, not a realtime control.
+enum class MonitorLatencyPolicy : std::uint8_t { aligned, independent };
+// Post-fader dynamics have two explicit timing contracts. Strict is useful
+// for callers requiring sample coincidence; live ducking consumes the actual
+// causal key, including source FX latency, without retiming the audible graph.
+enum class SidechainTimingPolicy : std::uint8_t { requireCoincidence, causalLive };
+// Control-only dependency; never an audible send.
+struct DynamicSidechainDependency final {ChannelId source{},target{};};
 struct DynamicGraphRequest final {
     std::vector<DynamicSourcePatch> sources;
     int physicalInputs=0;
     int maxFrames=512;
     std::size_t maxScratchBytes=64U*1024U*1024U; // admission, not channel-count cap
     bool mainMonoAfterFx=false; // legacy MAIN mono occurs after MAIN VST+balance
+    MonitorLatencyPolicy monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
+    std::vector<DynamicSidechainDependency> postFaderSidechains;
 };
 enum class DynamicGraphFault : std::uint8_t {
     none, noMaster, multipleMasters, invalidFrameCapacity,
     invalidPhysicalCount, missingSource, invalidSource,
     invalidSendDestination, duplicateSend, mainFeedback, cycle, invalidChannel,
-    scratchBudget, overflow, multipleMonitors, monitorFeedback
+    scratchBudget, overflow, multipleMonitors, monitorFeedback, invalidMonitorLatencyPolicy,
+    invalidSidechain, sidechainLatency
 };
 struct DynamicGraphError final {
     DynamicGraphFault fault=DynamicGraphFault::none;
@@ -63,6 +77,7 @@ struct DynamicGraphError final {
 class DynamicPreparedMixerBlock final {
     struct Edge final {
         std::size_t destination=0;
+        std::uint64_t id=0;
         float panL=0.f,panR=0.f,initialGain=1.f;
         bool pre=false,primary=false,enabled=true;
     };
@@ -75,7 +90,7 @@ class DynamicPreparedMixerBlock final {
         bool inputStereo=false,enabled=false;
         bool monoPan=false; // mono source/processing, independent of VST rack width
         float gainL=1.f,gainR=1.f;
-        std::size_t first=0,last=0,slot=0;
+        std::size_t first=0,last=0,slot=0,keyFirst=0,keyLast=0;
     };
     // Immutable topology + atomics for live control targets. Callback-only
     // smoothed state is preallocated per accepted graph revision.
@@ -98,8 +113,15 @@ class DynamicPreparedMixerBlock final {
     }
     struct ChannelTarget final {
         std::atomic<std::uint64_t> state{Word::encode(1.f,1.f,false,false)};
-        armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{},inputApplied{}; // AUDIO only
+        armix::dsp::RealtimeSlew64 appliedL{},appliedR{},gate{},inputApplied{},wireSumApplied{}; // AUDIO only
         std::atomic<float> inputGain{1.f}; // CONTROL writes, AUDIO reads
+        std::atomic<float> wireSumGain{1.f};
+        // A topology retirement is NOT a persisted MUTE/fader edit.
+        static_assert(std::atomic<int>::is_always_lock_free&&std::atomic<bool>::is_always_lock_free);
+        std::atomic<int> retireFrames{0};
+        std::atomic<bool> retireDone{false};
+        float retireGain=1.f,retireGoal=1.f,retireStep=0.f;
+        int retireRemaining=0,retireDuration=64,retireDrain=0; // AUDIO only
     };
     // CONTROL only packs already verified callback-ordinal physical pin pairs.
     // 0xFFFF means missing right input for mono, never an active physical pin.
@@ -182,6 +204,14 @@ public:
         if(found==controlIndex_.end() || lanes_[found->second].role!=ChannelRole::input)
             return false;
         channelTargets_[found->second].inputGain.store(gain,std::memory_order_release);
+        return true;
+    }
+    bool setChannelWireSumGain(ChannelId id,float gain) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>2.f)return false;
+        const auto found=controlIndex_.find(id.value);
+        if(found==controlIndex_.end() || (lanes_[found->second].role!=ChannelRole::input && lanes_[found->second].role!=ChannelRole::group && lanes_[found->second].role!=ChannelRole::fxReturn))
+            return false;
+        channelTargets_[found->second].wireSumGain.store(gain,std::memory_order_release);
         return true;
     }
     // Canonical physical-pin validation shared by structural preflight and
@@ -326,11 +356,30 @@ public:
             externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
     }
 
+    // Immutable, CONTROL-only evidence from the exact accepted PDC plan.
+    // A potential direct tap is not proof that a hardware patch is armed.
+    struct LatencyPlanSummary final {
+        bool valid=false,hasMonitor=false;
+        MonitorLatencyPolicy monitorPolicy=MonitorLatencyPolicy::aligned;
+        int alignedSamples=0,mainBeforeAlignment=0,monitorBeforeAlignment=0;
+        int potentialDirectMaxSamples=0,monitorOutputSamples=0;
+        int monitorAlignmentPad() const noexcept {return monitorOutputSamples-monitorBeforeAlignment;}
+        int monitorIndependentSaving() const noexcept {return hasMonitor?alignedSamples-monitorBeforeAlignment:0;}
+        ChannelId potentialDirectMaxChannel{};
+        unsigned potentialDirectMaxTies=0;
+        bool directTapRaisesTarget() const noexcept {
+            return valid && potentialDirectMaxSamples >
+                std::max(mainBeforeAlignment,hasMonitor?monitorBeforeAlignment:0);
+        }
+    };
+    LatencyPlanSummary latencyPlanSummary() const noexcept {return latencyPlan_;}
+
     // CONTROL-only DAG PDC. Every fan-in receives sample-aligned PCM,
     // including a destination's own hardware capture and PRE-fader sends.
     // A failure discards the unpublished candidate; the old graph stays live.
     template<class Latency>
-    bool prepareLatency(Latency&& latency,std::size_t budget,DynamicGraphError& error) {
+    bool prepareLatency(Latency&& latency,std::size_t budget,DynamicGraphError& error,
+                        SidechainTimingPolicy sidechainTiming=SidechainTimingPolicy::requireCoincidence) {
         std::vector<int> arrival(lanes_.size(),0),output(lanes_.size(),0);
         std::size_t bytes=scratch_.size()*sizeof(float);
         edgeDelays_.resize(edges_.size());physicalDelays_.resize(lanes_.size());
@@ -356,17 +405,50 @@ public:
             for(std::size_t e=lanes_[i].first;e<lanes_[i].last;++e)
                 arrival[edges_[e].destination]=std::max(arrival[edges_[e].destination],output[i]);
         }
+        // Strict clients retain the original coincidence fence. Native live
+        // ducking instead uses actual post-fader PCM from this callback in DAG
+        // order; it adds neither program delay nor a previous-block key.
+        // A latent source can trigger later (or earlier than a latent target).
+        // Audio fan-in/output PDC below is identical in both modes.
+        if(sidechainTiming==SidechainTimingPolicy::requireCoincidence)
+        for(const auto i:renderOrder_){
+            const auto& lane=lanes_[i];
+            for(auto k=lane.keyFirst;k<lane.keyLast;++k){
+                const auto source=postKeys_[k].laneIndex;
+                if(output[source]!=arrival[i]||output[i]!=arrival[i]){
+                    error={DynamicGraphFault::sidechainLatency,lane.id};return false;
+                }
+            }
+        }
         int terminal=0,externalTerminal=0;
+        LatencyPlanSummary summary;
+        summary.hasMonitor=monitor_!=notScheduled;
+        summary.monitorPolicy=monitorLatencyPolicy_;
+        summary.mainBeforeAlignment=output[main_];
+        if(summary.hasMonitor)summary.monitorBeforeAlignment=output[monitor_];
         for(const auto i:renderOrder_){
             if(i==main_||i==monitor_)terminal=std::max(terminal,output[i]);
             if(lanes_[i].role==ChannelRole::input ||
                lanes_[i].role==ChannelRole::group ||
-               lanes_[i].role==ChannelRole::fxReturn)
-                externalTerminal=std::max(externalTerminal,output[i]);
+               lanes_[i].role==ChannelRole::fxReturn) {
+                if(output[i]>externalTerminal || summary.potentialDirectMaxTies==0) {
+                    externalTerminal=output[i];
+                    summary.potentialDirectMaxChannel=lanes_[i].id;
+                    summary.potentialDirectMaxTies=1;
+                } else if(output[i]==externalTerminal) {
+                    ++summary.potentialDirectMaxTies;
+                }
+            }
         }
         // Across independent physical buses, PDC shares a single target.
+        summary.potentialDirectMaxSamples=externalTerminal;
         terminal=std::max(terminal,externalTerminal);
         externalTerminal=terminal;
+        // MAIN and every potential direct output remain on the existing
+        // global reference, even when MONITOR is explicitly independent.
+        summary.monitorOutputSamples=!summary.hasMonitor?0:
+            monitorLatencyPolicy_==MonitorLatencyPolicy::independent?
+                summary.monitorBeforeAlignment:terminal;
         for(const auto i:renderOrder_) {
             const auto& lane=lanes_[i];
             if((lane.inputL>=0 || lane.playerDeckId!=0) &&
@@ -377,7 +459,8 @@ public:
                 if(!allocate(edgeDelays_[e],arrival[edges_[e].destination]-output[i])) {
                     error={DynamicGraphFault::scratchBudget,lane.id};return false;
                 }
-            if((i==main_||i==monitor_)&&!allocate(sinkDelays_[i],terminal-output[i])) {
+            if((i==main_||i==monitor_)&&!allocate(sinkDelays_[i],
+                   (i==monitor_?summary.monitorOutputSamples:terminal)-output[i])) {
                 error={DynamicGraphFault::scratchBudget,lane.id};return false;
             }
             // All potential direct taps are prepared on CONTROL so changing
@@ -389,9 +472,119 @@ public:
                 error={DynamicGraphFault::scratchBudget,lane.id};return false;
             }
         }
-        latencySamples_=terminal;return true;
+        latencySamples_=terminal;
+        summary.alignedSamples=terminal;summary.valid=true;
+        latencyPlan_=summary;return true;
     }
     int latencySamples() const noexcept {return latencySamples_;}
+
+    struct ContinuityPlan final {
+        std::vector<std::pair<std::size_t,std::size_t>> lanes,edges; // new, old
+    };
+    // CONTROL: only identical surviving topology and PDC are admissible.
+    // Inbound wires may be removed with their already faded destination;
+    // live SOLO topology and changed PDC still require an explicit stopped edit.
+    bool prepareContinuity(const DynamicPreparedMixerBlock& old,ChannelId removed,
+                           ContinuityPlan& plan) {
+        if(capacity_!=old.capacity_||physicalInputs_!=old.physicalInputs_||
+           mainMonoAfterFx_!=old.mainMonoAfterFx_||
+           monitorLatencyPolicy_!=old.monitorLatencyPolicy_||
+           latencySamples_!=old.latencySamples_||
+           lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size())return false;
+        if(removed.value){
+            const auto found=old.controlIndex_.find(removed.value);
+            if(found==old.controlIndex_.end()||controlIndex_.contains(removed.value))return false;
+            for(std::size_t i=0;i<old.lanes_.size();++i)
+                if(Word::decode(old.channelTargets_[i].state.load(std::memory_order_acquire)).solo)
+                    return false;
+        }
+        const auto delayEqual=[](const auto& a,std::size_t i,const auto& b,std::size_t j){
+            return i<a.size()&&j<b.size()&&a[i].samples()==b[j].samples();
+        };
+        for(std::size_t i=0;i<lanes_.size();++i){
+            const auto& n=lanes_[i];const auto found=old.controlIndex_.find(n.id.value);
+            if(found==old.controlIndex_.end())return false;
+            const auto j=found->second;const auto& o=old.lanes_[j];
+            const bool wasScheduled=old.channelScheduled(n.id),nowScheduled=channelScheduled(n.id);
+            if(n.role!=o.role||n.format!=o.format||n.monoPan!=o.monoPan||
+               n.inputStereo!=o.inputStereo||n.playerDeckId!=o.playerDeckId||
+               (n.inputL>=0)!=(o.inputL>=0))return false;
+            // A fresh zero-latency Compressor may activate an unpatched
+            // dormant lane. It has no physical/player input or prior history.
+            // A downstream lane which becomes dormant has no physical/player
+            // source or FX by compiler construction. Its removed contribution
+            // has drained before publication; no live processor tail is lost.
+            if(!wasScheduled&&nowScheduled&&!removed.value&&n.inputL<0&&!n.playerDeckId)continue;
+            if(wasScheduled&&!nowScheduled&&removed.value&&n.inputL<0&&!n.playerDeckId)continue;
+            if(wasScheduled!=nowScheduled||
+               !delayEqual(physicalDelays_,i,old.physicalDelays_,j)||
+               !delayEqual(sinkDelays_,i,old.sinkDelays_,j)||
+               !delayEqual(externalDelays_,i,old.externalDelays_,j))return false;
+            if(n.inputL>=0 && sourceTargets_[i].load()!=old.sourceTargets_[j].load())return false;
+            if(channelTargets_[i].state.load()!=old.channelTargets_[j].state.load()||
+               channelTargets_[i].inputGain.load()!=old.channelTargets_[j].inputGain.load()||
+               channelTargets_[i].wireSumGain.load()!=old.channelTargets_[j].wireSumGain.load())return false;
+            std::size_t survivingEdges=0;
+            for(std::size_t k=o.first;k<o.last;++k)
+                if(old.lanes_[old.edges_[k].destination].id!=removed)++survivingEdges;
+            if(n.last-n.first!=survivingEdges)return false;
+            plan.lanes.emplace_back(i,j);
+            externalTargets_[i].store(old.externalTargets_[j].load(std::memory_order_acquire));
+            for(std::size_t e=n.first;e<n.last;++e){
+                const auto& edge=edges_[e];
+                const auto prior=std::find_if(old.edges_.begin()+o.first,old.edges_.begin()+o.last,
+                    [&](const Edge& x){return x.id==edge.id&&
+                        old.lanes_[x.destination].id==lanes_[edge.destination].id;});
+                if(prior==old.edges_.begin()+o.last)return false;
+                const auto k=static_cast<std::size_t>(prior-old.edges_.begin());
+                if(edge.pre!=prior->pre||edge.primary!=prior->primary||
+                   edge.panL!=prior->panL||edge.panR!=prior->panR||
+                   sendTargets_[e].gain.load()!=old.sendTargets_[k].gain.load()||
+                   sendTargets_[e].enabled.load()!=old.sendTargets_[k].enabled.load()||
+                   !delayEqual(edgeDelays_,e,old.edgeDelays_,k))return false;
+                plan.edges.emplace_back(e,k);
+            }
+        }
+        return true;
+    }
+    // AUDIO only, once, under the existing render permit. Transfer ring
+    // ownership by swap (no sample copies, allocations or destruction).
+    void adoptContinuity(DynamicPreparedMixerBlock& old,const ContinuityPlan& plan) noexcept {
+        for(const auto& [i,j]:plan.lanes){
+            auto& n=channelTargets_[i];auto& o=old.channelTargets_[j];
+            n.appliedL=o.appliedL;n.appliedR=o.appliedR;n.gate=o.gate;
+            n.inputApplied=o.inputApplied;n.wireSumApplied=o.wireSumApplied;
+            n.retireGain=o.retireGain;n.retireGoal=o.retireGoal;n.retireStep=o.retireStep;
+            n.retireRemaining=o.retireRemaining;n.retireDuration=o.retireDuration;
+            sourceFades_[i]=old.sourceFades_[j];externalFades_[i]=old.externalFades_[j];
+            externalAppliedTargets_[i].store(old.externalAppliedTargets_[j].load(std::memory_order_acquire),
+                                             std::memory_order_release);
+            physicalDelays_[i].swapHistory(old.physicalDelays_[j]);
+            sinkDelays_[i].swapHistory(old.sinkDelays_[j]);
+            externalDelays_[i].swapHistory(old.externalDelays_[j]);
+        }
+        for(const auto& [i,j]:plan.edges){
+            sendTargets_[i].applied=old.sendTargets_[j].applied;
+            edgeDelays_[i].swapHistory(old.edgeDelays_[j]);
+        }
+    }
+    bool beginRetirement(ChannelId id,int frames) noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end()||frames<1||frames>4096)return false;
+        auto& t=channelTargets_[it->second];
+        t.retireDone.store(false,std::memory_order_relaxed);
+        t.retireFrames.store(frames,std::memory_order_release);return true;
+    }
+    bool retirementComplete(ChannelId id) const noexcept {
+        const auto it=controlIndex_.find(id.value);
+        return it!=controlIndex_.end()&&
+            channelTargets_[it->second].retireDone.load(std::memory_order_acquire);
+    }
+    void cancelRetirement(ChannelId id) noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it!=controlIndex_.end())channelTargets_[it->second].retireFrames.store(0,std::memory_order_release);
+    }
+
 
     // Control thread only. Rejection leaves the previous prepared object
     // byte-for-byte usable; caller must publish with epoch/revision MUTE/ACK.
@@ -406,7 +599,12 @@ public:
         if(req.physicalInputs<0 || req.physicalInputs>256) {
             error.fault=DynamicGraphFault::invalidPhysicalCount;return false;
         }
+        if(req.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned &&
+           req.monitorLatencyPolicy!=MonitorLatencyPolicy::independent){
+            error.fault=DynamicGraphFault::invalidMonitorLatencyPolicy;return false;
+        }
         DynamicPreparedMixerBlock next;
+        next.monitorLatencyPolicy_=req.monitorLatencyPolicy;
         next.capacity_=req.maxFrames;
         next.physicalInputs_=req.physicalInputs;
         const auto& rows=roster.channels();
@@ -421,6 +619,8 @@ public:
                !std::isfinite(row.inputGainLinear) || row.inputGainLinear<0.f ||
                row.inputGainLinear>16.f ||
                (row.role!=ChannelRole::input && row.inputGainLinear!=1.f) ||
+               !std::isfinite(row.wireSumGainLinear) || row.wireSumGainLinear<0.f || row.wireSumGainLinear>2.f ||
+               ((row.role!=ChannelRole::input && row.role!=ChannelRole::group && row.role!=ChannelRole::fxReturn) && row.wireSumGainLinear!=1.f) ||
                !std::isfinite(row.pan) || row.pan< -1.f || row.pan>1.f ||
                (row.format!=ProcessingFormat::mono &&
                 row.format!=ProcessingFormat::stereo) ||
@@ -451,6 +651,9 @@ public:
         if(main==notScheduled){error.fault=DynamicGraphFault::noMaster;return false;}
         next.main_=main;
         next.monitor_=monitor;
+        if(monitor==notScheduled && req.monitorLatencyPolicy==MonitorLatencyPolicy::independent){
+            error.fault=DynamicGraphFault::invalidMonitorLatencyPolicy;return false;
+        }
         next.mainMonoAfterFx_=req.mainMonoAfterFx;
         for(const auto& patch:req.sources) {
             const auto it=byId.find(patch.id.value);
@@ -517,11 +720,27 @@ public:
                 if(send.primaryOutput&&!send.enabled){
                     error={DynamicGraphFault::invalidSendDestination,rows[i].id};return false;
                 }
-                outgoing[i].push_back({to,gl,gr,send.gain,send.preFader,
+                outgoing[i].push_back({to,send.edgeId,gl,gr,send.gain,send.preFader,
                                        send.primaryOutput,send.enabled});
                 parents[to].push_back(i);
                 ++indegree[to];
             }
+        }
+        // Sidechain order constraints share the audio DAG's cycle check but
+        // never enter the audible CSR, solo closure, gain or send fan-out.
+        std::vector<std::vector<std::size_t>> sideTo(rows.size()),sideFrom(rows.size());
+        for(const auto& dep:req.postFaderSidechains){
+            const auto s=byId.find(dep.source.value),t=byId.find(dep.target.value);
+            if(s==byId.end()||t==byId.end()||s->second==t->second){
+                error={DynamicGraphFault::invalidSidechain,dep.target};return false;
+            }
+            auto& sources=sideFrom[t->second];
+            if(std::find(sources.begin(),sources.end(),s->second)!=sources.end()||
+               sources.size()>=8*armix::builtin_fx::AutoDuckerCore::maxSources){
+                error={DynamicGraphFault::invalidSidechain,dep.target};return false;
+            }
+            sources.push_back(s->second);sideTo[s->second].push_back(t->second);
+            ++indegree[t->second];
         }
         // Kahn compile O(V+E), no per-callback DAG sort or send scan.
         std::deque<std::size_t> queue;
@@ -534,6 +753,7 @@ public:
             order.push_back(i);
             for(const auto& edge:outgoing[i])
                 if(--indegree[edge.destination]==0)queue.push_back(edge.destination);
+            for(const auto target:sideTo[i])if(--indegree[target]==0)queue.push_back(target);
         }
         if(order.size()!=rows.size()){
             error.fault=DynamicGraphFault::cycle;return false;
@@ -590,6 +810,20 @@ public:
         std::vector<unsigned char> scheduled(rows.size(),0);
         for(const auto i:next.renderOrder_)scheduled[i]=1;
 
+        // One target-local sorted key view; source publication indexes are
+        // prepared on CONTROL. No scratch copies or scans of unrelated routes.
+        next.postKeyPublish_.resize(rows.size());
+        for(std::size_t i=0;i<rows.size();++i){
+            auto& lane=next.lanes_[i];
+            auto& from=sideFrom[i];
+            std::sort(from.begin(),from.end(),[&](auto a,auto b){return rows[a].id.value<rows[b].id.value;});
+            lane.keyFirst=next.postKeys_.size();
+            for(auto source:from){
+                next.postKeyPublish_[source].push_back(next.postKeys_.size());
+                next.postKeys_.push_back({rows[source].id.value,source,{}});
+            }
+            lane.keyLast=next.postKeys_.size();
+        }
         const auto active=next.renderOrder_.size();
         const std::size_t frame=static_cast<std::size_t>(req.maxFrames);
         if(frame>0 && active>req.maxScratchBytes/(2*sizeof(float)*frame)) {
@@ -610,13 +844,17 @@ public:
         next.scratch_.assign(active*2*frame,0.f);
         next.sourceTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.sourceFades_=std::make_unique<SourceFade[]>(rows.size());
+        next.sourceBlockTargets_.resize(rows.size());
         for(std::size_t i=0;i<rows.size();++i){
             const auto& lane=next.lanes_[i];
             if(lane.inputL<0)continue;
             const auto initial=packPhysical(lane.inputL,lane.inputR);
             next.sourceTargets_[i].store(initial,std::memory_order_relaxed);
             next.sourceFades_[i].current=next.sourceFades_[i].next=initial;
+            if(scheduled[i])next.duckerKeys_.push_back({lane.id.value,i,{}});
         }
+        std::sort(next.duckerKeys_.begin(),next.duckerKeys_.end(),
+            [](const auto& a,const auto& b){return a.id<b.id;});
         next.channelTargets_=std::make_unique<ChannelTarget[]>(rows.size());
         next.blockTargets_.resize(rows.size());
         next.soloAncestors_.assign(rows.size(),0);
@@ -631,6 +869,8 @@ public:
             target.gate.reset(next.initialAudible_[i]?1.f:0.f);
             target.inputGain.store(rows[i].inputGainLinear,std::memory_order_relaxed);
             target.inputApplied.reset(rows[i].inputGainLinear);
+            target.wireSumGain.store(rows[i].wireSumGainLinear,std::memory_order_relaxed);
+            target.wireSumApplied.reset(rows[i].wireSumGainLinear);
         }
         next.externalTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
         next.externalAppliedTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
@@ -663,7 +903,7 @@ public:
                  std::span<float> channelPeaksR={},
                  std::span<const DynamicPlayerPcmBlock> playerPcm={},
                  float* const* hardwareOutputs=nullptr,
-                 int hardwareOutputCount=0) noexcept {
+                 int hardwareOutputCount=0,bool allowUnmappedMonitor=false) noexcept {
         if(frames<=0 || !outputL || !outputR)return false;
         // The physical 10CH/4AUX callback requests only the stable
         // legacy prefix of an expanded ChannelId roster. Dynamic extra
@@ -680,7 +920,7 @@ public:
            hardwareOutputCount>256 ||
            (hardwareOutputCount!=0 && !hardwareOutputs) ||
            (monitorL==nullptr)!=(monitorR==nullptr) ||
-           (monitor_!=notScheduled && !monitorL) ||
+           (monitor_!=notScheduled && !monitorL && !allowUnmappedMonitor) ||
            (monitorL && (monitorL==monitorR || monitorL==outputL ||
                          monitorL==outputR || monitorR==outputL ||
                          monitorR==outputR)))return false;
@@ -727,6 +967,26 @@ public:
                 (!anySolo||soloAncestors_[i]||soloDescendants_[i]);
             channelTargets_[i].gate.retarget(audible?1.f:0.f);
         }
+        // A raw, pre-trim capture key is independent of strip/render order.
+        // Read each physical patch once at the block boundary; use the SAME
+        // snapshot for the program source render. A re-patch temporarily
+        // invalidates the key instead of triggering from the previous pin.
+        for(auto& entry:duckerKeys_){
+            const auto i=entry.laneIndex;
+            const auto& lane=lanes_[i];
+            const auto pair=sourceTargets_[i].load(std::memory_order_acquire);
+            sourceBlockTargets_[i]=pair;
+            entry.key={};
+            const auto& fade=sourceFades_[i];
+            const bool audible=!blockTargets_[i].mute &&
+                (!anySolo||soloAncestors_[i]||soloDescendants_[i]);
+            if(!audible||!physical||fade.remaining||pair!=fade.current)continue;
+            const int a=physicalLeft(pair),b=physicalRight(pair);
+            if(a<0||a>=physicalCount||!physical[a])continue;
+            if(lane.inputStereo&&(b<0||b>=physicalCount||!physical[b]))continue;
+            entry.key={physical[a],lane.inputStereo?physical[b]:nullptr};
+        }
+        for(auto& entry:postKeys_)entry.key={}; // never reuse a previous callback view
         // Prepared active scratch only; zero-patched lanes cost nothing.
         for(const auto i:renderOrder_){
             auto& lane=lanes_[i];
@@ -741,9 +1001,14 @@ public:
             const auto& lane=lanes_[i];
             float* const l=scratch_.data()+lane.slot*2*block;
             float* const r=l+block;
+            // The scratch buffers contain only accumulated incoming WIREs here.
+            // Scale their sum before adding any local physical/player input.
+            auto& sum=channelTargets_[i];
+            sum.wireSumApplied.retarget(sum.wireSumGain.load(std::memory_order_acquire));
+            sum.wireSumApplied.applyStereo(l,r,frames);
             if(lane.inputL>=0 && physical) {
                 auto& fade=sourceFades_[i];
-                const auto desired=sourceTargets_[i].load(std::memory_order_acquire);
+                const auto desired=sourceBlockTargets_[i];
                 if(fade.remaining==0 && desired!=fade.current) {
                     fade.next=desired;fade.remaining=armix::dsp::RealtimeSlew64::samples;
                 }
@@ -763,6 +1028,8 @@ public:
                 const float* oldR=resolve(fade.current,1);
                 const float* newL=fade.remaining?resolve(fade.next,0):oldL;
                 const float* newR=fade.remaining?resolve(fade.next,1):oldR;
+                auto* const physicalDelay=!physicalDelays_.empty() && physicalDelays_[i].active()?
+                    &physicalDelays_[i]:nullptr;
                 for(int f=0;f<frames;++f) {
                     float vl=oldL?oldL[f]:0.f,vr=oldR?oldR[f]:0.f;
                     if(fade.remaining>0) {
@@ -772,7 +1039,7 @@ public:
                         vr+=((newR?newR[f]:0.f)-vr)*alpha;
                         if(--fade.remaining==0){fade.current=fade.next;oldL=newL;oldR=newR;}
                     }
-                    if(!physicalDelays_.empty())physicalDelays_[i].process(vl,vr);
+                    if(physicalDelay)physicalDelay->process(vl,vr);
                     l[f]+=vl;r[f]+=vr;
                 }
             }
@@ -786,11 +1053,12 @@ public:
                 // Even when the worker runs dry, advance the prepared PDC
                 // delay with silence: otherwise returning music would release
                 // stale buffered frames at the wrong callback time.
+                auto* const physicalDelay=!physicalDelays_.empty() && physicalDelays_[i].active()?
+                    &physicalDelays_[i]:nullptr;
                 for(int f=0;f<frames;++f) {
                     float vl=(found&&found->left)?found->left[f]:0.f;
                     float vr=(found&&found->right)?found->right[f]:0.f;
-                    if(!physicalDelays_.empty())
-                        physicalDelays_[i].process(vl,vr);
+                    if(physicalDelay)physicalDelay->process(vl,vr);
                     l[f]+=vl;r[f]+=vr;
                 }
             }
@@ -804,17 +1072,40 @@ public:
             if(lane.role==ChannelRole::input){
                 auto& trim=channelTargets_[i];
                 trim.inputApplied.retarget(trim.inputGain.load(std::memory_order_acquire));
-                for(int f=0;f<frames;++f){
-                    const float g=trim.inputApplied.next();l[f]*=g;r[f]*=g;
-                }
+                trim.inputApplied.applyStereo(l,r,frames);
             }
-            processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
+            {
+                const auto post=std::span<const AutoDuckerKeyEntry>(postKeys_).subspan(lane.keyFirst,lane.keyLast-lane.keyFirst);
+                const AutoDuckerKeyScope keyScope(duckerKeys_,lane.id.value,frames,post);
+                processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
+            }
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
             auto& gate=channelTargets_[i].gate;
-            for(int f=0;f<frames;++f){
-                const float g=gate.next();l[f]*=g;r[f]*=g;
+            gate.applyStereo(l,r,frames);
+            // Fade after FX and before every PRE/POST/physical tap.
+            auto& retirement=channelTargets_[i];
+            const int retire=retirement.retireFrames.load(std::memory_order_acquire);
+            const float retireGoal=retire>0?0.f:1.f;
+            if(retireGoal!=retirement.retireGoal){
+                retirement.retireGoal=retireGoal;
+                if(retire>0)retirement.retireDuration=retire;
+                retirement.retireRemaining=retirement.retireDuration;
+                retirement.retireStep=(retireGoal-retirement.retireGain)/
+                    static_cast<float>(retirement.retireRemaining);
+                retirement.retireDrain=latencySamples_;
             }
+            const bool alreadySilent=retirement.retireRemaining==0&&retirement.retireGain==0.f;
+            if(retirement.retireRemaining||retirement.retireGain!=1.f){
+                for(int f=0;f<frames;++f){
+                    if(retirement.retireRemaining>0){
+                        if(--retirement.retireRemaining==0)retirement.retireGain=retireGoal;
+                        else retirement.retireGain+=retirement.retireStep;
+                    }
+                    l[f]*=retirement.retireGain;r[f]*=retirement.retireGain;
+                }
+            }
+            if(retire>0&&alreadySilent)retirement.retireDrain=std::max(0,retirement.retireDrain-frames);
             for(std::size_t e=lane.first;e<lane.last;++e) {
                 const auto& edge=edges_[e];
                 if(!edge.pre)continue;
@@ -827,10 +1118,14 @@ public:
                 // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
                 // ASIO callback advances only 4/64 of the requested change.
                 target.applied.retarget(goal);
-                for(int f=0;f<frames;++f){
+                auto* const edgeDelay=!edgeDelays_.empty() && edgeDelays_[e].active()?
+                    &edgeDelays_[e]:nullptr;
+                if(!edgeDelay)
+                    target.applied.accumulateStereo(l,r,dl,dr,frames,edge.panL,edge.panR);
+                else for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
                     float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
-                    if(!edgeDelays_.empty())edgeDelays_[e].process(vl,vr);
+                    edgeDelay->process(vl,vr);
                     dl[f]+=vl;dr[f]+=vr;
                 }
             }
@@ -842,11 +1137,31 @@ public:
             controls.appliedL.retarget(goalL);
             controls.appliedR.retarget(goalR);
             float observedL=0.f,observedR=0.f;
-            for(int f=0;f<frames;++f){
+            if(controls.appliedL.remaining==0 && controls.appliedR.remaining==0){
+                const float gainL=controls.appliedL.current,gainR=controls.appliedR.current;
+                if(gainL==1.f && gainR==1.f){
+                    for(int f=0;f<frames;++f){
+                        observedL=std::max(observedL,std::abs(l[f]));
+                        observedR=std::max(observedR,std::abs(r[f]));
+                    }
+                }else{
+                    for(int f=0;f<frames;++f){
+                        l[f]*=gainL;r[f]*=gainR;
+                        observedL=std::max(observedL,std::abs(l[f]));
+                        observedR=std::max(observedR,std::abs(r[f]));
+                    }
+                }
+            }else for(int f=0;f<frames;++f){
                 l[f]*=controls.appliedL.next();
                 r[f]*=controls.appliedR.next();
                 observedL=std::max(observedL,std::abs(l[f]));
                 observedR=std::max(observedR,std::abs(r[f]));
+            }
+            // Source is fully processed for THIS callback. Its scratch is
+            // retained until all consumers finish; never inject key PCM.
+            const bool keyAudible=!goal.mute&&(!anySolo||soloAncestors_[i]||soloDescendants_[i]);
+            if(keyAudible){
+                for(auto k:postKeyPublish_[i])postKeys_[k].key={l,r};
             }
             if(i<channelPeaksL.size()) {
                 channelPeaksL[i]=observedL;
@@ -864,10 +1179,14 @@ public:
                 // Coalesced, callback-continuous 64 SAMPLE slew. A 4-frame
                 // ASIO callback advances only 4/64 of the requested change.
                 target.applied.retarget(goal);
-                for(int f=0;f<frames;++f){
+                auto* const edgeDelay=!edgeDelays_.empty() && edgeDelays_[e].active()?
+                    &edgeDelays_[e]:nullptr;
+                if(!edgeDelay)
+                    target.applied.accumulateStereo(l,r,dl,dr,frames,edge.panL,edge.panR);
+                else for(int f=0;f<frames;++f){
                     const float applied=target.applied.next();
                     float vl=l[f]*applied*edge.panL,vr=r[f]*applied*edge.panR;
-                    if(!edgeDelays_.empty())edgeDelays_[e].process(vl,vr);
+                    edgeDelay->process(vl,vr);
                     dl[f]+=vl;dr[f]+=vr;
                 }
             }
@@ -877,22 +1196,19 @@ public:
         // in-place/aliased hardware buffers an earlier clear would erase the
         // input before the source strips consumed it. This adds no allocation,
         // copy, lock, callback, DSP pass or latency.
-        std::fill_n(outputL,frames,0.f);
-        std::fill_n(outputR,frames,0.f);
-        if(monitorL){
-            std::fill_n(monitorL,frames,0.f);
-            std::fill_n(monitorR,frames,0.f);
-        }
-        // Output roles are terminal sinks; copy each independently from
-        // the SAME preallocated render graph. No second FX traversal.
+        // Each terminal sink is written once, after all aliased input
+        // reads: prepared PCM copy OR silence, not redundant clear+copy.
         const auto copySink=[&](std::size_t sink,float* l,float* r) noexcept {
-            if(sink==notScheduled || !lanes_[sink].enabled)return;
+            if(sink==notScheduled || !lanes_[sink].enabled ||
+               lanes_[sink].slot>=renderOrder_.size()){
+                std::fill_n(l,frames,0.f);std::fill_n(r,frames,0.f);return;
+            }
             const auto slot=lanes_[sink].slot;
-            if(slot>=renderOrder_.size())return;
             const float* const source=scratch_.data()+slot*2*block;
             std::copy_n(source,frames,l);
             std::copy_n(source+block,frames,r);
-            if(!sinkDelays_.empty())for(int f=0;f<frames;++f)sinkDelays_[sink].process(l[f],r[f]);
+            if(!sinkDelays_.empty() && sinkDelays_[sink].active())
+                for(int f=0;f<frames;++f)sinkDelays_[sink].process(l[f],r[f]);
         };
         copySink(main_,outputL,outputR);
         if(mainMonoAfterFx_) {
@@ -962,12 +1278,21 @@ public:
                     fade.next=wanted;
                     fade.remaining=armix::dsp::RealtimeSlew64::samples;
                 }
+                auto* const externalDelay=!externalDelays_.empty() && externalDelays_[i].active()?
+                    &externalDelays_[i]:nullptr;
                 const auto slot=lane.slot;
                 const float* src=scratch_.data()+slot*2*block;
                 const float* srcR=src+block;
+                // Disconnected taps still retain exact latency history for
+                // immediate reconnect, but never read discarded delayed PCM.
+                if(fade.remaining==0 && fade.current==noExternal){
+                    if(externalDelay)externalDelay->advanceHistory(src,srcR,frames);
+                    externalAppliedTargets_[i].store(noExternal,std::memory_order_release);
+                    continue;
+                }
                 for(int f=0;f<frames;++f) {
                     float l=src[f],r=srcR[f];
-                    if(!externalDelays_.empty())externalDelays_[i].process(l,r);
+                    if(externalDelay)externalDelay->process(l,r);
                     float nextWeight=1.f,oldWeight=0.f;
                     if(fade.remaining>0) {
                         nextWeight=1.f-static_cast<float>(fade.remaining-1)/
@@ -990,6 +1315,15 @@ public:
                     std::memory_order_release);
             }
         }
+        // A completion receipt follows successful delivery, including PDC
+        // drain and physical taps. A cancelled request never authorizes removal.
+        for(const auto i:renderOrder_){
+            auto& t=channelTargets_[i];
+            if(t.retireFrames.load(std::memory_order_acquire)>0&&t.retireGain==0.f&&
+               t.retireRemaining==0&&t.retireDrain==0&&
+               (hardwareOutputs||externalTargets_[i].load(std::memory_order_acquire)==noExternal))
+                t.retireDone.store(true,std::memory_order_release);
+        }
         return true;
     }
 private:
@@ -1000,9 +1334,15 @@ private:
     std::vector<unsigned char> initialAudible_,soloAncestors_,soloDescendants_;
     std::vector<Word::Snapshot> blockTargets_; // all allocated before RT
     std::vector<float> scratch_;
+    std::vector<AutoDuckerKeyEntry> postKeys_;
+    std::vector<std::vector<std::size_t>> postKeyPublish_;
+    std::vector<AutoDuckerKeyEntry> duckerKeys_; // preallocated, callback-local views
+    std::vector<std::uint32_t> sourceBlockTargets_;
     std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
     std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;
+    LatencyPlanSummary latencyPlan_{};
+    MonitorLatencyPolicy monitorLatencyPolicy_=MonitorLatencyPolicy::aligned;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
     std::unique_ptr<SourceFade[]> sourceFades_;

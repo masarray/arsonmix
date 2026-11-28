@@ -41,6 +41,8 @@ public:
         previousFrames_ = 0;
     }
 
+    void breakSequence() noexcept {previousStartedUs_=0;previousFrames_=0;}
+
     Observation observe(std::uint64_t startUs, int currentFrames) noexcept
     {
         if (startUs == 0 || currentFrames <= 0 || currentFrames > 65536

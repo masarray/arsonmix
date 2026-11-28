@@ -1,0 +1,9 @@
+# VD7 stage preset candidate — one click, ready to sing
+Owner request: no operator, all genres/situations. Baseline canonical #899 6970a54e203445330ff7754f40bd049e8be89e06. This commit is a preset/recall candidate, NOT sonic stage qualification.
+
+## Product behavior
+Smart Live is the new-insert universal preset; 12 Ready to Sing presets provide musical outcomes, not engineering jargon. Classic factory voicings remain available in a separate menu section. Factory stage selection sets internal Power ON, resets transient HIT and manual tempo to safe free-time fallback, leaves host/slot bypass untouched. Saved Show/user preset parameters remain the authority; no state schema change or implicit migration. Smart voicing no longer lowers the chosen duck depth. No mandatory TAP or expert editing.
+
+## Gate before calling this stage ready
+Existing V2 ping-pong dual-mono injection bug and sustained-phrase history policy remain open in #916 VD7: do not claim true movement or automatic genre classification from this commit. Dual style gives asymmetric taps even for equal input; Dance Bounce/Silky Ping Pong require VD7 topology fix. MUSIC follow remains explicit because a reliable music source cannot be inferred; confidence-gated auto source selection and safe fallback must be implemented and tested before claiming tempo automation. User does not need BPM to use free-time presets. No automatic gain increase of dry vocal. Actual values are initial engineering targets, not vendor presets or listening-tuned results.
+Acceptance: real sung phrases, quiet/loud singers, genres above, no manual tweak, real headphone/ASIO test, stereo & mono, repeated preset changes, dry unchanged, no click, headroom, CPU and actual wet RMS/phrase gap checks. Existing presets remain classic. New preset names are provisional.

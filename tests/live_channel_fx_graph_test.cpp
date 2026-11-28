@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/LiveChannelFxGraph.h"
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
+#include "../engine/builtin_fx/ChannelCompressorProcessor.h"
 #include "../engine/core/DynamicChannelFxLeaseBank.h"
 #include "../engine/core/NativeFxRackTransaction.h"
+#include "../src/NativeFxRackArchive.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/UnifiedLegacyProductionAdmission.h"
 #include "../engine/core/NativeOutputPairTap.h"
@@ -47,7 +49,12 @@ public:
         .withOutput("Main",juce::AudioChannelSet::stereo(),true)),gain_(gain),offset_(offset),delaySamples_(delay){++living;setLatencySamples(delay);}
     ~GainFx() override{--living;}
     const juce::String getName()const override{return "In-memory gain effect";}
-    void prepareToPlay(double,int)override{++prepared;assert(delay_.prepare(delaySamples_));}
+    void prepareToPlay(double rate,int frames)override{
+        // Direct in-memory fixture (not JUCE's plugin host): publish the
+        // same metadata the real host supplies before preparing playback.
+        setRateAndBufferSizeDetails(rate,frames);
+        ++prepared;assert(delay_.prepare(delaySamples_));
+    }
     void releaseResources()override{++released;}
     void processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&)override{
         ++renderCalls;
@@ -1924,6 +1931,292 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+// Deterministic interleaving: AUDIO has removed the command from its
+// queue, but the terminal receipt has not yet reached CONTROL. Both queues
+// could be empty; the real shared receipt fence must remain closed.
+static void verifyControlEditReceiptFence() {
+    struct Probe final : RealtimeNativeFxControl {
+        void consumeRealtimeEdits() noexcept override {}
+        bool submit(bool accepted) noexcept {return trackControlEdit(accepted);}
+        bool poll(bool received) noexcept {return settleControlEdit(received);}
+        bool stateSnapshotQuiescent() const noexcept override {return controlEditsSettled();}
+    } p;
+    assert(p.stateSnapshotQuiescent());
+    assert(!p.submit(false)&&p.stateSnapshotQuiescent());
+    assert(p.submit(true)&&!p.stateSnapshotQuiescent());
+    assert(!p.poll(false)&&!p.stateSnapshotQuiescent()); // popped, no ACK
+    assert(p.submit(true)&&!p.stateSnapshotQuiescent());
+    assert(p.poll(true)&&!p.stateSnapshotQuiescent()); // only first ACK
+    assert(p.poll(true)&&p.stateSnapshotQuiescent()); // all terminal receipts
+    assert(!p.poll(false)&&p.stateSnapshotQuiescent());
+}
+
+static void verifyNativeExactIdle() {
+    verifyControlEditReceiptFence();
+    using Eq=armix::builtin_fx::ChannelEqProcessor;
+    using Comp=armix::builtin_fx::ChannelCompressorProcessor;
+    auto eq=std::make_unique<Eq>();eq->prepareToPlay(48000,64);
+    auto* live=eq.get();
+    LiveChannelFxGraph::FxInstance lease(std::move(eq),Eq::catalogIdentity,"EQ",64);
+    std::array<float,64> l{},r{};l.fill(.125f);r.fill(-.25f);
+    const auto before=heapCalls.load();
+    lease.render(l.data(),r.data(),64);
+    assert(lease.dspSleeping.load()&&lease.dspSleepBlocks.load()==1);
+    assert(l[0]==.125f&&r[63]==-.25f&&heapCalls.load()==before);
+    juce::MemoryBlock beforeEdit;
+    // A live native snapshot is available even while AUDIO owns the
+    // process permit. Snapshot must not clear or contend for that permit.
+    assert(!lease.processing.test_and_set(std::memory_order_acquire));
+    assert(lease.captureLiveState(beforeEdit)&&beforeEdit.getSize()>0);
+    assert(lease.processing.test(std::memory_order_acquire));
+    lease.processing.clear(std::memory_order_release);
+    const auto beforeEditHeap=heapCalls.load();
+    auto band=live->acceptedBands()[0];band.enabled=true;band.frequencyHz=1000.f;
+    assert(live->queueBand(0,band,71));
+    juce::MemoryBlock changed;
+    assert(!lease.captureLiveState(changed)&&changed.getSize()==0);
+    lease.render(l.data(),r.data(),64);
+    assert(!lease.captureLiveState(changed)&&changed.getSize()==0);
+    Eq::Completion ack{};
+    assert(!lease.dspSleeping.load()&&live->pollCompletion(ack)&&ack.applied&&ack.requestId==71);
+    assert(lease.dspProcessedBlocks.load()==1&&heapCalls.load()==beforeEditHeap);
+    assert(lease.captureLiveState(changed)&&changed!=beforeEdit);
+    // Two accepted edits must remain outstanding until both callback
+    // receipts have been consumed; failed enqueue must not strand Save.
+    band.gainDb=3.f;
+    assert(live->queueBand(0,band,72));
+    band.gainDb=6.f;
+    assert(live->queueBand(0,band,73));
+    assert(!live->queueBand(0,band,0));
+    const auto savedFirst=changed;
+    lease.render(l.data(),r.data(),64);
+    assert(live->pollCompletion(ack)&&ack.requestId==72);
+    assert(!lease.captureLiveState(changed)&&changed==savedFirst);
+    lease.render(l.data(),r.data(),64);
+    assert(!lease.captureLiveState(changed)&&changed==savedFirst);
+    assert(live->pollCompletion(ack)&&ack.requestId==73);
+    assert(lease.captureLiveState(changed)&&changed!=savedFirst);
+    auto c=std::make_unique<Comp>();c->prepareToPlay(48000,64);
+    auto* compressor=c.get();
+    LiveChannelFxGraph::FxInstance cl(std::move(c),Comp::catalogIdentity,"Comp",64);
+    l.fill(0);r.fill(0);const auto serial=compressor->observedBlockSerial();
+    cl.render(l.data(),r.data(),16);
+    assert(cl.dspSleeping.load()&&compressor->observedBlockSerial()==serial+1);
+    l[0]=1.e-20f;
+    cl.render(l.data(),r.data(),16);
+    assert(!cl.dspSleeping.load()&&l[0]!=0.f);
+    // Vendor fixture can generate output with zero input. Never sleep it.
+    auto vendor=std::make_unique<GainFx>(1.f,0,.2f);vendor->prepareToPlay(48000,64);
+    LiveChannelFxGraph::FxInstance external(std::move(vendor),"unknown","Vendor",64);
+    assert(!external.captureLiveState(changed)); // opaque processor requires verified quiet
+    l.fill(0);r.fill(0);external.render(l.data(),r.data(),16);
+    assert(!external.dspSleeping.load()&&l[0]==.2f&&r[0]==.2f);
+}
+static void verifyFxTimingSampled() {
+    auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(48000,64);
+    LiveChannelFxGraph::FxInstance fx(std::move(p),"sampled","timed gain",64);
+    std::array<float,64> l{},r{};
+    const auto heap=heapCalls.load();
+    for(int i=0;i<320;++i){
+        l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
+        assert(l[0]==.25f&&r[0]==-.5f);
+    }
+    auto snap=fx.processTiming.snapshot();
+    assert(snap.samples>=7&&snap.samples<=14&&snap.frames==64*snap.samples&&
+        snap.fullyBypassed==0&&snap.totalNs>=snap.maxNs);
+    fx.bypassRequested.store(true);
+    for(int i=0;i<16;++i){l.fill(0);r.fill(0);fx.render(l.data(),r.data(),64);}
+    const auto bypassed=fx.processTiming.snapshot().samples;
+    for(int i=0;i<320;++i){
+        l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
+        assert(l[0]==.125f&&r[0]==-.25f);
+    }
+    assert(fx.processTiming.snapshot().samples==bypassed);
+    assert(heapCalls.load()==heap);
+}
+static void verifyZeroLatencyFxFastPath() {
+    // Exercise real JUCE FxInstance at device rates and irregular callback
+    // lengths; reference remains the original sample-wise envelope.
+    for(double rate:{32000.,44100.,48000.,96000.,192000.}){
+        auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(rate,64);
+        assert(p->getSampleRate()==rate&&p->getBlockSize()==64);
+        LiveChannelFxGraph::FxInstance fx(std::move(p),"zero","zero delay",64);
+        std::array<float,64> l{},r{};
+        fx.dryLeft.assign(64,-99.f);fx.dryRight.assign(64,-88.f);
+        l.fill(.125f);r.fill(-.25f);
+        const auto before=heapCalls.load();
+        fx.render(l.data(),r.data(),64);
+        assert(heapCalls.load()==before);
+        for(int i=0;i<64;++i){
+            assert(l[i]==.25f&&r[i]==-.5f);
+            assert(fx.dryLeft[i]==-99.f&&fx.dryRight[i]==-88.f);
+        }
+        armix::dsp::FxBypassEnvelope reference;reference.prepare(false,rate,0);
+        const auto block=[&](bool insert,bool rack,int n){
+            fx.bypassRequested.store(insert);
+            reference.request(insert||rack);
+            // Nonconstant source catches stale scratch and copy-length errors.
+            for(int i=0;i<n;++i){l[i]=.125f+i*.0005f;r[i]=-.25f+i*.0007f;}
+            fx.render(l.data(),r.data(),n,rack);
+            for(int i=0;i<n;++i){
+                const auto g=reference.next();
+                const float x=.125f+i*.0005f,y=-.25f+i*.0007f;
+                assert(near(l[i],2.f*x*g.wet+x*g.dry));
+                assert(near(r[i],2.f*y*g.wet+y*g.dry));
+            }
+            assert(heapCalls.load()==before);
+        };
+        // Reverse a fade before completion, then exercise both bypass
+        // sources independently and their OR, with exact dry/wet endpoints.
+        block(true,false,31);block(false,false,17);
+        for(const auto flags: {1,3,2,0}){
+            for(int i=0;i<80;++i)block((flags&1)!=0,(flags&2)!=0,i%2?31:64);
+            assert(!reference.transitioning());
+            assert(reference.fullyBypassed()==(flags!=0));
+            assert(fx.bypassFade.fullyBypassed()==(flags!=0));
+            l.fill(.125f);r.fill(-.25f);
+            fx.render(l.data(),r.data(),64,(flags&2)!=0);
+            for(int i=0;i<64;++i){
+                assert(l[i]==(flags?.125f:.25f)&&r[i]==(flags?-.25f:-.5f));
+            }
+            assert(heapCalls.load()==before);
+        }
+        fx.processor->setLatencySamples(8);
+        assert(fx.latencyChanged.load());
+        l.fill(.125f);r.fill(-.25f);fx.render(l.data(),r.data(),64);
+        for(int i=0;i<64;++i)assert(l[i]==.125f&&r[i]==-.25f);
+        assert(heapCalls.load()==before);
+    }
+}
+// Actual native Compressor, actual FxInstance/lease bank and actual publisher.
+// The reference is a separate processor only in this test, never a second
+// product renderer. The reference delay ring is warm from the prior graph.
+static void verifyContinuousNativeCompressorPublication() {
+    using Comp=armix::builtin_fx::ChannelCompressorProcessor;
+    using Bank=DynamicChannelFxLeaseBank;
+    using Pub=DynamicNativeSessionPublisher;
+    constexpr std::uint64_t epoch=915;
+    for(double rate:{44100.,48000.,96000.}){
+        DynamicChannelRoster roster;
+        std::array<ChannelEdit,3> rows{};
+        for(int i=0;i<3;++i){
+            rows[i].kind=ChannelEdit::Kind::add;rows[i].position=i;
+            rows[i].role=i<2?ChannelRole::input:ChannelRole::main;
+            rows[i].format=ProcessingFormat::stereo;
+        }
+        const auto created=roster.edit(0,rows);assert(created.ok());
+        const auto voice=created.createdIds[0],backing=created.createdIds[1],main=created.createdIds[2];
+        std::array<ChannelEdit,3> edits{};
+        for(int i=0;i<2;++i){
+            edits[i].kind=ChannelEdit::Kind::setPrimaryOutput;
+            edits[i].id=created.createdIds[i];edits[i].target=main;
+        }
+        edits[2].kind=ChannelEdit::Kind::addInsertReference;
+        edits[2].id=backing;edits[2].text="retained-delay";
+        assert(roster.edit(roster.revision(),edits).ok());
+        auto delayed=std::make_unique<GainFx>(1.f,37);delayed->prepareToPlay(rate,512);
+        const auto retained=std::make_shared<LiveChannelFxGraph::FxInstance>(
+            std::move(delayed),"retained-delay","retained delay",512);
+        Bank::Assignment binding;binding.id=backing;binding.inserts={retained};
+        Bank initial;assert(Bank::prepare(epoch,1,std::span(&binding,1),initial)==Bank::Fault::none);
+        auto oldBank=std::make_shared<Bank>(std::move(initial));
+        const auto plan=[&](const std::shared_ptr<Bank>& bank,std::uint64_t rev){
+            Pub::FxPlan fx;fx.owner=bank;fx.context=bank.get();fx.deviceEpoch=epoch;fx.graphRevision=rev;
+            fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept{(*static_cast<Bank*>(p))(id,l,r,n);};
+            fx.latency=+[](void* p,ChannelId id) noexcept{return static_cast<Bank*>(p)->latencySamples(id);};
+            return fx;
+        };
+        DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=512;
+        req.sources={{voice,0,1,true},{backing,2,3,true}};
+        Pub pub;assert(pub.commit(roster,req,0,epoch,epoch,true,plan(oldBank,1)).ok());
+        assert(pub.setExternalOutput(epoch,1,backing,2,3,4));
+        std::array<float,512> a{},b{},c{},d{},l{},r{},extL{},extR{},referenceL{},referenceR{};
+        c.fill(.2f);d.fill(-.1f);
+        const float* pins[]{a.data(),b.data(),c.data(),d.data()};
+        float* outs[]{l.data(),r.data(),extL.data(),extR.data()};
+        const auto noop=[](ChannelId,float*,float*,int) noexcept {};
+        armix::dsp::StereoLatencyDelay referenceDelay;assert(referenceDelay.prepare(37));
+        int position=0;
+        const auto fill=[&](int n){
+            for(int i=0;i<n;++i,++position){
+                a[i]=.45f+.12f*std::sin(position*.031f);
+                b[i]=-.31f+.10f*std::cos(position*.027f);
+                referenceL[i]=a[i];referenceR[i]=b[i];
+            }
+        };
+        const auto render=[&](int n){
+            const auto before=heapCalls.load();
+            assert(pub.render(epoch,pins,4,l.data(),r.data(),n,false,noop,
+                nullptr,nullptr,{},{},{},outs,4));
+            assert(heapCalls.load()==before);
+        };
+        for(int n:{512,193}){
+            fill(n);render(n);
+            for(int i=0;i<n;++i)referenceDelay.process(referenceL[i],referenceR[i]);
+        }
+        const auto makeComp=[&](){
+            auto p=std::make_unique<Comp>();
+            p->setRateAndBufferSizeDetails(rate,512);p->prepareToPlay(rate,512);
+            return p;
+        };
+        auto processor=makeComp();auto* actual=processor.get();
+        auto comp=std::make_shared<LiveChannelFxGraph::FxInstance>(
+            std::move(processor),Comp::catalogIdentity,"Compressor",512);
+        LiveChannelFxGraph::FxInstance reference(makeComp(),Comp::catalogIdentity,"reference",512);
+        comp->primeZeroLatencyLiveInsertFade();reference.primeZeroLatencyLiveInsertFade();
+        ChannelEdit insert;insert.kind=ChannelEdit::Kind::addInsertReference;
+        insert.id=voice;insert.text=Comp::catalogIdentity;
+        assert(roster.edit(roster.revision(),std::span(&insert,1)).ok());
+        Bank expanded;
+        assert(Bank::appendOwned(epoch,2,*oldBank,voice,ProcessingFormat::stereo,comp,expanded)==Bank::Fault::none);
+        auto nextBank=std::make_shared<Bank>(std::move(expanded));
+        assert(nextBank->retainsEditor(retained));
+        assert(pub.commit(roster,req,1,epoch,epoch,false,plan(nextBank,2),false,true,nullptr,nullptr,true).ok());
+        float maxError=0.f,maxWetDifference=0.f;
+        const int blocks[]{16,127,31,512,64,193};
+        for(int block=0;block<48;++block){
+            const int n=blocks[block%6];fill(n);
+            const auto serial=actual->observedBlockSerial();
+            render(n);
+            assert(actual->observedBlockSerial()==serial+1); // exactly one DSP pass
+            reference.render(referenceL.data(),referenceR.data(),n);
+            for(int i=0;i<n;++i){
+                maxWetDifference=std::max(maxWetDifference,std::abs(referenceL[i]-a[i]));
+                referenceDelay.process(referenceL[i],referenceR[i]);
+                maxError=std::max({maxError,std::abs(l[i]-(referenceL[i]+.2f)),
+                    std::abs(r[i]-(referenceR[i]-.1f)),std::abs(extL[i]-.2f),std::abs(extR[i]+.1f)});
+            }
+        }
+        assert(maxError<1.e-4f&&maxWetDifference>.01f);
+        std::cout<<"P0_B_COMPRESSOR rate="<<rate<<" max_reference_error="<<maxError
+                 <<" wet_difference="<<maxWetDifference<<" RT heap=0\\n";
+        pub.pollRetirement();
+    }
+}
+
+static void verifyLiveInsertFade() {
+    for(double rate:{44100.,48000.,96000.}){
+        auto p=std::make_unique<GainFx>(2.f);p->prepareToPlay(rate,64);
+        LiveChannelFxGraph::FxInstance fx(std::move(p),"live","new insert",64);
+        fx.primeZeroLatencyLiveInsertFade();
+        assert(!fx.bypassRequested.load()&&fx.bypassFade.fullyBypassed());
+        armix::dsp::FxBypassEnvelope reference;reference.prepare(true,rate,0);
+        reference.request(false);
+        std::array<float,64> l{},r{};
+        const auto heap=heapCalls.load();
+        for(int block=0;block<40;++block){
+            const int n=block%2?37:64;
+            l.fill(.125f);r.fill(-.25f);
+            fx.render(l.data(),r.data(),n);
+            for(int i=0;i<n;++i){
+                const auto g=reference.next();
+                assert(near(l[i],.25f*g.wet+.125f*g.dry));
+                assert(near(r[i],-.5f*g.wet-.25f*g.dry));
+            }
+        }
+        assert(!fx.bypassFade.transitioning()&&heapCalls.load()==heap);
+    }
+}
 static void verifyLatencyAlignedBypass() {
     // Real JUCE processing (not merely reporting a latency value): an impulse
     // remains at sample 7 through wet, individual bypass and rack bypass.
@@ -1968,11 +2261,11 @@ static void verifyNativeFxRackTransactions() {
     DynamicNativeSessionPublisher publisher;DynamicGraphRequest request;
     request.physicalInputs=4;request.maxFrames=64;request.sources={{source,0,1,true},{dest,2,3,true}};
     std::uint64_t revision=0;
-    const auto publish=[&](){
+    const auto publish=[&](bool disarmed=false){
         DynamicNativeSessionPublisher::FxPlan fx;fx.owner=bank;fx.context=bank.get();fx.deviceEpoch=11;fx.graphRevision=revision+1;
         fx.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept{(*static_cast<DynamicChannelFxLeaseBank*>(p))(id,l,r,n);};
         fx.latency=+[](void* p,ChannelId id) noexcept{return static_cast<DynamicChannelFxLeaseBank*>(p)->latencySamples(id);};
-        assert(publisher.commit(roster,request,revision,11,11,false,fx,false,true).ok());++revision;
+        assert(publisher.commit(roster,request,revision,11,11,disarmed,fx,false,!disarmed).ok());++revision;
     };
     const auto samples=[&](float expected){
         std::array<float,64> input{},other{},l{},r{};input.fill(.25f);other.fill(.1f);
@@ -1981,6 +2274,9 @@ static void verifyNativeFxRackTransactions() {
         assert(heapCalls.load()==count);for(int i=0;i<64;++i)assert(near(l[i],expected)&&near(l[i],r[i]));
     };
     publish();samples(1.6f);const int prepares=GainFx::prepared;
+    const auto original=bank->findEditorLocation(a,a->instanceId);
+    assert(original && original.channel==source && original.slot==0);
+    assert(!bank->findEditorLocation(a,b->instanceId)); // no token fallback
     const auto edit=[&](ChannelId from,std::size_t slot,const juce::String& token,ChannelId to,std::size_t pos){
         DynamicChannelRoster next;DynamicChannelFxLeaseBank owners;
         assert(prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,from,slot,token,to,pos,next,owners));
@@ -1994,12 +2290,47 @@ static void verifyNativeFxRackTransactions() {
     assert(!prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,source,0,a->instanceId,dest,9,rejected,rejectedBank));
     samples(1.6f);
     edit(source,0,a->instanceId,source,1);samples(2.6f);assert(bank->retainsEditor(a));
+    const auto movedUp=bank->findEditorLocation(a,a->instanceId);
+    assert(movedUp && movedUp.channel==source && movedUp.slot==1);
+    assert(bank->ownerForControl(source,0)->get()!=a.get());
     edit(source,1,a->instanceId,dest,0);samples(1.45f);
+    const auto movedChannel=bank->findEditorLocation(a,a->instanceId);
+    assert(movedChannel && movedChannel.channel==dest && movedChannel.slot==0);
     assert(bank->retainsEditor(a)&&(*bank->ownerForControl(dest,0)).get()==a.get());
     assert(roster.find(source)->insertCatalogIds==std::vector<std::string>{"offset"});
     assert(roster.find(dest)->insertCatalogIds==std::vector<std::string>{"gain"});
     edit(source,0,b->instanceId,{},0);samples(.45f);assert(!bank->retainsEditor(b));
+    assert(!bank->findEditorLocation(b,b->instanceId));
     edit(dest,0,a->instanceId,{},0);samples(.35f);assert(!bank->retainsEditor(a));
+    assert(!bank->findEditorLocation(a,a->instanceId));
+    // Replacement uses a new rack gate and fresh lease; unrelated graph
+    // owners and routing remain untouched. No armed PDC-changing commit.
+    auto latent=std::make_unique<GainFx>(1.f,19);latent->prepareToPlay(48000,64);
+    auto saved=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(latent),"latent","latent",64);
+    DynamicChannelRoster candidate;DynamicChannelFxLeaseBank candidateBank;
+    assert(prepareNativeFxRackReplacement(11,revision,roster.revision(),roster,*bank,
+        source,{saved},true,candidate,candidateBank));
+    assert(candidateBank.latencySamples(source)==19&&candidateBank.rackBypassed(source));
+    assert(!bank->rackBypassed(source)&&bank->insertCount(source)==0);
+    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish(true);
+    assert(publisher.latencySamples(11,revision)==19);
+    assert(prepareNativeFxRackReplacement(11,revision,roster.revision(),roster,*bank,
+        source,{},false,candidate,candidateBank));
+    roster=std::move(candidate);bank=std::make_shared<DynamicChannelFxLeaseBank>(std::move(candidateBank));publish(true);
+    assert(publisher.latencySamples(11,revision)==0&&!bank->retainsEditor(saved));
+    // Portable rack file round trip; opaque states and ordering, not IDs.
+    armix::storage::FxRackFile rack;rack.rackBypassed=true;
+    armix::storage::FxState entry;entry.catalogId="gain";entry.name="Gain";entry.bypass=true;
+    const float settings=2.f;entry.binary.append(&settings,sizeof(settings));
+    rack.effects.push_back(entry);entry.catalogId="offset";entry.bypass=false;rack.effects.push_back(entry);
+    juce::MemoryBlock bytes;using Archive=armix::storage::NativeFxRackArchive;
+    assert(Archive::encode(rack,bytes).isEmpty());
+    armix::storage::FxRackFile decoded;
+    assert(Archive::decode(bytes,decoded).isEmpty()&&decoded.rackBypassed&&decoded.effects.size()==2);
+    assert(decoded.effects[0].catalogId=="gain"&&decoded.effects[0].bypass&&
+        decoded.effects[1].catalogId=="offset"&&decoded.effects[0].binary==rack.effects[0].binary);
+    static_cast<char*>(bytes.getData())[10]^=1;
+    assert(Archive::decode(bytes,decoded).isNotEmpty()&&decoded.effects.size()==2);
 }
 
 // Native eight-band Parametric EQ must be the exact ordered rack lease in PCM,
@@ -2608,6 +2939,11 @@ int main(int argc,char** argv) {
     verifyFirstSoundOnePinNativeSourceDraft();
     verifyNativePuzzleV8FixtureAndWire();
     verifyChannelIdGroupPreservesHostedFx();
+    verifyFxTimingSampled();
+    verifyNativeExactIdle();
+    verifyZeroLatencyFxFastPath();
+    verifyLiveInsertFade();
+    verifyContinuousNativeCompressorPublication();
     verifyLatencyAlignedBypass();
     verifyNativeFxRackTransactions();
     verifyNativeBuiltinEqOrderedPcmAndBypassAck();

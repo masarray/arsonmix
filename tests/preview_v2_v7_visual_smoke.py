@@ -184,6 +184,7 @@ def audit_v29_operator_collapse(page, label):
             if not any(target):
                 upper=rows["pan"]["strip"]["top"]-data["root"]["top"]
                 lower=rows["footer"]["strip"]["bottom"]-rows["pan"]["strip"]["top"]
+                assert rows["fx"]["strip"]["height"]>=124,(label,"V60 lost the reserved 125px FX bay",data)
                 assert -3<=lower-upper<=100,(label,"V60 tactile fader priority must be bounded",upper,lower,data)
             assert page.locator('#tracks .strip[data-id="5"] .wire-node-out').get_attribute("data-wire-main-edge")==initial_edge,(
                 label,status,"fold changed accepted MAIN EdgeId")

@@ -19,6 +19,39 @@ int main(){
     assert(fx.isReady());
     assert(fx.getLatencySamples()==0);
     assert(fx.stateSnapshotQuiescent());
+    // Actual JUCE opt-in: flat unity must preserve PCM and peak;
+    // pending parameter ACK, output ramp, nonfinite/subnormal PCM veto.
+    {
+        std::array<float,128> l{},r{};l[0]=.25f;r[1]=-.75f;l[2]=-0.f;
+        assert(fx.supportsExactIdle()&&fx.tryExactIdle(l.data(),r.data(),128));
+        assert(fx.observedPeak()==.75f);
+        l[0]=std::numeric_limits<float>::infinity();
+        assert(!fx.tryExactIdle(l.data(),r.data(),128));
+        l[0]=std::numeric_limits<float>::denorm_min();
+        assert(!fx.tryExactIdle(l.data(),r.data(),128));
+        l[0]=.25f;
+        assert(fx.queueBandEdit(12,6.f,90));
+        assert(!fx.tryExactIdle(l.data(),r.data(),128));
+        juce::AudioBuffer<float> pcm(2,128);juce::MidiBuffer midi;
+        pcm.copyFrom(0,0,l.data(),128);pcm.copyFrom(1,0,r.data(),128);
+        fx.processBlock(pcm,midi);
+        armix::builtin_fx::GraphicEq31Processor::Completion ack{};
+        assert(fx.pollCompletion(ack)&&ack.requestId==90&&ack.applied);
+        assert(!fx.tryExactIdle(l.data(),r.data(),128));
+        assert(fx.queueBandEdit(12,0.f,91));
+        for(int block=0;block<8;++block){pcm.clear();fx.processBlock(pcm,midi);}
+        assert(fx.pollCompletion(ack)&&ack.requestId==91&&ack.applied);
+        assert(fx.tryExactIdle(l.data(),r.data(),128));
+        assert(fx.queueOutputEdit(-6.f,92));
+        assert(!fx.tryExactIdle(l.data(),r.data(),128));
+        pcm.clear();fx.processBlock(pcm,midi);
+        assert(fx.pollCompletion(ack)&&ack.requestId==92&&ack.applied);
+        assert(!fx.tryExactIdle(l.data(),r.data(),128));
+        assert(fx.queueOutputEdit(0.f,93));
+        for(int block=0;block<12;++block){pcm.clear();fx.processBlock(pcm,midi);}
+        assert(fx.pollCompletion(ack)&&ack.requestId==93&&ack.applied);
+        assert(fx.tryExactIdle(l.data(),r.data(),128));
+    }
     auto step=[&](std::uint64_t expected){
         juce::AudioBuffer<float> audio(2,128);
         audio.clear();

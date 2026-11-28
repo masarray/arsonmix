@@ -79,6 +79,10 @@ class LandingReleaseContract(unittest.TestCase):
                 self.assertNotIn("https://github.com/masarray/arsonmix/releases/tag/", html)
                 self.assertEqual(html.count('class="os-card is-available"'),
                                  len(available))
+            # One official informational release index is allowed in compatibility
+            # details, but it must not masquerade as a catalog-owned download.
+            self.assertEqual(html.count('href="https://github.com/masarray/arsonmix/releases"'), 1)
+            self.assertIn('href="https://github.com/masarray/arsonmix/releases">official release notes, portable packages and checksums</a>', html)
             self.assertIn('href="./LICENSE.txt"', html)
             self.assertIn("release-catalog.json", js)
             self.assertIn("https://api.github.com/repos/masarray/arsonmix/releases?per_page=40", js)

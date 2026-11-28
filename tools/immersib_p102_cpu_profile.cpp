@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <initializer_list>
 #include <memory>
@@ -46,9 +47,10 @@ bool measure(int rate,int frames,int inserts,int scene,bool roomOn,bool quick) {
                                 .038*std::sin(2.*3.141592653589793*4100.*t));
         }
     }
-    const int warmup=quick?48:96,measured=quick?128:320;
+    const int warmup=quick?128:192,measured=quick?192:320;
     std::vector<double> times;
     times.reserve(measured);
+    std::uint64_t streamHash=14695981039346656037ull;
     for(int block=0;block<warmup+measured;++block) {
         // Sine generation, memcpy and measurement bookkeeping are NOT
         // charged to the realtime DSP callback window.
@@ -59,8 +61,15 @@ bool measure(int rate,int frames,int inserts,int scene,bool roomOn,bool quick) {
         const auto start=Clock::now();
         for(int j=0;j<inserts;++j)fx[j]->process(left[j].data(),right[j].data(),frames);
         const auto stop=Clock::now();
-        if(block>=warmup)
+        if(block>=warmup) {
             times.push_back(std::chrono::duration<double,std::micro>(stop-start).count());
+            for(int j=0;j<inserts;++j)for(int i=0;i<frames;++i)
+                for(float sample:{left[j][i],right[j][i]}) {
+                    if(!std::isfinite(sample))return false;
+                    streamHash^=std::bit_cast<std::uint32_t>(sample);
+                    streamHash*=1099511628211ull;
+                }
+        }
     }
     std::uint64_t hash=14695981039346656037ull;
     for(int j=0;j<inserts;++j)for(int i=0;i<frames;++i)
@@ -78,11 +87,12 @@ bool measure(int rate,int frames,int inserts,int scene,bool roomOn,bool quick) {
         [&](double t){return t>deadline;});
     std::printf("IMMERSIB_P102_CPU,engine=branded_core,rate=%d,frames=%d,inserts=%d,"
                 "scene=%d,room=%s,blocks=%d,p50_us=%.2f,p95_us=%.2f,p99_us=%.2f,"
-                "p99_budget_pct=%.2f,period_us=%.2f,over_budget=%lld,pcm_hash=%016llx\n",
+                "p99_budget_pct=%.2f,period_us=%.2f,over_budget=%lld,pcm_hash=%016llx,stream_hash=%016llx\n",
                 rate,frames,inserts,scene,roomOn?"on":"off",measured,
                 quantile(.50),quantile(.95),quantile(.99),
                 100.*quantile(.99)/deadline,deadline,
-                static_cast<long long>(late),static_cast<unsigned long long>(hash));
+                static_cast<long long>(late),static_cast<unsigned long long>(hash),
+                static_cast<unsigned long long>(streamHash));
     return true;
 }
 
@@ -165,6 +175,13 @@ bool attributeRoom(int rate,int frames,int scene,bool quick) {
 } // namespace
 
 int main(int argc,char** argv) {
+    if(argc==6 && std::string_view(argv[1])=="--case") {
+        const int rate=std::atoi(argv[2]),frames=std::atoi(argv[3]);
+        const int inserts=std::atoi(argv[4]),scene=std::atoi(argv[5]);
+        if((rate!=44100&&rate!=48000)||frames<64||frames>maxFrames||
+           inserts<1||inserts>maxInserts||scene<2||scene>8)return 2;
+        return measure(rate,frames,inserts,scene,true,true)?0:3;
+    }
     if(argc!=2 || (std::string_view(argv[1])!="--quick" &&
                    std::string_view(argv[1])!="--matrix" &&
                    std::string_view(argv[1])!="--attribution")) {

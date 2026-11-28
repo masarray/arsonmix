@@ -112,3 +112,206 @@ test('bounded retry + callback watchdog cannot spin in realtime PCM',()=>{
   assert.match(main,/AudioContinuityRetry wasapiRecovery_/);
   assert.match(cmake,/P0DisplayIdlePreservesAudioAndDeviceRecoveryIntent/);
 });
+
+test('approved machine profile remains pending on IO failure and flushes on normal exit',()=>{
+  const persistence=main.split('void persistApprovedAudioSettings(bool shutdown)')[1]
+    .split('void timerCallback() override')[0];
+  assert.match(persistence,/if\(!shutdown&&now<deviceSettingsRetryAt_\)return/);
+  assert.match(persistence,/deviceSettingsRetryAt_=now\+5000/);
+  assert.ok(persistence.indexOf('return; // keep dirty')<persistence.indexOf('deviceSettingsDirty_ = false'));
+  assert.ok(persistence.indexOf('lastAudioXml_=text')<persistence.indexOf('deviceSettingsDirty_ = false'));
+  assert.match(main,/if\(!updaterProbeMode_\)persistApprovedAudioSettings\(true\)/);
+  assert.match(main,/mixerSessionWorker_\.finishForShutdown\(true\);\s*engine_\.stop\(\)/);
+});
+
+test('cold MON resumes saved playback intent only after verified restored MAIN',()=>{
+ const s=main.split('void serviceStartupSecondaryPreparation()')[1].split('// Same-session, same-graph recovery only')[0];
+ assert.match(s,/mixerSessionRecoveryPending_\|\|startupFxGuard_/);
+ assert.match(s,/!engine_\.secondaryResumeReady\(\)/);
+ assert.match(s,/!engine_\.hasBoundMixerRoute\(\)/);
+ assert.match(s,/current.selection.id!=wanted.id/);
+ assert.match(s,/engine_\.connectSecondaryOutput\(wanted.name,wanted.id\)/);
+ assert.match(s,/resume=wanted\.autoResume&&!operatorOutputMuted_/);
+ assert.match(s,/if\(resume&&!engine_\.isMonitorEnabled\(\)\)return/);
+ assert.match(s,/resume\?engine_\.enableSecondaryOutput\(wanted.name,wanted.id\)/);
+ assert.doesNotMatch(s,/setMonitorEnabled/);
+ assert.match(s,/generation!=startupSecondaryRetry_\.generation\(\)/);
+ assert.match(s,/epoch!=engine_\.dryRoutingLabEpoch\(\)/);
+ assert.match(s,/startupSecondaryRetry_\.failed\(now\)/);
+ assert.match(main,/cancelSecondaryContinuity\(\);\s*cancelStartupSecondaryPreparation\(\)/);
+ assert.match(main,/serviceSecondaryContinuity\(\);\s*serviceStartupSecondaryPreparation\(\)/);
+});
+
+test('saved ASIO cold-open retries are bounded, exact-registration and single-callback',()=>{
+ const s=main.split('void serviceStartupAsioRetry()')[1].split('void rememberSavedWasapiProfile(')[0];
+ assert.match(s,/engine_\.start\(&settings,true\)/);
+ assert.match(s,/startupAsioRetry_\.attempts\(\)>=3/);
+ assert.match(s,/generation!=startupAsioRetry_\.generation\(\)/);
+ assert.match(s,/!engine_\.savedAsioStartupRetryAvailable\(\)/);
+ assert.match(engine,/if\(!attached_\)\s*\{\s*deviceManager_\.addAudioCallback \(this\)/);
+ assert.match(engine,/startupAsioRetryIdentity_->sameDriverClass\(\*savedAsioPreflight\)/);
+ assert.match(main,/!mixerSessionStartupInspected_ && !pendingStartupAsioSettings_/);
+});
+test('last saved MAIN mute and previous-generation recovery remain muted after restore',()=>{
+ const s=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
+ assert.match(s,/const bool holdMain=usedPrevious\|\|\(doc.resumeMain.has_value\(\)&&!doc.resumeMain.value\(\)\)/);
+ assert.match(s,/if\(holdMain\)\s*\{\s*operatorOutputMuted_=true;\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
+ assert.match(main,/if\(mixerSessionRecoveryPending_\)return; \/\/ saved session has not been restored/);
+});
+
+test('smart idle checkpoint observes actual controls, debounces, and never captures armed audio',()=>{
+ const h=read('src/SessionCheckpointCadence.h');
+ const roster=read('engine/core/DynamicChannelRoster.h');
+ assert.match(h,/if\(!disarmed\) \{wasDisarmed_=false;return false;\}/);
+ assert.match(h,/quietMs=2000, retryMs=5000, refreshMs=60000/);
+ assert.match(h,/stamp!=stamp_/);
+ assert.match(h,/now-lastAttempt_<refreshMs/);
+ assert.match(roster,/if\(row.faderLinear!=gain\|\|row.pan!=pan\)\+\+liveStateRevision_/);
+ assert.match(engine,/dryRoutingLab_\.sessionLiveControlRevision\(\)/);
+ assert.match(main,/sessionCheckpointCadence_\.observe\(checkpointNow,engine_\.allOutputsDisarmed\(\)/);
+ assert.match(main,/sessionCheckpointCadence_\.failed\(monotonicMilliseconds\(\)\)/);
+ assert.doesNotMatch(main,/timerTicks_%720==0/);
+});
+test('recovered checkpoint is durably muted before atomic HEAD publication',()=>{
+ const s=read('src/NativeMixerSessionStore.h');
+ const recover=s.split('juce::String recoverPrevious(MixerSessionDocument& out')[1].split('private:')[0];
+ assert.ok(recover.indexOf('writePointer(marker,pointer)')<recover.indexOf('writePointer(head,pointer)'));
+ assert.match(recover,/verified.resumeMain=false/);
+ assert.match(s,/if\(recovered.isEmpty\(\)\|\|recovered==pointer\)doc.resumeMain=false/);
+});
+
+test('late WASAPI cold startup binds the device before one guarded FX restore',()=>{
+ const s=main.split('void serviceWasapiDeviceContinuity()')[1].split('void protectKnownFeedbackLoop(')[0];
+ assert.match(s,/else if\(pendingStartupWasapi_\)\s*\{[\s\S]*?if\(!engine_\.finishManualAudioSetup\(\)\)/);
+ assert.match(s,/pendingStartupWasapi_=false;\s*startupError_\.clear\(\)/);
+ assert.match(main,/!pendingStartupAsioSettings_ && !pendingStartupWasapi_ && !catalog_\.busy\(\)/);
+ assert.match(main,/pendingStartupWasapi_=saved&&startupError_\.isNotEmpty\(\)/);
+});
+test('MON persistence retries newest accepted intent without reusing stale preference',()=>{
+ const p=main.split('bool persistSecondaryPreference(')[1].split('bool forgetSecondaryStartupSelection(')[0];
+ assert.match(p,/if\(!immediate&&now<secondaryPreferenceRetryAt_\)return false/);
+ assert.match(p,/secondaryPreferenceRetryAt_=now\+5000/);
+ assert.ok(p.indexOf('secondaryPreference_=std::move(next)')<p.indexOf('secondaryPreferenceDirty_=true'));
+ assert.match(p,/return persistSecondaryPreference\(true\)/);
+ assert.match(main,/if\(!updaterProbeMode_\)\(void\)persistSecondaryPreference\(true\)/);
+ assert.match(main,/serviceSecondaryInventory\(\);\s*\(void\)persistSecondaryPreference\(\)/);
+});
+
+test('live checkpoint uses accepted metadata and immutable FX identity without muting or vendor capture',()=>{
+ const lab=read('src/LiveDryRoutingLab.h');
+ const capture=lab.split('juce::String captureLiveMixerControls(')[1].split('juce::String captureNativeMixerSession(')[0];
+ assert.match(capture,/nativeAccepted_\.matches\(nativePublisher_,ep,rev\)/);
+ assert.match(capture,/\(\*owner\)->instanceId/);
+ assert.doesNotMatch(capture,/tryCaptureState|RealtimeRenderPermit|Thread::sleep|getStateInformation/);
+ const host=main.split('juce::String saveLiveMixerControls()')[1].split('juce::String saveMixerSession(')[0];
+ assert.doesNotMatch(host,/setOutputMuted|setMonitorEnabled|captureNativeMixerSession/);
+ assert.match(host,/engine_\.captureLiveMixerControls\(doc\)/);
+ assert.match(host,/lastMixerSessionFingerprint_\.clear\(\)/);
+ assert.match(main,/liveCheckpointCadence_\.observeLive\(checkpointNow,!engine_\.allOutputsDisarmed\(\)/);
+ const worker=read('src/NativeMixerSessionSaveWorker.h');
+ assert.match(worker,/store\.commitLiveControls\(std::move\(doc_\)\)/);
+ const store=read('src/NativeMixerSessionStore.h');
+ assert.match(store,/if\(bound!=generation\)return OverlayResult::absent/);
+ assert.match(store,/if\(base.logicalOnly\|\|draft.logicalOnly\|\|base.id!=draft.id\)return false/);
+ assert.match(store,/old.catalogId!=fx.catalogId\|\|old.path!=fx.path\|\|old.uid!=fx.uid/);
+ assert.match(store,/staging.overwriteTargetFileWithTemporary\(\)/);
+});
+
+test('ASIO vendor panel preserves operator desire and only resumes the same verified driver',()=>{
+ const p=main.split('void showAsioControlPanel(')[1].split('void chooseStudioBackup()')[0];
+ assert.match(p,/const bool resume=engine_\.wantsMainContinuation\(\)&&!operatorOutputMuted_/);
+ assert.match(p,/engine_\.beginManualAudioSetup\(true\)/);
+ assert.match(p,/returned->getName\(\)==driverName/);
+ assert.match(p,/sameDriver && finishAudioSetupAndRecoverMixer\(\)/);
+ assert.match(p,/resume&&!operatorOutputMuted_&&!panelError\)requestAutomaticMain\(false\)/);
+ assert.match(p,/ASIO_PANEL_BEGIN/);
+ assert.doesNotMatch(p,/operatorOutputMuted_\s*=|setMonitorEnabled\(true\)/);
+ const restore=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
+ assert.match(restore,/if\(operatorOutputMuted_\)retainedDoc\.resumeMain=false/);
+ assert.match(restore,/else if\(engine_\.wantsMainContinuation\(\)\)retainedDoc\.resumeMain=true/);
+ assert.match(restore,/else retainedDoc\.resumeMain\.reset\(\)/);
+ assert.match(restore,/const bool holdMain=usedPrevious/);
+});
+test('nested device transaction permits explicit STOP but rejects ARM with native ACK',()=>{
+ const a=main.split('void onAction (const juce::var& args)')[1];
+ assert.match(a,/const bool outputIntent=action=="monitor"&&args\.getProperty\("value",\{\}\)\.isBool\(\)/);
+ assert.match(a,/action!="audioDeviceApply" && !outputIntent/);
+ const monitor=a.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
+ assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
+ assert.match(monitor,/if \(fault.isEmpty\(\)\) \{\s*operatorOutputMuted_=!arm/);
+ assert.match(monitor,/arMixAudioArmAck/);
+});
+
+test('smart bus remap uses native temporary stop and verified continuation, not an operator latch on success',()=>{
+ const p=main.split('void handlePhysicalBusOutput(')[1].split('void serviceSecondaryContinuity()')[0];
+ assert.match(p,/const bool resumeMain=engine_\.isMonitorEnabled\(\)&&!operatorOutputMuted_/);
+ assert.match(p,/engine_\.captureSecondaryResumeIntent\(\)/);
+ assert.ok(p.indexOf('engine_.setMonitorEnabled(false)')<p.indexOf('engine_.patchPhysicalBusOutput('));
+ assert.ok(p.indexOf('engine_.disarmSecondaryOutput()')<p.indexOf('engine_.patchPhysicalBusOutput('));
+ assert.match(p,/if\(resumeMain&&!operatorOutputMuted_\) \{[\s\S]*?engine_\.retainMainIntentAfterBusPatch\(\);\s*requestAutomaticMain\(false\)/);
+ assert.match(engine,/void retainMainIntentAfterBusPatch\(\) noexcept \{mainOutputIntent_\.operatorRequested\(true\);\}/);
+ assert.match(p,/if\(stream\)pendingVendorStream_=PendingVendorStream/);
+ assert.match(p,/operatorOutputMuted_=true;\s*diagnostics_\.record\("OUTPUT_MUTE","ON \| bus remap rejected"\)/);
+ const panic=main.split('if(mapping.operation=="PANIC_MUTE")')[1].split('// Existing control-thread guards')[0];
+ assert.match(panic,/pendingVendorStream_\.reset\(\)/);
+ assert.match(panic,/cancelStartupSecondaryPreparation\(\)/);
+});
+
+test('physical bus remap waits for AUDIO fade receipt with bounded CONTROL lease',()=>{
+ const p=main.split('void servicePendingPhysicalBusPatch()')[1].split('void serviceSecondaryContinuity()')[0];
+ assert.match(p,/monotonicMilliseconds\(\)\)>=p.deadline/);
+ assert.match(p,/if\(!engine_\.physicalBusPatchFadeReady\(\)\)return/);
+ assert.match(p,/handlePhysicalBusOutput\(args,true\)/);
+ assert.match(p,/engine_\.beginPhysicalBusPatchFade\(\)/);
+ assert.match(p,/Purpose::busOutputPatch/);
+ assert.match(engine,/busPatchEnvelope_\.process\(outputs,outputChannels/);
+ assert.ok(engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels')<engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)'));
+ assert.ok(engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
+ // Service both transitions before the busy-lease return.
+ assert.match(main,/servicePendingPhysicalBusPatch\(\);\s*serviceRackTransition\(\);\s*if\(deviceApply_\.busy\(\)\)return/);
+});
+
+test('integrated FIELD serializes physical bus remap with FX rack file operations',()=>{
+ const rack=main.split('bool rackFileOperationBusy() const')[1].split('void chooseNamedIoProfile(')[0];
+ assert.match(rack,/deviceApply_\.busy\(\)/);
+ assert.match(rack,/if\(!current\(\)\)return finish\("FAILED"/);
+ assert.match(rack,/safe->engine_\.rackFileTargetAvailable\(ep,rev,roster,channel\)/);
+ const bus=main.split('void handlePhysicalBusOutput(')[1].split('void serviceSecondaryContinuity()')[0];
+ assert.match(bus,/Purpose::busOutputPatch/);
+ assert.match(bus,/!deviceApply_\.busy\(\)/);
+ const actions=main.split('void onAction (const juce::var& args)')[1];
+ assert.match(actions,/if\(action=="fxRackFileReadback"\)return readFxRackFileResult\(args\)/);
+ assert.match(actions,/cancelPendingPhysicalBusPatch\("BUS OUTPUT: superseded by operator action"\)/);
+});
+
+test('FX file transition preserves the operator gates and the callback verifies committed PCM',()=>{
+ const t=main.split('void finishRackTransition(')[1].split('void chooseFxRackFile(')[0];
+ assert.match(t,/nativeTopologyMatches\(job.epoch,job.revision\)/);
+ assert.match(t,/monotonicMilliseconds\(\)\)>=job.deadline/);
+ assert.ok(t.indexOf('if(!engine_.physicalBusPatchFadeReady())return;')<t.indexOf('error=job.operation();'));
+ assert.match(t,/rackOutputRevisionObserved\(job.epoch,job.revision\)/);
+ assert.match(t,/finishPhysicalBusPatchFade\(!engine_.allOutputsDisarmed\(\)\)/);
+ const capture=engine.split('juce::String captureRackFile(')[1].split('struct PreparedRackFile')[0];
+ assert.match(capture,/rackSupportsLiveSnapshot/);
+ assert.match(capture,/\(!live&&!rackFileAllowed/);
+ const choose=main.split('void chooseFxRackFile(')[1].split('void chooseNamedIoProfile(')[0];
+ assert.doesNotMatch(choose,/operatorOutputMuted_\s*=|setMonitorEnabled\(/);
+ assert.match(choose,/rackArchive\(\[file,rack\]\{return Archive::save/);
+});
+
+
+test('session capture cannot reopen MAIN after a newer operator STOP or device/graph change',()=>{
+ const s=main.split('juce::String saveMixerSession(bool resumeMain')[1].split('const auto pendingId=doc.id;')[0];
+ assert.match(s,/Purpose::mixerSessionCapture/);
+ assert.ok(s.indexOf('Purpose::mixerSessionCapture')<s.indexOf('engine_.captureNativeMixerSession(doc,states)'));
+ assert.match(s,/const auto revision=engine_\.outputArmRevision\(\)/);
+ assert.match(s,/mayResumeCapturedMain\(monitoring,epoch,revision,operatorOutputMuted_\)/);
+ assert.match(s,/if\(mayResume\(\) && engine_\.liveOutputArmFault\(false\)\.isEmpty\(\) && mayResume\(\)\)/);
+ assert.match(policy,/return wasArmed && sameRoute && !operatorMuted && desired\(\) && !interrupted\(\)/);
+ const capture=engine.split('juce::String captureNativeMixerSession(')[1].split('struct MixerBindingInspection')[0];
+ assert.match(capture,/captureEpoch!=dryRoutingLabEpoch\(\)/);
+ assert.match(capture,/current=deviceManager_\.getCurrentAudioDevice\(\)/);
+ assert.match(capture,/current!=device \|\| !current->isOpen\(\)/);
+ assert.match(capture,/document\.binding=readMixerBinding\(\*current\)/);
+ assert.doesNotMatch(capture,/readMixerBinding\(\*device\)/);
+});

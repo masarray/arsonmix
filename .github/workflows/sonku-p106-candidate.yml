@@ -1,0 +1,52 @@
+name: SonKu P106 realtime musical candidate
+on:
+  pull_request:
+    paths:
+      - 'engine/builtin_fx/**'
+      - 'tests/sonku_p106_rt_musical_candidate.cpp'
+      - 'tools/sonku_p106_immersib_isolation.py'
+      - 'tools/sonku_p106_msvc.py'
+      - '.github/workflows/sonku-p106-candidate.yml'
+permissions:
+  contents: read
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compile real production-profile core and test
+        run: |
+          python3 - <<'PY'
+          import subprocess,sys
+          sys.path.insert(0,'tools')
+          from immersib_p102_geometry_cache_probe import MACROS
+          subprocess.run(['g++','-std=c++20','-O2','-ffp-contract=off','-Wall','-Wextra','-Werror',*['-D'+m+'=1' for m in MACROS],'tests/sonku_p106_rt_musical_candidate.cpp','-o','/tmp/sonku-p106'],check=True)
+          PY
+          python3 scripts/verify_immersib_approved_pcm_sources.py
+          python3 -m unittest scripts/tests/test_immersib_approved_pcm_sources.py
+          python3 -m unittest discover -s tests -p imersip_p92_authority_contract_test.py -v
+          /tmp/sonku-p106
+      - name: Historical main versus candidate — ImmerSIB full PCM isolation
+        run: python3 tools/sonku_p106_immersib_isolation.py
+  windows-candidate:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Real x64 MSVC Release core and historical ImmerSIB PCM isolation
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          if (-not (Test-Path -LiteralPath $vswhere)) { throw 'MSVC_VSWHERE_MISSING' }
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdline = 'call "' + $vcvars + '" >nul && python tools/sonku_p106_msvc.py && python tools/sonku_p106_immersib_isolation.py --msvc'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'SONKU_P106_MSVC_GATE_FAILED' }

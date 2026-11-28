@@ -116,6 +116,7 @@ jobs:
           node --check site/preview-v2/assets/mixer-native-peq.js
           node --check site/preview-v2/assets/mixer-native-geq31.js
           node --check site/preview-v2/assets/mixer-native-compressor.js
+          node --check site/preview-v2/assets/mixer-native-ducker.js
           # Vocal Harmony editor checks are owned ONLY by
           # harmony-fast-dsp.yml when the Vocal Harmony plugin changes.
           # Generic player/mixer GUI edits must never be blocked by its fixture.
@@ -262,12 +263,40 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  dmx-preview:
+    name: DMX native SOF Chromium (MAIN and MONITOR)
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/dual-mix-experience-20261126' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install scoped Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Existing and DMX native SOF, exact EdgeId, MAIN protected
+        run: python tests/approved_native_sof_chromium_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ArSonMix-DMX-Console-${{ github.run_id }}
+          path: arsonmix-native-dmx-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   sonku-preview:
     name: 8D-SonKu native insert/editor Chromium FAT (desktop and narrow)
     needs: quick
     # Both 8D-SonKu and SOF native-owner PRs share ONE actual Chromium runner.
     # Preserve fast-only checks for unrelated GUI and engine branches.
-    if: ${{ (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') }}
+    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-')) || ( (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/8d-sonku-') || startsWith(github.head_ref, 'feat/sonku-') || startsWith(github.head_ref, 'test/sof-native-') || startsWith(github.head_ref, 'integration/sof-sonku-main-') || startsWith(github.head_ref, 'fix/native-wire-inspector-') || (startsWith(github.head_ref, 'integration/sonku-m4-wire-') || startsWith(github.head_ref, 'integration/sonku-m4-guitar-picker-') || startsWith(github.head_ref, 'fix/sonku-')))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/heads/feat/8d-sonku-') && inputs.expected_sha != '') ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -350,7 +379,7 @@ jobs:
     needs: quick
     # Run dedicated Vocal Delay visual validation in the reconciled native
     # engine branch too; generic /preview/ smoke does not call this fixture.
-    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/vocal-delay-') || startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') }}
+    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-')) || ( github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/vocal-delay-') || startsWith(github.head_ref, 'feature/arson-vocal-throw-') || startsWith(github.head_ref, 'integration/arson-vocal-throw-') || github.head_ref == 'integration/asio4all-harmony-d4-compat-20261109') ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -373,10 +402,256 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  studio-audio-io:
+    name: Studio Audio I/O real Chromium routing interaction
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/p0-output-matrix-token-contract-20261128' || github.head_ref == 'fix/operator-workflow-reconciliation-20261128' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'feature/io-studio-workflow-') || startsWith(github.head_ref, 'feature/io-atomic-output-') || startsWith(github.head_ref, 'fix/u1-output-recovery-') || (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-live-fx-rack-file-dialog-20261127' || github.head_ref == 'fix/p0-asio-panel-main-sof-recovery-20261127' || github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || github.head_ref == 'fix/p0-ducker-transaction-lifecycle-20261127' || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'fix/production-profile-wire-readback-20261127') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Verify compiled Audio I/O interaction with native transport fixture
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          echo "AUDIO_IO_CHROMIUM_EXACT_HEAD=$EXPECTED_SOURCE_SHA"
+          python tests/approved_audio_io_chromium_smoke.py
+      - name: Production CSS parity — exact composed baseline before optimization
+        if: ${{ github.head_ref == 'feature/io-atomic-output-readback-profile-20261127' }}
+        run: |
+          python scripts/build_pages.py --out dist-pages --sha "$(git rev-parse HEAD)" --branch main
+          python tests/approved_stage_c_css_visual_parity_smoke.py
+          python tests/approved_css_stage_c_computed_parity_smoke.py
+      - name: Profiled WIRE readback — exact assembled Chromium routing regression
+        if: ${{ github.head_ref == 'fix/p0-output-matrix-token-contract-20261128' || github.head_ref == 'fix/operator-workflow-reconciliation-20261128' || github.head_ref == 'fix/production-profile-wire-readback-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
+        run: python tests/approved_native_wire_gain_smoke.py
+      - name: V6 direct assignment and Plugin Manager actual Chromium
+        if: ${{ github.head_ref == 'fix/p0-output-matrix-token-contract-20261128' || github.head_ref == 'fix/v6-operator-io-matrix-plugin-sof-20261127' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
+        run: python tests/v6_operator_io_plugin_sof_smoke.py
+      - name: FX rack recovery after a failed insert, power and transfer
+        if: ${{ github.head_ref == 'fix/p0-output-matrix-token-contract-20261128' || github.head_ref == 'fix/p0-live-fx-secondary-insert-20261127' || github.head_ref == 'fix/p0-live-fx-rack-file-dialog-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
+        run: python tests/approved_native_fx_edit_smoke.py
+      - name: Unified routing actual held SOF gesture and assignment
+        if: ${{ (startsWith(github.head_ref, 'fix/unified-send-gesture-custom-') || github.head_ref == 'fix/operator-menu-offline-sof-20261127') }}
+        run: python tests/approved_native_sof_chromium_smoke.py
+      - name: Application menu layout and offline workspace integration
+        if: ${{ github.head_ref == 'fix/operator-menu-offline-sof-20261127' }}
+        run: |
+          python tests/native_header_toolbar_chromium_smoke.py
+          python tests/approved_native_offline_logical_smoke.py
+          python tests/sof_contextual_console_smoke.py
+      - name: P0 live-ops exact assembled workspace restore
+        if: ${{ !cancelled() && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'staging/io-reverb-integrated-global-20261125' || github.head_ref == 'feat/arson-player-tempered-glass-20261127') }}
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          python tests/approved_native_cold_start_smoke.py
+      - name: P0 live-ops exact assembled FX window focus
+        if: ${{ !cancelled() && (github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || github.head_ref == 'fix/p0-live-ops-reliability-20261127' || github.head_ref == 'staging/io-reverb-integrated-global-20261125' || github.head_ref == 'feat/arson-player-tempered-glass-20261127') }}
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          python tests/approved_inline_fx_clip_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ always() }}
+        with:
+          name: ArSonMix-Audio-IO-${{ github.run_id }}
+          path: |
+            audio-io-custom-stereo.png
+            native-external-output-matrix.png
+            operator-ux-application-menu-*.png
+            v6-direct-sof-*.png
+            v6-plugin-manager-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  clean-ribbon-v6:
+    name: Clean Ribbon V6 exact-head native assembly Chromium
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/operator-workflow-reconciliation-20261128' || github.head_ref == 'fix/v6-cascading-operator-menu-20261127' || github.head_ref == 'fix/v6-mobile-ribbon-ownership-20261128' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') || startsWith(github.head_ref, 'feat/clean-ribbon-v6-') || github.head_ref == 'feat/arson-player-tempered-glass-20261127' || github.head_ref == 'feat/autonomous-updater-v2-20261127') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Native ribbon, application menu and Player readback
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          python tests/native_header_toolbar_chromium_smoke.py
+          python tests/approved_player_v4_chromium_smoke.py
+      - name: Exact public touch ribbon and cascading menu
+        if: ${{ github.head_ref == 'fix/v6-mobile-ribbon-ownership-20261128' }}
+        run: |
+          python scripts/build_pages.py --out dist-pages --sha "${{ github.event.pull_request.head.sha }}" --branch main
+          python tests/approved_preview_mobile_navigation_smoke.py
+      - name: Production layout exact public geometry preflight
+        if: ${{ github.head_ref == 'feat/clean-ribbon-v6-production-layout-20261127' }}
+        run: python tests/preview_v2_v7_visual_smoke.py
+      - name: Smart Autonomous Update Center interaction
+        if: ${{ github.head_ref == 'feat/autonomous-updater-v2-20261127' || startsWith(github.head_ref, 'staging/io-reverb-integrated-') }}
+        run: python tests/autonomous_update_center_chromium_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ always() }}
+        with:
+          name: ArSonMix-Clean-Ribbon-V6-${{ github.run_id }}
+          path: |
+            operator-ux-application-menu-*.png
+            operator-ux-menu-*.png
+            operator-ux-toolbar-*.png
+            player-visual-evidence/*.png
+            autonomous-update-center-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  rc-contract-reconciliation:
+    name: RC independent tail diagnostics (not a substitute for full gate)
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/rc-contract-reconciliation-20261128' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Validate two previously failing source contracts
+        run: node --test --test-name-pattern="U5 first sound|saved ASIO startup failure" tests/approved_native_m2_contract.test.cjs tests/independent_clock_adapter_contract_test.mjs
+      - name: Assemble exact public GUI and install Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+          python scripts/build_pages.py --out dist-pages --sha "${{ github.event.pull_request.head.sha }}" --branch main
+          python scripts/build_landing_assets.py dist-pages
+          python tests/single_preview_publication_contract_test.py dist-pages
+      - name: Collect all independent remaining GUI assertions, return failure if any fail
+        run: |
+          failed=0
+          run_test() {
+            echo "::group::$*"
+            if python "$@"; then echo "RC_TAIL_PASS $*"; else echo "RC_TAIL_FAIL $*"; failed=1; fi
+            echo "::endgroup::"
+          }
+          run_test tests/pages_global_fx_ab_pan_wire_smoke.py
+          run_test tests/approved_native_fx_edit_smoke.py
+          run_test tests/approved_native_peq_smoke.py
+          run_test tests/approved_native_geq31_smoke.py
+          run_test tests/approved_native_compressor_smoke.py
+          run_test tests/approved_native_vocal_throw_smoke.py
+          run_test tests/approved_native_harmony_smoke.py
+          run_test tests/approved_native_cold_start_smoke.py
+          run_test tests/approved_native_fx_param_hotkey_smoke.py
+          run_test tests/approved_native_offline_logical_smoke.py
+          run_test tests/approved_audio_io_chromium_smoke.py
+          run_test tests/v6_operator_io_plugin_sof_smoke.py
+          run_test tests/native_header_toolbar_chromium_smoke.py
+          run_test tests/approved_native_wire_gain_smoke.py
+          run_test tests/approved_css_stage_d_single_bundle_smoke.py
+          run_test tests/sof_contextual_console_smoke.py
+          run_test tests/approved_native_sof_chromium_smoke.py
+          run_test tests/pages_v60_fader_wire_tactile_smoke.py
+          run_test tests/approved_css_stage_c_computed_parity_smoke.py
+          run_test tests/pages_wire_first_canonical_main_smoke.py
+          run_test tests/pages_wire_v49_direct_controls_smoke.py
+          run_test tests/desktop_wire_resize_chromium_smoke.py
+          run_test tests/pages_fx_rail_v53_smoke.py
+          run_test tests/approved_operator_ux_chromium_fat.py --public
+          run_test tests/approved_fx_rack_master_power_smoke.py
+          run_test tests/pages_v54_wire_fx_context_smoke.py
+          run_test tests/pages_v55_context_wire_fader_smoke.py
+          run_test tests/fader_asset_test.py
+          run_test tests/button_asset_test.py
+          run_test tests/wire_knob_asset_contract_test.py
+          run_test tests/pan_button_asset_test.py
+          run_test tests/mixer_shell_geometry_smoke.py
+          run_test tests/pages_v51_portrait_led_peak_hold_smoke.py
+          run_test tests/pages_v52_fader_recess_smoke.py
+          run_test tests/pages_v50_wire_popout_layout_smoke.py
+          run_test tests/pages_contextual_buttons_smoke.py
+          run_test tests/pages_wire_incoming_v43_smoke.py
+          run_test tests/preview_v15_drag_wire_smoke.py
+          run_test tests/pages_inter_utility_v7_smoke.py
+          run_test tests/pages_micro_button_assets_v1_smoke.py
+          run_test tests/pages_controls_v6_smoke.py
+          run_test tests/pages_mute_css_reference_smoke.py
+          run_test tests/pages_png_buttons_wire_reconciliation_smoke.py
+          run_test tests/pages_contextual_contrast_smoke.py
+          run_test tests/pages_micro_fader_visual_v18_smoke.py
+          run_test tests/pages_m1_meter_gain_calibration_smoke.py
+          run_test tests/pages_m3_operator_visual_interaction_smoke.py
+          run_test tests/approved_floating_fx_window_smoke.py
+          run_test tests/ui_smoke.py
+          run_test tests/pages_wire_focus_v40_smoke.py
+          run_test tests/pages_wire_dot_v42_smoke.py
+          run_test tests/pages_wire_v44_finish_smoke.py
+          run_test tests/pages_wire_v45_socket_layout_smoke.py
+          run_test tests/pages_wire_v46_precision_smoke.py
+          run_test tests/mixer_io_smoke.py
+          run_test tests/native_orbit_ui_smoke.py
+          exit "$failed"
+
+  rounded-micro-keys:
+    name: Rounded micro keys exact-head Chromium
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feat/rounded-micro-keys-') || startsWith(github.head_ref, 'feat/clean-ribbon-v6-')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: Install Chromium
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Verify exact assembled micro keys, gestures and WIRE
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE_SHA"
+          python tests/pages_micro_button_assets_v1_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ always() }}
+        with:
+          name: ArSonMix-Rounded-Micro-Keys-${{ github.run_id }}
+          path: pages-native-micro-assets-1680.png
+          if-no-files-found: ignore
+          retention-days: 7
+
   operator-ux-fat:
     name: Operator UX real Chromium / native-assembled GUI (5 viewports)
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/approved-operator-ux-20261107' }}
+    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/approved-operator-ux-20261107' || github.head_ref == 'perf/wire-gain-readback-index-20261128') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -392,6 +667,11 @@ jobs:
         run: |
           python tests/approved_operator_ux_chromium_fat.py
           python tests/approved_operator_ux_native_identity_smoke.py
+      - name: Verify actual WIRE gain readback and public narrow-viewport gesture
+        if: ${{ github.head_ref == 'perf/wire-gain-readback-index-20261128' }}
+        run: |
+          python tests/approved_native_wire_gain_smoke.py
+          python tests/approved_operator_ux_chromium_fat.py --public
       - name: Retain rendered evidence across viewport sizes
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -401,10 +681,49 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  harmony-gesture-preview:
+    name: Harmonice hover wheel and accepted PCM readback FAT
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - run: python tests/approved_native_harmony_smoke.py
+
+  auto-ducker-preview:
+    name: Auto Ducker actual Chromium trigger picker and ACK FAT
+    needs: quick
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'feature/auto-ducker-') || startsWith(github.head_ref, 'fix/p0-ducker-')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - run: python tests/approved_native_ducker_smoke.py
+      - run: python tests/approved_floating_fx_window_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: auto-ducker-native-ui-${{ github.run_id }}
+          path: auto-ducker-native-*.png
+          if-no-files-found: ignore
+
   compressor-preview:
     name: Native Compressor actual Chromium screenshot and ACK FAT
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && (github.head_ref == 'feature/native-zero-latency-compressor-20261108' || github.head_ref == 'feature/native-compressor-live-lcd-meters-20261108' || (startsWith(github.head_ref, 'feature/compressor-') || startsWith(github.head_ref, 'fix/compressor-'))) }}
+    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-')) || ( github.event_name == 'pull_request' && (github.head_ref == 'feature/native-zero-latency-compressor-20261108' || github.head_ref == 'feature/native-compressor-live-lcd-meters-20261108' || (startsWith(github.head_ref, 'feature/compressor-') || startsWith(github.head_ref, 'fix/compressor-'))) ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -467,7 +786,7 @@ jobs:
   geq31-webview:
     name: GEQ31 single-renderer WebView GUI, 31 labels, PCM ACK (3 viewports)
     needs: quick
-    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/geq31-') }}
+    if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/auto-ducker-')) || ( github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/geq31-') ) }}
     runs-on: ubuntu-latest
     timeout-minutes: 14
     steps:
@@ -555,6 +874,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install playwright
           python -m playwright install --with-deps chromium
+      - name: V6 Plugin Manager exact assembled Chromium geometry and native actions
+        run: python tests/v6_operator_io_plugin_sof_smoke.py
       - name: Landing public storefront desktop/mobile Chromium and download journey
         run: python tests/landing_page_browser_smoke.py
       # Fail fast: clipped editor is the actual PR feature gate. Testing it

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #pragma once
 #include "LegacyLiveGraphMigration.h"
+#include "DmxOutputSinkPlan.h"
 #include "DynamicChannelFxLeaseBank.h"
 #include "DynamicNativeSessionPublisher.h"
 #include <array>
@@ -21,17 +22,11 @@ struct VerifiedNativeOutputs final {
     int activeOutputChannels=0; // EXACT current enabled callback output count
     int mainL=-1,mainR=-1,monitorL=-1,monitorR=-1;
     bool monitorEnabled=false;
-    bool valid() const noexcept {
-        if(activeOutputChannels<2||activeOutputChannels>256 ||
-           mainL<0||mainR<0||mainL>=activeOutputChannels||
-           mainR>=activeOutputChannels||mainL==mainR)return false;
-        if(!monitorEnabled)return monitorL==-1&&monitorR==-1;
-        return monitorL>=0&&monitorR>=0&&
-               monitorL<activeOutputChannels&&
-               monitorR<activeOutputChannels&&
-               monitorL!=monitorR&&monitorL!=mainL&&
-               monitorL!=mainR&&monitorR!=mainL&&monitorR!=mainR;
+    constexpr DmxOutputSinkPlan sinkPlan() const noexcept {
+        return {activeOutputChannels,{mainL,mainR},{monitorL,monitorR},monitorEnabled};
     }
+    constexpr bool secondaryMain() const noexcept {return sinkPlan().secondaryMain();}
+    bool valid() const noexcept {return sinkPlan().valid();}
 };
 struct UnifiedLegacyAccepted final {
     LegacyMigratedGraph graph{};
@@ -190,6 +185,9 @@ public:
         };
         plan.latency=+[](void* ctx,ChannelId id) noexcept {
             return static_cast<Bank*>(ctx)->latencySamples(id);
+        };
+        plan.sidechains=+[](void* p,std::vector<DynamicSidechainDependency>& routes){
+            static_cast<Bank*>(p)->collectPostFaderSidechains(routes);
         };
         plan.deviceEpoch=deviceEpoch;plan.graphRevision=expectedPcmRevision+1;
         result.native=publisher.commit(candidate.roster,candidate.request,

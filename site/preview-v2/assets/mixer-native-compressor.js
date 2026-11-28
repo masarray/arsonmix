@@ -137,7 +137,7 @@ Object.entries(defs).forEach(([key,r])=>{
  const input=dom("input","mx-comp-slider");
  input.type="range";input.min=String(r.min);input.max=String(r.max);
  input.step=String(r.step);input.setAttribute("aria-label",r.label);
- input.title="Drag vertically; Shift for fine; arrows for steps; double-click to reset";
+ input.title="Drag or hover + wheel; Shift for fine; arrows for steps; double-click to reset";
  item.append(name,dial,output,input);
  inputs[key]={item,input,output,dial,body,pointer,arcProgress};
  const changeValue=value=>{
@@ -148,6 +148,7 @@ Object.entries(defs).forEach(([key,r])=>{
   else delayed={...draft};
  };
  input.addEventListener("input",()=>changeValue(Number(input.value)));
+ window.ArMixFxGesture.bindRange(input,{target:item,get:()=>draft[key],enabled:()=>!!current&&(!native()||!!context()),onChange:value=>{changeValue(value);if(native()&&!pending)send();}});
  input.addEventListener("change",()=>{if(native())send();else saveDemo();});
  let drag=null;
  input.addEventListener("pointerdown",e=>{
@@ -306,7 +307,7 @@ function syncPower(){
    current.track.slotBypass?.[current.slot]?"off":"on"):
   (!lane||typeof lane.fxRackBypassed!=="boolean"||!insert||
    typeof insert.bypassed!=="boolean"?"unknown":
-   lane.fxRackBypassed?"rack-off":insert.bypassed?"off":"on");
+   (lane.fxRackBypassed||snapshot()?.raw?.globalFxBypassed===true)?"rack-off":insert.bypassed?"off":"on");
  power.dataset.fxState=fxState;
  power.disabled=fxState==="unknown"||fxState==="rack-off";
  power.setAttribute("aria-pressed",String(fxState==="on"));
@@ -422,7 +423,7 @@ window.addEventListener("resize",()=>{
  panel.style.top=clamp(r.top,0,Math.max(0,innerHeight-r.height))+"px";
 });
 window.addEventListener("keydown",e=>{
- if(e.key==="Escape"&&!panel.hidden){
+ if(!window.ArSonMixFxWorkspace&&e.key==="Escape"&&!panel.hidden){
  if(e.target.closest?.(".mx-fxp-form"))return;
  panel.hidden=true;pending=null;delayed=null;presetBar.close();
 }
@@ -449,7 +450,7 @@ window.ArSonMixNativeCompressor=Object.freeze({
   panel.dataset.fxTrackId=String(track.id);panel.dataset.fxSlot=String(slot);
   panel.hidden=false;paint();
  },
- close(){panel.hidden=true;presetBar.close();}
+ close(){panel.hidden=true;pending=null;delayed=null;presetBar.close();}
 });
 backend()?.addEventListener?.("arMixBuiltinCompQueue",reply=>{
  if(!pending||reply?.requestId!==pending.id)return;
@@ -516,6 +517,7 @@ backend()?.addEventListener?.("arMixConsoleSnapshot",()=>{
 window.setInterval(()=>{
  if(panel.hidden)return;
  presetBar.tick();
+ if(delayed&&!pending&&Date.now()-lastSend>=130&&context())send();
  paintMeters();
  if(native()&&context()&&!snapshot()?.logical)requestSnapshot();
 },160);

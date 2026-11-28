@@ -3,11 +3,16 @@
 
 #include "../engine/builtin_fx/ChannelEqProcessor.h"
 #include "../engine/builtin_fx/ChannelCompressorProcessor.h"
+#include "../engine/builtin_fx/AutoDuckerProcessor.h"
+#include "../engine/builtin_fx/AntiNoizProcessor.h"
 #include "../engine/builtin_fx/GraphicEq31Processor.h"
 #include "../engine/builtin_fx/ChannelHarmonyProcessor.h"
 #include "../engine/builtin_fx/VocalThrowProcessor.h"
+#include "../engine/builtin_fx/vocal_delay/JuceVocalDelayProcessor.h"
+#include "../engine/builtin_fx/VocalReverbProcessor.h"
 #include "../engine/builtin_fx/GuitarRigEditor.h"
 #include "../engine/builtin_fx/SonKuSpatialProcessor.h"
+#include "../engine/builtin_fx/DeEzzerProcessor.h"
 #if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
 #include "../engine/builtin_fx/ImerSipP92Processor.h"
 #endif
@@ -55,10 +60,64 @@ std::unique_ptr<juce::AudioProcessor> prepareNativeBuiltInFx(
        (state==nullptr && bytes!=0) || (state!=nullptr && bytes==0))
         return {};
     auto processor=std::make_unique<Processor>();
+    // Direct native construction does not pass through JUCE's plug-in
+    // format wrapper. Some processors implement prepareToPlay without
+    // publishing base metadata; the host must supply the verified rate.
+    // Used by the shared bypass envelope and normalized workload budget.
+    processor->setRateAndBufferSizeDetails(rate,frames);
     processor->prepareToPlay(rate,frames);
     if(!processor->isReady() || (state && !processor->restoreUnpublishedState(state,bytes)))
         return {};
     return processor;
+}
+
+// ArSonVerb P8 first-callback safety: unlike historical generic adapters,
+// restore preset targets BEFORE Engine::prepare() precomputes coefficients.
+// This function runs on CONTROL, never the primary ASIO callback.
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalReverbMode(
+        double rate,int frames,const void* state,int bytes,bool wetReturn) {
+    if(!std::isfinite(rate)||rate<8000.||rate>192000.||
+       frames<16||frames>armix::mixer::PreparedMixerBlock::hardFrameLimit||
+       bytes<0||bytes>8*1024*1024||
+       (state==nullptr&&bytes!=0)||(state!=nullptr&&bytes==0))
+        return {};
+    auto p=std::make_unique<VocalReverbProcessor>(wetReturn);
+    if(state&&!p->restoreUnpublishedState(state,bytes))return {};
+    p->prepareToPlay(rate,frames);
+    if(!p->isReady())return {};
+    return p;
+}
+
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalReverb(
+        double rate,int frames,const void* state,int bytes) {
+    return prepareNativeVocalReverbMode(rate,frames,state,bytes,false);
+}
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalReverbReturn(
+        double rate,int frames,const void* state,int bytes) {
+    return prepareNativeVocalReverbMode(rate,frames,state,bytes,true);
+}
+
+// Continuous delay is a distinct catalog identity; old Vocal Throw remains
+// hidden and restores its original AVTH v1 semantics without any type cast.
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalDelayMode(
+        double rate,int frames,const void* state,int bytes,bool wetOnly) {
+    if(!vocal_delay::validRate(rate)||frames<16||
+       frames>armix::mixer::PreparedMixerBlock::hardFrameLimit||
+       (state==nullptr?bytes!=0:bytes!=48))return {};
+    auto p=std::make_unique<vocal_delay::JuceVocalDelayProcessor>(wetOnly);
+    if(!p->useHostLocalMailbox()||(state&&!p->restoreUnpublishedState(state,bytes)))return {};
+    p->prepareToPlay(rate,frames);
+    if(!p->isReady())return {};
+    return p;
+}
+
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalDelay(
+        double rate,int frames,const void* state,int bytes) {
+    return prepareNativeVocalDelayMode(rate,frames,state,bytes,false);
+}
+inline std::unique_ptr<juce::AudioProcessor> prepareNativeVocalDelayReturn(
+        double rate,int frames,const void* state,int bytes) {
+    return prepareNativeVocalDelayMode(rate,frames,state,bytes,true);
 }
 
 inline constexpr std::array nativeBuiltInFx{
@@ -77,6 +136,16 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_COMP_UNSUPPORTED_AUDIO_FORMAT","NATIVE_COMP_PREPARE_REJECTED",
         "NATIVE_COMP_PREPARE_EXCEPTION","Saved native Compressor state rejected; graph unchanged",
         prepareNativeBuiltInFx<ChannelCompressorProcessor>},
+    NativeBuiltInFx{AutoDuckerProcessor::catalogIdentity,"Auto Ducker","Dynamics",true,8000.,384000.,
+        "NATIVE_DUCKER_HOST_UNAVAILABLE","NATIVE_DUCKER_DEVICE_CHANGED",
+        "NATIVE_DUCKER_UNSUPPORTED_AUDIO_FORMAT","NATIVE_DUCKER_PREPARE_REJECTED",
+        "NATIVE_DUCKER_PREPARE_EXCEPTION","Saved Auto Ducker state rejected; graph unchanged",
+        prepareNativeBuiltInFx<AutoDuckerProcessor>},
+    NativeBuiltInFx{AntiNoizProcessor::catalogIdentity,"Anti Noiz","Dynamics",true,44100.,96000.,
+        "NATIVE_AN_HOST_UNAVAILABLE","NATIVE_AN_DEVICE_CHANGED",
+        "NATIVE_AN_UNSUPPORTED_AUDIO_FORMAT","NATIVE_AN_PREPARE_OR_PDC_REJECTED",
+        "NATIVE_AN_PREPARE_EXCEPTION","Saved Anti Noiz state rejected; graph unchanged",
+        prepareNativeBuiltInFx<AntiNoizProcessor>},
     NativeBuiltInFx{ChannelHarmonyProcessor::catalogIdentity,"Harmonice","Utility",true,32000.,192000.,
         "NATIVE_HARMONY_HOST_UNAVAILABLE","NATIVE_HARMONY_DEVICE_CHANGED",
         "NATIVE_HARMONY_UNSUPPORTED_AUDIO_FORMAT","NATIVE_HARMONY_PREPARE_OR_PDC_REJECTED",
@@ -87,6 +156,26 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_THROW_UNSUPPORTED_AUDIO_FORMAT","NATIVE_THROW_PREPARE_REJECTED",
         "NATIVE_THROW_PREPARE_EXCEPTION","Saved native Vocal Delay state rejected; graph unchanged",
         prepareNativeBuiltInFx<VocalThrowProcessor>},
+    NativeBuiltInFx{vocal_delay::JuceVocalDelayProcessor::catalogIdentity,"Vocal Delay","Utility",true,8000.,192000.,
+        "NATIVE_VD_HOST_UNAVAILABLE","NATIVE_VD_DEVICE_CHANGED",
+        "NATIVE_VD_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VD_PREPARE_REJECTED",
+        "NATIVE_VD_PREPARE_EXCEPTION","Saved continuous Vocal Delay state rejected; graph unchanged",
+        prepareNativeVocalDelay},
+    NativeBuiltInFx{vocal_delay::JuceVocalDelayProcessor::wetReturnIdentity,"Vocal Delay Return","Utility",true,8000.,192000.,
+        "NATIVE_VD_RETURN_HOST_UNAVAILABLE","NATIVE_VD_RETURN_DEVICE_CHANGED",
+        "NATIVE_VD_RETURN_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VD_RETURN_PREPARE_REJECTED",
+        "NATIVE_VD_RETURN_PREPARE_EXCEPTION","Saved Vocal Delay Return rejected; graph unchanged",
+        prepareNativeVocalDelayReturn},
+    NativeBuiltInFx{VocalReverbProcessor::catalogIdentity,"Reverb-Sis","Reverb",true,8000.,192000.,
+        "NATIVE_VREV_HOST_UNAVAILABLE","NATIVE_VREV_DEVICE_CHANGED",
+        "NATIVE_VREV_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VREV_PREPARE_REJECTED",
+        "NATIVE_VREV_PREPARE_EXCEPTION","Saved Reverb-Sis state rejected; graph unchanged",
+        prepareNativeVocalReverb},
+    NativeBuiltInFx{VocalReverbProcessor::wetReturnIdentity,"Reverb-Sis Return","Reverb",true,8000.,192000.,
+        "NATIVE_VREV_RETURN_HOST_UNAVAILABLE","NATIVE_VREV_RETURN_DEVICE_CHANGED",
+        "NATIVE_VREV_RETURN_UNSUPPORTED_AUDIO_FORMAT","NATIVE_VREV_RETURN_PREPARE_REJECTED",
+        "NATIVE_VREV_RETURN_PREPARE_EXCEPTION","Saved Reverb-Sis Return rejected; graph unchanged",
+        prepareNativeVocalReverbReturn},
     NativeBuiltInFx{SonKuSpatialProcessor::catalogIdentity,"8D-SonKu","Spatial",true,44100.,48000.,
         "NATIVE_SONKU_HOST_UNAVAILABLE","NATIVE_SONKU_DEVICE_CHANGED",
         "NATIVE_SONKU_UNSUPPORTED_AUDIO_FORMAT","NATIVE_SONKU_PREPARE_REJECTED",
@@ -105,7 +194,12 @@ inline constexpr std::array nativeBuiltInFx{
         "NATIVE_GFX_HOST_UNAVAILABLE","NATIVE_GFX_DEVICE_CHANGED",
         "NATIVE_GFX_UNSUPPORTED_AUDIO_FORMAT","NATIVE_GFX_PREPARE_REJECTED",
         "NATIVE_GFX_PREPARE_EXCEPTION","Saved Guitar FX Rig state rejected; graph unchanged",
-        prepareNativeBuiltInFx<GuitarRigProcessor>}
+        prepareNativeBuiltInFx<GuitarRigProcessor>},
+    NativeBuiltInFx{DeEzzerProcessor::catalogIdentity,"de-Ezzer","Dynamics",true,44100.,96000.,
+        "NATIVE_DEZ_HOST_UNAVAILABLE","NATIVE_DEZ_DEVICE_CHANGED",
+        "NATIVE_DEZ_UNSUPPORTED_AUDIO_FORMAT","NATIVE_DEZ_PREPARE_REJECTED",
+        "NATIVE_DEZ_PREPARE_EXCEPTION","Saved de-Ezzer state rejected; graph unchanged",
+        prepareNativeBuiltInFx<DeEzzerProcessor>}
 };
 
 // Compile-time registration contract: one stable catalog identity per FX,

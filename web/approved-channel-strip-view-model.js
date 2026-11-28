@@ -27,7 +27,11 @@
     if(track?.kind!=="audio")return ["None"];
     if(retained&&!logical)return [track.input||"None"];
     const labels=Array.isArray(physical)?physical.map(p=>p.label):["None"];
-    // Internal BUS is a readback-only label, never offered as a physical pin.
+    // Keep virtual player separate from the physical pin inventory. It is
+    // offered ONLY when the native ChannelId graph has the real decoder
+    // command; retained/M4 never see an imaginary browser PCM source.
+    if(Array.isArray(physical)&&physical.some(p=>p.mode==="PLAYER")&&
+       !labels.includes("Music Player"))labels.push("Music Player");
     if(track.input===internalBus&&!labels.includes(internalBus))
       labels.push(internalBus);
     return labels;
@@ -67,6 +71,8 @@
       const verified=left&&Number.isSafeInteger(l)&&
         (src.sourceFormat!=="STEREO"||right&&Number.isSafeInteger(r));
       out.input=native?.retained&&src.bindingState==="NEEDS_REMAP"?REMAP:
+        src.sourceFormat==="PLAYER"&&src.playerDeckId==="1"?
+          "Music Player":
         verified?inputLabel({mode:src.sourceFormat==="STEREO"?"STEREO":"MONO",
           left:l,right:r}):"None";
     }
@@ -147,8 +153,12 @@
                                currentLabel,choices=[],pending=false,
                                channelName=""}={}) {
     const unavailable={kind:"UNAVAILABLE"};
-    const safeCounter=x=>typeof x==="string"&&/^[1-9][0-9]*$/.test(x)&&
-      Number.isSafeInteger(Number(x))?x:null;
+    // ChannelId route tokens use exact decimal uint64 strings, not JS
+    // Number. The native token parser verifies these again on admission.
+    const safeCounter=x=>{
+      if(typeof x!=="string"||!/^[1-9][0-9]*$/.test(x))return null;
+      try{return BigInt(x)<=18446744073709551615n?x:null;}catch{return null;}
+    };
     const nativeId=x=>{
       if(typeof x!=="string"||!/^[1-9][0-9]*$/.test(x))return false;
       try{return BigInt(x)<=18446744073709551615n;}catch{return false;}
@@ -162,6 +172,10 @@
         native.device.epoch!==epoch))return unavailable;
     const channel=graph.channels.find(ch=>ch?.id===channelId);
     if(!channel||!["INPUT","GROUP","FX_RETURN"].includes(channel.role))
+      return unavailable;
+    if((typeof graph.revision==="string"&&graph.revision!==revision)||
+       hardware.raw.physicalBusOutputObserved===false||
+       hardware.raw.logicalOutputRegistry?.references?.some(r=>r.channelId===channelId))
       return unavailable;
     const matches=Array.isArray(choices)?
       choices.filter(p=>p?.label===selectedLabel):[];
@@ -178,6 +192,9 @@
         return unavailable;
       const main=hardware?.raw?.physicalMainOutputs||[];
       const monitor=hardware?.raw?.physicalMonitorOutputs||[];
+      const ports=hardware.raw.logicalOutputRegistry?.ports;
+      if(Array.isArray(ports)&&ports.some(p=>p.bound===true&&p.playback===d.playbackDevice&&
+        [p.left,p.right].some(pin=>pin===left||pin===right)))return unavailable;
       if((Array.isArray(main)&&[left,right].some(p=>main.includes(p)))||
          (Array.isArray(monitor)&&[left,right].some(p=>monitor.includes(p))))
         return unavailable;
@@ -308,7 +325,10 @@
       return decimalId(pending.createdId)&&
         !pending.beforeIds?.includes(pending.createdId)&&
         matches.length===1&&
-        matches[0].role===ROSTER_OPS[pending.operation].role?
+        matches[0].role===(pending.purpose==="FX"?"FX_RETURN":ROSTER_OPS[pending.operation].role)&&
+        (pending.purpose!=="FX"||(matches[0].inserts?.length===1&&matches[0].inserts[0].catalogId==="armix.builtin.vocal-reverb-return.v1"&&matches[0].primaryOutId===g.mainChannelId))&&
+        (pending.connectMain!==false||!matches[0].primaryOutId)&&
+        (!pending.selection?.length||pending.selection.every(id=>g.channels.some(ch=>ch.id===id&&ch.primaryOutId===pending.createdId)))?
         "CONFIRMED":"WAIT";
     return (pending.operation==="DELETE_CHANNEL"||
        pending.operation==="REMOVE_BUS")&&
@@ -423,14 +443,17 @@
     if(!choice||typeof choice.label!=="string"||!Array.isArray(options))return false;
     const exact=options.filter(p=>p?.label===choice.label);
     if(exact.length!==1)return false;
-    if(!["NONE","MONO","STEREO"].includes(choice.mode)||
+    if(!["NONE","MONO","STEREO","PLAYER"].includes(choice.mode)||
        exact[0].mode!==choice.mode||
        exact[0].left!==choice.left||exact[0].right!==choice.right)return false;
+    if(choice.mode==="PLAYER")
+      return choice.left===-1&&choice.right===-1&&
+        choice.deckId==="1"&&exact[0].deckId==="1";
     if(choice.mode==="NONE")return choice.left===-1&&choice.right===-1;
     if(!Number.isSafeInteger(choice.left)||choice.left<0)return false;
     if(choice.mode==="MONO")return choice.right===-1;
-    return Number.isSafeInteger(choice.right)&&
-      choice.right===choice.left+1;
+    return Number.isSafeInteger(choice.right)&&choice.right>=0&&
+      choice.right!==choice.left;
   }
   function sourceQueueSelection({choice,choices,epoch,acceptedLabel,
                                  activeSameChannel=false,
@@ -450,7 +473,8 @@
     return {kind:"QUEUE",entry:{epoch,
       ...(hardwareConfiguration!==undefined?{hardwareConfiguration}:{}),
       choice:{label:choice.label,mode:choice.mode,
-        left:choice.left,right:choice.right}}};
+        left:choice.left,right:choice.right,
+        ...(choice.mode==="PLAYER"?{deckId:"1"}:{})}}};
   }
   function sourceDispatchPlan({authority,entry,hardware,native,
                                channelId,channel,choices,deviceReady=false}={}) {
@@ -479,9 +503,11 @@
       return {kind:"READY",action:"routingNativeSourcePatch",
         payload:{channelId,deviceEpoch:epoch,
           graphRevision:graph.revision,rosterRevision:graph.rosterRevision,
-          mode:choice.mode,left:choice.left,right:choice.right}};
+          mode:choice.mode,left:choice.left,right:choice.right,
+          ...(choice.mode==="PLAYER"?{deckId:"1"}:{})}};
     }
     if(authority==="M4"){
+      if(choice.mode==="PLAYER")return unavailable;
       if(hardware?.raw?.mixerSession?.authority==="CHANNEL_ID"||
          !positiveCounter(epoch)||
          !Number.isInteger(channel)||channel<0||channel>=10||
@@ -498,9 +524,13 @@
   // correlated ACK/readback settlement and the queue's no-op optimization.
   // No GUI label, ACK payload, or pending request may prove installed PCM.
   function installedSourceMatches(authority,choice,source) {
-    if(!choice||!["NONE","MONO","STEREO"].includes(choice.mode))return false;
+    if(!choice||!["NONE","MONO","STEREO","PLAYER"].includes(choice.mode))
+      return false;
     if(authority==="CHANNEL_ID"){
       if(choice.mode==="NONE")return !source;
+      if(choice.mode==="PLAYER")
+        return source?.bindingState!=="NEEDS_REMAP"&&
+          source?.sourceFormat==="PLAYER"&&source?.playerDeckId==="1";
       if(!source||source.bindingState==="NEEDS_REMAP"||
          source.portId!=="in:"+choice.left)return false;
       if(choice.mode==="MONO")
@@ -1066,7 +1096,7 @@
     primaryChoices,resolvePrimarySelection,readbackBindings,externalPending,
     primaryOutMutation,externalOutputPlan,rosterMutationPlan,
     rosterAckResult,rosterReadbackSettlement,m4ChannelPatchPlan,
-    m4ChannelPatchAckResult,m4ChannelPatchSettlement,sourceQueueSelection,
+    m4ChannelPatchAckResult,m4ChannelPatchSettlement,sourceChoiceMatches,sourceQueueSelection,
     sourceDispatchPlan,sourceQueueHead,sourceQueueAlreadyInstalled,
     sourceQueueRequestLease,
     sourceAckResult,sourceReadbackSettlement,

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "../engine/core/DynamicAcceptedSession.h"
+#include "auto_ducker_core_cases.h"
 #include "../engine/core/RealtimeSlew64.h"
 #include <array>
 #if defined(NDEBUG)
@@ -1044,7 +1045,210 @@ static void verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm() {
     assert(pcm.channelCount()==3);
 }
 
+// DMX: one real accepted graph, one FX callback, independent MAIN and MONITOR
+// returns. A deterministic wet-only stand-in isolates the routing algebra;
+// this is NOT qualification of a native delay/reverb wet-only adapter.
+static void verifyDualMixSharedReturnPcm() {
+    constexpr std::uint64_t epoch=9601;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest route;route.physicalInputs=2;route.maxFrames=64;
+    const std::array<ChannelEdit,4> creates{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::fxReturn,"DELAY",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto a=session.edit(0,0,creates,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0],wet=a.edit.createdIds[1],
+        main=a.edit.createdIds[2],monitor=a.edit.createdIds[3];
+    const std::array<ChannelEdit,5> links{
+        output(voice,main),output(wet,main),send(voice,monitor,1.f,true),
+        send(voice,wet,1.f,true),send(wet,monitor,.125f,true)};
+    route.sources={{voice,0,1,true}};
+    a=session.edit(1,1,links,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto* wetRow=session.acceptedRoster().find(wet);
+    assert(wetRow&&wetRow->sends.size()==2);
+    const auto edge=std::find_if(wetRow->sends.begin(),wetRow->sends.end(),
+        [&](const auto& e){return e.destination==monitor&&!e.primaryOutput;});
+    assert(edge!=wetRow->sends.end()&&edge->edgeId&&edge->preFader);
+    const auto edgeId=edge->edgeId;
+    std::array<float,64> inL{},inR{},mainL{},mainR{},monL{},monR{};
+    inL.fill(.2f);inR.fill(.1f);
+    const float* pins[]{inL.data(),inR.data()};
+    int wetCalls=0;
+    const auto fx=[&](ChannelId id,float* l,float* r,int n) noexcept {
+        if(id==wet){++wetCalls;for(int i=0;i<n;++i){l[i]*=.5f;r[i]*=.5f;}}
+    };
+    const auto render=[&](int frames=64){
+        const int before=wetCalls;
+        const bool ok=session.render(epoch,pins,2,mainL.data(),mainR.data(),
+            frames,false,fx,monL.data(),monR.data());
+        assert(ok&&wetCalls==before+1);
+    };
+    const auto check=[&](int i,float m,float c){
+        assert(near(mainL[i],m)&&near(mainR[i],m*.5f));
+        assert(near(monL[i],c)&&near(monR[i],c*.5f));
+    };
+    render();check(0,.3f,.2125f);check(63,.3f,.2125f);
+    // Wet return fader controls MAIN; pre-fader cue edge is independent.
+    assert(session.setLiveMix(epoch,2,wet,.5f,0.f));
+    render(4);assert(mainL[3]<.3f&&mainL[3]>.25f);
+    assert(near(monL[3],.2125f));
+    render(60);check(59,.25f,.2125f);
+    // Cue send gain modifies MONITOR only, never MAIN or graph identity.
+    assert(session.setLiveParallelSend(epoch,2,wet,monitor,true,.5f));
+    render(4);assert(monL[3]>.2125f&&monL[3]<.25f);
+    assert(near(mainL[3],.25f));
+    render(60);check(59,.25f,.25f);
+    assert(!session.setLiveParallelSend(epoch-1,2,wet,monitor,true,1.f));
+    assert(!session.setLiveParallelSend(epoch,1,wet,monitor,true,1.f));
+    const auto* accepted=session.acceptedRouting(epoch,2);
+    assert(accepted&&accepted->find(wet)->primaryOutput==main);
+    assert(std::any_of(accepted->find(wet)->parallelSends.begin(),
+        accepted->find(wet)->parallelSends.end(),
+        [&](const auto& e){return e.edgeId==edgeId;}));
+    // A terminal MONITOR is not a source. Failure keeps live graph intact.
+    const std::array<ChannelEdit,1> invalid{send(monitor,wet,1.f,true)};
+    const auto rejected=session.edit(session.acceptedRosterRevision(),2,
+        invalid,route,epoch,epoch,true);
+    assert(!rejected.ok()&&session.acceptedGraphRevision()==2);
+    render();check(63,.25f,.25f);
+    session.unpublish();session.pollRetirement();
+    std::puts("DMX_SHARED_RETURN_PCM_PASS one render, first sample dry, independent return, slew, stable edge, terminal rejection");
+}
+
+// The same starter planner used by the production split transaction, plus
+// the explicit unmapped-sink path. No auto-patch of GROUP children or
+// authored monitor routes; MAIN and monitor faders are independent.
+static void verifyHeadphoneStarterAndDormantSinkPcm() {
+    constexpr std::uint64_t epoch=9671;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest route;route.physicalInputs=2;route.maxFrames=64;
+    const std::array<ChannelEdit,4> rows{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::group,"GROUP",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto a=session.edit(0,0,rows,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0],group=a.edit.createdIds[1],
+        main=a.edit.createdIds[2],monitor=a.edit.createdIds[3];
+    route.sources={{voice,0,1,true}};
+    const std::array<ChannelEdit,2> links{output(voice,group),output(group,main)};
+    assert(session.edit(1,1,links,route,epoch,epoch,true).ok());
+    const auto changes=planHeadphoneStarter(session.acceptedRoster(),main,monitor);
+    assert(changes.size()==1&&changes[0].from==group&&changes[0].preFader&&
+           near(changes[0].gain,.25f));
+    assert(session.wireTransaction(2,2,changes,route,epoch,epoch,true).ok());
+    assert(planHeadphoneStarter(session.acceptedRoster(),main,monitor).empty());
+    const auto* row=session.acceptedRoster().find(group);
+    const auto edge=std::find_if(row->sends.begin(),row->sends.end(),
+        [&](const auto& e){return e.destination==monitor;});
+    assert(edge!=row->sends.end()&&edge->preFader&&!edge->primaryOutput&&edge->edgeId);
+    const auto id=edge->edgeId;
+    std::array<float,64> inL{},inR{},mainL{},mainR{},monL{},monR{};
+    inL.fill(.2f);inR.fill(.1f);
+    const float* pins[]{inL.data(),inR.data()};
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    assert(session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx,monL.data(),monR.data()));
+    assert(near(mainL[63],.2f)&&near(monL[63],.05f));
+    assert(session.setLiveMix(epoch,3,group,.5f,0.f));
+    assert(session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx,monL.data(),monR.data()));
+    assert(near(mainL[63],.1f)&&near(monL[63],.05f));
+    // Missing monitor is still rejected unless the installed output plan
+    // explicitly authorizes a dormant logical sink. No scratch copy needed.
+    assert(!session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx));
+    assert(session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx,
+        nullptr,nullptr,{},{},{},true));
+    assert(near(mainL[63],.1f)&&near(mainR[63],.05f));
+    assert(session.setLiveWireGain(epoch,3,group,id,.125f));
+    assert(session.render(epoch,pins,2,mainL.data(),mainR.data(),64,false,fx,monL.data(),monR.data()));
+    assert(near(mainL[63],.1f)&&near(monL[63],.025f));
+    assert(session.acceptedGraphRevision()==3);
+    session.unpublish();session.pollRetirement();
+    std::puts("HEADPHONE_STARTER_DORMANT_PCM_PASS PRE branch, preserved EdgeId, explicit unbound sink, default fail-closed");
+}
+
+static void verifyAutoDuckerKeyScope() {
+    constexpr std::uint64_t epoch=8491;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest req;req.physicalInputs=3;req.maxFrames=64;
+    const std::array<ChannelEdit,3> channels{
+        add(0,ChannelRole::input,"MUSIC"),add(1,ChannelRole::input,"VOICE"),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)};
+    auto a=session.edit(0,0,channels,req,epoch,epoch,true);
+    assert(a.ok());
+    const auto music=a.edit.createdIds[0],voice=a.edit.createdIds[1],main=a.edit.createdIds[2];
+    const std::array<ChannelEdit,2> links{output(music,main),output(voice,main)};
+    req.sources={{music,0,-1,false},{voice,1,-1,false}};
+    a=session.edit(1,1,links,req,epoch,epoch,true);assert(a.ok());
+    std::array<float,64> m{},v{},replacement{},l{},r{};m.fill(.1f);v.fill(.2f);replacement.fill(.3f);
+    const float* pins[]{m.data(),v.data(),replacement.data()};
+    const float* expected=v.data();int visits=0;
+    const auto fx=[&](ChannelId id,float*,float*,int frames) noexcept {
+        if(id==music){
+            ++visits;
+            assert(AutoDuckerKeyScope::find(voice.value,frames).left==expected);
+            assert(!AutoDuckerKeyScope::find(music.value,frames).valid());
+            assert(!AutoDuckerKeyScope::find(voice.value,frames+1).valid());
+            assert(!AutoDuckerKeyScope::find(main.value,frames).valid());
+        }
+    };
+    auto render=[&]{assert(session.render(epoch,pins,3,l.data(),r.data(),64,false,fx));
+        assert(!AutoDuckerKeyScope::find(voice.value,64).valid());};
+    render();assert(visits==1);
+    assert(session.setLiveMuteSolo(epoch,2,voice,true,false));expected=nullptr;render();
+    assert(session.setLiveMuteSolo(epoch,2,voice,false,false));expected=v.data();render();
+    assert(session.setLivePhysicalSource(epoch,2,voice,2,-1,false));expected=nullptr;render();
+    expected=replacement.data();render();
+    assert(visits==5);
+}
+
+void verifyAutoDuckerPostFaderDependencies(){
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"MUSIC"),add(1,ChannelRole::input,"VOICE"),
+        add(2,ChannelRole::group,"VOCALS",ProcessingFormat::stereo),
+        add(3,ChannelRole::main,"MAIN",ProcessingFormat::stereo)};
+    const auto made=roster.edit(0,create);assert(made.ok());
+    const auto music=made.createdIds[0],voice=made.createdIds[1],bus=made.createdIds[2],main=made.createdIds[3];
+    const std::array<ChannelEdit,3> links{output(music,main),output(voice,bus),output(bus,main)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=64;
+    req.sources={{music,0,-1,false},{voice,1,-1,false}};
+    req.postFaderSidechains={{bus,music},{voice,music}};
+    DynamicPreparedMixerBlock block;DynamicGraphError fault;
+    assert(DynamicPreparedMixerBlock::compile(roster,req,block,fault));
+    std::array<float,64> m{},v{},l{},r{};m.fill(.1f);v.fill(.2f);
+    const float* pins[]{m.data(),v.data()};
+    int seen=0;
+    const auto fx=[&](ChannelId id,float*,float*,int frames) noexcept{
+        if(id==music){
+            ++seen;
+            const auto k=AutoDuckerKeyScope::findPostFader(bus.value,frames);
+            const auto k2=AutoDuckerKeyScope::findPostFader(voice.value,frames);
+            assert(k.valid()&&k2.valid()&&k.left[0]>0.f&&k2.left[0]>0.f);
+            assert(!AutoDuckerKeyScope::findPostFader(main.value,frames).valid());
+        }else if(id==bus)assert(!AutoDuckerKeyScope::findPostFader(voice.value,frames).valid());
+    };
+    assert(block.process(pins,2,l.data(),r.data(),64,fx));assert(seen==1);
+    assert(block.prepareLatency([](ChannelId){return 0;},req.maxScratchBytes,fault));
+    DynamicPreparedMixerBlock delayed;
+    assert(DynamicPreparedMixerBlock::compile(roster,req,delayed,fault));
+    assert(!delayed.prepareLatency([&](ChannelId id){return id==voice?64:0;},req.maxScratchBytes,fault));
+    assert(fault.fault==DynamicGraphFault::sidechainLatency);
+    req.postFaderSidechains.push_back({main,music});
+    assert(!DynamicPreparedMixerBlock::compile(roster,req,block,fault));
+    assert(fault.fault==DynamicGraphFault::cycle);
+    assert(block.process(pins,2,l.data(),r.data(),64,fx));assert(seen==2);
+}
 int main() {
+    armix::ducker_test::run(); // same standalone core cases in existing fast CI
+    verifyAutoDuckerKeyScope();
+    verifyAutoDuckerPostFaderDependencies();
+    verifyHeadphoneStarterAndDormantSinkPcm();
+    verifyDualMixSharedReturnPcm();
     verifyNativeAuxAndBusRemovalPreservesUnrelatedPcm();
     verifyNativeDeleteTrackRetainsUnrelatedWires();
     verifyGroupMuteAffectsRealNativePcm();

@@ -33,9 +33,12 @@ def run() -> None:
         source = html.read_text(encoding="utf-8")
         assert 'id="gainView"' in source and 'id="fxView"' in source
         assert 'id="mixContext"' in source
-        assert "Never auto-patch or remove a WIRE at minimum send level." in source
-        assert "const send=sofEnabled&&t.kind==='audio';" in source, (
+        assert "const send=sofEnabled&&isSofSource(t);" in source, (
             "Fader reset must inspect active SEND context instead of overwriting MAIN")
+        assert "['INPUT','GROUP','FX_RETURN'].includes(t.nativeRole)" in source, (
+            "Native group and FX returns are valid SEND sources; terminal outputs are not")
+        assert "if(send&&!getSofEdge(t))" in source, (
+            "Fader reset must not create a missing SEND")
         assert "nativeGainAvailable===true" in source, (
             "Native input gain should be available only with installed capability")
         assert "window.__ARMIX_GAIN_UNITY_DETENT__=gainUnityDetent;" in source
@@ -329,21 +332,22 @@ def run() -> None:
                     assert page.locator("#mixContext").inner_text().startswith("SEND MIX")
                     assert gain.is_disabled() and fx.is_disabled()
                     assert first.locator(".is-sof-view").count() == 1
-                    assert first.locator(".mx-sof-tap-key").count() == 1
+                    assert first.locator(".mx-sof-tap-key").count() == 0
+                    assert first.locator(".sof-assign-key").count() == 2
                     assert first.locator('button[data-hw-kind="tap"]').count() == 0
                     assert first.locator('button[data-hw-kind="mute"]').count() == 1
                     assert first.locator('button[data-hw-kind="solo"]').count() == 1
-                    assert first.locator(".fader").is_disabled(), (
-                        "A missing WIRE must not turn a fader gesture into auto-patch")
+                    assert first.locator(".fader").is_enabled(), "Unassigned SEND must remain adjustable as a draft"
+                    assert first.get_by_role("button",name="Assign PRE send").is_visible()
+                    first.locator(".fader").fill("-12")
+                    assert "DRAFT" in first.locator(".sof-info small").inner_text()
+                    assert "NO SEND" in first.locator(".sof-badge").inner_text()
                     assert page.locator("#master .strip").count() == 1
                     assert page.locator("#wireLayer").count() == 1
 
-                    # SENDS mode exposes approved raster, not a fake CSS key.
-                    tap = first.locator(".mx-sof-tap-key")
-                    sprite = tap.evaluate(
-                        "el => getComputedStyle(el, '::before').backgroundImage")
-                    assert "harmonice-thin-flat-v9-approved-off-shadow-57x30.png" in sprite, sprite
-                    assert tap.is_disabled()
+                    # Unassigned sends expose explicit actions, not an installed tap.
+                    for label in ("Assign PRE send", "Assign POST send"):
+                        assert first.get_by_role("button",name=label).is_enabled()
 
                     # SOF target is a stable strip ID, never a BUS display name.
                     target_select = page.locator("#sofTarget")
@@ -351,8 +355,8 @@ def run() -> None:
                     assert initial_id.isdigit(), (width, initial_id)
                     expected_name = target_select.locator("option:checked").inner_text()
                     assert page.locator("#mixContext").inner_text() == "SEND MIX → " + expected_name
-                    assert first.locator(".mx-sof-on-key").get_attribute("aria-pressed") == "false", (
-                        "An absent SEND is not secretly ON")
+                    assert "NO SEND" in first.locator(".sof-badge").inner_text(), (
+                        "An absent SEND is not secretly connected")
 
                     # Returning to MAIN must keep FX/GAIN selection and actual fader mix.
                     page.locator("#sofToggle").click()
@@ -369,11 +373,11 @@ def run() -> None:
                         menu = page.locator("#moreTools")
                         choice = page.locator("#viewFilter")
                         if not choice.is_visible():
-                            menu.locator("summary").click()
+                            menu.locator(":scope > summary").click()
                         assert choice.is_visible(), "More menu must reveal channel filter"
                         choice.select_option(value)
                         if menu.evaluate("el=>el.open"):
-                            menu.locator("summary").click()
+                            menu.locator(":scope > summary").click()
 
                     select_visible_channel_filter("bus")
                     selected_bus = page.locator('#tracks .strip[data-id="' + initial_id + '"]')

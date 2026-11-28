@@ -2,6 +2,7 @@
 #pragma once
 
 #include "NativeLogicalMixerWorkspace.h"
+#include "NativeIoDefaults.h"
 #include "NativeMixerSessionSaveWorker.h"
 
 namespace armix::session {
@@ -59,14 +60,79 @@ public:
     }
 
     bool open(MixerSessionDocument doc,std::vector<shows::BinaryState> states,
-              Completion completion) {
+              Completion completion,bool archiveCurrent=false) {
         if(worker_.busy())return false;
+        if(archiveCurrent && readOnly_){completion("Recover the damaged checkpoint first");return true;}
+        if(archiveCurrent)doc.resumeMain.reset();
         auto candidate=std::make_shared<Workspace>();
         if(!candidate->load(std::move(doc),std::move(states))) {
             completion("Saved logical routing is invalid or cyclic");
             return true;
         }
-        return commit(std::move(candidate),std::move(completion));
+        return commit(std::move(candidate),std::move(completion),archiveCurrent?
+            NativeMixerSessionStore::ArchiveMode::reopenArchive:NativeMixerSessionStore::ArchiveMode::none);
+    }
+
+    // A new offline session uses a fresh roster, workspace token and ID.
+    // Only the names/formats of default ports are copied; the logical codec
+    // forbids physical bindings before an explicitly verified device Apply.
+    bool newSession(const juce::String& token,std::uint64_t revision,
+                    const IoPortLayout* defaults,Completion completion) {
+        if(worker_.busy())return false;
+        if(readOnly_ || token!=workspace_.workspaceToken() || revision!=workspace_.revision()){
+            completion("Saved mixer changed or requires recovery");return true;
+        }
+        auto candidate=std::make_shared<Workspace>();
+        auto doc=candidate->document();
+        doc.masterMute=true;
+        doc.resumeMain=false;
+        if(defaults){
+            if(!defaults->definitionsOnly() || defaults->empty()){
+                completion("No valid saved I/O defaults");return true;
+            }
+            for(const auto& p:defaults->inputs.ports())
+                if(!doc.logicalInputs.add(p.id,p.name,p.format)){
+                    completion("Invalid default input");return true;
+                }
+            for(const auto& p:defaults->outputs.ports())
+                if(!doc.logicalOutputs.add(p.id,p.name)){
+                    completion("Invalid default output");return true;
+                }
+        }
+        if(!candidate->load(std::move(doc))){
+            completion("Cannot prepare new mixer workspace");return true;
+        }
+        return commit(std::move(candidate),std::move(completion),NativeMixerSessionStore::ArchiveMode::newSession);
+    }
+
+    bool canResetIo() const {
+        const auto& doc=workspace_.document();
+        return !readOnly_ && doc.logicalOnly && !doc.resumeMain.value_or(false) &&
+            doc.logicalInputs.references().empty() && doc.logicalOutputs.references().empty() &&
+            NativeMixerSessionStore(studio_).exists();
+    }
+    bool resetIo(const juce::String& token,std::uint64_t revision,
+                 const IoPortLayout& defaults,Completion completion) {
+        if(worker_.busy())return false;
+        if(!canResetIo() || token!=workspace_.workspaceToken() || revision!=workspace_.revision() ||
+           !defaults.definitionsOnly() || defaults.empty()){
+            completion("Reset requires saved, unassigned offline I/O and current session identity");return true;
+        }
+        auto doc=workspace_.document();
+        doc.logicalInputs={};doc.logicalOutputs={};
+        for(const auto& p:defaults.inputs.ports())
+            if(!doc.logicalInputs.add(p.id,p.name,p.format)){
+                completion("Invalid default input");return true;
+            }
+        for(const auto& p:defaults.outputs.ports())
+            if(!doc.logicalOutputs.add(p.id,p.name)){
+                completion("Invalid default output");return true;
+            }
+        auto candidate=std::make_shared<Workspace>();
+        if(!candidate->load(std::move(doc),workspace_.states())){
+            completion("Cannot prepare default I/O definitions");return true;
+        }
+        return commit(std::move(candidate),std::move(completion),NativeMixerSessionStore::ArchiveMode::resetIo);
     }
 
     bool exportTo(const juce::File& file,Completion completion) {
@@ -173,7 +239,7 @@ public:
     }
 
 private:
-    bool commit(std::shared_ptr<Workspace> candidate,Completion completion) {
+    bool commit(std::shared_ptr<Workspace> candidate,Completion completion,NativeMixerSessionStore::ArchiveMode archiveMode=NativeMixerSessionStore::ArchiveMode::none) {
         return worker_.save(studio_,candidate->document(),candidate->states(),
             [this,lifetime=std::weak_ptr<int>(lifetime_),candidate,
              completion=std::move(completion)](juce::String error) {
@@ -185,7 +251,7 @@ private:
                     checkpointSaved_(workspace_.document().id);
                 }
                 completion(std::move(error));
-            });
+            },{},archiveMode);
     }
 
     const juce::File studio_;

@@ -63,8 +63,78 @@ static void verifyTransactionOutcomes() {
     assert(!armix::device::translateNamedPins(selected,{"Left","Right"},{"Left"}));
 }
 
+static void verifyBusyCommandReceipts() {
+    Coordinator owner;
+    const auto args=config(R"({"requestId":"out-o-42","channelId":"7","deviceEpoch":"13","revision":"8","value":true,"channel":2})");
+    assert(!owner.busyCommandReceipt("routingExternalOutput",args).event);
+    for(auto purpose : {Coordinator::Purpose::explicitApply,Coordinator::Purpose::setupDialog,
+            Coordinator::Purpose::asioRecovery,Coordinator::Purpose::wasapiRecovery,
+            Coordinator::Purpose::offlineFxCapture,Coordinator::Purpose::secondaryOutput,
+            Coordinator::Purpose::busOutputPatch,Coordinator::Purpose::fxRackFile,
+            Coordinator::Purpose::mixerSessionCapture}){
+        auto lease=owner.tryBegin(purpose);
+        assert(lease);
+        const std::pair<const char*,const char*> expected[]={
+            {"routingExternalOutput","arMixExternalOutputAck"},
+            {"routingMonitorTiming","arMixMonitorTimingAck"},
+            {"routingLogicalInputEdit","arMixLogicalInputAck"},
+            {"routingLogicalOutputEdit","arMixLogicalOutputAck"},
+            {"audioIoDefaults","arMixIoDefaultsAck"},
+            {"audioNamedPatchEdit","arMixNamedPatchAck"},
+            {"routingNativeFxRackBypass","arMixNativeFxPowerAck"},
+            {"routingNativeFxInsertBypass","arMixNativeFxPowerAck"},
+            {"routingM4Control","arMixM4ControlAck"},
+            {"routingChannelPatch","arMixChannelPatchAck"},
+            {"routingSourceSwitch","arMixSourceSwitchAck"},
+            {"routingFxInsert","arMixRoutingFxInsertAck"},
+            {"routingFxBypass","arMixRoutingFxBypassAck"},
+            {"routingFxRackBypass","arMixRoutingFxRackAck"},
+            {"routingGlobalFxBypass","arMixGlobalFxAck"},
+            {"audioNamedProfileFile","arMixNamedProfileFileResult"},
+            {"routingDryShowSave","arMixNativeShowSaveAck"},
+            {"routingDryShowList","arMixNativeShowListAck"},
+            {"routingDryShowRecall","arMixNativeShowRecallAck"},
+            {"routingDryShowRecover","arMixNativeShowRecoverAck"},
+        };
+        for(const auto& [action,event]:expected){
+            const auto rejected=owner.busyCommandReceipt(action,args);
+            assert(rejected.event&&juce::String(rejected.event)==event);
+            assert(rejected.payload.getProperty("requestId",{})==args.getProperty("requestId",{}));
+            assert(rejected.payload.getProperty("ok",{}).isBool()&&!bool(rejected.payload.getProperty("ok",{})));
+            assert(rejected.payload.getProperty("error",{}).toString().isNotEmpty());
+            assert(owner.activePurpose()==purpose); // no mutation/release
+        }
+        const auto ext=owner.busyCommandReceipt("routingExternalOutput",args).payload;
+        assert(ext.getProperty("channelId",{}).toString()=="7");
+        assert(ext.getProperty("deviceEpoch",{}).toString()=="13");
+        assert(ext.getProperty("graphRevision",{}).toString()=="8");
+        const auto fx=owner.busyCommandReceipt("routingNativeFxInsertBypass",args).payload;
+        assert(fx.getProperty("channelId",{}).toString()=="7"&&bool(fx.getProperty("bypassed",{})));
+        const auto numeric=config(R"({"requestId":42,"channel":2})");
+        const auto patch=owner.busyCommandReceipt("routingChannelPatch",numeric).payload;
+        assert(patch.getProperty("requestId",{}).isInt()&&int(patch.getProperty("requestId",{}))==42);
+        assert(int(patch.getProperty("channel",{}))==2);
+        const auto slotRequest=config(R"({"requestId":"fx-1","channel":2,"slot":3})");
+        const auto slot=owner.busyCommandReceipt("routingFxBypass",slotRequest).payload;
+        assert(int(slot.getProperty("channel",{}))==2&&int(slot.getProperty("slot",{}))==3);
+        for(const auto* operation:{"OPEN","EXPORT"}){
+            auto file=config(R"({"requestId":"io-file-9"})");
+            file.getDynamicObject()->setProperty("operation",operation);
+            const auto rejected=owner.busyCommandReceipt("audioNamedProfileFile",file);
+            assert(rejected.payload.getProperty("requestId",{}).toString()=="io-file-9");
+            assert(rejected.payload.getProperty("operation",{}).toString()==operation);
+        }
+        assert(!owner.busyCommandReceipt("monitor",args).event);
+        assert(!owner.busyCommandReceipt("secondaryOutputStop",args).event);
+        assert(!owner.busyCommandReceipt("audioDeviceApply",args).event);
+        assert(!owner.busyCommandReceipt("unknown",args).event);
+    }
+    assert(!owner.busy()&&!owner.busyCommandReceipt("routingExternalOutput",args).event);
+}
+
 int main() {
     verifyTransactionOutcomes();
+    verifyBusyCommandReceipts();
     // Nested JUCE driver modal loops must reject another concurrent APPLY
     // and release exactly once, including moved lease ownership.
     Coordinator owner;

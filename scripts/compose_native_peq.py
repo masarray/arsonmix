@@ -3,6 +3,8 @@ No alternate GUI, pseudo FX row, fixed pre-VST DSP bank or demo audio engine.
 An accepted EQ uses the same rack slot, ChannelId, and FX control as VST3.
 """
 CATALOG="armix.builtin.channel-eq.v1"
+DUCKER_SCRIPT='<script defer src="assets/mixer-native-ducker.js?v=ducker-1"></script>'
+GESTURE_SCRIPT='<script defer src="assets/mixer-builtin-fx-gesture.js?v=1"></script>'
 SCRIPT='<script defer src="assets/mixer-native-peq.js?v=eq-graph2-fx-recovery"></script>'
 COMP_SCRIPT='<script defer src="assets/mixer-native-compressor.js?v=comp-2-fx-recovery"></script>'
 HARMONY_SCRIPT='<script defer src="assets/mixer-native-harmony.js?v=harmony2-fx-recovery"></script>'
@@ -10,6 +12,8 @@ THROW_SCRIPT='<script defer src="assets/mixer-native-vocal-throw.js?v=throw-2-fx
 SONKU_SCRIPT='<script defer src="assets/mixer-native-sonku.js?v=sonku-2-fx-recovery"></script>'
 GEQ_SCRIPT='<script defer src="assets/mixer-native-geq31.js?v=geq-v14h-centered-output"></script>'
 PRESET_SCRIPT='<script defer src="assets/mixer-builtin-fx-preset-bar.js?v=preset-shared-m4"></script>'
+DEZ_SCRIPT='<script defer src="assets/mixer-native-de-ezzer.js?v=dez-native-v1"></script>'
+DEZ_HOST_SCRIPT='<script defer src="assets/mixer-native-de-ezzer-host.js?v=dez-native-v1"></script>'
 
 PICKER_HEAD="function renderFastPicker(){"
 PICKER_FN="""function insertChosenNativeGeq(){
@@ -186,22 +190,53 @@ OPEN=" if(a==='openPlugin'){openFastPicker(t,Number(btn.dataset.slot),btn);retur
 OPEN_NEW=""" if(a==='openPlugin'){
   const index=Number(btn.dataset.slot);
   if(t.fx[index]==='Parametric EQ'){
-   window.ArSonMixNativeEq?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativePeq',t.fxInsertIds?.[index]?.id)){
+    window.ArSonMixNativeEq?.open(t,index);
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativePeq'),t.fxInsertIds?.[index]?.id);
+   }
+   return;
   }
   if(t.fx[index]==='Graphic EQ 31'){
-   window.ArSonMixGraphicEq31?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeGeq31',t.fxInsertIds?.[index]?.id)){
+    window.ArSonMixGraphicEq31?.open(t,index);
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeGeq31'),t.fxInsertIds?.[index]?.id);
+   }
+   return;
+  }
+  if(t.fx[index]==='Auto Ducker'){
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeDucker',t.fxInsertIds?.[index]?.id)){
+    window.ArSonMixNativeDucker?.open(t,index);
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeDucker'),t.fxInsertIds?.[index]?.id);
+   }
+   return;
   }
   if(t.fx[index]==='Compressor'){
-   window.ArSonMixNativeCompressor?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeComp',t.fxInsertIds?.[index]?.id)){
+    window.ArSonMixNativeCompressor?.open(t,index);
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeComp'),t.fxInsertIds?.[index]?.id);
+   }
+   return;
   }
   if(t.fx[index]==='Harmonice'||t.fx[index]==='ArSon Harmony'){
-   window.ArSonMixNativeHarmony?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeHarmony',t.fxInsertIds?.[index]?.id)){
+    window.ArSonMixNativeHarmony?.open(t,index);
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeHarmony'),t.fxInsertIds?.[index]?.id);
+   }
+   return;
   }
   if(t.fx[index]==='Vocal Delay'||t.fx[index]==='ArSon Vocal Throw'){
-   window.ArSonMixNativeVocalThrow?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeVocalThrow',t.fxInsertIds?.[index]?.id)){
+    window.ArSonMixNativeVocalThrow?.open(t,index);
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeVocalThrow'),t.fxInsertIds?.[index]?.id);
+   }
+   return;
   }
   if(t.fx[index]==='8D-SonKu'){
-   window.ArSonMixNativeSonKu?.open(t,index);return;
+   if(!window.ArSonMixFxWorkspace?.focusInsert(t.id,index,'mxNativeSonKu',t.fxInsertIds?.[index]?.id)){
+    window.ArSonMixNativeSonKu?.open(t,index);
+    window.ArSonMixFxWorkspace?.openedPreview(document.getElementById('mxNativeSonKu'),t.fxInsertIds?.[index]?.id);
+   }
+   return;
   }
   openFastPicker(t,index,btn);return;
  }"""
@@ -213,11 +248,11 @@ def apply_native_peq(html: str)->str:
              (PICKER_ENTER,PICKER_ENTER_NEW),
              (OPEN,OPEN_NEW))
     if html.count('</head>')!=1 or html.count('</body>')!=1 or \
-       SCRIPT in html or COMP_SCRIPT in html or HARMONY_SCRIPT in html or THROW_SCRIPT in html or PRESET_SCRIPT in html or SONKU_SCRIPT in html or GEQ_SCRIPT in html or 'insertChosenNativeEq' in html:
+       SCRIPT in html or COMP_SCRIPT in html or DUCKER_SCRIPT in html or GESTURE_SCRIPT in html or HARMONY_SCRIPT in html or THROW_SCRIPT in html or PRESET_SCRIPT in html or SONKU_SCRIPT in html or GEQ_SCRIPT in html or 'insertChosenNativeEq' in html:
         raise ValueError("Parametric EQ requires one pristine approved compiled GUI")
     for before,after in anchors:
         if html.count(before)!=1:
             raise ValueError('Ambiguous approved picker/editor anchor: '+before[:90])
         html=html.replace(before,after,1)
-    html=html.replace('</body>',PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n'+GEQ_SCRIPT+'\n</body>',1)
+    html=html.replace('</body>',GESTURE_SCRIPT+'\n'+PRESET_SCRIPT+'\n'+SCRIPT+'\n'+COMP_SCRIPT+'\n'+DUCKER_SCRIPT+'\n'+HARMONY_SCRIPT+'\n'+THROW_SCRIPT+'\n'+SONKU_SCRIPT+'\n'+GEQ_SCRIPT+'\n'+DEZ_SCRIPT+'\n'+DEZ_HOST_SCRIPT+'\n</body>',1)
     return html

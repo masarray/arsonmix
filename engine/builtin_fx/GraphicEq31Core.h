@@ -2,6 +2,7 @@
 #pragma once
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -39,6 +40,7 @@ public:
             dbFactors_[index]=std::pow(10.,(factorMinDb_+
                 factorStepDb_*static_cast<double>(index))/40.);
         constexpr double pi=3.1415926535897932384626433832795;
+        activeMask_=0;
         for(std::size_t i=0;i<bandCount;++i) {
             const double omega=2.*pi*graphicEq31Hz[i]/rate_;
             bandConstants_[i]={std::cos(omega),
@@ -47,6 +49,7 @@ public:
             b.current=b.target=coefficients(i,b.db);
             b.step={};b.frames=0;
             b.l1=b.l2=b.r1=b.r2=0.;
+            if(b.db!=0.)activeMask_|=std::uint32_t{1}<<i;
         }
         return true;
     }
@@ -80,7 +83,27 @@ public:
             (b.target.a2-b.current.a2)*inv
         };
         b.frames=rampFrames_;
+        activeMask_|=std::uint32_t{1}<<i;
         return true;
+    }
+    // Flat means no ramp and no pending history cleanup. The bit remains
+    // set for the whole final ramp block, even when the target is zero.
+    // This preserves the old block-boundary re-enable behavior exactly.
+    bool flatSettled() const noexcept {return ready_&&activeMask_==0;}
+    // Exact unity shortcut for the host wrapper. Reject nonfinite and
+    // subnormal PCM: the full path owns sanitization and FTZ/DAZ semantics.
+    bool tryUnityPeak(const float* left,const float* right,std::size_t frames,
+                      float& peak) const noexcept {
+        if(!flatSettled()||!left||!right||!frames)return false;
+        std::uint32_t maximum=0;
+        for(std::size_t n=0;n<frames;++n){
+            const auto l=std::bit_cast<std::uint32_t>(left[n])&0x7fffffffu;
+            const auto r=std::bit_cast<std::uint32_t>(right[n])&0x7fffffffu;
+            if(l>=0x7f800000u||r>=0x7f800000u||
+               (l!=0&&l<0x00800000u)||(r!=0&&r<0x00800000u))return false;
+            maximum=std::max(maximum,std::max(l,r));
+        }
+        peak=std::bit_cast<float>(maximum);return true;
     }
     // Per-band, in-place stereo cascade: the active band processes the
     // entire buffer before the next band. Flat EQ skips all 31 biquads,
@@ -101,11 +124,20 @@ public:
         if(invalidLeft||invalidRight)
             resetHistories(invalidLeft,invalidRight);
         bool processed=false;
-        for(auto& b:bands_) {
+        // Visit only active/ramping/pending-cleanup bands in ascending
+        // order. Inactive bands have already been reset; never touch their
+        // cache lines on steady sparse/flat curves.
+        auto remaining=activeMask_;
+        while(remaining){
+            const auto i=static_cast<std::size_t>(std::countr_zero(remaining));
+            const auto bit=std::uint32_t{1}<<i;
+            remaining&=~bit;
+            auto& b=bands_[i];
             if(b.frames==0 && b.db==0.) {
                 // Flush stale IIR memories after a completed ramp-to-unity,
                 // so re-enabling a band never exposes a frozen old history.
                 b.l1=b.l2=b.r1=b.r2=0.;
+                activeMask_&=~bit;
                 continue;
             }
             processed=true;
@@ -190,6 +222,7 @@ private:
     std::array<Band,bandCount> bands_{};
     double rate_=0.;
     int rampFrames_=240;
+    std::uint32_t activeMask_=0;
     bool ready_=false;
 };
 } // namespace armix::builtin_fx

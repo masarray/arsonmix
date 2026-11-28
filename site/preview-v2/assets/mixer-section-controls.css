@@ -226,8 +226,8 @@
  .console-body .strip .gain-readout{font-size:10.5px;line-height:15px}
 }
 .console-body .strip .sof-view-body{
- flex:1;display:flex;align-items:center;justify-content:space-between;
- min-height:0;gap:4px;padding:4px 4px 5px;
+ flex:1;display:flex;flex-direction:column;align-items:stretch;justify-content:center;
+ min-height:0;gap:7px;padding:6px 7px;
 }
 .console-body .strip .sof-info{display:flex;flex-direction:column;min-width:0;gap:3px}
 .console-body .strip .sof-badge{
@@ -238,7 +238,12 @@
  font-size:9px;color:#91b3c0;max-width:100%;white-space:nowrap;
  overflow:hidden;text-overflow:ellipsis;
 }
-.console-body .strip .sof-actions{display:flex;align-items:center;gap:2px;flex:0 0 auto}
+.console-body .strip .sof-actions{display:flex;align-items:center;gap:4px;flex:0 0 auto}
+.console-body .strip .sof-actions:empty{display:none}
+.console-body .strip .sof-view-body[data-sof-state="assign"] .sof-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.console-body .strip .sof-assign-key{min-width:0;height:27px;padding:0 2px;border:1px solid #41687a;border-radius:4px;background:#203b49;color:#bde6f3;font:500 10px system-ui;white-space:nowrap;cursor:pointer}
+.console-body .strip .sof-assign-key:hover{background:#2a5062;border-color:#78bdd3;color:#effaff}
+.console-body .strip .sof-assign-key:focus-visible{outline:2px solid #91d5e5;outline-offset:1px}
 .console-body .strip .mx-sof-on-key{
  flex:0 0 27px;width:27px;height:23px;padding:0 1px;
  border:1px solid #58727c;border-radius:2px;background:#27353d;
@@ -259,7 +264,8 @@
  .command-bar .mix-context{padding:2px 4px}
 }
 @media(max-height:610px){
- .console-body .strip .sof-info small{display:none}
+ .console-body .strip .sof-view-body{gap:3px;padding:3px 5px}
+ .console-body .strip .sof-assign-key{height:23px;font-size:9px}
 }
 
 /* Console Visual Harmony: ONE geometry contract for /preview/ and JUCE.

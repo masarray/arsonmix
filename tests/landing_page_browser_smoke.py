@@ -21,6 +21,40 @@ class QuietSiteHandler(SimpleHTTPRequestHandler):
         pass
 
 
+def check_release_navigation(page):
+    # The collapsed compatibility details intentionally expose official notes,
+    # checksums, licensing and rollback. This is not a platform download CTA.
+    notes = page.locator(
+        '.download-details a[href="https://github.com/masarray/arsonmix/releases"]'
+    )
+    assert notes.count() == 1
+    # Chromium returns an empty innerText for descendants of closed <details>.
+    # Assert exact DOM text, then exercise the real disclosure (also without JS).
+    expected_label = "official release notes, portable packages and checksums"
+    assert notes.text_content() == expected_label
+    disclosure = page.locator("details.download-details")
+    assert disclosure.count() == 1
+    was_open = disclosure.get_attribute("open") is not None
+    if not was_open:
+        assert not notes.is_visible()
+        disclosure.locator("summary").click()
+    assert notes.is_visible()
+    assert notes.inner_text() == expected_label
+    if not was_open:
+        disclosure.locator("summary").click()
+        assert not notes.is_visible()
+    assert notes.get_attribute("data-release-link") is None
+    # No other GitHub release navigation or unverified direct asset may escape
+    # the catalog-owned controls, even when downloads are unavailable.
+    outside_catalog = page.locator(
+        'a[href*="github.com/masarray/arsonmix/releases"]:not([data-release-link])'
+    )
+    assert outside_catalog.count() == 1
+    assert page.locator(
+        'a[data-release-link]:not(.os-card a[data-release-link])'
+    ).count() == 0
+
+
 def browser_check(page):
     assert page.title() == "ArSonMix — Free Open Source Digital Mixer for Windows"
     assert page.locator("h1").count() == 1
@@ -99,7 +133,7 @@ def browser_check(page):
         "nodes=>nodes.map(n=>n.complete && n.naturalWidth>0)")), "Screenshot/brand broken"
     overflow = page.evaluate("document.documentElement.scrollWidth - window.innerWidth")
     assert overflow <= 2, "Horizontal overflow (px): " + str(overflow)
-    assert page.locator('a[href*="github.com/masarray/arsonmix/releases"]:not([data-release-link])').count() == 0
+    check_release_navigation(page)
 
 
 def main():
@@ -163,6 +197,7 @@ def main():
             nojs = browser.new_page(viewport={"width": 1100, "height": 650},
                                     java_script_enabled=False)
             nojs.goto(site)
+            check_release_navigation(nojs)
             verified = nojs.locator(".os-card[data-release-tag]").count()
             assert verified == nojs.locator(".os-card.is-available").count()
             # Unhydrated source HTML intentionally has inert #download
@@ -210,7 +245,7 @@ def main():
         server.shutdown()
         server.server_close()
         worker.join(timeout=5)
-    print("PASS landing: HTTP same-origin, desktop/mobile, OS availability, zero GitHub UI")
+    print("PASS landing: HTTP same-origin, desktop/mobile, OS availability, catalog-only download CTAs and official release information")
 
 
 if __name__ == "__main__":

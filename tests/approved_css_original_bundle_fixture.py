@@ -13,7 +13,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "site/preview-v2/index.html"
 sys.path.insert(0, str(ROOT / "scripts"))
-from compile_approved_css import LINK
+from compile_approved_css import LINK, RUNTIME_CSS, optimize_css, compile_runtime_bundle
+from approved_fx_rack_power import apply_authoritative_fx_power
+from compose_native_peq import apply_native_peq
+from compose_clean_ribbon import apply_clean_ribbon
+from compose_rounded_micro_keys import apply_rounded_micro_keys
 from compose_operator_ux import apply_operator_ux
 from approved_fx_rack_interaction import apply_fx_rack_interaction
 ORIGINAL_LINK = re.compile(
@@ -44,5 +48,19 @@ def restore_original_css_bundle(bundle: Path) -> None:
         shutil.copyfile(ROOT / "site" / owner / "assets" / name, assets / name)
     # The shipped DOM already contains the same composition. Reapply it
     # only to reconstruct the CSS owner bytes, using its original HTML input.
-    apply_operator_ux(apply_fx_rack_interaction(source_html, assets), assets)
+    composed = apply_authoritative_fx_power(source_html)
+    composed = apply_fx_rack_interaction(composed, assets)
+    composed = apply_native_peq(composed)
+    composed = apply_operator_ux(composed, assets)
+    composed = apply_clean_ribbon(composed, assets)
+    apply_rounded_micro_keys(assets)
+    # Fail closed before the browser if reconstruction omitted a composer.
+    # Regenerate in memory only; leave every unoptimized owner intact for
+    # the independent computed-style and exact-pixel differential check.
+    owners = [name for _, name, _, _ in LINK.findall(source_html)]
+    original = [(name, (assets / name).read_text(encoding="utf-8")) for name in owners]
+    optimized, _ = optimize_css(original)
+    regenerated = compile_runtime_bundle([(name, optimized[name]) for name in owners])
+    if regenerated.encode("utf-8") != (assets / RUNTIME_CSS).read_bytes():
+        raise AssertionError("Stage C fixture composition differs from shipped runtime CSS")
     index.write_text(original_html, encoding="utf-8")

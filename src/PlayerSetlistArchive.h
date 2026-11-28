@@ -16,6 +16,7 @@ namespace armix::player {
 struct PlayerTrackSettings {
     int key=0, tempo=100;
     double cueIn=0., cueOut=0.;
+    int autoAfter=-1; // inherit global, 0 stop, 1 continue
 };
 struct PlayerSavedSet {
     juce::String name;
@@ -27,6 +28,7 @@ struct PlayerSetlistDocument {
     int active=0;
     bool autoNext=false;
     int fadeMs=180;
+    std::vector<juce::File> catalogue;
 };
 class PlayerSetlistArchive final {
     static void parseSongs(const juce::var& items,int version,
@@ -65,11 +67,29 @@ class PlayerSetlistArchive final {
                     settings.cueOut=cueOut;
                 }
             }
+            if(version>=3){
+                const auto mode=item.getProperty("autoAfter",-1);
+                if(mode.isInt()&&static_cast<int>(mode)>=-1&&static_cast<int>(mode)<=1)
+                    settings.autoAfter=static_cast<int>(mode);
+            }
             destination.files.push_back(source);
             destination.controls.push_back(settings);
         }
     }
 public:
+    static constexpr std::size_t maxCatalogue=64000;
+    static std::optional<std::vector<juce::File>> mergeCatalogue(
+        const std::vector<juce::File>& known,const std::vector<PlayerSavedSet>& sets) {
+        std::vector<juce::File> result;std::set<juce::File> unique;
+        auto add=[&](const juce::File& file){
+            const auto path=file.getFullPathName();
+            if(path.isEmpty()||path.length()>4096||!juce::File::isAbsolutePath(path)||!file.hasFileExtension("wav;mp3;flac;aif;aiff;ogg"))return false;
+            if(unique.insert(file).second){if(result.size()>=maxCatalogue)return false;result.push_back(file);}return true;
+        };
+        for(const auto& file:known)if(!add(file))return std::nullopt;
+        for(const auto& set:sets)for(const auto& file:set.files)if(!add(file))return std::nullopt;
+        return result;
+    }
     // Keep automatic creation consistent with the archive's case-insensitive
     // uniqueness rule, including a delete-then-create cycle. At <32 sets,
     // candidate numbers 2..33 always contain an unused name.
@@ -133,11 +153,23 @@ public:
         document.autoNext=autoNext.isBool()&&static_cast<bool>(autoNext);
         const int fade=static_cast<int>(json.getProperty("crossfadeMs",180));
         document.fadeMs=(fade>=0&&fade<=3000)?fade:180;
+        const auto savedCatalogue=json.getProperty("catalogue",{});
+        if(const auto* items=savedCatalogue.getArray()){
+            if(static_cast<std::size_t>(items->size())>maxCatalogue)return std::nullopt;
+            for(const auto& item:*items){
+                const auto path=item.toString();
+                if(!item.isString()||path.length()>4096||!juce::File::isAbsolutePath(path))return std::nullopt;
+                document.catalogue.emplace_back(path);
+            }
+        }else if(!savedCatalogue.isVoid())return std::nullopt;
+        auto catalogue=mergeCatalogue(document.catalogue,document.sets);
+        if(!catalogue)return std::nullopt;
+        document.catalogue=std::move(*catalogue);
         return document;
     }
 
     static juce::var serialize(const std::vector<PlayerSavedSet>& sets,
-                               int active,bool autoNext,int fadeMs) {
+                               int active,bool autoNext,int fadeMs,const std::vector<juce::File>& catalogue={}) {
         // Reject inconsistent in-memory state BEFORE writing a checkpoint.
         // Never truncate song/control pairs or silently persist a broken show.
         if(sets.empty()||sets.size()>32||active<0||
@@ -171,6 +203,7 @@ public:
                 const auto& settings=s.controls[i];
                 if(settings.key< -6||settings.key>6||
                    settings.tempo<80||settings.tempo>120||
+                   settings.autoAfter< -1||settings.autoAfter>1||
                    !PlayerCueEditPolicy::validArchive(
                        {settings.cueIn,settings.cueOut}))
                     return {};
@@ -198,12 +231,16 @@ public:
                     "cueIn",set.controls[i].cueIn);
                 song.getDynamicObject()->setProperty(
                     "cueOut",set.controls[i].cueOut);
+                song.getDynamicObject()->setProperty("autoAfter",set.controls[i].autoAfter);
                 songs.add(std::move(song));
             }
             row.getDynamicObject()->setProperty("files",juce::var(songs));
             savedSets.add(std::move(row));
         }
         out->setProperty("setlists",juce::var(savedSets));
+        const auto merged=mergeCatalogue(catalogue,sets);if(!merged)return {};
+        juce::Array<juce::var> paths;for(const auto& file:*merged)paths.add(file.getFullPathName());
+        out->setProperty("catalogue",juce::var(paths));
         return document;
     }
 };

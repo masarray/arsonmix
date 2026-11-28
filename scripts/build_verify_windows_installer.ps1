@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Independent FAT-only GUI installer build AND real per-user install/uninstall.
-param([string]$OutputDir="dist",[string]$InstallerOutput="installer-output")
+param([string]$OutputDir="dist",[string]$InstallerOutput="installer-output",[switch]$IncludePortableUpdater)
 Set-StrictMode -Version Latest
 $ErrorActionPreference="Stop"
 $dist=(Resolve-Path -LiteralPath $OutputDir).Path
@@ -39,6 +39,102 @@ $sentinel=Join-Path $studio ("installer-test-"+[guid]::NewGuid().ToString("N")+"
 "persistent-private-data" | Set-Content -LiteralPath $sentinel
 $fixtureReady=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-ready-"+[guid]::NewGuid().ToString("N"))
 $fixtureClosed=Join-Path $env:RUNNER_TEMP ("arsonmix-fixture-closed-"+[guid]::NewGuid().ToString("N"))
+# Compare actual installed FactoryFX resources against the same verified
+# lock, not merely the mixer EXE hash. Use the portable receipt as the
+# expected inventory; the installed tree must independently validate.
+function Assert-InstalledFactoryFx([string]$Phase) {
+    $receipt = Join-Path $install "FACTORYFX_STAGE_REPORT.json"
+    $portableManifest = Join-Path $dist "FactoryFX/factoryfx-manifest.json"
+    $installedFxManifest = Join-Path $install "FactoryFX/factoryfx-manifest.json"
+    if (Test-Path -LiteralPath $portableManifest -PathType Leaf) {
+        if (-not (Test-Path -LiteralPath $installedFxManifest -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $portableManifest -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath $installedFxManifest -Algorithm SHA256).Hash) {
+            throw "Installed FactoryFX manifest differs from portable: $Phase"
+        }
+    }
+    try {
+        Copy-Item -LiteralPath (Join-Path $dist "FACTORYFX_STAGE_REPORT.json") -Destination $receipt
+        & python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output $install --best-effort
+        if ($LASTEXITCODE -ne 0) { throw "Installed FactoryFX verification failed: $Phase" }
+        Write-Host "FACTORYFX_INSTALLED_TREE_VERIFIED: $Phase"
+    } finally {
+        Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# GUI-only updater health deliberately suppresses vendor discovery. Exercise
+# the actual installed ArSonMix.exe's existing isolated VST3 scanner after
+# the independent installed-tree hash gate, never an external fake host.
+function Test-InstalledFactoryFxScanner([string]$Application) {
+    $manifestPath=Join-Path $install "FactoryFX/factoryfx-manifest.json"
+    if(-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)){return 0}
+    $fxManifest=Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $count=0
+    foreach($row in @($fxManifest.plugins)){
+        $module=(Resolve-Path -LiteralPath (Join-Path $install $row.bundleRelativePath)).Path
+        $nonce=[guid]::NewGuid().ToString('N')
+        $receiptDir=Join-Path ([IO.Path]::GetTempPath()) ("arsonmix-vst3-probe-"+$nonce)
+        if(Test-Path -LiteralPath $receiptDir){throw "FactoryFX scan receipt collision"}
+        $child=$null
+        try {
+            New-Item -ItemType Directory -Path $receiptDir | Out-Null
+            $info=[Diagnostics.ProcessStartInfo]::new()
+            $info.FileName=$Application
+            $info.WorkingDirectory=$install
+            $info.UseShellExecute=$false
+            $info.Arguments='--arsonmix-vst3-scan-worker "'+$module+'" '+$nonce
+            $child=[Diagnostics.Process]::Start($info)
+            if($null -eq $child -or !$child.WaitForExit(40000) -or $child.ExitCode -ne 0){
+                throw "Installed FactoryFX scanner failed: $($row.productId)"
+            }
+            $receipt=Join-Path $receiptDir "result.xml"
+            if(-not (Test-Path -LiteralPath $receipt -PathType Leaf) -or
+               (Get-Item -LiteralPath $receipt).Length -gt 1MB){
+                throw "Missing or oversized FactoryFX scanner receipt: $($row.productId)"
+            }
+            $settings=[System.Xml.XmlReaderSettings]::new()
+            $settings.DtdProcessing=[System.Xml.DtdProcessing]::Prohibit
+            $settings.XmlResolver=$null
+            $settings.MaxCharactersInDocument=1048576
+            $xml=[System.Xml.XmlDocument]::new()
+            $xml.XmlResolver=$null
+            $reader=[System.Xml.XmlReader]::Create($receipt,$settings)
+            try { $xml.Load($reader) } finally { $reader.Dispose() }
+            $node=$xml.DocumentElement
+            if($null -eq $node -or $node.Name -cne 'ARSONMIX_VST3_SCAN_V1' -or
+               $node.GetAttribute('nonce') -cne $nonce -or $node.GetAttribute('path') -cne $module){
+                throw "Invalid FactoryFX scanner receipt binding: $($row.productId)"
+            }
+            $matching=@($node.SelectNodes('PLUGIN') | Where-Object {
+                $uid=$_.GetAttribute('uniqueId')
+                $uid -match '^[0-9a-fA-F]{1,8}$' -and
+                [Convert]::ToInt32($uid,16) -eq [int]$row.hostUniqueId -and
+                $_.GetAttribute('format') -ceq 'VST3' -and
+                $_.GetAttribute('file') -ceq $module -and
+                $_.GetAttribute('version') -ceq [string]$row.pluginVersion -and
+                $_.GetAttribute('isInstrument') -in @('0','false')
+            })
+            if($matching.Count -ne 1){throw "Installed FactoryFX UID/version mismatch: $($row.productId)"}
+            ++$count
+            Write-Host "FACTORYFX_INSTALLED_NATIVE_SCAN_PASS product=$($row.productId) uid=$($row.hostUniqueId) version=$($row.pluginVersion)"
+        } finally {
+            if($null -ne $child){
+                if(!$child.HasExited){$child.Kill();[void]$child.WaitForExit(5000)}
+                $child.Dispose()
+            }
+            Remove-Item -LiteralPath $receiptDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if($fxManifest.distribution -ceq 'production-three' -and $count -ne 3){
+        throw "Alpha.33 FactoryFX installed scanner did not find all three modules"
+    }
+    if($fxManifest.distribution -ceq 'production-four' -and $count -ne 4){
+        throw "Standard FactoryFX installed scanner did not find all four modules"
+    }
+    return $count
+}
+
 $fixtureProcess=$null
 $probeProcess=$null
 $probeToken=[guid]::NewGuid().ToString('D')
@@ -57,6 +153,7 @@ try {
     # Official standard VB-CABLE archive must be downloaded, exact-SHA
     # verified and staged BEFORE compiling Setup. Fatal if it changed.
     & ./scripts/prepare_vbcable_package.ps1 -StageDirectory $stage
+    & ./scripts/prepare_update_verifier.ps1 -StageDirectory $stage
     $vendor=Get-Content -LiteralPath "config/vbcable-official-package.json" -Raw -Encoding UTF8 | ConvertFrom-Json
     & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$out" "/DSourceAppVersion=$appVersion" "/DVBCableSha256=$($vendor.sha256)" "installer/ArSonMix.iss"
     $setup=Join-Path $out "ArSonMix-Windows-x64-Setup-Preview.exe"
@@ -72,8 +169,15 @@ try {
        (Test-Path -LiteralPath (Join-Path $install "portable_mode.txt"))){
         throw "Installed EXE hash or storage mode differs from source"
     }
+    Assert-InstalledFactoryFx "fresh-install"
+    $factoryFxScanCount=Test-InstalledFactoryFxScanner $installedExe
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
+    foreach($item in @("gh.exe","verifier.json","LICENSE.txt","THIRD-PARTY-LICENSES.txt")){
+        $staged=Join-Path (Join-Path $stage "UpdateVerifier") $item
+        $actual=Join-Path (Join-Path $install "UpdateVerifier") $item
+        if((Get-FileHash -LiteralPath $staged).Hash -cne (Get-FileHash -LiteralPath $actual).Hash){throw "Installed update verifier payload differs: $item"}
+    }
     $diagnosticHelper=Join-Path $install "ArSonMixStartupDiagnostics.ps1"
     if ((Get-FileHash -LiteralPath $diagnosticHelper -Algorithm SHA256).Hash.ToLowerInvariant() -ne
         $manifest.startupDiagnosticsSha256) {
@@ -181,6 +285,7 @@ try {
             throw "Old loose legal file survived in-place update: $name"
         }
     }
+    Assert-InstalledFactoryFx "in-place-upgrade"
     Write-Host "INNO_GRACEFUL_UPDATE_PASS: running app Windows session close, verified PE replacement, user files preserved"
     $uninstall=Join-Path $install "unins000.exe"
     if(-not (Test-Path -LiteralPath $uninstall -PathType Leaf)){throw "Uninstaller missing"}
@@ -195,9 +300,20 @@ try {
         installerSha256=(Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
         certification="PREVIEW__INSTALLER_INTEGRITY_AND_UPDATE_TESTED";mode="PER_USER_NO_AUTOARM"
         updaterTest="WM_CLOSE_IN_PLACE_SHA256_AND_USER_DATA_PRESERVED"
+        factoryFxInstall="VERIFIED_LOCK_AND_RESOURCE_HASHES_FRESH_AND_UPGRADE"
+        factoryFxInstalledScanCount=$factoryFxScanCount
+        factoryFxInstalledScan=if($factoryFxScanCount -gt 0){"NATIVE_INSTALLED_EXE_UID_VERSION_MATCH"}else{"NOT_APPLICABLE_CORE_ONLY"}
         guiStartup="NATIVE_WEBVIEW_READY_NO_AUDIO"
         guiStartupRunnerBuild=[Environment]::OSVersion.Version.Build
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
+    if($IncludePortableUpdater){
+        $portableVerifier=Join-Path $dist 'UpdateVerifier'
+        if(Test-Path -LiteralPath $portableVerifier){throw 'Portable verifier destination already exists'}
+        Copy-Item -LiteralPath (Join-Path $stage 'UpdateVerifier') -Destination $portableVerifier -Recurse
+        Copy-Item -LiteralPath 'installer/ArSonMixAutoUpdate.ps1' -Destination $dist
+        'ARSONMIX_PORTABLE_LAUNCHER_V2' | Set-Content -LiteralPath (Join-Path $dist 'portable_launcher_v2.txt') -Encoding utf8
+        Write-Host 'PORTABLE_RELEASE_UPDATE_DOWNLOADER_STAGED'
+    }
     Write-Host "INSTALLER_RC_VERIFIED: first install, graceful running-app graceful update, SHA-matched PE, uninstall, private Studio intact"
     Write-Host "OWNER_FIELD_AUDIO_LISTENING_REPORTED__PER_BUILD_HARDWARE_REPORT_SEPARATE"
 }

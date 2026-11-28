@@ -85,8 +85,8 @@ private:
         UINT count = 0;
         if (FAILED (collection->GetCount (&count))) return;
         const auto limit = static_cast<UINT> (juce::jmin (32u, count));
-        text << kind << " ACTIVE ENDPOINTS: " << count;
-        if (count > limit) text << " (first " << limit << " only)";
+        text << kind << " ACTIVE ENDPOINTS: " << static_cast<juce::int64> (count);
+        if (count > limit) text << " (first " << static_cast<juce::int64> (limit) << " only)";
         text << "\n";
 
         for (UINT index = 0; index < limit; ++index)
@@ -113,7 +113,7 @@ private:
             }
             // Defensive report bounds; endpoint names can contain arbitrary
             // user-supplied text. Device IDs are never copied to clipboard.
-            text << "  [" << index << "] " << name.substring (0,100)
+            text << "  [" << static_cast<juce::int64> (index) << "] " << name.substring (0,100)
                  << " | idHash=" << id << "\n";
             Microsoft::WRL::ComPtr<IAudioClient> client;
             const HRESULT activated = endpoint->Activate (
@@ -127,10 +127,10 @@ private:
             WAVEFORMATEX* mix = nullptr;
             if (SUCCEEDED (client->GetMixFormat (&mix)) && mix != nullptr)
             {
-                text << "    MIX format: " << mix->nSamplesPerSec << " Hz, "
-                     << mix->nChannels << " channels, "
-                     << mix->wBitsPerSample << " bits, tag "
-                     << mix->wFormatTag << "\n";
+                text << "    MIX format: " << static_cast<juce::int64> (mix->nSamplesPerSec) << " Hz, "
+                     << static_cast<juce::int64> (mix->nChannels) << " channels, "
+                     << static_cast<juce::int64> (mix->wBitsPerSample) << " bits, tag "
+                     << static_cast<juce::int64> (mix->wFormatTag) << "\n";
                 Microsoft::WRL::ComPtr<IAudioClient3> client3;
                 if (SUCCEEDED (client.As (&client3)))
                 {
@@ -139,8 +139,8 @@ private:
                         mix, &defaultFrames, &fundamentalFrames, &minFrames, &maxFrames);
                     if (SUCCEEDED (period))
                         text << "    IAudioClient3 engine periods (frames): default="
-                             << defaultFrames << ", fundamental=" << fundamentalFrames
-                             << ", min=" << minFrames << ", max=" << maxFrames << "\n";
+                             << static_cast<juce::int64> (defaultFrames) << ", fundamental=" << static_cast<juce::int64> (fundamentalFrames)
+                             << ", min=" << static_cast<juce::int64> (minFrames) << ", max=" << static_cast<juce::int64> (maxFrames) << "\n";
                     else
                         text << "    IAudioClient3 period not available: " << hex (period) << "\n";
                 }

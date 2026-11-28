@@ -246,11 +246,13 @@ test("FUX-1 retained FX offline access requires identical native authority and d
    "controller.subscribe(); // only accepted native logical readback"])
   assert.ok(bridge.includes(marker.replaceAll('\\"','"')),marker);
  const main=read("src/Main.cpp");
- const host=main.slice(main.indexOf("void openRetainedFxOffline("),
+ const host=main.slice(main.indexOf("void emitRetainedFxOfflineAck("),
   main.indexOf("void handleLogicalMixerIntent("));
- for(const marker of ["engine_.captureNativeMixerSession(document,states,true)",
-  "logicalMixer_.restoreCheckpoint(std::move(document),std::move(states))",
-  "document.resumeMain=false","operatorOutputMuted_=true"])
+ for(const marker of ["engine_.beginRetainedMixerCapture(pending.capture)",
+  "engine_.stepRetainedMixerCapture(pending.capture,done)",
+  "logicalMixer_.restoreCheckpoint(std::move(doc),std::move(pending.capture.states))",
+  "doc.resumeMain=pending.resumeMain && !operatorOutputMuted_",
+  "scheduleRetainedFxCaptureStep()"])
   assert.ok(host.includes(marker),marker);
  assert.ok(!/setMonitorEnabled\(true\)|setOutputMuted\(false\)|restoreNativeMixerSession\(/.test(host),
   "offline editor must not arm/restore PCM");
@@ -266,7 +268,7 @@ test("FUX-1 offline FX remains more recent than restored audio and survives shut
                           host.indexOf("juce::String saveMixerSession("));
  assert.match(restore,/if\(retainedOfflineFxActive_\)/);
  assert.match(restore,/RETAINED_OFFLINE_FX_REAPPLY_REQUIRED/);
- assert.match(restore,/Open the saved \.smix explicitly/);
+ assert.match(restore,/Offline FX edits are pending: Apply Audio I\/O/);
  const save=host.slice(host.indexOf("juce::String saveMixerSession("),
                        host.indexOf("juce::String resolveMixer",host.indexOf("juce::String saveMixerSession("))+1);
  // Older live PCM must not serialize over newer logical vendor binary state
@@ -276,4 +278,27 @@ test("FUX-1 offline FX remains more recent than restored audio and survives shut
  assert.match(host,/retainedOfflineFxActive_=false;/);
  assert.match(host,/safe->retainedOfflineFxActive_=false;/);
  assert.doesNotMatch(restore,/setOutputMuted\(false\)|outputArmed=true/);
+});
+
+ test("retained FX capture yields between processors and preserves exact owner",()=>{
+ const lab=read("src/LiveDryRoutingLab.h"),host=read("src/Main.cpp");
+ const step=lab.slice(lab.indexOf("juce::String stepRetainedMixerCapture("),lab.indexOf("// CONTROL-only capture of the currently INSTALLED"));
+ assert.match(step,/if\(!permit\)return \{\}/);
+ assert.equal((step.match(/tryCaptureState\(/g)||[]).length,1);
+ assert.doesNotMatch(step,/Thread::sleep|openSelectedAudioDevice/);
+ assert.match(step,/retainedCaptureCurrent\(c\)/);
+ assert.match(host,/pendingRetainedFxCapture_ \|\| retainedOfflineFxActive_\)return; \/\/ never arm/);
+ assert.match(host,/retainedCaptureDeviceEpoch/);
+ });
+
+test("offline auto recovery requires a live verified original callback and no external vendor restore",()=>{
+ const main=read("src/Main.cpp");
+ const auto=main.slice(main.indexOf("void serviceRetainedOfflineRecovery()"),main.indexOf("void serviceAsioMixerRestart()"));
+ for(const marker of ["engine_.allOutputsDisarmed()","engine_.retainedNativeEpoch()!=retainedOfflineOwnerEpoch_",
+  "mixerSessionWorker_.busy()","logicalVendorEditor_","held->window->isVisible()",
+  "engine_.directCallbackCount()","now-offlineReturnProgressMs_>500",
+  "offlineAutoAttemptWorkspace_==token","findNativeBuiltInFx(fx.catalogId)",
+  "engine_.authorizeRetainedAsioRestart()","engine_.verifiedRetainedWasapiReturn()",
+  "finishAudioSetupAndRecoverMixer(mode,true)"])assert.ok(auto.includes(marker),marker);
+ assert.doesNotMatch(auto,/openSelectedAudioDevice\(|setOutputMuted\(false\)|setMonitorEnabled\(true\)/);
 });

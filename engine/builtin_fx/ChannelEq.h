@@ -3,6 +3,7 @@
 #include "BuiltInFxCatalog.h"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -173,6 +174,29 @@ public:
     }
     [[nodiscard]] std::size_t activeBands() const noexcept { return current_.activeCount; }
     [[nodiscard]] int addedLatencySamples() const noexcept { return 0; }
+    // Settled all-bands-disabled EQ is an exact identity for any PCM.
+    // Do not skip while the old filter bank is still fading out.
+    [[nodiscard]] bool exactIdentity() const noexcept {
+        return prepared_ && current_.activeCount==0 &&
+            fadeRemaining_==0 && externalFadeRemaining_==0 && externalWet_==externalTarget_;
+    }
+    // Active bands may sleep only after the existing DSP denormal guard
+    // has actually drained every filter state. Never infer from output peak.
+    [[nodiscard]] bool tryExactIdle(const float* left,const float* right,std::size_t frames) const noexcept {
+        if(!prepared_||!left||!right||!frames||transitioning()||externalWet_!=externalTarget_)
+            return false;
+        if(exactIdentity())return true;
+        for(std::uint8_t i=0;i<current_.activeCount;++i){
+            const auto& slot=current_.slots[current_.active[i]];
+            for(std::uint8_t j=0;j<slot.count;++j)
+                for(int ch=0;ch<2;++ch)
+                    if(slot.section[j].z1[ch]!=0.0||slot.section[j].z2[ch]!=0.0)return false;
+        }
+        for(std::size_t i=0;i<frames;++i)
+            if(std::bit_cast<std::uint32_t>(left[i])!=0u ||
+               std::bit_cast<std::uint32_t>(right[i])!=0u)return false;
+        return true;
+    }
     [[nodiscard]] bool transitioning() const noexcept {
         return fadeRemaining_>0 || externalFadeRemaining_>0;
     }

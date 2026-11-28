@@ -84,7 +84,21 @@ test('native LUFS/true peak are shown only with qualified live measurement prove
  assert.match(app,/updateMasterAnalysisPreview\(-31\+/); // preview remains demo-only
  assert.match(bridge,/MEASURED_48K_BS1770_K_4X_FIR/);
  assert.match(bridge,/element\.classList\.toggle\("over-limit",measured&&value>limit\)/);
- assert.match(src,/masterLoudness_\.process\(measured,juce::jmin\(outputChannels,2\),samples\)/);
+ // The former synchronous DSP is now analysis-only: exact render PCM is
+ // published to a bounded queue and the unchanged meter runs on its worker.
+ assert.match(src,/NativeMasterAnalysisTap masterLoudness_/);
+ assert.match(src,/const float\* measured\[2\] = \{nativeMain\[0\],nativeMain\[1\]\};\s*if\(!independent_\.active\(\)\)masterLoudness_\.publish\(measured,2,samples\)/);
+ assert.match(src,/masterLoudness_\.publish\(measured,juce::jmin\(outputChannels,2\),samples\)/);
+ assert.doesNotMatch(src,/masterLoudness_\.process\(/);
+ const tap=read('engine/dsp/NativeMasterAnalysisTap.h');
+ const producer=tap.slice(tap.indexOf('void publish('),tap.indexOf('Reading read() const')).replace(/\/\/[^\r\n]*/g, ""); // inspect code, not explanatory comments
+ assert.match(producer,/queue_->push\(gen,pcm,count,n\)/);
+ assert.match(producer,/gapGeneration_\.store\(gen,std::memory_order_release\)/);
+ assert.doesNotMatch(producer,/meter\.process|lock_guard|sleep_for|new |make_unique/);
+ const worker=tap.slice(tap.indexOf('void run() noexcept'));
+ assert.match(worker,/meter\.process\(pcm,b\.channels,b\.frames\)/);
+ assert.match(tap,/State::gap/);
+ assert.match(tap,/State::stale/);
  assert.match(src,/masterLoudness_\.prepare \(sampleRateHz_\)/);
  assert.match(src,/masterLoudness_\.prepare \(0\.0\)/);
  assert.match(src,/masterAnalysisProvenance/);
@@ -126,4 +140,113 @@ test('startup handoff raises mixer once after splash, without permanent topmost 
  assert.match(handoff,/window_->grabKeyboardFocus\(\)/);
  assert.doesNotMatch(handoff,/startTimer|engine_\.start|setAlwaysOnTop\s*\(/);
  assert.match(app,/if \(isAutoUpdateHealthProbe\(\)\)\s*\{\s*if \(window_\) window_->setVisible \(false\);/);
+});
+
+test('native splash embeds preblurred JPEG and product PNG, preserves guard and responsive centering',()=>{
+ const splash=read('src/ArSonMixStartupSplash.h');
+ const cmake=read('CMakeLists.txt');
+ const artwork=readFileSync('assets/startup/arsonmix-splash-background.jpg');
+ assert.match(cmake,/ARMIX_BRAND_DIR\}\/arsonmix-256\.png/);
+ assert.match(cmake,/assets\/startup\/arsonmix-splash-background\.jpg/);
+ assert.match(splash,/BinaryData::arsonmix256_png,/);
+ assert.match(splash,/BinaryData::arsonmix256_pngSize/);
+ assert.match(splash,/BinaryData::arsonmixsplashbackground_jpg,/);
+ assert.match(splash,/BinaryData::arsonmixsplashbackground_jpgSize/);
+ assert.equal((splash.match(/juce::ImageFileFormat::loadFrom/g)||[]).length,2);
+ assert.match(splash,/g\.drawImageWithin \(background_, 0, 0, getWidth\(\), getHeight\(\),\s*juce::RectanglePlacement::fillDestination/);
+ assert.match(splash,/g\.drawImageWithin \(brand_, 265, 22, 90, 90,\s*juce::RectanglePlacement::centred/);
+ assert.match(splash,/g\.drawText \("ArSonMix", 24, 116, 572, 50, juce::Justification::centred\)/);
+ assert.match(splash,/width \/ \(cardWidth \+ 24\.0f\), height \/ \(cardHeight \+ 24\.0f\)/);
+ assert.match(splash,/\(width - cardWidth \* scale\) \* 0\.5f,\s*\(height - cardHeight \* scale\) \* 0\.5f/);
+ assert.match(splash,/g\.fillAll \(juce::Colour \(0xff0b1823\)\)/);
+ assert.doesNotMatch(splash,/g\.drawText \("Ar",|g\.drawText \("SonMix",/);
+ assert.doesNotMatch(splash.slice(splash.indexOf('void paint'),splash.indexOf('private:')),/ColourGradient/);
+ assert.doesNotMatch(splash.slice(splash.indexOf('void paint')),/loadFrom|ImageCache|startTimer|repaint\(\)|ImageConvolutionKernel|GaussianBlur/);
+ assert.ok(artwork.length<=8*1024,'soft startup JPEG size budget');
+ assert.equal(artwork[0],0xff);
+ assert.equal(artwork[1],0xd8);
+ assert.equal(artwork[artwork.length-2],0xff);
+ assert.equal(artwork[artwork.length-1],0xd9);
+ let dimensions;
+ for(let i=2;i+8<artwork.length;){
+   assert.equal(artwork[i],0xff);
+   const marker=artwork[i+1];
+   const length=artwork[i+2]*256+artwork[i+3];
+   assert.ok(length>=2 && i+2+length<=artwork.length);
+   if(marker===0xc0){
+     dimensions=[artwork[i+7]*256+artwork[i+8],artwork[i+5]*256+artwork[i+6]];
+     break;
+   }
+   assert.notEqual(marker,0xda,'SOF precedes scan');
+   i+=2+length;
+ }
+ assert.deepEqual(dimensions,[384,216]);
+ const layout=splash.match(/cardWidth = ([\d.]+)f, cardHeight = ([\d.]+)f/);
+ const cap=splash.match(/const float scale = juce::jmin \(([\d.]+)f/);
+ assert.ok(layout && cap);
+ const cw=Number(layout[1]), ch=Number(layout[2]), maxScale=Number(cap[1]);
+ for(const [w,h] of [[740,420],[1366,768],[1646,928],[1920,1080],[3440,1440],[320,200],[1,1]]){
+   const s=Math.min(maxScale,w/(cw+24),h/(ch+24));
+   const x=(w-cw*s)/2,y=(h-ch*s)/2;
+   assert.ok(s>0 && x>=0 && y>=0 && x+cw*s<=w && y+ch*s<=h);
+   assert.ok(Math.abs(x+cw*s/2-w/2)<1e-7);
+   assert.ok(Math.abs(y+ch*s/2-h/2)<1e-7);
+ }
+});
+
+test('Aurora Glass Linear uses actual checkpoints, not elapsed time or false audio readiness',()=>{
+ const splash=read('src/ArSonMixStartupSplash.h');
+ const model=read('src/StartupSplashProgress.h');
+ const setStage=splash.slice(splash.indexOf('void setStage'),splash.indexOf('juce::String timingSummary'));
+ assert.match(model,/if \(stage <= stage_ \|\| stage > 2\)/);
+ assert.match(setStage,/if \(progress_\.advance \(stage, elapsedMs\(\)\)\)\s*repaint\(\);/);
+ assert.doesNotMatch(setStage,/jlimit|clamp/);
+ assert.match(model,/int stage_ = 0;/);
+ assert.match(splash,/drawAuroraProgress \(g, progress_\.fraction\(\)\);/);
+ assert.match(model,/static_cast<float> \(stage_ \+ 1\) \/ 3\.0f/);
+ assert.match(splash,/juce::String \(stage \+ 1\) \+ " \/ 3"/);
+ assert.match(splash,/STARTUP CHECKPOINTS/);
+ assert.match(splash,/"Loading mixer interface\.\.\."/);
+ assert.match(splash,/"Preparing audio device\.\.\."/);
+ assert.match(splash,/"Opening mixer\.\.\."/);
+ assert.doesNotMatch(splash,/Mixer interface ready|Ready mixer layout|drawEllipse|startTimer|Timer::|sleep|ImageConvolutionKernel|GaussianBlur/);
+ assert.match(splash,/juce::ColourGradient aurora/);
+ assert.match(splash,/juce::ColourGradient glass/);
+ for(const colour of ['167a91','20b3bd','59ded0','b4efe1']) assert.ok(splash.includes('0xff'+colour));
+ assert.match(splash,/inner\.withWidth \(inner\.getWidth\(\) \* fraction\)/);
+ assert.match(splash,/juce::jmin \(fill\.getHeight\(\) \* 0\.5f, fill\.getWidth\(\) \* 0\.5f\)/);
+ // Real lifecycle still owns all progression and immediate dismissal.
+ assert.match(main,/if \(onStartupStage_\) onStartupStage_ \(1\)/);
+ assert.match(main,/if \(onStartupStage_\) onStartupStage_ \(3\)/);
+ assert.match(main,/if \(splash_\) splash_->setStage \(stage\);\s*if \(stage >= 2\)/);
+ assert.match(main,/splash_\.reset\(\); \/\/ no overlay over live mixer/);
+ const track=splash.match(/track \(([\d.]+)f, ([\d.]+)f, ([\d.]+)f, ([\d.]+)f\)/);
+ const card=splash.match(/cardWidth = ([\d.]+)f, cardHeight = ([\d.]+)f/);
+ assert.ok(track && card);
+ const [x,y,w,h]=track.slice(1).map(Number),[cw,ch]=card.slice(1).map(Number);
+ assert.equal(x+w/2,cw/2);
+ assert.ok(y>=233 && y+h<269 && 287<ch);
+ assert.ok(w>6 && h>6);
+ for(let stage=0;stage<=2;stage++){
+   const width=(w-6)*(stage+1)/3;
+   assert.ok(width>0 && width<=w-6);
+   assert.ok(x+3+width<=x+w-3);
+ }
+});
+
+test('splash phase profiling reuses the existing diagnostic without polling or new disk writes',()=>{
+ const splash=read('src/ArSonMixStartupSplash.h');
+ const model=read('src/StartupSplashProgress.h');
+ assert.ok(splash.indexOf('const double startedMs_')<splash.indexOf('const juce::Image background_'));
+ assert.match(splash,/progress_\.markAssetsDecoded \(elapsedMs\(\)\);/);
+ assert.match(splash,/if \(progress_\.firstPaintMs\(\) < 0\.0\)\s*progress_\.markFirstPaint \(elapsedMs\(\)\);/);
+ assert.match(splash,/getMillisecondCounterHiRes\(\) - startedMs_/);
+ assert.match(model,/if \(firstPaintMs_ < 0\.0\)/);
+ assert.match(model,/if \(assetsDecodedMs_ < 0\.0\)/);
+ assert.match(model,/guiHandshakeMs_ = elapsedMs;/);
+ assert.match(model,/handoffMs_ = elapsedMs;/);
+ assert.match(main,/writeStartupDiagnostic\("GUI_READY",\s*splash_ \? splash_->timingSummary\(\) : juce::String\{\}\);/);
+ assert.doesNotMatch(splash,/juce::File|replaceWithText|startTimer|callAsync/);
+ assert.doesNotMatch(model,/juce::|#include|std::thread/);
+ assert.match(read('CMakeLists.txt'),/add_test\(NAME StartupSplashCheckpointTiming COMMAND ARMixStartupSplashProgressTests\)/);
 });

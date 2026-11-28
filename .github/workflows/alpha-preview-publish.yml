@@ -97,6 +97,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Reject incomplete or extra alpha.33 FactoryFX before native build
+        shell: pwsh
+        run: |
+          python scripts/factoryfx_release_bundle.py preflight --lock config/factoryfx-approved-releases.json --require three
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Checkout pinned JUCE 8.0.15
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -139,10 +145,12 @@ jobs:
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Stage only independently approved optional first-party VST3
+      - name: Stage all three independently approved FactoryFX (alpha.33)
         shell: pwsh
         run: |
-          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --require three
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output dist --require three
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Independently audit exact native executable and portable package
@@ -163,7 +171,7 @@ jobs:
       - name: Build, install, upgrade and uninstall exact verified Windows installer
         shell: pwsh
         run: |
-          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output
+          & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output -IncludePortableUpdater
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create release assets with checksums
@@ -184,6 +192,14 @@ jobs:
           python scripts/verify_release_setup_zip.py --exe $releasedExe --zip $releasedZip
           if ($LASTEXITCODE -ne 0) { throw "Installer ZIP failed byte-for-byte verification" }
           Compress-Archive -Path 'dist/*' -DestinationPath "release/ArSonMix-$tag-Windows-x64-Portable.zip" -CompressionLevel Fastest
+          # Compare actual public ZIP (not only the temporary audit ZIP) to
+          # every verified distribution file, including nested VST3 resources.
+          . ./scripts/windows_zip_member_paths.ps1
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $distRoot=(Resolve-Path -LiteralPath 'dist').Path
+          $portableZip=[IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath "release/ArSonMix-$tag-Windows-x64-Portable.zip").Path)
+          try{Assert-ArSonMixZipPayload $portableZip $distRoot}finally{$portableZip.Dispose()}
+
           Copy-Item -LiteralPath dist/BUILD_PROVENANCE.json -Destination release/BUILD_PROVENANCE.json
           Copy-Item -LiteralPath dist/FACTORYFX_STAGE_REPORT.json -Destination release/FACTORYFX_STAGE_REPORT.json
           Copy-Item -LiteralPath installer-output/INSTALLER_PROVENANCE.json -Destination release/INSTALLER_PROVENANCE.json

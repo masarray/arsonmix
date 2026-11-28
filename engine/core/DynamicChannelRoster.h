@@ -46,6 +46,7 @@ struct ChannelStripDefinition final {
     // Digital INPUT gain is independent of the channel fader and physical preamp.
     // Append to retain positional aggregate compatibility with older fixtures.
     float inputGainLinear=1.f;
+    float wireSumGainLinear=1.f; // incoming WIRE sum only, independent of GAIN and fader
 };
 
 struct ChannelRosterBudget final {
@@ -67,7 +68,7 @@ struct ChannelEdit final {
         // Control-document metadata (rack/slot bypass) changes revision
         // without changing a fader, audio descriptor or live PCM topology.
         touchDocumentRevision,
-        setInputGain, setSendEnabled, setSendTap
+        setInputGain, setSendEnabled, setSendTap, setWireSumGain, setSendGain
     } kind=Kind::add;
     ChannelId id{};       // existing channel (except add)
     ChannelId target{};   // send destination
@@ -99,13 +100,15 @@ struct WireChange final {
     ChannelId from{},to{};
     std::uint64_t edgeId=0;
     float gain=1.f;
-    bool preFader=false; // SET_TAP only: true = post-FX / pre-channel-fader
+    bool preFader=false; // CONNECT/SET_TAP: post-FX / pre-channel-fader; default POST
 };
 
 class DynamicChannelRoster final {
 public:
     explicit DynamicChannelRoster(ChannelRosterBudget budget={}) : budget_(budget) {}
     std::uint64_t revision() const noexcept {return revision_;}
+    // Separate persistence hint: live controls must NOT invalidate graph/ACK identity.
+    std::uint64_t liveStateRevision() const noexcept {return liveStateRevision_;}
     std::size_t size() const noexcept {return channels_.size();}
     const std::vector<ChannelStripDefinition>& channels() const noexcept {return channels_;}
     const ChannelStripDefinition* find(ChannelId id) const noexcept {
@@ -123,6 +126,7 @@ public:
         const auto it=index_.find(id.value);
         if(it==index_.end())return false;
         auto& row=channels_[it->second];
+        if(row.faderLinear!=gain||row.pan!=pan)++liveStateRevision_;
         row.faderLinear=gain;row.pan=pan;
         return true;
     }
@@ -131,20 +135,33 @@ public:
         if(!id.value || !std::isfinite(gain) || gain<0.f || gain>16.f)return false;
         const auto it=index_.find(id.value);
         if(it==index_.end() || channels_[it->second].role!=ChannelRole::input)return false;
+        if(channels_[it->second].inputGainLinear!=gain)++liveStateRevision_;
         channels_[it->second].inputGainLinear=gain;
+        return true;
+    }
+    bool rememberLiveWireSumGain(ChannelId id,float gain) noexcept {
+        if(!id.value || !std::isfinite(gain) || gain<0.f || gain>2.f)return false;
+        const auto it=index_.find(id.value);
+        if(it==index_.end() || (channels_[it->second].role!=ChannelRole::input && channels_[it->second].role!=ChannelRole::group && channels_[it->second].role!=ChannelRole::fxReturn))return false;
+        if(channels_[it->second].wireSumGainLinear!=gain)++liveStateRevision_;
+        channels_[it->second].wireSumGainLinear=gain;
         return true;
     }
     bool rememberLiveSendEnabled(ChannelId id,std::uint64_t edgeId,bool enabled) noexcept {
         const auto it=index_.find(id.value);
         if(!id.value||!edgeId||it==index_.end())return false;
         for(auto& edge:channels_[it->second].sends)
-            if(edge.edgeId==edgeId&&!edge.primaryOutput){edge.enabled=enabled;return true;}
+            if(edge.edgeId==edgeId&&!edge.primaryOutput){
+                if(edge.enabled!=enabled)++liveStateRevision_;
+                edge.enabled=enabled;return true;
+            }
         return false;
     }
     bool rememberLiveMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
         const auto it=index_.find(id.value);
         if(!id.value||it==index_.end())return false;
         auto& row=channels_[it->second];
+        if(row.mute!=mute||row.solo!=solo)++liveStateRevision_;
         row.mute=mute;row.solo=solo;
         return true;
     }
@@ -157,6 +174,7 @@ public:
         for(auto& link:channels_[it->second].sends)
             if(link.destination==destination &&
                link.preFader==preFader && !link.primaryOutput) {
+                if(link.gain!=gain)++liveStateRevision_;
                 link.gain=gain;return true;
             }
         return false;
@@ -253,6 +271,12 @@ public:
                         result.fault=ChannelEditFault::invalidValue;
                     else it->inputGainLinear=op.value;
                     break;
+                case ChannelEdit::Kind::setWireSumGain:
+                    if((it->role!=ChannelRole::input && it->role!=ChannelRole::group && it->role!=ChannelRole::fxReturn) || !std::isfinite(op.value) ||
+                       op.value<0.f || op.value>2.f)
+                        result.fault=ChannelEditFault::invalidValue;
+                    else it->wireSumGainLinear=op.value;
+                    break;
                 case ChannelEdit::Kind::setFader:
                     if(!std::isfinite(op.value)||op.value<0.f||op.value>4.f)
                         result.fault=ChannelEditFault::invalidValue;
@@ -269,6 +293,7 @@ public:
                 case ChannelEdit::Kind::setSolo:
                     it->solo=op.enabled;
                     break;
+                case ChannelEdit::Kind::setSendGain:
                 case ChannelEdit::Kind::setSendEnabled:
                 case ChannelEdit::Kind::setSendTap: {
                     const auto edge=std::find_if(it->sends.begin(),it->sends.end(),
@@ -279,7 +304,11 @@ public:
                         result.fault=ChannelEditFault::invalidAction;
                     else if(op.kind==ChannelEdit::Kind::setSendEnabled)
                         edge->enabled=op.enabled;
-                    else edge->preFader=op.preFader; // post-FX PRE, not PRE_FX
+                    else if(op.kind==ChannelEdit::Kind::setSendGain) {
+                        if(!std::isfinite(op.value)||op.value<0.f||op.value>2.f)
+                            result.fault=ChannelEditFault::invalidAction;
+                        else edge->gain=op.value;
+                    } else edge->preFader=op.preFader; // post-FX PRE, not PRE_FX
                     break;
                 }
                 case ChannelEdit::Kind::touchDocumentRevision:
@@ -467,7 +496,7 @@ public:
             }
             if(!op.to.value || op.to==op.from || !std::isfinite(op.gain) ||
                op.gain<0.f || op.gain>4.f ||
-               (op.kind==WireChange::Kind::routeOnly && op.gain!=1.f)){
+               (op.kind==WireChange::Kind::routeOnly && (op.gain!=1.f||op.preFader))){
                 result.fault=ChannelEditFault::invalidValue;break;
             }
             const auto existing=std::find_if(sends.begin(),sends.end(),
@@ -496,12 +525,10 @@ public:
             if(sends.size()>=budget_.maximumSendsPerChannel){
                 result.fault=ChannelEditFault::budgetExceeded;break;
             }
-            // CONNECT means a deliberate parallel POST-fader send, even to
-            // MAIN and even when primary OUT is NONE. Only ROUTE_ONLY may
-            // establish a primary. This prevents silent promotion of a send
-            // into an exclusive route and preserves SOURCE ONLY readback.
+            // CONNECT is a deliberate parallel send (POST by default).
+            // Only ROUTE_ONLY establishes primary OUT; its tap is fixed POST.
             const bool primary=op.kind==WireChange::Kind::routeOnly;
-            sends.push_back({op.to,op.gain,false,0.f,primary,0});
+            sends.push_back({op.to,op.gain,op.preFader,0.f,primary,0});
         }
         if(result.ok()){
             // Legacy PRE and primary edges share the same accepted graph.
@@ -546,7 +573,7 @@ public:
     // stereo ChannelId, OUT -> MAIN, without borrowing an input or requiring
     // a selection. CONTROL only; native graph publication is separate.
     ChannelEditResult createStandaloneBus(std::uint64_t expectedRevision,
-                                         std::string name,ChannelRole role) {
+                                         std::string name,ChannelRole role,bool connectMain=true) {
         ChannelEditResult result;result.revision=revision_;
         if(expectedRevision!=revision_) {
             result.fault=ChannelEditFault::staleRevision;return result;
@@ -570,7 +597,7 @@ public:
         ChannelStripDefinition bus;
         bus.id={nextId_};bus.role=role;bus.format=ProcessingFormat::stereo;
         bus.name=std::move(name);
-        bus.sends.push_back({mainIt->id,1.f,false,0.f,true});
+        if(connectMain)bus.sends.push_back({mainIt->id,1.f,false,0.f,true});
         const auto position=static_cast<std::size_t>(mainIt-candidate.begin());
         candidate.insert(candidate.begin()+static_cast<std::ptrdiff_t>(position),
                          std::move(bus));
@@ -590,6 +617,24 @@ public:
         nextEdgeId_=stagedNextEdge;
         index_.swap(stagedIndex);result.createdIds.push_back({nextId_++});
         result.revision=++revision_;return result;
+    }
+
+    // Build the receiving strip and its mandatory wet insert reference on
+    // a private candidate. The caller still has to prepare a matching real
+    // processor lease before publishing any PCM. Never expose an empty return.
+    ChannelEditResult createReverbReturn(std::uint64_t expectedRevision,std::string name) {
+        auto candidate=*this;
+        auto created=candidate.createStandaloneBus(expectedRevision,std::move(name),ChannelRole::fxReturn,true);
+        if(!created.ok())return created;
+        ChannelEdit insert;
+        insert.kind=ChannelEdit::Kind::addInsertReference;
+        insert.id=created.createdIds.front();
+        insert.text="armix.builtin.vocal-reverb-return.v1";
+        auto edited=candidate.edit(candidate.revision(),std::span<const ChannelEdit>{&insert,1});
+        if(!edited.ok()){edited.revision=revision_;return edited;}
+        created.revision=edited.revision;
+        *this=std::move(candidate);
+        return created;
     }
 
     // Studio Console Remove Bus: reconnect incoming exclusive primary OUT to
@@ -807,6 +852,8 @@ public:
                ch.faderLinear>4.f || !std::isfinite(ch.inputGainLinear) ||
                ch.inputGainLinear<0.f || ch.inputGainLinear>16.f ||
                (ch.role!=ChannelRole::input && ch.inputGainLinear!=1.f) ||
+               !std::isfinite(ch.wireSumGainLinear) || ch.wireSumGainLinear<0.f || ch.wireSumGainLinear>2.f ||
+               ((ch.role!=ChannelRole::input && ch.role!=ChannelRole::group && ch.role!=ChannelRole::fxReturn) && ch.wireSumGainLinear!=1.f) ||
                !std::isfinite(ch.pan) ||
                ch.pan< -1.f || ch.pan>1.f)return false;
             maxId=std::max(maxId,ch.id.value);
@@ -902,5 +949,35 @@ private:
     std::vector<ChannelStripDefinition> channels_;
     std::unordered_map<std::uint64_t,std::size_t> index_; // CONTROL ONLY
     std::uint64_t revision_=0, nextId_=1, nextEdgeId_=1;
+    std::uint64_t liveStateRevision_=0; // CONTROL only, not serialized
 };
+
+// CONTROL only. Build the first monitor mix from the last stage of each
+// primary MAIN branch. Do not double-route children of a GROUP, overwrite
+// authored monitor sends, or change any existing ChannelId or EdgeId.
+inline std::vector<WireChange> planHeadphoneStarter(
+        const DynamicChannelRoster& roster,ChannelId main,ChannelId monitor) {
+    const auto* m=roster.find(main);
+    const auto* h=roster.find(monitor);
+    if(!m||m->role!=ChannelRole::main||!h||h->role!=ChannelRole::monitor)return {};
+    std::vector<WireChange> changes;
+    for(const auto& row:roster.channels()) {
+        if(row.role==ChannelRole::main||row.role==ChannelRole::monitor)continue;
+        if(std::any_of(row.sends.begin(),row.sends.end(),[&](const auto& send){
+            return send.destination==monitor;
+        }))return {};
+        if(std::any_of(row.sends.begin(),row.sends.end(),[&](const auto& send){
+            return send.destination==main&&send.primaryOutput&&send.enabled;
+        })) {
+            WireChange change{WireChange::Kind::connect,row.id,monitor};
+            change.preFader=true;
+            changes.push_back(change);
+            if(changes.size()>256)return {};
+        }
+    }
+    if(changes.empty())return {};
+    const float gain=std::min(0.25f,1.f/static_cast<float>(changes.size()));
+    for(auto& change:changes)change.gain=gain;
+    return changes;
+}
 } // namespace armix::mixer

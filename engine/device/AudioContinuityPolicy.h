@@ -43,6 +43,12 @@ public:
     bool interrupted() const noexcept {
         return interrupted_.load(std::memory_order_acquire);
     }
+    // CONTROL-only temporary capture mute: a later operator STOP always wins,
+    // even when the driver and routing revision did not change.
+    bool mayResumeTemporaryMute(bool wasArmed, bool sameRoute,
+                                bool operatorMuted) const noexcept {
+        return wasArmed && sameRoute && !operatorMuted && desired() && !interrupted();
+    }
 private:
     std::atomic<bool> desired_{false}, interrupted_{false};
 };
@@ -67,7 +73,7 @@ public:
     }
     void failed(std::uint64_t now) noexcept {
         if (!pending_) return;
-        ++attempts_;
+        if(attempts_<4)++attempts_; // saturate after reaching the steady 30s cadence
         const auto waitMs = attempts_ == 1 ? 1000ull
             : attempts_ == 2 ? 3000ull
             : attempts_ == 3 ? 8000ull : 30000ull;

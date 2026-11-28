@@ -5,6 +5,7 @@
 #include <juce_cryptography/juce_cryptography.h>
 #include <algorithm>
 #include <set>
+#include <map>
 #include <utility>
 #include <vector>
 
@@ -17,6 +18,19 @@ public:
     explicit NativeMixerSessionStore(juce::File studio)
         : root_(studio.getChildFile("MixerSession")) {}
     using Input=armix::storage::BoundedDataInput;
+    // Cold-start emergency path only, before any session worker or driver exists.
+    // Preserve even corrupt journals byte-for-byte; do not read or delete them.
+    juce::String quarantineForStartupRecovery(juce::File& archived) const {
+        archived=juce::File{};
+        if(!root_.exists())return {};
+        const auto id=juce::Uuid().toDashedString().toLowerCase();
+        if(!armix::shows::detail::uuid(id))return "Cannot allocate recovery identity";
+        const auto target=root_.getSiblingFile("MixerSession-Recovery-"+id);
+        if(target.exists()||!root_.moveFileTo(target))
+            return "Cannot archive MixerSession; close ArSonMix and verify folder access";
+        archived=target;
+        return {};
+    }
     static constexpr juce::int64 maxJson=4*1024*1024;
     static constexpr juce::int64 maxState=8*1024*1024;
     static constexpr juce::int64 maxTotal=128*1024*1024;
@@ -24,6 +38,11 @@ public:
 
     juce::String commit(const MixerSessionDocument& doc,
                         const std::vector<armix::shows::BinaryState>& states) const {
+        const auto head=root_.getChildFile("HEAD");
+        // A missing HEAD with PREVIOUS is recovery evidence, not a new
+        // workspace. A directory or invalid pointer is likewise not fresh.
+        if(!head.existsAsFile() && (head.exists()||root_.getChildFile("PREVIOUS").exists()))
+            return "Mixer checkpoint requires recovery before saving";
         if(!armix::shows::detail::uuid(doc.id)||states.size()>maxStates)
             return "Mixer session ID/state count invalid";
         const auto json=Codec::encode(doc);
@@ -79,7 +98,6 @@ public:
         const auto committed=versions.getChildFile(id);
         if(committed.exists()||!stage.moveFileTo(committed))
             return "Cannot publish immutable mixer generation";
-        const auto head=root_.getChildFile("HEAD");
         if(head.existsAsFile()) {
             const auto previous=readPointer(head);
             if(previous.isEmpty())return "Current mixer HEAD invalid; recover explicitly";
@@ -92,6 +110,53 @@ public:
             if(backupError.isNotEmpty())return backupError;
         }
         return writePointer(head,id);
+    }
+
+    // Explicit NEW replaces HEAD only after archiving the independently
+    // verified previous checkpoint. PREVIOUS alone is not enough: the next
+    // normal edit rotates it. All IO stays on the existing session worker.
+    enum class ArchiveMode { none, newSession, resetIo, reopenArchive };
+    juce::File archiveDirectory() const {return root_.getSiblingFile("SessionArchive");}
+    juce::String commitNewSession(const MixerSessionDocument& doc,
+                        const std::vector<armix::shows::BinaryState>& states,
+                        ArchiveMode mode=ArchiveMode::newSession) const {
+        const bool reset=mode==ArchiveMode::resetIo;
+        const bool reopen=mode==ArchiveMode::reopenArchive;
+        if(mode==ArchiveMode::none || doc.resumeMain.value_or(false) ||
+           (!reopen && (!doc.logicalOnly ||
+             !doc.logicalInputs.references().empty() || !doc.logicalOutputs.references().empty() ||
+             (!reset && (!states.empty() || !doc.inserts.empty() || !doc.hotkeys.empty() ||
+                         !doc.request.sources.empty())))))
+            return "New/reset session must be an unbound workspace";
+        const auto head=root_.getChildFile("HEAD");
+        if(head.exists()) {
+            MixerSessionDocument old,checked;
+            std::vector<armix::shows::BinaryState> oldStates,checkedStates;
+            auto error=load(old,oldStates);
+            if(error.isNotEmpty())return error;
+            if(reset){
+                if(old.id!=doc.id || !old.logicalOnly ||
+                   !old.logicalInputs.references().empty() || !old.logicalOutputs.references().empty())
+                    return "Reset requires the same unassigned offline session";
+                auto before=old,after=doc;
+                before.logicalInputs={};before.logicalOutputs={};
+                after.logicalInputs={};after.logicalOutputs={};
+                if(Codec::encode(before)!=Codec::encode(after))
+                    return "Reset would change mixer state outside I/O definitions";
+            }else if(!reopen&&old.id==doc.id)return "New session identity must differ";
+            const auto archive=archiveDirectory();
+            if(archive.createDirectory().failed())return "Cannot create session archive";
+            const auto file=archive.getNonexistentChildFile(old.id+"-"+juce::Uuid().toDashedString(),".smix",false);
+            error=writeFile(file,old,oldStates);
+            if(error.isNotEmpty())return error;
+            old.resumeMain.reset(); // portable archive cannot auto-arm
+            error=readFile(file,checked,checkedStates);
+            if(error.isNotEmpty() || Codec::encode(old)!=Codec::encode(checked))
+                return "Previous session archive readback failed";
+        }else if(root_.getChildFile("PREVIOUS").exists())
+            return "Previous checkpoint requires explicit recovery";
+        else if(reset)return "Save an offline session before resetting its I/O";
+        return commit(doc,states);
     }
 
     // A single portable JSON file, with content-addressed plug-in state.
@@ -171,6 +236,61 @@ public:
         return {};
     }
 
+    // Serialized session IO worker only. A small atomic overlay references
+    // the immutable HEAD's verified FX blobs; never copy them on each fader
+    // change. New FX without a captured binary require a full idle checkpoint.
+    juce::String commitLiveControls(MixerSessionDocument draft) const {
+        if(draft.logicalOnly||!armix::shows::detail::uuid(draft.id))
+            return "Invalid live checkpoint identity";
+        const auto head=root_.getChildFile("HEAD");
+        const auto generation=readPointer(head);
+        if(generation.isEmpty()) {
+            if(exists()||!draft.inserts.empty())
+                return "Live checkpoint awaits first verified FX snapshot";
+            return commit(draft,{});
+        }
+        MixerSessionDocument base;
+        std::vector<armix::shows::BinaryState> blobs;
+        // The immutable generation was fully verified when committed. During
+        // live updates validate metadata and bounded blob paths/sizes only;
+        // full binary SHA verification remains mandatory on restore.
+        auto error=readGeneration(root_.getChildFile("versions").getChildFile(generation),base,blobs,false);
+        if(error.isNotEmpty())return error;
+        if(!attachLiveHashes(base,draft))
+            return "Live checkpoint awaits verified FX snapshot for current session";
+        const auto json=Codec::encode(draft);
+        MixerSessionDocument verified;
+        if(json.getNumBytesAsUTF8()>maxJson||!Codec::decode(json,verified))
+            return "Live checkpoint document rejected";
+        const auto file=root_.getChildFile("LIVE_CONTROLS");
+        if(!Input::managedPath(root_,file))return "Unsafe live checkpoint path";
+        // Compare canonical metadata only; do not rewrite identical state.
+        const auto prior=readLiveControls(generation,base,blobs);
+        if(prior!=OverlayResult::invalid) {
+            base.savedMs=draft.savedMs;
+            if(Codec::encode(base)==json)return {};
+        }
+        const auto hash=juce::SHA256(json.toRawUTF8(),json.getNumBytesAsUTF8()).toHexString();
+        const auto payload=generation+"\n"+hash+"\n"+json;
+        juce::TemporaryFile staging(file);
+        // The receipt has LF separators, but Codec::encode emits CRLF JSON
+        // in JUCE. Text-mode writing normalises the JSON after hashing it.
+        // Preserve the exact UTF-8 bytes (no BOM or line-ending conversion).
+        auto output=staging.getFile().createOutputStream();
+        if(!output||!output->openedOk()||
+           !output->write(payload.toRawUTF8(),payload.getNumBytesAsUTF8()))
+            return "Cannot stage live checkpoint";
+        output->flush();
+        if(output->getStatus().failed())return "Cannot flush live checkpoint";
+        output.reset(); // close before bounded readback and atomic replacement
+        juce::String check;
+        if(!Input::text(staging.getFile(),maxJson+128,check)||check!=payload||
+           readPointer(head)!=generation)
+            return "Live checkpoint readback or HEAD changed";
+        return staging.overwriteTargetFileWithTemporary()
+            ?juce::String{}:juce::String("Cannot atomically publish live checkpoint");
+    }
+
     // Read normal HEAD only: no silent fallback to an older performance.
     juce::String load(MixerSessionDocument& out,
                       std::vector<armix::shows::BinaryState>& states) const {
@@ -183,10 +303,26 @@ public:
         if(error.isNotEmpty())return error;
         if(readPointer(root_.getChildFile("HEAD"))!=pointer)
             return "Mixer HEAD changed during read";
+        // Only a matching, validated overlay may replace base metadata.
+        // Missing/corrupt overlay never discards the verified FX checkpoint.
+        if(readLiveControls(pointer,doc,binary)==OverlayResult::invalid)
+            doc.resumeMain=false;
+        if(readPointer(root_.getChildFile("HEAD"))!=pointer)
+            return "Mixer HEAD changed during live checkpoint read";
+        // A recovered generation must stay muted even if the process dies
+        // before its first new checkpoint. The marker is bound to this HEAD.
+        const auto recovery=root_.getChildFile("RECOVERED_MUTED");
+        if(recovery.exists()) {
+            const auto recovered=readPointer(recovery);
+            if(recovered.isEmpty()||recovered==pointer)doc.resumeMain=false;
+        }
         out=std::move(doc);states=std::move(binary);
         return {};
     }
-    bool exists() const noexcept {return root_.getChildFile("HEAD").existsAsFile();}
+    // Presence is distinct from validity; callers must load/recover.
+    bool exists() const noexcept {
+        return root_.getChildFile("HEAD").exists()||root_.getChildFile("PREVIOUS").exists();
+    }
     // Recovery does NOT arm output or publish a graph. Valid HEAD wins.
     juce::String recoverPrevious() const {
         MixerSessionDocument recovered;
@@ -208,18 +344,70 @@ public:
         if(error.isNotEmpty())return "Previous mixer generation invalid: "+error;
         if(readPointer(head)!=before)
             return "Mixer HEAD changed during recovery";
+        // Publish the disarm marker BEFORE HEAD: a crash between these
+        // atomic writes cannot allow the recovered generation to auto-arm.
+        const auto marker=root_.getChildFile("RECOVERED_MUTED");
+        if(!Input::managedPath(root_,marker))return "Unsafe mixer recovery marker path";
+        error=writePointer(marker,pointer);
+        if(error.isNotEmpty())return error;
         error=writePointer(head,pointer);
         if(error.isNotEmpty())return error;
         if(readPointer(head)!=pointer)
             return "Mixer HEAD changed after recovery";
         // Return the same verified immutable generation that was published.
         // No second blob read or hash pass is needed on the control thread.
+        verified.resumeMain=false;
         out=std::move(verified);
         states=std::move(binary);
         return {};
     }
 private:
     juce::File root_;
+    enum class OverlayResult { absent, applied, invalid };
+    // Exact durable instance identity, not slot number or plugin display name.
+    // MOVE/REMOVE may reuse a blob; ADD/REPLACE with a new instance cannot.
+    static bool attachLiveHashes(const MixerSessionDocument& base,MixerSessionDocument& draft) {
+        if(base.logicalOnly||draft.logicalOnly||base.id!=draft.id)return false;
+        std::map<juce::String,const StoredInsert*> byId;
+        for(const auto& fx:base.inserts)
+            if(fx.instanceId.isNotEmpty()&&!byId.emplace(fx.instanceId,&fx).second)return false;
+        std::set<juce::String> used;
+        for(auto& fx:draft.inserts) {
+            const auto it=byId.find(fx.instanceId);
+            if(fx.instanceId.isEmpty()||it==byId.end()||!used.insert(fx.instanceId).second)
+                return false;
+            const auto& old=*it->second;
+            if(old.catalogId!=fx.catalogId||old.path!=fx.path||old.uid!=fx.uid||
+               (fx.sha256.isNotEmpty()&&fx.sha256!=old.sha256))return false;
+            fx.sha256=old.sha256;
+        }
+        return true;
+    }
+    OverlayResult readLiveControls(const juce::String& generation,MixerSessionDocument& doc,
+            std::vector<armix::shows::BinaryState>& blobs) const {
+        const auto file=root_.getChildFile("LIVE_CONTROLS");
+        if(!file.exists())return OverlayResult::absent;
+        juce::String text;
+        if(!Input::managedPath(root_,file)||!Input::text(file,maxJson+128,text))
+            return OverlayResult::invalid;
+        // Fixed-width ASCII header; stale overlays after a new full HEAD
+        // (including NEW/Open/archive) cannot replace that generation.
+        if(text.length()<102||text[36]!='\n'||text[101]!='\n')
+            return OverlayResult::invalid;
+        const auto bound=text.substring(0,36);
+        if(!armix::shows::detail::uuid(bound))return OverlayResult::invalid;
+        if(bound!=generation)return OverlayResult::absent;
+        const auto expected=text.substring(37,101),json=text.substring(102);
+        MixerSessionDocument candidate;
+        if(!safeHash(expected)||juce::SHA256(json.toRawUTF8(),json.getNumBytesAsUTF8()).toHexString()!=expected||
+           !Codec::decode(json,candidate)||!attachLiveHashes(doc,candidate))
+            return OverlayResult::invalid;
+        std::set<juce::String> hashes;
+        for(const auto& fx:candidate.inserts)hashes.insert(fx.sha256);
+        std::erase_if(blobs,[&](const auto& blob){return !hashes.contains(blob.sha256);});
+        doc=std::move(candidate);
+        return OverlayResult::applied;
+    }
     static bool safeHash(const juce::String& hash) {
         return hash.length()==64 && hash.containsOnly("0123456789abcdef");
     }
@@ -244,7 +432,8 @@ private:
     }
     static juce::String readGeneration(const juce::File& generation,
                        MixerSessionDocument& out,
-                       std::vector<armix::shows::BinaryState>& states) {
+                       std::vector<armix::shows::BinaryState>& states,
+                       bool verifyBlobs=true) {
         const auto jsonFile=generation.getChildFile("mixer.json");
         const auto sumFile=generation.getChildFile("mixer.sha256");
         if(!generation.isDirectory()||!jsonFile.existsAsFile()||
@@ -275,6 +464,12 @@ private:
             if(!file.existsAsFile()||file.getSize()<0||file.getSize()>maxState)
                 return "Mixer VST3 state missing or oversized";
             if(!Input::managedPath(root,file))return "Unsafe mixer blob path";
+            if(!verifyBlobs) {
+                const auto size=file.getSize();
+                if(size<0||size>maxState||size>maxTotal-total)return "Mixer vendor state budget exceeded";
+                total+=size;
+                continue;
+            }
             armix::shows::BinaryState blob;
             blob.sha256=hash;
             if(!Input::read(file,std::min(maxState,maxTotal-total),blob.bytes,true)||

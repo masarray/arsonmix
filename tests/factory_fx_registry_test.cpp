@@ -119,6 +119,32 @@ int main()
     if (! check (scan.ok() && scan.candidates.size() == 2 &&
                  scan.warnings.isEmpty(), "valid optional effects all load")) return 28;
 
+    // Exact three-product alpha.33 manifest: positive and wrong-ID cases.
+    const auto verbBundle = root.getChildFile ("FactoryFX/ArSonVerb/ArSonVerb.vst3");
+    if (! verbBundle.getParentDirectory().createDirectory().wasOk() ||
+        ! verbBundle.replaceWithText ("original reverb fixture")) return 29;
+    auto third = juce::JSON::parse (juce::JSON::toString (rows->getReference (0)));
+    auto* verb = third.getDynamicObject();
+    if (verb == nullptr) return 30;
+    verb->setProperty ("productId", "arson-verb");
+    verb->setProperty ("bundleRelativePath", "FactoryFX/ArSonVerb/ArSonVerb.vst3");
+    verb->setProperty ("hostUniqueId", 3456);
+    auto verbFiles = third.getProperty ("files", {});
+    verbFiles.getArray()->getReference (0).getDynamicObject()->setProperty (
+        "sha256", juce::SHA256 (verbBundle).toHexString());
+    rows->add (third);
+    two.getDynamicObject()->setProperty ("distribution", "production-three");
+    const auto threeManifest = juce::JSON::toString (two);
+    manifest.replaceWithText (threeManifest);
+    scan = armix::factory::Registry::discover (root);
+    if (! check (scan.ok() && scan.candidates.size() == 3, "exact three production manifest")) return 31;
+    manifest.replaceWithText (twoManifest.replace ("engineering-partial", "production-three"));
+    scan = armix::factory::Registry::discover (root, true);
+    if (! check (! scan.ok(), "three production rejects missing ID even in runtime mode")) return 32;
+    manifest.replaceWithText (threeManifest.replace ("arson-verb", "arsonkupik-enhancer"));
+    scan = armix::factory::Registry::discover (root);
+    if (! check (! scan.ok(), "three production rejects foreign ID")) return 33;
+
     manifest.deleteFile();
     scan = armix::factory::Registry::discover (root);
     if (! check (! scan.ok() && scan.candidates.empty(), "missing manifest rejected"))

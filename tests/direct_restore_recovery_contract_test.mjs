@@ -49,7 +49,10 @@ test('output-only SAME-device WASAPI recovery never invents or requires micropho
   assert.ok(restore.includes('current.inputDeviceName == expected.inputDeviceName'));
   assert.ok(restore.includes('current.outputDeviceName == expected.outputDeviceName'));
   assert.match(engine,/resumeVerifiedDirectRoute\(\)/);
-  assert.match(main,/No verified stereo playback device; audio remains gated/);
+  const bind=main.slice(main.indexOf('bool finishAudioSetupAndRecoverMixer('),
+    main.indexOf('std::uint64_t asioRecoveryEpoch_'));
+  assert.match(bind,/if\(!engine_\.directRouteAuthorized\(\)\)\s*\{\s*engine_\.setOutputMuted\(true\);\s*mixerSessionError_="No verified stereo playback device; audio remains gated";[\s\S]*?return false;/);
+  assert.match(main,/arMixOpenAudioIO/);
 });
 test('restore retry is bounded and disabled on success, explicit direct and setup paths',()=>{
   assert.match(coordinator,/gate\.failed\(snapshot\.generation,nowMs\)/);
@@ -135,4 +138,49 @@ test('ASIO/WASAPI DIRECT authorizes the exact active input/output channel map',(
   assert.ok(callback.indexOf('!directFence_.permitted()')<callback.indexOf('handoff_.beginCycle()'));
   assert.ok(!callback.includes('fingerprint(') && !callback.includes('toString (16)'));
   assert.ok(cmake.includes('P0AsioLiveDirectRouteFence'));
+});
+
+test('offline recovery editor guard compiles with ImmerSIB feature disabled',()=>{
+  const start=main.indexOf('void serviceRetainedOfflineRecovery()');
+  const end=main.indexOf('const auto now=monotonicMilliseconds()',start);
+  assert.ok(start>=0 && end>start);
+  const guard=main.slice(start,end);
+  assert.match(guard,/if\(editorWindow_&&editorWindow_->isVisible\(\)\)return;/);
+  const feature=/#if defined\(ARMIX_IMMERSIB_RELEASE_CANDIDATE\) && ARMIX_IMMERSIB_RELEASE_CANDIDATE\s*if\(immersibEditorWindow_&&immersibEditorWindow_->isVisible\(\)\)return;\s*#endif/;
+  assert.match(guard,feature);
+  assert.doesNotMatch(guard.replace(feature,''),/immersibEditorWindow_/);
+});
+
+// The automatic detached workspace transition must precede operator FX edits,
+// but cannot grant hardware admission or run arbitrary vendor code unattended.
+test('retained workspace capture is bounded and independent of FX navigation',()=>{
+  const start=main.indexOf('void serviceDetachedMixerWorkspace()');
+  const end=main.indexOf('    // Once the logical',start);
+  assert.ok(start>=0&&end>start);
+  const service=main.slice(start,end);
+  assert.match(service,/engine_\.hasRetainedNativeSession\(\)/);
+  assert.match(service,/offlineCaptureAttemptEpoch_==epoch && offlineCaptureAttemptOwner_==owner/);
+  assert.match(service,/findNativeBuiltInFx/);
+  assert.match(service,/startRetainedWorkspaceCapture\(epoch,revision,\{\}\)/);
+  assert.match(main,/serviceWasapiDeviceContinuity\(\);\s*serviceDetachedMixerWorkspace\(\);/);
+  const capture=main.slice(main.indexOf('void serviceRetainedFxCapture()'),main.indexOf('void openRetainedFxOffline('));
+  assert.ok(capture.indexOf('pending.startedMs>=8000')<capture.indexOf('deviceApply_.tryBegin('));
+  assert.match(capture,/scheduleRetainedFxCaptureStep\(25\)/);
+  const join=main.slice(main.indexOf('void openRetainedFxOffline('),start);
+  assert.match(join,/pending.requestId.isVoid\(\) && pending.epoch==epoch/);
+  assert.match(join,/engine_\.setOutputMuted\(true\);\s*engine_\.disarmSecondaryOutput\(\);/);
+  assert.match(join,/engine_\.retainedCaptureAllowed\(\)/);
+  assert.doesNotMatch(join,/requestAutomaticMain|setOutputMuted\(false\)/);
+});
+
+test('retained workspace authority is published only after durable HEAD commit',()=>{
+  const capture=main.slice(main.indexOf('void serviceRetainedFxCapture()'),main.indexOf('void openRetainedFxOffline('));
+  assert.match(capture,/pending.committing=true/);
+  assert.match(capture,/logicalMixer_\.open\(std::move\(doc\),std::move\(pending.capture.states\)/);
+  assert.doesNotMatch(capture,/logicalMixer_\.restoreCheckpoint/);
+  const finish=capture.slice(capture.indexOf('void finishRetainedWorkspaceCapture'));
+  assert.match(finish,/if\(error.isEmpty\(\)\)\s*\{\s*retainedOfflineFxActive_=true/);
+  assert.ok(finish.indexOf('pendingRetainedFxCapture_.reset()')<finish.indexOf('emitRetainedFxOfflineAck('));
+  assert.match(main,/pendingRetainedFxCapture_ && !pendingRetainedFxCapture_->committing/);
+  assert.match(main,/finishForShutdown\(logicalVendorEditor_\.has_value\(\) \|\|/);
 });

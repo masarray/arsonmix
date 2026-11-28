@@ -273,6 +273,7 @@ test('FXF1 manifest parser is fail-closed and factory entries do not persist in 
   assert.match(catalog,/if \(! entry\.factory && entry\.path\.isNotEmpty\(\)\)/);
   assert.match(catalog,/approved->artifactSha256/);
   assert.match(catalog,/usedVerifiedCache/);
+  assert.ok(schema.properties.distribution.enum.includes('production-three'));
   assert.ok(schema.properties.distribution.enum.includes('production-four'));
   assert.match(native,/catalog_\.scanFactoryIfPresent\(\)/);
   assert.match(cmake,/FactoryFxVerifiedManifestAndNegativePathGate/);

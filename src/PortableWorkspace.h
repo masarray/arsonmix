@@ -30,31 +30,100 @@ struct PortableWorkspace final
         return executableFolder.getChildFile (marker).existsAsFile();
     }
 
+    // Managed portable layout is opt-in at the stable root. Legacy loose
+    // packages and FIELD builds still use their existing adjacent Studio.
+    static bool hasManagedPayloadShape (const juce::File& folder)
+    {
+        const auto key=folder.getFileName();
+        return folder.getParentDirectory().getFileName()=="payloads" &&
+            folder.getParentDirectory().getParentDirectory().getFileName()==".ArSonMixUpdates" &&
+            key.length()==105 && key[40]=='-' &&
+            key.substring(0,40).containsOnly("0123456789abcdef") &&
+            key.substring(41).containsOnly("0123456789abcdef");
+    }
+
+    static juce::File portableRootFor (const juce::File& folder)
+    {
+        if(!hasManagedPayloadShape(folder))return folder;
+        const auto stable=folder.getParentDirectory().getParentDirectory().getParentDirectory();
+        const auto capability=stable.getChildFile("portable_launcher_v2.txt");
+        const auto rootMarker=stable.getChildFile(marker);
+        const auto payloadMarker=folder.getChildFile(marker);
+        juce::String content,rootMode,payloadMode;
+        if(!BoundedDataInput::managedPath(stable,folder) ||
+           !BoundedDataInput::managedPath(stable,capability) ||
+           !BoundedDataInput::managedPath(stable,rootMarker) ||
+           !BoundedDataInput::managedPath(folder,payloadMarker) ||
+           !BoundedDataInput::text(capability,128,content) ||
+           content.trim()!="ARSONMIX_PORTABLE_LAUNCHER_V2" ||
+           !BoundedDataInput::text(rootMarker,128,rootMode) ||
+           rootMode.trim()!="ARSONMIX_PORTABLE_WORKSPACE_V1" ||
+           !BoundedDataInput::text(payloadMarker,128,payloadMode) ||
+           payloadMode.trim()!="ARSONMIX_PORTABLE_WORKSPACE_V1")return {};
+        return stable;
+    }
+
+    static juce::File updateRootFor (const juce::File& folder)
+    {
+        const auto stable=portableRootFor(folder);
+        return stable==juce::File()?juce::File():stable.getChildFile(".ArSonMixUpdates");
+    }
+
     static juce::File dataRootFor (const juce::File& executableFolder)
     {
+        if(hasManagedPayloadShape(executableFolder)){
+            const auto stable=portableRootFor(executableFolder);
+            return stable==juce::File()?juce::File():stable.getChildFile ("Studio");
+        }
         return isPortableAt (executableFolder)
             ? executableFolder.getChildFile ("Studio")
             : installedDataRoot();
     }
 
+    static bool launcherEnabledAt(const juce::File& folder)
+    {
+        if(folder==juce::File())return false;
+        const auto cap=folder.getChildFile("portable_launcher_v2.txt");
+        juce::String value,mode;
+        return BoundedDataInput::managedPath(folder,cap) &&
+            BoundedDataInput::text(cap,128,value) && value.trim()=="ARSONMIX_PORTABLE_LAUNCHER_V2" &&
+            BoundedDataInput::text(folder.getChildFile(marker),128,mode) && mode.trim()=="ARSONMIX_PORTABLE_WORKSPACE_V1";
+    }
+
+    // Every GUI-only probe uses a fresh machine-local scratch root, including
+    // installed probes. No production Studio, device XML or WebView profile.
+    static juce::File probeDataRoot()
+    {
+#if defined(_WIN32)
+        const auto token=juce::SystemStats::getEnvironmentVariable("ARSONMIX_UPDATE_PROBE",{});
+        const auto local=juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{});
+        if(token.length()==36 && juce::Uuid(token).toDashedString()==token && local.isNotEmpty())
+            return juce::File(local).getChildFile("ArSonMix/Updates/probes").getChildFile(token);
+#endif
+        return {};
+    }
+
     static juce::File dataRoot()
     {
-        return dataRootFor (executableDirectory());
+        const auto probe=probeDataRoot();
+        return probe==juce::File()?dataRootFor (executableDirectory()):probe;
     }
 
     // Device selections remain per MACHINE so copying USB never un-mutes an
     // unintended endpoint, and legacy installed audio-devices.xml is retained.
-    static juce::File machineDataRoot() { return installedDataRoot(); }
+    static juce::File machineDataRoot() { const auto probe=probeDataRoot(); return probe==juce::File()?installedDataRoot():probe; }
 
     static juce::File browserDataRootFor (const juce::File& executableFolder)
     {
-        if (isPortableAt (executableFolder))
-            return dataRootFor (executableFolder).getChildFile ("Cache/WebView2");
+        if (isPortableAt (executableFolder) || hasManagedPayloadShape(executableFolder)){
+            const auto data=dataRootFor(executableFolder);
+            return data==juce::File()?juce::File():data.getChildFile ("Cache/WebView2");
+        }
         return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
             .getChildFile ("AR-MIX-Studio-WebView2");
     }
 
-    static juce::File browserDataRoot() { return browserDataRootFor (executableDirectory()); }
+    static juce::File browserDataRoot() { const auto probe=probeDataRoot(); return probe==juce::File()?browserDataRootFor (executableDirectory()):probe.getChildFile("Cache/WebView2"); }
 
     static juce::File vaultRoot (const juce::File& workspace)
     {

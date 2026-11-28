@@ -7,6 +7,9 @@ import json
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
+from operator_wire_menu import open_application_menu
+from approved_native_wire_gain_smoke import select_ribbon_workflow
 from approved_floating_fx_component_harness import project_approved_editor_for_component_smoke
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -46,7 +49,7 @@ def logical_graph(revision="1", extra=False, source_only=False):
             "supportedOps":["CREATE_CHANNEL","DELETE_CHANNEL","CREATE_GROUP",
                 "REMOVE_BUS","RENAME_CHANNEL","SET_FADER","SET_PAN",
                 "SET_MUTE","SET_SOLO","SET_PROCESSING_FORMAT",
-                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP",
+                "WIRE_TRANSACTION","SET_SEND_ENABLED","SET_SEND_TAP","SET_WIRE_GAIN",
                 "ADD_FX_REFERENCE","REMOVE_FX_REFERENCE",
                 "SET_FX_SLOT_BYPASS","SET_FX_RACK_BYPASS"],
             "dynamicChannels":True,"groups":True,
@@ -66,6 +69,7 @@ def snapshot(revision="1",extra=False,source_only=False,workspace_token="workspa
     raw["productionCallbackLive"]=False
     raw["mixerSession"]={"authority":"NONE","deviceEpoch":"0"}
     graph=logical_graph(revision,extra,source_only)
+    raw["globalFxBypassed"]=False  # Published on every native mixer snapshot.
     raw["logicalMixer"]={"schema":"arsonmix.native.logical-mixer.v1",
         "authority":"LOGICAL_ONLY","workspaceToken":workspace_token,
         "revision":revision,"graph":graph,
@@ -107,10 +111,10 @@ def main():
         page=browser.new_page(viewport={"width":1366,"height":768})
         errors=[]
         page.on("pageerror",lambda error:errors.append(str(error)))
-        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+        page.add_init_script(NATIVE_EVENTS + """window.__events=[];
           window.__JUCE__={backend:{
              emitEvent(name,payload){window.__events.push({name,payload});},
-             addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+             ...window.__nativeListenerMethods
           }};""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
@@ -200,10 +204,50 @@ def main():
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
         # The approved Pages tool tray is a real collapsible <details>.
         # Open it as the operator would; never assert hidden children visible.
-        page.locator("#moreTools > summary.tool").click()
         assert page.locator("#addTrack").is_visible()
         assert page.locator("#addTrack").is_enabled()
-        assert page.locator("#addBus").is_visible()
+        # Native V6 places Add BUS on the Routing ribbon, not in the cascade.
+        select_ribbon_workflow(page, "routing")
+        add_bus=page.locator(".command-bar > #addBus")
+        assert add_bus.count()==1 and add_bus.is_visible() and add_bus.is_enabled()
+        select_ribbon_workflow(page, "mixer")
+        open_application_menu(page, "session")
+        # Archive action requires accepted offline authority and confirmation.
+        archive=page.get_by_role("button",name="Open session archive",exact=True)
+        assert archive.is_visible()
+        archive.click()
+        assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
+        state["offlineNewSessionAvailable"]=True
+        emit(page,"arMixConsoleSnapshot",state)
+        def open_menu(category="session"):
+            open_application_menu(page, category)
+
+        def confirm_menu_action(button, choice, category="session"):
+            open_menu(category)
+            button.click()
+            page.get_by_role("dialog").get_by_role("button", name=choice, exact=True).click()
+
+        confirm_menu_action(archive, "Cancel")
+        assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerOpenArchive')")
+        confirm_menu_action(archive, "Open archive")
+        event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerOpenArchive')?.payload")
+        assert event["confirmed"] is True and event["workspaceToken"]=="workspace-a" and event["baseRevision"]=="1", event
+        new_project=page.get_by_role("button",name="New Project · empty mixer",exact=True)
+        open_menu()
+        assert new_project.is_visible()
+        confirm_menu_action(new_project, "Cancel")
+        assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
+        # The leftmost New shortcut delegates to exactly the same transaction.
+        toolbar_new=page.locator("#moreTools [data-native-new-project]")
+        open_menu(None)
+        assert toolbar_new.inner_text()=="New" and toolbar_new.is_visible()
+        confirm_menu_action(toolbar_new, "Cancel", None)
+        assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='nativeMixerNewOffline')")
+        confirm_menu_action(toolbar_new, "Continue", None)
+        assert page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='nativeMixerNewOffline').length")==1
+        new_event=page.evaluate("()=>window.__events.find(e=>e.payload?.action==='nativeMixerNewOffline')?.payload")
+        assert new_event["mode"]=="EMPTY" and new_event["confirmed"] is True, new_event
+        assert new_event["workspaceToken"]=="workspace-a" and new_event["baseRevision"]=="1", new_event
         assert page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixConsoleIntent').length""")==0
         page.locator("#addTrack").click()
@@ -295,10 +339,10 @@ def main():
         # of the saved-document SET_SEND_TAP. Test the actual compiled GUI.
         page=browser.new_page(viewport={"width":1366,"height":768})
         page.on("pageerror",lambda error:errors.append(str(error)))
-        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+        page.add_init_script(NATIVE_EVENTS + """window.__events=[];
           window.__JUCE__={backend:{
              emitEvent(name,payload){window.__events.push({name,payload});},
-             addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+             ...window.__nativeListenerMethods
           }};""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
@@ -322,6 +366,37 @@ def main():
           if(!edge||!primary)throw Error('Missing exact accepted logical SEND/primary');
           return {source:src.id,parallel:edge.id,primary:primary.id};
         }""")
+        # Offline SOF is a saved EdgeId transaction, not a second PCM graph.
+        select_ribbon_workflow(page, "mixer")
+        sof=page.locator("#sofToggle")
+        assert sof.is_enabled()
+        sof.click()
+        page.locator("#sofTarget").select_option(str(page.evaluate(
+            "()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(t=>t.name==='AUX A').id")))
+        fader=page.locator(f'#tracks .strip[data-id="{wire_ids["source"]}"] .fader')
+        assert fader.is_enabled(), "Saved SEND must be editable without PCM"
+        page.screenshot(path="arsonmix-offline-sof.png")
+        gain_events="()=>window.__events.filter(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_WIRE_GAIN')"
+        fader.evaluate("(el)=>{el.value='-12';el.dispatchEvent(new Event('input',{bubbles:true}));}")
+        assert len(page.evaluate(gain_events))==0, "Offline disk edit must wait for release"
+        fader.evaluate("(el)=>{el.dispatchEvent(new Event('change',{bubbles:true}));}")
+        page.wait_for_function(f"()=>({gain_events})().length===1")
+        gain_req=page.evaluate(gain_events)[-1]["payload"]
+        assert gain_req["channelId"]=="1" and gain_req["baseRevision"]=="1"
+        assert gain_req["payload"]["edgeId"]=="1001"
+        assert abs(gain_req["payload"]["gainLinear"]-10**(-12/20))<0.00001
+        emit(page,"arMixLogicalAck",{"requestId":gain_req["requestId"],"status":"REJECTED","errorCode":"FIXTURE"})
+        emit(page,"arMixConsoleSnapshot",staged)
+        # Exercise the actual delegated double-click handler on the fader box.
+        fader.locator("xpath=ancestor::*[contains(concat(' ',normalize-space(@class),' '),' fader-box ')][1]").dispatch_event("dblclick")
+        page.wait_for_function(f"()=>({gain_events})().length===2")
+        reset_req=page.evaluate(gain_events)[-1]["payload"]
+        assert reset_req["channelId"]=="1" and reset_req["baseRevision"]=="1"
+        assert reset_req["payload"]=={"edgeId":"1001","gainLinear":1}
+        assert not page.evaluate("()=>window.__events.some(e=>e.name==='arMixConsoleIntent'||e.payload?.operation==='SET_FADER'||e.payload?.action==='monitor')")
+        emit(page,"arMixLogicalAck",{"requestId":reset_req["requestId"],"status":"REJECTED","errorCode":"FIXTURE"})
+        emit(page,"arMixConsoleSnapshot",staged)
+        sof.click()
         assert page.evaluate("""([src,edge,primary])=>{
           const hooks=window.__ARMIX_NATIVE_M2__;
           return hooks.canWireTap(edge,src) && !hooks.canWireTap(primary,src);
@@ -367,10 +442,10 @@ def main():
         # authorize editing an outdated disk mirror or report PCM admitted.
         page=browser.new_page(viewport={"width":1366,"height":768})
         page.on("pageerror",lambda error:errors.append(str(error)))
-        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+        page.add_init_script(NATIVE_EVENTS + """window.__events=[];
           window.__JUCE__={backend:{
              emitEvent(name,payload){window.__events.push({name,payload});},
-             addEventListener(name,callback){window.__nativeListeners.set(name,callback);}
+             ...window.__nativeListenerMethods
           }};""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
@@ -382,6 +457,45 @@ def main():
         assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")!="logical-editable"
         assert page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixLogicalIntent').length""")==0
+        # Power on a retained empty rack must capture the authoritative
+        # workspace, not show an I/O repair modal or send a PCM command.
+        rack=page.locator("#tracks .strip").first
+        rack.locator('[data-action="fxOn"]').click()
+        page.wait_for_function("""()=>window.__events.some(e=>
+            e.payload?.action==='retainedFxOfflineOpen')""")
+        request=page.evaluate("""()=>window.__events.find(e=>
+            e.payload?.action==='retainedFxOfflineOpen').payload""")
+        assert request["channelId"]=="1" and request["slot"]==0
+        assert request["deviceEpoch"]=="69" and request["graphRevision"]=="2"
+        assert request["instanceId"]==""
+        assert not page.evaluate("""()=>window.__events.some(e=>
+            e.name==='arMixLogicalIntent' || e.name==='arMixConsoleIntent')""")
+        # Native capture ACK alone cannot make a stale saved mirror editable.
+        emit(page,"arMixRetainedFxOfflineAck",{"requestId":request["requestId"],"ok":True})
+        assert page.evaluate("""()=>window.__events.filter(e=>
+            e.name==='arMixLogicalIntent').length""")==0
+        captured=retained_snapshot(stale_scalar=True)
+        offline=captured["logicalMixer"]
+        offline.update(retainedOffline=True,retainedDeviceEpoch="69",
+            retainedGraphRevision="2",retainedCaptureDeviceEpoch="69",
+            retainedCaptureGraphRevision="2")
+        offline["graph"]["channels"][0]["controls"]["faderDb"]=-7
+        emit(page,"arMixConsoleSnapshot",captured)
+        page.wait_for_function("""()=>window.__events.some(e=>
+            e.name==='arMixLogicalIntent'&&e.payload?.operation==='SET_FX_RACK_BYPASS')""")
+        intent=page.evaluate("""()=>window.__events.filter(e=>
+            e.name==='arMixLogicalIntent').at(-1).payload""")
+        assert intent["channelId"]=="1" and intent["payload"]=={"enabled":True}
+        assert not page.evaluate("""()=>window.__events.some(e=>e.name==='arMixConsoleIntent')""")
+        emit(page,"arMixLogicalAck",{"requestId":intent["requestId"],"status":"ACCEPTED",
+            "errorCode":"NONE","revision":"3","physicalOutputAdmitted":False})
+        applied=copy.deepcopy(captured)
+        applied["logicalMixer"]["revision"]="3"
+        applied["logicalMixer"]["graph"]["revision"]="3"
+        applied["logicalMixer"]["graph"]["rosterRevision"]="3"
+        applied["logicalMixer"]["graph"]["channels"][0]["fxRackBypassed"]=True
+        emit(page,"arMixConsoleSnapshot",applied)
+        page.wait_for_function("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks[0].fxOn===false""")
         assert not errors,errors
         browser.close()
     print("PASS native compiled GUI: offline ACK, workspace replacement, WIRE SOURCE ONLY and retained PCM isolation")

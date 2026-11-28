@@ -1,0 +1,43 @@
+name: P0 Windows-only FIR exact candidate qualification
+on:
+  push:
+    branches:
+      - perf/immersib-p0-active-fir-20261124
+    paths:
+      - tools/immersib_p0_windows_fir_gate.py
+      - .github/workflows/immersib-p0-windows-fir.yml
+permissions:
+  contents: read
+concurrency:
+  group: p0-windows-fir-exact
+  cancel-in-progress: true
+jobs:
+  gcc-fallback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify unchanged legacy and full product fallback under both FP policies
+        run: python tools/immersib_p0_windows_fir_gate.py
+  msvc-active:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify Windows-only candidate PCM and paired active benchmark
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdline = 'call "' + $vcvars + '" >nul && python tools/immersib_p0_windows_fir_gate.py --msvc'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'P0_WINDOWS_FIR_GATE_FAILED' }

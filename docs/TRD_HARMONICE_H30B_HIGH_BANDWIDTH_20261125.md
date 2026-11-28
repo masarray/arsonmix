@@ -1,0 +1,9 @@
+# H30B / H31 — HIGH fractional bandwidth A/B and field-level stress
+Baseline 5ac7d559 exact qualification 45521095707 PASS, artifact 14981160009. 10 cases x 5 variants. Native hostile contraction pool blocks 10 -> 0 and admissions 301 -> 311. Aggregate baseline loss 208/HIGH40, H28_local 204/HIGH38, no sample overload or isolated deadline misses. No evidence that H28 is audibly superior. Dynamic derivatives were low-level (mix peaks 0.047/0.136).
+
+## H30B
+Existing H22 four-point fractional interpolation improved analytic interpolation error; it was not auditioned across the full real-source matrix. Add a HIGH-only cubic candidate using the existing proven full-grain support and cubic history bounds. Candidate is independent of H28 and H26/H27; defaults OFF; no new persisted setting, no lead, Duo, Doubler or other voice modification, no latency or buffer change. Verify candidate trace/partition/dry parity and exact per-role admission and seam-count equality with baseline. This tests interpolation separately from scheduling; not proof of formant preservation or absence of crackle. Retain all five existing variants and add sixth. 
+Add two full-duration peak-calibrated mono PCM16 derivatives from pinned f1/m2 (0.75 source sample peak, not loudness); preserve original source and provenance. 12 cases x 6 variants planned. Keep per-ear callback evidence and export no audio. Sample overload != true peak; use future hardware/BS.1770 evidence separately. No normalization of raw output.
+References: https://speechprocessingbook.aalto.fi/representations/pitch-synchoronous-overlap-add-psola/ ; https://www.itu.int/rec/R-REC-BS.1770-5-202311-I .
+## H31
+No release until exact-source Windows FAT plus physical ASIO, blind audition and field gain/route tests. Previous f6245ad Windows FAT remains running; cannot certify latest source with it. No duplicate dispatch. No candidate promotion or public merge without acceptance.

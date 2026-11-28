@@ -9,6 +9,7 @@ import tempfile
 import sys
 import copy
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import snapshot, emit, SOURCE, RECEIVER
 from approved_operator_ux_chromium_fat import IDENTITY_GEOMETRY, assert_still
 
@@ -26,11 +27,11 @@ def main():
         def open_page():
             page=context.new_page()
             page.on("pageerror",lambda e:errors.append(str(e)))
-            page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];window.__nativeEvents=[];
+            page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];window.__nativeEvents=[];
               window.__JUCE__={backend:{
                 emitEvent(name,payload){window.__nativeEvents.push({name,payload});
                   if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);},
-                addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+                ...window.__nativeListenerMethods}};""")
             page.goto((out/"index.html").as_uri())
             page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
             return page
@@ -43,11 +44,21 @@ def main():
         assert ready and ready["viewportWidth"]==1366 and ready["viewportHeight"]==768
         # No unimplemented native functionality advertised as a working action.
         for id in ("saveScene","recallScene","copy","paste","group","ungroup",
-                   "preview","clearCue","reset","sofToggle","sofTarget"):
+                   "preview","clearCue","reset","sofTarget"):
             el=page.locator("#"+id)
             assert el.is_hidden() and el.is_disabled(),id
+        # Operator requested a discoverable SOF header. Before the native
+        # SEND capability set is admitted, it must remain inert, not hidden.
+        sof=page.locator("#sofToggle")
+        assert sof.is_visible() and sof.is_disabled()
+        sof.evaluate("e=>e.click()")
+        assert sof.get_attribute("aria-pressed")=="false"
+        assert page.evaluate("()=>window.__nativeIntents.length")==0
         assert page.locator("#pluginsButton").is_visible()
         emit(page,"arMixConsoleSnapshot",state)
+        # This identity fixture deliberately lacks SET_SEND_ENABLED.
+        # A partial native capability set must not activate SOF.
+        assert sof.is_visible() and sof.is_disabled()
         strip=page.locator('#tracks .strip[data-id="1"]')
         strip.wait_for(state="visible")
         # Native DAW convention: one click selects, double-click opens editor.

@@ -9,6 +9,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import snapshot, emit, SOURCE
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -26,10 +27,10 @@ def main():
         page=browser.new_page(viewport={"width":1366,"height":768})
         errors=[]
         page.on("pageerror",lambda e:errors.append(str(e)))
-        page.add_init_script("""window.__nativeListeners=new Map();window.__events=[];
+        page.add_init_script(NATIVE_EVENTS + """window.__events=[];
             window.__JUCE__={backend:{
               emitEvent(name,payload){window.__events.push({name,payload});},
-              addEventListener(name,handler){window.__nativeListeners.set(name,handler);}
+              ...window.__nativeListenerMethods
             }};""")
         page.goto((out/"index.html").as_uri())
         page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")

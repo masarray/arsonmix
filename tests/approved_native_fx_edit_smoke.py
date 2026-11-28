@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 from playwright.sync_api import sync_playwright
+from native_event_fixture import NATIVE_EVENTS
 from approved_native_wire_gain_smoke import snapshot,emit,ack,SOURCE,RECEIVER
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -17,18 +18,66 @@ def main():
         for width,height in [(1366,768),(1680,900),(1920,1080)]:
             page=browser.new_page(viewport={'width':width,'height':height});errors=[]
             page.on('pageerror',lambda e:errors.append(str(e)))
-            page.add_init_script("""window.__nativeListeners=new Map();window.__nativeIntents=[];window.__actions=[];
+            page.add_init_script(NATIVE_EVENTS + """window.__nativeIntents=[];window.__actions=[];
               window.__JUCE__={backend:{emitEvent(name,payload){
                 if(name==='arMixConsoleIntent')window.__nativeIntents.push(payload);
                 if(name==='arMixAction')window.__actions.push(payload);},
-                addEventListener(name,callback){window.__nativeListeners.set(name,callback);}}};""")
+                ...window.__nativeListenerMethods}};""")
             page.goto((out/'index.html').as_uri());page.wait_for_function('()=>window.__ARMIX_NATIVE_M2__?.enabled')
-            state=snapshot();state['graph']['capabilities']['supportedOps']+=['MOVE_INSERT','REMOVE_INSERT']
+            state=snapshot();state['graph']['capabilities']['supportedOps']+=['LOAD_INSERT','MOVE_INSERT','REMOVE_INSERT']
             state['graph']['channels'][0]['inserts']=[
                 {'id':'actual-a','catalogId':'a','name':'ArSonEQ','bypassed':False},
                 {'id':'actual-b','catalogId':'b','name':'ArSonKuPik','bypassed':True}]
+            state["globalFxBypassed"]=False
+            state["secondaryMainReady"]=True
+            for channel in state["graph"]["channels"]:
+                channel["fxRackBypassed"]=False
+            state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
             emit(page,'arMixConsoleSnapshot',state)
             def row(channel,slot):return page.locator(f'#tracks .strip[data-id="{channel}"] .fxslot-row[data-slot="{slot}"]')
+            # Real right-click menu -> correlated request -> native receipt.
+            # The OS dialog/engine transaction is not emulated as a success.
+            def rack_request(channel,action,operation):
+                rack=page.locator(f'#tracks .strip[data-id="{channel}"] .fx-section')
+                rack.locator(".fxslot-row.is-empty").first.click(button="right")
+                page.locator("#armixContext [data-menu='"+action+"']").click()
+                intent=page.evaluate("()=>window.__actions.at(-1)")
+                assert intent["action"]=="fxRackFile" and intent["operation"]==operation,intent
+                assert intent["channelId"]==(SOURCE if channel==1 else RECEIVER),intent
+                assert intent["requestId"].startswith("fx-rack-file-")
+                assert "Effect settings updated" not in page.locator(".status-bar").inner_text()
+                return intent
+            def rack_result(intent,phase,message):
+                emit(page,"arMixFxRackFileResult",dict(requestId=intent["requestId"],
+                    operation=intent["operation"],channelId=intent["channelId"],phase=phase,message=message))
+            saved=rack_request(1,"rack-save","SAVE")
+            rack_result(saved,"CHOOSER","FX rack file: Choose a .arfx file")
+            rack_result(saved,"CANCELLED","FX rack file: Cancelled; rack unchanged")
+            opened=rack_request(2,"rack-open","OPEN")
+            rack_result(opened,"CHOOSER","FX rack file: Choose a .arfx file")
+            rack_result(saved,"COMPLETED","FX rack file: Stale receipt")
+            rack_result(opened,"FAILED","FX rack file: Registered VST3 unavailable: Test; rack unchanged")
+            assert page.locator("#armixNativeToast").inner_text()=="FX rack file: Registered VST3 unavailable: Test; rack unchanged"
+            assert row(1,0).locator(".fx-pick").inner_text().strip()=="ArSonEQ"
+            saved=rack_request(1,"rack-save","SAVE")
+            # Drop the terminal native event as if the mixer WebView were
+            # hidden during picker completion. Readback is correlated and
+            # must never resend a mutating SAVE/OPEN request.
+            rack_result(saved,"CHOOSER","FX rack file: Choose a .arfx file")
+            page.wait_for_function("""id=>window.__actions.some(a=>a.action==="fxRackFileReadback"&&a.requestId===id)""",arg=saved["requestId"])
+            readback=page.evaluate("""id=>window.__actions.find(a=>a.action==="fxRackFileReadback"&&a.requestId===id)""",saved["requestId"])
+            assert readback["operation"]=="SAVE" and readback["channelId"]==saved["channelId"]
+            assert page.evaluate("""id=>window.__actions.filter(a=>a.action==="fxRackFile"&&a.requestId===id).length""",saved["requestId"])==1
+            rack_result(saved,"COMPLETED","FX rack file: Saved Vocal-Rack.arfx")
+            assert page.locator("#armixNativeToast").inner_text()=="FX rack file: Saved Vocal-Rack.arfx"
+            opened=rack_request(2,"rack-open","OPEN")
+            rack_result(saved,"FAILED","FX rack file: Stale receipt")
+            rack_result(opened,"UNKNOWN","FX rack file: Result unavailable; verify the file and rack before retrying")
+            assert "Result unavailable" in page.locator("#armixNativeToast").inner_text()
+            opened=rack_request(2,"rack-open","OPEN")
+            rack_result(opened,"CANCELLED","FX rack file: Cancelled; rack unchanged")
+            assert row(1,0).locator(".fx-pick").inner_text().strip()=="ArSonEQ"
+            page.locator("#armixNativeToast").evaluate("(el)=>el.hidden=true")
             def move(source,slot,destination,target_slot,after=False):
                 surface=row(source,slot).locator('.fx-pick').bounding_box();target=row(destination,target_slot).bounding_box()
                 assert surface and target
@@ -48,6 +97,73 @@ def main():
                 state['mixerSession'].update(routeRevision=n,rosterRevision=n,channels=copy.deepcopy(state['graph']['channels']))
                 ack(page,state,request);emit(page,'arMixConsoleSnapshot',state)
                 page.wait_for_function('()=>!window.__ARMIX_NATIVE_M2__.state().pending')
+            # A failed insert used to trigger a strip rebuild and another
+            # subscribe each time the same snapshot arrived from native.
+            emit(page,"arMixCatalog",{"items":[],"builtIns":[
+                {"id":"armix.builtin.auto-ducker.v1","name":"Auto Ducker","category":"Dynamics"}
+            ]})
+            row(1,2).locator(".fx-pick").click()
+            page.get_by_role("button",name="Auto Ducker",exact=False).click()
+            insertion=page.evaluate("()=>window.__nativeIntents.at(-1)")
+            assert insertion["operation"]=="LOAD_INSERT" and insertion["payload"]["slot"]==2
+            old_row=row(1,0).element_handle()
+            emit(page,"arMixConsoleAck",{"requestId":insertion["requestId"],"status":"REJECTED",
+                "errorCode":"AUTO_DUCKER_HOST_UNAVAILABLE","deviceEpoch":state["device"]["epoch"],
+                "graphRevision":state["graph"]["revision"],"rosterRevision":state["graph"]["rosterRevision"]})
+            for _ in range(3):
+                emit(page,"arMixConsoleSnapshot",state)
+            assert old_row.evaluate("(row)=>row.isConnected"),"rejection remounted the FX rack"
+            assert "could not be added" in page.locator("#armixNativeToast").inner_text()
+            assert page.locator("#fastClose").is_visible()
+            page.locator("#fastClose").click()
+            page.locator("#armixNativeToast").evaluate("(el)=>el.hidden=true")
+            assert row(1,2).locator(".fx-pick.empty").is_visible()
+
+            def click_power(slot):
+                row(1,slot).locator('[data-action="slotPower"]').click()
+                action=page.evaluate("()=>window.__actions.at(-1)")
+                assert action["action"]=="routingNativeFxInsertBypass"
+                return action
+
+            def send_power_ack(action):
+                emit(page,"arMixNativeFxPowerAck",{"requestId":action["requestId"],
+                    "channelId":action["channelId"],"ok":True,"bypassed":action["value"]})
+
+            def publish_power(slot,value):
+                state["graph"]["channels"][0]["inserts"][slot]["bypassed"]=value
+                state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
+                emit(page,"arMixConsoleSnapshot",state)
+
+            # Native title stripping must not fight stable FX rack repaint.
+            page.evaluate("""()=>{window.__rackPowerMutations=[];
+              const rack=document.querySelector('#tracks .strip[data-id="1"] .fx-section');
+              window.__rackObserver=new MutationObserver(rs=>window.__rackPowerMutations.push(...rs.map(r=>r.attributeName)));
+              window.__rackObserver.observe(rack,{subtree:true,attributes:true,
+                attributeFilter:['title','aria-pressed','aria-label','aria-description','data-fx-chain-enabled','data-global-fx-enabled','data-fx-slot-enabled','data-fx-effective','class']});}""")
+            for _ in range(3):
+                emit(page,"arMixConsoleSnapshot",state)
+            assert page.evaluate("()=>window.__rackPowerMutations")==[]
+            assert row(1,0).locator('[data-action="slotPower"]').get_attribute("title") is None
+            # A different slot remains editable before the first slot is
+            # confirmed. Deliver first slot snapshot before its ACK.
+            power=click_power(0)
+            other=click_power(1)
+            assert power["insertId"]=="actual-a" and power["value"] is True
+            assert other["insertId"]=="actual-b" and other["value"] is False
+            publish_power(0,True)
+            send_power_ack(power)
+            emit(page,"arMixConsoleSnapshot",state)
+            send_power_ack(other)
+            publish_power(1,False)
+            retry=click_power(0)
+            assert retry["requestId"]!=power["requestId"] and retry["value"] is False
+            send_power_ack(retry)
+            publish_power(0,False)
+            publish_power(1,True)
+            assert row(1,0).get_attribute("data-fx-slot-enabled")=="true"
+            assert row(1,1).get_attribute("data-fx-slot-enabled")=="false"
+            page.evaluate("()=>window.__nativeIntents.length=0")
+
             # Escape cancels presentation without committing an audio edit.
             assert page.locator('.fx-grip').count()==0,'retired handle must never appear'
             surface=row(1,0).locator('.fx-pick').bounding_box();assert surface
@@ -67,7 +183,8 @@ def main():
                 assert page.evaluate('()=>window.__nativeIntents.length')==0,action
             # A short click on the name still opens the real native editor.
             row(1,0).locator('.fx-pick').click()
-            assert page.evaluate("()=>window.__actions.at(-1)?.action")=="routingFxEditor"
+            first_editor=page.evaluate("()=>window.__actions.at(-1)")
+            assert first_editor['action']=="routingFxEditor" and first_editor['requestId']
             assert page.evaluate('()=>window.__nativeIntents.length')==0
             # Drag lower within the same rack: exact plugin follows pointer.
             request=move(1,0,1,1,True)
@@ -75,6 +192,11 @@ def main():
             assert row(1,0).get_attribute('data-insert-id')=='actual-a','optimistic reorder'
             state['graph']['channels'][0]['inserts'].reverse();accept(request)
             assert row(1,0).get_attribute('data-insert-id')=='actual-b'
+            # Deliberate MOVE retires the pending slot lease; even a late
+            # rejected ACK cannot show a toast for the already-closed editor.
+            emit(page,'arMixRoutingFxEditorAck',{'ok':False,'requestId':first_editor['requestId'],
+                'instanceId':first_editor['instanceId'],'error':'obsolete editor request'})
+            assert page.locator('#armixNativeToast:visible').count()==0
             # Cross-channel MOVE, not a new plugin load or name-only copy.
             request=move(1,1,2,0)
             assert request['operation']=='MOVE_INSERT' and request['payload']['toChannelId']==RECEIVER
@@ -84,6 +206,7 @@ def main():
             row(2,0).locator('[data-action="openPlugin"]').click()
             editor=page.evaluate('()=>window.__actions.at(-1)')
             assert editor['action']=='routingFxEditor' and editor['channelId']==RECEIVER and editor['instanceId']=='actual-a'
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'requestId':editor['requestId'],'instanceId':'actual-a'})
             row(1,0).locator('[data-action="removeFx"]').click()
             request=page.evaluate('()=>window.__nativeIntents.at(-1)')
             assert request['operation']=='REMOVE_INSERT' and request['payload']['instanceId']=='actual-b'
@@ -110,17 +233,26 @@ def main():
             assert opened['instanceId']=='concert-accepted',opened
             assert str(opened['deviceEpoch'])==str(state['device']['epoch']),opened
             assert str(opened['revision'])==str(state['graph']['revision']),opened
-            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'instanceId':'concert-accepted'})
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'requestId':opened['requestId'],'instanceId':'concert-accepted'})
             row(2,1).locator('[data-action="openPlugin"]').click()
             vst=page.evaluate('()=>window.__actions.at(-1)')
             assert vst['action']=='routingFxEditor' and vst['instanceId']=='dearvr-accepted',vst
-            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'instanceId':'dearvr-accepted'})
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'requestId':vst['requestId'],'instanceId':'dearvr-accepted'})
             row(2,0).locator('[data-action="openPlugin"]').click()
             reopened=page.evaluate('()=>window.__actions.at(-1)')
             assert reopened['action']=='routingFxEditor' and reopened['instanceId']=='concert-accepted',reopened
             assert reopened['channelId']==RECEIVER,reopened
+            emit(page,'arMixRoutingFxEditorAck',{'ok':True,'requestId':reopened['requestId'],'instanceId':'concert-accepted'})
             assert page.locator('#armixNativeToast:visible').count()==0,(
                 'Successful native editor open must not raise an FX settings toast')
+            # A genuine correlated failure is still visible. Do not silence
+            # all editor errors merely to make the success case pass.
+            row(2,1).locator('[data-action="openPlugin"]').click()
+            failed=page.evaluate('()=>window.__actions.at(-1)')
+            emit(page,'arMixRoutingFxEditorAck',{'ok':False,'requestId':failed['requestId'],
+                'instanceId':failed['instanceId'],'error':'fixture native host rejected'})
+            assert page.locator('#armixNativeToast:visible').count()==1
+            assert 'FX editor unavailable' in page.locator('#armixNativeToast').inner_text()
             assert not errors,errors
             page.screenshot(path=f'native-fx-edit-{width}.png');page.close()
         browser.close()

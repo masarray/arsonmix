@@ -102,6 +102,8 @@ public:
         result->setProperty ("done", completed_.load (std::memory_order_relaxed));
         result->setProperty ("total", total);
         result->setProperty ("found", found_.load (std::memory_order_relaxed));
+        result->setProperty ("reported", scanReported_);
+        result->setProperty ("issues", scanIssues_);
         {
             const juce::ScopedLock lock (progressLock_);
             result->setProperty ("current", current_);
@@ -110,17 +112,42 @@ public:
     }
     Callback onChanged;
 
-    void addDirectory (const juce::File& folder)
+    juce::String addDirectory (const juce::File& folder)
     {
-        if (! folder.isDirectory() || busy())
-            return;
-        const auto p = folder.getFullPathName();
-        if (! customFolders_.contains (p))
+        if (busy()) return "Wait for the current VST3 scan to finish.";
+        if (! folder.isDirectory() || folder.hasFileExtension (".vst3"))
+            return "Choose a folder containing VST3 plug-ins.";
+        const auto path = folder.getFullPathName();
+        if (! defaultFolders_.contains (path, !juce::File::areFileNamesCaseSensitive())
+            && ! customFolders_.contains (path, !juce::File::areFileNamesCaseSensitive()))
         {
-            customFolders_.add (p);
-            save();
+            customFolders_.add (path);
+            if (! save())
+            {
+                customFolders_.remove (customFolders_.size() - 1);
+                return "Could not save the scan folder settings.";
+            }
         }
-        scan ({ p });
+        scan ({ path });
+        return {};
+    }
+
+    juce::String removeDirectory (const juce::String& path)
+    {
+        if (busy()) return "Wait for the current VST3 scan to finish.";
+        const auto index = customFolders_.indexOf (path);
+        if (index < 0 || defaultFolders_.contains (path, !juce::File::areFileNamesCaseSensitive()))
+            return "Only a registered custom scan folder can be removed.";
+        customFolders_.remove (index);
+        if (! save())
+        {
+            customFolders_.insert (index, path);
+            return "Could not save the scan folder settings.";
+        }
+        // Removal changes future scan scope. Existing rack, catalog and
+        // favorite identities remain valid while the actual modules exist.
+        if (onChanged) onChanged();
+        return {};
     }
 
     void scanFactoryIfPresent()
@@ -133,13 +160,9 @@ public:
 
     void scanDefaults()
     {
-        juce::VST3PluginFormat format;
-        juce::StringArray paths;
-        const auto defaults = format.getDefaultLocationsToSearch();
-        for (int i = 0; i < defaults.getNumPaths(); ++i)
-            paths.addIfNotAlreadyThere (defaults[i].getFullPathName());
-        for (const auto& p : customFolders_)
-            paths.addIfNotAlreadyThere (p);
+        auto paths = defaultFolders_;
+        for (const auto& path : customFolders_)
+            paths.addIfNotAlreadyThere (path, !juce::File::areFileNamesCaseSensitive());
         scan (paths);
     }
 
@@ -167,13 +190,21 @@ public:
             if (entry.key() == id)
             {
                 if (entry.favorite == favorite) return true;
+                const auto previousFavorite = entry.favorite;
+                const auto previousFactoryFavorites = factoryFavorites_;
                 entry.favorite = favorite;
                 if (entry.factory)
                 {
                     if (favorite) factoryFavorites_.addIfNotAlreadyThere (entry.factoryProductId);
                     else factoryFavorites_.removeString (entry.factoryProductId);
                 }
-                save();
+                if (! save())
+                {
+                    entry.favorite = previousFavorite;
+                    factoryFavorites_ = previousFactoryFavorites;
+                    if (onChanged) onChanged(); // publish authoritative rollback
+                    return false;
+                }
                 if (onChanged) onChanged();
                 return true;
             }
@@ -195,6 +226,20 @@ public:
         for (const auto& entry : entries_)
             list.add (entry.toVar());
         o->setProperty ("items", juce::var (list));
+        juce::Array<juce::var> folders;
+        const auto addFolder = [&folders] (const juce::String& path, bool custom)
+        {
+            auto row = std::make_unique<juce::DynamicObject>();
+            row->setProperty ("path", path);
+            row->setProperty ("custom", custom);
+            row->setProperty ("available", juce::File (path).isDirectory());
+            folders.add (juce::var (row.release()));
+        };
+        for (const auto& path : defaultFolders_) addFolder (path, false);
+        for (const auto& path : customFolders_)
+            if (! defaultFolders_.contains (path, !juce::File::areFileNamesCaseSensitive()))
+                addFolder (path, true);
+        o->setProperty ("scanPaths", juce::var (folders));
         o->setProperty ("scanning", busy());
         o->setProperty ("message", scanMessage_);
         o->setProperty ("count", static_cast<int> (entries_.size()));
@@ -384,46 +429,69 @@ private:
            #if JUCE_WINDOWS
             if (SUCCEEDED (hr)) CoUninitialize();
            #endif
-            // Completion is delivered by a SafePointer owned by the UI host,
-            // so destruction cannot dereference the window after shutdown.
+            // The message can arrive before JUCE retires the thread handle.
+            // Keep the scan busy until the worker is actually finished.
             auto lifetime = owner_.lifetime_;
             const bool wasFactoryScan = factoryOnly_;
             juce::MessageManager::callAsync ([&owner = owner_, lifetime, results = std::move (found),
                                               importErrors, wasFactoryScan]() mutable
             {
-                if (! lifetime->load()) return;
-                if (wasFactoryScan)
-                    owner.entries_.erase (std::remove_if (owner.entries_.begin(), owner.entries_.end(),
-                        [] (const CatalogEntry& e) { return e.factory; }), owner.entries_.end());
-                for (auto e : results)
-                {
-                    const auto iter = std::find_if (owner.entries_.begin(), owner.entries_.end(),
-                        [&e] (const CatalogEntry& old) { return old.key() == e.key(); });
-                    if (e.factory) e.favorite = owner.factoryFavorites_.contains (e.factoryProductId);
-                    if (iter == owner.entries_.end())
-                        owner.entries_.push_back (e);
-                    else
-                    {
-                        const bool favorite = iter->favorite;
-                        *iter = e;
-                        iter->favorite = favorite; // Rescan must NEVER erase user favorites.
-                    }
-                }
-                std::sort (owner.entries_.begin(), owner.entries_.end(),
-                    [] (const CatalogEntry& a, const CatalogEntry& b)
-                    { return a.name.compareIgnoreCase (b.name) < 0; });
-                owner.scanMessage_ = importErrors.isNotEmpty()
-                    ? (wasFactoryScan ? importErrors : "Import incomplete: " + importErrors)
-                    : (results.empty()
-                        ? "No compatible VST3 effects found; check plugin architecture and vendor dependencies."
-                        : "Ready: " + juce::String (results.size()) + " VST3 variants inspected");
-                owner.phase_.store (0, std::memory_order_release);
-                owner.scanning_.store (false);
-                owner.save();
-                if (owner.onChanged) owner.onChanged();
+                if (lifetime->load()) owner.completeScanOnControl (std::move (results), importErrors, wasFactoryScan);
             });
         }
     };
+
+    void completeScanOnControl (std::vector<CatalogEntry> results, juce::String importErrors,
+                                bool wasFactoryScan)
+    {
+        // Same nonblocking CONTROL retirement rule as NativeMixerSessionSaveWorker.
+        // No wait/join on the message thread, no reuse of requested_ while run()
+        // is still active, no idle notification until a rescan can really start.
+        if (worker_.isThreadRunning())
+        {
+            juce::Timer::callAfterDelay (1, [this, lifetime = lifetime_, results = std::move (results),
+                                            importErrors, wasFactoryScan]() mutable
+            {
+                if (lifetime->load()) completeScanOnControl (std::move (results), importErrors, wasFactoryScan);
+            });
+            return;
+        }
+        if (wasFactoryScan)
+            entries_.erase (std::remove_if (entries_.begin(), entries_.end(),
+                [] (const CatalogEntry& e) { return e.factory; }), entries_.end());
+        for (auto e : results)
+        {
+            const auto iter = std::find_if (entries_.begin(), entries_.end(),
+                [&e] (const CatalogEntry& old) { return old.key() == e.key(); });
+            if (e.factory) e.favorite = factoryFavorites_.contains (e.factoryProductId);
+            if (iter == entries_.end())
+                entries_.push_back (e);
+            else
+            {
+                const bool favorite = iter->favorite;
+                *iter = e;
+                iter->favorite = favorite; // Rescan must NEVER erase user favorites.
+            }
+        }
+        std::sort (entries_.begin(), entries_.end(),
+            [] (const CatalogEntry& a, const CatalogEntry& b)
+            { return a.name.compareIgnoreCase (b.name) < 0; });
+        scanMessage_ = importErrors.isNotEmpty()
+            ? (wasFactoryScan ? importErrors : "Import incomplete: " + importErrors)
+            : (results.empty()
+                ? "No compatible VST3 effects found; check plugin architecture and vendor dependencies."
+                : "Ready: " + juce::String (results.size()) + " VST3 variants inspected");
+        scanReported_ = ! wasFactoryScan;
+        scanIssues_ = importErrors.isNotEmpty();
+        if (! save())
+        {
+            scanIssues_ = true;
+            scanMessage_ << " | Could not save the VST3 catalog.";
+        }
+        phase_.store (0, std::memory_order_release);
+        scanning_.store (false);
+        if (onChanged) onChanged();
+    }
 
     void scan (const juce::StringArray& paths, bool copyToVault = false, bool factoryOnly = false)
     {
@@ -434,18 +502,31 @@ private:
         phase_.store (1);
         { const juce::ScopedLock lock (progressLock_); current_.clear(); }
         scanning_.store (true);
+        scanReported_ = ! factoryOnly;
+        scanIssues_ = false;
         scanMessage_ = factoryOnly ? "Verifying bundled Factory VST3..." :
             (copyToVault ? "Importing selected VST3 into Studio (only chosen module)..."
                          : "Scanning VST3 metadata (background)...");
-        if (onChanged) onChanged();
         worker_.requested_ = paths;
         worker_.copyToVault_ = copyToVault;
         worker_.factoryOnly_ = factoryOnly;
-        worker_.startThread();
+        if (! worker_.startThread())
+        {
+            scanMessage_ = "Could not start the VST3 scan. Retry.";
+            scanIssues_ = true;
+            scanReported_ = true;
+            phase_.store (0, std::memory_order_release);
+            scanning_.store (false);
+        }
+        if (onChanged) onChanged();
     }
 
     void load()
     {
+        juce::VST3PluginFormat format;
+        const auto defaults = format.getDefaultLocationsToSearch();
+        for (int i = 0; i < defaults.getNumPaths(); ++i)
+            defaultFolders_.addIfNotAlreadyThere (defaults[i].getFullPathName());
         auto json = juce::JSON::parse (dataFolder_.getChildFile ("plugin-catalog.json"));
         const auto storedItems = json.getProperty ("items", {});
         if (auto* items = storedItems.getArray())
@@ -464,7 +545,11 @@ private:
         const auto storedFolders = json.getProperty ("folders", {});
         if (auto* folders = storedFolders.getArray())
             for (const auto& folder : *folders)
-                customFolders_.addIfNotAlreadyThere (folder.toString());
+            {
+                const auto path = folder.toString();
+                if (juce::File::isAbsolutePath (path))
+                    customFolders_.addIfNotAlreadyThere (path, !juce::File::areFileNamesCaseSensitive());
+            }
         const auto storedFactoryFavorites = json.getProperty ("factoryFavorites", {});
         if (auto* favorites = storedFactoryFavorites.getArray())
             for (const auto& id : *favorites)
@@ -472,7 +557,7 @@ private:
         scanMessage_ = "Ready - " + juce::String (entries_.size()) + " cached VST3 effects";
     }
 
-    void save()
+    bool save()
     {
         auto o = std::make_unique<juce::DynamicObject>();
         juce::Array<juce::var> list, verifiedFactory, folders;
@@ -497,18 +582,19 @@ private:
         juce::Array<juce::var> factoryFav;
         for (const auto& id : factoryFavorites_) factoryFav.add (id);
         o->setProperty ("factoryFavorites", juce::var (factoryFav));
-        dataFolder_.getChildFile ("plugin-catalog.json")
+        return dataFolder_.getChildFile ("plugin-catalog.json")
             .replaceWithText (juce::JSON::toString (juce::var (o.release()), true));
     }
 
     juce::File dataFolder_;
     std::vector<CatalogEntry> entries_;
-    juce::StringArray customFolders_, factoryFavorites_;
+    juce::StringArray defaultFolders_, customFolders_, factoryFavorites_;
     std::atomic<bool> alive_ { true }, scanning_ { false };
     std::shared_ptr<std::atomic<bool>> lifetime_ = std::make_shared<std::atomic<bool>> (true);
     mutable juce::CriticalSection progressLock_;
     juce::String current_;
     std::atomic<int> phase_ { 0 }, total_ { 0 }, completed_ { 0 }, found_ { 0 };
     juce::String scanMessage_ = "Ready";
+    bool scanReported_ = false, scanIssues_ = false;
     Scanner worker_;
 };

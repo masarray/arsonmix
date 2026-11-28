@@ -10,6 +10,9 @@ on:
       - 'engine/builtin_fx/ChannelHarmonyProcessor.h'
       - 'tests/harmony*.cpp'
       - 'tools/harmony_offline_ab.cpp'
+      - 'scripts/harmony_vocalset_qualification.py'
+      - 'scripts/vocal_harmony_ci_scope.mjs'
+      - '.github/workflows/harmony-fast-dsp.yml'
       - 'site/preview-v2/assets/mixer-native-harmony.js'
       - 'tests/native_harmony_assembly_test.py'
       - 'tests/approved_native_harmony_smoke.py'
@@ -90,12 +93,24 @@ jobs:
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra tools/harmony_offline_ab.cpp -o /tmp/arson-harmony-ab
           /tmp/arson-harmony-ab --self-test
+      - name: Pinned real-singer qualification (VocalSet sustained vowels)
+        run: |
+          python3 scripts/harmony_vocalset_qualification.py --self-test
+          node --input-type=module -e 'import assert from "node:assert/strict"; import {classifyVocalHarmonyChanges as c} from "./scripts/vocal_harmony_ci_scope.mjs"; for(const p of ["scripts/harmony_vocalset_qualification.py","scripts/vocal_harmony_ci_scope.mjs",".github/workflows/harmony-fast-dsp.yml"]) assert.deepEqual(c([p]),{dsp:true,ui:true}); assert.deepEqual(c(["CMakeLists.txt","src/Main.cpp"]),{dsp:false,ui:false});'
+          python3 scripts/harmony_vocalset_qualification.py /tmp/arson-harmony-ab "$RUNNER_TEMP/harmony-vocalset" "$(git rev-parse HEAD)"
+      - name: Publish exact-source qualification evidence (no PCM)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: harmonice-qualification-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/harmony-vocalset/evidence/
+          if-no-files-found: error
+          retention-days: 30
   harmony-ui:
-    name: Vocal Harmony editor syntax and approved UI contract (no Chromium)
+    name: Vocal Harmony editor syntax and approved UI contract and Chromium
     needs: scope
     if: ${{ needs.scope.outputs.ui == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -104,3 +119,11 @@ jobs:
         run: |
           node --check site/preview-v2/assets/mixer-native-harmony.js
           python tests/native_harmony_assembly_test.py
+      - name: Install Chromium for exact-head preset and bypass geometry checks
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+      - name: Native assembled Harmonice factory recall and accepted readback
+        run: python tests/approved_native_harmony_smoke.py
+      - name: Inline FX geometry and accepted bypass gate matrix
+        run: python tests/approved_inline_fx_clip_smoke.py

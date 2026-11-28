@@ -67,6 +67,11 @@ public:
         ready_=restored;
     }
     void releaseResources() override {ready_=false;}
+    bool supportsExactIdle() const noexcept override {return true;}
+    bool tryExactIdle(const float* l,const float* r,int n) noexcept override {
+        return ready_ && l && r && n>0 && queued_.empty() &&
+            eq_.tryExactIdle(l,r,static_cast<std::size_t>(n));
+    }
     void processBlock(juce::AudioBuffer<float>& pcm,juce::MidiBuffer&) override {
         juce::ScopedNoDenormals noDenormals;
         if(!ready_||pcm.getNumChannels()<2||pcm.getNumSamples()<=0)return;
@@ -93,7 +98,7 @@ public:
         Edit e;e.requestId=id;
         if(!ChannelEq::prepareBandEdit(index,band,rate_,e.prepared))
             return false;
-        return queued_.push(e);
+        return trackControlEdit(queued_.push(e));
     }
     // Control-thread only, after a callback completion: accepted_ is never
     // accessed by processBlock, so Show/GUI reads cannot race DSP histories.
@@ -101,7 +106,7 @@ public:
         if(!completion_.pop(result))return false;
         if(result.applied&&result.bandIndex<accepted_.size())
             accepted_[result.bandIndex]=result.band;
-        return true;
+        return settleControlEdit(true);
     }
     std::array<Band,ChannelEq::bandCount> acceptedBands() const noexcept {
         return accepted_; // CONTROL thread ONLY
@@ -110,14 +115,15 @@ public:
     bool isReady() const noexcept {return ready_;}
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        // CONTROL only; the caller owns FxInstance's non-blocking capture
-        // gate, so it cannot race the consumer inside processBlock.
-        return queued_.empty()&&completion_.empty();
+        // CONTROL only; accepted_ is updated solely when the receipt is
+        // consumed. A popped, not-yet-acknowledged edit is still pending.
+        return controlEditsSettled()&&queued_.empty()&&completion_.empty();
     }
 
     // The native Show's vendor-state lease already serializes state on the
     // control thread. Built-in DSP uses that same per-insert lease and schema,
     // not a second fixed channel EQ snapshot.
+    bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& destination) override {
         juce::MemoryOutputStream output(destination,false);
         output.writeInt(0x41504551); // "APEQ"

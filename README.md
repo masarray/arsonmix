@@ -18,7 +18,7 @@
 
 Bring your voice, instruments and music together in a single live digital mixer. Shape your sound, connect channels with **WIRE**, add your favorite effects and save the entire setup as a `.smix` session. Great for karaoke, streaming, live vocals and home studios.
 
-**Get started on Windows 10/11 (64-bit).** **[Download ArSonMix](https://masarray.github.io/arsonmix/#download)** or [explore the mixer online](https://masarray.github.io/arsonmix/preview/). Free to download, no sign-up required. The download page always points to the latest published installer.
+**Get started on Windows 10/11 (64-bit).** **[Download ArSonMix](https://masarray.github.io/arsonmix/#download)** or [explore the mixer online](https://masarray.github.io/arsonmix/preview/). Free to download, no sign-up required. The download page points to the latest published installer; the [release history and checksums](https://github.com/masarray/arsonmix/releases) also provide portable packages and previous releases for rollback.
 
 
 
@@ -43,7 +43,7 @@ ArSonMix is a **free, open-source digital mixer for Windows** with visual WIRE s
 | **ImmerSIB** | Explore concert halls, arenas and theater listening scenes with stage and room controls. | [Six native venue screenshots](https://masarray.github.io/arsonmix/effects/immersib/) |
 | **Guitar FX Rig** | Explore gate, overdrive, amplifier and cabinet stages, plus guitar tone choices. | [Guitar FX guide](https://masarray.github.io/arsonmix/effects/guitar-fx/) |
 
-Other console tools: **WIRE routing** connects signals visibly; **ArSon Player** keeps playback near the mixer; **.smix sessions** save your setup; **VST3 hosting** loads compatible external effects (commercial VST3 plugins are not included).
+Other console tools: **WIRE routing** connects signals visibly; **ArSon Player** keeps playback near the mixer; **.smix sessions** save your setup; **VST3 hosting** loads compatible external effects (external plug-ins retain their own licenses; the exact FactoryFX inventory, if included, is listed in each verified release).
 
 ### Original built-in effect editor interfaces
 

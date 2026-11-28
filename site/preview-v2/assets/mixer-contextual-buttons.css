@@ -29,7 +29,6 @@
   #wireMaster,
   .mixer-title button.wire-v34-tool,
   .console-body .section-rail button.rail-cell[data-section],
-  .plugin-footer button,
   .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,
   .plugin-browser .plugin-paths button,
@@ -64,7 +63,7 @@
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
-  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
   .route-choice-option,.wire-workspace .wire-ws-head button,
@@ -85,7 +84,7 @@
 ){--ari-on-top:#3b8c6e;--ari-on-hi:#50a783;--ari-on-mid:#3d956f;--ari-on-bottom:#308665;--ari-on-edge:#266347;--ari-on-ink:#f0fff7}
 .app :is(#mode,#wireNavigatorToggle,#wireMatrixToggle,#pluginsButton)
 {--ari-on-top:#388ea9;--ari-on-hi:#54aec6;--ari-on-mid:#3e94ae;--ari-on-bottom:#2d839c;--ari-on-edge:#246577;--ari-on-ink:#152b36}
-.app :is(#sofToggle,#saveScene,#recallScene,#pluginScan,#pluginImport)
+.app :is(#sofToggle,#saveScene,#recallScene)
 {--ari-on-top:#3c76a7;--ari-on-hi:#548ebd;--ari-on-mid:#417aaa;--ari-on-bottom:#366b99;--ari-on-edge:#28486f;--ari-on-ink:#f4faff}
 .app :is(#sceneSafe,#preview,#wireWsUndo)
 {--ari-on-top:#ba8034;--ari-on-hi:#cc9849;--ari-on-mid:#b98033;--ari-on-bottom:#aa722a;--ari-on-edge:#7d5021;--ari-on-ink:#21180c}
@@ -99,7 +98,7 @@
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
   .console-body .section-rail button.rail-cell[data-section],
-  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
   .route-choice-option,.wire-workspace .wire-ws-head button,
@@ -123,7 +122,7 @@
   .command-bar button.tool,.command-bar summary.tool,
   .more-tools-panel button.tool,.identity-actions button.console-control,
   #wireMaster,.mixer-title button.wire-v34-tool,
-  .plugin-footer button,.plugin-browser .plugin-head button,
+  .plugin-browser .plugin-head button,
   .plugin-browser .plugin-actions button,.plugin-browser .plugin-paths button,
   .fast-picker button:not(.fast-effect),.route-choice-head button,
   .route-choice-option,.wire-workspace .wire-ws-head button,
@@ -231,7 +230,7 @@
    All cards: same 24px hit box, same icon, same pressed-red interaction.
    Green ON, muted red insert bypass, amber rack bypass, grey unavailable.
    FX state is assigned exclusively from accepted DSP graph readback. */
-:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close){display:inline-flex!important;align-items:center!important;justify-content:center!important;position:relative!important;box-sizing:border-box!important;flex:0 0 24px!important;width:24px!important;min-width:24px!important;max-width:24px!important;height:24px!important;min-height:24px!important;max-height:24px!important;padding:0!important;margin:0!important;margin-inline-start:auto!important;justify-self:end!important;font-size:0!important;line-height:1!important;color:var(--armix-floating-close-ink)!important;cursor:pointer!important;border:1px solid #607d8c!important;border-radius:4px!important;background:var(--armix-floating-close-face)!important;box-shadow:inset 0 1px #ffffff22,0 1px 2px #06131f75!important;transform:none!important;text-shadow:none!important;transition:background-color .10s,border-color .10s,color .10s!important}
+:is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close){display:inline-flex!important;align-items:center!important;justify-content:center!important;position:relative!important;box-sizing:border-box!important;flex:0 0 24px!important;width:24px!important;min-width:24px!important;max-width:24px!important;height:24px!important;min-height:24px!important;max-height:24px!important;padding:0!important;margin:0!important;margin-inline-start:auto!important;justify-self:end!important;font-size:0!important;line-height:1!important;filter:none!important;color:var(--armix-floating-close-ink)!important;cursor:pointer!important;border:1px solid #607d8c!important;border-radius:4px!important;background:var(--armix-floating-close-face)!important;box-shadow:inset 0 1px #ffffff22,0 1px 2px #06131f75!important;transform:none!important;text-shadow:none!important;transition:background-color .10s,border-color .10s,color .10s!important}
 :is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close) svg{display:none!important}
 :is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close)::before{content:none!important;display:none!important}
 /* Keep the SVG centered in every state, including WIRE's legacy pressed lip. */
@@ -246,7 +245,7 @@
 :is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):hover:not(:disabled){color:#fff!important;border-color:#b27078!important;background:linear-gradient(#633840,#48292f)!important}
 :is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):active:not(:disabled){color:#fff!important;border-color:#ee8b93!important;background:linear-gradient(#ef3e50,#c52d40)!important;box-shadow:inset 0 2px 4px #4c0c1790,0 0 0 1px #ef698069!important;transition:none!important}
 :is(.app,body) :is(#identityClose,#pluginClose,#fastClose,#wireConfigClose,#wireWsClose,#routeChoiceClose,#playerClose,[data-audio-close],[data-io-close],[data-send-close],[data-source-close],.arRouteClose,.armix-floating-close,.mx-peq-close,.mx-comp-close,.mx-harm-close,.armix-builtin-fx-close):focus-visible{outline:2px solid #a2dce9!important;outline-offset:2px!important}
-body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power){display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;flex:0 0 26px!important;width:26px!important;height:24px!important;opacity:1!important;padding:0!important;border:1px solid #4b6572!important;border-radius:4px!important;background:linear-gradient(#384b56,#243846)!important;box-shadow:inset 0 1px #ffffff20!important;font-size:18px!important;transition:none!important}
+body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power){display:inline-flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;flex:0 0 26px!important;width:26px!important;min-width:26px!important;max-width:26px!important;height:24px!important;min-height:24px!important;max-height:24px!important;opacity:1!important;padding:0!important;border:1px solid #4b6572!important;border-radius:4px!important;background:linear-gradient(#384b56,#243846)!important;box-shadow:inset 0 1px #ffffff20!important;font-size:18px!important;font-family:"Segoe UI Symbol","DejaVu Sans",sans-serif!important;font-weight:400!important;line-height:1!important;letter-spacing:0!important;text-align:center!important;filter:none!important;margin:0!important;transition:none!important}
 body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power)[data-fx-state="on"]{color:#76f0b9!important;border-color:#428969!important;background:linear-gradient(#335c51,#204539)!important;text-shadow:0 0 5px #7df0b85c!important}
 body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power)[data-fx-state="off"]{color:#e99b9f!important;border-color:#83525a!important;background:linear-gradient(#533b42,#3a3039)!important;text-shadow:none!important}
 body :is(.mx-peq-global,.mx-comp-power,.mx-harm-power,.armix-builtin-fx-power)[data-fx-state="rack-off"]{color:#f0c483!important;border-color:#846948!important;background:linear-gradient(#544737,#41382d)!important;text-shadow:none!important;cursor:not-allowed!important}
@@ -266,209 +265,147 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 /* ArSon Player: compact stage-first drawer inside the ONE approved mixer GUI. */
 #playerToggle{min-width:86px;letter-spacing:.01em}
 #playerToggle[aria-expanded="true"]{color:#8cf0d0;border-color:#358c78}
-#arsonPlayer[hidden]{display:none!important}
-#arsonPlayer{position:fixed;z-index:90;top:75px;right:12px;bottom:52px;
- width:min(386px,calc(100vw - 24px));display:flex;flex-direction:column;
- background:#132028;border:1px solid #375059;border-radius:11px;
- box-shadow:0 16px 42px #0009;overflow:hidden;font-family:Inter,system-ui,sans-serif;
- color:#d9e9ea;font-size:12px;font-weight:400;line-height:1.4}
+/* ArSon Player V4.2: approved local visual master, one scoped owner. */
+#arsonPlayer[hidden],#arsonPlayer [hidden],#playerMini[hidden]{display:none!important}
+#arsonPlayer{--ap-radius:14px;--ap-rim:1px;--ap-inner-radius:calc(var(--ap-radius) - var(--ap-rim));--ap-bg:#151b20;--ap-header:#20272d;--ap-recess:#10161a;--ap-border:#303a43;--ap-ink:#e4e9ee;--ap-muted:#9badb8;--ap-mint:#67d7c1;--ap-blue:#a5bed2;position:fixed;z-index:90;top:75px;right:12px;bottom:52px;width:min(410px,calc(100vw - 24px));display:flex;flex-direction:column;isolation:isolate;background:linear-gradient(180deg,#25343e 0%,#1a2730 18%,#141e26 56%,#10171d 100%) padding-box;border:var(--ap-rim) solid #a9bbc4;border-radius:var(--ap-radius);overflow:hidden;box-shadow:0 1px 0 #8197a3,0 3px 0 #101b23,0 5px 8px #0007,0 18px 55px #0009;font:400 13px/1.4 "ArSonMix Inter",Inter,"Segoe UI",Arial,sans-serif;color:var(--ap-ink);color-scheme:dark}
 #arsonPlayer *{box-sizing:border-box}
-#arsonPlayer button,#arsonPlayer input{font:inherit}
-#arsonPlayer button{cursor:pointer;color:inherit;touch-action:manipulation}
-#arsonPlayer button:focus-visible,#arsonPlayer input:focus-visible{
- outline:2px solid #6bdcc4;outline-offset:2px}
-#arsonPlayer .ap-top{display:flex;align-items:center;gap:9px;
- padding:11px 13px;border-bottom:1px solid #2a3b44}
-#arsonPlayer .ap-brand{font-size:13px;font-weight:600;letter-spacing:.02em}
-#arsonPlayer .ap-sub{font-size:10px;color:#88a7ad}
-#arsonPlayer .ap-current{padding:13px 13px 9px;background:#172830}
-#arsonPlayer .ap-overline{font-size:10px;letter-spacing:.08em;color:#74b5af}
-#arsonPlayer .ap-title{font-size:15px;font-weight:550;margin:4px 0 8px;
- overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#arsonPlayer .ap-time{display:flex;align-items:center;gap:9px;
- color:#a7c2c8;font-variant-numeric:tabular-nums}
-#arsonPlayer progress{appearance:none;width:100%;height:5px;border:0;
- border-radius:10px;background:#2b424a;overflow:hidden}
-#arsonPlayer progress::-webkit-progress-bar{background:#2b424a}
-#arsonPlayer progress::-webkit-progress-value{background:#55ceb8}
-#arsonPlayer progress::-moz-progress-bar{background:#55ceb8}
-#arsonPlayer .ap-transport{display:flex;align-items:center;gap:6px;padding:10px 13px;
- border-bottom:1px solid #2a3b44}
-#arsonPlayer .ap-transport button{min-height:34px;border-radius:7px;
- padding:6px 11px;border:1px solid #37515b;background:#1b323b}
-#arsonPlayer #playerPlay{background:#16755f;border-color:#40a991;color:white;
- font-weight:600;min-width:87px}
-#arsonPlayer #playerPlay:hover{background:#19866c}
-#arsonPlayer #playerAutoNext{margin-left:auto;color:#b2c8cc;
- font-size:11px;padding:5px 8px}
-#arsonPlayer #playerAutoNext[aria-pressed="true"]{color:#77f0cd;
- border-color:#4a9c83}
-#arsonPlayer .ap-feedback{min-height:26px;padding:5px 13px;
- color:#9ebabe;font-size:11px}
-#arsonPlayer .ap-feedback[data-error="true"]{color:#f4bca6}
-#arsonPlayer .ap-listhead{display:flex;align-items:center;gap:8px;
- padding:10px 13px;border-top:1px solid #273a43;border-bottom:1px solid #273a43}
-#arsonPlayer .ap-listhead strong{font-size:12px;font-weight:550}
-#arsonPlayer #playerAdd{margin-left:0;white-space:nowrap;border:1px solid #41616a;
- border-radius:6px;padding:6px 10px;background:#223f47;color:#bfe9e6}
-#arsonPlayer #playerSearch{width:calc(100% - 26px);margin:9px 13px;
- padding:8px 10px;border-radius:7px;background:#0f1b22;
- color:#e5f2f1;border:1px solid #2f4650;outline:none}
-#arsonPlayer #playerList{overflow-y:auto;min-height:80px;flex:1;
- padding:0 6px 14px}
-#arsonPlayer .ap-song{display:flex;align-items:center;gap:8px;
- width:100%;padding:9px 9px;border:1px solid transparent;
- border-radius:6px;background:transparent;text-align:left;
- min-height:38px}
-#arsonPlayer .ap-song:hover{background:#213943}
-#arsonPlayer .ap-song[data-selected="true"]{border-color:#517a81;background:#263e46}
-#arsonPlayer .ap-song[data-current="true"]{color:#6ce0ba}
-#arsonPlayer .ap-index{flex:0 0 25px;color:#78949c;
- font-variant-numeric:tabular-nums}
-#arsonPlayer .ap-songname{overflow:hidden;text-overflow:ellipsis;
- white-space:nowrap;flex:1;font-weight:450}
-#arsonPlayer .ap-song small{color:#8ab9c1;font-size:10px}
-#arsonPlayer .ap-empty{color:#86aab0;padding:28px 18px;text-align:center}
-#arsonPlayer .ap-foot{padding:8px 13px;font-size:10px;color:#839fa6;
- border-top:1px solid #293c45}
-@media(max-width:640px){#arsonPlayer{right:6px;left:6px;top:56px;
- bottom:12px;width:auto}}
-
-/* Contextual one-tap resolution, no modal consent card or extra visual mode. */
-#arsonPlayer .ap-statusbar{display:flex;align-items:center;gap:6px;
- padding-right:10px;min-height:32px}
-#arsonPlayer .ap-statusbar .ap-feedback{flex:1;min-width:0}
-#arsonPlayer #playerChooseOutput{border:1px solid #3b8e84;
- border-radius:6px;padding:5px 8px;background:#21473f;
- color:#baf2e4;white-space:nowrap;font-size:11px}
-#arsonPlayer #playerChooseOutput:hover{background:#286355}
-#arsonPlayer #playerChooseOutput[hidden]{display:none!important}
-
-/* M2 independent KEY/TEMPO: a single compact instrument-grade control row. */
-#arsonPlayer .ap-pitchtempo{display:flex;align-items:center;gap:6px;
- padding:8px 11px 7px;border-bottom:1px solid #293f45;
- background:#182a31;flex-wrap:nowrap;justify-content:space-between}
-#arsonPlayer .ap-pitchctrl{display:flex;align-items:center;gap:3px;
- min-width:0;flex-shrink:1}
-#arsonPlayer .ap-pitchctrl span{font-size:10px;color:#8eb2b9;
- letter-spacing:.035em;margin-right:2px}
-#arsonPlayer .ap-pitchctrl button{min-width:24px;width:24px;height:27px;
- border:1px solid #3e5c64;border-radius:5px;background:#213c44;
- color:#badfdf;line-height:1;font-size:14px}
-#arsonPlayer .ap-pitchctrl button:hover{background:#29515a}
-#arsonPlayer .ap-pitchctrl output{width:40px;text-align:center;
- font-variant-numeric:tabular-nums;color:#8ee3c8;font-size:11px}
-#arsonPlayer #playerTempoValue{width:39px}
-#arsonPlayer .ap-reset{border:1px solid #3c555e;background:#20333d;
- border-radius:5px;padding:5px 6px;font-size:10px;color:#a9bfc3}
-@media(max-width:390px){
- #arsonPlayer .ap-pitchtempo{padding-left:7px;padding-right:7px;gap:3px}
- #arsonPlayer .ap-pitchctrl{gap:2px}
- #arsonPlayer .ap-pitchctrl span{font-size:9px}
- #arsonPlayer .ap-pitchctrl output{width:35px}
- #arsonPlayer #playerTempoValue{width:36px}
- #arsonPlayer .ap-reset{padding:5px}
-}
-
-/* M3 smart library controls: lightweight, keyboard-accessible icon and
-   one contextual Locate file action. No additional cards or UI modes. */
-#arsonPlayer #playerAddFolder{margin-left:auto;display:inline-flex;
- align-items:center;justify-content:center;width:29px;height:29px;
- flex:0 0 29px;border:1px solid #45616a;border-radius:6px;
- background:#223941;color:#a7d4d2}
-#arsonPlayer #playerAddFolder:hover{background:#2c5058}
-#arsonPlayer #playerRelink{border:1px solid #41616a;
- border-radius:6px;padding:5px 8px;background:#223f47;
- color:#bfe9e6;white-space:nowrap;font-size:11px}
-#arsonPlayer #playerRelink:hover{background:#2b5761}
-#arsonPlayer #playerRelink[hidden]{display:none!important}
-#arsonPlayer #playerAdd:disabled,
-#arsonPlayer #playerAddFolder:disabled{opacity:.5;cursor:wait}
-
-
-/* IN/OUT cues live inside the player timeline; no additional drawer. */
-#arsonPlayer .ap-cues{display:flex;align-items:center;gap:4px;
- margin-top:6px;flex-wrap:wrap}
-#arsonPlayer #playerCueSummary{flex:1;min-width:96px;
- color:#92c6bb;font-size:10px;font-variant-numeric:tabular-nums}
-#arsonPlayer .ap-cues button{padding:3px 5px;border:1px solid #35505a;
- border-radius:4px;background:#1d3940;color:#bbd8d2;font-size:10px}
-#arsonPlayer .ap-cues button:disabled{opacity:.38;cursor:default}
-#arsonPlayer #playerLoopAB[aria-pressed="true"]{
- border-color:#5bbba4;background:#25534a;color:#d0f9ed}
-
-/* M3 transition remains one inline control, not a new player mode. */
-#arsonPlayer .ap-showtools{display:flex;align-items:center;gap:8px;
- min-height:30px;padding:4px 12px;background:#172830;
- border-bottom:1px solid #2a4148;font-size:10px;color:#92b5b5}
-#arsonPlayer .ap-showtools select{max-width:138px;padding:4px 6px;
- background:#1c353e;border:1px solid #3d5c64;border-radius:5px;
- font-size:10px;color:#cbebdf}
-#arsonPlayer #playerTransitionStatus{margin-left:auto;min-width:0;
- color:#83d7c4;text-align:right;font-size:10px}
-
-/* Decoder-only peak summary + explicit seek: never streams browser PCM. */
-#arsonPlayer .ap-waveform{display:block;width:100%;height:42px;
- border:1px solid #2c454b;border-radius:5px;background:#1e363e}
-#arsonPlayer #playerSeek{appearance:none;-webkit-appearance:none;
- height:5px;width:100%;min-width:24px;flex:1;cursor:pointer;
- background:#39545b;border-radius:4px;accent-color:#72d7bb}
-#arsonPlayer #playerSeek::-webkit-slider-thumb{-webkit-appearance:none;
- width:12px;height:12px;border:1px solid #8af1d2;border-radius:50%;
- background:#408978;box-shadow:0 1px 4px #0008}
-#arsonPlayer #playerSeek:disabled{opacity:.4;cursor:default}
-
-/* ArSon Player Show v3: dense, keyboard/touch-accessible setlist editing.
-   Reuse the approved panel chrome; no extra floating card, stylesheet or
-   production mixer control style mutation. */
-#arsonPlayer .ap-settools{display:flex;align-items:center;gap:5px;
- padding:7px 11px 4px}
-#arsonPlayer .ap-settools select{flex:1;min-width:0;max-width:200px;
- padding:5px 7px;border:1px solid #35535c;border-radius:5px;
- background:#162b33;color:#c5e3e1;font-size:11px}
-#arsonPlayer .ap-settools button,#arsonPlayer .ap-setname button{
- white-space:nowrap;padding:5px 7px;border:1px solid #36535c;
- border-radius:5px;background:#1d363d;color:#b4d6d3;font-size:10px}
-#arsonPlayer .ap-setname{display:flex;align-items:center;gap:6px;
- padding:3px 11px}
-#arsonPlayer .ap-setname input{flex:1;min-width:0;max-width:230px;
- padding:5px 7px;background:#10232b;color:#d8e9e8;
- border:1px solid #31505a;border-radius:5px;font-size:11px}
-#arsonPlayer .ap-setname button[hidden]{display:none!important}
-#arsonPlayer .ap-settools :disabled{opacity:.4;cursor:default}
-#arsonPlayer .ap-songrow{display:flex;align-items:center;gap:2px;
- min-width:0;height:38px;min-height:38px;box-sizing:border-box}
+/* A real front-glass paint order: chassis -> isolated scrolling screen ->
+   in-device popup -> one stationary optical coat.  The coat never receives
+   pointer input, never participates in layout or scroll, and has no DOM/tab stop. */
+#arsonPlayer>.ap-screen{position:relative;z-index:0;display:flex;flex-direction:column;flex:1 1 auto;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;border-radius:var(--ap-inner-radius)}
+#arsonPlayer>.ap-screen>*{flex-shrink:0}
+/* EPS reference: one broad upper-left reflection, one straight 45-degree
+   boundary (no narrow streaks, repeated stops or rounded sheet highlights).
+   Constant clear transmission below it; edge depth is entirely bevel/shadow.
+   All optics are stationary and above the same interactive display. */
+/* The absolute coat occupies the padding box: inner radius = outer radius - rim.
+   A concentric radius prevents the reflective corners from leaving a dark seam. */
+#arsonPlayer::after{content:"";position:absolute;inset:0;z-index:2;border-radius:var(--ap-inner-radius);pointer-events:none;user-select:none;background:linear-gradient(135deg,#eef7fc30 0%,#eef7fc30 40%,#d9ecf00e 40%,#d9ecf00e 100%);box-shadow:inset 0 0 0 1px #f4fbffa0,inset 0 2px 0 #dceef63d,inset 0 -2px 0 #e3f2fa52,inset 2px 0 0 #dceef633,inset -2px 0 0 #dceef633,inset 0 12px 14px -10px #03090d9c,inset 0 -12px 14px -10px #03090da6,inset 0 0 15px 3px #09101838}
+#arsonPlayer button,#arsonPlayer input,#arsonPlayer select{font:inherit;color:inherit}
+#arsonPlayer button{border:0;background:none;cursor:pointer;padding:0;display:inline-flex;align-items:center;justify-content:center;gap:5px;touch-action:manipulation}
+#arsonPlayer button:hover{color:var(--ap-mint)}
+#arsonPlayer button:disabled,#arsonPlayer input:disabled,#arsonPlayer select:disabled{opacity:.35;cursor:default}
+#arsonPlayer :is(button,input,select,summary):focus-visible{outline:2px solid var(--ap-mint);outline-offset:1px}
+#arsonPlayer svg{width:16px;height:16px;flex:none}
+#arsonPlayer .ap-icon{width:28px;height:28px;border-radius:5px;color:var(--ap-muted)}
+#arsonPlayer .ap-icon:hover{background:#2a343b;color:var(--ap-ink)}
+#arsonPlayer .ap-top{height:44px;display:flex;align-items:center;gap:9px;padding:0 12px;background:linear-gradient(180deg,#43545f 0%,#31414b 38%,#263741 41%,#1b2831 100%);box-shadow:0 1px #a6c6d34a;cursor:grab;position:sticky;top:0;z-index:2}
+#arsonPlayer .ap-top>svg{color:var(--ap-mint);width:17px;height:17px}
+#arsonPlayer .ap-brand{font-size:13px;font-weight:450;flex:1}
+#arsonPlayer .ap-chrome{display:flex;align-items:center;gap:1px}
+#arsonPlayer .ap-chrome .ap-icon{width:24px;height:26px}
+#arsonPlayer .ap-chrome svg{width:12px;height:12px}
+#arsonPlayer .ap-hero{padding:12px 12px 19px}
+#arsonPlayer .ap-nowhead{display:grid;grid-template-columns:68px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:90px;margin-bottom:12px}
+#arsonPlayer .ap-trackmark{width:68px;height:68px;border-radius:15px;background:radial-gradient(ellipse at 48% 42%,#315361,#102738 55%,#081521 85%);box-shadow:inset 0 0 0 1px #ffffff13;display:grid;place-items:center;color:#a2c8d6}
+#arsonPlayer .ap-trackmark svg{width:30px;height:30px}
+#arsonPlayer .ap-nowtext{min-width:0}
+#arsonPlayer .ap-overline{display:flex;align-items:center;gap:5px;color:var(--ap-mint);font-size:10.5px;margin-bottom:7px}
+#arsonPlayer .ap-overline i,#arsonPlayer .ap-route-light{width:6px;height:6px;background:currentColor;border-radius:50%;display:block;flex:none}
+#arsonPlayer .ap-title{font-size:15px;line-height:1.3;font-weight:500;letter-spacing:-.12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px}
+#arsonPlayer .ap-subtitle,#arsonPlayer .ap-meta{font-size:11.5px;color:#aebdc7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#arsonPlayer .ap-meta{color:#8296a3;margin-top:2px}
+#arsonPlayer .ap-remaining{text-align:right;min-width:64px}
+#arsonPlayer .ap-remaining output{font-size:17px;font-weight:400;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+#arsonPlayer .ap-remaining span{display:block;font-size:11.5px;color:#c0cbd2;margin-top:5px}
+#arsonPlayer .ap-waveform{display:block;width:100%;height:70px;background:var(--ap-recess);border-radius:5px;cursor:crosshair;box-shadow:inset 0 1px 3px #02080c99,0 1px #d0eaff13;border:1px solid #57717d30}
+#arsonPlayer .ap-time{display:flex;align-items:center;gap:8px;color:#a8b8c3;font-size:11px;font-variant-numeric:tabular-nums;margin:12px 0 8px}
+#arsonPlayer #playerSeek,#arsonPlayer #playerVolume{appearance:none;width:100%;min-width:0;height:18px;background:transparent;cursor:pointer;margin:0}
+#arsonPlayer #playerSeek::-webkit-slider-runnable-track,#arsonPlayer #playerVolume::-webkit-slider-runnable-track{height:3px;border-radius:5px;background:linear-gradient(90deg,var(--ap-mint) 0 var(--ap-fill,0%),#303e47 var(--ap-fill,0%) 100%)}
+#arsonPlayer #playerSeek::-webkit-slider-thumb,#arsonPlayer #playerVolume::-webkit-slider-thumb{appearance:none;width:9px;height:9px;border-radius:50%;background:var(--ap-mint);margin-top:-3px}
+/* Skin/geometry comes from the shared Clean Ribbon transport rule. */
+#arsonPlayer .ap-transport{height:49px;display:grid;grid-template-columns:32px 32px 44px 32px 32px;align-items:center;justify-content:center;justify-items:center;gap:15px;margin-bottom:9px}
+#arsonPlayer .ap-pitchtempo{height:64px;border-radius:8px;background:#11181c;display:grid;grid-template-columns:1fr 1fr 26px;align-items:center;padding:8px;gap:5px;box-shadow:inset 0 1px 3px #02080c99,0 1px #d0eaff13;border:1px solid #57717d30}
+#arsonPlayer .ap-pitch-section{display:grid;grid-template-rows:16px 26px;min-width:0}
+#arsonPlayer .ap-pitch-section:first-child{border-right:1px solid #2c3941;padding-right:6px}
+#arsonPlayer .ap-pitch-section>span{font-size:10.5px;color:#96adba;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#arsonPlayer .ap-pitchtarget[data-next="true"]{color:var(--ap-blue)}
+#arsonPlayer .ap-step{display:grid;grid-template-columns:24px 1fr 24px;align-items:center;text-align:center;color:var(--ap-mint);font-size:15px;font-variant-numeric:tabular-nums}
+#arsonPlayer .ap-step button{height:26px;color:#8098a6;font-size:15px}
+#arsonPlayer .ap-step button:hover{color:var(--ap-mint);background:#243139;border-radius:4px}
+#arsonPlayer .ap-statusbar{display:flex;align-items:center;gap:6px;margin:13px 0 10px;min-height:24px;font-size:11px;color:#9bc9bf}
+#arsonPlayer .ap-feedback{min-width:0;flex:1;overflow-wrap:anywhere}
+#arsonPlayer .ap-feedback[data-error="true"]{color:#f2b8a7}
+#arsonPlayer .ap-route-light{color:#677581}
+#arsonPlayer .ap-route-light[data-state="audible"]{color:var(--ap-mint)}
+#arsonPlayer .ap-route-light[data-state="warning"]{color:#e5ae76}
+#arsonPlayer .ap-mode{font-size:11px;color:#aabac5;white-space:nowrap;flex:none}
+#arsonPlayer .ap-mode svg{width:11px;height:11px}
+#arsonPlayer .ap-recovery{display:flex;gap:6px;flex-wrap:wrap}
+#arsonPlayer .ap-recovery button{padding:4px 8px;background:#26343c;border-radius:4px;margin-bottom:6px;font-size:11px}
+#arsonPlayer .ap-upnext{min-height:56px;width:100%;display:flex;align-items:center;gap:9px;padding:8px;background:linear-gradient(#283945,#1a272f);box-shadow:inset 0 1px #cce6f21a,0 1px 2px #050a0e66;border:1px solid #516a763d;border-radius:6px;text-align:left;justify-content:flex-start;color:var(--ap-ink)}
+#arsonPlayer .ap-upnext:hover{background:#26343c;color:var(--ap-ink)}
+#arsonPlayer .ap-nextname{flex:1;min-width:0;display:grid;gap:4px}
+#arsonPlayer #playerNextLabel{font-size:10.5px;color:#a2b8c8}
+#arsonPlayer #playerUpNext{font-size:13px;font-weight:450;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#arsonPlayer .ap-nextmeta,#arsonPlayer #playerTransitionStatus{font-size:11px;color:#a5b9c6;white-space:nowrap}
+#arsonPlayer .ap-upnext>svg{width:12px;height:12px;color:#a1b2bd}
+#arsonPlayer .ap-listhead{border-top:1px solid #7d99a32c;display:flex;align-items:center;gap:4px;padding:13px 12px 4px}
+#arsonPlayer .ap-view-switch{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+#arsonPlayer .ap-view-switch button{height:28px;font-size:13px;color:#90a3af;white-space:nowrap}
+#arsonPlayer .ap-view-switch button[aria-pressed="true"]{color:var(--ap-mint)}
+#arsonPlayer .ap-listhead .ap-icon{width:24px;color:#b2c3cd}
+#arsonPlayer .ap-settools{display:flex;align-items:center;gap:5px;min-height:29px;padding:0 12px;margin-bottom:8px}
+#arsonPlayer .ap-settools select{appearance:none;background:transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' stroke='%23a7bac6' fill='none' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 2px center/12px;border:0;min-width:0;max-width:58%;padding:4px 16px 4px 0;cursor:pointer;font-size:13px}
+#arsonPlayer .ap-settools select option{background:#20272d}
+#arsonPlayer #playerCount{margin-left:auto;white-space:nowrap;color:#d2dae0;font-size:12px}
+#arsonPlayer .ap-library-note{padding:0 12px 4px}
+#arsonPlayer .ap-searchwrap{position:relative;height:36px;margin:0 12px 5px;color:#8da1af}
+#arsonPlayer .ap-searchwrap svg{position:absolute;left:9px;top:11px;width:14px;height:14px;pointer-events:none}
+#arsonPlayer #playerSearch{height:100%;width:100%;background:#10161a;border:1px solid #57717d30;border-radius:6px;padding:0 10px 0 30px;font-size:12px;box-shadow:inset 0 1px 3px #02080c99,0 1px #d0eaff13}
+#arsonPlayer #playerSearch::placeholder{color:#94a7b4}
+#arsonPlayer .ap-columns{display:grid;grid-template-columns:24px minmax(0,1fr) 36px 43px 24px;align-items:center;gap:3px;margin:0 12px;padding:0 7px;height:29px;font-size:11.5px;color:#bdc9d0}
+#arsonPlayer .ap-columns span:nth-child(3),#arsonPlayer .ap-columns span:nth-child(4){text-align:center}
+#arsonPlayer #playerList,#arsonPlayer .ap-queue{overflow:auto;min-height:132px;flex:1 0 132px;padding:0 12px 6px;scrollbar-width:none}
+#arsonPlayer .ap-songrow{display:flex;align-items:center;gap:3px;height:34px;min-height:34px;border-radius:6px;color:#cbd6de;padding:0 7px}
+#arsonPlayer .ap-songrow[data-current="true"]{background:#203b37;color:#a2ebd8}
+#arsonPlayer .ap-songrow[data-selected="true"]:not([data-current="true"]){background:#23313e;color:#c3d9ee}
+#arsonPlayer .ap-songrow:hover:not([data-current="true"]):not([data-selected="true"]){background:#252f36}
+#arsonPlayer .ap-songrow .ap-song{display:grid;grid-template-columns:24px minmax(0,1fr) 36px 43px;gap:3px;align-items:center;min-width:0;flex:1;height:33px;text-align:left;font-size:12px;color:inherit}
+#arsonPlayer .ap-index{font-size:11px;color:#9db0bd}
+#arsonPlayer .ap-songrow[data-current="true"] .ap-index{color:var(--ap-mint)}
+#arsonPlayer .ap-songname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#arsonPlayer .ap-song small{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#arsonPlayer .ap-songrow[data-missing="true"] .ap-songname{color:#e7aea9}
+#arsonPlayer .ap-songkey,#arsonPlayer .ap-songtime{font-size:11px;text-align:center;color:#9db2bf;font-variant-numeric:tabular-nums}
+#arsonPlayer .ap-row-menu{width:24px;height:28px;color:#8da2b0;flex:none}
 #arsonPlayer .ap-list-spacer{height:0;min-height:0;pointer-events:none}
-#arsonPlayer .ap-songrow .ap-song{flex:1;min-width:0;
- width:auto;height:36px;min-height:36px;padding:6px}
-#arsonPlayer .ap-songrow .ap-index{flex-basis:21px}
-#arsonPlayer .ap-row-actions{display:flex;align-items:center;gap:1px;
- flex:0 0 auto}
-#arsonPlayer .ap-row-action{width:22px;height:27px;min-width:22px;
- padding:0!important;display:inline-flex;align-items:center;justify-content:center;
- border:1px solid transparent;background:transparent;border-radius:4px;
- color:#8aadb0;font-size:12px;line-height:1}
-#arsonPlayer .ap-row-action:hover{background:#29464d;border-color:#49636b;
- color:#def4ed}
-#arsonPlayer .ap-songrow[draggable="true"]{cursor:grab}
-#arsonPlayer .ap-queue{flex:0 0 auto;max-height:110px;overflow:auto;
- padding:6px 11px;border-top:1px solid #2b4449;background:#162830}
-#arsonPlayer .ap-queue[hidden]{display:none!important}
-#arsonPlayer .ap-queue-title{font-size:10px;color:#94c2b9;
- letter-spacing:.03em;padding-bottom:3px}
-#arsonPlayer .ap-queue-row{display:flex;align-items:center;justify-content:space-between;
- gap:8px;padding:2px 3px;font-size:11px;color:#c6dfdc}
-#arsonPlayer .ap-queue-row span{min-width:0;overflow:hidden;
- text-overflow:ellipsis;white-space:nowrap}
-#arsonPlayer .ap-queue-row .ap-row-action{height:22px}
-#arsonPlayer .ap-queue-row[draggable="true"]{cursor:grab}
-#arsonPlayer .ap-queue-row[draggable="true"]:active{cursor:grabbing}
-#arsonPlayer .ap-queue-row:focus-within{background:#234047}
-#arsonPlayer .ap-queue-row .ap-row-action:disabled{opacity:.3;cursor:default}
-@media(max-width:410px){
- #arsonPlayer .ap-row-action{width:20px;min-width:20px}
- #arsonPlayer .ap-settools button{padding:5px}
-}
+#arsonPlayer .ap-empty{text-align:center;padding:27px;color:var(--ap-muted)}
+#arsonPlayer .ap-queue-title{color:var(--ap-muted);font-size:11px;padding:6px 0}
+#arsonPlayer .ap-queue-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0;min-height:34px;border-bottom:1px solid #ffffff0b;font-size:12px}
+#arsonPlayer .ap-queue-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#arsonPlayer .ap-row-actions{display:flex;align-items:center;gap:2px;flex:none}
+#arsonPlayer .ap-row-action{width:26px;height:28px;color:#9badb8}
+#arsonPlayer .ap-songrow[draggable="true"],#arsonPlayer .ap-queue-row[draggable="true"]{cursor:grab}
+#arsonPlayer .ap-foot{border-top:1px solid #7d99a32c;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;color:#8296a4;font-size:10.5px}
+#arsonPlayer .ap-foot button{color:#a7b7c2;font-size:11px}
+#arsonPlayer .ap-foot svg{width:11px;height:11px}
+#arsonPlayer .ap-details{padding:11px 12px;border-top:1px solid var(--ap-border);font-size:11px;color:var(--ap-muted);background:#12181d}
+#arsonPlayer .ap-showtools,#arsonPlayer .ap-cues{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+#arsonPlayer .ap-showtools label{min-width:70px}
+#arsonPlayer .ap-showtools input{flex:1;width:0}
+#arsonPlayer .ap-showtools output{width:55px;text-align:right}
+#arsonPlayer .ap-details button,#arsonPlayer .ap-details select,#arsonPlayer .ap-details input[type="text"]{background:#253039;border:1px solid #35444d;border-radius:4px;padding:5px 6px}
+#arsonPlayer .ap-details input[type="text"]{width:100%}
+#arsonPlayer #playerCueSummary{flex:1 0 100%}
+#arsonPlayer .ap-details .ap-settools{padding:4px 0}
+#arsonPlayer .ap-disclosure summary{cursor:pointer;padding:5px 0}
+#arsonPlayer .ap-song-menu{position:absolute;z-index:1;width:190px;max-width:calc(100% - 12px);max-height:calc(100% - 12px);overflow:auto;scrollbar-width:none;background:#222b32;border:1px solid #414e59;border-radius:7px;padding:4px;box-shadow:0 12px 28px #0008}
+#arsonPlayer .ap-song-menu button{display:flex;width:100%;justify-content:flex-start;text-align:left;padding:7px 10px;color:var(--ap-ink);border-radius:4px;font-size:12px}
+#arsonPlayer .ap-song-menu button:hover:not(:disabled),#arsonPlayer .ap-song-menu button:focus-visible{background:#34434d;color:var(--ap-mint)}
+#arsonPlayer .ap-song-menu button[data-danger="true"]{color:#e7aea9;border-top:1px solid #39434d}
+#arsonPlayer .ap-song-menu-title{font-size:10px;color:var(--ap-muted);padding:5px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#playerMini{display:flex;align-items:center;gap:6px;flex:0 1 205px;min-width:120px;max-width:205px;padding:2px 6px;border:1px solid #3a4851;border-radius:6px;background:#20272d;color:#e4e9ee;font:400 11px/1.2 "ArSonMix Inter",Inter,"Segoe UI",sans-serif}
+#playerMini>svg{color:#67d7c1;width:17px;height:17px;flex:none}
+#playerMini button{border:0;background:none;color:inherit;padding:0;cursor:pointer}
+#playerMini button:focus-visible{outline:2px solid #67d7c1}
+#playerMini #playerMiniExpand{min-width:0;flex:1;text-align:left;display:grid;gap:2px}
+#playerMini #playerMiniTitle,#playerMini #playerMiniTime{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#playerMini #playerMiniTime{font-size:9px;color:#a0b3bf}
+#playerMini :is(.ap-mini-play,.ap-mini-next){flex:none}
+@media(max-width:640px){#arsonPlayer{right:6px;left:6px;top:56px;bottom:12px;width:auto;--ap-radius:11px}#playerMini{flex:0 0 150px}}
+@media(max-width:440px){#arsonPlayer .ap-hero{padding-inline:10px}#arsonPlayer .ap-nowhead{grid-template-columns:62px minmax(0,1fr) auto;gap:8px}#arsonPlayer .ap-trackmark{width:62px;height:62px}#arsonPlayer .ap-columns{grid-template-columns:21px minmax(0,1fr) 30px 35px 24px}#arsonPlayer .ap-songrow .ap-song{grid-template-columns:21px minmax(0,1fr) 30px 35px}#arsonPlayer .ap-view-switch{gap:8px}}
+@media(max-height:700px){#arsonPlayer .ap-hero{padding-top:7px;padding-bottom:10px}#arsonPlayer .ap-nowhead{min-height:72px;margin-bottom:8px}#arsonPlayer .ap-waveform{height:54px}#arsonPlayer .ap-time{margin:5px 0 4px}#arsonPlayer .ap-transport{margin-bottom:5px}#arsonPlayer .ap-pitchtempo{height:58px}#arsonPlayer .ap-statusbar{margin:7px 0 6px}#arsonPlayer .ap-upnext{min-height:46px}#arsonPlayer .ap-listhead{padding-top:6px}}
 
 /* Shared modeless window workspace.
    Header-only drag: underlying FX knobs, faders, routing wires, search,
@@ -496,9 +433,9 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
     #nativeOrbit .native-dialog-header):active{cursor:grabbing}
 .armix-floating-moved{will-change:auto}
 
-/* One compact, legible action face across the FX picker, manager footer and
-   search-folder row. Neither tiny naked links nor full-width flattened bars. */
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath){
+/* Compact action face for the quick FX picker only.
+   Plugin Manager footer and scan-folder actions belong to mixer-plugin-browser.css. */
+#fastManage{
   box-sizing:border-box!important;
   display:inline-flex!important;align-items:center!important;justify-content:center!important;
   flex:0 0 auto!important;width:auto!important;
@@ -509,16 +446,16 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
   font:500 10px/1.25 "ArSonMix Inter","Segoe UI",sans-serif!important;
   white-space:nowrap!important;box-shadow:inset 0 1px #ffffff15!important;cursor:pointer!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):hover:not(:disabled){
+#fastManage:hover:not(:disabled){
   background:var(--armix-floating-action-hover)!important;border-color:#8ac3d2!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):active:not(:disabled){
+#fastManage:active:not(:disabled){
   background:#1d485b!important;border-color:#64bdd2!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):focus-visible{
+#fastManage:focus-visible{
   outline:2px solid var(--armix-floating-action-focus)!important;outline-offset:2px!important;
 }
-:is(#fastManage,#pluginImport,#pluginScan,#pluginAddPath):disabled{
+#fastManage:disabled{
   opacity:.44!important;cursor:not-allowed!important;
 }
 
@@ -528,3 +465,81 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
    Only raise the toolbar while the menu is open; native modal overlays retain
    their own higher blocking layer. No persistent topbar reordering. */
 .app .command-bar:has(.more-tools[open]){z-index:1200!important}
+
+/* UX-P0: prioritize frequent live controls, without removing routing.
+   The V28 hardware baseline hides More's WIRE TOOLS above 1250px. Once
+   Routes/Matrix/WIRE Setup move off the topbar, expose their *original*
+   More commands at every width; preserve V28's pinned artwork checksum. */
+.app .command-bar > :is(#wireMatrixToggle,#wireConfigToggle){display:none!important}
+.app .command-bar>#mixContext{display:block!important;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px!important;font-weight:500;color:#aec4ce}
+.app .command-bar:has(#sofToggle[aria-pressed="true"])>#mixContext{color:#73ccdf!important}
+@media(max-width:1150px){.app .command-bar>#mixContext{max-width:80px}}
+.app .more-tools-panel .wire-overflow{display:block!important}
+.app .command-bar:not(:has(#sofToggle[aria-pressed="true"])) #sofTarget{
+  display:none!important
+}
+/* Invisible forgiving click envelopes, not large visual controls: preserve
+   the 17px approved PNG sprite and 24px rack-row geometry. No delegation
+   from entire row (which would accidentally power/delete another insert). */
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]){
+    isolation:isolate;z-index:2;touch-action:manipulation
+}
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"])::before{
+    display:block!important;content:""!important;position:absolute;
+    inset:-3px;pointer-events:auto;background:transparent;border:0
+}
+.app .console-body .strip .fxslot-row
+  button.mx-util-key:is([data-util-kind="fx-slot"],[data-util-kind="fx-remove"]):focus-visible{
+    outline:2px solid #95d8ea!important;outline-offset:1px!important
+}
+
+/* FX workspace is a modeless layer below real operator dialogs. Preserve
+   each popup's original layout/visibility and never use global TOPMOST. */
+:is(#fastPicker,#routeChoice,#channelIdentity,#nativeFxSelector,#nativePluginManager,#nativeMySounds,#nativeOrbit){
+ z-index:12000!important;
+}
+
+/* Player row states: visible shape and text, not color alone. */
+#arsonPlayer .ap-songrow .ap-song{justify-items:stretch}
+#arsonPlayer .ap-songrow[data-current="true"] .ap-index{font-size:0}
+#arsonPlayer .ap-songrow[data-current="true"] .ap-index::after{content:"▶";font-size:10px}
+#arsonPlayer .ap-songrow[data-selected="true"]:not([data-current="true"]) .ap-index{font-size:0}
+#arsonPlayer .ap-songrow[data-selected="true"]:not([data-current="true"]) .ap-index::after{content:"NEXT";font-size:8px}
+#arsonPlayer #playerTransitionStatus:empty,#arsonPlayer #playerNextMeta:empty{display:none}
+#arsonPlayer .ap-top{touch-action:none;user-select:none}
+
+#arsonPlayer .ap-shortcuts{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 12px;padding:6px 0 10px;color:var(--ap-muted)}
+#arsonPlayer .ap-shortcuts kbd{font:inherit;font-size:10px;background:#202b32;border:1px solid #35444d;border-radius:3px;padding:2px 5px;color:var(--ap-ink)}
+#arsonPlayer .ap-song-menu button[data-danger="true"]{margin-top:3px}
+
+#arsonPlayer #playerArtwork{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+/* Same compact geometry, fixed bundled artwork. */
+#arsonPlayer .ap-trackmark,#playerMini .ap-mini-cover{overflow:hidden;position:relative}
+#arsonPlayer .ap-cover-fallback,#playerMini .ap-cover-fallback{display:block;width:100%;height:100%;background-size:cover;background-position:center;border-radius:inherit}
+#playerMini .ap-mini-cover{width:25px;height:25px;flex:none;border-radius:5px;background:#19262e}
+#playerMini #playerMiniArtwork{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+#playerMini [hidden]{display:none!important}
+.ap-cover-fallback[data-art="blue-hour"]{background-image:url("player-cover-blue-hour.jpg")}
+.ap-cover-fallback[data-art="prism"]{background-image:url("player-cover-prism.jpg")}
+.ap-cover-fallback[data-art="tide"]{background-image:url("player-cover-tide.jpg")}
+.ap-cover-fallback[data-art="dune"]{background-image:url("player-cover-dune.jpg")}
+.ap-cover-fallback[data-art="bloom"]{background-image:url("player-cover-bloom.jpg")}
+.ap-cover-fallback[data-art="still"]{background-image:url("player-cover-still.jpg")}
+.ap-cover-fallback[data-art="unavailable"]{background-image:url("player-cover-unavailable.jpg")}
+#arsonPlayer #playerCount{font-variant-numeric:tabular-nums;min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+#arsonPlayer .ap-library-filter{margin:0 12px 6px;padding:3px 6px;max-width:calc(100% - 24px);font-size:11px;background:#20282f;border:1px solid #34424b;border-radius:4px;color:var(--ap-ink)}
+#arsonPlayer .ap-songrow[data-done="true"]:not([data-current="true"]):not([data-selected="true"]) .ap-songname{color:#879ba6}
+#arsonPlayer .ap-songrow[data-favorite="true"] .ap-songname{color:#d7c49c}
+#arsonPlayer #playerAfterSongTarget{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Visible status without an extra column. */
+#arsonPlayer .ap-songrow[data-done="true"][data-current="false"][data-selected="false"] .ap-index{font-size:0;color:#8faeaa}
+#arsonPlayer .ap-songrow[data-done="true"][data-current="false"][data-selected="false"] .ap-index::after{content:"DONE";font-size:8px}
+#arsonPlayer .ap-songrow[data-favorite="true"][data-done="false"][data-current="false"][data-selected="false"] .ap-index{font-size:0;color:#d7c49c}
+#arsonPlayer .ap-songrow[data-favorite="true"][data-done="false"][data-current="false"][data-selected="false"] .ap-index::after{content:"★";font-size:11px}
+
+/* Scrollports remain scrollable, with no visible browser track. */
+#arsonPlayer :is(.ap-screen,#playerList,.ap-queue,.ap-song-menu)::-webkit-scrollbar{display:none;width:0;height:0}

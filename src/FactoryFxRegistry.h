@@ -103,7 +103,8 @@ struct Registry final
             data.getProperty ("hostFormat", {}).toString() != "VST3")
             return fail ("incompatible manifest version/platform");
         const auto distribution = data.getProperty ("distribution", {}).toString();
-        if (distribution != "engineering-partial" && distribution != "production-four" &&
+        if (distribution != "engineering-partial" && distribution != "production-three" &&
+            distribution != "production-four" &&
             distribution != "production-six")
             return fail ("unknown distribution type");
 
@@ -180,6 +181,16 @@ struct Registry final
                 continue;
             }
             result.candidates.push_back (std::move (candidate));
+        }
+        // Alpha.33 production scope is exactly EQ, Comp, Verb. A corrupt
+        // module may be quarantined at runtime, but foreign/missing IDs never
+        // qualify as the declared inventory.
+        if (distribution == "production-three")
+        {
+            static const std::set<std::string> required {
+                "arson-eq", "arson-comp", "arson-verb" };
+            if (seen != required)
+                return fail ("production-three manifest requires EQ, Comp, Verb");
         }
         // Official four-FX packs require the exact reviewed original suppliers.
         if (distribution == "production-four")

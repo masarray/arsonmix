@@ -9,9 +9,18 @@ test('native tools open directly without Setup workspace',()=>{
  assert.ok(bridge.includes('if(action==="audioSetup"){send("audioSetup");return;}'));
  assert.ok(!bridge.includes('nativeAudioSetup')&&!bridge.includes('renderSetup'));
  const action=cpp.indexOf('if (action == "audioSetup")');
- const open=cpp.indexOf('showDeviceSetup();',action);
  const nextAction=cpp.indexOf('else if (action == "diagnosticRoute")',action);
- assert.ok(action>=0 && open>action && nextAction>open, 'SETUP opens directly after restoring any temporary audio test route');
+ assert.ok(action>=0 && nextAction>action);
+ const setup=cpp.slice(action,nextAction);
+ const restore=setup.indexOf('engine_.setDiagnosticRoute (armix::diagnostics::Route::normal)');
+ const refresh=setup.indexOf('emitApprovedNativeSnapshot();');
+ const inventory=setup.indexOf('emitDeviceInventory(false);');
+ const open=setup.indexOf('emitEventIfBrowserIsVisible("arMixOpenAudioIO"');
+ assert.ok(restore>=0 && refresh>restore && inventory>refresh && open>inventory,
+   'SETUP restores temporary audio route and refreshes native evidence before opening custom Audio I/O');
+ assert.ok(!setup.includes('showDeviceSetup();'), 'SETUP must not open stock JUCE selector');
+ assert.ok(setup.includes('engine_.abandonPendingDirectRestoreForSetup()'));
+ assert.ok(setup.includes('return emitNotice (error, true)'));
  assert.ok(monitor.includes("querySelector('#audioSetupBtn')"));
 });
 test('demo EQ/Setup code is gone; fader double-click returns unity',()=>{

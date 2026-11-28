@@ -37,6 +37,7 @@ public:
         ready_=dsp_.prepare(rate)&&guide_.prepare(rate)&&dsp_.setSettings(accepted_);
         guideSource_.store(accepted_.guideMode==1?accepted_.guideChannelId:0,
                            std::memory_order_release);
+        observedNote_.store(-1,std::memory_order_relaxed);
         guideAge_=0;guideObservedKey_.store(-1,std::memory_order_relaxed);
         guideObservedScale_.store(-1,std::memory_order_relaxed);
         guideConfidence_.store(0.f,std::memory_order_relaxed);
@@ -61,8 +62,16 @@ public:
         // tonal estimate running indefinitely. Manual Key is the fallback.
         const int guideTimeout=static_cast<int>(sampleRate_*2.);
         const bool guideWasFresh=guideAge_<=guideTimeout;
+        const int chordTimeout=static_cast<int>(sampleRate_*.30);
+        const bool chordWasFresh=guideAge_<=chordTimeout;
         guideAge_=std::min(guideAge_+samples.getNumSamples(),
                             static_cast<int>(sampleRate_*3.));
+        if(chordWasFresh&&guideAge_>chordTimeout){
+            // Missing source must not keep a local chord through the
+            // longer global-key timeout. Re-entry needs fresh evidence.
+            guide_.resetChordEvidence();
+            dsp_.setGuideChord(-1,-1);
+        }
         if(guideWasFresh&&guideAge_>guideTimeout){
             // The guide source went missing. A detector that still retains
             // old chroma would publish the old key on the FIRST resumed
@@ -70,6 +79,7 @@ public:
             // at the missing-source boundary, not at every audio callback.
             guide_.reset();
             dsp_.setGuideKey(-1,-1);
+            dsp_.setGuideChord(-1,-1);
             guideObservedKey_.store(-1,std::memory_order_relaxed);
             guideObservedScale_.store(-1,std::memory_order_relaxed);
             guideConfidence_.store(0.f,std::memory_order_relaxed);
@@ -107,14 +117,15 @@ public:
         if(!ready_||!requestId)return false;
         armix::harmony::Engine::PreparedSettings prepared;
         if(!armix::harmony::Engine::prepareSettings(settings,prepared))return false;
-        return queued_.push({requestId,prepared});
+        return trackControlEdit(queued_.push({requestId,prepared}));
     }
     bool pollCompletion(Completion& completion) noexcept {
         if(!completion_.pop(completion))return false;
-        if(completion.applied && completion.requestId==pendingId_) {
-            accepted_=pendingSettings_;pendingId_=0;
+        if(completion.requestId==pendingId_) {
+            if(completion.applied)accepted_=pendingSettings_;
+            pendingId_=0; // rejected terminal receipt also releases ownership
         }
-        return true;
+        return settleControlEdit(true);
     }
     bool queueAccepted(const armix::harmony::Settings& settings,
                        std::uint64_t requestId) noexcept {
@@ -139,6 +150,8 @@ public:
         guideAge_=0;
         guide_.process(left,right,frames);
         const auto estimate=guide_.estimate();
+        const auto chord=guide_.chordEstimate();
+        dsp_.setGuideChord(chord.valid()?chord.root:-1,chord.valid()?chord.quality:-1);
         dsp_.setGuideKey(estimate.valid()?estimate.key:-1,
                          estimate.valid()?estimate.scale:-1);
         guideObservedKey_.store(estimate.valid()?estimate.key:-1,std::memory_order_relaxed);
@@ -160,8 +173,9 @@ public:
     bool requiresContinuousBypassProcessing() const noexcept override {return true;}
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        return queued_.empty()&&completion_.empty()&&!pendingId_;
+        return controlEditsSettled()&&queued_.empty()&&completion_.empty()&&!pendingId_;
     }
+    bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& out) override {
         juce::MemoryOutputStream stream(out,false);
         stream.writeInt(0x41484d31); // AHM1
@@ -183,7 +197,13 @@ public:
         juce::MemoryInputStream stream(bytes,static_cast<std::size_t>(len),false);
         if(stream.readInt()!=0x41484d31)return false;
         const int version=stream.readInt();
+        // JUCE stream reads can return zero on EOF. Position==length alone
+        // is insufficient: a truncated final float/int could become valid 0.
+        // AHM1 is fixed-width little-endian with a single byte bool.
         if(version!=1&&version!=2&&version!=3)return false;
+        const int expectedBytes=version==1?37:version==2?49:53;
+        if(len!=expectedBytes || static_cast<const unsigned char*>(bytes)[20]>1)
+            return false;
         armix::harmony::Settings incoming{};
         incoming.key=stream.readInt();incoming.scale=stream.readInt();
         incoming.voices=stream.readInt();incoming.correction=stream.readBool();

@@ -18,8 +18,8 @@ namespace armix::device {
 class NativeDeviceApplyCoordinator final {
 public:
     // Every possible JUCE driver mutation uses the same control-thread gate:
-    // explicit UI Apply, native modal selector, and bounded ASIO recovery.
-    enum class Purpose : std::uint8_t { none, explicitApply, setupDialog, asioRecovery, wasapiRecovery };
+    // explicit custom UI Apply, explicit vendor ASIO panel, and bounded recovery.
+    enum class Purpose : std::uint8_t { none, explicitApply, setupDialog, asioRecovery, wasapiRecovery, offlineFxCapture, secondaryOutput, busOutputPatch, fxRackFile, mixerSessionCapture };
 
     class Lease final {
     public:
@@ -42,6 +42,63 @@ public:
         if(purpose==Purpose::none || busy())return {};
         purpose_=purpose;
         return Lease(this);
+    }
+
+    // A blocked correlated command still requires a terminal NACK. This
+    // path is CONTROL-only and deliberately cannot inspect or mutate a driver,
+    // graph, or accepted revision during a nested vendor modal loop.
+    struct BusyReceipt {
+        const char* event=nullptr;
+        juce::var payload;
+    };
+    BusyReceipt busyCommandReceipt(const juce::String& action,const juce::var& args) const {
+        if(!busy())return {};
+        const char* event=nullptr;
+        if(action=="routingExternalOutput")event="arMixExternalOutputAck";
+        else if(action=="routingMonitorTiming")event="arMixMonitorTimingAck";
+        else if(action=="routingLogicalInputEdit")event="arMixLogicalInputAck";
+        else if(action=="routingLogicalOutputEdit")event="arMixLogicalOutputAck";
+        else if(action=="audioIoDefaults")event="arMixIoDefaultsAck";
+        else if(action=="audioNamedPatchEdit")event="arMixNamedPatchAck";
+        else if(action=="routingNativeFxRackBypass")event="arMixNativeFxPowerAck";
+        else if(action=="routingNativeFxInsertBypass")event="arMixNativeFxPowerAck";
+        else if(action=="routingM4Control")event="arMixM4ControlAck";
+        else if(action=="routingChannelPatch")event="arMixChannelPatchAck";
+        else if(action=="routingSourceSwitch")event="arMixSourceSwitchAck";
+        else if(action=="routingFxInsert")event="arMixRoutingFxInsertAck";
+        else if(action=="routingFxBypass")event="arMixRoutingFxBypassAck";
+        else if(action=="routingFxRackBypass")event="arMixRoutingFxRackAck";
+        else if(action=="routingGlobalFxBypass")event="arMixGlobalFxAck";
+        else if(action=="audioNamedProfileFile")event="arMixNamedProfileFileResult";
+        else if(action=="routingDryShowSave")event="arMixNativeShowSaveAck";
+        else if(action=="routingDryShowList")event="arMixNativeShowListAck";
+        else if(action=="routingDryShowRecall")event="arMixNativeShowRecallAck";
+        else if(action=="routingDryShowRecover")event="arMixNativeShowRecoverAck";
+        if(!event)return {};
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",args.getProperty("requestId",{}));
+        ack->setProperty("ok",false);
+        ack->setProperty("error","Audio configuration is finishing. Retry when ready.");
+        // Echo request identity only, not authoritative installed state.
+        if(action=="routingExternalOutput"){
+            ack->setProperty("channelId",args.getProperty("channelId",{}).toString());
+            ack->setProperty("deviceEpoch",args.getProperty("deviceEpoch",{}));
+            ack->setProperty("graphRevision",args.getProperty("revision",{}));
+        }else if(action=="routingNativeFxRackBypass"||action=="routingNativeFxInsertBypass"){
+            ack->setProperty("channelId",args.getProperty("channelId",{}));
+            ack->setProperty("bypassed",args.getProperty("value",{}));
+        }else if(action=="routingFxInsert"||action=="routingFxBypass"){
+            // The bridge indexes a pending legacy slot-power request by channel:slot.
+            ack->setProperty("channel",args.getProperty("channel",-1));
+            ack->setProperty("slot",args.getProperty("slot",-1));
+        }else if(action=="audioNamedProfileFile"){
+            // File-dialog completion is correlated by both request and operation.
+            ack->setProperty("operation",args.getProperty("operation",{}));
+        }else if(action=="routingM4Control"||action=="routingChannelPatch"||
+                 action=="routingSourceSwitch"||action=="routingFxRackBypass"){
+            ack->setProperty("channel",args.getProperty("channel",-1));
+        }
+        return {event,juce::var(ack.release())};
     }
 
     struct Request {
@@ -408,9 +465,14 @@ public:
         }
 
         if(sameEndpoint && priorOpen) {
-            if(r.rate>0&&!device->getAvailableSampleRates().contains(r.rate))
+            // A currently negotiated format is evidence even if a vendor
+            // omits it from its advertised alternatives. Pin-only edits must
+            // retain that exact format rather than silently requesting AUTO.
+            if(r.rate>0&&r.rate!=device->getCurrentSampleRate()&&
+               !device->getAvailableSampleRates().contains(r.rate))
                 plan.error="Requested sample rate not reported by selected device";
-            else if(r.block>0&&!device->getAvailableBufferSizes().contains(candidate.bufferSize))
+            else if(r.block>0&&candidate.bufferSize!=device->getCurrentBufferSizeSamples()&&
+                    !device->getAvailableBufferSizes().contains(candidate.bufferSize))
                 plan.error="Requested buffer size not reported by selected device";
         }
         return plan;

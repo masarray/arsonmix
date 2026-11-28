@@ -146,10 +146,24 @@ test('saved ASIO startup failure keeps the host callback registered for manual A
   // Product default requests stereo IN 1+2; saved explicit masks remain authoritative.
   const initialise=engine.indexOf('auto error = deviceManager_.initialise (2, 2, savedSettings, !savedRoute);');
   assert.ok(registration>=0 && registration<initialise);
-  assert.match(engine,/attached_ = true;\s*const bool savedRoute/);
-  assert.match(engine,/if \(error\.isNotEmpty\(\)\) return error;/);
-  assert.match(host,/new juce::AudioDeviceSelectorComponent/);
-  assert.match(host,/showDeviceSetup\(\)/);
+  // Cold-start retry must not register the same callback twice.
+  const guard=engine.indexOf('if(!attached_) {');
+  const saved=engine.indexOf('const bool savedRoute',registration);
+  assert.ok(guard>=0&&guard<registration&&registration<saved&&saved<initialise);
+  assert.match(engine.slice(guard,saved),/if\(!attached_\)\s*\{\s*deviceManager_\.addAudioCallback \(this\);\s*attached_ = true;\s*\}\s*$/);
+  const failure=engine.indexOf('if (error.isNotEmpty()) {',initialise);
+  const success=engine.indexOf('startupAsioRetryIdentity_.reset();',failure);
+  assert.ok(failure>initialise&&success>failure);
+  const failurePath=engine.slice(failure,success);
+  assert.match(failurePath,/if\(savedAsioPreflight\)\s*\{\s*startupAsioRetryIdentity_=\*savedAsioPreflight;\s*deviceManager_\.closeAudioDevice\(\);\s*\}\s*return error;/);
+  assert.doesNotMatch(failurePath,/removeAudioCallback|\bdetach\s*\(/);
+  // The legacy JUCE selector was replaced by the approved Audio I/O WebView.
+  const setup=host.slice(host.indexOf('else if (action == "audioSetup")'),host.indexOf('else if (action == "diagnosticRoute")'));
+  assert.match(setup,/emitDeviceInventory\(false\)/);
+  assert.match(setup,/emitEventIfBrowserIsVisible\("arMixOpenAudioIO"/);
+  assert.match(host,/else if \(action == "audioDeviceApply"\)\s*\{\s*applyCustomAudioDevice\(args\);/);
+  assert.match(host,/\[this\] \{engine_\.beginManualAudioSetup\(\);\}/);
+  assert.match(host,/finishAudioSetupAndRecoverMixer\(mode\)/);
 });
 
 test('P0 ASIO live direct route fence blocks hotplug substitution before DSP',()=>{

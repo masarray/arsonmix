@@ -92,10 +92,24 @@ public:
         return commit(std::move(candidate),std::move(result));
     }
 
-    Result createBus(std::uint64_t expected,std::string name,ChannelRole role) {
+    Result createBus(std::uint64_t expected,std::string name,ChannelRole role,bool connectMain=true) {
         if(!initialized_)return {ChannelEditFault::invalidAction,revision(),{}};
         auto candidate=roster_;
-        auto result=candidate.createStandaloneBus(expected,std::move(name),role);
+        auto result=candidate.createStandaloneBus(expected,std::move(name),role,connectMain);
+        return commit(std::move(candidate),std::move(result));
+    }
+
+    Result createReverbReturn(std::uint64_t expected,std::string name) {
+        if(!initialized_)return {ChannelEditFault::invalidAction,revision(),{}};
+        auto candidate=roster_;
+        auto result=candidate.createReverbReturn(expected,std::move(name));
+        return commit(std::move(candidate),std::move(result));
+    }
+
+    Result createGroupForSelected(std::uint64_t expected,std::span<const ChannelId> selected,std::string name) {
+        if(!initialized_)return {ChannelEditFault::invalidAction,revision(),{}};
+        auto candidate=roster_;
+        auto result=candidate.createBusForSelected(expected,selected,std::move(name),ChannelRole::group,1.f);
         return commit(std::move(candidate),std::move(result));
     }
 

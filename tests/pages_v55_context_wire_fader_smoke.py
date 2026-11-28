@@ -2,6 +2,7 @@
 """V55 context WIRE dot paint; preserve owner-approved realistic static cap shadow."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import open_wire_config, toggle_wire_routes
 PAGE=Path(__file__).resolve().parents[1]/"site/preview-v2/index.html"
 def node(page,ch,direction):
     sel=".wire-node-out" if direction=="out" else ".wire-node-in"
@@ -50,7 +51,7 @@ def main():
                     assert hidden["color"]=="rgb(75, 83, 91)",(w,density,hidden)
                     page.locator('#tracks .strip[data-id="3"] .strip-identity-top').click()
                     assert node(page,3,"in")["paint"]=="connected"
-                    page.locator("#wireNavigatorToggle").click()
+                    toggle_wire_routes(page)
                     page.locator("#wireWsUndo").click()
                     assert node(page,5,"out")["connected"] is None and node(page,5,"out")["paint"]=="idle"
                     assert node(page,3,"in")["paint"]=="idle"

@@ -5,13 +5,16 @@ This tests SIMULATED Pages values only, never physical PCM or JUCE telemetry.
 """
 from pathlib import Path
 from playwright.sync_api import sync_playwright
+from operator_wire_menu import click_demo_meters
+from approved_publication_fixture import published_console
 
 ROOT=Path(__file__).resolve().parents[1]
-HTML=ROOT/"site/preview-v2/index.html"
+HTML=ROOT/"dist-pages/preview/index.html"
 CSS=ROOT/"site/preview-v2/assets/mixer-meter-display.css"
 
 def inspect_geometry(page,density,w):
-    page.locator("#densitySelect").select_option(density)
+    assert page.locator("#densitySelect").is_hidden()
+    assert page.locator(".console-body").get_attribute("data-density")==density
     page.wait_for_selector('#tracks .strip[data-id="1"] .meter-peak-hold')
     data=page.evaluate("""() => {
       const elems=[document.querySelector('#tracks .strip[data-id="1"]'),
@@ -48,9 +51,7 @@ def inspect_geometry(page,density,w):
     return data
 
 def inspect_motion(page):
-    menu=page.locator('#moreTools')
-    menu.locator('summary').click()
-    page.locator('#preview').click()
+    click_demo_meters(page)
     lane=page.locator('#tracks .strip[data-id="1"] .meter-lane').first
     fill=lane.locator('.meter-fill')
     hold=lane.locator('.meter-peak-hold')
@@ -95,8 +96,7 @@ def inspect_motion(page):
        'Independent CLIP lamps lost')
     page.screenshot(path='pages-v51-peak-hold-release-1680.png')
     # Stop MUST clear both LED level and held marker, without leftover RAF.
-    menu.locator('summary').click()
-    page.locator('#preview').click()
+    click_demo_meters(page)
     assert hold.evaluate("e=>getComputedStyle(e).opacity")=='0',(
        'stopped demo still shows peak hold')
 
@@ -109,11 +109,9 @@ def main():
             page=browser.new_page(viewport={'width':w,'height':h})
             errors=[]
             page.on('pageerror',lambda e:errors.append(str(e)))
-            page.goto(HTML.as_uri())
+            page.goto(published_console(HTML.parent.parent).as_uri())
             page.wait_for_selector('#tracks .strip[data-id="1"]')
-            for density in ('comfort','standard','compact'):
-                inspect_geometry(page,density,w)
-            page.locator('#densitySelect').select_option('comfort')
+            inspect_geometry(page,'comfort',w)
             if w==1680:inspect_motion(page)
             assert not errors,(w,h,'JavaScript errors',errors)
             page.close()

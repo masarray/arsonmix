@@ -12,6 +12,9 @@ if($LASTEXITCODE -ne 0 -or $policyOutput -notcontains 'ARSONMIX_UPDATER_POLICY_P
    $policyOutput -notcontains 'ARSONMIX_UPDATER_RETRY_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_SELF_REPAIR_POLICY_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_STAGED_INTEGRITY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_AUTONOMOUS_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_RESUME_POLICY_PASS' -or
+   $policyOutput -notcontains 'ARSONMIX_UPDATER_OFFLINE_ROLLBACK_LEASE_PASS' -or
    $policyOutput -notcontains 'ARSONMIX_UPDATER_ATTESTATION_POLICY_PASS'){
     throw "Smart updater offline version/origin/duplicate-asset policy failed: $policyOutput"
 }
@@ -35,6 +38,36 @@ if($LASTEXITCODE -ne 0 -or $startupOutput -notcontains 'ARSONMIX_STARTUP_DIAGNOS
 Write-Host "ARSONMIX_STARTUP_DIAGNOSTIC_POLICY_PASS"
 
 $ErrorActionPreference="Stop"
+# Exercise the same distribution verifier on an actual Windows nested archive.
+. (Join-Path $PSScriptRoot "windows_zip_member_paths.ps1")
+$zipWork=Join-Path $env:RUNNER_TEMP ("armix-zip-fixture-"+[guid]::NewGuid().ToString("N"))
+try{
+    $zipRoot=Join-Path $zipWork 'dist'
+    $moduleDir=Join-Path $zipRoot 'FactoryFX/ArSonEQ/ArSonEQ.vst3/Contents/x86_64-win'
+    New-Item -ItemType Directory -Force -Path $moduleDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $zipRoot 'README.md') -Value 'fixture'
+    $module=Join-Path $moduleDir 'ArSonEQ.vst3'
+    Set-Content -LiteralPath $module -Value 'fixture module bytes'
+    $relative=Get-ArSonMixZipRelativePath $zipRoot $module
+    if($relative -cne 'FactoryFX/ArSonEQ/ArSonEQ.vst3/Contents/x86_64-win/ArSonEQ.vst3'){throw "Windows nested path normalization failed: $relative"}
+    $zipPath=Join-Path $zipWork 'portable.zip'
+    Compress-Archive -Path (Join-Path $zipRoot '*') -DestinationPath $zipPath -Force
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip=[IO.Compression.ZipFile]::OpenRead($zipPath)
+    try{
+        Assert-ArSonMixZipPayload $zip $zipRoot
+        Set-Content -LiteralPath $module -Value 'tampered module bytes'
+        $rejected=$false
+        try{Assert-ArSonMixZipPayload $zip $zipRoot}catch{if($_.Exception.Message -like 'ZIP payload SHA256 mismatch:*'){$rejected=$true}else{throw}}
+        if(-not $rejected){throw 'ZIP tamper regression not rejected'}
+        Remove-Item -LiteralPath $module
+        $rejected=$false
+        try{Assert-ArSonMixZipPayload $zip $zipRoot}catch{if($_.Exception.Message -like 'ZIP does not contain exactly*'){$rejected=$true}else{throw}}
+        if(-not $rejected){throw 'ZIP extra member regression not rejected'}
+    }finally{$zip.Dispose()}
+    Write-Host 'FACTORYFX_NESTED_WINDOWS_ZIP_INVENTORY_PASS'
+}finally{if(Test-Path -LiteralPath $zipWork){Remove-Item -LiteralPath $zipWork -Recurse -Force}}
+
 $root=(Resolve-Path .).Path
 $work=Join-Path $env:RUNNER_TEMP ("arsonmix-inno-smoke-"+[guid]::NewGuid().ToString("N"))
 $stage=Join-Path $work "stage"
@@ -172,6 +205,7 @@ try {
     [IO.File]::WriteAllBytes((Join-Path $stage "VBCABLE_Driver_Pack45.zip"),
         [Text.Encoding]::ASCII.GetBytes("TEST_FIXTURE_ONLY_NOT_A_VB_AUDIO_DRIVER"))
     Copy-Item -LiteralPath (Join-Path $root "installer/VB-CABLE-NOTICE.txt") -Destination (Join-Path $stage "VB-CABLE-NOTICE.txt")
+    & ./scripts/prepare_update_verifier.ps1 -StageDirectory $stage
     $found=Get-Command ISCC.exe -ErrorAction SilentlyContinue
     $iscc=if($found){$found.Source}else{"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"}
     Assert-Condition (Test-Path -LiteralPath $iscc -PathType Leaf) "ISCC.exe missing"
@@ -184,6 +218,11 @@ try {
     Assert-Condition ($first.ExitCode -eq 0) ("First test install exit="+$first.ExitCode)
     $installedExe=Join-Path $install "ArSonMix.exe"
     Assert-Condition (Test-Path -LiteralPath $installedExe -PathType Leaf) "Installed fixture missing"
+    foreach($item in @("gh.exe","verifier.json","LICENSE.txt","THIRD-PARTY-LICENSES.txt")){
+        $staged=Join-Path (Join-Path $stage "UpdateVerifier") $item
+        $actual=Join-Path (Join-Path $install "UpdateVerifier") $item
+        Assert-Condition ((Get-FileHash -LiteralPath $staged).Hash -ceq (Get-FileHash -LiteralPath $actual).Hash) "Installed verifier payload differs: $item"
+    }
     # No top-level loose legal documents should be installed. The real FAT
     # separately scans the actual JUCE PE for the seven full embedded texts.
     foreach($name in @("LICENSE","LICENSE-NOTICE.txt",
@@ -331,6 +370,42 @@ try {
     Write-Host "INNO_BLOCKED_FAIL_CLOSED_PASS: live process stays running, no overwrite, Studio intact"
     Stop-Process -Id $fixtureProcess.Id -Force -ErrorAction Stop # TEST-ONLY synthetic fixture teardown
     $fixtureProcess.Dispose();$fixtureProcess=$null
+
+    # Independent second version: actual Inno upgrade then downgrade, with
+    # the old setup file held read-only for the entire transaction. Test-only
+    # rotated verifier receipt represents replacement; no production trust
+    # is inferred from these unsigned WinForms fixtures.
+    $nextOut=Join-Path $work 'next-setup'
+    New-Item -ItemType Directory -Force -Path $nextOut|Out-Null
+    $nextSource=Join-Path $work 'next-fixture.cs'
+    $source=Get-Content -LiteralPath (Join-Path $root 'tests/fixtures/installer_graceful_close.cs') -Raw
+    $source=$source.Replace('ArSonMix Upgrade Graceful-Close FAT Fixture','ArSonMix Second Version FAT Fixture')
+    [IO.File]::WriteAllText($nextSource,$source)
+    & $csc "/nologo" "/target:winexe" "/reference:System.Windows.Forms.dll" "/out:$(Join-Path $stage 'verified-gui.exe')" $nextSource
+    Assert-Condition ($LASTEXITCODE -eq 0) "Second version fixture failed to compile"
+    $nextHash=(Get-FileHash -LiteralPath (Join-Path $stage 'verified-gui.exe') -Algorithm SHA256).Hash
+    Assert-Condition ($nextHash -cne $fixtureHash) "Two fixtures unexpectedly have identical executable hashes"
+    $verifierReceipt=Join-Path $stage 'UpdateVerifier\verifier.json'
+    $oldReceiptHash=(Get-FileHash -LiteralPath $verifierReceipt -Algorithm SHA256).Hash
+    '{"testOnly":"rotated verifier receipt"}'|Set-Content -LiteralPath $verifierReceipt
+    '{"sourceCommit":"TEST_FIXTURE_SECOND_VERSION","fatStatus":"NOT_A_PRODUCT"}'|Set-Content -LiteralPath (Join-Path $stage 'BUILD_PROVENANCE.json')
+    & $iscc "/Qp" "/DSourceRoot=$stage" "/DOutputRoot=$nextOut" "/DSourceAppVersion=0.5.1" "/DVBCableSha256=$('0'*64)" (Join-Path $root "installer/ArSonMix.iss")
+    Assert-Condition ($LASTEXITCODE -eq 0) "Cannot compile distinct second Inno fixture"
+    $nextSetup=Join-Path $nextOut 'ArSonMix-Windows-x64-Setup-Preview.exe'
+    $oldSetupLease=[IO.File]::Open($setup,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try {
+        $nextInstall=Start-Process -FilePath $nextSetup -ArgumentList ($setupArgs+@('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+        Assert-Condition ($nextInstall.ExitCode -eq 0) "Second fixture installation failed"
+        Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -ceq $nextHash) "Second version not installed"
+        Assert-Condition ((Get-FileHash -LiteralPath (Join-Path $install 'UpdateVerifier\verifier.json') -Algorithm SHA256).Hash -cne $oldReceiptHash) "Verifier receipt was not rotated"
+        $rollback=Start-Process -FilePath $setup -ArgumentList ($setupArgs+@('/ARSONMIXAUTOUPDATE')) -Wait -PassThru
+        Assert-Condition ($rollback.ExitCode -eq 0) "Previous fixture installer rejected rollback"
+        Assert-Condition ((Get-FileHash -LiteralPath $installedExe -Algorithm SHA256).Hash -ceq $fixtureHash) "Rollback failed to restore old EXE bytes"
+        Assert-Condition ((Get-FileHash -LiteralPath (Join-Path $install 'UpdateVerifier\verifier.json') -Algorithm SHA256).Hash -ceq $oldReceiptHash) "Rollback failed to restore old verifier receipt"
+        Assert-Condition ((Get-Content -LiteralPath $userFile -Raw).Trim() -ceq 'user-file-must-survive') "Rollback changed private local file"
+        Assert-Condition ((Get-Content -LiteralPath $privateSentinel -Raw).Trim() -ceq 'private-user-data') "Rollback changed Studio sentinel"
+        Write-Host 'INNO_DISTINCT_VERSION_ROLLBACK_PASS: two different EXEs and verifier receipts, old setup lease, private data retained'
+    } finally {$oldSetupLease.Dispose()}
 
     $uninstaller=Join-Path $install "unins000.exe"
     Assert-Condition (Test-Path -LiteralPath $uninstaller) "Uninstaller missing"

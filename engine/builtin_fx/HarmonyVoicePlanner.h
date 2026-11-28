@@ -38,7 +38,14 @@ class VoicePlanner final {
 public:
     void reset() noexcept { targets_.fill(-1); }
 
-    void plan(int melody,int key,const std::array<int,7>& scale) noexcept {
+    void plan(int melody,int key,const std::array<int,7>& scale,
+              int voices=2) noexcept {
+        if(voices>=3){planEnsemble(melody,key,scale);return;}
+        planDuo(melody,key,scale);
+    }
+    // Preserve the accepted two-voice arrangement. Wider ensembles need
+    // joint chord membership, not independently chosen scale neighbours.
+    void planDuo(int melody,int key,const std::array<int,7>& scale) noexcept {
         for(std::size_t i=0;i<singers.size();++i){
             const auto& profile=singers[i];
             int selected=-1,best=1000;
@@ -58,8 +65,87 @@ public:
         }
     }
 
+    // A confidently observed triad may override key-only inference, but
+    // never force an incompatible melody or violate the approved register
+    // bands. On passing/non-chord tones preserve the established fallback.
+    bool planGuided(int melody,int key,const std::array<int,7>& scale,
+                    int voices,int root,int quality) noexcept {
+        if(voices<3||root<0||root>=12||quality<0||quality>1){
+            plan(melody,key,scale,voices);return false;
+        }
+        const auto previous=targets_;
+        plan(melody,key,scale,voices);
+        const auto fallback=targets_;
+        const std::array<int,3> chord{{root,(root+(quality?3:4))%12,(root+7)%12}};
+        const auto member=[&](int note) noexcept{
+            return std::find(chord.begin(),chord.end(),pc(note,0))!=chord.end();
+        };
+        if(!member(melody))return false;
+        std::array<int,5> selected{};
+        for(std::size_t i=0;i<singers.size();++i){
+            const auto& role=singers[i];
+            int best=10000,chosen=-1;
+            for(int delta=role.minInterval;delta<=role.maxInterval;++delta){
+                const int note=melody+delta;
+                if(!member(note))continue;
+                const int move=previous[i]<0?0:std::min(7,std::abs(note-previous[i]));
+                const int cost=2*std::abs(delta-role.preferred)+2*move+
+                               (note!=fallback[i]?1:0);
+                if(cost<best){best=cost;chosen=note;}
+            }
+            if(chosen<0)return false;
+            selected[i]=chosen;
+        }
+        if(selected[0]-selected[3]<3||selected[2]-selected[1]<3||
+           selected[4]-selected[2]<3)return false;
+        targets_=selected;return true;
+    }
     int target(std::size_t voice) const noexcept { return targets_[voice]; }
 private:
+    static int pc(int note,int key) noexcept {return ((note-key)%12+12)%12;}
+    // A key is NOT an observed backing-track chord. This is a deterministic
+    // diatonic triad fallback containing the melody, not chord recognition.
+    // Evaluate at most 7 roots * 5 roles * 4 interval candidates per new
+    // accepted note. No allocation, per-sample search, or additional DSP.
+    void planEnsemble(int melody,int key,const std::array<int,7>& scale) noexcept {
+        const auto previous=targets_;
+        planDuo(melody,key,scale);
+        const auto fallback=targets_;
+        auto bestNotes=fallback;
+        int bestCost=100000;
+        for(int root=0;root<7;++root){
+            const std::array<int,3> chord{{scale[root],scale[(root+2)%7],
+                                          scale[(root+4)%7]}};
+            const auto member=[&](int note) noexcept {
+                return std::find(chord.begin(),chord.end(),pc(note,key))!=chord.end();
+            };
+            if(!member(melody))continue;
+            // Major/minor triads only: a key-only fallback should not
+            // invent a diminished chord under an ambiguous melody.
+            if((chord[2]-chord[0]+12)%12!=7)continue;
+            std::array<int,singers.size()> notes{};
+            int score=0;
+            bool complete=true;
+            for(std::size_t i=0;i<singers.size();++i){
+                const auto& role=singers[i];
+                int chosen=-1,costBest=10000;
+                for(int interval=role.minInterval;interval<=role.maxInterval;++interval){
+                    const int note=melody+interval;
+                    if(!member(note))continue;
+                    const int move=previous[i]<0?0:std::min(7,std::abs(note-previous[i]));
+                    const int cost=2*std::abs(interval-role.preferred)+move+
+                        (i==0&&note!=fallback[0]?12:0);
+                    if(cost<costBest){costBest=cost;chosen=note;}
+                }
+                if(chosen<0){complete=false;break;}
+                notes[i]=chosen;score+=costBest;
+            }
+            if(!complete||notes[0]-notes[3]<3||notes[2]-notes[1]<3||
+               notes[4]-notes[2]<3)continue;
+            if(score<bestCost){bestCost=score;bestNotes=notes;}
+        }
+        targets_=bestNotes;
+    }
     std::array<int,singers.size()> targets_{{-1,-1,-1,-1,-1}};
 };
 } // namespace armix::harmony

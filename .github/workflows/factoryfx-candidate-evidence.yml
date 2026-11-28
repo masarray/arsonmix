@@ -1,0 +1,83 @@
+name: FactoryFX pinned candidate archive evidence
+on:
+  pull_request:
+    paths:
+      - 'config/factoryfx-qualification-candidates.json'
+      - 'scripts/factoryfx_candidate_probe.py'
+      - 'scripts/factoryfx_release_bundle.py'
+      - 'scripts/tests/test_factoryfx_candidate_probe.py'
+      - '.github/workflows/factoryfx-candidate-evidence.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: factoryfx-candidates-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  archive-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Offline candidate and strict package contract tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_factoryfx*.py' -v
+      - name: Download exact pinned public archives and inspect without executing DLLs
+        run: python3 scripts/factoryfx_candidate_probe.py --output factoryfx-evidence.json
+      - name: Retain candidate evidence, never an approved lock or binary package
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: FactoryFX-candidate-evidence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: factoryfx-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows-host-evidence:
+    # Explicit owner-requested release qualification of the four real modules.
+    # Never run vendor binaries on unrelated PRs or ordinary canonical pushes.
+    if: github.event_name == 'pull_request' && github.head_ref == 'feat/factoryfx-standard-four-20261127'
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: juce-framework/JUCE
+          ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53
+          path: third_party/JUCE
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Configure and compile actual isolated JUCE VST3 host
+        shell: pwsh
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ((& git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) { throw 'FACTORYFX_SOURCE_MISMATCH' }
+          nuget install Microsoft.Web.WebView2 -Version 1.0.3485.44 -OutputDirectory .deps -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake -S . -B factoryfx-build -G "Visual Studio 17 2022" -A x64 "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build factoryfx-build --config Release --parallel 2 --target ARMixFactoryFxHostProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Execute exact pinned Windows VST3 host evidence (not approval)
+        shell: pwsh
+        run: |
+          python scripts/factoryfx_candidate_probe.py --output factoryfx-host-evidence.json --host factoryfx-build/ARMixFactoryFxHostProbe_artefacts/Release/ARMixFactoryFxHostProbe.exe
+          $code=$LASTEXITCODE
+          if (Test-Path -LiteralPath factoryfx-host-evidence.json) { Get-Content -LiteralPath factoryfx-host-evidence.json -Raw | Write-Host }
+          if ($code -ne 0) { exit $code }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: FactoryFX-host-evidence-${{ github.event.pull_request.head.sha }}
+          path: factoryfx-host-evidence.json
+          if-no-files-found: warn
+          retention-days: 14

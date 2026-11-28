@@ -15,7 +15,7 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 OWNED = {
     "arson-eq": ("masarray/arson-eq", "ArSonEQ", "ArSonEQ.vst3", "EQ"),
@@ -25,7 +25,19 @@ OWNED = {
     "arson-harmony": ("masarray/arson-harmony", "ArSonHarmony", "ArSonHarmony.vst3", "HARMONY"),
     "arson-color": ("masarray/arson-color", "ArSonColor", "ArSonColor.vst3", "COLOR"),
 }
+THREE_IDS = frozenset(("arson-eq", "arson-comp", "arson-verb"))
 FOUR_IDS = frozenset(("arson-eq", "arson-comp", "arson-verb", "arsonkupik-enhancer"))
+
+
+def standard_ready(plugins):
+    ids = {p["productId"] for p in plugins}
+    return ids == THREE_IDS or FOUR_IDS.issubset(ids)
+
+
+def stage_mode(plugins):
+    if distribution_for(plugins) == "production-three":
+        return "standard-three"
+    return "standard-four" if standard_ready(plugins) else "best-effort"
 
 
 def distribution_for(plugins):
@@ -34,6 +46,8 @@ def distribution_for(plugins):
         return "production-six"
     if len(ids) == 4 and set(ids) == FOUR_IDS:
         return "production-four"
+    if len(ids) == 3 and set(ids) == THREE_IDS:
+        return "production-three"
     return "engineering-partial"
 
 
@@ -117,14 +131,20 @@ def zip_members(z, bundle):
     chosen = []
     seen = set()
     total = 0
+    selected_root = None
+    selected_layout = None
     for info in z.infolist():
         # Ignore zip folder markers and unrelated top-level build metadata.
         if info.is_dir():
             continue
-        pp = PurePosixPath(info.filename)
-        parts = pp.parts
-        if not parts or any(x in ("", ".", "..") for x in parts) or info.filename.startswith("/") or "\\" in info.filename:
-            fail("unsafe ZIP path")
+        # Older Windows ZIP producers use backslashes. Normalize ONLY
+        # separators, never resolve path traversal or extract raw names.
+        # Reject absolute, drive/ADS, UNC and dot/empty components before
+        # using a relative resource path on any host.
+        raw = info.filename.replace("\\", "/")
+        parts = raw.split("/")
+        if any(x in ("", ".", "..") or ":" in x or "\x00" in x for x in parts):
+            fail("unsafe ZIP path: " + repr(info.filename[:160]))
         mode = info.external_attr >> 16
         if stat.S_ISLNK(mode):
             fail("symlink inside VST3 archive")
@@ -133,17 +153,38 @@ def zip_members(z, bundle):
             # Standalone EXEs and foreign plugins must never enter the factory.
             continue
         i = positions[0]
-        if i > 1 or (i == 1 and parts[0] not in ("VST3", "vst3", "Plugin")):
-            fail("unexpected VST3 archive root")
+        # Supplier ZIPs may put the exact named bundle under one
+        # versioned wrapper directory. The wrapper is never extracted.
+        # Require a single root for ALL chosen resources; no merging two
+        # different copies of the module, even with disjoint filenames.
+        if i == 1 and (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._ -]{0,119}", parts[0])
+                       or parts[0].endswith((".", " ")) or parts[0].lower().endswith(".vst3")):
+            fail("unexpected VST3 archive root: " + repr(parts[0][:120]))
+        root = tuple(parts[:i])
+        if selected_root is not None and root != selected_root:
+            fail("multiple VST3 archive roots")
+        selected_root = root
         sub = parts[i + 1:]
+        # Some legacy Windows VST3 releases contain a single .vst3 PE.
+        # Normalize to the registry's standard x64 bundle path without
+        # changing the module bytes. Only the known KuPik legacy supplier
+        # is admitted; a real Windows host probe still must qualify it.
+        layout = "bundle" if sub else "legacy-flat"
+        if selected_layout is not None and layout != selected_layout:
+            fail("mixed flat and directory VST3 layouts")
+        selected_layout = layout
         if not sub:
-            fail("Windows JUCE VST3 must be a bundle directory")
+            if bundle != OWNED["arsonkupik-enhancer"][2]:
+                fail("Windows JUCE VST3 must be a bundle directory")
+            sub = ["Contents", "x86_64-win", bundle]
         rel = "/".join(sub)
         lower = rel.lower()
         if lower in seen:
             fail("duplicate / case-alias VST3 resource")
         seen.add(lower)
-        if not all(TOKEN.fullmatch(v) for v in sub):
+        if not all(TOKEN.fullmatch(v) and not v.endswith(".") and
+                   v.split(".")[0].upper() not in {"CON", "PRN", "AUX", "NUL", *("COM"+str(n) for n in range(1,10)), *("LPT"+str(n) for n in range(1,10))}
+                   for v in sub):
             fail("unsafe VST3 resource name")
         total += info.file_size
         if len(seen) > MAX_FILES or total > MAX_UNPACKED or info.file_size > MAX_UNPACKED:
@@ -161,6 +202,10 @@ def stage(plugins, output, notices, best_effort=False):
     leave the existing installed/package FactoryFX untouched. Temporary files
     are on the same filesystem so the final directory rename is atomic.
     """
+    # Existing reviewed Windows workflow invokes --best-effort. Once the
+    # exact three-product or complete four-product lock is present, a supplier failure is a distribution
+    # failure, not permission to silently downgrade a Standard package.
+    standard = standard_ready(plugins)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     destination = output / "FactoryFX"
@@ -208,7 +253,7 @@ def stage(plugins, output, notices, best_effort=False):
                     "notices": ["FactoryFX/licenses/" + pid + ".txt"], "files": files,
                 })
             except (ValueError, OSError, urllib.error.URLError, zipfile.BadZipFile) as error:
-                if not best_effort:
+                if not best_effort or standard:
                     raise
                 # A failed supplier cannot leave a broken module in the final bundle.
                 shutil.rmtree(factory / OWNED[pid][1], ignore_errors=True)
@@ -231,7 +276,7 @@ def stage(plugins, output, notices, best_effort=False):
             factory.rename(destination)
     if best_effort:
         report = {
-            "schemaVersion": 1, "mode": "best-effort",
+            "schemaVersion": 1, "mode": stage_mode(plugins),
             "included": [{"productId": row["productId"],
                           "artifactSha256": row["artifactSha256"]} for row in rows],
             "omitted": omitted,
@@ -305,7 +350,8 @@ def read_best_effort_report(plugins, output):
     report = json.loads(path.read_text(encoding="utf-8"))
     if (not isinstance(report, dict) or set(report) !=
             {"schemaVersion", "mode", "included", "omitted"} or
-            report["schemaVersion"] != 1 or report["mode"] != "best-effort" or
+            report["schemaVersion"] != 1 or
+            report["mode"] != stage_mode(plugins) or
             not isinstance(report["included"], list) or
             not isinstance(report["omitted"], list)):
         fail("invalid optional FactoryFX stage report")
@@ -332,16 +378,18 @@ def read_best_effort_report(plugins, output):
             len(accepted_ids) + len(omitted_ids) != len(expected_ids) or
             len(set(accepted_ids + omitted_ids)) != len(expected_ids)):
         fail("FactoryFX stage report does not account for every approved module")
+    if standard_ready(plugins) and omitted_ids:
+        fail("Standard FactoryFX cannot omit any locked module")
     return [locked[pid] for pid in accepted_ids]
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["stage", "verify"])
+    parser.add_argument("action", choices=["stage", "verify", "preflight"])
     parser.add_argument("--lock", default="config/factoryfx-approved-releases.json")
     parser.add_argument("--notices", default="config/factoryfx-notices")
     parser.add_argument("--output", default="dist")
-    parser.add_argument("--require", choices=["none", "factory", "four", "six"], default="none")
+    parser.add_argument("--require", choices=["none", "factory", "three", "four", "six"], default="none")
     parser.add_argument("--best-effort", action="store_true",
                         help="Include each approved, retrievable plugin; never block core mixer")
     args = parser.parse_args()
@@ -350,12 +398,30 @@ def main():
         fail("--best-effort cannot bypass an explicit --require gate")
     if args.require == "factory" and not plugins:
         fail("Factory FX required but no approved release")
+    if args.require == "three" and distribution_for(plugins) != "production-three":
+        fail("Three-FX release requires exactly EQ, Comp and Verb — all approved")
     if args.require == "four" and distribution_for(plugins) != "production-four":
         fail("Four-FX release requires EQ, Comp, Verb and KuPik — all approved")
     if args.require == "six" and distribution_for(plugins) != "production-six":
         fail("Six-FX release requires all six approved effects")
+    if args.action == "preflight":
+        for p in plugins:
+            notice = Path(args.notices) / (p["productId"] + ".txt")
+            if not notice.is_file() or not notice.read_text(encoding="utf-8").strip():
+                fail(p["productId"] + ": reviewed redistribution/EULA notice missing")
+        print("FactoryFX reviewed inventory and notices:", distribution_for(plugins))
+        return
     if args.action == "stage":
         stage(plugins, Path(args.output), Path(args.notices), args.best_effort)
+        # The normal Windows distribution verifier consumes a report even
+        # when a strict CLI gate was selected explicitly.
+        if args.require in ("three", "four", "six"):
+            report = {"schemaVersion": 1, "mode": stage_mode(plugins),
+                      "included": [{"productId": p["productId"],
+                                    "artifactSha256": p["artifactSha256"].lower()} for p in plugins],
+                      "omitted": []}
+            (Path(args.output) / "FACTORYFX_STAGE_REPORT.json").write_text(
+                json.dumps(report, indent=2) + "\n", encoding="utf-8")
     else:
         accepted = (read_best_effort_report(plugins, Path(args.output))
                     if args.best_effort else plugins)

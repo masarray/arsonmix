@@ -152,6 +152,8 @@ def main():
             # opens the same instance again (no hidden/forced pointer click).
             editor=page.locator("#mxNativePeq")
             editor.wait_for(state="visible")
+            first=editor.bounding_box()
+            assert first and first["x"]>=0 and first["y"]>=0,(width,first)
             if width<=500:
                 # Full-width FX now intentionally clips inside the native
                 # mixer WebView, instead of folding the hardware into a
@@ -164,6 +166,7 @@ def main():
                 }""")
                 box=editor.locator(".mx-peq-close").bounding_box()
                 assert box and 0<=box["x"]<width-12,(width,box)
+            before_reopen=editor.bounding_box()
             editor.locator(".mx-peq-close").click()
             assert editor.is_hidden()
             if width==1366:
@@ -211,6 +214,23 @@ def main():
                 ?.dataset.fxState==='on'&&getComputedStyle(
                 document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
             assert not power.is_disabled()
+            # The shared overlay requires explicit native global A/B readback.
+            # Prove fail-closed on missing evidence and recovery on restoration;
+            # do not force clicks or bypass the real browser hit-test.
+            shade=editor.locator(".armix-native-fx-bypass")
+            shade.wait_for(state="attached")
+            page.wait_for_function("""()=>!document.querySelector(
+                "#mxNativePeq .armix-native-fx-bypass").classList.contains("is-on")""")
+            missing=copy.deepcopy(state)
+            del missing["globalFxBypassed"]
+            emit(page,"arMixConsoleSnapshot",missing)
+            page.wait_for_function("""()=>{const el=document.querySelector(
+                "#mxNativePeq .armix-native-fx-bypass");return el?.classList.contains("is-on")&&
+                el.textContent==="FX UNAVAILABLE"&&getComputedStyle(el).pointerEvents==="auto";}""")
+            emit(page,"arMixConsoleSnapshot",state)
+            page.wait_for_function("""()=>{const el=document.querySelector(
+                "#mxNativePeq .armix-native-fx-bypass");return el&&!el.classList.contains("is-on")&&
+                getComputedStyle(el).pointerEvents==="none";}""")
             assert page.locator(".mx-peq-knob").count()==3
             assert page.locator(".mx-peq-band").count()==8
             assert page.locator(".mx-peq-graph svg").count()==1
@@ -222,8 +242,19 @@ def main():
             assert page.locator(".mx-peq-zero").count()==1
             assert page.locator(".mx-peq-graph circle[data-eq-node]").count()==16
             bbox=editor.bounding_box()
-            assert bbox and bbox["x"]>=0 and bbox["y"]>=0,\
-                "EQ window starts outside viewport"
+            # Reopening the exact same instance preserves the operator's pan
+            # offset, including a deliberately cropped negative left edge.
+            assert bbox and before_reopen and all(
+                abs(bbox[key]-before_reopen[key])<1 for key in ("x","y","width","height")),(
+                width,bbox,before_reopen)
+            if width<=500:
+                close_box=editor.locator(".mx-peq-close").bounding_box()
+                assert close_box and 0<=close_box["x"]<width-12,(width,close_box)
+                # The existing explicit rescue action must restore first-open
+                # reachability without shrinking or altering the FX face.
+                assert page.evaluate("()=>window.ArSonMixFxWorkspace.recenter(document.getElementById('mxNativePeq'))")
+                bbox=editor.bounding_box()
+            assert bbox and bbox["x"]>=0 and bbox["y"]>=0,(width,bbox)
             if width==1366:
                 page.screenshot(path="native-peq-02-open-editor.png")
                 # Enable bell band with an acknowledged native write.

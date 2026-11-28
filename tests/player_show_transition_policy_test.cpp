@@ -39,6 +39,27 @@ int main() {
     assert(P::nextIndex(-1,2,10,-1)==2);
     assert(P::nextIndex(0,0,0,-1)==-1);
     assert(P::nextIndex(0,0,10,999)==1);
+    assert(!P::automatic(true,0,2));
+    assert(P::automatic(false,1,0));
+    assert(P::automatic(false,-1,1));
+    assert(!P::automatic(false,-1,0));
+    assert(P::automaticIndex(3,3,10,-1,1)==3);
+    assert(P::automaticIndex(9,9,10,-1,2)==0);
+    assert(P::automaticIndex(3,5,10,-1,1)==5);
+    assert(P::automaticIndex(3,5,10,7,1)==7);
+    assert(P::automaticIndex(9,9,10,-1,0)==-1);
+    armix::player::PlayerSessionActivity activity;
+    assert(activity.observe(3,true,false));
+    assert(!activity.observe(3,true,false));
+    assert(activity.observe(3,false,true));
+    assert(activity.done().contains(3));
+    assert(!activity.observe(3,false,true));
+    assert(activity.observe(5,true,false));
+    assert(activity.complete(5));
+    assert(activity.started(5));assert(!activity.done().contains(5));
+    assert(activity.complete(5));
+    activity.resetSet();assert(activity.done().empty()&&activity.recent().front()==5);
+    activity.clear();assert(activity.recent().empty());
     // A 500ms crossfade must start shortly before the end, never at
     // arbitrary mid-song positions and never when time is invalid.
     assert(!P::armBeforeEnd(60.,120.,500,.085));
@@ -80,6 +101,10 @@ int main() {
     }
     // Loop A-B is only allowed for real segments, with enough source
     // material on both sides of the selected equal-power overlap.
+    assert(P::loopDue(true,false,15.9,16.,180,.085,100));
+    assert(P::loopDue(false,true,16.,16.,180,.085,100));
+    assert(!P::loopDue(false,false,16.,16.,180,.085,100));
+    assert(!P::loopDue(true,false,12.,16.,180,.085,100));
     assert(P::validLoop(12.,16.,180));
     assert(P::validLoop(0.,2.,1500));
     assert(P::validLoop(0.,1.5,0));
