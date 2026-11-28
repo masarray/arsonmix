@@ -315,3 +315,21 @@ test('session capture cannot reopen MAIN after a newer operator STOP or device/g
  assert.match(capture,/document\.binding=readMixerBinding\(\*current\)/);
  assert.doesNotMatch(capture,/readMixerBinding\(\*device\)/);
 });
+
+
+test('authorized MAIN rollback and saved explicit resume do not depend on capture pins',()=>{
+ const rollback=main.split('case Apply::Outcome::recoveryRequired: {')[1].split('// A Windows native Explorer picker')[0];
+ assert.match(rollback,/if\(restored&&previousMonitor\)requestAutomaticMain\(false\)/);
+ assert.match(rollback,/if\(restored\)resumeStream\(true\)/);
+ const start=main.indexOf('const bool holdMain=usedPrevious');
+ const end=main.indexOf('mixerSessionStatus_=engine_.isMonitorEnabled()',start);
+ const restore=main.slice(start,end);
+ assert.match(restore,/const bool savedMainRequested=doc\.resumeMain\.value_or\(false\)/);
+ assert.ok(restore.indexOf('savedMainRequested=')<restore.indexOf('std::move(doc)'));
+ assert.match(restore,/if\(plan.resumeMain\)\s*requestAutomaticMain\(!savedMainRequested && plan.bindingMode!=MixerBindingMode::verifiedAsioRestart\)/);
+ assert.match(restore,/if\(holdMain\)\s*\{[\s\S]*?engine_\.setMonitorEnabled\(false\)/);
+ const auto=main.split('void serviceAutomaticMain()')[1].split('void requestAutomaticMain')[0];
+ assert.match(auto,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
+ assert.match(auto,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
+ assert.match(auto,/engine_\.liveOutputArmFault\(requireInput\)/);
+});

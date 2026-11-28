@@ -4408,7 +4408,8 @@ private:
         autoMainCheckedRevision_=revision;
         engine_.setMonitorEnabled(true);
         autoMainEpoch_=0;
-        diagnostics_.record("MAIN_AUTO_ENABLED","Verified device, input and MAIN output");
+        diagnostics_.record("MAIN_AUTO_ENABLED",requireInput?"Verified device, input and MAIN output":
+            "Verified device and authorized MAIN output; capture not required");
     }
 
     void requestAutomaticMain(bool requireInput=true) {
@@ -4582,7 +4583,9 @@ private:
             diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",result.error+" | rollback="+
                 (restored?"RESTORED":"RECOVERY_REQUIRED")+" | "+
                 juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-            if(restored&&previousMonitor)requestAutomaticMain();
+            // Rollback has restored the previously authorized endpoint. Its
+            // output intent is not conditional on a physical capture patch.
+            if(restored&&previousMonitor)requestAutomaticMain(false);
             if(restored)resumeStream(true);
             send(false,restored?(engine_.isMonitorEnabled()?"RESTORED_LIVE":"RESTORED_MUTED"):
                 "RECOVERY_REQUIRED",result.error);
@@ -6464,6 +6467,10 @@ private:
         // A saved explicit MUTE or previous-generation recovery must not be
         // undone by a later ordinary input/FX edit scheduling automatic MAIN.
         const bool holdMain=usedPrevious||(doc.resumeMain.has_value()&&!doc.resumeMain.value());
+        // Legacy checkpoints with no explicit intent retain first-sound
+        // admission. A saved affirmative MAIN intent is different: PLAYER,
+        // internal WIRE and dormant SOURCE NONE do not need a capture pin.
+        const bool savedMainRequested=doc.resumeMain.value_or(false);
         error=engine_.restoreNativeMixerSession(std::move(doc),states,
             plan.replacePristineStartup,nullptr,plan.bindingMode);
         if(error.isNotEmpty()) {
@@ -6483,7 +6490,7 @@ private:
                 "ON | previous checkpoint recovery":"ON | saved explicit MAIN mute");
         }
         if(plan.resumeMain)
-            requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
+            requestAutomaticMain(!savedMainRequested && plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",mixerSessionStatus_);
