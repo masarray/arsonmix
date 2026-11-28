@@ -1025,7 +1025,39 @@ def verify_independent_output(page,out,legacy_empty=False):
     assert panel.get_by_role("button",name="Edit headphone mix").is_enabled()
     assert any(e==monitor_edge for e in state["graph"]["edges"])
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryMonitorStarter').length")==int(legacy_empty)
-    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
+    # A real operator can disconnect the Windows endpoint while split is
+    # active. MAIN must be recoverable to the original ASIO pins without
+    # re-enabling Windows or discarding the authored headphone sends.
+    panel.get_by_role("button",name="Disconnect").click()
+    stop=page.evaluate("()=>window.__actions.at(-1)")
+    assert stop["action"]=="secondaryOutputStop"
+    emit(page,"arMixSecondaryOutputAck",{"requestId":stop["requestId"],"action":stop["action"],"ok":True,"preferenceSaved":True})
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,
+                secondaryOutputRecovering=False,secondaryOutputRecoveryName="",secondaryOutputName="")
+    emit(page,"arMixStatus",live)
+    restore=panel.get_by_role("button",name="Restore MAIN to ASIO")
+    assert restore.is_enabled()
+    restore.click()
+    recover=page.evaluate("()=>window.__actions.at(-1)")
+    assert recover["action"]=="secondaryOutputSplit" and recover["value"]["enabled"] is False
+    assert restore.is_disabled()
+    next_rev=str(int(next_rev)+1)
+    emit(page,"arMixSecondaryOutputAck",{"requestId":recover["requestId"],"action":recover["action"],
+        "ok":True,"graphRevision":next_rev,"resumeSecondary":False})
+    assert restore.is_disabled() # ACK alone cannot declare a new mapping
+    state.update(secondaryMainOnly=False,physicalMainOutputs=[0,1],
+                 physicalMonitorOutputs=[],physicalBusSecondaryArmed=False)
+    state["graph"]["revision"]=next_rev
+    state["mixerSession"]["routeRevision"]=next_rev
+    emit(page,"arMixConsoleSnapshot",state)
+    assert panel.locator("[data-extra-status]").inner_text().startswith("Verifying")
+    live["dryRoutingLab"].update(secondaryMainOnly=False,nativeBus={"graphRevision":next_rev})
+    emit(page,"arMixStatus",live)
+    assert panel.get_by_role("button",name="Separate headphone mix").is_disabled()
+    assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
+    assert not panel.locator("[data-extra-status]").inner_text().startswith("Verifying")
+    assert any(e==monitor_edge for e in state["graph"]["edges"])
+    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm','secondaryOutputEnable'].includes(a.action)).length")==0
     assert not errors,errors
 
 

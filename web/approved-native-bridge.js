@@ -4280,7 +4280,7 @@
     const modeButton=extraField("mix");
     modeButton.hidden=!mix.available&&!split;
     modeButton.disabled=busy||!allowed||!mix.available;
-    const modeLabel=split?(armed?"Use same mix":"Restore MAIN to ASIO"):"Separate headphone mix";
+    const modeLabel=split?(armed||recovering?"Use same mix":"Restore MAIN to ASIO"):"Separate headphone mix";
     if(modeButton.textContent!==modeLabel)modeButton.textContent=modeLabel;
     const starter=protocol.secondaryMonitorStarter(hardware,live);
     const starterButton=extraField("starter");
