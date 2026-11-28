@@ -1481,7 +1481,83 @@ static void verifySameRevisionPhysicalSwitchReceipt() {
     std::puts("LIVE_PHYSICAL_SOURCE_RECEIPT_PCM_PASS same graph, 64-sample fade, A-B-A generations");
 }
 
+// Stereo retarget across every production sink in one native render.
+// Distinct L/R values expose accidental mono/ordinal swaps. Independent
+// MONITOR PRE send, physical EXT and programme tap all use the same fade.
+static void verifyStereoPhysicalSwitchAcrossSinks() {
+    constexpr std::uint64_t epoch=9604;
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"KEEP",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto made=roster.edit(0,create);assert(made.ok());
+    const auto voice=made.createdIds[0],keep=made.createdIds[1],
+        main=made.createdIds[2],monitor=made.createdIds[3];
+    const std::array<ChannelEdit,3> links{
+        output(voice,main),output(keep,main),send(voice,monitor,.25f,true)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=6;req.maxFrames=64;
+    req.sources={{voice,0,1,true},{keep,4,5,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher p;
+    assert(p.commit(roster,req,0,epoch,epoch,true).ok());
+    assert(p.setExternalOutput(epoch,1,voice,2,3,4));
+    std::array<std::array<float,64>,6> in{},out{};
+    const std::array<float,6> values{.10f,.20f,.40f,.05f,.03f,.07f};
+    std::array<const float*,6> pins{};
+    for(int i=0;i<6;++i){in[i].fill(values[i]);pins[i]=in[i].data();}
+    float* hardware[]{out[0].data(),out[1].data(),out[4].data(),out[5].data()};
+    DynamicProgrammeTap tap;tap.requested=voice;
+    int voiceCalls=0,keepCalls=0;
+    const auto fx=[&](ChannelId id,float*,float*,int) noexcept {
+        if(id==voice)++voiceCalls;
+        if(id==keep)++keepCalls;
+    };
+    const auto render=[&](int n){
+        assert(p.render(epoch,pins.data(),6,out[0].data(),out[1].data(),n,false,fx,
+            out[2].data(),out[3].data(),{},{},{},hardware,4,{},0,nullptr,nullptr,false,nullptr,0,&tap));
+        assert(tap.captured()==voice&&tap.left().size()==static_cast<std::size_t>(n));
+        for(int i=0;i<n;++i){
+            const float l=tap.left()[i],r=tap.right()[i];
+            assert(near(out[0][i],l+values[4])&&near(out[1][i],r+values[5]));
+            assert(near(out[2][i],l*.25f)&&near(out[3][i],r*.25f));
+            assert(near(out[4][i],l)&&near(out[5][i],r));
+        }
+    };
+    // Settle initial EXT ramp before sample-exact comparisons.
+    assert(p.render(epoch,pins.data(),6,out[0].data(),out[1].data(),64,false,fx,
+        out[2].data(),out[3].data(),{},{},{},hardware,4));
+    render(64);
+    std::uint64_t first=0,back=0,retry=0;
+    assert(p.setPhysicalSource(epoch,1,voice,2,3,true,&first)&&first);
+    render(16);
+    assert(p.requestedPhysicalSourceTicket(epoch,1,voice)==first);
+    assert(p.appliedPhysicalSourceTicket(epoch,1,voice)==0);
+    for(int i=0;i<16;++i){
+        const float a=static_cast<float>(i+1)/64.f;
+        assert(near(tap.left()[i],values[0]+(values[2]-values[0])*a));
+        assert(near(tap.right()[i],values[1]+(values[3]-values[1])*a));
+    }
+    assert(!p.setPhysicalSource(epoch,1,voice,2,2,true,&retry));
+    assert(!p.setPhysicalSource(epoch,1,voice,2,6,true,&retry));
+    assert(!p.setPhysicalSource(epoch,1,voice,2,-1,false,&retry));
+    assert(p.setPhysicalSource(epoch,1,voice,2,3,true,&retry)&&retry==first);
+    assert(p.setPhysicalSource(epoch,1,voice,0,1,true,&back)&&back>first);
+    render(48);
+    assert(near(tap.left().back(),values[2])&&near(tap.right().back(),values[3]));
+    assert(p.appliedPhysicalSourceTicket(epoch,1,voice)==0);
+    render(64);
+    assert(near(tap.left().back(),values[0])&&near(tap.right().back(),values[1]));
+    assert(p.appliedPhysicalSourceTicket(epoch,1,voice)==back);
+    assert(p.setPhysicalSource(epoch,1,voice,0,1,true,&retry)&&retry==back);
+    assert(p.acceptedRevision()==1&&voiceCalls==5&&keepCalls==5);
+    std::puts("STEREO_RETARGET_ALL_SINKS_PCM_PASS");
+}
+
 int main() {
+    verifyStereoPhysicalSwitchAcrossSinks();
     verifySameRevisionPhysicalSwitchReceipt();
     verifyDormantRosterAdditionContinuity();
     verifyPrivatePflCapturePcm();
