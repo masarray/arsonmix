@@ -19,14 +19,19 @@ public:
         // Invalidate the old ticket BEFORE writing the payload. Sequentially
         // consistent atomics + a never-reused ticket give a bounded coherent
         // snapshot without waiting for a preempted CONTROL writer.
+        const auto generation=invalidation_.load();
         active_.store(0);
         epoch_.store(key.epoch);revision_.store(key.revision);
         route_.store(key.route);channel_.store(key.channel.value);
-        active_.store(++nextTicket_);
+        const auto ticket=++nextTicket_;
+        active_.store(ticket);
+        // A device/output revocation racing publication must not leave a
+        // latent cue that can reappear after the output gate is restored.
+        if(invalidation_.load()!=generation){revoke(ticket);return false;}
         return true;
     }
     void cancel() noexcept {active_.store(0);}
-    void revokePublished() noexcept {revoke(active_.load());}
+    void revokePublished() noexcept {invalidation_.fetch_add(1);revoke(active_.load());}
     State state(std::uint64_t epoch,std::uint64_t revision,std::uint64_t route) const noexcept {
         Request r;
         if(!read(r)||!matches(r.key,epoch,revision,route))return {};
@@ -37,7 +42,7 @@ public:
                             std::uint64_t route,int frames) noexcept {
         block_={};capture_.reset();
         Request r;
-        if(!read(r)){resetAudio();return nullptr;}
+        if(!read(r)){if(lastTicket_)resetAudio();return nullptr;}
         if(!matches(r.key,epoch,revision,route)||frames<1||frames>DynamicPflCapture::capacity){
             revoke(r.ticket);resetAudio();return nullptr;
         }
@@ -109,7 +114,7 @@ private:
     }
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
     std::uint64_t nextTicket_=0; // CONTROL only
-    std::atomic<std::uint64_t> active_{0},epoch_{0},revision_{0},route_{0},channel_{0},applied_{0};
+    std::atomic<std::uint64_t> active_{0},epoch_{0},revision_{0},route_{0},channel_{0},applied_{0},invalidation_{0};
     Request block_{};Key lastKey_{};
     std::uint64_t lastTicket_=0;
     int remaining_=0;

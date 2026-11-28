@@ -5919,38 +5919,6 @@
   // switches and repeated NEEDS_REMAP readbacks. No second PCM ownership.
   // Keep cosmetic readback signatures separate so retained-mixer telemetry
   // does not force pointless full DOM repaint on every callback.
-  function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {
-    pendingNativeSources.clear();pendingSourceQueue.clear();
-    activeNativeSource=null;nativeUiSourcePending=null;pendingSourceId=0;
-    pendingOutputPatch=null;pendingNativeFxPowers.clear();pendingGlobalFx=null;
-    pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
-    pendingFxEditorAck=null; // expire old native HWND on device owner change
-    startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
-    latestInputGainDrafts.clear();latestLogicalInputGains.clear();latestLogicalSendGains.clear();
-    pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
-    pendingWireGains.clear();wireGainVisualTargets.clear();pendingNativeControl.clear();
-    liveFaderVisualTargets.clear();lastNativeControlSent.clear();
-    pendingM4Controls.clear();pendingM4RackPowers.clear();
-    // MV-18: these two hardware-scoped leases were previously omitted.
-    // A same-epoch driver/endpoint replacement or M4 authority change
-    // must not strand EXTERNAL OUT selects or slot-bypass edits behind
-    // an old ACK/timer. Never touch persisted PCM/FX state here.
-    pendingExternal.clear();pendingSlotPowers.clear();busOutputPending=null;
-    // Cosmetic ChannelId edits remain legal while native playback is
-    // NEEDS_REMAP. They still require their own native ACK/readback proof.
-    // Only physical/authority changes must invalidate those old identities.
-    if(pendingIdentity&&!preserveRetainedIdentity){
-      if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
-      rejectIdentity("Channel identity expired after audio connection change");
-    }
-  }
-  function expireTransientNativeUi(reason) {
-    discardTransientNativeUi();
-    lastPaintedSignature="";lastNativeTopologySignature="";
-    status(reason==="DEVICE_CHANGED"?
-      "Audio connection changed · old control gestures discarded":
-      "Mixer authority changed · old control gestures discarded");
-  }
   let pendingNativePfl=null,nativePflSerial=0,nativePflObservation=0;
   function paintNativePfl(next,observed=false){
     if(observed)++nativePflObservation;
@@ -5998,6 +5966,39 @@
       nativeToast("PFL response not verified · check current monitor routing");
     },4000);
     return true;
+  }
+  function discardTransientNativeUi({preserveRetainedIdentity=false}={}) {
+    pendingNativePfl=null; // discard only the UI lease; never send a compensating cue command
+    pendingNativeSources.clear();pendingSourceQueue.clear();
+    activeNativeSource=null;nativeUiSourcePending=null;pendingSourceId=0;
+    pendingOutputPatch=null;pendingNativeFxPowers.clear();pendingGlobalFx=null;
+    pendingBusCreate=null;pendingTrackDelete=null;pendingFxInsert=null;
+    pendingFxEditorAck=null; // expire old native HWND on device owner change
+    startupWire=null;activeWireAttempt=null;pendingNativeGainIntent=false;
+    latestInputGainDrafts.clear();latestLogicalInputGains.clear();latestLogicalSendGains.clear();
+    pendingNativeWireRetract=null; // old output/epoch cannot animate a new cable
+    pendingWireGains.clear();wireGainVisualTargets.clear();pendingNativeControl.clear();
+    liveFaderVisualTargets.clear();lastNativeControlSent.clear();
+    pendingM4Controls.clear();pendingM4RackPowers.clear();
+    // MV-18: these two hardware-scoped leases were previously omitted.
+    // A same-epoch driver/endpoint replacement or M4 authority change
+    // must not strand EXTERNAL OUT selects or slot-bypass edits behind
+    // an old ACK/timer. Never touch persisted PCM/FX state here.
+    pendingExternal.clear();pendingSlotPowers.clear();busOutputPending=null;
+    // Cosmetic ChannelId edits remain legal while native playback is
+    // NEEDS_REMAP. They still require their own native ACK/readback proof.
+    // Only physical/authority changes must invalidate those old identities.
+    if(pendingIdentity&&!preserveRetainedIdentity){
+      if(pendingIdentity.migration)legacyDeferred.add(pendingIdentity.channelId);
+      rejectIdentity("Channel identity expired after audio connection change");
+    }
+  }
+  function expireTransientNativeUi(reason) {
+    discardTransientNativeUi();
+    lastPaintedSignature="";lastNativeTopologySignature="";
+    status(reason==="DEVICE_CHANGED"?
+      "Audio connection changed · old control gestures discarded":
+      "Mixer authority changed · old control gestures discarded");
   }
   function onNativeReadback(next,confirmed) {
     settleWireGainVisuals(next,confirmed);
