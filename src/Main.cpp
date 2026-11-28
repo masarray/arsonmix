@@ -814,7 +814,16 @@ public:
             fireNativeHotkey(mapping);
         });
         restorePlayerLibrary(); // portable, local song paths only; NEVER autoplay on launch
-        catalog_.onChanged = [this] { emitCatalog(); emitScanProgress(); };
+        catalog_.onChanged = [this]
+        {
+            if (! catalog_.busy() && catalog_.scanMessage() != lastCatalogDiagnostic_)
+            {
+                lastCatalogDiagnostic_ = catalog_.scanMessage();
+                diagnostics_.record ("VST3_CATALOG", lastCatalogDiagnostic_);
+            }
+            emitCatalog();
+            emitScanProgress();
+        };
         if (!updaterProbeMode_)
             catalog_.scanFactoryIfPresent(); // Do not scan even FactoryFX during GUI-only probe.
 #if defined(_WIN32)
@@ -1205,7 +1214,7 @@ private:
     juce::File lastMixerFile_;
     bool nativeShowBusy_ = false;
     bool studioBackupBusy_ = false;
-    std::unique_ptr<juce::FileChooser> chooser_;
+    std::unique_ptr<juce::FileChooser> chooser_, pluginScanFolderChooser_;
     std::unique_ptr<PlayerDesktopWindow> playerWindow_;
     bool playerWindowCapabilityPublished_=false;
     std::unique_ptr<juce::FileChooser> playerFileChooser_;
@@ -1251,6 +1260,7 @@ private:
     bool playerFolderBusy_=false; // GUI only; background scanner never touches this
     armix::player::PlayerAutoAdvanceGate playerAutoAdvanceGate_;
     juce::String playerError_;
+    juce::String lastCatalogDiagnostic_;
     juce::File lastPluginFolder_ = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
     // Destruction order: editorWindow_ releases its JUCE GUI BEFORE the
     // retained vendor processor lease. No vendor destructor runs on RT.
@@ -4835,37 +4845,6 @@ private:
         armix::device::NativeDeviceApplyCoordinator::Lease lease;
     };
     std::optional<PendingPhysicalBusPatch> pendingPhysicalBusPatch_;
-    // Same control lease and PCM envelope as physical bus patching. No new
-    // audio thread, output authority, or second graph owner.
-    struct PendingFxRackTransition {
-        std::uint64_t epoch,revision,deadline;
-        armix::device::NativeDeviceApplyCoordinator::Lease lease;
-        std::function<void(bool)> perform;
-        std::function<void(const juce::String&)> cancel;
-    };
-    std::optional<PendingFxRackTransition> pendingFxRackTransition_;
-    void cancelPendingFxRackTransition(const juce::String& reason) {
-        if(!pendingFxRackTransition_)return;
-        auto cancel=std::move(pendingFxRackTransition_->cancel);
-        pendingFxRackTransition_.reset();
-        engine_.finishPhysicalBusPatchFade(true); // only existing output gates
-        cancel(reason);
-    }
-    void servicePendingFxRackTransition() {
-        if(!pendingFxRackTransition_)return;
-        const auto& p=*pendingFxRackTransition_;
-        if(sessionLifecycleShuttingDown_||engine_.dryRoutingLabEpoch()!=p.epoch||
-           engine_.outputArmRevision()!=p.revision||
-           static_cast<std::uint64_t>(monotonicMilliseconds())>=p.deadline||
-           !engine_.secondaryResumeReady()) {
-            cancelPendingFxRackTransition("Audio route changed or did not become quiet; retry");
-            return;
-        }
-        if(!engine_.physicalBusPatchFadeReady())return;
-        auto perform=std::move(pendingFxRackTransition_->perform);
-        pendingFxRackTransition_.reset();
-        perform(true);
-    }
     void emitPhysicalBusOutputAck(const juce::var& args,const juce::String& error) {
         auto ack=std::make_unique<juce::DynamicObject>();
         ack->setProperty("requestId",args.getProperty("requestId",{}));
@@ -5188,19 +5167,29 @@ private:
 
     void chooseFolder()
     {
-        if (catalog_.busy()) return;
-        chooser_ = std::make_unique<juce::FileChooser> (
-            "Add a VST3 plugin reference folder", lastPluginFolder_, "*", true);
-        chooser_->launchAsync (
+        if (catalog_.busy())
+            return emitNotice ("Wait for the current VST3 scan to finish.", true);
+        if (pluginScanFolderChooser_) return;
+        pluginScanFolderChooser_ = std::make_unique<juce::FileChooser> (
+            "Add a VST3 scan folder", lastPluginFolder_, "*", true);
+        pluginScanFolderChooser_->launchAsync (
             juce::FileBrowserComponent::openMode |
             juce::FileBrowserComponent::canSelectDirectories,
             [safe = juce::Component::SafePointer<ConsoleWindow> (this)] (const juce::FileChooser& picker)
             {
                 if (safe == nullptr) return;
                 const auto folder = picker.getResult();
-                if (folder == juce::File{}) return;
-                safe->lastPluginFolder_ = folder;
-                safe->catalog_.addDirectory (folder);
+                juce::MessageManager::callAsync ([safe, folder]
+                {
+                    if (safe == nullptr) return;
+                    safe->pluginScanFolderChooser_.reset();
+                    if (folder == juce::File{} || safe->sessionLifecycleShuttingDown_) return;
+                    if (safe->studioBackupBusy_ || safe->nativeShowBusy_)
+                        return safe->emitNotice ("Finish the current file operation before adding a scan folder.", true);
+                    safe->lastPluginFolder_ = folder;
+                    const auto error = safe->catalog_.addDirectory (folder);
+                    if (error.isNotEmpty()) safe->emitNotice (error, true);
+                });
             });
     }
 
@@ -6800,6 +6789,87 @@ private:
             mixerSessionWorker_.busy()||catalog_.busy()||logicalVendorEditor_||
             pendingSecondaryStop_||pendingRetainedFxCapture_||retainedOfflineFxActive_;
     }
+    using RackFileCompletion=std::function<void(const juce::String&)>;
+    struct PendingRackTransition {
+        std::uint64_t epoch,revision,deadline;
+        bool replaceGraph,committed=false,executing=false;
+        std::function<juce::String()> operation;
+        RackFileCompletion complete;
+        armix::device::NativeDeviceApplyCoordinator::Lease lease;
+    };
+    std::optional<PendingRackTransition> pendingRackTransition_;
+
+    void finishRackTransition(const juce::String& error) {
+        auto complete=std::move(pendingRackTransition_->complete);
+        pendingRackTransition_.reset();
+        // This only releases the envelope. An output stopped by the operator
+        // or the device retains its existing disarmed state.
+        engine_.finishPhysicalBusPatchFade(!engine_.allOutputsDisarmed());
+        complete(error);
+    }
+    void cancelPendingFxRackTransition(const juce::String& reason) {
+        if(pendingRackTransition_&&!pendingRackTransition_->executing&&!pendingRackTransition_->committed)
+            finishRackTransition(reason+"; previous rack retained.");
+    }
+    void serviceRackTransition() {
+        if(!pendingRackTransition_||pendingRackTransition_->executing)return;
+        auto& job=*pendingRackTransition_;
+        if(!engine_.nativeTopologyMatches(job.epoch,job.revision)||
+           static_cast<std::uint64_t>(monotonicMilliseconds())>=job.deadline||
+           engine_.hasRuntimeFxFault()){
+            if(job.committed){
+                if(!engine_.allOutputsDisarmed()){
+                    operatorOutputMuted_=true;
+                    autoMainEpoch_=0;
+                    cancelSecondaryContinuity();
+                    engine_.setMonitorEnabled(false);
+                    engine_.disarmSecondaryOutput();
+                    diagnostics_.record("OUTPUT_MUTE","ON | FX rack playback could not be verified");
+                    emitApprovedNativeSnapshot();
+                }
+                return finishRackTransition("Rack installed but playback could not be verified. Review Audio I/O, then Resume from the Mixer.");
+            }
+            return finishRackTransition("Audio changed or the fade did not complete. Previous rack retained.");
+        }
+        if(job.committed){
+            // A previous hardware remap may make secondaryResumeReady()
+            // transiently false until the NEW graph's callback is observed.
+            // Keep the output envelope silent during that bounded interval.
+            if(engine_.rackOutputRevisionObserved(job.epoch,job.revision)&&engine_.secondaryResumeReady())
+                finishRackTransition({});
+            return;
+        }
+        if(!engine_.secondaryResumeReady())
+            return finishRackTransition("Audio route changed before the operation; previous rack retained.");
+        if(engine_.allOutputsDisarmed())
+            return finishRackTransition("Output stopped during the transition. Previous rack retained.");
+        if(!engine_.physicalBusPatchFadeReady())return;
+        job.executing=true;
+        juce::String error;
+        try {error=job.operation();}
+        catch(...) {error="FX rack operation failed";}
+        job.executing=false;
+        if(error.isNotEmpty())return finishRackTransition(error);
+        if(!job.replaceGraph)return finishRackTransition({});
+        job.committed=true;
+        ++job.revision;
+        job.deadline=static_cast<std::uint64_t>(monotonicMilliseconds())+2000;
+    }
+    void runRackFileOperation(std::uint64_t ep,std::uint64_t rev,bool quietRequired,bool replaceGraph,
+                              std::function<juce::String()> operation,RackFileCompletion complete) {
+        if(!quietRequired||engine_.allOutputsDisarmed()){
+            juce::String error;
+            try {error=operation();}
+            catch(...) {error="FX rack operation failed";}
+            return complete(error);
+        }
+        auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::fxRackFile);
+        if(!lease||!engine_.beginPhysicalBusPatchFade())
+            return complete("Audio is busy. Retry when the current transition finishes.");
+        pendingRackTransition_.emplace(PendingRackTransition{ep,rev,
+            static_cast<std::uint64_t>(monotonicMilliseconds())+2000,replaceGraph,false,false,
+            std::move(operation),std::move(complete),std::move(lease)});
+    }
     void chooseFxRackFile(const juce::var& args) {
         const auto op=args.getProperty("operation",{}).toString();
         const auto request=args.getProperty("requestId",{}).toString();
@@ -6817,6 +6887,10 @@ private:
            !armix::console::approvedNativeId(args.getProperty("channelId",{}),id))
             return emitFxRackFileResult(args,"FAILED","FX rack file: Invalid request; reopen rack menu");
         const armix::mixer::ChannelId channel{id};
+        if(matchesFxRackFileReceipt(fxRackActiveReceipt_,args))
+            return publishFxRackFileReceipt(fxRackActiveReceipt_);
+        if(matchesFxRackFileReceipt(fxRackLastReceipt_,args))
+            return publishFxRackFileReceipt(fxRackLastReceipt_);
         if(fxRackFileChooser_||rackFileOperationBusy())
             return emitFxRackFileResult(args,"FAILED","FX rack file: Finish the current dialog or audio operation first");
         if(!engine_.rackFileTargetAvailable(ep,rev,roster,channel))
@@ -6857,91 +6931,69 @@ private:
                             safe->engine_.rackFileTargetAvailable(ep,rev,roster,channel);
                     };
                     if(!current())return finish("FAILED","FX rack file: Device or rack changed; retry");
-                    // Decode and verify catalog BEFORE asking to interrupt live
-                    // sound. Invalid/missing plugins never cause a mute.
-                    auto rack=std::make_shared<armix::storage::FxRackFile>();
-                    if(!save){
-                        juce::String error;
-                        try{
-                            error=armix::storage::NativeFxRackArchive::load(file,*rack);
-                            if(error.isEmpty())error=safe->resolveRackFileCatalog(*rack,false);
-                            if(error.isEmpty()&&rack->single!=append)
-                                error="Choose matching rack or single FX file";
-                        }catch(...){error="FX rack read failed";}
-                        if(error.isNotEmpty())return finish("FAILED","FX rack file: "+error+"; rack unchanged");
-                    }
-                    const auto perform=[safe,finish,current,ep,rev,roster,channel,token,slot,save,deactivate,append,file,rack](bool faded){
-                        if(!safe)return;
-                        const auto resumeFade=[safe,faded]{
-                            if(faded)safe->engine_.finishPhysicalBusPatchFade(true);
-                        };
-                        if(!current()){
-                            resumeFade();
-                            return finish("FAILED","FX rack file: Device or rack changed; retry");
-                        }
-                        juce::String error;
-                        bool archived=false;
-                        // SAVE is a read operation. Hold the existing control lease
-                        // only during processor capture; release PCM fade BEFORE
-                        // disk I/O. No change to MAIN/STREAM desired or user mute.
-                        if(save){
-                            {
-                                auto lease=safe->deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::fxRackFile);
-                                if(!lease)error="Audio configuration is finishing";
-                                else try{
-                                    error=safe->engine_.captureRackFile(ep,rev,roster,channel,slot,token,*rack);
-                                }catch(...){error="FX state capture failed";}
-                            }
-                            if(!deactivate||error.isNotEmpty())resumeFade();
-                            try{
-                                if(error.isEmpty())error=safe->resolveRackFileCatalog(*rack,true);
-                                if(error.isEmpty())error=armix::storage::NativeFxRackArchive::save(file,*rack);
-                            }catch(...){error="FX rack file write failed";}
-                            archived=error.isEmpty();
-                        }
-                        // RESTORE/INSERT/DEACTIVATE are topology writes. Keep the
-                        // disarmed write guard; use the existing continuity
-                        // transaction to restore only the verified prior intent.
-                        if(error.isEmpty()&&(!save||deactivate)){
-                            const auto result=safe->withNativeTopologyContinuity(ep,rev,false,[&]{
-                                LiveDryRoutingLab::NativeBusResult edit;
-                                safe->engine_.setMonitorEnabled(false);
-                                try{
-                                    error=safe->engine_.applyRackFile(ep,rev,roster,channel,*rack,
-                                        save?false:append,deactivate?slot:-1,deactivate?token:juce::String{});
-                                }catch(...){error="FX rack apply failed";}
-                                edit.accepted=error.isEmpty();
-                                edit.error=edit.accepted?"":"FX rack apply failed";
-                                return edit;
+                    using Rack=armix::storage::FxRackFile;
+                    using Archive=armix::storage::NativeFxRackArchive;
+                    auto rack=std::make_shared<Rack>();
+                    const auto restore=[safe,current,finish,ep,rev,roster,channel,token,slot,
+                                        deactivate,append,file,rack] {
+                        if(!current())return finish("FAILED",deactivate?
+                            "FX rack file: File saved; rack changed before deactivation":
+                            "FX rack file: Device or rack changed; retry");
+                        auto prepared=std::make_shared<LiveAudioEngine::PreparedRackFile>();
+                        const auto error=safe->engine_.prepareRackFile(ep,rev,roster,channel,
+                            *rack,append,deactivate,*prepared);
+                        if(error.isNotEmpty())return finish("FAILED","FX rack file: "+error);
+                        safe->runRackFileOperation(ep,rev,true,true,
+                            [safe,prepared,ep,rev,roster,channel,append,rack,deactivate,slot,token] {
+                                if(!safe)return juce::String("Mixer is closing");
+                                return safe->engine_.applyRackFile(ep,rev,roster,channel,*prepared,
+                                    append,rack->rackBypassed,deactivate?slot:-1,token);
+                            },[safe,finish,file,deactivate,append,ep,rev](const juce::String& result){
+                                if(!safe)return;
+                                if(safe->engine_.nativeTopologyMatches(ep,rev+1)){
+                                    safe->retireStaleRoutedEditors();
+                                    safe->emitApprovedNativeSnapshot();
+                                }
+
+                                if(result.isNotEmpty())return finish("FAILED",
+                                    (deactivate?juce::String("FX rack file: File saved; "):
+                                                juce::String("FX rack file: "))+result);
+                                finish("COMPLETED","FX rack file: "+
+                                    (deactivate?juce::String("Saved and deactivated "):
+                                     append?juce::String("Inserted "):juce::String("Opened "))+file.getFileName());
                             });
-                            if(!result.accepted&&error.isEmpty())error=juce::String(result.error);
-                            resumeFade();
-                            if(result.accepted)safe->retireStaleRoutedEditors();
-                            safe->emitApprovedNativeSnapshot();
-                        }else if(deactivate)resumeFade();
-                        const bool recovering=safe->autoMainEpoch_!=0||safe->pendingVendorStream_.has_value();
-                        const bool outputOff=safe->engine_.allOutputsDisarmed();
-                        const juce::String outputStatus=(!save||deactivate)?
-                            (recovering?"; restoring previous output":
-                             outputOff?"; outputs are off — use Resume if needed":""):"";
-                        if(error.isNotEmpty())return finish("FAILED",
-                            (archived?juce::String("FX rack file: File saved; deactivation rejected: "):
-                                juce::String("FX rack file: Operation rejected: "))+error+outputStatus);
-                        finish("COMPLETED","FX rack file: "+(deactivate?juce::String("Saved and deactivated "):
-                            save?juce::String("Saved "):append?juce::String("Inserted "):juce::String("Opened "))+
-                            file.getFileName()+outputStatus);
                     };
-                    if(safe->engine_.allOutputsDisarmed())return perform(false);
-                    // Confirmed file choice is the user action. Do not require a
-                    // permanent emergency mute. Wait for the audio callback's
-                    // acknowledged silent envelope, not a guessed delay.
-                    auto lease=safe->deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::fxRackFile);
-                    if(!lease||!safe->engine_.beginPhysicalBusPatchFade())
-                        return finish("FAILED","FX rack file: Audio transition busy or unavailable; retry");
-                    safe->pendingFxRackTransition_.emplace(PendingFxRackTransition{
-                        ep,safe->engine_.outputArmRevision(),
-                        static_cast<std::uint64_t>(monotonicMilliseconds())+2000,std::move(lease),perform,
-                        [finish](const juce::String& reason){finish("FAILED","FX rack file: "+reason);}});
+                    if(!save){
+                        if(!safe->mixerSessionWorker_.rackArchive([file,rack]{return Archive::load(file,*rack);},
+                            [safe,rack,current,finish,append,restore](const juce::String& status){
+                                if(!safe||safe->sessionLifecycleShuttingDown_)return;
+                                if(status.isNotEmpty())return finish("FAILED","FX rack file: "+status);
+                                if(!current())return finish("FAILED","FX rack file: Device or rack changed; retry");
+                                const auto error=safe->resolveRackFileCatalog(*rack,false);
+                                if(error.isNotEmpty())return finish("FAILED","FX rack file: "+error);
+                                if(rack->single!=append)return finish("FAILED","FX rack file: Choose matching rack or single FX file");
+                                restore();
+                            }))return finish("FAILED","FX rack file: Finish the current file operation first");
+                        return;
+                    }
+                    const bool needsQuiet=!safe->engine_.rackSupportsLiveSnapshot(channel,slot);
+                    safe->runRackFileOperation(ep,rev,needsQuiet,false,
+                        [safe,ep,rev,roster,channel,slot,token,rack] {
+                            if(!safe)return juce::String("Mixer is closing");
+                            return safe->engine_.captureRackFile(ep,rev,roster,channel,slot,token,*rack);
+                        },[safe,finish,file,rack,deactivate,restore](const juce::String& status){
+                            if(!safe||safe->sessionLifecycleShuttingDown_)return;
+                            if(status.isNotEmpty())return finish("FAILED","FX rack file: "+status);
+                            const auto error=safe->resolveRackFileCatalog(*rack,true);
+                            if(error.isNotEmpty())return finish("FAILED","FX rack file: "+error);
+                            if(!safe->mixerSessionWorker_.rackArchive([file,rack]{return Archive::save(file,*rack);},
+                                [safe,finish,file,deactivate,restore](const juce::String& result){
+                                    if(!safe||safe->sessionLifecycleShuttingDown_)return;
+                                    if(result.isNotEmpty())return finish("FAILED","FX rack file: "+result);
+                                    if(deactivate)return restore();
+                                    finish("COMPLETED","FX rack file: Saved "+file.getFileName());
+                                }))return finish("FAILED","FX rack file: Finish the current file operation first");
+                        });
                 });
             });
     }
@@ -7861,7 +7913,7 @@ private:
            ((action!="monitor"&&action!="secondaryOutputArm")||
             (args.getProperty("value",{}).isBool()&&!bool(args.getProperty("value",{})))))
             cancelPendingPhysicalBusPatch("BUS OUTPUT: superseded by operator action");
-        if(pendingFxRackTransition_&&(action=="monitor"||action=="secondaryOutputArm"||
+        if(pendingRackTransition_&&(action=="monitor"||action=="secondaryOutputArm"||
            action=="secondaryOutputStop"||action=="secondaryOutputEnable"||
            action=="secondaryOutputConnect"||action=="secondaryOutputSplit"||
            action=="audioDeviceApply"||action=="audioSetup"||action=="audioDriverPanel"))
@@ -9288,8 +9340,8 @@ private:
                 const LiveDryRoutingLab::FxSelection selection{
                     plugin->key(),plugin->path,plugin->name,plugin->uid};
                 error=engine_.insertDryRoutingLabFx(lane,position,
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    armix::console::nativeSessionTokenValue(ep),
+                    armix::console::nativeSessionTokenValue(rv),
                     selection);
             }
             auto reply=std::make_unique<juce::DynamicObject>();
@@ -9334,8 +9386,8 @@ private:
                 if(acceptedControlRequests_.size()>512)acceptedControlRequests_.remove(0);
             }
             const bool applied=valid&&engine_.setDryRoutingLabFxRackBypass(
-                lane,static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                lane,armix::console::nativeSessionTokenValue(ep),
+                armix::console::nativeSessionTokenValue(rv),
                 static_cast<bool>(value));
             if(applied)synchronizeOpenImmerSIBPower();
             auto ack=std::make_unique<juce::DynamicObject>();
@@ -9389,8 +9441,8 @@ private:
                 (boolean||std::isfinite(numeric)) && range;
             if(applied && lane)
                 applied=engine_.setDryRoutingLabParameter(channel,
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    armix::console::nativeSessionTokenValue(ep),
+                    armix::console::nativeSessionTokenValue(rv),
                     name,val.isBool()?(bool(val)?1.f:0.f):
                          static_cast<float>(numeric));
             else if(applied && name=="masterGain")
@@ -9463,8 +9515,8 @@ private:
             const auto ep=args.getProperty("deviceEpoch",{});
             const auto rv=args.getProperty("revision",{});
             const auto confirmed=args.getProperty("confirmed",{});
-            const int left=static_cast<int>(args.getProperty("left",-2));
-            const int right=static_cast<int>(args.getProperty("right",-2));
+            const auto leftValue=args.getProperty("left",-2),rightValue=args.getProperty("right",-2);
+            const int left=static_cast<int>(leftValue),right=static_cast<int>(rightValue);
             const auto nativeStatus=engine_.status().getProperty("dryRoutingLab",{});
             const auto bus=nativeStatus.getProperty("nativeBus",{});
             const bool tokens=
@@ -9476,10 +9528,11 @@ private:
             const bool idOk=armix::session::parseDecimal(juce::var(channelText),rawId);
             juce::String error;
             if(!requestId.startsWith("out-o-") || requestId.length()>64 || !idOk ||
-               !confirmed.isBool() || !((left==-1 && right==-1) || (left>=0 && right>=0)))
+               !confirmed.isBool() || !leftValue.isInt() || !rightValue.isInt() ||
+               !((left==-1 && right==-1) || (left>=0 && right>=0)))
                 error="EXTERNAL OUT: invalid channel or output request";
-            else if(nativeShowBusy_ || studioBackupBusy_)
-                error="EXTERNAL OUT: finish the current Show or backup operation first";
+            else if(deviceApply_.busy() || nativeShowBusy_ || studioBackupBusy_)
+                error="EXTERNAL OUT: wait for the current audio or file operation";
             else if(!tokens)
                 error="EXTERNAL OUT: stale device or graph revision; refresh Audio I/O";
             else
@@ -9531,8 +9584,8 @@ private:
                armix::console::nativeSessionTokenValid(rv) &&
                !nativeShowBusy_ && !studioBackupBusy_)
                 error=engine_.repatchDryRoutingLabChannel(channel,
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(ep)),
-                    static_cast<std::uint64_t>(static_cast<juce::int64>(rv)),
+                    armix::console::nativeSessionTokenValue(ep),
+                    armix::console::nativeSessionTokenValue(rv),
                     operation,target);
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",requestId);
@@ -11742,7 +11795,9 @@ private:
         }
         else if (action == "scanVst3")
         {
-            diagnostics_.record ("PLUGIN_SCAN", "Scan standard VST3 folders");
+            if (catalog_.busy())
+                return emitNotice ("Wait for the current VST3 scan to finish.", true);
+            diagnostics_.record ("PLUGIN_SCAN", "Scan registered VST3 folders");
             catalog_.scanDefaults();
         }
         else if (action == "addScanFolder")
@@ -11751,10 +11806,12 @@ private:
         }
         else if (action == "removeScanFolder")
         {
-            const auto path = args.getProperty("path",{});
-            if (!path.isString() || !catalog_.removeDirectory(path.toString()))
-                emitNotice("Could not remove scan folder. Finish scanning and check folder permissions.",true);
-            emitCatalog(); // authoritative readback even on rejection
+            const auto error = catalog_.removeDirectory (args.getProperty ("path", {}).toString());
+            if (error.isNotEmpty())
+            {
+                emitNotice (error, true);
+                emitCatalog(); // Return authoritative folders on rejection.
+            }
         }
         else if (action == "importVst3")
         {
@@ -12702,7 +12759,7 @@ private:
             }
 #endif
         servicePendingPhysicalBusPatch();
-        servicePendingFxRackTransition();
+        serviceRackTransition();
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
         if(pendingSecondaryStop_) {
             auto stop=std::move(*pendingSecondaryStop_);

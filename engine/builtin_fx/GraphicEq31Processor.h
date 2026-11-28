@@ -156,6 +156,7 @@ public:
         peak_.store(peak,std::memory_order_relaxed);
     }
     void processBlock(juce::AudioBuffer<double>&,juce::MidiBuffer&) override {}
+    bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& destination) override {
         // CONTROL thread. Only one fixed-size, versioned state per insert.
         juce::MemoryOutputStream out(destination,false);

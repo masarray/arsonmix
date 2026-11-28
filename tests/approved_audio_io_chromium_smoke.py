@@ -381,6 +381,48 @@ def verify_input_matrix_direct_patch(page,out):
     emit(page,"arMixConsoleSnapshot",state)
     assert cell.get_attribute("data-mark")==""
 
+def verify_audio_io_shell(page, out, pin_count):
+    page.add_init_script(NATIVE_EVENTS + """window.__JUCE__={backend:{
+        emitEvent(){}, ...window.__nativeListenerMethods}};""")
+    page.goto((out / "index.html").as_uri())
+    page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+    state = snapshot()
+    state["productionCallbackLive"] = True
+    labels = ["Maono HP Out 1", "Maono HP Out 2", "Maono VC Out 1", "Maono VC Out 2",
+              "Maono VC Out 3", "Maono VC Out 4", "Maono Loopback 1", "Maono Loopback 2"]
+    state["device"].update(
+        backend="ASIO", captureDevice="Maono ProStudio 2x2 ASIO", playbackDevice="Maono ProStudio 2x2 ASIO",
+        sampleRate=48000, bufferFrames=128, outputArmed=True, enabledOutputs=list(range(pin_count)),
+        outputEndpoints=[{"id":f"out:{i}", "port":i, "callback":i, "active":True,
+                          "label":labels[i] if i < len(labels) else f"Playback {i+1}"}
+                         for i in range(pin_count)])
+    state.update(physicalMainOutputs=[0,1], physicalMonitorOutputs=[], externalOutputs=[],
+                 externalRevision="8", physicalBusPatchSupported=True, physicalBusOutputObserved=True)
+    emit(page,"arMixConsoleSnapshot",state)
+    open_verified_audio_io(page,state,"device")
+    dialog = page.get_by_role("dialog", name="Audio hardware setup")
+    close = page.get_by_role("button", name="Close Audio I/O")
+    initial = dialog.bounding_box()
+    for tab in ("Hardware Pins","Inputs","Outputs","Performance","Diagnostics","Audio Device"):
+        page.get_by_role("tab", name=tab, exact=True).click()
+        assert dialog.bounding_box() == initial, f"{tab} resized the Audio I/O shell"
+        assert close.evaluate("(el)=>{const r=el.getBoundingClientRect();return el===document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)}"), tab
+        assert dialog.evaluate("(el)=>el.scrollWidth===el.clientWidth"), tab
+        if tab == "Outputs" and pin_count > 8:
+            matrix = dialog.get_by_role("region", name="Output patch matrix")
+            assert matrix.evaluate("(el)=>el.scrollWidth>el.clientWidth")
+            row = matrix.locator("tbody tr").filter(has=page.get_by_label("CH03 assignment",exact=True))
+            row.get_by_role("button",name=f"CH03 / Playback {pin_count}",exact=True).scroll_into_view_if_needed()
+            assert matrix.evaluate("(el)=>el.scrollLeft>0")
+            assert row.locator("td").first.bounding_box()["x"] >= matrix.bounding_box()["x"]
+    page.get_by_role("tab", name="Audio Device").focus()
+    page.keyboard.press("ArrowRight")
+    assert page.get_by_role("tab", name="Hardware Pins").get_attribute("aria-selected") == "true"
+    page.keyboard.press("Escape")
+    assert dialog.is_hidden()
+    assert page.locator("[data-native-io]:focus").count() == 1
+
+
 def verify_output_matrix_direct_patch(page,out):
     errors=[]
     page.on("pageerror",lambda e:errors.append(str(e)))
@@ -1060,6 +1102,10 @@ def main():
         out=Path(tmp)
         bundle.stage(out)
         browser=p.chromium.launch(headless=True)
+        for width,height,pins in [(1650,930,8),(1100,620,8),(880,540,32)]:
+            page=browser.new_page(viewport={"width":width,"height":height})
+            verify_audio_io_shell(page,out,pins)
+            page.close()
         for width,height in [(1366,768),(1024,576)]:
             page=browser.new_page(viewport={"width":width,"height":height})
             verify_custom_input(page,out)

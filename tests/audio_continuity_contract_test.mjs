@@ -267,9 +267,8 @@ test('physical bus remap waits for AUDIO fade receipt with bounded CONTROL lease
  assert.match(engine,/busPatchEnvelope_\.process\(outputs,outputChannels/);
  assert.ok(engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels')<engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)'));
  assert.ok(engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
- // Both serialized transitions must be serviced before the busy lease
- // early return, otherwise the owner waits on its own CONTROL lease.
- assert.match(main,/servicePendingPhysicalBusPatch\(\);\s*servicePendingFxRackTransition\(\);\s*if\(deviceApply_\.busy\(\)\)return/);
+ // Service both transitions before the busy-lease return.
+ assert.match(main,/servicePendingPhysicalBusPatch\(\);\s*serviceRackTransition\(\);\s*if\(deviceApply_\.busy\(\)\)return/);
 });
 
 test('integrated FIELD serializes physical bus remap with FX rack file operations',()=>{
@@ -285,21 +284,17 @@ test('integrated FIELD serializes physical bus remap with FX rack file operation
  assert.match(actions,/cancelPendingPhysicalBusPatch\("BUS OUTPUT: superseded by operator action"\)/);
 });
 
-test('FX file fade transaction preserves operator intent and never waits on its own lease',()=>{
- const transition=main.split('void servicePendingFxRackTransition()')[1].split('void emitPhysicalBusOutputAck(')[0];
- assert.match(transition,/engine_\.dryRoutingLabEpoch\(\)!=p\.epoch/);
- assert.match(transition,/engine_\.outputArmRevision\(\)!=p\.revision/);
- assert.match(transition,/monotonicMilliseconds\(\)\)>=p\.deadline/);
- assert.ok(transition.indexOf('if(!engine_.physicalBusPatchFadeReady())return;')<transition.indexOf('perform(true)'));
- assert.ok(transition.indexOf('pendingFxRackTransition_.reset();')<transition.indexOf('perform(true)'));
- const rack=main.split('const auto perform=[safe,finish,current,ep,rev,roster,channel')[1].split('void chooseNamedIoProfile(')[0];
- assert.doesNotMatch(rack,/operatorOutputMuted_\s*=|cancelAsioResetMonitorIntent\(\)/);
- assert.match(rack,/Purpose::fxRackFile/);
- assert.match(rack,/withNativeTopologyContinuity\(ep,rev,false/);
- assert.ok(rack.indexOf('captureRackFile(')<rack.indexOf('if(!deactivate||error.isNotEmpty())resumeFade()'));
- assert.ok(rack.indexOf('if(!deactivate||error.isNotEmpty())resumeFade()')<rack.indexOf('NativeFxRackArchive::save('));
- const capture=engine.split('juce::String captureRackFile(')[1].split('juce::String applyRackFile(')[0];
- assert.match(capture,/!allOutputsDisarmed\(\)&&!physicalBusPatchFadeReady\(\)/);
- const apply=engine.split('juce::String applyRackFile(')[1];
- assert.match(apply,/if\(!rackFileAllowed\(ep,rev,roster,target\)\)return/);
+test('FX file transition preserves the operator gates and the callback verifies committed PCM',()=>{
+ const t=main.split('void finishRackTransition(')[1].split('void chooseFxRackFile(')[0];
+ assert.match(t,/nativeTopologyMatches\(job.epoch,job.revision\)/);
+ assert.match(t,/monotonicMilliseconds\(\)\)>=job.deadline/);
+ assert.ok(t.indexOf('if(!engine_.physicalBusPatchFadeReady())return;')<t.indexOf('error=job.operation();'));
+ assert.match(t,/rackOutputRevisionObserved\(job.epoch,job.revision\)/);
+ assert.match(t,/finishPhysicalBusPatchFade\(!engine_.allOutputsDisarmed\(\)\)/);
+ const capture=engine.split('juce::String captureRackFile(')[1].split('struct PreparedRackFile')[0];
+ assert.match(capture,/rackSupportsLiveSnapshot/);
+ assert.match(capture,/\(!live&&!rackFileAllowed/);
+ const choose=main.split('void chooseFxRackFile(')[1].split('void chooseNamedIoProfile(')[0];
+ assert.doesNotMatch(choose,/operatorOutputMuted_\s*=|setMonitorEnabled\(/);
+ assert.match(choose,/rackArchive\(\[file,rack\]\{return Archive::save/);
 });

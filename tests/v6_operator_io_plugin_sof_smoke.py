@@ -50,7 +50,7 @@ def assert_manager_controls(manager, same_row=True):
           background:s.backgroundColor,border:s.borderTopColor,font:s.fontSize};
       });
     }""")
-    assert all(abs(c["h"]-34)<=.5 and abs(float(c["radius"].removesuffix("px"))-c["h"]/2)<=.5 and c["box"]=="border-box" and c["w"]>0 for c in controls),controls
+    assert all(abs(c["h"]-34)<=.5 and c["radius"]=="5px" and c["box"]=="border-box" and c["w"]>0 for c in controls),controls
     fields=controls[:3]
     if same_row:
         assert max(c["y"] for c in fields)-min(c["y"] for c in fields)<=.5,fields
@@ -196,16 +196,6 @@ def exercise(browser,out,width,height,tap,close_reference):
     assert manager.locator("#pluginNewPath,#pluginPaths,.plugin-disclaimer").count()==0
     assert manager.locator("#pluginNativePaths").count()==1
     emit(page,"arMixCatalog",{"items":[],"scanPaths":[{"path":"C:/System/VST3","custom":False},{"path":"D:/Custom VST3","custom":True}]})
-    paths=manager.locator("#pluginNativePaths")
-    assert paths.locator("li").count()==2
-    assert paths.get_by_text("System",exact=True).count()==1
-    paths.get_by_role("button",name="Remove scan folder D:/Custom VST3").click()
-    assert page.evaluate("()=>window.__events.some(e=>e.name==='arMixAction'&&e.payload.action==='removeScanFolder'&&e.payload.path==='D:/Custom VST3')")
-    assert paths.locator("li").count()==2,"request must not optimistically remove a folder"
-    emit(page,"arMixCatalog",{"items":[],"scanPaths":[{"path":"C:/System/VST3","custom":False}]})
-    assert paths.locator("li").count()==1
-    emit(page,"arMixCatalog",{"items":[{"id":f"fixture-{i}","name":f"Fixture VST {i:03d}","vendor":"Fixture Vendor","category":"Utility","format":"VST3"} for i in range(258)]})
-    assert manager.locator("#pluginScanStatus").is_hidden()
     assert "Static browser preview" not in manager.inner_text()
     assert "Click a plugin to insert" not in manager.inner_text()
     assert_manager_controls(manager)
@@ -215,10 +205,40 @@ def exercise(browser,out,width,height,tap,close_reference):
         manager.locator("#"+control).click()
         after=page.evaluate("(a)=>window.__events.filter(e=>e.name==='arMixAction'&&e.payload.action===a).length",action)
         assert after==before+1,(action,before,after)
-    emit(page,"arMixScanProgress",{"active":True,"done":2,"total":5})
+    default_path = r"C:\Program Files\Common Files\VST3"
+    custom_path = r"D:\Audio\VST3"
+    folders = [{"path":default_path,"custom":False,"available":True},
+               {"path":custom_path,"custom":True,"available":False}]
+    emit(page,"arMixCatalog",{"items":[{"id":f"fixture-{i}","name":f"Fixture VST {i:03d}","vendor":"Fixture Vendor","category":"Utility","format":"VST3"} for i in range(258)],
+                              "scanPaths":folders})
+    folder_list=manager.get_by_role("list",name="VST3 scan folders")
+    assert folder_list.get_by_role("listitem").count()==2
+    expect(folder_list.get_by_role("listitem").nth(0)).to_contain_text("System")
+    expect(folder_list.get_by_role("listitem").nth(1)).to_contain_text("Custom · Unavailable")
+    remove=folder_list.get_by_role("button",name=f"Remove scan folder {custom_path}")
+    assert folder_list.get_by_role("button").count()==1
+    remove.click()
+    confirmation=page.get_by_role("dialog",name="Remove scan folder")
+    confirmation.get_by_role("button",name="Cancel").click()
+    assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='removeScanFolder')")
+    assert manager.is_visible() and remove.is_visible()
+    remove.click()
+    confirmation.get_by_role("button",name="Remove folder",exact=True).click()
+    assert page.evaluate("()=>window.__events.filter(e=>e.payload?.action==='removeScanFolder').at(-1).payload.path")==custom_path
+    assert folder_list.get_by_role("listitem").count()==2,"wait for native folder readback"
+    emit(page,"arMixCatalog",{"items":[{"id":f"fixture-{i}","name":f"Fixture VST {i:03d}","vendor":"Fixture Vendor","category":"Utility","format":"VST3"} for i in range(258)],
+                              "scanPaths":folders[:1],"scanning":True})
+    assert folder_list.get_by_role("listitem").count()==1
+    assert manager.locator("#pluginScan").is_disabled()
+    emit(page,"arMixScanProgress",{"reported":True,"active":True,"done":2,"total":5})
     expect(manager.locator("#pluginScanStatus")).to_contain_text("2/5")
-    emit(page,"arMixScanProgress",{"active":False})
-    expect(manager.locator("#pluginScanStatus")).to_contain_text("scan finished")
+    catalog=page.evaluate("()=>({items: Array.from({length:258},(_,i)=>({id:'fixture-'+i,name:'Fixture VST '+String(i).padStart(3,'0'),vendor:'Fixture Vendor',category:'Utility',format:'VST3'}))})")
+    emit(page,"arMixCatalog",{**catalog,"scanPaths":folders[:1],"scanning":False})
+    assert manager.locator("#pluginScan").is_enabled()
+    emit(page,"arMixScanProgress",{"reported":True,"active":False,"found":5,"issues":True})
+    expect(manager.locator("#pluginScanStatus")).to_contain_text("Scan finished · 5 found")
+    expect(manager.locator("#pluginScanStatus")).to_contain_text("Diagnostics")
+    assert "JUCE" not in manager.locator("#pluginScanStatus").inner_text()
     manager.locator("#pluginSearch").fill("Fixture VST 257")
     assert manager.locator(".plugin-item").count()==1
     assert manager.locator(".plugin-item .plugin-meta").inner_text()=="Fixture Vendor"
@@ -240,16 +260,13 @@ def exercise(browser,out,width,height,tap,close_reference):
       });
       return {buttons,filters,icons,add:add?read(add):null,bank:bank?read(bank):null};
     }""")
-    assert controls["add"],controls
     for face in controls["buttons"]:
-        for key in ("backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
-            assert face[key]==controls["add"][key],(key,face,controls["add"])
+        assert face["height"]=="34px" and face["borderRadius"]=="5px",face
+        assert face["backgroundColor"]=="rgb(40, 70, 83)",face
+        assert face["borderTopColor"]=="rgb(86, 119, 136)",face
     for face in controls["filters"]:
-        assert face["height"]=="34px" and face["borderRadius"]=="17px",face
+        assert face["height"]=="34px" and face["borderRadius"]=="5px",face
         assert face["backgroundColor"]=="rgb(13, 32, 42)",face
-        if controls["bank"]:
-            for key in ("backgroundColor","borderTopColor","color","fontSize","fontWeight","boxShadow"):
-                assert face[key]==controls["bank"][key],(key,face,controls["bank"])
     for icon in controls["icons"]:
         assert icon["w"]==24 and icon["h"]==24 and icon["iw"]=="16px" and icon["ih"]=="16px",icon
         assert icon["mask"]!="none" and icon["text"]=="",icon

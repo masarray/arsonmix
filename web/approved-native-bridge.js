@@ -1330,7 +1330,7 @@
   // Native-only operator controls in the EXISTING approved More menu:
   // user selects REAL JUCE active pin -> explicitly patches CH1 -> arms output.
   // No auto-arm, demo PCM, guessed physical port or second GUI.
-  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null, ribbonAudioSummary=null;
+  let hardware=null, inputSelect=null, routeBtn=null, armBtn=null, muteBtn=null, resumeOutputBtn=null, ribbonAudioSummary=null;
   let lastM4Performance=null,m4PaintKey="";
   let externalSerial=0;
   const pendingExternal=new Map(); // each ChannelId independent; no mixer-wide lock
@@ -2732,11 +2732,29 @@
     const label=panic?"Resume after emergency stop":"Emergency stop audio";
     if(muteBtn.textContent!==label)muteBtn.textContent=label;
     muteBtn.disabled=panic?!deviceReady():d?.outputArmed!==true;
+    if(resumeOutputBtn){
+      resumeOutputBtn.hidden=!panic;
+      resumeOutputBtn.disabled=!deviceReady();
+      resumeOutputBtn.title=resumeOutputBtn.disabled?"Verify the device and routing in Audio I/O":
+        "Resume the verified MAIN output";
+    }
     muteBtn.title=panic?"Resume only the verified native route":
       "Emergency stop · normal device recovery is automatic";
   }
   // Output patching is rendered from physical native readback, never a
   // second routing state. Repainting only on changes avoids 12 Hz DOM churn.
+  function externalOutputConfirmationLease(id,plan){
+    const d=hardware?.device,r=hardware?.raw;
+    const row=controller?.state()?.current?.graph?.channels?.find(c=>c.id===id);
+    const pins=[plan.left,plan.right].map(port=>d?.outputEndpoints?.find(p=>p.port===port));
+    const assignments=(r?.externalOutputs||[]).filter(p=>p.channelId===id||
+      (p.physicalLeft===plan.left&&p.physicalRight===plan.right))
+      .map(p=>[p.channelId,p.physicalLeft,p.physicalRight]).sort();
+    return JSON.stringify([hardware?.hardwareConfiguration,r?.workspaceGeneration,
+      d?.outputArmed,r?.operatorOutputMuted,r?.physicalMainOutputs,r?.physicalMonitorOutputs,
+      row?.role,row?.name,plan.epoch,plan.left,plan.right,
+      pins.map(p=>[p?.id,p?.port,p?.callback,p?.label,p?.active]),assignments]);
+  }
   async function requestExternalOutput(t,label,el=null,matrixChannelId=null,directClick=false){
         // Matrix owns ChannelId selection, not the mounted strip/bank.
         const id=matrixChannelId??nativeIdFor(t);
@@ -2768,22 +2786,27 @@
           return true;
         }
         if(plan.kind==="NO_CHANGE"){if(el)el.value=previous;return true;}
-        const {left,right,epoch,revision}=plan;
-        // Restore installed selection before asynchronous confirmation.
+        const lease=externalOutputConfirmationLease(id,plan);
         if(el)el.value=previous;
-        if(plan.requiresConfirmation&&(!directClick||plan.sharedCount>0)&&!await confirmIo("External output",plan.confirmation,"Enable output"))return true;
+        if(plan.requiresConfirmation&&(!directClick||plan.sharedCount>0)&&
+           !await confirmArson("External output",plan.confirmation,"Enable output"))return true;
         const freshTrack=scope?.tracks?.find(x=>nativeIdFor(x)===id);
-        if(matrixChannelId!==null?
-          (!matrixReady(hardware)||matrixBusy()||namedPatchPending||acceptedLabel()!==previous):
-          (!freshTrack||(freshTrack.externalOutput||"None")!==previous))return true;
+        if(matrixBusy()||namedPatchPending||(matrixChannelId!==null?
+          (!matrixReady(hardware)||acceptedLabel()!==previous):
+          (!freshTrack||(freshTrack.externalOutput||"None")!==previous))){
+          nativeToast("Audio I/O changed · review external output again");return true;
+        }
         const freshName=matrixChannelId!==null?
           controller?.state()?.current?.graph?.channels?.find(c=>c.id===id)?.name:freshTrack.name;
         const freshPlan=stripVM.externalOutputPlan({native:controller?.state()?.current,
           hardware,channelId:id,selectedLabel:label,currentLabel:previous,
           choices:hardwareOutputPairs(),pending:pendingExternal.has(id),channelName:freshName});
-        if(JSON.stringify(freshPlan)!==JSON.stringify(plan)){
+        // A graph edit elsewhere can advance its revision during confirmation.
+        // Reuse the consent only if its exact device, ports and owners match.
+        if(freshPlan.kind!=="READY"||lease!==externalOutputConfirmationLease(id,freshPlan)){
           nativeToast("Routing changed · review external output again");return true;
         }
+        const {left,right,epoch,revision}=freshPlan;
         const requestId="out-o-"+(++externalSerial);
         if(matrixChannelId!==null)outputMatrixDrafts.delete(id);
         pendingExternal.set(id,{requestId,channelId:id,left,right,
@@ -3991,7 +4014,7 @@
     return true;
   }
   let arsonConfirmation=null;
-  function confirmArson(title,message,actionLabel="Continue"){
+  function confirmArson(title,message,actionLabel="Continue",owner=document.body){
     if(arsonConfirmation)return Promise.resolve(false);
     const focus=document.activeElement,dialog=document.createElement("dialog");
     dialog.className="armix-confirm-dialog";
@@ -4004,7 +4027,7 @@
     for(const [button,label] of [[cancel,"Cancel"],[accept,actionLabel]]){
       button.type="button";button.className="tool";button.textContent=label;actions.append(button);
     }
-    dialog.append(heading,body,actions);document.body.append(dialog);
+    dialog.append(heading,body,actions);owner.append(dialog);
     return new Promise(resolve=>{
       const finish=ok=>{
         if(arsonConfirmation!==dialog)return;
@@ -4353,14 +4376,17 @@
     paintAdditionalOutput();
     refreshAdditionalInventory();
   }
+  let audioIoReturnFocus=null;
   function closeNativeAudioIO(){
-    if(deviceBusy())return;
+    if(!devicePanel||devicePanel.hidden)return;
     if(loopbackPending)backend.emitEvent("arMixAction",{action:"audioLoopbackCancel"});
     loopbackId="";
     loopbackPending=false;
     loopbackField("confirmed").checked=false;
     for(const side of ["input","output"])loopbackField(side).disabled=false;
     devicePanel.hidden=true;syncRibbonBuffer();
+    if(audioIoReturnFocus?.isConnected)audioIoReturnFocus.focus({preventScroll:true});
+    audioIoReturnFocus=null;
     outputMatrixDrafts.clear();
     syncNamedOptions();
     for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
@@ -4407,10 +4433,15 @@
   function selectAudioSetupPage(page){
     if(!devicePanel)return;
     const dialog=devicePanel.querySelector(".armix-audio-dialog");
-    if(dialog.dataset.audioTab!==page)dialog.querySelector(".armix-audio-content")?.scrollTo(0,0);
+    const content=dialog.querySelector(".armix-audio-content");
+    if(dialog.dataset.audioTab!==page)content.scrollTop=0;
     dialog.dataset.audioTab=page;
-    for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
-      item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
+    content.setAttribute("aria-labelledby","armix-audio-tab-"+page);
+    for(const item of devicePanel.querySelectorAll("button[data-audio-tab]")){
+      const selected=item.dataset.audioTab===page;
+      item.setAttribute("aria-selected",String(selected));
+      item.tabIndex=selected?0:-1;
+    }
     const apply=devicePanel.querySelector("[data-audio-apply]");
     apply.hidden=page==="routing"||page==="inputs"||page==="diagnostics"||page==="performance";
     if(page==="routing")mountInlineAdditionalOutput();
@@ -4418,7 +4449,7 @@
     if(page==="performance")paintSmartPerformance(true);
     if(!deviceBusy())apply.textContent=page==="pins"?"Apply pins":"Apply device";
   }
-  function openNativeAudioIO(){
+  function openNativeAudioIO(trigger=null){
     if(!devicePanel){
       const style=document.createElement("style");
       style.textContent=`
@@ -4426,8 +4457,13 @@
           display:flex;align-items:center;justify-content:center}
         .armix-audio-shade[hidden]{display:none}
         .armix-audio-dialog{background:#142631;border:1px solid #467083;border-radius:8px;
-          box-shadow:0 16px 56px #0009;color:#e3eff4;width:min(480px,94vw);
-          padding:17px;display:grid;gap:11px;font:12px system-ui,sans-serif}
+          box-shadow:0 16px 56px #0009;color:#e3eff4;
+          width:min(1050px,calc(100% - 24px));height:min(740px,calc(100% - 24px));
+          min-width:0;min-height:0;box-sizing:border-box;overflow:hidden;
+          display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto;
+          font:12px Inter,"Segoe UI",system-ui,sans-serif}
+        .armix-audio-content{min-width:0;min-height:0;overflow-y:auto;overflow-x:hidden;
+          scrollbar-gutter:stable;overscroll-behavior:contain;overflow-wrap:anywhere}
         .armix-audio-dialog h2{font-size:14px;font-weight:600;margin:0}
         .armix-audio-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
         /* Floating close belongs to mixer-contextual-buttons.css. */
@@ -4451,7 +4487,6 @@
         .armix-loopback-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
         .armix-audio-dialog .armix-loopback-confirm{display:flex;align-items:flex-start;gap:6px;margin:8px 0}
         .armix-loopback-result{margin-top:6px}
-        .armix-audio-dialog{box-sizing:border-box;max-height:calc(100dvh - 24px);overflow:hidden}
         .armix-output-overview{border-top:1px solid #345666;padding-top:8px}
         .armix-output-heading{color:#c5e1ed;font-weight:500}
         .armix-output-matrix{max-height:175px;overflow:auto;display:grid;gap:3px;margin:7px 0}
@@ -4471,16 +4506,11 @@
         .armix-audio-pins label{display:flex;align-items:center;gap:5px;font-size:11px}
         /* Audio setup uses one clearly separated Device / Output Routing
            workspace like a DAW preferences panel; no independent audio owner. */
-        .armix-audio-dialog{width:min(1050px,calc(100vw - 24px));height:min(650px,calc(100dvh - 24px));
-          display:flex;flex-direction:column;padding:0;gap:0;min-width:0;
-          font:12px Inter,"Segoe UI",system-ui,sans-serif;
-          background:#1a252d;border-color:#506778;border-radius:8px}
-        .armix-audio-top,.armix-audio-tabs,.armix-audio-footer{flex:none;min-width:0}
-        .armix-audio-content{flex:1;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
-        .armix-audio-top [data-audio-close]{flex:none}
-        .armix-audio-dialog button:focus-visible,.armix-audio-dialog select:focus-visible{outline:2px solid #9de4fa;outline-offset:-2px}
+        .armix-audio-dialog{background:#1a252d;border-color:#506778}
         .armix-audio-top{padding:13px 18px;border-bottom:1px solid #344b59;
           background:#23323d;min-height:44px}
+        .armix-audio-top [data-audio-close]{flex:none}
+        .armix-audio-dialog button:focus-visible,.armix-audio-dialog select:focus-visible{outline:2px solid #9de4fa;outline-offset:-2px}
         .armix-audio-dialog h2{font-size:14px;font-weight:550}
         .armix-audio-tabs{display:flex;flex-wrap:wrap;gap:2px;padding:0 14px;
           border-bottom:1px solid #405866;background:#1b303b}
@@ -4505,9 +4535,8 @@
         .armix-output-matrix{max-height:min(46vh,360px);gap:4px}
         .armix-output-row{grid-template-columns:92px minmax(0,1fr) auto;
           min-height:34px;padding:8px 10px}
-        .armix-input-overview,.armix-output-overview,.armix-crosspoint-scroll{min-width:0;max-width:100%;box-sizing:border-box}
         .armix-input-overview{padding:15px 20px}
-        .armix-crosspoint-scroll{min-width:0;overflow-x:auto}
+        .armix-crosspoint-scroll{min-width:0;max-width:100%}
          .armix-matrix-scroll{overflow:auto;max-height:43vh;border:1px solid #354b59;border-radius:5px;scrollbar-gutter:stable}
          .armix-patch-grid{border-collapse:separate;border-spacing:3px;font-size:11px;width:max-content;min-width:100%}
          .armix-patch-grid th{font-weight:500;max-width:76px;min-width:48px;vertical-align:bottom;background:#20313c;position:sticky;top:0;z-index:2;padding:5px 3px}
@@ -4521,6 +4550,7 @@
          .armix-audio-dialog .armix-patch-cell[data-mark]:not([data-mark=""]){background:#326b8a;color:#fff}
          .armix-audio-dialog .armix-patch-cell[data-draft="true"]{background:#90672e;color:#fff}
          .armix-audio-dialog .armix-patch-cell[data-unavailable="true"][data-mark=""]{background:#15222a;border-color:#293943;color:#52636c;cursor:not-allowed}
+         .armix-patch-grid td:nth-last-child(2){max-width:192px;white-space:normal;overflow-wrap:anywhere}
          .armix-patch-grid select{max-width:180px;font-size:11px}
          .armix-audio-dialog [data-io-matrix-tools]{margin:8px 0 0;padding:8px 0 0}
          .armix-audio-dialog [data-io-matrix-tools] details{margin:0}
@@ -4570,6 +4600,7 @@
         .armix-diagnostic-tools summary{cursor:pointer}
         .armix-driver-inventory{padding:12px 20px;border-top:1px solid #354b59}
         .armix-endpoint-fields .armix-device-actions{padding:0;border:0;background:transparent}
+        .armix-audio-dialog:not([data-audio-tab="device"],[data-audio-tab="pins"]) > .armix-device-actions{display:none}
         .armix-audio-dialog .armix-device-actions{padding:12px 20px;
           border-top:1px solid #344b59;background:#192a33}
         .armix-audio-dialog .armix-device-actions button[data-audio-apply]{
@@ -4593,20 +4624,20 @@
           viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path
           d="M6.4,19L5,17.6L10.6,12L5,6.4L6.4,5L12,10.6L17.6,5L19,6.4L13.4,12L19,17.6L17.6,19L12,13.4L6.4,19Z"/></svg></button></header>
         <nav class="armix-audio-tabs" aria-label="Audio setup pages" role="tablist">
-          <button type="button" class="armix-audio-tab" data-audio-tab="device"
+          <button type="button" class="armix-audio-tab" id="armix-audio-tab-device" aria-controls="armix-audio-tab-content" data-audio-tab="device"
             role="tab" aria-selected="true">Audio Device</button>
-          <button type="button" class="armix-audio-tab" data-audio-tab="pins"
+          <button type="button" class="armix-audio-tab" id="armix-audio-tab-pins" aria-controls="armix-audio-tab-content" data-audio-tab="pins"
             role="tab" aria-selected="false" disabled>Hardware Pins</button>
-          <button type="button" class="armix-audio-tab" data-audio-tab="inputs"
+          <button type="button" class="armix-audio-tab" id="armix-audio-tab-inputs" aria-controls="armix-audio-tab-content" data-audio-tab="inputs"
             role="tab" aria-selected="false" disabled>Inputs</button>
-          <button type="button" class="armix-audio-tab" data-audio-tab="routing"
+          <button type="button" class="armix-audio-tab" id="armix-audio-tab-routing" aria-controls="armix-audio-tab-content" data-audio-tab="routing"
             role="tab" aria-selected="false" disabled>Outputs</button>
-          <button type="button" class="armix-audio-tab" data-audio-tab="performance"
+          <button type="button" class="armix-audio-tab" id="armix-audio-tab-performance" aria-controls="armix-audio-tab-content" data-audio-tab="performance"
             role="tab" aria-selected="false">Performance</button>
-          <button type="button" class="armix-audio-tab" data-audio-tab="diagnostics"
+          <button type="button" class="armix-audio-tab" id="armix-audio-tab-diagnostics" aria-controls="armix-audio-tab-content" data-audio-tab="diagnostics"
             role="tab" aria-selected="false">Diagnostics</button>
         </nav>
-        <div class="armix-audio-content">
+        <div class="armix-audio-content" id="armix-audio-tab-content" role="tabpanel" aria-labelledby="armix-audio-tab-device">
         <div class="armix-endpoint-fields">
           <label>Audio driver<select data-audio-field="backend"></select></label>
           <label>Recording / input<select data-audio-field="capture"></select></label>
@@ -4723,7 +4754,7 @@
           <div class="armix-device-note">Select pins, then Apply. Additional pins are not automatically patched to mixer channels or outputs.</div>
         </section>
         </div>
-        <div class="armix-device-actions armix-audio-footer">
+        <div class="armix-device-actions">
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
@@ -4753,6 +4784,30 @@
         const dialog=devicePanel.querySelector(".armix-audio-dialog");
         if(!tab||!dialog||deviceBusy()||tab.disabled||loopbackPending)return;
         selectAudioSetupPage(tab.dataset.audioTab);
+      });
+      devicePanel.addEventListener("keydown",event=>{
+        if(event.key==="Escape"){
+          event.preventDefault();event.stopPropagation();closeNativeAudioIO();
+          return;
+        }
+        const current=event.target.closest("button[data-audio-tab]");
+        if(current&&["ArrowLeft","ArrowRight","Home","End"].includes(event.key)){
+          if(deviceBusy()||loopbackPending)return;
+          const tabs=[...devicePanel.querySelectorAll("button[data-audio-tab]:enabled")];
+          const index=tabs.indexOf(current);
+          const target=tabs[event.key==="Home"?0:event.key==="End"?tabs.length-1:
+            (index+tabs.length+(event.key==="ArrowRight"?1:-1))%tabs.length];
+          event.preventDefault();event.stopPropagation();
+          selectAudioSetupPage(target.dataset.audioTab);target.focus();
+          return;
+        }
+        if(event.key!=="Tab")return;
+        const stops=[...devicePanel.querySelectorAll("button,select,input,summary,[tabindex]")]
+          .filter(item=>item.tabIndex>=0&&!item.matches(":disabled")&&item.getClientRects().length);
+        const first=stops[0],last=stops.at(-1);
+        if(event.shiftKey&&event.target===first||!event.shiftKey&&event.target===last){
+          event.preventDefault();(event.shiftKey?last:first).focus();
+        }
       });
       loopbackField("start").onclick=()=>requestLoopback(true);
       loopbackField("confirmed").onchange=e=>{
@@ -4803,15 +4858,21 @@
         if(!deviceBusy() && deviceState.remapGeneration!==null)
           sendDeviceApply(true);
       };
-       document.body.appendChild(devicePanel);
+      devicePanel.hidden=true;
+      document.body.appendChild(devicePanel);
     }
+    const opening=devicePanel.hidden;
+    if(opening)audioIoReturnFocus=trigger?.currentTarget||document.activeElement;
     devicePanel.hidden=false;
-    const dialog=devicePanel.querySelector(".armix-audio-dialog");
-    if(dialog)selectAudioSetupPage("device");
+    if(opening)devicePanel.querySelector("[data-audio-close]").focus({preventScroll:true});
+    if(deviceBusy()){
+      showDeviceApplyProgress(true);
+      return;
+    }
+    selectAudioSetupPage("device");
     for(const item of devicePanel.querySelectorAll('button[data-audio-tab="pins"],button[data-audio-tab="inputs"],button[data-audio-tab="routing"]'))
       item.disabled=true;
     paintPhysicalOutputs(hardware);
-    if(deviceBusy())return;
     const active=devicePanel.querySelector("[data-audio-active]");
     deviceState=deviceVM.setupClearResult(deviceState);
     if(active)active.textContent="Reading verified audio devices…";
@@ -4983,7 +5044,6 @@
     const svg=progress.querySelector("svg");
     progress.hidden=!pending;
     devicePanel.querySelector("[data-audio-active]").hidden=pending;
-    devicePanel.querySelector("[data-audio-close]").disabled=pending;
     const apply=devicePanel.querySelector("[data-audio-apply]");
     apply.textContent=pending?"Applying…":
       devicePanel.querySelector(".armix-audio-dialog").dataset.audioTab==="pins"?"Apply pins":"Apply device";
@@ -5310,10 +5370,10 @@
     };
     const caption=item("span","more-tools-caption","AUDIO / SAFETY");
     const setup=item("button","tool","Audio I/O");
-    setup.addEventListener("click",()=>{
+    setup.addEventListener("click",event=>{
       // Reuse the existing custom driver/endpoint pane for all workflows.
       // No stock JUCE device selector, including explicit recovery.
-      openNativeAudioIO();
+      openNativeAudioIO(event);
     });
     inputSelect=item("select","toolbar-select","");
     inputSelect.setAttribute("aria-label","JUCE physical input for CH1");
@@ -5367,6 +5427,15 @@
         expectedEpoch:ep,expectedRevision:rev});
       status("Verifying audio route after emergency stop");
     });
+    const footer=document.querySelector("footer.status-bar");
+    if(footer){
+      resumeOutputBtn=item("button","native-resume-output","Audio stopped · Resume");
+      resumeOutputBtn.type="button";resumeOutputBtn.hidden=true;
+      resumeOutputBtn.addEventListener("click",()=>muteBtn.click());
+      resumeOutputBtn.style.cssText="flex:none;margin:0 6px;padding:0 6px;border:1px solid #765b40;"+
+        "border-radius:3px;background:#30271b;color:#f2d29d;font:inherit;cursor:pointer";
+      footer.append(resumeOutputBtn);
+    }
     hardwareNote=item("span","armix-device-note","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
     // Everyday I/O and driver recovery use the same custom Audio I/O pane.
@@ -6536,38 +6605,47 @@
       }
       controller?.subscribe();
     });
-    // Scan-folder metadata is independent of the installed mixer rack.
-    // Render only native readback; no browser-local folder authority.
-    function paintNativeScanPaths(paths,scanning){
-      const list=document.getElementById("pluginNativePaths");
-      if(!list||!Array.isArray(paths))return;
-      list.replaceChildren();
-      for(const row of paths){
-        if(typeof row?.path!=="string"||!row.path||typeof row.custom!=="boolean")continue;
-        const item=document.createElement("li"),label=document.createElement("span");
-        label.textContent=row.path;label.title=row.path;item.append(label);
-        if(row.custom){
+    function paintPluginScanFolders(folders, busy){
+      const host=document.getElementById("pluginNativePaths");
+      if(!host||!Array.isArray(folders))return;
+      const previous=host.contains(document.activeElement)?document.activeElement.dataset.scanPath:null;
+      const rows=[];
+      let refocus=null;
+      for(const folder of folders){
+        if(typeof folder?.path!=="string"||!folder.path)continue;
+        const row=document.createElement("li");row.className="plugin-scan-folder";
+        row.dataset.available=String(folder.available===true);
+        const info=document.createElement("div"),path=document.createElement("span"),kind=document.createElement("small");
+        path.textContent=folder.path;path.title=folder.path;
+        kind.textContent=(folder.custom===true?"Custom":"System")+(folder.available===true?"":" · Unavailable");
+        info.append(path,kind);row.append(info);
+        if(folder.custom===true){
           const remove=document.createElement("button");
-          remove.type="button";remove.textContent="Remove";remove.disabled=scanning;
-          remove.setAttribute("aria-label","Remove scan folder "+row.path);
-          remove.onclick=()=>{
-            if(nativeFxCatalogScanning)return;
-            backend.emitEvent("arMixAction",{action:"removeScanFolder",path:row.path});
+          remove.type="button";remove.textContent="×";
+          remove.dataset.scanPath=folder.path;remove.disabled=busy;
+          remove.setAttribute("aria-label","Remove scan folder "+folder.path);
+          remove.onclick=async()=>{
+            if(await confirmArson("Remove scan folder",
+              "Stop scanning "+folder.path+"? Existing plug-ins and their files are kept.","Remove folder",
+              host.closest("#pluginBrowser")))
+              backend.emitEvent("arMixAction",{action:"removeScanFolder",path:folder.path});
           };
-          item.append(remove);
-        }else{
-          const tag=document.createElement("small");tag.textContent="System";item.append(tag);
+          if(previous===folder.path)refocus=remove;
+          row.append(remove);
         }
-        list.append(item);
+        rows.push(row);
+      }
+      host.replaceChildren(...rows);
+      if(previous)(refocus&&!refocus.disabled?refocus:document.getElementById("pluginAddPath"))?.focus({preventScroll:true});
+      for(const id of ["pluginAddPath","pluginScan","pluginImport"]){
+        const button=document.getElementById(id);
+        if(button)button.disabled=busy;
       }
     }
     backend.addEventListener("arMixCatalog",catalog=>{
       if(!Array.isArray(catalog?.items))return;
       nativeFxCatalogScanning=catalog.scanning===true;
-      paintNativeScanPaths(catalog.scanPaths,nativeFxCatalogScanning);
-      for(const id of ["pluginScan","pluginImport","pluginAddPath"]){
-        const button=document.getElementById(id);if(button)button.disabled=nativeFxCatalogScanning;
-      }
+      paintPluginScanFolders(catalog.scanPaths,nativeFxCatalogScanning);
       nativeCatalog=new Map(catalog.items.filter(p=>
         p&&typeof p.id==="string"&&p.id.length>0&&
         typeof p.name==="string"&&p.name.length>0).map(p=>[p.id,p]));
@@ -6584,18 +6662,12 @@
     });
     backend.addEventListener("arMixScanProgress",progress=>{
       const statusEl=document.getElementById("pluginScanStatus");
-      if(!statusEl)return;
-      if(progress?.active){
-        statusEl.textContent=progress.total>0?
-          "Scanning plugins… "+(progress.done||0)+"/"+progress.total:"Finding plugins…";
-      }else{
-        const message=typeof progress?.message==="string"?progress.message:"";
-        // Native terminal errors remain actionable. Ignore idle progress
-        // on startup instead of announcing a scan that never occurred.
-        if(statusEl.dataset.scanning==="true"||message.includes("Could not")||message.includes("removed")||message.includes("incomplete")||message.includes("Choose a")||message.includes("No compatible"))
-          statusEl.textContent=message||"Plugin scan finished.";
-      }
-      statusEl.dataset.scanning=String(progress?.active===true);
+      if(!statusEl||progress?.reported!==true)return;
+      const text=progress.active?(progress.total>0?
+        "Scanning VST3… "+progress.done+"/"+progress.total:"Finding VST3 plug-ins…"):
+        "Scan finished · "+(progress.found||0)+" found"+
+          (progress.issues?" · Some items need attention. Open Diagnostics for details.":"");
+      if(statusEl.textContent!==text)statusEl.textContent=text;
     });
     backend.addEventListener("arMixOpenAudioIO",()=>openNativeAudioIO());
     backend.addEventListener("arMixFxRackFileResult",receipt=>{

@@ -174,6 +174,7 @@ public:
     bool stateSnapshotQuiescent() const noexcept override {
         return queued_.empty()&&completion_.empty()&&!pendingId_;
     }
+    bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& out) override {
         juce::MemoryOutputStream stream(out,false);
         stream.writeInt(0x41484d31); // AHM1

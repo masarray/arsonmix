@@ -29,7 +29,7 @@ public:
         ++serial_; // invalidate the queued message-thread completion
         busy_.store(false,std::memory_order_release);
         auto completion=std::move(done_);
-        done_={};readDone_={};states_.clear();
+        done_={};readDone_={};rackWork_={};states_.clear();
         // Archive lifecycle commits may have published HEAD just before
         // shutdown. Never discard their authoritative workspace adoption.
         if((applySaveCompletion||liveControlsOnly_||archiveMode_!=NativeMixerSessionStore::ArchiveMode::none)&&completion)
@@ -61,12 +61,18 @@ public:
         readDone_=std::move(completion);
         return start();
     }
+    bool rackArchive(std::function<juce::String()> operation,Completion completion) {
+        if(busy_.exchange(true,std::memory_order_acq_rel))return false;
+        rackWork_=std::move(operation);
+        done_=std::move(completion);
+        return start();
+    }
 private:
     bool start() {
         ++serial_;
         if(!startThread()){
             busy_.store(false,std::memory_order_release);
-            done_={};readDone_={};states_.clear();
+            done_={};readDone_={};rackWork_={};states_.clear();
             return false;
         }
         return true;
@@ -74,33 +80,36 @@ private:
     void run() override {
         juce::String error;
         try {
-            NativeMixerSessionStore store(studio_);
-            if(readDone_)error=NativeMixerSessionStore::readFile(exportFile_,doc_,states_);
-            else if(liveControlsOnly_) {
-                if(exportFile_!=juce::File{}||archiveMode_!=NativeMixerSessionStore::ArchiveMode::none||!states_.empty())
-                    error="Invalid live checkpoint worker request";
-                else error=store.commitLiveControls(std::move(doc_));
-            }
-            else if(verifyExportArchive_) {
-                if(exportFile_==juce::File{} || exportFile_.exists() ||
-                   exportFile_.getParentDirectory().createDirectory().failed())
-                    error="Cannot create a unique session archive";
-                else {
-                    error=NativeMixerSessionStore::writeFile(exportFile_,doc_,states_);
-                    if(error.isEmpty()) {
-                        MixerSessionDocument verified;
-                        std::vector<armix::shows::BinaryState> verifiedStates;
-                        error=NativeMixerSessionStore::readFile(exportFile_,verified,verifiedStates);
-                        doc_.resumeMain.reset();
-                        if(error.isEmpty() && Codec::encode(doc_)!=Codec::encode(verified))
-                            error="Session archive readback mismatch";
+            if(rackWork_)error=rackWork_();
+            else {
+                NativeMixerSessionStore store(studio_);
+                if(readDone_)error=NativeMixerSessionStore::readFile(exportFile_,doc_,states_);
+                else if(liveControlsOnly_) {
+                    if(exportFile_!=juce::File{}||archiveMode_!=NativeMixerSessionStore::ArchiveMode::none||!states_.empty())
+                        error="Invalid live checkpoint worker request";
+                    else error=store.commitLiveControls(std::move(doc_));
+                }
+                else if(verifyExportArchive_) {
+                    if(exportFile_==juce::File{} || exportFile_.exists() ||
+                       exportFile_.getParentDirectory().createDirectory().failed())
+                        error="Cannot create a unique session archive";
+                    else {
+                        error=NativeMixerSessionStore::writeFile(exportFile_,doc_,states_);
+                        if(error.isEmpty()) {
+                            MixerSessionDocument verified;
+                            std::vector<armix::shows::BinaryState> verifiedStates;
+                            error=NativeMixerSessionStore::readFile(exportFile_,verified,verifiedStates);
+                            doc_.resumeMain.reset();
+                            if(error.isEmpty() && Codec::encode(doc_)!=Codec::encode(verified))
+                                error="Session archive readback mismatch";
+                        }
                     }
                 }
+                else error=archiveMode_!=NativeMixerSessionStore::ArchiveMode::none?
+                    store.commitNewSession(doc_,states_,archiveMode_):
+                    exportFile_==juce::File{}?store.commit(doc_,states_):
+                    NativeMixerSessionStore::writeFile(exportFile_,doc_,states_);
             }
-            else error=archiveMode_!=NativeMixerSessionStore::ArchiveMode::none?
-                store.commitNewSession(doc_,states_,archiveMode_):
-                exportFile_==juce::File{}?store.commit(doc_,states_):
-                NativeMixerSessionStore::writeFile(exportFile_,doc_,states_);
         }catch(...) {error="Mixer session IO worker exception";}
         // Release potentially large VST3 binary buffers before callback.
         if(!readDone_) {
@@ -126,7 +135,7 @@ private:
         }
         busy_.store(false,std::memory_order_release);
         auto callback=std::move(done_);
-        done_={};
+        done_={};rackWork_={};
         auto readCallback=std::move(readDone_);
         readDone_={};
         archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
@@ -139,6 +148,7 @@ private:
     std::vector<armix::shows::BinaryState> states_;
     juce::String saveResult_;
     Completion done_;
+    std::function<juce::String()> rackWork_;
     ReadCompletion readDone_;
     NativeMixerSessionStore::ArchiveMode archiveMode_=NativeMixerSessionStore::ArchiveMode::none;
     bool verifyExportArchive_=false,liveControlsOnly_=false;

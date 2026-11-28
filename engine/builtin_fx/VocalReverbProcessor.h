@@ -266,6 +266,7 @@ public:
         return !settingsPending() &&
                !(acceptedSequence_.load(std::memory_order_seq_cst)&1u);
     }
+    bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& out) override {
         VocalReverbSettings accepted;
         const auto snapshotId=appliedRequestId();

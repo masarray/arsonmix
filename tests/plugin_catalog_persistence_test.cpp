@@ -9,14 +9,15 @@
 // Native catalog on a real filesystem and JUCE message thread. No third-party
 // plugin binaries are required: scan an empty custom folder and preserve an
 // existing cached descriptor. The fixture never claims actual vendor DSP.
-static bool customPath(const PluginCatalog& catalog,const juce::String& path) {
+static bool customPath(const PluginCatalog& catalog,const juce::String& path,bool available=true) {
     const auto snapshot=catalog.snapshot();
     const auto rows=snapshot.getProperty("scanPaths",{});
     const auto* paths=rows.getArray();
     assert(paths);
     for(const auto& row:*paths)
         if(row.getProperty("path",{}).toString()==path)
-            return bool(row.getProperty("custom",false));
+            return bool(row.getProperty("custom",false)) &&
+                   bool(row.getProperty("available",false))==available;
     return false;
 }
 static void waitForScan(PluginCatalog& catalog) {
@@ -47,11 +48,11 @@ int main(){
         PluginCatalog catalog(studio);
         const auto original=catalog.entries().front().key();
         assert(!customPath(catalog,folder.getFullPathName()));
-        catalog.addDirectory(folder);
+        assert(catalog.addDirectory(folder).isEmpty());
         assert(customPath(catalog,folder.getFullPathName()));
         waitForScan(catalog);
         assert(catalog.entries().size()==1&&catalog.entries().front().key()==original);
-        catalog.addDirectory(folder); // idempotent source registration
+        assert(catalog.addDirectory(folder).isEmpty()); // idempotent source registration
         waitForScan(catalog);
         const auto snapshot=catalog.snapshot();
         const auto rows=snapshot.getProperty("scanPaths",{});
@@ -64,19 +65,23 @@ int main(){
         PluginCatalog catalog(studio); // restart: same native persisted folder
         assert(customPath(catalog,folder.getFullPathName()));
         assert(catalog.entries().size()==1&&catalog.entries().front().key()==cached.key());
-        assert(!catalog.removeDirectory(second.getFullPathName()));
+        assert(catalog.removeDirectory(second.getFullPathName()).isNotEmpty());
+        const auto moved=root.getChildFile("Temporarily moved VST");
+        assert(folder.moveFileTo(moved));
+        assert(customPath(catalog,folder.getFullPathName(),false));
+        assert(moved.moveFileTo(folder));
         // A directory in place of the JSON file is a deterministic write
         // failure without administrator permissions or OS ACL assumptions.
         const auto backup=studio.getChildFile("catalog-backup.json");
         assert(file.moveFileTo(backup));
         assert(file.createDirectory().wasOk());
-        assert(!catalog.removeDirectory(folder.getFullPathName()));
+        assert(catalog.removeDirectory(folder.getFullPathName()).isNotEmpty());
         assert(customPath(catalog,folder.getFullPathName()));
-        catalog.addDirectory(second);
+        assert(catalog.addDirectory(second).isNotEmpty());
         assert(!customPath(catalog,second.getFullPathName())&&!catalog.busy());
         assert(file.deleteRecursively());
         assert(backup.moveFileTo(file));
-        assert(catalog.removeDirectory(folder.getFullPathName()));
+        assert(catalog.removeDirectory(folder.getFullPathName()).isEmpty());
         assert(!customPath(catalog,folder.getFullPathName()));
         assert(catalog.entries().size()==1&&folder.isDirectory());
     }

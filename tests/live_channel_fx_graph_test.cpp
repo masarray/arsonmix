@@ -1942,12 +1942,24 @@ static void verifyNativeExactIdle() {
     lease.render(l.data(),r.data(),64);
     assert(lease.dspSleeping.load()&&lease.dspSleepBlocks.load()==1);
     assert(l[0]==.125f&&r[63]==-.25f&&heapCalls.load()==before);
+    juce::MemoryBlock beforeEdit;
+    // A live native snapshot is available even while AUDIO owns the
+    // process permit. Snapshot must not clear or contend for that permit.
+    assert(!lease.processing.test_and_set(std::memory_order_acquire));
+    assert(lease.captureLiveState(beforeEdit)&&beforeEdit.getSize()>0);
+    assert(lease.processing.test(std::memory_order_acquire));
+    lease.processing.clear(std::memory_order_release);
+    const auto beforeEditHeap=heapCalls.load();
     auto band=live->acceptedBands()[0];band.enabled=true;band.frequencyHz=1000.f;
     assert(live->queueBand(0,band,71));
+    juce::MemoryBlock changed;
+    assert(!lease.captureLiveState(changed)&&changed.getSize()==0);
     lease.render(l.data(),r.data(),64);
+    assert(!lease.captureLiveState(changed)&&changed.getSize()==0);
     Eq::Completion ack{};
     assert(!lease.dspSleeping.load()&&live->pollCompletion(ack)&&ack.applied&&ack.requestId==71);
-    assert(lease.dspProcessedBlocks.load()==1&&heapCalls.load()==before);
+    assert(lease.dspProcessedBlocks.load()==1&&heapCalls.load()==beforeEditHeap);
+    assert(lease.captureLiveState(changed)&&changed!=beforeEdit);
     auto c=std::make_unique<Comp>();c->prepareToPlay(48000,64);
     auto* compressor=c.get();
     LiveChannelFxGraph::FxInstance cl(std::move(c),Comp::catalogIdentity,"Comp",64);
@@ -1960,6 +1972,7 @@ static void verifyNativeExactIdle() {
     // Vendor fixture can generate output with zero input. Never sleep it.
     auto vendor=std::make_unique<GainFx>(1.f,0,.2f);vendor->prepareToPlay(48000,64);
     LiveChannelFxGraph::FxInstance external(std::move(vendor),"unknown","Vendor",64);
+    assert(!external.captureLiveState(changed)); // opaque processor requires verified quiet
     l.fill(0);r.fill(0);external.render(l.data(),r.data(),16);
     assert(!external.dspSleeping.load()&&l[0]==.2f&&r[0]==.2f);
 }

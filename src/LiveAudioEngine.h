@@ -2608,8 +2608,7 @@ public:
             fail.error="NATIVE_VST3_VENDOR_PREPARE_FAILED";return fail;
         }
     }
-    // Browsing a file is non-mutating. The original stricter admission is
-    // still required before capturing plugin state or publishing a rack.
+    // Browsing and disk I/O do not grant permission to alter the audio graph.
     bool rackFileTargetAvailable(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId target) {
         return !independent_.active()&&attached_&&directFence_.permitted()&&!handoff_.busy()&&
@@ -2620,30 +2619,37 @@ public:
     }
     bool rackFileAllowed(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId target) {
-        return allOutputsDisarmed()&&!wantsMainContinuation()&&
+        return (busPatchEnvelope_.ready()||(allOutputsDisarmed()&&!wantsMainContinuation()))&&
             rackFileTargetAvailable(ep,rev,roster,target);
+    }
+    bool rackSupportsLiveSnapshot(armix::mixer::ChannelId target,int slot) const noexcept {
+        return dryRoutingLab_.rackSupportsLiveSnapshot(target,slot);
     }
     juce::String captureRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId target,int slot,const juce::String& token,
             armix::storage::FxRackFile& rack) {
-        // Capture needs processor exclusion and a confirmed quiet PCM
-        // boundary, not a permanent change to operator output intent.
-        if(!rackFileTargetAvailable(ep,rev,roster,target)||
-           (!allOutputsDisarmed()&&!physicalBusPatchFadeReady()))
-            return "Audio transition not quiet; retry FX rack";
-        return dryRoutingLab_.captureRackFile(ep,rev,roster,target,slot,token,rack);
+        const bool live=rackSupportsLiveSnapshot(target,slot);
+        if(!rackFileTargetAvailable(ep,rev,roster,target)||(!live&&!rackFileAllowed(ep,rev,roster,target)))
+            return "Device or rack changed before state capture";
+        return dryRoutingLab_.captureRackFile(ep,rev,roster,target,slot,token,rack,live);
     }
-    juce::String applyRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+    struct PreparedRackFile {
+        juce::AudioIODevice* device=nullptr;
+        double rate=0;
+        int frames=0;
+        std::vector<armix::mixer::LiveChannelFxGraph::InstanceLease> leases;
+    };
+    juce::String prepareRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId target,const armix::storage::FxRackFile& rack,
-            bool append,int removeSlot=-1,const juce::String& token={}) {
-        if(!rackFileAllowed(ep,rev,roster,target))return "Disarm MAIN and STREAM; refresh FX rack";
+            bool append,bool remove,PreparedRackFile& prepared) {
+        if(!rackFileTargetAvailable(ep,rev,roster,target))return "Device or rack changed";
         auto* device=deviceManager_.getCurrentAudioDevice();
         if(!device||!device->isOpen())return "Audio device unavailable";
         const double rate=device->getCurrentSampleRate();
         const int frames=juce::jmax(32,device->getCurrentBufferSizeSamples());
         try{
-            std::vector<armix::mixer::LiveChannelFxGraph::InstanceLease> leases;
-            if(removeSlot<0){
+            PreparedRackFile next{device,rate,frames,{}};
+            if(!remove){
                 if(rack.single!=append||rack.effects.size()>8||
                    (append&&rack.effects.size()!=1))return "Choose matching rack or single FX file";
                 for(const auto& fx:rack.effects){
@@ -2658,16 +2664,27 @@ public:
                     auto lease=std::make_shared<armix::mixer::LiveChannelFxGraph::FxInstance>(
                         std::move(processor),fx.catalogId,fx.name,LiveDryRoutingLab::Block::hardFrameLimit);
                     lease->bypassRequested.store(fx.bypass,std::memory_order_release);
-                    leases.push_back(std::move(lease)); // fresh identity, never import tokens
+                    next.leases.push_back(std::move(lease)); // fresh identity, never import tokens
                 }
             }
-            if(deviceManager_.getCurrentAudioDevice()!=device||device->getCurrentSampleRate()!=rate||
-               juce::jmax(32,device->getCurrentBufferSizeSamples())!=frames||
-               !rackFileAllowed(ep,rev,roster,target))return "Device or rack changed during prepare";
-            auto result=dryRoutingLab_.replaceRackFile(ep,rev,roster,target,std::move(leases),
-                append,rack.rackBypassed,removeSlot,token,allOutputsDisarmed());
-            return result.accepted?juce::String{}:juce::String(result.error);
+            if(!rackFileTargetAvailable(ep,rev,roster,target))return "Device or rack changed during preparation";
+            prepared=std::move(next);
+            return {};
         }catch(...){return "FX rack preparation failed; current rack retained";}
+    }
+    juce::String applyRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId target,PreparedRackFile& prepared,bool append,
+            bool rackBypassed,int removeSlot,const juce::String& token) {
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        if(!device||device!=prepared.device||device->getCurrentSampleRate()!=prepared.rate||
+           juce::jmax(32,device->getCurrentBufferSizeSamples())!=prepared.frames||
+           !rackFileAllowed(ep,rev,roster,target))return "Device or rack changed before restore";
+        const auto result=dryRoutingLab_.replaceRackFile(ep,rev,roster,target,std::move(prepared.leases),
+            append,rackBypassed,removeSlot,token,true);
+        return result.accepted?juce::String{}:juce::String(result.error);
+    }
+    bool rackOutputRevisionObserved(std::uint64_t ep,std::uint64_t rev) const noexcept {
+        return nativeTopologyMatches(ep,rev)&&dryRoutingLab_.renderedNativeRevision()==rev;
     }
     LiveDryRoutingLab::NativeBusResult convertNativeReverbReturn(std::uint64_t ep,
             std::uint64_t revision,std::uint64_t roster,armix::mixer::ChannelId source,

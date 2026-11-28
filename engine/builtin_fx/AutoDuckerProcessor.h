@@ -167,6 +167,7 @@ public:
     }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {return !editInFlight_.load(std::memory_order_acquire)&&queue_.empty()&&completion_.empty();}
+    bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& out) override {
         juce::MemoryOutputStream w(out,false);
         w.writeInt(0x41445543);w.writeInt(2);w.writeInt(static_cast<int>(accepted_.count));

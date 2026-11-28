@@ -358,12 +358,17 @@ def verify_external_output(page, out):
     assert first.input_value()=="None"
     assert not page.evaluate("()=>window.__outActions.some(x=>x.action==='routingExternalOutput')")
     first.select_option(label=preset)
+    # An unrelated graph edit during consent updates the dispatch token.
+    # The accepted channel, exact ASIO pins and pair ownership are unchanged.
+    state["graph"]["revision"]="3"
+    state["externalRevision"]="3"
+    emit(page,"arMixConsoleSnapshot",state)
     dialog.get_by_role("button",name="Enable output",exact=True).click()
     actions=page.evaluate("()=>window.__outActions.filter(x=>x.action==='routingExternalOutput')")
     assert len(actions)==1,actions
     requested=actions[0]
     assert (requested["channelId"]==SOURCE and requested["deviceEpoch"]==state["device"]["epoch"]
-            and requested["revision"]=="2" and requested["left"]==4 and requested["right"]==5
+            and requested["revision"]=="3" and requested["left"]==4 and requested["right"]==5
             and requested["confirmed"] is True),requested
     assert first.get_attribute("aria-busy")=="true"
     # Failed ACK only clears the affected busy state; PCM remains unchanged.
@@ -371,6 +376,13 @@ def verify_external_output(page, out):
         "ok":False,"error":"TEST_REJECTED"})
     assert first.get_attribute("aria-busy") is None
     assert first.input_value()=="None"
+    first.select_option(label=choice)
+    state["externalOutputs"]=[{"channelId":RECEIVER,"physicalLeft":4,"physicalRight":5,"status":"LIVE"}]
+    emit(page,"arMixConsoleSnapshot",state)
+    dialog.get_by_role("button",name="Enable output",exact=True).click()
+    assert page.evaluate("()=>window.__outActions.filter(x=>x.action==='routingExternalOutput').length")==1
+    state["externalOutputs"]=[]
+    emit(page,"arMixConsoleSnapshot",state)
     first.select_option(label=choice)
     dialog.get_by_role("button",name="Enable output",exact=True).click()
     actions=page.evaluate("()=>window.__outActions.filter(x=>x.action==='routingExternalOutput')")

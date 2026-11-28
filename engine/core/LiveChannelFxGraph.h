@@ -161,6 +161,21 @@ public:
             if(details.latencyChanged && p && p->getLatencySamples()!=latencySamples)
                 latencyChanged.store(true,std::memory_order_release);
         }
+        bool supportsLiveStateSnapshot() const noexcept {
+            return nativeControl && nativeControl->supportsLiveStateSnapshot();
+        }
+        bool captureLiveState(juce::MemoryBlock& out) noexcept {
+            if(!supportsLiveStateSnapshot()||processFaulted()||
+               !nativeControl->stateSnapshotQuiescent())return false;
+            try {
+                juce::MemoryBlock candidate;
+                processor->getStateInformation(candidate);
+                if(candidate.getSize()==0||candidate.getSize()>8U*1024U*1024U||
+                   processFaulted()||!nativeControl->stateSnapshotQuiescent())return false;
+                out=std::move(candidate);
+                return true;
+            } catch(...) {return false;}
+        }
         // G5E: vendor binary state capture is CONTROL only. This is the same
         // fail-closed gate used by realtime processBlock. While control owns
         // the gate, a racing muted callback returns silence without waiting.

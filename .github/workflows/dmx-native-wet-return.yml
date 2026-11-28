@@ -14,6 +14,8 @@ on:
       - 'tests/plugin_catalog_persistence_test.cpp'
       - 'src/PluginCatalog.h'
       - 'tests/audio_continuity_policy_test.cpp'
+      - 'tests/live_channel_fx_graph_test.cpp'
+      - 'engine/core/LiveChannelFxGraph.h'
       - 'engine/core/NativeFxRackTransaction.h'
       - 'src/NativeMixerSessionDocument.h'
       - 'src/NativeLogicalMixerWorkspace.h'
@@ -60,9 +62,9 @@ jobs:
           if ($env:GITHUB_HEAD_REF -eq 'fix/p0-output-matrix-token-contract-20261128') {
             # Real native routing, retained session, catalog and audio transition
             # tests. This is a scoped regression suite, not installer FAT.
-            cmake --build dmx-build --parallel 2 --target ARMixNativeDrySendTests ARMixPhysicalExternalOutputTests ARMixApprovedRoutingPcmTests ARMixAudioContinuityPolicyTests ARMixPluginCatalogTests ARMixDeviceSessionTransitionTests ARMixDeviceApplyCoordinatorTests ARMixDurableMixerSessionTests
+            cmake --build dmx-build --parallel 2 --target ARMixNativeDrySendTests ARMixPhysicalExternalOutputTests ARMixLiveChannelFxTests ARMixApprovedRoutingPcmTests ARMixAudioContinuityPolicyTests ARMixPluginCatalogTests ARMixDeviceSessionTransitionTests ARMixDeviceApplyCoordinatorTests ARMixDurableMixerSessionTests
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(LiveNativePrePostSendAndBusContract|O1PhysicalExternalOutputNativePcmAndFailClosedRouting|P0ApprovedDecoderChannelToChannelAndSourceOnlyPCM|P0DisplayIdlePreservesAudioAndDeviceRecoveryIntent|NativePluginCatalogScanFolderPersistence|NonDestructiveAudioSetupRetainsMixerDocument|NativeDeviceApplyPinValidationAndRollbackEvidence|P0DynamicMixerSessionDocumentAndCrashSafeRecovery)$'
+            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(LiveNativePrePostSendAndBusContract|O1PhysicalExternalOutputNativePcmAndFailClosedRouting|P1HRealNativePerChannelFxAndSafeRetirement|P0ApprovedDecoderChannelToChannelAndSourceOnlyPCM|P0DisplayIdlePreservesAudioAndDeviceRecoveryIntent|NativePluginCatalogScanFolderPersistence|NonDestructiveAudioSetupRetainsMixerDocument|NativeDeviceApplyPinValidationAndRollbackEvidence|P0DynamicMixerSessionDocumentAndCrashSafeRecovery)$'
           } elseif ($env:GITHUB_HEAD_REF -in @('fix/unified-send-gesture-custom-ux-20261127','fix/operator-menu-offline-sof-20261127','fix/p0-live-fx-secondary-insert-20261127','fix/rc-contract-reconciliation-20261128')) {
             # Product routing/persistence regression only; accepted DSP freeze.
             cmake --build dmx-build --parallel 2 --target ARMixDurableMixerSessionTests

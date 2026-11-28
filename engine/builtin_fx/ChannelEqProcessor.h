@@ -123,6 +123,7 @@ public:
     // The native Show's vendor-state lease already serializes state on the
     // control thread. Built-in DSP uses that same per-insert lease and schema,
     // not a second fixed channel EQ snapshot.
+    bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& destination) override {
         juce::MemoryOutputStream output(destination,false);
         output.writeInt(0x41504551); // "APEQ"

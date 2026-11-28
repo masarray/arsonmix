@@ -3,6 +3,7 @@
 #undef NDEBUG
 #endif
 // O1: deterministic buffer-level proof. This does not certify physical FAT.
+#include "../engine/core/BusPatchEnvelope.h"
 #include "../engine/core/DynamicNativeSessionPublisher.h"
 #include "../engine/core/LiveOutputRouteGate.h"
 #include "../engine/core/NativeOutputTransition.h"
@@ -395,7 +396,52 @@ static void verifyLogicalPairReservations() {
     assert(!registry.reservesPair(device,4,5));
     assert(registry.restoreIntent(2,binding));
 }
+static void verifyRackTransitionKeepsExternalAndSecondaryPcm() {
+    Harness h;
+    BusPatchEnvelope envelope;
+    using P=DynamicNativeSessionPublisher;
+    const std::array<int,2> reserved{0,1};
+    const std::array<P::InitialExternalTarget,2> targets{{{h.busA,2,3},{h.busB,4,5}}};
+    P::InitialExternalPlan plan{8,reserved,targets};
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,2,3,8));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busB,4,5,8));
+    assert(h.render());
+    assert(envelope.begin());
+    std::array<float,Harness::frames> tapL{},tapR{};
+    auto cycle=[&](bool hardware){
+        assert(h.render());
+        tapL=h.output[0];tapR=h.output[1];
+        const auto block=envelope.process(h.outputPointers.data(),8,tapL.data(),tapR.data(),
+            h.frames,48000.,true,true); // Windows secondary remains armed
+        envelope.acknowledge(block);
+        if(!hardware)for(auto& destination:h.output)destination.fill(0.f);
+    };
+    for(int i=0;i<5;++i)cycle(true);
+    assert(envelope.ready());
+    assert(near(tapL.back(),0.f)&&near(h.output[2].back(),0.f));
+    // A rejected graph never replaces the installed PCM authority.
+    assert(!h.publisher.commit(h.roster,h.request,0,h.epoch,h.epoch,true).ok());
+    cycle(true);
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.busA).first==2);
+    assert(near(h.output[2].back(),0.f));
+    const auto accepted=h.publisher.commit(h.roster,h.request,1,h.epoch,h.epoch,true,
+        {},false,false,nullptr,&plan);
+    assert(accepted.ok()&&accepted.revision==2);
+    cycle(true);
+    assert(h.publisher.appliedExternalOutput(h.epoch,2,h.busA).first==2);
+    assert(h.publisher.appliedExternalOutput(h.epoch,2,h.busB).first==4);
+    for(const auto& channel:h.output)assert(near(channel.back(),0.f));
+    assert(near(tapL.back(),0.f)&&near(tapR.back(),0.f));
+    envelope.finish(true);
+    // Operator closed the hardware gate during the transition. Releasing the
+    // envelope recovers only the secondary stream and cannot re-arm ASIO.
+    for(int i=0;i<5;++i)cycle(false);
+    for(const auto& channel:h.output)assert(near(channel.back(),0.f));
+    assert(near(tapL.back(),.71f)&&near(tapR.back(),.32f));
+}
+
 int main() {
+    verifyRackTransitionKeepsExternalAndSecondaryPcm();
     verifyLogicalPairReservations();
     verifyAtomicInitialExternalPlan();
     verifyIndependentBusPcmAndOncePerFx();

@@ -1576,9 +1576,21 @@ public:
         return row&&row->role!=armix::mixer::ChannelRole::monitor&&
             row->insertCatalogIds.size()==nativeAccepted_.fxOwners->insertCount(target);
     }
+    bool rackSupportsLiveSnapshot(armix::mixer::ChannelId target,int slot) const noexcept {
+        const auto& owners=nativeAccepted_.fxOwners;
+        if(!owners)return false;
+        const auto count=owners->insertCount(target);
+        if(slot>=0&&static_cast<std::size_t>(slot)>=count)return false;
+        for(std::size_t i=0;i<count;++i){
+            if(slot>=0&&i!=static_cast<std::size_t>(slot))continue;
+            const auto* owner=owners->ownerForControl(target,i);
+            if(!owner||!*owner||!(*owner)->supportsLiveStateSnapshot())return false;
+        }
+        return true;
+    }
     juce::String captureRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId target,int slot,const juce::String& token,
-            armix::storage::FxRackFile& result) {
+            armix::storage::FxRackFile& result,bool live) {
         if(!rackFileTargetCurrent(ep,rev,roster,target))return "FX rack changed or unsupported";
         try {
             auto owners=nativeAccepted_.fxOwners;
@@ -1586,10 +1598,14 @@ public:
             if(slot>=0&&(static_cast<std::size_t>(slot)>=count||token.isEmpty()))
                 return "FX slot unavailable";
             std::optional<armix::rt::RealtimeRenderPermit> permit;
-            for(int i=0;i<50;++i){
-                permit.emplace(rendering_);if(*permit)break;juce::Thread::sleep(1);
+            if(!live){
+                for(int i=0;i<50;++i){
+                    permit.emplace(rendering_);
+                    if(*permit)break;
+                    juce::Thread::sleep(1);
+                }
+                if(!*permit)return "Audio callback busy; retry FX rack";
             }
-            if(!*permit)return "Audio callback busy; retry FX rack";
             armix::storage::FxRackFile staged;
             staged.single=slot>=0;staged.rackBypassed=owners->rackBypassed(target);
             for(std::size_t i=0;i<count;++i){
@@ -1600,7 +1616,10 @@ public:
                 armix::storage::FxState fx;
                 fx.catalogId=(*owner)->catalogId;fx.name=(*owner)->name;
                 fx.bypass=(*owner)->bypassRequested.load(std::memory_order_acquire);
-                if(!(*owner)->tryCaptureState(fx.binary))return "FX state pending; retry after edits apply";
+                const bool captured=live?(*owner)->captureLiveState(fx.binary):
+                    (*owner)->tryCaptureState(fx.binary);
+                if(!captured||((*owner)->nativeControl&&fx.binary.getSize()==0))
+                    return "FX state unavailable; wait for pending edits and retry";
                 staged.effects.push_back(std::move(fx));
             }
             if(!rackFileTargetCurrent(ep,rev,roster,target)||nativeAccepted_.fxOwners!=owners)
@@ -1608,7 +1627,7 @@ public:
             result=std::move(staged);return {};
         }catch(...){return "FX rack capture failed";}
     }
-    // Explicit disarmed topology edit only. Removed instances are retired by
+    // Verified quiet topology edit. Removed instances are retired by
     // the existing publisher; no releaseResources or state file IO in RT.
     NativeBusResult replaceRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t rosterRev,
             armix::mixer::ChannelId target,std::vector<FxGraph::InstanceLease> fresh,

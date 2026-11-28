@@ -211,6 +211,7 @@ public:
     bool stateSnapshotQuiescent() const noexcept override{
         return commands_.empty()&&done_.empty();
     }
+    bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& out) override {
         juce::MemoryOutputStream writer(out,false);
         writer.writeInt(0x41565448); // AVTH

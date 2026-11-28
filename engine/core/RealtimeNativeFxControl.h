@@ -40,5 +40,8 @@ struct RealtimeNativeFxControl {
     // CONTROL-only Show capture guard: pending DSP edits must first be
     // consumed AND acknowledged, otherwise a saved state could be stale.
     virtual bool stateSnapshotQuiescent() const noexcept {return true;}
+    // Opt in only when getStateInformation serializes CONTROL-owned or
+    // atomic accepted state without touching the live DSP or its lock.
+    virtual bool supportsLiveStateSnapshot() const noexcept {return false;}
 };
 } // namespace armix::mixer
