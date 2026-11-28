@@ -193,7 +193,7 @@ test("only server event identifiers drive PR reconciliation",()=>{
 });
 test("status publication is exact-head and uses deterministic scoped checks",async()=>{
   const writes=[];
-  const pr={state:"open",base:{ref:"main",repo:{full_name:repo}},
+  const pr={state:"open",changed_files:1,base:{ref:"main",repo:{full_name:repo}},
     head:{sha,repo:{full_name:"contributor/fork"}}};
   const runs=[automatic(10,"p1-windows.yml"),dispatched(12,"p1-windows.yml")];
   const api=async(path,method,payload)=>{
@@ -273,5 +273,47 @@ test("Security regression requires exact-head run and actual successful job",()=
     const lanes=requiredLanes([path]);
     assert.equal(lanes.securityRegression,true,path);
     assert.equal(evaluate(lanes,{},{}).state,"pending",path);
+  }
+});
+
+test("large PR inventory reads all 713 files; late security path gates merge",async()=>{
+  const rows=Array.from({length:712},(_,i)=>file("docs/page-"+i+".md"));
+  rows.push(file("src/StudioBackup.h"));
+  const pr={state:"open",changed_files:rows.length,base:{ref:"main",sha:"b".repeat(40),repo:{full_name:repo}},head:{sha}};
+  const writes=[],pages=[];
+  const api=async(path,method,payload)=>{
+    if(path==="/pulls/753")return pr;
+    if(path.startsWith("/pulls/753/files?")){
+      const n=Number(new URL("https://api.example"+path).searchParams.get("page"));
+      pages.push(n);return rows.slice((n-1)*100,n*100);
+    }
+    if(path.startsWith("/actions/"))return {workflow_runs:[]};
+    if(path==="/statuses/"+sha&&method==="POST"){writes.push(payload);return {};}
+    throw Error("unexpected "+path);
+  };
+  const result=await refreshOne(repo,number,api);
+  assert.deepEqual(pages,[1,2,3,4,5,6,7,8]);
+  assert.equal(result.lanes.securityRegression,true);
+  assert.equal(result.state,"pending");
+  assert.equal(writes[0].state,"pending");
+});
+test("truncated, duplicate, over-cap or changed inventory never publishes green",async()=>{
+  for(const variant of ["truncated","duplicate","over-cap","stale"]){
+    let reads=0,writes=0;
+    const api=async(path,method)=>{
+      if(path==="/pulls/753"){
+        reads++;
+        return {state:"open",changed_files:variant==="over-cap"?3001:2,
+          base:{ref:"main",sha:"b".repeat(40),repo:{full_name:repo}},
+          head:{sha:variant==="stale"&&reads>1?"c".repeat(40):sha}};
+      }
+      if(path.startsWith("/pulls/753/files?"))return variant==="truncated"?
+        [file("docs/one.md")]:[file("docs/one.md"),file(variant==="duplicate"?"docs/one.md":"docs/two.md")];
+      if(path.startsWith("/actions/"))return {workflow_runs:[]};
+      if(method==="POST"){writes++;return {};}
+      throw Error("unexpected "+path);
+    };
+    await assert.rejects(refreshOne(repo,number,api),/INVALID_PR_FILE_COUNT|INCOMPLETE_PR_FILE_INVENTORY|PR_CI_STALE_INVENTORY/);
+    assert.equal(writes,0);
   }
 });
