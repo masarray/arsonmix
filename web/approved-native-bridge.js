@@ -996,11 +996,8 @@
       if(labels.output!==undefined)t.output=labels.output;
       const direct=Array.isArray(native.raw?.externalOutputs)?
         native.raw.externalOutputs.find(x=>x.channelId===ch.id):null;
-      const pair=direct && deviceVM.outputChoices(hardware,true).find(p=>
-        p.left===direct.physicalLeft&&p.right===direct.physicalRight);
-      t.externalOutput=direct?(direct.status==="LIVE"&&pair?pair.label:
-        (direct.status==="PENDING"?"Pending · ":"Needs Remap · ")+
-        "OUT "+(direct.physicalLeft+1)+"/"+(direct.physicalRight+1)):"None";
+      t.externalOutput=deviceVM.externalPresentation(hardware,direct,
+        deviceVM.outputChoices(hardware,true)).value;
       t.selected=previous.get(t.id)?.selected || false;
       if(typeof ch.fxRackBypassed==="boolean")t.fxOn=!ch.fxRackBypassed;
       if (Array.isArray(ch.inserts)) {
@@ -1441,6 +1438,7 @@
         pendingExternal.delete(id);
         const name=next?.graph?.channels?.find(c=>c.id===id)?.name||"Channel "+id;
         status(state==="MUTED"?"EXTERNAL OUT patched · hardware output muted":
+          state==="ASSIGNED_SILENT"?"EXTERNAL OUT assigned · silent until signal":
           "EXTERNAL OUT verified · "+name+" → "+value);
       }
     }

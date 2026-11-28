@@ -321,7 +321,9 @@ public:
         if(it==controlIndex_.end() || outputCount<2 || outputCount>256 ||
            (left<0 ? right!=-1 :
              (right<0 || left>=outputCount || right>=outputCount ||
-              left==right)) || !channelScheduled(id))return false;
+              left==right)))return false;
+        // Dormant strips already own a preallocated target slot, but no PCM
+        // scratch. Saving a destination must not wake DSP or require a source.
         const auto role=lanes_[it->second].role;
         if(role!=ChannelRole::input && role!=ChannelRole::group &&
            role!=ChannelRole::fxReturn)return false;

@@ -224,10 +224,9 @@ public:
                     report.fault=Fault::invalidCandidate;return report;
                 }
                 pairByPin[l]=pairByPin[r]=pair; // exact ordered sharing only
-                // An intentionally unpatched lane has no render scratch.
-                // Its durable intent stays pending in the CONTROL owner.
-                if(prepared->graph->channelScheduled(target.channel)&&
-                   !prepared->graph->setExternalOutput(target.channel,l,r,initialExternal->outputCount)){
+                // A dormant strip retains a verified destination in its
+                // existing target slot; it still owns no PCM scratch.
+                if(!prepared->graph->setExternalOutput(target.channel,l,r,initialExternal->outputCount)){
                     report.fault=Fault::invalidCandidate;return report;
                 }
             }
@@ -496,6 +495,13 @@ public:
         return p?p->graph->externalOutput(id):std::pair<int,int>{-1,-1};
     }
 
+    // CONTROL only: distinguish configured silence from a scheduled tap
+    // awaiting the audio callback. Never synthesize an APPLIED receipt.
+    bool externalOutputDormant(std::uint64_t epoch,std::uint64_t revision,
+                               ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&p->graph->contains(id)&&!p->graph->channelScheduled(id);
+    }
     std::pair<int,int> appliedExternalOutput(std::uint64_t epoch,
                 std::uint64_t revision,ChannelId id) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);

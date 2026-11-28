@@ -4187,6 +4187,9 @@ test("MVVM external readback needs verified pair and output-arm, never ACK-only 
     {...installed,physicalLeft:6,physicalRight:7},choices);
   assert.equal(invalid.state,"NEEDS_REMAP");
   assert.match(invalid.value,/Needs Remap/);
+  const silent=deviceVM.externalPresentation(snapshot,{...installed,status:"ASSIGNED_SILENT"},choices);
+  assert.equal(silent.state,"ASSIGNED_SILENT");assert.equal(silent.marker,"SILENT");
+  assert.equal(silent.value,choices[1].label);
   assert.equal(deviceVM.externalPresentation(snapshot,null,choices).state,"NONE");
   assert.equal(deviceVM.externalPresentation(null,installed).state,"NEEDS_REMAP");
 });
@@ -4627,6 +4630,8 @@ test("GUI-1 external OUT pending waits for matching ACK and later readback",()=>
   assert.equal(stripVM.externalPending(ack,"18","LIVE",row),"STALE",
     "new device epoch invalidates pending output");
   assert.equal(stripVM.externalPending(ack,"19","MUTED",row),"CONFIRMED");
+  assert.equal(stripVM.externalPending(p,"19","ASSIGNED_SILENT",row),"PENDING");
+  assert.equal(stripVM.externalPending(ack,"19","ASSIGNED_SILENT",row),"CONFIRMED");
   assert.equal(stripVM.externalPending(ack,"19","LIVE",null),"PENDING");
   assert.equal(stripVM.externalPending({...ack,left:-1,right:-1},
     "19","NONE",null),"CONFIRMED","remove requires observed absent row");

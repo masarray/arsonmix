@@ -3339,6 +3339,8 @@ public:
         externalOutputAssignments_=std::move(amended);
         externalOutputVerified_=std::move(verified);
         externalOutputEpoch_=expectedEpoch;
+        // A destination is authored session content even before any source.
+        nativeControlDirty_=true;
         return {};
     }
 
@@ -3905,7 +3907,9 @@ public:
                 if(ref.role==R::Role::external){
                     const auto target=nativePublisher_.externalOutput(nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,{ref.channel});
                     const auto applied=nativePublisher_.appliedExternalOutput(nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,{ref.channel});
-                    if(target.first>=0)status=target==applied?"RESOLVED":"PENDING";
+                    if(target.first>=0)status=(target==applied||
+                        nativePublisher_.externalOutputDormant(nativeAccepted_.deviceEpoch,
+                            nativeAccepted_.pcmRevision,{ref.channel}))?"RESOLVED":"PENDING";
                 }else status=nativeBusOutputObserved()?"RESOLVED":"PENDING";
                 row->setProperty("state",status);outputRefs.add(juce::var(row.release()));
             }
@@ -4847,16 +4851,18 @@ public:
                 nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,patch.channel);
             const auto applied=nativePublisher_.appliedExternalOutput(
                 nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,patch.channel);
-            const bool installed=nativePcm && externalOutputEpoch_==epoch() &&
+            const bool verified=nativePcm && externalOutputEpoch_==epoch() &&
                 live.first>=0 && live.second>=0 &&
-                applied==live &&
                 live.first<callbackOutputCount_.load(std::memory_order_acquire) &&
                 live.second<callbackOutputCount_.load(std::memory_order_acquire) &&
                 enabledOutputPorts_[live.first].load(std::memory_order_relaxed)==patch.left &&
                 enabledOutputPorts_[live.second].load(std::memory_order_relaxed)==patch.right;
-            row->setProperty("status",installed?"LIVE":
-                (nativePcm && externalOutputEpoch_==epoch() && live.first>=0 &&
-                 live.second>=0)?"PENDING":"NEEDS_REMAP");
+            const bool silent=verified&&nativePublisher_.externalOutputDormant(
+                nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,patch.channel);
+            // A verified assignment on an unscheduled strip is complete,
+            // but never represents callback-observed PCM or a live signal.
+            row->setProperty("status",silent?"ASSIGNED_SILENT":
+                verified?(applied==live?"LIVE":"PENDING"):"NEEDS_REMAP");
             external.add(juce::var(row.release()));
         }
         out->setProperty("externalOutputs",juce::var(external));

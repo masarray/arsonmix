@@ -471,6 +471,7 @@
       const logical=logicalPorts.find(p=>[p.left,p.right].some(pin=>pin===left||pin===right));
       const state=applied.length?(d.outputArmed?"LIVE":"MUTED"):
         items.some(p=>p.status==="PENDING")?"PENDING":
+        snapshot.admitted===true&&items.some(p=>p.status==="ASSIGNED_SILENT")?"ASSIGNED_SILENT":
         items.length?"NEEDS_REMAP":logical?"RESERVED":"FREE";
       rows.push({pair:pair(left,right),pins:pins(left,right),
         role:items.length?"EXTERNAL":logical?"LOGICAL":"AVAILABLE",

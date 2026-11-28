@@ -40,7 +40,7 @@ struct Harness {
     int callsA=0,callsB=0;
     std::uint64_t epoch=9157,revision=1;
 
-    Harness(bool sourceOnly=false) {
+    Harness(bool sourceOnly=false,bool withSources=true) {
         const std::array<ChannelEdit,5> create{
             add(0,ChannelRole::input,"VOICE"),
             add(1,ChannelRole::input,"MUSIC"),
@@ -61,7 +61,7 @@ struct Harness {
             result=roster.edit(1,links);assert(result.ok());
         }
         request.physicalInputs=4;request.maxFrames=frames;
-        request.sources={{voice,0,1,true},{music,2,3,true}};
+        if(withSources)request.sources={{voice,0,1,true},{music,2,3,true}};
         for(int s=0;s<frames;++s){
             input[0][s]=.25f;input[1][s]=.10f;
             input[2][s]=.07f;input[3][s]=.04f;
@@ -440,7 +440,55 @@ static void verifyRackTransitionKeepsExternalAndSecondaryPcm() {
     assert(near(tapL.back(),.71f)&&near(tapR.back(),.32f));
 }
 
+static void verifyAssignBeforeSourceAndRestore() {
+    Harness h(true,false);
+    using P=DynamicNativeSessionPublisher;
+    const auto pair=std::make_pair(2,3);
+    // Entire project has no source. Target is accepted without activating
+    // any dormant lane, and cannot pretend to have rendered PCM.
+    assert(h.publisher.externalOutputDormant(h.epoch,1,h.voice));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.voice,2,3,8));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,4,5,8));
+    assert(h.publisher.externalOutput(h.epoch,1,h.voice)==pair);
+    assert(!h.publisher.setExternalOutput(h.epoch,1,h.main,2,3,8));
+    assert(!h.publisher.setExternalOutput(h.epoch,1,h.voice,7,8,8));
+    for(int i=0;i<3;++i)assert(h.render());
+    for(const auto& port:h.output)for(float v:port)assert(near(v,0.f));
+    assert(h.callsA==0&&h.callsB==0);
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.voice).first==-1);
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,-1,-1,8));
+    assert(h.publisher.externalOutput(h.epoch,1,h.busA).first==-1);
+    // Reopening the same verified route with no source preserves assignment.
+    const std::array<int,2> reserved{0,1};
+    const std::array<P::InitialExternalTarget,1> targets{{{h.voice,2,3}}};
+    const P::InitialExternalPlan plan{8,reserved,targets};
+    assert(h.publisher.commit(h.roster,h.request,1,h.epoch,h.epoch,true,
+        {},false,false,nullptr,&plan).ok());
+    assert(h.publisher.externalOutput(h.epoch,2,h.voice)==pair);
+    assert(h.publisher.externalOutputDormant(h.epoch,2,h.voice));
+    assert(h.render()&&near(h.output[2].back(),0.f));
+    // Source added later: same persisted destination, no re-assignment.
+    h.request.sources={{h.voice,0,1,true}};
+    assert(h.publisher.commit(h.roster,h.request,2,h.epoch,h.epoch,true,
+        {},false,false,nullptr,&plan).ok());
+    assert(!h.publisher.externalOutputDormant(h.epoch,3,h.voice));
+    assert(h.publisher.appliedExternalOutput(h.epoch,3,h.voice).first==-1);
+    assert(h.render());
+    assert(near(h.output[2].back(),.25f)&&near(h.output[3].back(),.10f));
+    assert(near(h.output[0].back(),0.f)&&near(h.output[1].back(),0.f));
+    assert(h.publisher.appliedExternalOutput(h.epoch,3,h.voice)==pair);
+    // Removing the source again is not a routing deletion.
+    h.request.sources.clear();
+    assert(h.publisher.commit(h.roster,h.request,3,h.epoch,h.epoch,true,
+        {},false,false,nullptr,&plan).ok());
+    assert(h.publisher.externalOutput(h.epoch,4,h.voice)==pair);
+    assert(h.publisher.externalOutputDormant(h.epoch,4,h.voice));
+    assert(h.render());
+    for(const auto& port:h.output)for(float v:port)assert(near(v,0.f));
+}
+
 int main() {
+    verifyAssignBeforeSourceAndRestore();
     verifyRackTransitionKeepsExternalAndSecondaryPcm();
     verifyLogicalPairReservations();
     verifyAtomicInitialExternalPlan();

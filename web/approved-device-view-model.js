@@ -283,12 +283,14 @@
       p.right===row.physicalRight);
     const installed=row?.status==="LIVE"&&match;
     const state=installed?(snapshot?.device?.outputArmed===true?"LIVE":"MUTED"):
+      row?.status==="ASSIGNED_SILENT"&&match?"ASSIGNED_SILENT":
       row?.status==="PENDING"&&match?"PENDING":row?"NEEDS_REMAP":"NONE";
-    const value=row?((state==="LIVE"||state==="MUTED")?match.label:
+    const value=row?((state==="LIVE"||state==="MUTED"||state==="ASSIGNED_SILENT")?match.label:
       (state==="PENDING"?"Pending · ":"Needs Remap · ")+
        "OUT "+(row.physicalLeft+1)+"/"+(row.physicalRight+1)):"None";
-    const marker=state==="NONE"?"":state==="NEEDS_REMAP"?"REMAP":state;
-    const title=state==="PENDING"?"Native PCM pending · wait for audio callback":
+    const marker=state==="NONE"?"":state==="NEEDS_REMAP"?"REMAP":state==="ASSIGNED_SILENT"?"SILENT":state;
+    const title=state==="ASSIGNED_SILENT"?"Output assigned · silent until a signal path is available":
+      state==="PENDING"?"Native PCM pending · wait for audio callback":
       state==="NEEDS_REMAP"?
       "Saved physical output disarmed; choose a verified ASIO pair":
       state==="MUTED"?"ASIO pair connected · output muted, settings retained":

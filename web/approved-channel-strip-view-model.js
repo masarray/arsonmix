@@ -91,7 +91,7 @@
     if(!pending)return "NONE";
     if(epoch && epoch!==pending.epoch)return "STALE";
     if(pending.acked!==true)return "PENDING";
-    if(((state==="LIVE"||state==="MUTED")&&row&&
+    if(((state==="LIVE"||state==="MUTED"||state==="ASSIGNED_SILENT")&&row&&
         row.physicalLeft===pending.left&&row.physicalRight===pending.right)||
        (pending.left===-1&&!row))return "CONFIRMED";
     return "PENDING";
