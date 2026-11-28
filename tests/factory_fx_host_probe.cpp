@@ -3,6 +3,9 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../src/VstBusLayout.h"
+#include "../engine/core/DynamicChannelFxLeaseBank.h"
+#include "../engine/core/DynamicNativeSessionPublisher.h"
+#include "../src/NativeFxRackArchive.h"
 #include <windows.h>
 #include <pluginterfaces/base/ipluginbase.h>
 #include <array>
@@ -105,6 +108,157 @@ bool set(juce::AudioProcessorParameter* p,float value) {
     p->beginChangeGesture(); p->setValueNotifyingHost(value); p->endChangeGesture();
     return std::isfinite(p->getValue()) && std::abs(p->getValue()-value)<.025f;
 }
+
+// Actual vendor instances in the production ChannelId/EdgeId PCM publisher,
+// not a second mixer or a mock AudioProcessor. The direct and parallel AUX
+// paths reconverge at MAIN; the two leases contribute their real latency.
+bool qualifyGraph(std::unique_ptr<juce::AudioPluginInstance> first,
+                  std::unique_ptr<juce::AudioPluginInstance> second,
+                  const juce::PluginDescription& desc,
+                  const juce::String& parameter, float value,
+                  juce::DynamicObject& receipt) {
+    using namespace armix::mixer;
+    using Bank = DynamicChannelFxLeaseBank;
+    constexpr int frames=128;
+    constexpr std::uint64_t epoch=991;
+    if (!prepare(*first,48000.,frames)||!prepare(*second,48000.,frames)) return false;
+    DynamicChannelRoster roster;
+    std::array<ChannelEdit,3> adds{};
+    for (int i=0;i<3;++i) {
+        adds[i].kind=ChannelEdit::Kind::add;
+        adds[i].position=static_cast<std::size_t>(i);
+        adds[i].role=i==0?ChannelRole::input:i==1?ChannelRole::fxReturn:ChannelRole::main;
+        adds[i].format=i==0?ProcessingFormat::mono:ProcessingFormat::stereo;
+        adds[i].text=i==0?"CH1":i==1?"AUX RETURN":"MAIN";
+    }
+    const auto created=roster.edit(0,adds);
+    if (!created.ok()||created.createdIds.size()!=3) return false;
+    const auto ch=created.createdIds[0],aux=created.createdIds[1],main=created.createdIds[2];
+    std::array<ChannelEdit,3> routes{};
+    for (auto& op:routes) op.kind=ChannelEdit::Kind::addSendReference;
+    routes[0].id=ch;routes[0].target=main;routes[0].primaryOutput=true;routes[0].value=1.f;
+    routes[1].id=ch;routes[1].target=aux;routes[1].value=.5f;
+    routes[2].id=aux;routes[2].target=main;routes[2].primaryOutput=true;routes[2].value=1.f;
+    if (!roster.edit(roster.revision(),routes).ok()) return false;
+
+    const auto catalog=juce::String("qualification-vst3-")+juce::String(desc.uniqueId);
+    auto voice=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(first),catalog,desc.name,frames);
+    auto ret=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(second),catalog,desc.name,frames);
+    Bank::Assignment v,a;
+    v.id=ch;v.format=ProcessingFormat::mono;v.inserts={voice};
+    a.id=aux;a.format=ProcessingFormat::stereo;a.inserts={ret};
+    std::array<Bank::Assignment,2> assignments{v,a};
+    auto bank=std::make_shared<Bank>();
+    if (Bank::prepare(epoch,1,assignments,*bank)!=Bank::Fault::none) return false;
+    DynamicNativeSessionPublisher::FxPlan plan;
+    plan.owner=bank;plan.context=bank.get();plan.deviceEpoch=epoch;plan.graphRevision=1;
+    plan.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {
+        (*static_cast<Bank*>(p))(id,l,r,n);
+    };
+    plan.latency=+[](void* p,ChannelId id) noexcept {
+        return static_cast<Bank*>(p)->latencySamples(id);
+    };
+    DynamicGraphRequest request;
+    request.physicalInputs=1;request.maxFrames=frames;request.sources={{ch,0,-1,false}};
+    DynamicNativeSessionPublisher pub;
+    if (!pub.commit(roster,request,0,epoch,epoch,true,plan).ok()) return false;
+    const int latency=voice->latencySamples+ret->latencySamples;
+    if (pub.latencySamples(epoch,1)!=latency) return false;
+    std::array<float,frames> in{},l{},r{};
+    const float* pins[]{in.data()};
+    int fallback=0;
+    const auto renderBlock=[&](bool muted=false) {
+        return pub.render(epoch,pins,1,l.data(),r.data(),frames,muted,
+            [&](ChannelId,float*,float*,int) noexcept { ++fallback; });
+    };
+    double energy=0.;
+    const auto beforeVoice=voice->dspProcessedBlocks.load();
+    const auto beforeReturn=ret->dspProcessedBlocks.load();
+    for (int b=0;b<256;++b) {
+        for (int i=0;i<frames;++i) {
+            const double t=(b*frames+i)/48000.;
+            in[i]=static_cast<float>(.12*std::sin(t*6283.185307179586)+.04*std::sin(t*1256.637061435917));
+        }
+        if (!renderBlock()) return false;
+        for (int i=0;i<frames;++i) {
+            if (!std::isfinite(l[i])||!std::isfinite(r[i])||
+                std::abs(l[i])>32.f||std::abs(r[i])>32.f) return false;
+            energy+=static_cast<double>(l[i])*l[i]+static_cast<double>(r[i])*r[i];
+        }
+    }
+    if (energy<=1.e-9||fallback!=0||voice->processFaulted()||ret->processFaulted()||
+        voice->latencyChanged.load()||ret->latencyChanged.load()||
+        voice->dspProcessedBlocks.load()-beforeVoice!=256||
+        ret->dspProcessedBlocks.load()-beforeReturn!=256) return false;
+
+    // Use the actual CONTROL capture and hashed rack codec, then recall the
+    // opaque vendor state into the other real instance. Corrupt bytes must
+    // not produce a replacement rack. This is rack recall, not a full Show.
+    armix::storage::FxState state;
+    state.name=desc.name;state.catalogId=catalog;state.path=desc.fileOrIdentifier;state.uid=desc.uniqueId;
+    if (!voice->tryCaptureState(state.binary)||state.binary.getSize()==0) return false;
+    armix::storage::FxRackFile rack,decoded;
+    rack.single=true;rack.effects.push_back(state);
+    juce::MemoryBlock bytes;
+    if (armix::storage::NativeFxRackArchive::encode(rack,bytes).isNotEmpty()||
+        armix::storage::NativeFxRackArchive::decode(bytes,decoded).isNotEmpty()||
+        decoded.effects.size()!=1||decoded.effects[0].uid!=desc.uniqueId||
+        decoded.effects[0].catalogId!=catalog||decoded.effects[0].binary!=state.binary) return false;
+    auto damaged=bytes;
+    static_cast<char*>(damaged.getData())[0]^=1;
+    armix::storage::FxRackFile rejected;
+    if (armix::storage::NativeFxRackArchive::decode(damaged,rejected).isEmpty()||
+        !rejected.effects.empty()) return false;
+    auto* other=dynamic_cast<juce::AudioPluginInstance*>(ret->processor.get());
+    if (!other) return false;
+    auto* control=findParam(*other,parameter);
+    if (!set(control,value<.55f?.78f:.22f)) return false;
+    other->setStateInformation(decoded.effects[0].binary.getData(),
+                               static_cast<int>(decoded.effects[0].binary.getSize()));
+    control=findParam(*other,parameter);
+    if (!control||std::abs(control->getValue()-value)>.025f) return false;
+
+    if (bank->setInsertBypass(epoch,0,ch,0,voice->instanceId,true)||
+        !bank->setInsertBypass(epoch,1,ch,0,voice->instanceId,true)||
+        !bank->setInsertBypass(epoch,1,aux,0,ret->instanceId,true)) return false;
+    // Drain bypass envelope and all compensation histories, then measure
+    // the actual aligned direct+AUX impulse, not merely reported latency.
+    in.fill(0.f);
+    for (int b=0;b<64+latency/frames;++b) if (!renderBlock()) return false;
+    const auto parkedVoice=voice->dspProcessedBlocks.load();
+    const auto parkedReturn=ret->dspProcessedBlocks.load();
+    int impulse=-1;
+    for (int b=0;b<4+latency/frames;++b) {
+        in.fill(0.f);if (b==0) in[0]=.1f;
+        if (!renderBlock()) return false;
+        for (int i=0;i<frames;++i) {
+            if (!std::isfinite(l[i])||!std::isfinite(r[i])) return false;
+            if (std::abs(l[i])>1.e-5f||std::abs(r[i])>1.e-5f) {
+                if (impulse!=-1) return false;
+                impulse=b*frames+i;
+            }
+        }
+    }
+    if (impulse!=latency||voice->dspProcessedBlocks.load()!=parkedVoice||
+        ret->dspProcessedBlocks.load()!=parkedReturn||fallback!=0) return false;
+    // Reject an invalid candidate without replacing the accepted route.
+    auto bad=plan;bad.graphRevision=2;bad.context=nullptr;
+    if (pub.commit(roster,request,1,epoch,epoch,true,bad).ok()||
+        pub.acceptedRevision()!=1) return false;
+    in.fill(.1f);
+    if (!renderBlock(true)) {
+        // Muted render may report false; silence is the invariant.
+    }
+    for (int i=0;i<frames;++i) if (l[i]!=0.f||r[i]!=0.f) return false;
+    receipt.setProperty("graphChannelAuxMain",true);
+    receipt.setProperty("graphLatencySamples",latency);
+    receipt.setProperty("graphBypassedImpulseSample",impulse);
+    receipt.setProperty("graphWetEnergy",energy);
+    receipt.setProperty("graphRenderBlocksPerLease",256);
+    receipt.setProperty("graphRackStateRecall",true);
+    receipt.setProperty("graphRejectedCandidatePreservedRevision",true);
+    return true;
+}
 }
 int main(int argc,char** argv) {
     if(argc!=3) return 2;
@@ -195,7 +349,7 @@ int main(int argc,char** argv) {
         std::unique_ptr<juce::AudioProcessorEditor> editor(first->createEditorIfNeeded());
         if(!editor) return fail("editor-create-reopen");
     }
-    first->releaseResources(); first.reset(); second.reset();
+    first->releaseResources();
     auto row=std::make_unique<juce::DynamicObject>();
     row->setProperty("hostUniqueId",d.uniqueId); row->setProperty("runtimeClassId",cid);
     row->setProperty("name",d.name); row->setProperty("version",d.version);
@@ -204,6 +358,7 @@ int main(int argc,char** argv) {
     row->setProperty("wetDifferenceEnergy",wet.delta); row->setProperty("bypassPeak",bypass.peak);
     row->setProperty("editorCreated",true); row->setProperty("editorReopened",true);
     row->setProperty("profiles",juce::var(profiles));
-    row->setProperty("scope","actual-factory-cid-production-stereo-layout-two-instance-automation-state-pcm-bypass-9-profiles-mono-adapted-editor-reopen; no physical IO or full mixer graph");
+    if (!qualifyGraph(std::move(first),std::move(second),d,paramName,changed,*row)) return fail("production-channel-aux-main-graph");
+    row->setProperty("scope","actual-factory-cid-production-stereo-layout-two-instance-automation-state-pcm-bypass-9-profiles-mono-adapted-editor-reopen; production ChannelId graph with CH/AUX/MAIN, PDC impulse, rack recall, rollback; no physical IO or full application UI/Show qualification");
     return receipt.replaceWithText(juce::JSON::toString(juce::var(row.release())))?0:9;
 }
