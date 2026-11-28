@@ -103,16 +103,15 @@ def verify_custom_input(page,out):
     right=row.get_by_label("CH03 R pin",exact=True)
     left.select_option("3")
     right.select_option("3")
-    apply=row.get_by_role("button",name="Apply",exact=True)
+    apply=row.get_by_role("button",name="Set stereo pair",exact=True,include_hidden=True)
     assert apply.is_disabled(),"same physical pin must never become stereo"
     right.select_option("0")
     assert apply.is_enabled()
-    # A named preset resolves to the exact same verified physical choice.
-    select.select_option("preset:fixture-1")
-    assert apply.is_enabled()
-    assert row.locator('[data-draft="true"]').count()==2
     assert page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').length")==0
-    apply.click()
+    # A complete named preset is applied immediately, without an extra click.
+    select.select_option("preset:fixture-1")
+    assert apply.is_hidden()
+    assert row.locator('[data-mark="L"]').count()==0
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').at(-1)")
     assert req and req["channelId"]==SOURCE and req["mode"]=="STEREO",req
     assert (req["left"],req["right"])==(3,0),req
@@ -312,15 +311,13 @@ def verify_bus_remap(page,out):
     assert len(choices)==2 and any(x.startswith("OUT 5/6") for x in choices),choices
     assert not any(x.startswith(("OUT 3/4","OUT 7/8")) for x in choices),choices
     select.select_option(label=next(x for x in choices if x.startswith("OUT 5/6")))
-    assert main.locator('[data-draft="true"]').count()==4
-    apply=main.get_by_role("button",name="Apply",exact=True)
-    apply.click()
+    assert main.locator('[data-draft="true"]').count()==0
     dialog=page.get_by_role("dialog",name="Remap bus output")
     assert dialog.is_visible()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
     dialog.get_by_role("button",name="Cancel",exact=True).click()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
-    apply.click()
+    select.select_option(label=next(x for x in choices if x.startswith("OUT 5/6")))
     state["device"]["outputArmed"]=False
     state["operatorOutputMuted"]=True
     emit(page,"arMixConsoleSnapshot",state)
@@ -331,7 +328,6 @@ def verify_bus_remap(page,out):
     emit(page,"arMixConsoleSnapshot",state)
     select=main.get_by_label("MAIN assignment",exact=True)
     select.select_option(label=next(x for x in select.locator("option").all_text_contents() if x.startswith("OUT 5/6")))
-    apply.click()
     dialog.get_by_role("button",name="Remap output",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingPhysicalBusOutput').at(-1)")
     assert req and req["bus"]=="MAIN" and req["confirmed"] is True,req

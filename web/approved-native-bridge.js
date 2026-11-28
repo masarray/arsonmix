@@ -2808,7 +2808,6 @@
         }
         const {left,right,epoch,revision}=freshPlan;
         const requestId="out-o-"+(++externalSerial);
-        if(matrixChannelId!==null)outputMatrixDrafts.delete(id);
         pendingExternal.set(id,{requestId,channelId:id,left,right,
           epoch,revision,acked:false});
         if(el)el.value=previous;el?.setAttribute("aria-busy","true");
@@ -2941,7 +2940,6 @@
       if(!fresh||JSON.stringify(fresh.pair)!==JSON.stringify(row.pair)||
          !fresh.choices.some(x=>x.label===label&&x.left===choice.left&&x.right===choice.right))return;
       const requestId="bus-out-"+(++busOutputSerial);
-      outputMatrixDrafts.delete(id);
       busOutputPending={requestId,id,epoch:lease.epoch,config:lease.config,revision:lease.revision,
         left:choice.left,right:choice.right,acked:false};
       backend.emitEvent("arMixAction",{action:"routingPhysicalBusOutput",requestId,
@@ -3477,7 +3475,6 @@
     }
     host.append(section);
   }
-  const outputMatrixDrafts=new Map();
   function paintRouteMatrix(next,side){
     const host=devicePanel?.querySelector("[data-audio-"+side+"-grid]");
     if(!host)return;
@@ -3499,7 +3496,6 @@
     const scrollTop=previousMatrix?.scrollTop??0,scrollLeft=previousMatrix?.scrollLeft??0;
     host.replaceChildren();
     if(!ready||!model.live||!model.pins.length){
-      if(side==="output")outputMatrixDrafts.clear();
       host.textContent=!ready?"Apply device and pin changes first.":
         "Open a verified mixer with enabled "+side+" pins.";
       return;
@@ -3511,8 +3507,6 @@
       text.textContent="Click to assign or clear · MAIN / ASIO MON remap requires confirmation.";
       note.append(text);
       host.append(note);
-      const ids=new Set(model.rows.map(r=>r.id));
-      for(const id of outputMatrixDrafts.keys())if(!ids.has(id))outputMatrixDrafts.delete(id);
     }
     const table=document.createElement("table");table.className="armix-patch-grid";
     const head=table.createTHead().insertRow();
@@ -3528,7 +3522,7 @@
       label.textContent=pin.label;
       cell.append(number,label);
     }
-    th("Source / pair");th(busy?"Pending":"Apply");
+    th("Source / pair");th(busy?"Pending":"Status");
     const body=table.createTBody();
     for(const row of model.rows){
       const tr=body.insertRow();const name=tr.insertCell();
@@ -3560,29 +3554,15 @@
       if(side==="input"&&row.editable&&model.pins.length>1)
         select.append(new Option("Custom stereo L/R…",customValue));
       select.value=row.selected??"";
-      // Preserve only a draft tied to exactly the same physical identity,
-      // graph, accepted row and available pair list. Unrelated named preset
-      // or busy-state repaints do not silently erase the user's selection.
-      const draftKey=side==="output"?JSON.stringify([lease.config,lease.epoch,lease.authority,
-        lease.revision,lease.roster,lease.externalRevision,row.selected,row.cells,
-        model.pins,candidates,aliases]):null;
-      const saved=side==="output"?outputMatrixDrafts.get(row.id):null;
-      if(saved&&saved.key===draftKey&&row.editable&&[...select.options].some(o=>o.value===saved.value&&!o.disabled))
-        select.value=saved.value;
-      else if(side==="output")outputMatrixDrafts.delete(row.id);
-      const remember=()=>{
-        if(side!=="output")return;
-        if(select.value===row.selected)outputMatrixDrafts.delete(row.id);
-        else outputMatrixDrafts.set(row.id,{key:draftKey,value:select.value});
-      };
       const selectedChoice=()=>select.value===customValue?
         deviceVM.physicalInputChoice(next,"STEREO",Number(customLeft.value),Number(customRight.value)):
         select.value.startsWith("preset:")?aliases.find(p=>"preset:"+p.id===select.value)?.choice:
         candidates.find(x=>x.label===select.value);
-      const apply=document.createElement("button");apply.type="button";apply.textContent="Apply";
+      const apply=document.createElement("button");apply.type="button";apply.textContent="Set stereo pair";
       const update=()=>{
         const choice=selectedChoice();
         custom.hidden=select.value!==customValue;
+        apply.hidden=custom.hidden;
         apply.disabled=busy||!row.editable||!choice||choice.label===row.selected;
         controls.forEach(({button,pin,index})=>{
           const mark=row.editable&&choice?(pin.port===choice.left?(choice.mode==="MONO"?"M":"L"):pin.port===choice.right?"R":""):row.cells[index];
@@ -3612,7 +3592,6 @@
           if(choice){
             // Do not paint the requested crosspoint as installed. Native
             // queue/ACK/readback is the only assignment authority.
-            if(side==="output")outputMatrixDrafts.delete(row.id);
             select.value=row.selected??"";update();
             void applyMatrixRow(side,row.id,choice.label,lease,choice,true);
           }
@@ -3621,16 +3600,26 @@
       }
       const pick=tr.insertCell(),action=tr.insertCell();
       if(row.editable){
-        select.disabled=busy;select.onchange=()=>{remember();update();};pick.append(select);
+        // A complete dropdown choice is the same explicit operation as
+        // a crosspoint click. Restore accepted marks before dispatch; only
+        // native ACK + readback can install the selection. Keep a separate
+        // commit for the two-field custom stereo editor, not every row.
+        const commitChoice=()=>{
+          const choice=selectedChoice();
+          if(!choice||choice.label===row.selected){select.value=row.selected??"";update();return;}
+          select.value=row.selected??"";update();
+          void applyMatrixRow(side,row.id,choice.label,lease,choice,true);
+        };
+        select.disabled=busy;select.onchange=()=>{
+          if(select.value===customValue)update();
+          else commitChoice();
+        };pick.append(select);
         if(side==="input"){
           customLeft.onchange=customRight.onchange=update;
           pick.append(custom);
+          apply.onclick=commitChoice;
+          action.append(apply);
         }
-        apply.onclick=()=>{
-          const choice=selectedChoice();
-          if(choice)applyMatrixRow(side,row.id,choice.label,lease,choice);
-        };
-        action.append(apply);
       }else pick.textContent=row.state||"Read-only";
       update();
     }
@@ -4390,7 +4379,6 @@
     devicePanel.hidden=true;syncRibbonBuffer();
     if(audioIoReturnFocus?.isConnected)audioIoReturnFocus.focus({preventScroll:true});
     audioIoReturnFocus=null;
-    outputMatrixDrafts.clear();
     syncNamedOptions();
     for(const host of devicePanel.querySelectorAll("[data-audio-input-grid],[data-audio-output-grid]"))
       delete host.dataset.signature;
