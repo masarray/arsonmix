@@ -1,0 +1,116 @@
+name: SonKu P10.4 coherent externalization research
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify_sonku_p104_externalization.py'
+      - 'tests/sonku_p104_externalization.cpp'
+      - '.github/workflows/sonku-p104-externalization.yml'
+      - 'scripts/verify_sonku_p105_program_material.py'
+      - 'tests/sonku_p105_program_material.cpp'
+      - 'tests/sonku_p106_depth_transition.cpp'
+      - 'scripts/build_sonku_p107_windows_audition.py'
+      - 'tests/sonku_p108_acoustic_callback.cpp'
+      - 'scripts/verify_sonku_p108_acoustic_callback.py'
+permissions:
+  contents: read
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compare actual native renderer with isolated acoustic hypothesis
+        run: python3 scripts/verify_sonku_p104_externalization.py sonku-p104-listening
+      - name: Upload blinded listening and numeric evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P104-coherent-externalization-research
+          path: sonku-p104-listening/
+          if-no-files-found: error
+          retention-days: 14
+  program-material:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify approved native PCM source identity
+        run: python3 scripts/verify_immersib_approved_pcm_sources.py
+      - name: Install offline FFmpeg measurement tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: LUFS-matched program material and all seven protected ImmerSIB scenes
+        run: |
+          ffmpeg -version
+          python3 scripts/verify_sonku_p105_program_material.py
+      - name: Publish original instrumental blind listening pairs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P105-LUFS-program-listening
+          path: sonku-p105-program/
+          if-no-files-found: error
+          retention-days: 14
+  windows-audition:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify approved source identity
+        run: python scripts/verify_immersib_approved_pcm_sources.py
+      - name: Compile MSVC audition pair and verify distributed executables
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdline = 'call "' + $vcvars + '" >nul && python scripts/build_sonku_p107_windows_audition.py'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'SONKU_P107_AUDITION_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P107-Windows-Offline-Audition
+          path: sonku-p107-windows/
+          if-no-files-found: error
+          retention-days: 14
+  acoustic-callback:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify approved source identity
+        run: python scripts/verify_immersib_approved_pcm_sources.py
+      - name: GNU fixed-buffer acoustic cost
+        if: runner.os == 'Linux'
+        run: python3 scripts/verify_sonku_p108_acoustic_callback.py
+      - name: MSVC fixed-buffer acoustic cost
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdline = 'call "' + $vcvars + '" >nul && python scripts/verify_sonku_p108_acoustic_callback.py --msvc'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'SONKU_P108_CALLBACK_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P108-acoustic-callback-${{ matrix.os }}
+          path: sonku-p108-acoustic-rt/report.json
+          if-no-files-found: error
+          retention-days: 14

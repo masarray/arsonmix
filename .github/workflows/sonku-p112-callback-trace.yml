@@ -1,0 +1,45 @@
+name: SonKu P12 musical callback and retarget trace
+on:
+  pull_request:
+    paths:
+      - 'tests/sonku_p112_callback_trace.cpp'
+      - 'scripts/verify_sonku_p112_callback_trace.py'
+      - 'scripts/verify_sonku_p12_musical.py'
+      - '.github/workflows/sonku-p112-callback-trace.yml'
+permissions:
+  contents: read
+jobs:
+  trace:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Verify approved source identity
+        run: python scripts/verify_immersib_approved_pcm_sources.py
+      - name: Linux callback trace
+        if: runner.os == 'Linux'
+        run: python3 scripts/verify_sonku_p112_callback_trace.py --musical
+      - name: Windows callback trace
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pf86 = [Environment]::GetFolderPath('ProgramFilesX86')
+          $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsroot = (& $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1)
+          if (-not $vsroot) { throw 'MSVC_CPP_TOOLCHAIN_MISSING' }
+          $vcvars = Join-Path $vsroot 'VC\Auxiliary\Build\vcvars64.bat'
+          $cmdline = 'call "' + $vcvars + '" >nul && python scripts/verify_sonku_p112_callback_trace.py --msvc --musical'
+          & cmd.exe /D /C $cmdline
+          if ($LASTEXITCODE -ne 0) { throw 'SONKU_P112_TRACE_FAILED' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SonKu-P12-musical-trace-${{ matrix.os }}
+          path: sonku-p112-trace/
+          if-no-files-found: error
+          retention-days: 14
