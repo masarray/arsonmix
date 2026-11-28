@@ -5,9 +5,9 @@ import { readFileSync } from 'node:fs';
 const REPO='masarray/arsonmix';
 const CONTROL_ISSUE=450;
 export function parseReleaseCommand(body) {
-  const m=/^\/arsonmix-release (v\d+\.\d+\.\d+-alpha\.\d+) ([0-9a-f]{40})$/.exec(
+  const m=/^\/arsonmix-release (v\d+\.\d+\.\d+-(alpha|beta)\.\d+) ([0-9a-f]{40})$/.exec(
     typeof body==='string'?body.trim():'');
-  return m?{tag:m[1],sha:m[2],branch:'releases/alpha/'+m[1]}:null;
+  return m?{tag:m[1],sha:m[3],branch:'releases/'+m[2]+'/'+m[1]}:null;
 }
 // One OS per explicitly requested milestone; no automatic platform matrix.
 export function parsePortCommand(body) {
@@ -44,6 +44,9 @@ export async function releaseDispatch({event,api}) {
   if (!ancestry || !['identical','ahead'].includes(ancestry.status) ||
       ancestry.behind_by!==0 || !Number.isSafeInteger(ancestry.ahead_by))
     throw Error('RELEASE_CANDIDATE_MISSING_MAIN_PROGRESS');
+  // Beta must originate from reviewed protected main, not unreviewed additions.
+  if(cmd.branch.startsWith('releases/beta/') && (ancestry.status!=='identical' || ancestry.ahead_by!==0))
+    throw Error('BETA_CANDIDATE_NOT_EXACT_MAIN');
   const older=[];
   for(let page=1;page<=10;page++) {
     const chunk=await api('/issues/'+CONTROL_ISSUE+'/comments?per_page=100&page='+page);
@@ -83,7 +86,7 @@ export async function releaseDispatch({event,api}) {
   if(notes?.type!=='file'||!Number.isSafeInteger(notes.size)||notes.size<100)
     throw Error('RELEASE_NOTES_EMPTY_PRECHECK');
   const cmake=await api('/contents/CMakeLists.txt?ref='+cmd.sha);
-  const version=cmd.tag.match(/^v(\d+\.\d+\.\d+)-alpha\./)?.[1];
+  const version=cmd.tag.match(/^v(\d+\.\d+\.\d+)-(?:alpha|beta)\./)?.[1];
   if(cmake?.type!=='file'||cmake.encoding!=='base64'||!version||
       !Buffer.from(cmake.content||'','base64').toString('utf8')
         .includes('project(ARMixConsole VERSION '+version+' LANGUAGES'))

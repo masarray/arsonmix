@@ -79,7 +79,7 @@ These are genuine owner-supplied Windows editor screenshots, not a verified DSP/
 <details>
 <summary>Compatibility and release information</summary>
 
-The Windows release is an early-access build for Windows 10/11 x64. A compatible audio driver and Windows WebView2 may be required. Features and device behavior depend on your setup; see [release notes](https://github.com/masarray/arsonmix/releases). Keep a backup of important `.smix` sessions before updating. Current audio routing uses one primary ASIO device; independently synchronized dual-vendor ASIO is not advertised as a released feature.
+The Windows release is an early-access build for Windows 10/11 x64. A compatible audio driver and Windows WebView2 may be required. Features and device behavior depend on your setup; see [release notes](https://github.com/masarray/arsonmix/releases). Keep a backup of important `.smix` sessions before updating. For a first migration from an Alpha build whose updater does not accept Beta attestations, use the verified installer manually (or a fresh portable directory); never disable signature checks. Current audio routing uses one primary ASIO device; independently synchronized dual-vendor ASIO is not advertised as a released feature.
 
 </details>
 

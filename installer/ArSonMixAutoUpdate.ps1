@@ -298,13 +298,15 @@ function Get-AttestationVerifier([string]$installRoot=$PSScriptRoot) {
 }
 function Get-AttestationArguments([string]$path,[string]$tag,[string]$sha,[switch]$PortableZip) {
     $suffix=if($PortableZip){'Portable.zip'}else{'Setup.exe'}
-    if($tag -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-alpha\.(0|[1-9][0-9]*)$' -or
+    if($tag -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(alpha|beta)\.(0|[1-9][0-9]*)$' -or
        $null -eq (Version-Key $tag) -or $sha -cnotmatch '^[a-f0-9]{40}$' -or
        -not [IO.Path]::IsPathRooted($path) -or $path.Contains('"') -or
        [IO.Path]::GetFileName($path) -cne "ArSonMix-$tag-Windows-x64-$suffix"){return $null}
+    # Derive the allowed branch solely from the already validated tag.
+    $stage=if($tag -cmatch '-beta\.'){'beta'}else{'alpha'}
     return ('attestation verify "'+$path+'" --repo masarray/arsonmix'+
         ' --signer-workflow masarray/arsonmix/.github/workflows/alpha-preview-publish.yml'+
-        ' --source-ref refs/heads/releases/alpha/'+$tag+
+        ' --source-ref refs/heads/releases/'+$stage+'/'+$tag+
         ' --source-digest '+$sha+' --signer-digest '+$sha+' --deny-self-hosted-runners')
 }
 function Test-AttestationBundleUri([Uri]$uri,[string]$repositoryId) {
@@ -913,7 +915,7 @@ function Test-PortableDescriptor([object]$value,[object]$bootstrap) {
                 [long]$value.bytes -eq 0 -and $value.proofId -ceq '' -and $value.bundleHash -ceq '' -and $value.rootHash -ceq '')
         }
         return ($value.digest -cmatch '^sha256:[a-f0-9]{64}$' -and
-            $null -ne (Version-Key ([string]$value.tag)) -and $value.tag -cmatch '^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$' -and
+            $null -ne (Version-Key ([string]$value.tag)) -and $value.tag -cmatch '^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta)\.[0-9]+$' -and
             [long]$value.bytes -ge 2097152 -and [long]$value.bytes -le 209715200 -and
             $value.proofId -cmatch '^[a-f0-9]{32}$' -and $value.bundleHash -cmatch '^[a-f0-9]{64}$' -and $value.rootHash -cmatch '^[a-f0-9]{64}$')
     }catch{return $false}
@@ -1453,10 +1455,12 @@ if($PolicySelfTest) {
     # installer, audio device or file mutation is permitted by this mode.
     $alpha=Version-Key 'v0.5.0-alpha.5'
     $next=Version-Key 'v0.5.0-alpha.6'
+    $beta=Version-Key 'v0.5.0-beta.1'
     $stable=Version-Key 'v0.5.0'
     if($null -eq $alpha -or $null -ne (Version-Key 'v0.5.0-alpha.5/evil') -or
        (Compare-Version $next $alpha) -le 0 -or
-       (Compare-Version $stable $next) -le 0 -or
+       (Compare-Version $beta $next) -le 0 -or
+       (Compare-Version $stable $beta) -le 0 -or
        (Compare-Version (Version-Key 'v1.0.0') $stable) -le 0) {
         throw 'Updater SemVer policy failed'
     }
@@ -1483,6 +1487,13 @@ if($PolicySelfTest) {
     $verifyArgs=Get-AttestationArguments $fixtureInstaller $tag ('f'*40)
     if($null -eq $verifyArgs -or $verifyArgs -cnotmatch '--signer-workflow masarray/arsonmix/\.github/workflows/alpha-preview-publish\.yml' -or
        $verifyArgs -cnotmatch '--deny-self-hosted-runners'){throw 'Attestation identity policy failed'}
+    $betaTag='v0.5.0-beta.1'
+    foreach($suffix in @('Setup.exe','Portable.zip')){
+        $betaPath=Join-Path ([IO.Path]::GetTempPath()) ("ArSonMix-$betaTag-Windows-x64-$suffix")
+        $betaArgs=Get-AttestationArguments $betaPath $betaTag ('f'*40) -PortableZip:($suffix -eq 'Portable.zip')
+        if($null -eq $betaArgs -or -not $betaArgs.Contains('--source-ref refs/heads/releases/beta/'+$betaTag+' ') -or
+           -not $verifyArgs.Contains('--source-ref refs/heads/releases/alpha/'+$tag+' ')){throw 'Alpha/Beta attestation ref policy failed'}
+    }
     if($null -ne (Get-AttestationArguments $fixtureInstaller '../bad' ('f'*40)) -or
        $null -ne (Get-AttestationArguments $fixtureInstaller $tag 'main') -or
        $null -ne (Get-AttestationArguments (Join-Path ([IO.Path]::GetTempPath()) 'other.exe') $tag ('f'*40))){

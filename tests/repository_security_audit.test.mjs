@@ -16,7 +16,7 @@ const state=(b,id)=>evaluate(b).find(x=>x.id===id)?.state;
 test('observed baseline passes while unconfigured and private controls are explicit',()=>{
   const b=baseline();
   for(const id of ['REPOSITORY','MAIN_PROTECTED','MAIN_RULESET','MAIN_BYPASS']) assert.equal(state(b,id),'PASS');
-  for(const id of ['RELEASE_TAGS','RELEASE_BRANCHES']) assert.equal(state(b,id),'PENDING');
+  for(const id of ['RELEASE_TAGS','RELEASE_BRANCHES','BETA_RELEASE_BRANCHES']) assert.equal(state(b,id),'PENDING');
   for(const id of ['SECRET_SCANNING','PUSH_PROTECTION','PRIVATE_REPORTING','ACCOUNT_AND_BACKUP']) assert.equal(state(b,id),'UNKNOWN');
 });
 test('wrong identity and unprotected main fail',()=>{
@@ -54,7 +54,7 @@ test('import recipes protect updates/deletes without blocking new release creati
     if(file==='release-branches')assert.equal(r.rules.some(x=>x.type==='update'),false);
     b.rulesets.push(r);
   }
-  assert.equal(state(b,'RELEASE_TAGS'),'PASS');assert.equal(state(b,'RELEASE_BRANCHES'),'PASS');
+  assert.equal(state(b,'RELEASE_TAGS'),'PASS');assert.equal(state(b,'RELEASE_BRANCHES'),'PASS');assert.equal(state(b,'BETA_RELEASE_BRANCHES'),'PASS');
   b.rulesets[1].bypass_actors=[{actor_id:1}];assert.equal(state(b,'RELEASE_TAGS'),'PENDING');
 });
 test('known secret scanning settings distinguish enabled, disabled and absent',()=>{

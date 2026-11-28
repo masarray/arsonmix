@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 SHA = re.compile(r"[0-9a-f]{40}")
-TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+")
+TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-(?:alpha|beta)\.[0-9]+")
 HEX = re.compile(r"[0-9a-f]{64}")
 BLOCK = 1024 * 1024
 MAX_METADATA = 4 * 1024 * 1024
@@ -134,6 +134,8 @@ def calculate(root, platform, tag, sha, existing=False):
         build, installer = [json_file(root / n) for n in metadata[:2]]
         if build.get("sourceCommit") != sha or installer.get("sourceCommit") != sha:
             raise ValueError("Windows source provenance mismatch")
+        if "-beta." in tag and (build.get("releaseTag") != tag or installer.get("appVersion") != tag[1:]):
+            raise ValueError("Beta release version provenance mismatch")
         if installer.get("installerSha256") != hashes[binary[0]]:
             raise ValueError("Installer provenance mismatch")
         with zipfile.ZipFile(root / binary[1]) as z:

@@ -8,7 +8,7 @@ on:
       release_tag:
         type: string
         required: true
-        description: Approved immutable alpha tag
+        description: Approved immutable alpha or beta tag
       expected_sha:
         type: string
         required: true
@@ -46,11 +46,14 @@ jobs:
           if ($tag -ne $env:RELEASE_TAG -or $env:EXPECTED_SHA -notmatch '^[0-9a-f]{40}$') {
             throw "Release controller tag/SHA does not match branch and verified inputs"
           }
-          if ($env:GITHUB_REF_NAME -ne "releases/alpha/$tag" -or
-              $tag -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)-alpha\.[0-9]+$') {
-            throw "Release must use releases/alpha/vX.Y.Z-alpha.N"
+          if ($tag -cnotmatch '^v([0-9]+\.[0-9]+\.[0-9]+)-(alpha|beta)\.[0-9]+$') {
+            throw "Release must use vX.Y.Z-alpha.N or vX.Y.Z-beta.N"
           }
           $version = $Matches[1]
+          $stage = $Matches[2]
+          if ($env:GITHUB_REF_NAME -cne "releases/$stage/$tag") {
+            throw "Release branch must match the verified tag stage"
+          }
           $cmake = Get-Content -LiteralPath CMakeLists.txt -Raw -Encoding UTF8
           if (-not $cmake.Contains("project(ARMixConsole VERSION $version LANGUAGES")) {
             throw "Pre-release version does not match native product version"
@@ -174,6 +177,15 @@ jobs:
           & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output -IncludePortableUpdater
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Verify actual Alpha.33 to Beta installation and rollback before publication
+        if: contains(inputs.release_tag, '-beta.')
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          & ./scripts/test_two_genuine_inno_releases_windows.ps1 -CandidateInstaller 'installer-output/ArSonMix-Windows-x64-Setup-Preview.exe' -CandidateProvenance 'installer-output/INSTALLER_PROVENANCE.json' -CandidateTag $env:ARMIX_RELEASE_TAG -CandidateSha $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Create release assets with checksums
         shell: pwsh
         run: |
@@ -253,9 +265,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta)\.[0-9]+$ ]]
+          stage="${BASH_REMATCH[1]}"
           test "$GITHUB_SHA" = "$SOURCE_SHA"
-          test "$GITHUB_REF" = "refs/heads/releases/alpha/$RELEASE_TAG"
+          test "$GITHUB_REF" = "refs/heads/releases/$stage/$RELEASE_TAG"
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$SOURCE_SHA"
       - name: Validate transferred release manifest and every asset
@@ -293,7 +306,8 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $existingTag) { throw "Release tag already exists or cannot be verified" }
           # The owner dispatcher requires current main before scheduling.
           # Subsequent development can continue while this pinned SHA builds.
-          & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "ArSonMix $tag — Alpha Preview" --notes-file "docs/releases/$tag.md" --prerelease --latest=false --draft
+          $titleStage = if ($tag -cmatch '-beta\.') { "Public Beta" } else { "Alpha Preview" }
+          & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "ArSonMix $tag — $titleStage" --notes-file "docs/releases/$tag.md" --prerelease --latest=false --draft
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release draft upload failed" }
           python3 scripts/release_trust_manifest.py verify-upload --directory release --platform windows --tag $tag --sha $env:SOURCE_SHA
           if ($LASTEXITCODE -ne 0) { throw "Draft asset integrity check failed; draft retained" }

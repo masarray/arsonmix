@@ -32,6 +32,17 @@ def release(tag="v0.5.0-alpha.1", published="2026-11-08T00:46:00Z", suffixes=Non
 
 
 class ReleaseCatalogContract(unittest.TestCase):
+    def test_beta_supersedes_alpha_without_relabeling_other_platforms(self):
+        alpha = release('v0.5.0-alpha.33', suffixes=[('Windows-x64-Setup.exe', 'INSTALLER_PROVENANCE.json'), ('Linux-x86_64.tar.gz', 'LINUX_PROVENANCE.json')])
+        beta = release('v0.5.0-beta.1')
+        selected = mod.catalog([beta, alpha])
+        self.assertEqual(selected['platforms']['windows']['tag'], 'v0.5.0-beta.1')
+        self.assertEqual(selected['platforms']['linux']['tag'], 'v0.5.0-alpha.33')
+        html = mod.hydrate_landing((ROOT / 'site/index.html').read_text('utf-8'), selected)
+        self.assertIn('v0.5.0-beta.1', html)
+        self.assertIn('Public Beta', html)
+        self.assertIn('Alpha preview', html)
+
     def test_actual_windows_alpha_is_not_a_fake_three_platform_release(self):
         output = mod.catalog([release()])
         self.assertEqual(output["schemaVersion"], 1)

@@ -353,3 +353,44 @@ test("Alpha.33 Windows public release requires the exact three FactoryFX",()=>{
   assert.match(workflow,/factoryfx_release_bundle\.py verify --lock config\/factoryfx-approved-releases\.json --output dist --require three/);
   assert.doesNotMatch(workflow,/factoryfx_release_bundle\.py stage[^\n]*--best-effort/);
 });
+
+test('Windows beta requires exact protected main and existing owner-only publisher',async()=>{
+  const tag='v0.5.0-beta.1',branch='releases/beta/'+tag,body='/arsonmix-release '+tag+' '+SHA;
+  assert.deepEqual(parseReleaseCommand(body),{tag,sha:SHA,branch});
+  assert.equal(parseReleaseCommand(body.replace('-beta.1','-rc.1')),null);
+  assert.equal(parsePublicPortCommand('/arsonmix-publish linux '+tag+' '+SHA),null);
+  const candidate=(exact=false)=>{
+    const x=fakeApi({compareStatus:exact?'identical':'ahead',compareAhead:exact?0:1});
+    return {calls:x.calls,api:async(path,method,data)=>{
+      if(path==='/git/ref/heads/'+branch){x.calls.push({path,method,data});return {ref:'refs/heads/'+branch,object:{sha:SHA}};}
+      return x.api(path.replace(tag,TAG),method,data);
+    }};
+  };
+  const ahead=candidate();
+  await assert.rejects(releaseDispatch({event:ev(body),api:ahead.api}),/BETA_CANDIDATE_NOT_EXACT_MAIN/);
+  assert.equal(ahead.calls.filter(c=>c.method==='POST').length,0);
+  const exact=candidate(true);
+  assert.equal((await releaseDispatch({event:ev(body),api:exact.api})).kind,'dispatched');
+  assert.deepEqual(exact.calls.filter(c=>c.method==='POST').map(c=>c.data),[{ref:branch,inputs:{release_tag:tag,expected_sha:SHA}}]);
+  const untrusted=ev(body);untrusted.comment.author_association='MEMBER';
+  const denied=candidate(true);
+  assert.equal((await releaseDispatch({event:untrusted,api:denied.api})).kind,'ignored');
+  assert.equal(denied.calls.length,0);
+});
+
+test('Beta publisher gates actual Alpha.33 migration and exact version before asset transfer',()=>{
+  const read=p=>readFileSync(new URL('../'+p,import.meta.url),'utf8');
+  const flow=read('.github/workflows/alpha-preview-publish.yml');
+  const migrate=flow.indexOf('Verify actual Alpha.33 to Beta installation and rollback before publication');
+  assert.ok(migrate>flow.indexOf('Build, install, upgrade and uninstall exact verified Windows installer'));
+  assert.ok(migrate<flow.indexOf('Create release assets with checksums'));
+  assert.match(flow,/if: contains\(inputs\.release_tag, '-beta\.'\)/);
+  const install=read('scripts/build_verify_windows_installer.ps1');
+  const packageScript=read('scripts/package_native_windows.ps1');
+  const real=read('scripts/test_two_genuine_inno_releases_windows.ps1');
+  assert.match(packageScript,/RELEASE_NATIVE_VERSION_CACHE_MISMATCH/);
+  assert.match(install,/RELEASE_INSTALLED_VERSION_MISMATCH/);
+  assert.match(real,/ALPHA33_ROLLBACK_ATTESTATION_FAILED/);
+  assert.match(real,/BETA_ALPHA33_MIGRATION_AND_ROLLBACK_PASS/);
+  assert.match(real,/Installed Beta updater differs from reviewed source/);
+});

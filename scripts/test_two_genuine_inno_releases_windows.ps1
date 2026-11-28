@@ -2,7 +2,7 @@
 # Opt-in FAT ONLY: two genuine historical ArSonMix releases, update,
 # rollback, user-data retention. Not used by the low-cost PR smoke path.
 # This requires a disposable GitHub Windows runner, NEVER a user PC.
-param()
+param([string]$CandidateInstaller='', [string]$CandidateProvenance='', [string]$CandidateTag='', [string]$CandidateSha='')
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if($env:GITHUB_ACTIONS -cne 'true' -or
@@ -30,6 +30,16 @@ $matrix=@(
     @{tag='v0.5.0-alpha.4';sha='7447d82e84a52e583c7e4c30b9a7bbcded1abd11'},
     @{tag='v0.5.0-alpha.5';sha='d7cf109ad1d45f0666431ce748d72572dd49facc'}
 )
+$candidateMode= -not [string]::IsNullOrWhiteSpace($CandidateInstaller)
+if($candidateMode){
+    if($CandidateTag -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$' -or
+       $CandidateSha -cnotmatch '^[a-f0-9]{40}$' -or $CandidateSha -cne $env:GITHUB_SHA -or
+       -not (Test-Path -LiteralPath $CandidateInstaller -PathType Leaf) -or
+       -not (Test-Path -LiteralPath $CandidateProvenance -PathType Leaf)){
+        throw 'BETA_MIGRATION_REQUIRES_EXACT_LOCAL_CANDIDATE'
+    }
+    $matrix=@(@{tag='v0.5.0-alpha.33';sha='213d2a4b861cd592c41c3ce6a4b318bf347b9e7b'})
+}
 $root=Join-Path $env:RUNNER_TEMP ('arsonmix-genuine-upgrade-'+[guid]::NewGuid().ToString('N'))
 $packages=Join-Path $root 'packages'
 $install=Join-Path $root 'installed'
@@ -41,6 +51,13 @@ $sentinel=Join-Path $studio 'proof-user-session.smix'
 $installSentinel=Join-Path $install 'USER_PRESERVE_ME.txt'
 [IO.File]::WriteAllText($sentinel,'real-release-upgrade-and-rollback')
 [IO.File]::WriteAllText($installSentinel,'first-party-unrecognized-user-file')
+$profileSentinel=$null
+if($candidateMode){
+    $profile=Join-Path $env:APPDATA 'AR-MIX-Studio'
+    [IO.Directory]::CreateDirectory($profile) | Out-Null
+    $profileSentinel=Join-Path $profile ('beta-migration-'+[guid]::NewGuid().ToString('N')+'.smix')
+    [IO.File]::WriteAllText($profileSentinel,'preserve-real-studio-file')
+}
 function Assert-True([bool]$ok,[string]$message) {
     if(-not $ok){throw $message}
 }
@@ -72,7 +89,7 @@ function Run-Silent([string]$installer,[string]$label) {
         Assert-True ($p.ExitCode -eq 0) "$label installation failed with $($p.ExitCode)"
     } finally {$p.Dispose()}
 }
-function Verify-Installed([string]$sha,[string]$label) {
+function Verify-Installed([string]$sha,[string]$label,[string]$expectedGui='') {
     $exe=Join-Path $install 'ArSonMix.exe'
     $manifest=Join-Path $install 'BUILD_PROVENANCE.json'
     Assert-True ((Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath $manifest)) "$label missing native PE/manifest"
@@ -83,6 +100,8 @@ function Verify-Installed([string]$sha,[string]$label) {
     Assert-True ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() -ceq $proof.exeSha256) "$label EXE hash mismatch"
     Assert-True ((Get-Content -LiteralPath $sentinel -Raw) -ceq 'real-release-upgrade-and-rollback') "$label private .smix changed"
     Assert-True ((Get-Content -LiteralPath $installSentinel -Raw) -ceq 'first-party-unrecognized-user-file') "$label install-local user file deleted"
+    if($expectedGui){Assert-True ($proof.exeSha256 -ceq $expectedGui) "$label unexpected installed executable"}
+    if($candidateMode){Assert-True ((Get-Content -LiteralPath $profileSentinel -Raw) -ceq 'preserve-real-studio-file') "$label real Studio data changed"}
 }
 $downloaded=@()
 try {
@@ -110,16 +129,38 @@ try {
         $line=$digest+'  '+$name
         Assert-True (@(Get-Content -LiteralPath $sums | Where-Object {$_ -ceq $line}).Count -eq 1) "Published release SHA256SUMS mismatch"
         Fetch-Verified $installerAsset $installer
-        $downloaded+=@{sha=$item.sha;tag=$tag;installer=$installer}
+        $gui=''
+        if($candidateMode){
+            Assert-True ($digest -ceq '7e8d2849fb14ddd6d17cf9a3ec7543e85a88e22296f5995814578ac0c195937b') 'Pinned Alpha.33 rollback digest changed'
+            & gh attestation verify $installer --repo masarray/arsonmix --signer-workflow masarray/arsonmix/.github/workflows/alpha-preview-publish.yml --source-ref "refs/heads/releases/alpha/$tag" --source-digest $item.sha --signer-digest $item.sha --deny-self-hosted-runners
+            if($LASTEXITCODE -ne 0){throw 'ALPHA33_ROLLBACK_ATTESTATION_FAILED'}
+            $gui=$proof.guiSha256
+        }
+        $downloaded+=@{sha=$item.sha;tag=$tag;installer=$installer;gui=$gui}
     }
-    Run-Silent $downloaded[0].installer 'alpha.4 initial'
-    Verify-Installed $downloaded[0].sha 'alpha.4 initial'
+    if($candidateMode){
+        $local=Get-Content -LiteralPath $CandidateProvenance -Raw | ConvertFrom-Json
+        $localHash=(Get-FileHash -LiteralPath $CandidateInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+        Assert-True ($local.sourceCommit -ceq $CandidateSha -and $local.installerSha256 -ceq $localHash -and
+                     $local.appVersion -ceq $CandidateTag.Substring(1) -and $local.guiSha256 -cmatch '^[a-f0-9]{64}$') 'Local Beta candidate provenance mismatch'
+        $downloaded+=@{sha=$CandidateSha;tag=$CandidateTag;installer=(Resolve-Path -LiteralPath $CandidateInstaller).Path;gui=$local.guiSha256}
+    }
+    Run-Silent $downloaded[0].installer ($downloaded[0].tag+' initial')
+    Verify-Installed $downloaded[0].sha ($downloaded[0].tag+' initial') $downloaded[0].gui
     Write-Host 'GENUINE_RELEASE_BASELINE_PASS'
-    Run-Silent $downloaded[1].installer 'alpha.5 upgrade'
-    Verify-Installed $downloaded[1].sha 'alpha.5 upgrade'
+    Run-Silent $downloaded[1].installer ($downloaded[1].tag+' upgrade')
+    Verify-Installed $downloaded[1].sha ($downloaded[1].tag+' upgrade') $downloaded[1].gui
+    if($candidateMode){
+        $arp=Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ArSonMix.LiveStudio_is1' -ErrorAction Stop
+        Assert-True ($arp.DisplayVersion -ceq $CandidateTag.Substring(1)) 'Installed Beta display version mismatch'
+        $installedUpdater=Join-Path $install 'ArSonMixAutoUpdate.ps1'
+        Assert-True ((Get-FileHash -LiteralPath $installedUpdater -Algorithm SHA256).Hash -ceq
+                     (Get-FileHash -LiteralPath 'installer/ArSonMixAutoUpdate.ps1' -Algorithm SHA256).Hash) 'Installed Beta updater differs from reviewed source'
+    }
     Write-Host 'GENUINE_RELEASE_UPGRADE_PASS'
-    Run-Silent $downloaded[0].installer 'alpha.4 rollback'
-    Verify-Installed $downloaded[0].sha 'alpha.4 rollback'
+    Run-Silent $downloaded[0].installer ($downloaded[0].tag+' rollback')
+    Verify-Installed $downloaded[0].sha ($downloaded[0].tag+' rollback') $downloaded[0].gui
+    if($candidateMode){Write-Host 'BETA_ALPHA33_MIGRATION_AND_ROLLBACK_PASS'}
     Write-Host 'GENUINE_RELEASE_ROLLBACK_PASS'
 } finally {
     $uninstall=Join-Path $install 'unins000.exe'
@@ -131,5 +172,6 @@ try {
     }
     # This is a unique RUNNER_TEMP directory created by this script,
     # never the real installation or any ArSonMix user profile.
+    if($profileSentinel -and (Test-Path -LiteralPath $profileSentinel)){Remove-Item -LiteralPath $profileSentinel -Force}
     if(Test-Path -LiteralPath $root){Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue}
 }

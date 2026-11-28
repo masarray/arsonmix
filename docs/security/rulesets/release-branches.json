@@ -1,12 +1,13 @@
 {
-  "name": "ArSonMix - Protect alpha release branches",
+  "name": "ArSonMix - Protect prerelease branches",
   "target": "branch",
   "enforcement": "active",
   "bypass_actors": [],
   "conditions": {
     "ref_name": {
       "include": [
-        "refs/heads/releases/alpha/*"
+        "refs/heads/releases/alpha/*",
+        "refs/heads/releases/beta/*"
       ],
       "exclude": []
     }
