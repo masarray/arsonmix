@@ -182,12 +182,12 @@ public:
         if(!ready_||id==0)return false;
         Edit e{};e.id=id;e.kind=CommandKind::settings;
         if(!VocalThrow::prepareEdit(settings,rate_,e.prepared))return false;
-        return commands_.push(e);
+        return trackControlEdit(commands_.push(e));
     }
     bool queueTrigger(std::uint64_t id) noexcept {
         if(!ready_||id==0)return false;
         Edit e{};e.id=id;e.kind=CommandKind::trigger;
-        return commands_.push(e);
+        return trackControlEdit(commands_.push(e));
     }
     void cancelQueuedRequest(std::uint64_t id) noexcept {
         if(id)cancelledIds_[cancelWrite_++ % cancelledIds_.size()].store(
@@ -196,7 +196,7 @@ public:
     bool pollCompletion(Completion& out) noexcept {
         if(!done_.pop(out))return false;
         if(out.applied&&out.kind==CommandKind::settings)accepted_=out.settings;
-        return true;
+        return settleControlEdit(true);
     }
     VocalThrowSettings acceptedSettings() const noexcept{return accepted_;}
     double acceptedSampleRate() const noexcept{return rate_;}
@@ -209,7 +209,7 @@ public:
     bool isReady() const noexcept{return ready_;}
     void sealForRealtime() noexcept override{published_=true;}
     bool stateSnapshotQuiescent() const noexcept override{
-        return commands_.empty()&&done_.empty();
+        return controlEditsSettled()&&commands_.empty()&&done_.empty();
     }
     bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& out) override {

@@ -101,7 +101,7 @@ public:
     }
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        return ready_&&
+        return ready_&&controlEditsSettled()&&
                (presetWriteSeq_.load(std::memory_order_acquire)&1u)==0u &&
             queuedGeq_.empty() && completionGeq_.empty();
     }
@@ -246,23 +246,23 @@ public:
            !std::isfinite(db)||db<-12.f||db>12.f||!queuedGeq_.canPush())
             return false;
         setBandFromUi(index,db);
-        return queuedGeq_.push(requestId);
+        return trackControlEdit(queuedGeq_.push(requestId));
     }
     bool queueOutputEdit(float db,std::uint64_t requestId) {
         if(!ready_||requestId==0||!std::isfinite(db)||
            db<-24.f||db>6.f||!queuedGeq_.canPush())return false;
         setLevelFromUi(db);
-        return queuedGeq_.push(requestId);
+        return trackControlEdit(queuedGeq_.push(requestId));
     }
     bool queueCurveEdit(
             const std::array<float,GraphicEq31Core::bandCount>& bands,
             float outputDb,std::uint64_t requestId) {
         if(!ready_||requestId==0||!queuedGeq_.canPush()||
            !setBandsFromPreset(bands,outputDb))return false;
-        return queuedGeq_.push(requestId);
+        return trackControlEdit(queuedGeq_.push(requestId));
     }
     bool pollCompletion(Completion& result) noexcept {
-        return completionGeq_.pop(result);
+        return settleControlEdit(completionGeq_.pop(result));
     }
     float acceptedLevelDb() const noexcept {
         return levelValue_->load(std::memory_order_acquire);

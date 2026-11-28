@@ -117,14 +117,15 @@ public:
         if(!ready_||!requestId)return false;
         armix::harmony::Engine::PreparedSettings prepared;
         if(!armix::harmony::Engine::prepareSettings(settings,prepared))return false;
-        return queued_.push({requestId,prepared});
+        return trackControlEdit(queued_.push({requestId,prepared}));
     }
     bool pollCompletion(Completion& completion) noexcept {
         if(!completion_.pop(completion))return false;
-        if(completion.applied && completion.requestId==pendingId_) {
-            accepted_=pendingSettings_;pendingId_=0;
+        if(completion.requestId==pendingId_) {
+            if(completion.applied)accepted_=pendingSettings_;
+            pendingId_=0; // rejected terminal receipt also releases ownership
         }
-        return true;
+        return settleControlEdit(true);
     }
     bool queueAccepted(const armix::harmony::Settings& settings,
                        std::uint64_t requestId) noexcept {
@@ -172,7 +173,7 @@ public:
     bool requiresContinuousBypassProcessing() const noexcept override {return true;}
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        return queued_.empty()&&completion_.empty()&&!pendingId_;
+        return controlEditsSettled()&&queued_.empty()&&completion_.empty()&&!pendingId_;
     }
     bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& out) override {

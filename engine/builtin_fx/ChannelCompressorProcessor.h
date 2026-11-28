@@ -96,12 +96,12 @@ public:
         if(!ready_||!id)return false;
         Edit edit{};edit.requestId=id;
         if(!ChannelCompressor::prepareEdit(s,rate_,edit.packet))return false;
-        return queued_.push(edit);
+        return trackControlEdit(queued_.push(edit));
     }
     bool pollCompletion(Completion& c) noexcept {
         if(!completion_.pop(c))return false;
         if(c.applied)accepted_=c.settings;
-        return true;
+        return settleControlEdit(true);
     }
     [[nodiscard]] CompressorSettings acceptedSettings() const noexcept {return accepted_;}
     [[nodiscard]] double acceptedSampleRate() const noexcept {return rate_;}
@@ -122,7 +122,7 @@ public:
     [[nodiscard]] bool isReady() const noexcept {return ready_;}
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        return queued_.empty()&&completion_.empty();
+        return controlEditsSettled()&&queued_.empty()&&completion_.empty();
     }
     bool supportsLiveStateSnapshot() const noexcept override {return true;}
     void getStateInformation(juce::MemoryBlock& out) override {

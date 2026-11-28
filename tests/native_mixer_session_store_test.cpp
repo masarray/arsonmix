@@ -2650,6 +2650,76 @@ static void verifyLiveInsertWithSecondaryMainTap(){
     assert(bool(destination[0].getProperty("bypassed",false)));
     assert(rackFor(movedRows,16).size()==1);
     render();assert(render()>.01f);
+
+    // Exercise the real LiveDryRoutingLab rack API and native processor
+    // preparation on the installed PCM graph, not only archive codecs or
+    // the view-model fixture. Hardware device remains a JUCE fixture.
+    using Archive=armix::storage::NativeFxRackArchive;
+    using Rack=armix::storage::FxRackFile;
+    const auto directory=juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("armix-live-rack-","",false);
+    assert(directory.createDirectory().wasOk());
+    const auto archive=directory.getChildFile("Vocal.arfx");
+    const auto oldEq=rackFor(mixer.nativeBusStatus().getProperty("channels",{}),16)[0]
+        .getProperty("instanceId",{}).toString();
+    auto current=revisions();
+    assert(mixer.rackSupportsLiveSnapshot({16},-1));
+    assert(mixer.bypassNativeInsert(pins.epoch,current[0],{16},0,oldEq,true));
+    render();render();const float priorPcm=render();
+    assert(priorPcm>.01f);
+    current=revisions();
+    Rack saved;
+    assert(mixer.captureRackFile(pins.epoch,current[0],current[1],{16},-1,{},saved,true).isEmpty());
+    assert(saved.effects.size()==1&&saved.effects[0].bypass&&!saved.effects[0].binary.isEmpty());
+    assert(saved.effects[0].catalogId=="armix.builtin.channel-eq.v1");
+    assert(revisions()==current&&std::abs(render()-priorPcm)<1.e-5f);
+    // Rejected captures must preserve the previous completed snapshot.
+    const auto originalBytes=saved.effects[0].binary;
+    assert(mixer.captureRackFile(pins.epoch,current[0],current[1],{16},0,
+        "stale-instance",saved,true).isNotEmpty());
+    assert(saved.effects.size()==1&&saved.effects[0].binary==originalBytes);
+    assert(mixer.captureRackFile(pins.epoch,current[0]-1,current[1],{16},-1,{},saved,true).isNotEmpty());
+    assert(Archive::save(archive,saved).isEmpty());
+    Rack decoded;
+    assert(Archive::load(archive,decoded).isEmpty()&&decoded.effects.size()==1);
+    assert(decoded.effects[0].binary==originalBytes&&decoded.effects[0].bypass);
+    assert(Archive::load(directory.getChildFile("missing.arfx"),decoded).isNotEmpty());
+    assert(decoded.effects.size()==1&&decoded.effects[0].binary==originalBytes);
+    auto previousToken=oldEq;
+    for(int repeat=0;repeat<3;++repeat){
+        const auto& fx=decoded.effects.front();
+        StoredInsert insert;insert.catalogId=fx.catalogId;insert.name=fx.name;insert.path=fx.path;insert.uid=fx.uid;
+        BinaryState bytes;bytes.bytes=fx.binary;bytes.sha256=juce::SHA256(bytes.bytes).toHexString();
+        std::unique_ptr<juce::AudioProcessor> proc;
+        assert(NativeMixerSessionFxRestore::prepareProcessor(insert,&bytes,formats,48000.,480,proc).isEmpty()&&proc);
+        auto fresh=std::make_shared<LiveChannelFxGraph::FxInstance>(std::move(proc),fx.catalogId,fx.name,
+            LiveDryRoutingLab::Block::hardFrameLimit);
+        fresh->bypassRequested.store(fx.bypass,std::memory_order_release);
+        assert(fresh->instanceId!=previousToken);
+        assert(!mixer.replaceRackFile(pins.epoch,current[0],current[1],{16},{fresh},false,
+            decoded.rackBypassed,-1,{},false).accepted); // no quiet authorization
+        assert(!mixer.replaceRackFile(pins.epoch,current[0]-1,current[1],{16},{fresh},false,
+            decoded.rackBypassed,-1,{},true).accepted); // stale revision
+        assert(revisions()==current&&std::abs(render()-priorPcm)<1.e-5f);
+        const auto replaced=mixer.replaceRackFile(pins.epoch,current[0],current[1],{16},{fresh},false,
+            decoded.rackBypassed,-1,{},true);
+        assert(replaced.accepted&&replaced.pcmRevision==current[0]+1);
+        assert(mixer.renderedNativeRevision()!=replaced.pcmRevision); // accepted is not yet PCM evidence
+        render();render();
+        assert(mixer.renderedNativeRevision()==replaced.pcmRevision);
+        assert(std::abs(render()-priorPcm)<1.e-5f);
+        const auto rows=mixer.nativeBusStatus().getProperty("channels",{});
+        const auto restored=rackFor(rows,16);
+        assert(restored.size()==1&&restored[0].getProperty("instanceId",{}).toString()==fresh->instanceId);
+        assert(bool(restored[0].getProperty("bypassed",false)));
+        assert(rackFor(rows,2)[0].getProperty("instanceId",{}).toString()==token); // unrelated FX preserved
+        current=revisions();previousToken=fresh->instanceId;
+        Rack check;
+        assert(mixer.captureRackFile(pins.epoch,current[0],current[1],{16},-1,{},check,true).isEmpty());
+        assert(check.effects[0].binary==originalBytes&&check.effects[0].bypass);
+    }
+    assert(directory.deleteRecursively());
+    std::cout<<"LIVE_RACK_ARCHIVE_RESTORE_PCM_PASS\n";
     std::cout<<"LIVE_INSERT_SECONDARY_MAIN_TAP_PASS\n";
 }
 static void checkCheckpointCadenceAndRecoveredMute() {

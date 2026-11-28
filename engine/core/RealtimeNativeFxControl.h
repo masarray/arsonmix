@@ -43,5 +43,23 @@ struct RealtimeNativeFxControl {
     // Opt in only when getStateInformation serializes CONTROL-owned or
     // atomic accepted state without touching the live DSP or its lock.
     virtual bool supportsLiveStateSnapshot() const noexcept {return false;}
+
+protected:
+    // CONTROL-thread only: an edit is outstanding from successful enqueue
+    // until its terminal callback receipt is consumed, even during the
+    // interval where AUDIO has popped the edit but not pushed completion.
+    // Queue emptiness alone cannot prove an accepted snapshot is current.
+    // No callback reads/writes this count, and no audio-thread lock or atomic.
+    bool trackControlEdit(bool queued) noexcept {
+        if(queued)++pendingControlEdits_;
+        return queued;
+    }
+    bool settleControlEdit(bool received) noexcept {
+        if(received&&pendingControlEdits_!=0)--pendingControlEdits_;
+        return received;
+    }
+    bool controlEditsSettled() const noexcept {return pendingControlEdits_==0;}
+private:
+    unsigned pendingControlEdits_=0;
 };
 } // namespace armix::mixer

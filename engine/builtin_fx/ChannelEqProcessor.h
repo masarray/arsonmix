@@ -98,7 +98,7 @@ public:
         Edit e;e.requestId=id;
         if(!ChannelEq::prepareBandEdit(index,band,rate_,e.prepared))
             return false;
-        return queued_.push(e);
+        return trackControlEdit(queued_.push(e));
     }
     // Control-thread only, after a callback completion: accepted_ is never
     // accessed by processBlock, so Show/GUI reads cannot race DSP histories.
@@ -106,7 +106,7 @@ public:
         if(!completion_.pop(result))return false;
         if(result.applied&&result.bandIndex<accepted_.size())
             accepted_[result.bandIndex]=result.band;
-        return true;
+        return settleControlEdit(true);
     }
     std::array<Band,ChannelEq::bandCount> acceptedBands() const noexcept {
         return accepted_; // CONTROL thread ONLY
@@ -115,9 +115,9 @@ public:
     bool isReady() const noexcept {return ready_;}
     void sealForRealtime() noexcept override {published_=true;}
     bool stateSnapshotQuiescent() const noexcept override {
-        // CONTROL only; the caller owns FxInstance's non-blocking capture
-        // gate, so it cannot race the consumer inside processBlock.
-        return queued_.empty()&&completion_.empty();
+        // CONTROL only; accepted_ is updated solely when the receipt is
+        // consumed. A popped, not-yet-acknowledged edit is still pending.
+        return controlEditsSettled()&&queued_.empty()&&completion_.empty();
     }
 
     // The native Show's vendor-state lease already serializes state on the

@@ -1931,7 +1931,28 @@ static void verifyChannelIdGroupPreservesHostedFx() {
     live.unpublish();live.pollRetirement();
 }
 
+// Deterministic interleaving: AUDIO has removed the command from its
+// queue, but the terminal receipt has not yet reached CONTROL. Both queues
+// could be empty; the real shared receipt fence must remain closed.
+static void verifyControlEditReceiptFence() {
+    struct Probe final : RealtimeNativeFxControl {
+        void consumeRealtimeEdits() noexcept override {}
+        bool submit(bool accepted) noexcept {return trackControlEdit(accepted);}
+        bool poll(bool received) noexcept {return settleControlEdit(received);}
+        bool stateSnapshotQuiescent() const noexcept override {return controlEditsSettled();}
+    } p;
+    assert(p.stateSnapshotQuiescent());
+    assert(!p.submit(false)&&p.stateSnapshotQuiescent());
+    assert(p.submit(true)&&!p.stateSnapshotQuiescent());
+    assert(!p.poll(false)&&!p.stateSnapshotQuiescent()); // popped, no ACK
+    assert(p.submit(true)&&!p.stateSnapshotQuiescent());
+    assert(p.poll(true)&&!p.stateSnapshotQuiescent()); // only first ACK
+    assert(p.poll(true)&&p.stateSnapshotQuiescent()); // all terminal receipts
+    assert(!p.poll(false)&&p.stateSnapshotQuiescent());
+}
+
 static void verifyNativeExactIdle() {
+    verifyControlEditReceiptFence();
     using Eq=armix::builtin_fx::ChannelEqProcessor;
     using Comp=armix::builtin_fx::ChannelCompressorProcessor;
     auto eq=std::make_unique<Eq>();eq->prepareToPlay(48000,64);
@@ -1960,6 +1981,21 @@ static void verifyNativeExactIdle() {
     assert(!lease.dspSleeping.load()&&live->pollCompletion(ack)&&ack.applied&&ack.requestId==71);
     assert(lease.dspProcessedBlocks.load()==1&&heapCalls.load()==beforeEditHeap);
     assert(lease.captureLiveState(changed)&&changed!=beforeEdit);
+    // Two accepted edits must remain outstanding until both callback
+    // receipts have been consumed; failed enqueue must not strand Save.
+    band.gainDb=3.f;
+    assert(live->queueBand(0,band,72));
+    band.gainDb=6.f;
+    assert(live->queueBand(0,band,73));
+    assert(!live->queueBand(0,band,0));
+    const auto savedFirst=changed;
+    lease.render(l.data(),r.data(),64);
+    assert(live->pollCompletion(ack)&&ack.requestId==72);
+    assert(!lease.captureLiveState(changed)&&changed==savedFirst);
+    lease.render(l.data(),r.data(),64);
+    assert(!lease.captureLiveState(changed)&&changed==savedFirst);
+    assert(live->pollCompletion(ack)&&ack.requestId==73);
+    assert(lease.captureLiveState(changed)&&changed!=savedFirst);
     auto c=std::make_unique<Comp>();c->prepareToPlay(48000,64);
     auto* compressor=c.get();
     LiveChannelFxGraph::FxInstance cl(std::move(c),Comp::catalogIdentity,"Comp",64);
