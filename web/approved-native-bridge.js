@@ -3155,7 +3155,10 @@
         leftName:model.pins.find(p=>p.port===c?.left)?.label||"",
         rightName:model.pins.find(p=>p.port===c?.right)?.label||""};
       if(operation==="IMPORT"){payload.id="";payload.profile=profile;}
-      namedPatchPending={requestId,phase:"APPLYING",revision:data.revision,payload};
+      namedPatchPending={requestId,phase:"APPLYING",revision:data.revision,payload,
+        previousEntries:data.entries.map(p=>({...p})),
+        active:Object.fromEntries(["backend","captureDevice","playbackDevice","deviceGeneration","rate","buffer"].map(k=>[k,a[k]])),
+        epoch:hardware.device.epoch,configuration:hardware.hardwareConfiguration};
       backend.emitEvent("arMixAction",{action:"audioNamedPatchEdit",requestId,...payload});
       paintPhysicalOutputs(hardware);
       window.setTimeout(()=>{
@@ -5163,20 +5166,32 @@
         paintPhysicalOutputs(hardware);return;
       }
       namedPatchPending={...namedPatchPending,phase:"VERIFYING"};
-      backend.emitEvent("arMixAction",{action:"audioNamedPatchRead",requestId:ack.requestId});
+      const read=()=>{
+        if(namedPatchPending?.phase!=="VERIFYING"||
+           namedPatchPending.requestId!==ack.requestId)return;
+        backend.emitEvent("arMixAction",{action:"audioNamedPatchRead",requestId:ack.requestId});
+      };
+      read();
+      // A device transaction can swallow a read-only request after the disk
+      // ACK. Retry only the read, within the existing five-second deadline.
+      // Never replay the edit; late timers cannot touch a newer transaction.
+      for(const delay of [300,1000,2200])window.setTimeout(read,delay);
     });
     backend.addEventListener("arMixNamedPatchReadback",message=>{
       if(namedPatchPending?.phase!=="VERIFYING"||
          message?.requestId!==namedPatchPending.requestId)return;
       const a=deviceInventory?.active,b=message.active,data=message.namedPatches;
-      const same=a&&b&&["backend","captureDevice","playbackDevice","deviceGeneration","rate","buffer"]
-        .every(k=>a[k]===b[k])&&deviceVM.setupMatrixDeviceMatches({active:b},hardware);
+      const p=namedPatchPending;
+      const same=a&&b&&hardware?.device?.epoch===p.epoch&&
+        hardware.hardwareConfiguration===p.configuration&&
+        Object.keys(p.active).every(k=>a[k]===b[k]&&b[k]===p.active[k])&&
+        deviceVM.setupMatrixDeviceMatches({active:b},hardware);
       if(!same||data?.revision!==namedPatchPending.revision+1||
          !Array.isArray(data.entries))return;
       const wanted=namedPatchPending.payload;
       const fields=["name","mode","left","right","leftName","rightName"];
       const matches=(p,q)=>p.side===wanted.side&&fields.every(k=>p[k]===q[k]);
-      const previous=deviceInventory?.namedPatches?.entries||[];
+      const previous=p.previousEntries;
       const proved=wanted.operation==="IMPORT"?
         data.entries.length===previous.length+wanted.profile.entries.length&&
         previous.every(old=>data.entries.some(p=>p.id===old.id&&p.side===old.side&&fields.every(k=>p[k]===old[k])))&&

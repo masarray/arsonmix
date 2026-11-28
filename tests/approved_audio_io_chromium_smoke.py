@@ -85,7 +85,11 @@ def verify_custom_input(page,out):
     assert page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').length")==0
     emit(page,"arMixNamedPatchAck",{"requestId":preset_req["requestId"],"ok":True})
     assert page.locator('option[value="preset:fixture-1"]').count()==0
-    assert page.evaluate("()=>window.__actions.some(x=>x.action==='audioNamedPatchRead')")
+    # Simulate native busy dropping the first read-only request. The edit
+    # must not be replayed, and only a correlated readback can settle it.
+    page.wait_for_function("(id)=>window.__actions.filter(x=>x.action==='audioNamedPatchRead'&&x.requestId===id).length>=2",arg=preset_req["requestId"])
+    assert page.evaluate("()=>window.__actions.filter(x=>x.action==='audioNamedPatchEdit').length")==1
+    assert page.locator('option[value="preset:fixture-1"]').count()==0
     entry={k:preset_req[k] for k in ("name","side","mode","left","right","leftName","rightName")}
     entry.update(id="fixture-1",available=True)
     inventory["namedPatches"]={"revision":1,"readOnly":False,"entries":[entry]}
@@ -171,8 +175,19 @@ def verify_custom_input(page,out):
     assert page.locator('option[value="preset:fixture-2"]').count()==0
     new_entry={**entry,"id":"fixture-2","name":"Imported Vocal"}
     inventory["namedPatches"]={"revision":3,"readOnly":False,"entries":[entry,new_entry]}
+    # General inventory can arrive before the correlated import readback.
+    # Compare against the pre-edit baseline, not this newer observation.
+    emit(page,"arMixAudioDeviceInventory",inventory)
+    assert page.get_by_label("Saved input preset",exact=True).is_disabled()
+    emit(page,"arMixNamedPatchReadback",{"requestId":rename["requestId"],
+        "active":inventory["active"],"namedPatches":inventory["namedPatches"]})
+    assert page.get_by_label("Saved input preset",exact=True).is_disabled()
+    emit(page,"arMixNamedPatchReadback",{"requestId":imported["requestId"],
+        "active":{**inventory["active"],"deviceGeneration":inventory["active"]["deviceGeneration"]+1},"namedPatches":inventory["namedPatches"]})
+    assert page.get_by_label("Saved input preset",exact=True).is_disabled()
     emit(page,"arMixNamedPatchReadback",{"requestId":imported["requestId"],
         "active":inventory["active"],"namedPatches":inventory["namedPatches"]})
+    assert page.get_by_label("Saved input preset",exact=True).is_enabled()
     assert page.locator('option[value="preset:fixture-2"]').count()>0
     assert page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').length")==1
     page.screenshot(path="audio-io-custom-stereo.png")
