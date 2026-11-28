@@ -8,6 +8,25 @@ ROOT = Path(__file__).resolve().parents[1]
 DIST = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "dist-pages"
 
 class LandingReleaseContract(unittest.TestCase):
+    def test_windows_requirements_match_readme(self):
+        readme = (ROOT / "README.md").read_text("utf-8")
+        md = readme.split("## System requirements (Windows)", 1)[1].split("\n## ", 1)[0]
+        expected = [tuple(cell.strip() for cell in line.strip("|").split("|"))
+                    for line in md.splitlines() if line.startswith("| ") and not line.startswith("| ---")]
+        self.assertEqual(len(expected), 11)
+        for base in (ROOT / "site", DIST):
+            html = (base / "index.html").read_text("utf-8")
+            self.assertEqual(html.count('id="system-requirements"'), 1)
+            self.assertGreaterEqual(html.count('href="#system-requirements"'), 2)
+            block = html.split('id="system-requirements"', 1)[1].split("</section>", 1)[0]
+            actual = [tuple(re.findall(r"<t[hd][^>]*>([^<]*)</t[hd]>", row))
+                      for row in re.findall(r"<tr>(.*?)</tr>", block, re.S)]
+            self.assertEqual(actual, expected)
+            self.assertLess(html.index('id="system-requirements"'), html.index('class="os-grid"'))
+            for phrase in ("minimum hardware has not yet been qualified", "not a guarantee of dropout-free audio"):
+                self.assertIn(phrase, block)
+                self.assertIn(phrase, md)
+
     def test_source_and_built_assets(self):
         for base in (ROOT / "site", DIST):
             html = (base / "index.html").read_text("utf-8")

@@ -6,6 +6,7 @@
 <p align="center"><strong>Your live mix, under your control.</strong><br>A free, open-source digital mixing studio for live vocals, karaoke, streaming and instruments.</p>
 <p align="center">
   <a href="https://masarray.github.io/arsonmix/#download"><strong>Download ArSonMix</strong></a> ·
+  <a href="https://masarray.github.io/arsonmix/#system-requirements">System requirements</a> ·
   <a href="https://masarray.github.io/arsonmix/preview/">Explore the mixer</a> ·
   <a href="https://masarray.github.io/arsonmix/#effects">Built-in effects</a> ·
   <a href="https://masarray.github.io/arsonmix/#feedback">Share feedback</a> ·
@@ -69,6 +70,29 @@ ImmerSIB and Guitar FX Rig are shown **after** the original effects. To keep the
 These are genuine owner-supplied Windows editor screenshots, not a verified DSP/hardware test. The Guitar FX capture visibly reads **DSP OFFLINE**; the exact installed binary used for those screenshots was not independently identified.
 
 [Explore the built-in FX showcase](https://masarray.github.io/arsonmix/#effects) or [try the official mixer preview](https://masarray.github.io/arsonmix/preview/). The preview is visual only; native audio and effects require a compatible desktop audio setup.
+
+## System requirements (Windows)
+
+Windows desktop app — estimated hardware guidance for early-access builds; minimum hardware has not yet been qualified across physical test PCs.
+
+| Component | Minimum (estimated) | Recommended (estimated) |
+| --- | --- | --- |
+| CPU (laptop) | Intel Core i5-8250U / AMD Ryzen 5 3500U or equivalent | Intel Core i5-1235U / AMD Ryzen 5 5600U or equivalent |
+| CPU (desktop) | Intel Core i5-8400 / AMD Ryzen 5 2600 or equivalent | Intel Core i5-12400 / AMD Ryzen 5 5600 or equivalent |
+| RAM | 8 GB | 16 GB or more |
+| Storage | SSD, 5 GB free | NVMe SSD, 10 GB free |
+| Graphics | Integrated graphics; no dedicated GPU required | Integrated graphics; dedicated GPU optional for video streaming |
+| Display | 1366 × 768 | 1920 × 1080 or higher |
+| Operating system | Windows 10/11 x64 | Windows 11 x64 |
+| Runtime | Microsoft Edge WebView2 Runtime | Microsoft Edge WebView2 Runtime |
+| Audio driver | Compatible WASAPI or ASIO | Audio interface with native ASIO driver |
+| Audio setup (starting point) | 48 kHz, 256–512 samples | 48 kHz, 128–256 samples |
+
+Minimum target: karaoke, playback and basic vocal mixing (EQ, compressor, reverb). Recommended: live mixing with more channels, Harmonice, ImmerSIB or external VST3 effects; for OBS or TikTok Live Studio, allow extra CPU/GPU and memory for video encoding.
+
+Actual performance depends on active channels, effects, driver quality, buffer size and cooling. Start at 48 kHz / 256 samples; if audio crackles, try 512 samples or reduce demanding effects. Smaller buffers reduce buffering latency but require more real-time CPU headroom. Older PCs may work with lighter sessions; these estimates are not a guarantee of dropout-free audio.
+
+[View system requirements on the download page](https://masarray.github.io/arsonmix/#system-requirements).
 
 ## From download to your first mix
 
