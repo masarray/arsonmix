@@ -14,7 +14,7 @@ FX_PAGES = (
          headline="Move sound around your headphones.",
          introduction="8D-SonKu is a built-in 8D audio plugin for positioning and moving sound around a headphone listening field. Its editor makes the direction and movement controls visible rather than hiding them inside a preset name.",
          details=("Explore the binaural map and orbit controls in the editor.", "Use headphones when evaluating spatial placement and movement.", "Adjust levels carefully; spatial effects do not replace routing and output setup."),
-         image="fx-editor-8d-sonku.jpg", width=790, height=604, origin="Approved native WebView resource rendered in Chromium; not a hardware test",
+         image="fx-editor-8d-sonku.jpg", width=790, height=538, origin="Approved native WebView resource rendered in Chromium; not a hardware test",
          related=("vocal-delay", "immersib")),
     dict(slug="vocal-delay", title="Vocal Delay", category="Voice / creative timing",
          seo="Vocal Delay Built-in Audio Effect | ArSonMix Mixer",
