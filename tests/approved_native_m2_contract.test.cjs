@@ -2072,16 +2072,19 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/e\.preventDefault\(\)/);
  assert.match(menu,/\.strip-identity-top/);
  assert.match(menu,/\.fxslot-row:not\(\.is-empty\)/);
- assert.doesNotMatch(menu,/Confirm Delete Track/);
- assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
- assert.match(menu,/Confirm Delete AUX/);
+ assert.doesNotMatch(menu,/Confirm Delete (Track|AUX|BUS)|data-menu="confirm"/);
+ assert.match(menu,/dismissMenu\(\);deleteStrip\(track\);return;/);
+ assert.match(menu,/function deleteStrip\(track\)/);
+ assert.match(menu,/if\(e\.key==="Delete"\)/);
+ assert.match(menu,/if\(selected\.length!==1\)return;/);
+ assert.match(menu,/if\(deleteStrip\(selected\[0\]\)\)/);
  assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
  assert.match(bridge,/if\(value==="__armix_settings__"\)\{openAdditionalOutput\(\);return;\}/);
  assert.doesNotMatch(bridge,/nativeExtraOutput|nativeFirstSound/);
  assert.match(bridge,/if\(page==="routing"\)mountInlineAdditionalOutput\(\)/);
  assert.match(bridge,/host\.append\(extraControls\)/);
  assert.doesNotMatch(bridge,/__arMixOpenAdditionalOutput/);
- assert.match(menu,/requestDeleteTrack\(track\)/);
+ assert.match(menu,/hooks\.requestDeleteStrip\?\.\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
  assert.ok(read("web/approved-channel-strip-view-model.js").includes(
@@ -2107,6 +2110,19 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(installer,/approved-native-context-menu\.js/);
 });
 
+test("single explicit delete uses the same native gate for every removable strip",()=>{
+ const menu=read("web/approved-native-context-menu.js");
+ const body=menu.match(/function deleteStrip\(track\)\{[\s\S]*?\n    \}/)?.[0];
+ assert.ok(body);
+ const calls=[];let ready=true;
+ const hooks={canDeleteStrip:()=>ready,requestDeleteStrip:t=>{calls.push(t.id);return true;}};
+ const remove=new (require("node:vm").Script)(body+";deleteStrip").runInNewContext({hooks});
+ for(const [id,kind] of ["audio","fx","bus"].entries())assert.equal(remove({id,kind}),true);
+ assert.equal(remove({id:3,kind:"master"}),false);
+ assert.equal(remove(null),false);
+ ready=false;assert.equal(remove({id:4,kind:"audio"}),false);
+ assert.deepEqual(calls,[0,1,2]);
+});
 test("all native strip menus bind true AUX/BUS deletion and persistent Rename, Orbit anchors and moves",()=>{
  const menu=read("web/approved-native-context-menu.js");
  const bridge=read("web/approved-native-bridge.js");

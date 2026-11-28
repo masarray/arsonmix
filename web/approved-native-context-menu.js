@@ -137,11 +137,18 @@
       '<div class="foot"><button type="button" data-orbit-start disabled>Start Orbit</button><button type="button" data-orbit-stop>Stop</button></div>'+
       '<div class="info" id="armixOrbitInfo">Reading verified VST3 parameters…</div>';
     document.body.appendChild(orbit);
-    let menuTrack=null,menuSlot=-1,menuTarget=null,confirmation=false;
+    let menuTrack=null,menuSlot=-1,menuTarget=null;
     let orbitTrack=null,orbitSlot=-1,orbitTarget=null,orbitState=null;
     let orbitDrag=null;
     const $=id=>document.getElementById(id);
-    const dismissMenu=()=>{menu.hidden=true;menuTrack=null;menuSlot=-1;menuTarget=null;confirmation=false;};
+    const dismissMenu=()=>{menu.hidden=true;menuTrack=null;menuSlot=-1;menuTarget=null;};
+    // Both gestures use the same authoritative roster mutation. No local
+    // removal, bypass of pending native edits, or implicit multi-delete.
+    function deleteStrip(track){
+      if(!track||!["audio","fx","bus"].includes(track.kind)||
+         !hooks.canDeleteStrip?.(track))return false;
+      return hooks.requestDeleteStrip?.(track)===true;
+    }
     function place(el,x,y){
       el.style.left=Math.max(6,Math.min(x,window.innerWidth-(el.offsetWidth||222)-8))+"px";
       el.style.top=Math.max(6,Math.min(y,window.innerHeight-(el.offsetHeight||130)-8))+"px";
@@ -151,19 +158,12 @@
       if(kind==="strip"){
         const kindName=menuTrack?.kind==="audio"?"Track":
           menuTrack?.kind==="fx"?"AUX":"BUS";
-        if(confirmation){
-          const confirmLabel=kindName==="AUX"?"Confirm Delete AUX":"Confirm Delete BUS";
-          menu.innerHTML='<div class="detail">Delete this '+kindName+
-            ' and disconnect its FX/WIRE? Other channels are preserved.</div>'+
-            '<button role="menuitem" class="danger" data-menu="confirm">'+confirmLabel+'</button>'+
-            '<button role="menuitem" data-menu="cancel">Cancel</button>';
-        }else{
           const canDelete=menuTrack?.kind!=="master" && hooks.canDeleteStrip?.(menuTrack);
           menu.innerHTML='<button role="menuitem" data-menu="rename">Rename…</button>'+
             (hooks.canGroupSelected?.()?'<button role="menuitem" data-menu="group-selected">Group Selected</button>':'')+
             (hooks.canUngroupSelected?.()?'<button role="menuitem" data-menu="ungroup-selected">Ungroup Selected</button>':'')+
             '<button role="menuitem" class="danger" data-menu="delete" '+
-            (canDelete?'':'disabled')+'>'+(menuTrack?.kind==="audio"?"Delete Track":"Delete…")+'</button>'+
+            (canDelete?'':'disabled')+'>Delete '+kindName+'</button>'+
             (canDelete?'':'<div class="detail">Delete unavailable for this native strip</div>')+
             (eligibleHotkey(menuTrack,"SET_MUTE")?
               '<button role="menuitem" data-menu="hotkey-mute">Mute · Assign Hotkey…</button>'+
@@ -173,7 +173,6 @@
               '<button role="menuitem" data-menu="rack-insert">Insert Saved FX…</button>'+
               '<div class="detail">Disarm MAIN / STREAM first</div>':'')+
             '<button role="menuitem" data-menu="hotkey-register">Hotkey Register…</button>';
-        }
       }else if(kind==="rack"){
         menu.innerHTML='<button role="menuitem" data-menu="rack-save">Save FX Rack…</button>'+
           '<button role="menuitem" data-menu="rack-open">Open FX Rack (replace)…</button>'+
@@ -783,22 +782,12 @@
         return;
       }
       if(action==="delete"){
-        if(!hooks.canDeleteStrip?.(track))return;
-        // An explicit right-click Delete Track is the user's confirmation.
-        // Keep the existing exact ChannelId / ACK gate; never remove optimistically.
-        if(track?.kind==="audio"){
-          dismissMenu();hooks.requestDeleteTrack(track);return;
-        }
-        confirmation=true;showMenu(menu.offsetLeft,menu.offsetTop,"strip");return;
+        dismissMenu();deleteStrip(track);return;
       }
       dismissMenu();
       if(action==="rename"){
         const anchor=document.querySelector('.strip[data-id="'+track?.id+'"] .strip-identity-top');
         hooks.renameStrip?.(track,anchor);return;
-      }
-      if(action==="confirm"){
-        if(track?.kind==="bus"||track?.kind==="fx")hooks.requestDeleteStrip?.(track);
-        return;
       }
       if(action!=="orbit")return;
       const actual=hooks.orbitTarget(track,slot);
@@ -839,6 +828,23 @@
       if(!menu.hidden&&!menu.contains(e.target))dismissMenu();
     },true);
     document.addEventListener("keydown",e=>{
+      if(e.key==="Delete"){
+        if(e.defaultPrevented||e.repeat||e.ctrlKey||e.altKey||e.metaKey||e.shiftKey||
+           !menu.hidden||!hotkeyCard.hidden||!hotkeyRegister.hidden||!fxParamPanel.hidden||!orbit.hidden)return;
+        const target=e.target;
+        // Only the mixer canvas or a strip identity may initiate deletion.
+        // Text fields, faders, plugin tools, dialogs and other controls retain Delete.
+        if(target!==document.body&&!target.closest?.(".strip-identity-top,.footer-label .name"))return;
+        if(target.closest?.('input,textarea,select,[contenteditable]'))return;
+        if([...document.querySelectorAll('[role="dialog"],dialog')].some(el=>
+          !el.hidden&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=="hidden"))return;
+        const selected=(scope.tracks||[]).filter(t=>t.selected);
+        if(selected.length!==1)return;
+        const focused=scope.findTrack(target);
+        if(focused&&focused.id!==selected[0].id)return;
+        if(deleteStrip(selected[0])){e.preventDefault();e.stopImmediatePropagation();}
+        return;
+      }
       if(e.key!=="Escape")return;
       if(!menu.hidden){e.preventDefault();e.stopImmediatePropagation();dismissMenu();}
       else if(!fxParamPanel.hidden){e.preventDefault();closeFxParamBrowser();}
