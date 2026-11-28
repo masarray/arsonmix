@@ -11,6 +11,9 @@ on:
       - 'tests/native_mixer_session_store_test.cpp'
       - 'src/NativeSessionToken.h'
       - 'tests/native_dry_route_command_test.cpp'
+      - 'tests/plugin_catalog_persistence_test.cpp'
+      - 'src/PluginCatalog.h'
+      - 'tests/audio_continuity_policy_test.cpp'
       - 'engine/core/NativeFxRackTransaction.h'
       - 'src/NativeMixerSessionDocument.h'
       - 'src/NativeLogicalMixerWorkspace.h'
@@ -55,10 +58,11 @@ jobs:
           cmake -S . -B dmx-build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($env:GITHUB_HEAD_REF -eq 'fix/p0-output-matrix-token-contract-20261128') {
-            # Exact native token and physical output regressions; no DSP scope expansion.
-            cmake --build dmx-build --parallel 2 --target ARMixNativeDrySendTests ARMixPhysicalExternalOutputTests
+            # Real native routing, retained session, catalog and audio transition
+            # tests. This is a scoped regression suite, not installer FAT.
+            cmake --build dmx-build --parallel 2 --target ARMixNativeDrySendTests ARMixPhysicalExternalOutputTests ARMixApprovedRoutingPcmTests ARMixAudioContinuityPolicyTests ARMixPluginCatalogTests ARMixDeviceSessionTransitionTests ARMixDeviceApplyCoordinatorTests ARMixDurableMixerSessionTests
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(LiveNativePrePostSendAndBusContract|O1PhysicalExternalOutputNativePcmAndFailClosedRouting)$'
+            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(LiveNativePrePostSendAndBusContract|O1PhysicalExternalOutputNativePcmAndFailClosedRouting|P0ApprovedDecoderChannelToChannelAndSourceOnlyPCM|P0DisplayIdlePreservesAudioAndDeviceRecoveryIntent|NativePluginCatalogScanFolderPersistence|NonDestructiveAudioSetupRetainsMixerDocument|NativeDeviceApplyPinValidationAndRollbackEvidence|P0DynamicMixerSessionDocumentAndCrashSafeRecovery)$'
           } elseif ($env:GITHUB_HEAD_REF -in @('fix/unified-send-gesture-custom-ux-20261127','fix/operator-menu-offline-sof-20261127','fix/p0-live-fx-secondary-insert-20261127','fix/rc-contract-reconciliation-20261128')) {
             # Product routing/persistence regression only; accepted DSP freeze.
             cmake --build dmx-build --parallel 2 --target ARMixDurableMixerSessionTests

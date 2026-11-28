@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Release CTest must execute assertions (including side-effecting begin()).
+#ifdef NDEBUG
+ #undef NDEBUG
+#endif
 #include "../engine/device/AudioContinuityPolicy.h"
 #include "../engine/core/BusPatchEnvelope.h"
 #include <array>

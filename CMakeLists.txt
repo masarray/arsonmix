@@ -1716,6 +1716,14 @@ if(BUILD_TESTING)
   target_link_libraries(ARMixVaultTests PRIVATE juce::juce_core juce::juce_recommended_config_flags)
   target_compile_features(ARMixVaultTests PRIVATE cxx_std_20)
   add_test(NAME SelectiveVst3BundleVaultImport COMMAND ARMixVaultTests)
+  # Exercise the real catalog and native scan-folder readback/persistence.
+  juce_add_console_app(ARMixPluginCatalogTests PRODUCT_NAME "ArSonMix Native Plugin Catalog Tests")
+  target_sources(ARMixPluginCatalogTests PRIVATE tests/plugin_catalog_persistence_test.cpp src/PluginCatalog.h)
+  target_link_libraries(ARMixPluginCatalogTests PRIVATE juce::juce_audio_processors
+      juce::juce_cryptography juce::juce_events juce::juce_recommended_config_flags)
+  target_compile_definitions(ARMixPluginCatalogTests PRIVATE JUCE_PLUGINHOST_VST3=1 JUCE_MODAL_LOOPS_PERMITTED=1)
+  target_compile_features(ARMixPluginCatalogTests PRIVATE cxx_std_20)
+  add_test(NAME NativePluginCatalogScanFolderPersistence COMMAND ARMixPluginCatalogTests)
   juce_add_console_app(ARMixBackupTests PRODUCT_NAME "ArSonMix Verified Native Studio Backup Tests")
   target_sources(ARMixBackupTests PRIVATE tests/studio_backup_test.cpp src/StudioBackup.h src/PortableWorkspace.h)
   target_link_libraries(ARMixBackupTests PRIVATE juce::juce_core juce::juce_cryptography
