@@ -391,4 +391,7 @@ test('authorized secondary callback without a complete native tap emits clocked 
  assert.match(bridge,/int pushSilence\(int frames\)[\s\S]*?return push\(zero,1,frames\)/);
  assert.match(lab,/const auto silence=\[&\]\(\) noexcept \{[\s\S]*?if\(actualOutputPair\)\*actualOutputPair=\{\{-1,-1\}\};[\s\S]*?if\(secondaryMainTap\)\*secondaryMainTap=\{\{nullptr,nullptr\}\};/);
  assert.match(engine,/"secondaryOutputSubstitutedFrames"/);
+ const stop=device.split('void stop() {')[1].split('bool arm(bool requested)')[0];
+ assert.match(stop,/admission_\.revoke\(\);[\s\S]*?while\(publishers_\.load\(\)!=0\)[\s\S]*?substitutedFrames_\.store\(0/);
+ assert.match(main,/"secondaryOutputPriming", "secondaryOutputSubstitutedFrames"/);
 });

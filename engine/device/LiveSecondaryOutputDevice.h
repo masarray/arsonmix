@@ -136,6 +136,7 @@ public:
         // revocation share an SC order, including late old-generation work.
         while(publishers_.load()!=0)
             std::this_thread::yield();
+        substitutedFrames_.store(0,std::memory_order_relaxed);
         if(device_){device_->stop();device_->close();device_.reset();}
         type_.reset();
         name_.clear();endpointId_.clear();endpointHash_.clear();targetMs_=renderRate_=0;

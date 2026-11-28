@@ -1704,7 +1704,8 @@ private:
                  "masterAnalysisState", "masterAnalysisDroppedFramesLifetime", "masterAnalysisSegmentRestartsLifetime",
                  "backendXrunCount", "backendXrunMeaning",
                  "renderUnderrunSource", "secondaryOutputUnderflow",
-                 "secondaryOutputOverflow", "secondaryOutputFrames"})
+                 "secondaryOutputOverflow", "secondaryOutputFrames",
+                 "secondaryOutputPriming", "secondaryOutputSubstitutedFrames"})
         {
             const auto value = state.getProperty (key, {});
             if (!value.isVoid())
