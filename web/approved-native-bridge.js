@@ -5935,7 +5935,9 @@
     for(const t of scope?.tracks||[]){
       const id=nativeIdFor(t),available=view.available&&view.eligible.includes(id)&&!pendingNativePfl;
       const on=view.available&&view.applied===id;
-      if(t.nativePflAvailable===available&&!!t.nativePflApplied===on)continue;
+      // Legacy M4 and offline strips have no PFL authority or mounted cue
+      // model. Treat an absent flag as OFF, not as a change requiring paint.
+      if(!!t.nativePflAvailable===available&&!!t.nativePflApplied===on)continue;
       t.nativePflAvailable=available;t.cue=t.nativePflApplied=on;
       const key=document.querySelector('.strip[data-id="'+t.id+'"] [data-action="cue"]');
       if(key){
