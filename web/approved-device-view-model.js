@@ -193,6 +193,34 @@
         (mainPins.length===2?" · MAIN "+mainPins.join(" / "):""):
         "No verified audio device. Select a supported input and output.")};
   }
+  // Offer only the first reported physical capture pair on an explicitly
+  // selected, already open separate Windows endpoint with ZERO active pins.
+  // This is a draft edit, not installed pins or a PCM/auto-arm command.
+  function captureRecoveryDraft(inventory,draft) {
+    const a=inventory?.active;
+    if(!a||!setupSameEndpoint(a,draft)||!String(a.backend).startsWith("Windows Audio")||
+       !a.captureDevice||a.authorized!==true||
+       !Array.isArray(a.enabledInputs)||a.enabledInputs.length!==0||
+       !Array.isArray(a.inputNames)||a.inputNames.length===0||
+       !Array.isArray(draft.inputPins)||draft.inputPins.length!==0||
+       !validPinMask(draft.outputPins,a.outputNames)||draft.outputPins.length<2)return null;
+    return {...draft,inputPins:a.inputNames.slice(0,2).map((_,i)=>i)};
+  }
+  function signalPathHint(active) {
+    if(!active?.open)return "No open audio device.";
+    if(active.authorized===false)return "Device route not authorized. Copy Audio Report.";
+    if(active.captureDevice&&Array.isArray(active.enabledInputs)&&!active.enabledInputs.length)
+      return active.inputNames?.length?
+        "Capture device selected, but ZERO input pins enabled. Enable capture pins below.":
+        "Capture device selected, but driver reports no input pins. Copy Audio Report.";
+    const messages={NATIVE_ROUTE_UNBOUND:"Device open, mixer route not bound. Copy Audio Report.",
+      OUTPUT_PINS_MISSING:"MAIN playback pins unavailable. Copy Audio Report.",
+      OPERATOR_OUTPUT_MUTED:"Output explicitly muted.",
+      OUTPUT_NOT_ARMED:"Output not armed. Check channel input and native route.",
+      MASTER_MUTED:"Master mute is active.",
+      CAPTURE_CALLBACK_NO_INPUT:"Driver pins exist, but callback reports no input. Copy Audio Report."};
+    return messages[active.audioPathCode]||"Device readback only; audio signal and speaker listening not certified.";
+  }
   function setupEditDraft(draft,inventory,change) {
     if(!draft||!inventory?.active||!change||
        typeof change!=="object")return draft;
@@ -452,6 +480,7 @@
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,
+    captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,
     nativeTransientReadbackPolicy});

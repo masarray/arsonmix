@@ -2100,10 +2100,10 @@
     if(devicePanel.dataset.outputSignature===signature)return;
     devicePanel.dataset.outputSignature=signature;
     const summary=devicePanel.querySelector("[data-audio-output-overview] .armix-output-heading");
-    if(summary)summary.textContent="OUTPUTS · "+patches.length+" physical patches";
+    if(summary)summary.textContent="ASIO EXTERNAL OUTPUTS · "+patches.length+" physical patches";
     view.replaceChildren();
     if(!patches.length){
-      view.textContent="No verified ASIO output pins · choose an ASIO device.";
+      view.textContent="No ASIO external patches. Windows Audio MAIN is a separate route.";
       return;
     }
     for(const patch of patches){
@@ -2206,7 +2206,7 @@
       next?.raw?.waitingAsioInputs>0?"INPUT TEMPORARILY UNAVAILABLE · AUTO-RECONNECT":
       d.outputArmed?(next.admitted?"OUTPUT ENABLED":
         "CHECK AUDIO CONNECTION"):
-      !d.enabledInputs?.length?(next.admitted?"CHOOSE AN INPUT":
+      !d.enabledInputs?.length?(next.admitted?"NO ACTIVE CAPTURE PINS · AUDIO I/O":
         "CHECK AUDIO I/O SETTINGS"):
       legacy()?.routeAccepted?"NATIVE INPUT ROUTED · MONITOR OFF":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
@@ -2422,6 +2422,11 @@
         <label>Input device<select data-audio-field="capture"></select></label>
         <label>Output / monitor device<select data-audio-field="playback"></select></label>
         <div class="armix-device-note" data-audio-active>Reading current audio device…</div>
+        <div class="armix-device-note" data-audio-signal-path role="status">Waiting for signal-path readback…</div>
+        <div class="armix-device-actions">
+          <button type="button" data-audio-copy-report>Copy Audio Report</button>
+          <button type="button" data-audio-enable-capture hidden>Enable capture pins</button>
+        </div>
         <div class="armix-device-note" data-audio-latency aria-label="Driver-reported audio latency">
           Latency · waiting for native device readback
         </div>
@@ -2508,6 +2513,18 @@
         deviceState=deviceVM.setupClearResult(deviceState);
         renderDevicePanel();
       });
+      devicePanel.querySelector("[data-audio-copy-report]").onclick=()=>{
+        backend.emitEvent("arMixAction",{action:"copyDiagnosticReport"});
+      };
+      devicePanel.querySelector("[data-audio-enable-capture]").onclick=()=>{
+        if(deviceBusy())return;
+        const next=deviceVM.captureRecoveryDraft(deviceInventory,deviceChoice);
+        if(!next)return;
+        deviceChoice=next;
+        deviceState=deviceVM.setupClearResult(deviceState);
+        renderDevicePanel();
+        sendDeviceApply(); // existing explicit Apply, ACK and readback gate
+      };
       devicePanel.querySelector("[data-audio-apply]").onclick=()=>{
         if(!deviceBusy())sendDeviceApply();
       };
@@ -2605,6 +2622,13 @@
         "AUDIO LATENCY · select an active device to read driver estimates";
       latencyText.title="Input and output are driver-reported. Buffer period is shown separately. Electrical round-trip requires physical loopback calibration.";
     }
+    const pathHint=devicePanel.querySelector("[data-audio-signal-path]");
+    pathHint.textContent=deviceVM.signalPathHint(active);
+    const captureRecovery=deviceVM.captureRecoveryDraft(deviceInventory,deviceChoice);
+    const recover=devicePanel.querySelector("[data-audio-enable-capture]");
+    recover.hidden=!captureRecovery;
+    recover.disabled=deviceBusy();
+    if(captureRecovery)recover.textContent="Enable capture IN "+captureRecovery.inputPins.map(p=>p+1).join(" + ");
     renderLoopbackPins(active);
     devicePanel.querySelector("[data-audio-apply]").disabled=
       deviceBusy()||!view.canApply;

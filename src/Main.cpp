@@ -3116,6 +3116,8 @@ private:
         o->setProperty("outputMuted",engine_.isOutputMuted());
         const auto live=engine_.status();
         o->setProperty("deviceGeneration",live.getProperty("deviceGeneration",0));
+        o->setProperty("audioPathCode",audioPathCode(live));
+        o->setProperty("operatorOutputMuted",operatorOutputMuted_);
         o->setProperty("mainOutputs",live.getProperty("dryRoutingLab",{}).getProperty("mainOutputs",{}));
         // DAW-style AUDIO SETUP telemetry: JUCE's driver-provided input/output
         // latency hints in SAMPLES, plus the host's current admitted DSP delay.
@@ -3562,6 +3564,39 @@ private:
             });
     }
 
+    // Read-only no-sound evidence. Called on the existing message-thread
+    // health tick and report request, never inside the audio callback.
+    juce::String lastAudioPathSignature_;
+    juce::String audioPathCode(const juce::var& live) const
+    {
+        if(!bool(live.getProperty("connected",false)))return "NO_DEVICE";
+        if(!bool(live.getProperty("directRouteAuthorized",false)))return "ROUTE_FENCE";
+        if(live.getProperty("inputDevice",{}).toString().isNotEmpty() &&
+           int(live.getProperty("deviceInputChannels",0))==0)return "CAPTURE_SELECTED_ZERO_ACTIVE_PINS";
+        if(int(live.getProperty("deviceOutputChannels",0))<2)return "OUTPUT_PINS_MISSING";
+        if(live.getProperty("productionRoutingState",{}).toString()!="NATIVE_ROUTE_ACCEPTED")
+            return "NATIVE_ROUTE_UNBOUND";
+        if(!bool(live.getProperty("monitor",false)))
+            return operatorOutputMuted_?"OPERATOR_OUTPUT_MUTED":"OUTPUT_NOT_ARMED";
+        if(bool(live.getProperty("masterMute",false)))return "MASTER_MUTED";
+        if(int(live.getProperty("deviceInputChannels",0))>0 &&
+           int(live.getProperty("callbackInputChannels",0))==0)return "CAPTURE_CALLBACK_NO_INPUT";
+        return "ROUTE_OPEN_CHECK_PCM";
+    }
+    void recordAudioPathTransition(const juce::var& live)
+    {
+        const auto code=audioPathCode(live);
+        const auto signature=code+" | generation="+live.getProperty("deviceGeneration",{}).toString()
+            +" | in="+live.getProperty("activeInputMaskHex",{}).toString()
+            +" | out="+live.getProperty("activeOutputMaskHex",{}).toString()
+            +" | callbackIN="+live.getProperty("callbackInputChannels",{}).toString()
+            +" | monitor="+live.getProperty("monitor",{}).toString()
+            +" | native="+live.getProperty("productionRoutingState",{}).toString();
+        if(signature==lastAudioPathSignature_)return;
+        lastAudioPathSignature_=signature;
+        diagnostics_.record("AUDIO_PATH_TRANSITION",signature);
+    }
+
     // Executed only on JUCE message thread on explicit user request.
     // No disk read, network request or audio-thread interaction is required.
     // Clipboard contents are private until the user explicitly pastes them.
@@ -3573,7 +3608,7 @@ private:
         auto* capture = engine_.diagnosticCaptureDevice();
         juce::String result;
         result.preallocateBytes (64 * 1024);
-        result << "ARSONMIX / SMART AUDIO DIAGNOSTIC REPORT v2\n";
+        result << "ARSONMIX / SMART AUDIO DIAGNOSTIC REPORT v3 (SIGNAL PATH)\n";
         result << "Timestamp: " << juce::Time::getCurrentTime().toISO8601 (true) << "\n";
         result << "Build: " << juce::JUCEApplication::getInstance()->getApplicationVersion()
                << " | Source HEAD: " << ARMIX_BUILD_SOURCE_SHA << "\n";
@@ -3605,6 +3640,28 @@ private:
                   "are scheduling heuristics only, not WASAPI/ASIO underrun evidence.\n";
         result << "No user audio samples, passwords or plugin vendor state are included.\n";
         result << "Check device names and local paths before sharing this report.\n\n";
+        result << "=== SIGNAL PATH / NO-SOUND TRIAGE ===\n";
+        result << "Observed stage: " << audioPathCode(status) << "\n";
+        result << "Output operator mute intent: " << (operatorOutputMuted_?"YES":"NO") << "\n";
+        result << "Native output arm preflight (read-only): "
+               << engine_.liveOutputArmFault() << "\n";
+        result << "Mixer session: " << mixerSessionStatus_ << " | " << mixerSessionError_ << "\n";
+        juce::AudioDeviceManager::AudioDeviceSetup requested;
+        engine_.devices().getAudioDeviceSetup(requested);
+        result << "Manager configured capture: " << requested.inputDeviceName
+               << " | Default pins: " << (requested.useDefaultInputChannels?"YES":"NO")
+               << " | Configured input mask(hex): " << requested.inputChannels.toString(16) << "\n";
+        result << "Manager configured playback: " << requested.outputDeviceName
+               << " | Configured output mask(hex): " << requested.outputChannels.toString(16) << "\n";
+        if(capture != nullptr) {
+            result << "Capture driver pin names: " << capture->getInputChannelNames().joinIntoString(" | ")
+                   << " | Active mask(hex): " << capture->getActiveInputChannels().toString(16) << "\n";
+        }
+        result << "PCM peak observations (linear, last callback; silence is not proof of failure): input="
+               << status.getProperty("inputPeak",{}).toString() << " postFX="
+               << status.getProperty("postFxPeak",{}).toString() << " output="
+               << status.getProperty("peak",{}).toString() << "\n";
+        result << "No automatic unmute, route rewrite or test tone is triggered by this report.\n\n";
         result << "=== DEVICE CAPABILITIES (backend-reported) ===\n";
         if (device != nullptr)
         {
@@ -3676,7 +3733,7 @@ private:
         result << diagnostics_.significantReport();
         result << "\n=== NEXT ACTION ===\n";
         result << "Copy/paste this report to the ArSonMix engineering thread. "
-                  "Add a short description of the audible crackle and its mode, if any.\n";
+                  "No additional symptom description is required for initial triage.\n";
         return result;
     }
 
@@ -9256,6 +9313,7 @@ private:
             const auto health = engine_.status();
             const auto evidence=makeEvidenceSample (health);
             crackleEvidence_.push (evidence);
+            recordAudioPathTransition(health);
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (health,evidence.memory), true));
         }
 
@@ -9453,6 +9511,8 @@ private:
         {
             const auto evidence=makeEvidenceSample (state);
             crackleEvidence_.push (evidence);
+            recordAudioPathTransition(state);
+            state.getDynamicObject()->setProperty("audioPathCode",audioPathCode(state));
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (state,evidence.memory), true));
             // UX-1: reuse THIS 1 Hz native status and memory sample, with no
             // extra timer, audio-thread probe or separate browser event.
