@@ -193,7 +193,6 @@ def main():
             assert apply.get_attribute('aria-busy')=='true'
             assert progress.locator('svg animate').count()==4
             assert progress.locator('svg').evaluate('(svg)=>svg.animationsPaused()')==(width==1920)
-            assert page.locator('[data-audio-close]').is_disabled()
             # The transient request lives in the ViewModel, not in a DOM attribute.
             apply_calls=[0]
             def wait_apply():
@@ -230,6 +229,16 @@ def main():
             assert request['config']['playbackDevice']=='Speakers'
             assert request['config']['enabledInputs']==[]
             assert request['config']['enabledOutputs']==[]
+            # Close dismisses the view, not the in-flight device transaction.
+            # Returning to Audio I/O shows the same pending operation.
+            close=page.locator('[data-audio-close]')
+            assert close.is_enabled()
+            close.click()
+            assert page.locator('.armix-audio-shade').is_hidden()
+            open_audio_io_command(page)
+            assert progress.is_visible() and apply.is_disabled() and capture_select.is_disabled()
+            assert page.evaluate("""()=>window.__events.filter(e=>
+                e.payload?.action==='audioDeviceApply').map(e=>e.payload.requestId)""")==[request['requestId']]
             out_active={**io_inventory['active'],'captureDevice':'',
                         'inputNames':[],'enabledInputs':[],'deviceGeneration':70,
                         'outputNames':['WDM L','WDM R','Realtek L','Realtek R']}
