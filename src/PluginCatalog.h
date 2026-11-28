@@ -102,6 +102,7 @@ public:
         result->setProperty ("done", completed_.load (std::memory_order_relaxed));
         result->setProperty ("total", total);
         result->setProperty ("found", found_.load (std::memory_order_relaxed));
+        if (!busy()) result->setProperty ("message", scanMessage_);
         {
             const juce::ScopedLock lock (progressLock_);
             result->setProperty ("current", current_);
@@ -118,9 +119,41 @@ public:
         if (! customFolders_.contains (p))
         {
             customFolders_.add (p);
-            save();
+            if (!save()) {
+                customFolders_.removeString(p);
+                scanMessage_ = "Could not save scan folder. Check Studio folder permissions.";
+                if (onChanged) onChanged();
+                return;
+            }
         }
         scan ({ p });
+    }
+
+    // CONTROL only. Removing a scan source does not uninstall a plugin,
+    // delete cached descriptors or invalidate an active processor lease.
+    bool removeDirectory(const juce::String& path)
+    {
+        if (busy()) return false;
+        const auto index = customFolders_.indexOf(path);
+        if (index < 0) return false;
+        customFolders_.remove(index);
+        if (!save()) {
+            customFolders_.insert(index,path);
+            return false;
+        }
+        scanMessage_ = "Scan folder removed. Installed effects are unchanged.";
+        if (onChanged) onChanged();
+        return true;
+    }
+
+    static juce::StringArray defaultScanFolders()
+    {
+        juce::VST3PluginFormat format;
+        juce::StringArray paths;
+        const auto defaults = format.getDefaultLocationsToSearch();
+        for (int i = 0; i < defaults.getNumPaths(); ++i)
+            paths.addIfNotAlreadyThere(defaults[i].getFullPathName());
+        return paths;
     }
 
     void scanFactoryIfPresent()
@@ -133,11 +166,7 @@ public:
 
     void scanDefaults()
     {
-        juce::VST3PluginFormat format;
-        juce::StringArray paths;
-        const auto defaults = format.getDefaultLocationsToSearch();
-        for (int i = 0; i < defaults.getNumPaths(); ++i)
-            paths.addIfNotAlreadyThere (defaults[i].getFullPathName());
+        auto paths = defaultScanFolders();
         for (const auto& p : customFolders_)
             paths.addIfNotAlreadyThere (p);
         scan (paths);
@@ -195,6 +224,18 @@ public:
         for (const auto& entry : entries_)
             list.add (entry.toVar());
         o->setProperty ("items", juce::var (list));
+        juce::Array<juce::var> scanPaths;
+        const auto defaults = defaultScanFolders();
+        const auto append = [&scanPaths](const juce::String& path, bool custom) {
+            auto row = std::make_unique<juce::DynamicObject>();
+            row->setProperty("path",path);
+            row->setProperty("custom",custom);
+            scanPaths.add(juce::var(row.release()));
+        };
+        for (const auto& path : defaults) append(path,false);
+        for (const auto& path : customFolders_)
+            if (!defaults.contains(path)) append(path,true);
+        o->setProperty("scanPaths",juce::var(scanPaths));
         o->setProperty ("scanning", busy());
         o->setProperty ("message", scanMessage_);
         o->setProperty ("count", static_cast<int> (entries_.size()));
@@ -472,7 +513,7 @@ private:
         scanMessage_ = "Ready - " + juce::String (entries_.size()) + " cached VST3 effects";
     }
 
-    void save()
+    bool save()
     {
         auto o = std::make_unique<juce::DynamicObject>();
         juce::Array<juce::var> list, verifiedFactory, folders;
@@ -497,7 +538,7 @@ private:
         juce::Array<juce::var> factoryFav;
         for (const auto& id : factoryFavorites_) factoryFav.add (id);
         o->setProperty ("factoryFavorites", juce::var (factoryFav));
-        dataFolder_.getChildFile ("plugin-catalog.json")
+        return dataFolder_.getChildFile ("plugin-catalog.json")
             .replaceWithText (juce::JSON::toString (juce::var (o.release()), true));
     }
 

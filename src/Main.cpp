@@ -8197,7 +8197,7 @@ private:
         // library/preset while a background snapshot is being copied.
         if ((studioBackupBusy_ || nativeShowBusy_) && (action.startsWith ("preset") ||
             action.startsWith ("import") || action.startsWith ("fx") ||
-            action == "addCatalog" || action == "addScanFolder" ||
+            action == "addCatalog" || action == "addScanFolder" || action == "removeScanFolder" ||
             action == "scanVst3" || action == "routingDryApply" ||
             action == "routingFxBypass" ||
             action == "routingNativeFxRackBypass" ||
@@ -11679,6 +11679,13 @@ private:
         else if (action == "addScanFolder")
         {
             chooseFolder();
+        }
+        else if (action == "removeScanFolder")
+        {
+            const auto path = args.getProperty("path",{});
+            if (!path.isString() || !catalog_.removeDirectory(path.toString()))
+                emitNotice("Could not remove scan folder. Finish scanning and check folder permissions.",true);
+            emitCatalog(); // authoritative readback even on rejection
         }
         else if (action == "importVst3")
         {

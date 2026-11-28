@@ -47,6 +47,21 @@ def verify_custom_input(page,out):
             for index,port in enumerate([0,2,3])])
     emit(page,"arMixConsoleSnapshot",state)
     inventory=open_verified_audio_io(page,state,"inputs")
+    # Actual assembled UI: tab content cannot resize the window or hide Close.
+    dialog=page.locator(".armix-audio-dialog")
+    initial=dialog.bounding_box()
+    for tab in ("device","pins","inputs","routing","performance","diagnostics","inputs"):
+        button=dialog.locator(f'button[data-audio-tab="{tab}"]')
+        if not button.is_enabled(): continue
+        button.click()
+        bounds=dialog.bounding_box()
+        close=dialog.locator("[data-audio-close]")
+        assert bounds and initial and abs(bounds["width"]-initial["width"])<1 and abs(bounds["height"]-initial["height"])<1,(tab,bounds,initial)
+        assert close.is_visible() and close.evaluate("e=>{const r=e.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.right<=innerWidth}"),tab
+        content=dialog.locator(".armix-audio-content")
+        content.evaluate("e=>e.scrollTop=e.scrollHeight")
+        assert close.evaluate("e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}"),tab
+        content.evaluate("e=>e.scrollTop=0")
     # Native store fixture: save does not mutate mixer; ACK alone does not
     # publish the preset. Only independent correlated disk readback does.
     inventory["namedPatches"]={"revision":0,"readOnly":False,"entries":[]}

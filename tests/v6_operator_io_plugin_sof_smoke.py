@@ -194,6 +194,17 @@ def exercise(browser,out,width,height,tap,close_reference):
     assert manager.locator("#pluginAddPath").is_visible()
     assert manager.locator("#pluginSearch").is_visible()
     assert manager.locator("#pluginNewPath,#pluginPaths,.plugin-disclaimer").count()==0
+    assert manager.locator("#pluginNativePaths").count()==1
+    emit(page,"arMixCatalog",{"items":[],"scanPaths":[{"path":"C:/System/VST3","custom":False},{"path":"D:/Custom VST3","custom":True}]})
+    paths=manager.locator("#pluginNativePaths")
+    assert paths.locator("li").count()==2
+    assert paths.get_by_text("System",exact=True).count()==1
+    paths.get_by_role("button",name="Remove scan folder D:/Custom VST3").click()
+    assert page.evaluate("()=>window.__events.some(e=>e.name==='arMixAction'&&e.payload.action==='removeScanFolder'&&e.payload.path==='D:/Custom VST3')")
+    assert paths.locator("li").count()==2,"request must not optimistically remove a folder"
+    emit(page,"arMixCatalog",{"items":[],"scanPaths":[{"path":"C:/System/VST3","custom":False}]})
+    assert paths.locator("li").count()==1
+    emit(page,"arMixCatalog",{"items":[{"id":f"fixture-{i}","name":f"Fixture VST {i:03d}","vendor":"Fixture Vendor","category":"Utility","format":"VST3"} for i in range(258)]})
     assert manager.locator("#pluginScanStatus").is_hidden()
     assert "Static browser preview" not in manager.inner_text()
     assert "Click a plugin to insert" not in manager.inner_text()

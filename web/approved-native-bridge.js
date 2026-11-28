@@ -4407,6 +4407,7 @@
   function selectAudioSetupPage(page){
     if(!devicePanel)return;
     const dialog=devicePanel.querySelector(".armix-audio-dialog");
+    if(dialog.dataset.audioTab!==page)dialog.querySelector(".armix-audio-content")?.scrollTo(0,0);
     dialog.dataset.audioTab=page;
     for(const item of devicePanel.querySelectorAll("button[data-audio-tab]"))
       item.setAttribute("aria-selected",String(item.dataset.audioTab===page));
@@ -4450,7 +4451,7 @@
         .armix-loopback-pins{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
         .armix-audio-dialog .armix-loopback-confirm{display:flex;align-items:flex-start;gap:6px;margin:8px 0}
         .armix-loopback-result{margin-top:6px}
-        .armix-audio-dialog{max-height:90vh;overflow:auto}
+        .armix-audio-dialog{box-sizing:border-box;max-height:calc(100dvh - 24px);overflow:hidden}
         .armix-output-overview{border-top:1px solid #345666;padding-top:8px}
         .armix-output-heading{color:#c5e1ed;font-weight:500}
         .armix-output-matrix{max-height:175px;overflow:auto;display:grid;gap:3px;margin:7px 0}
@@ -4470,12 +4471,18 @@
         .armix-audio-pins label{display:flex;align-items:center;gap:5px;font-size:11px}
         /* Audio setup uses one clearly separated Device / Output Routing
            workspace like a DAW preferences panel; no independent audio owner. */
-        .armix-audio-dialog{width:min(672px,96vw);padding:0;gap:0;
+        .armix-audio-dialog{width:min(1050px,calc(100vw - 24px));height:min(650px,calc(100dvh - 24px));
+          display:flex;flex-direction:column;padding:0;gap:0;min-width:0;
+          font:12px Inter,"Segoe UI",system-ui,sans-serif;
           background:#1a252d;border-color:#506778;border-radius:8px}
+        .armix-audio-top,.armix-audio-tabs,.armix-audio-footer{flex:none;min-width:0}
+        .armix-audio-content{flex:1;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+        .armix-audio-top [data-audio-close]{flex:none}
+        .armix-audio-dialog button:focus-visible,.armix-audio-dialog select:focus-visible{outline:2px solid #9de4fa;outline-offset:-2px}
         .armix-audio-top{padding:13px 18px;border-bottom:1px solid #344b59;
           background:#23323d;min-height:44px}
         .armix-audio-dialog h2{font-size:14px;font-weight:550}
-        .armix-audio-tabs{display:flex;gap:2px;padding:0 14px;
+        .armix-audio-tabs{display:flex;flex-wrap:wrap;gap:2px;padding:0 14px;
           border-bottom:1px solid #405866;background:#1b303b}
         .armix-audio-dialog .armix-audio-tab{background:transparent;border:0;
           border-bottom:2px solid transparent;border-radius:0;color:#a6c1cc;
@@ -4498,10 +4505,9 @@
         .armix-output-matrix{max-height:min(46vh,360px);gap:4px}
         .armix-output-row{grid-template-columns:92px minmax(0,1fr) auto;
           min-height:34px;padding:8px 10px}
-        .armix-audio-dialog[data-audio-tab="inputs"],
-        .armix-audio-dialog[data-audio-tab="routing"]{width:min(1050px,96vw)}
+        .armix-input-overview,.armix-output-overview,.armix-crosspoint-scroll{min-width:0;max-width:100%;box-sizing:border-box}
         .armix-input-overview{padding:15px 20px}
-        .armix-crosspoint-scroll{min-width:0}
+        .armix-crosspoint-scroll{min-width:0;overflow-x:auto}
          .armix-matrix-scroll{overflow:auto;max-height:43vh;border:1px solid #354b59;border-radius:5px;scrollbar-gutter:stable}
          .armix-patch-grid{border-collapse:separate;border-spacing:3px;font-size:11px;width:max-content;min-width:100%}
          .armix-patch-grid th{font-weight:500;max-width:76px;min-width:48px;vertical-align:bottom;background:#20313c;position:sticky;top:0;z-index:2;padding:5px 3px}
@@ -4600,6 +4606,7 @@
           <button type="button" class="armix-audio-tab" data-audio-tab="diagnostics"
             role="tab" aria-selected="false">Diagnostics</button>
         </nav>
+        <div class="armix-audio-content">
         <div class="armix-endpoint-fields">
           <label>Audio driver<select data-audio-field="backend"></select></label>
           <label>Recording / input<select data-audio-field="capture"></select></label>
@@ -4715,7 +4722,8 @@
           <button type="button" data-audio-main-pins hidden>Apply two selected playback pins as MAIN</button>
           <div class="armix-device-note">Select pins, then Apply. Additional pins are not automatically patched to mixer channels or outputs.</div>
         </section>
-        <div class="armix-device-actions">
+        </div>
+        <div class="armix-device-actions armix-audio-footer">
           <button type="button" data-audio-apply>Apply device</button>
           <button type="button" data-audio-remap hidden>Use same pins on this device</button>
         </div></section>`;
@@ -6528,9 +6536,38 @@
       }
       controller?.subscribe();
     });
+    // Scan-folder metadata is independent of the installed mixer rack.
+    // Render only native readback; no browser-local folder authority.
+    function paintNativeScanPaths(paths,scanning){
+      const list=document.getElementById("pluginNativePaths");
+      if(!list||!Array.isArray(paths))return;
+      list.replaceChildren();
+      for(const row of paths){
+        if(typeof row?.path!=="string"||!row.path||typeof row.custom!=="boolean")continue;
+        const item=document.createElement("li"),label=document.createElement("span");
+        label.textContent=row.path;label.title=row.path;item.append(label);
+        if(row.custom){
+          const remove=document.createElement("button");
+          remove.type="button";remove.textContent="Remove";remove.disabled=scanning;
+          remove.setAttribute("aria-label","Remove scan folder "+row.path);
+          remove.onclick=()=>{
+            if(nativeFxCatalogScanning)return;
+            backend.emitEvent("arMixAction",{action:"removeScanFolder",path:row.path});
+          };
+          item.append(remove);
+        }else{
+          const tag=document.createElement("small");tag.textContent="System";item.append(tag);
+        }
+        list.append(item);
+      }
+    }
     backend.addEventListener("arMixCatalog",catalog=>{
       if(!Array.isArray(catalog?.items))return;
       nativeFxCatalogScanning=catalog.scanning===true;
+      paintNativeScanPaths(catalog.scanPaths,nativeFxCatalogScanning);
+      for(const id of ["pluginScan","pluginImport","pluginAddPath"]){
+        const button=document.getElementById(id);if(button)button.disabled=nativeFxCatalogScanning;
+      }
       nativeCatalog=new Map(catalog.items.filter(p=>
         p&&typeof p.id==="string"&&p.id.length>0&&
         typeof p.name==="string"&&p.name.length>0).map(p=>[p.id,p]));
@@ -6543,13 +6580,22 @@
         status("Built-in FX ready · import VST3 to add more effects");
       if(hardware?.raw?.legacyM4)paintM4FxInstances(hardware.raw.legacyM4);
       const count=document.getElementById("pluginCount");
-      if(count)count.title="Native built-in DSP + verified VST3 catalog";
+      if(count)count.title="Available built-in effects and VST3 plugins";
     });
     backend.addEventListener("arMixScanProgress",progress=>{
       const statusEl=document.getElementById("pluginScanStatus");
-      if(statusEl)statusEl.textContent=progress?.active?
-        "Scanning real VST3… "+(progress.done||0)+"/"+(progress.total||"…"):
-        "Native VST3 scan finished; results from JUCE catalog";
+      if(!statusEl)return;
+      if(progress?.active){
+        statusEl.textContent=progress.total>0?
+          "Scanning plugins… "+(progress.done||0)+"/"+progress.total:"Finding plugins…";
+      }else{
+        const message=typeof progress?.message==="string"?progress.message:"";
+        // Native terminal errors remain actionable. Ignore idle progress
+        // on startup instead of announcing a scan that never occurred.
+        if(statusEl.dataset.scanning==="true"||message.includes("Could not")||message.includes("removed")||message.includes("incomplete")||message.includes("Choose a")||message.includes("No compatible"))
+          statusEl.textContent=message||"Plugin scan finished.";
+      }
+      statusEl.dataset.scanning=String(progress?.active===true);
     });
     backend.addEventListener("arMixOpenAudioIO",()=>openNativeAudioIO());
     backend.addEventListener("arMixFxRackFileResult",receipt=>{
@@ -7501,7 +7547,7 @@
       target.id==="pluginAddPath"?"addScanFolder":null;
     if(action){
       backend.emitEvent("arMixAction",{action});
-      status("PLUGIN MANAGER · "+action+" requested from native JUCE");
+      status(action==="scanVst3"?"Scanning plugins…":action==="importVst3"?"Choose a VST3 plugin":"Choose a scan folder");
       return;
     }
     if(target.id==="convertSelectedReverb"){
