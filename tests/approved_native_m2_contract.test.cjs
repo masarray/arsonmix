@@ -7089,6 +7089,11 @@ test("P0 WIRE LVL uses independent incoming sum scalar regardless of selected wi
     {...snapshot,graph:{...graph,edges:[]}}
   ])assert.equal(wireVM.channelSumLevelPlan(bad,true,"8",-12).kind,"UNAVAILABLE");
   assert.equal(wireVM.channelSumLevelPlan(snapshot,true,"7",3).kind,"UNAVAILABLE");
+  const offline={logical:true,readOnly:false,admitted:false,retained:true,graph};
+  assert.deepEqual(wireVM.channelSumLevelPlan(offline,true,"8",-12),
+    {kind:"READY",source:"8",levelDb:-12,wireCount:2});
+  assert.equal(wireVM.channelSumLevelPlan({...offline,readOnly:true},true,"8",-12).kind,"UNAVAILABLE");
+  assert.equal(wireVM.channelSumLevelPlan(offline,false,"8",-12).kind,"UNAVAILABLE");
   const bridge=read("web/approved-native-bridge.js");
   assert.match(bridge,/field==="wireChannelLevel"/);
   assert.match(bridge,/requestLiveWireSumGain\(t,db,event.type==="change"\)/);
@@ -7196,7 +7201,8 @@ test("P0 native receiver LVL re-admits only after projected device recovery",()=
  assert.match(bridge,/flags\.productionCallbackLive=next\.productLive;flags\.acceptedGraphConnected=true;\s*syncReceiverSumLevelAdmission\(next\)/);
  assert.match(bridge,/if\s*\(transientPlan\.discardRetained\)/);
  assert.match(bridge,/syncReceiverSumLevelAdmission\(next\);\s*stopDemo\(\)/);
- assert.match(bridge,/channelSumLevelPlan\(next,flags\.acceptedGraphConnected,/);
+ assert.match(bridge,/channelSumLevelPlan\(next,next\?\.logical===true\|\|flags\.acceptedGraphConnected,/);
+ assert.match(bridge,/syncReceiverSumLevelAdmission\(staged\)/);
  assert.match(cold,/['"]CREATE_CHANNEL['"], ['"]SET_FADER['"], ['"]SET_WIRE_SUM_GAIN['"]/);
  assert.match(cold,/\.wire-gain'\)\.is_disabled\(\)/);
  assert.match(cold,/\.wire-gain'\)\.is_enabled\(\)/);
@@ -7305,6 +7311,23 @@ test("P2 offline GAIN coalesces released values until durable ACK and exact read
  assert.equal(scope.tracks[0].trim,0);
 });
 
+test("P0 offline fader preview never enters a durable transaction on snapshot drain",()=>{
+ const src=read("web/approved-native-bridge.js");
+ const start=src.indexOf("  function streamFaderControl(");
+ const fn=src.slice(start,src.indexOf("  // A queued ChannelId target",start));
+ const queue=new Map(),visuals=new Map(),writes=[];
+ const ctx={logicalView:{},pendingNativeControl:queue,liveFaderVisualTargets:visuals,
+   lastNativeControlSent:new Map(),liveScalarReady:()=>true,controlKey:(p,t)=>p+":"+t.id,
+   performance:{now:()=>0},nativeEditIdentity:t=>({channelId:t.id,authority:"LOGICAL"}),
+   stripVM,flushLiveScalars:()=>{for(const [k,v] of queue){writes.push(v.value);queue.delete(k);}},
+   queueLiveControlFlush:()=>{throw Error("offline should not use live timer");}};
+ const f=require("node:vm").runInNewContext(fn+";streamFaderControl",ctx);
+ const track={id:"8"};
+ for(const value of [-20,-15,-10]){assert.equal(f("faderDb",track,value,false),true);ctx.flushLiveScalars();}
+ assert.deepEqual(writes,[]);assert.equal(visuals.get("faderDb:8").value,-10);
+ assert.equal(f("faderDb",track,-8,true),true);assert.deepEqual(writes,[-8]);
+ assert.match(src,/function resetUnconfirmedLogicalControls\(\)\{[\s\S]*?pendingNativeControl\.clear\(\);liveFaderVisualTargets\.clear\(\)/);
+});
 test("P0 output hold reasons distinguish emergency from safe project/recovery holds",()=>{
  assert.equal(protocol.outputHoldPresentation({operatorOutputMuted:false,outputHoldReason:"OPERATOR_STOP"}),null);
  const panic=protocol.outputHoldPresentation({operatorOutputMuted:true,outputHoldReason:"OPERATOR_STOP"});

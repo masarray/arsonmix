@@ -628,6 +628,11 @@
   }
   // Dedicated logical transactions never advertise physical PCM admission.
   // Native commits to .smix BEFORE ACK; the NEXT subscribe proves readback.
+  function resetUnconfirmedLogicalControls(){
+    latestLogicalInputGains.clear();latestLogicalSendGains.clear();
+    pendingNativeControl.clear();liveFaderVisualTargets.clear();lastNativeControlSent.clear();
+    lastPaintedSignature="";lastNativeTopologySignature="";
+  }
   function logicalIntent(operation,channelId,payload={}) {
     if(!logicalView || logicalView.readOnly || pendingLogical)
       return {ok:false,error:logicalView?.readOnly?"SAVED_MIXER_RECOVERY_REQUIRED":
@@ -659,8 +664,8 @@
     window.setTimeout(()=>{
       if(pendingLogical?.requestId!==requestId)return;
       pendingLogical=null;
-      latestLogicalInputGains.clear();latestLogicalSendGains.clear(); // unknown commit outcome: never blindly replay
-      lastPaintedSignature="";lastNativeTopologySignature="";
+      resetUnconfirmedLogicalControls(); // unknown commit outcome: never blindly replay
+      syncAddTrack();
       status("Mixer edit not confirmed · refreshing saved settings");
       controller?.subscribe();
     },8000);
@@ -765,17 +770,21 @@
   }
   function flushLogicalInputGains(){
     if(!logicalView||pendingLogical)return;
-    for(const [id,edit] of latestLogicalInputGains){
-      latestLogicalInputGains.delete(id);
-      const row=logicalGainRow(logicalView,id);
-      if(!row||edit.workspaceToken!==logicalView.workspaceToken)continue;
-      // Cancellation / release to the already saved value needs no disk write.
-      if(Math.abs(row.controls.inputGainDb-edit.db)<.001){
+    for(const [key,edit] of latestLogicalInputGains){
+      latestLogicalInputGains.delete(key);
+      const id=edit.id,operation=edit.operation;
+      if(edit.workspaceToken!==logicalView.workspaceToken)continue;
+      const row=operation==="SET_INPUT_GAIN"?logicalGainRow(logicalView,id):
+        wireVM.channelSumLevelPlan(logicalView,true,id,edit.db).kind==="READY"?
+          logicalView.graph.channels.find(ch=>ch.id===id):null;
+      if(!row)continue;
+      const accepted=operation==="SET_INPUT_GAIN"?row.controls.inputGainDb:row.controls.wireSumGainDb;
+      if(Math.abs(accepted-edit.db)<.001){
         const t=scope?.tracks?.find(t=>nativeIdFor(t)===id);
-        if(t)paintAcceptedInputGain(t,row.controls.inputGainDb);
+        if(t&&operation==="SET_INPUT_GAIN")paintAcceptedInputGain(t,accepted);
         continue;
       }
-      const result=logicalIntent("SET_INPUT_GAIN",id,{valueDb:edit.db});
+      const result=logicalIntent(operation,id,{valueDb:edit.db});
       if(result.ok)return; // one durable ACK + independent readback at a time
       latestLogicalInputGains.clear();latestLogicalSendGains.clear();
       lastPaintedSignature="";lastNativeTopologySignature="";
@@ -790,7 +799,7 @@
       const id=nativeIdFor(track);
       if(!logicalGainRow(logicalView,id))return false;
       if(!final)return true; // visual preview only; no intermediate .smix writes
-      latestLogicalInputGains.set(id,{db,workspaceToken:logicalView.workspaceToken});
+      latestLogicalInputGains.set("SET_INPUT_GAIN:"+id,{id,operation:"SET_INPUT_GAIN",db,workspaceToken:logicalView.workspaceToken});
       flushLogicalInputGains();
       return true;
     }
@@ -804,7 +813,15 @@
   }
   function requestLiveWireSumGain(track,db,final){
     if(!track||!Number.isFinite(db)||db< -60||db>6)return false;
-    if(logicalView) return final?intent("SET_WIRE_SUM_GAIN",track,{valueDb:db}):true;
+    if(logicalView){
+      const id=nativeIdFor(track);
+      if(wireVM.channelSumLevelPlan(logicalView,true,id,db).kind!=="READY")return false;
+      if(final){
+        latestLogicalInputGains.set("SET_WIRE_SUM_GAIN:"+id,{id,operation:"SET_WIRE_SUM_GAIN",db,workspaceToken:logicalView.workspaceToken});
+        flushLogicalInputGains();
+      }
+      return true;
+    }
     const id=nativeIdFor(track);
     if(!id||!deviceReady()||wireVM.channelSumLevelPlan(controller.state()?.current,
        flags.acceptedGraphConnected,id,db).kind!=="READY")return false;
@@ -1062,7 +1079,7 @@
     for(const input of inputs){
       const ui=Number(input.dataset.channelId),id=nativeByUiId.get(ui);
       const channel=next?.graph?.channels?.find(ch=>ch.id===id);
-      const plan=wireVM.channelSumLevelPlan(next,flags.acceptedGraphConnected,
+      const plan=wireVM.channelSumLevelPlan(next,next?.logical===true||flags.acceptedGraphConnected,
         id,channel?.controls?.wireSumGainDb);
       const ready=Number.isSafeInteger(ui)&&plan.kind==="READY";
       if(input.disabled===ready)input.disabled=!ready;
@@ -2364,7 +2381,7 @@
   const controlKey=(parameter,t)=>parameter+":"+(t?.kind==="master"?"main":t?.id);
   const channelIdScalarReady=(parameter,t)=>{
     const current=activeView();
-    if(logicalView)return !!nativeIdFor(t)&&
+    if(logicalView)return !logicalView.readOnly&&!!nativeIdFor(t)&&
       logicalView.graph.capabilities.supportedOps.includes(
         parameter==="faderDb"?"SET_FADER":"SET_PAN");
     return t?.kind!=="master" &&
@@ -2375,7 +2392,7 @@
         parameter==="faderDb"?"SET_FADER":"SET_PAN");
   };
   function liveScalarReady(parameter,t) {
-    if(t?.kind==="master")return logicalView?parameter==="masterGain":
+    if(t?.kind==="master")return logicalView?!logicalView.readOnly&&parameter==="masterGain":
       parameter==="masterGain"&&nativeMasterAuthority()!=="UNAVAILABLE";
     if(m4ControlIsOwner())return m4Verified()&&m4Index(t)>=0;
     return channelIdScalarReady(parameter,t);
@@ -2445,9 +2462,11 @@
     if(!Number.isFinite(value)||!liveScalarReady(parameter,t))return false;
     const key=controlKey(parameter,t),now=performance.now();
     const edit={parameter,t,value,...nativeEditIdentity(t)};
-    pendingNativeControl.set(key,edit); // coalesce: last writer always wins
     if(parameter==="faderDb"||parameter==="masterGain")
       liveFaderVisualTargets.set(key,edit);
+    // Snapshot drains must never commit a pointer preview to disk.
+    if(logicalView&&!final)return true;
+    pendingNativeControl.set(key,edit); // coalesce: last released writer wins
     // One pure selector preserves last-writer-wins, pointerup release and
     // offline .smix persistence, while ignoring old channel/epoch throttles.
     const flush=stripVM.scalarGestureFlushPlan({
@@ -4045,8 +4064,8 @@
     lastAudioRepairAt=now;
     nativeToast(context+" · Check Audio I/O");
     status("AUDIO NOT READY · choose and Apply the correct driver and endpoint");
-    window.setTimeout(()=>{
-      if(!deviceReady()&&!deviceBusy()&&(!devicePanel||devicePanel.hidden))
+    if(!logicalView)window.setTimeout(()=>{
+      if(!logicalView&&!deviceReady()&&!deviceBusy()&&(!devicePanel||devicePanel.hidden))
         openNativeAudioIO(); // explicit repair prompt, no automatic Apply
     },220);
     return true;
@@ -4055,7 +4074,7 @@
   // still offers explicit device repair, independently of first-run onboarding.
   document.addEventListener("pointerdown",event=>{
     const field=event.target.closest?.(".route-field");
-    if(field?.querySelector('select[data-field="input"]')&&!deviceReady())
+    if(field?.querySelector('select[data-field="input"]')&&!deviceReady()&&!logicalView)
       recommendAudioRepair("INPUT requires an audio device");
   },true);
   let loopbackSerial=0,loopbackId="",loopbackPending=false;
@@ -4371,6 +4390,8 @@
   }
   let audioIoReturnFocus=null,startupAudioSetupPresented=false;
   function maybePresentStartupAudioSetup(live){
+    if(!deviceVM.startupAudioSetupDecision(live,{presented:startupAudioSetupPresented,
+       busy:deviceBusy()}))return;
     const blocked=document.visibilityState==="hidden"||
       [...document.querySelectorAll('[aria-modal="true"],dialog[open]')].some(el=>
         !el.hidden&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=="hidden");
@@ -5960,7 +5981,7 @@
       const staged=readModel.view;
       let revealCreatedId=null,wireImpact=null;
       if(logicalView&&logicalView.workspaceToken!==offline.workspaceToken){
-        latestLogicalInputGains.clear();latestLogicalSendGains.clear();
+        resetUnconfirmedLogicalControls();
       }
       if(pendingLogical && pendingLogical.workspaceToken!==offline.workspaceToken)
         pendingLogical=null;
@@ -5972,8 +5993,8 @@
         // A later unrelated revision cannot prove THIS request's exact edit.
         if(!protocol.logicalReadbackProves(p,offline.graph)){
           pendingLogical=null;
-          latestLogicalInputGains.clear();latestLogicalSendGains.clear();
-          lastPaintedSignature="";lastNativeTopologySignature="";
+          resetUnconfirmedLogicalControls();
+          syncAddTrack();
           status("Mixer change not verified · refreshing saved session");
           controller?.subscribe();
           return;
@@ -6022,6 +6043,7 @@
       }
       document.documentElement.dataset.armixNativeRoster="logical";
       flags.acceptedGraphConnected=false;flags.productionCallbackLive=false;
+      syncReceiverSumLevelAdmission(staged);
       stopDemo();syncAddTrack(staged);
       if(pendingRetainedEditor?.acknowledged===true&&
          readModel.kind==="RETAINED_OFFLINE"&&
@@ -6452,8 +6474,8 @@
          protocol.decimal(ack.revision)===null ||
          BigInt(ack.revision)<=BigInt(pending.beforeRevision)){
         pendingLogical=null;
-        latestLogicalInputGains.clear();latestLogicalSendGains.clear();
-        lastPaintedSignature="";lastNativeTopologySignature="";
+        resetUnconfirmedLogicalControls();
+        syncAddTrack();
         status("Mixer edit rejected · previous saved settings retained");
         controller?.subscribe();
         return;
@@ -6917,7 +6939,7 @@
       if(field==="wireChannelLevel"){
         const db=Number(el.value);
         if(!requestLiveWireSumGain(t,db,event.type==="change")){
-          if(!deviceReady())recommendAudioRepair("WIRE SUM LVL unavailable");
+          if(!logicalView&&!deviceReady())recommendAudioRepair("WIRE SUM LVL unavailable");
           status("WIRE SUM LVL unavailable · verify receiver and Audio I/O");
           if(Number.isFinite(t.wireSumGainDb)){
             el.value=String(t.wireSumGainDb);scope?.paintWireKnob?.(el,t.wireSumGainDb);
@@ -7302,9 +7324,10 @@
       status("NATIVE: "+action+" is not an accepted ChannelId operation");return true;
     },
     canWireChannelLevel(uiChannelId){
-      if(logicalView&&!logicalView.readOnly){
-        const id=nativeByUiId.get(uiChannelId),g=logicalView.graph;
-        return g.capabilities.supportedOps.includes("SET_WIRE_SUM_GAIN")&&g.edges.some(e=>e.to===id&&e.enabled===true);
+      if(logicalView){
+        const id=nativeByUiId.get(uiChannelId);
+        const row=logicalView.graph.channels.find(ch=>ch.id===id);
+        return wireVM.channelSumLevelPlan(logicalView,true,id,row?.controls?.wireSumGainDb).kind==="READY";
       }
       const current=controller?.state()?.current;
       const id=nativeByUiId.get(uiChannelId);

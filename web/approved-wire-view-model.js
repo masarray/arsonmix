@@ -84,7 +84,8 @@
   // WIRE Inspector / Sends on Faders.
   function channelSumLevelPlan(snapshot,projected,channelId,levelDb) {
     const graph=snapshot?.graph;
-    if(projected!==true||snapshot?.admitted!==true||snapshot.retained===true||
+    const offline=snapshot?.logical===true&&snapshot.readOnly===false;
+    if(projected!==true||(!offline&&(snapshot?.admitted!==true||snapshot.retained===true))||
        !Array.isArray(graph?.capabilities?.supportedOps)||
        !graph.capabilities.supportedOps.includes("SET_WIRE_SUM_GAIN")||
        !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
