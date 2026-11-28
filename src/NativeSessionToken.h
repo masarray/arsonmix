@@ -3,12 +3,29 @@
 #include <juce_core/juce_core.h>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace armix::console {
-// The WebView JSON bridge may encode an integral Number as JUCE double.
+// ChannelId producers/commands use canonical positive decimal uint64 strings.
+// Legacy M4 WebView JSON may encode an integral Number as JUCE double.
 // Never reinterpret a fractional/NaN/oversized JavaScript value as a
 // different device epoch or graph revision. This is CONTROL thread only.
 inline std::uint64_t nativeSessionTokenValue(const juce::var& value) noexcept {
+    if(value.isString()) {
+        const auto text=value.toString();
+        auto p=text.getCharPointer();
+        if(p.isEmpty() || *p<'1' || *p>'9')return 0;
+        std::uint64_t n=0;
+        constexpr auto max=std::numeric_limits<std::uint64_t>::max();
+        while(!p.isEmpty()) {
+            const auto ch=p.getAndAdvance();
+            if(ch<'0'||ch>'9')return 0;
+            const auto digit=static_cast<std::uint64_t>(ch-'0');
+            if(n>(max-digit)/10)return 0;
+            n=n*10+digit;
+        }
+        return n;
+    }
     if(value.isInt() || value.isInt64()) {
         const auto n=static_cast<juce::int64>(value);
         return n>0 ? static_cast<std::uint64_t>(n) : 0;

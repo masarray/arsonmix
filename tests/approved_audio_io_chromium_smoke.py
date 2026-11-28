@@ -403,6 +403,8 @@ def verify_output_matrix_direct_patch(page,out):
     assert not page.get_by_role("dialog",name="External output").is_visible()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingExternalOutput').at(-1)")
     assert req and req["channelId"]==SOURCE and (req["left"],req["right"])==(2,3),req
+    assert req["deviceEpoch"]==state["device"]["epoch"] and isinstance(req["deviceEpoch"],str),req
+    assert req["revision"]==state["externalRevision"] and isinstance(req["revision"],str),req
     emit(page,"arMixExternalOutputAck",{"requestId":req["requestId"],"ok":True})
     state["externalOutputs"]=[{"channelId":SOURCE,"physicalLeft":2,"physicalRight":3,"status":"LIVE"}]
     emit(page,"arMixConsoleSnapshot",state)
