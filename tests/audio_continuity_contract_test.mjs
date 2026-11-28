@@ -379,3 +379,16 @@ test('silent removal is native-verified before avoiding secondary disarm; active
  assert.match(main,/target,true,false,true\)/);
  assert.match(main,/SILENT_REMOVE_CONTINUITY_NOT_VERIFIED/);
 });
+
+test('authorized secondary callback without a complete native tap emits clocked silence, not stale PCM',()=>{
+ const device=read('engine/device/LiveSecondaryOutputDevice.h');
+ const lab=read('src/LiveDryRoutingLab.h');
+ const bridge=read('engine/device/AdaptiveClockBridge.h');
+ assert.match(engine,/if\(outputGate\.secondary\)\s*\{[\s\S]*?if\(routed&&nativeMain\[0\]&&nativeMain\[1\]\)[\s\S]*?secondaryOutput_\.publish\(secondaryTicket,nullptr,nullptr,samples\)/);
+ assert.match(device,/if\(ticketValid\(ticket\)\)\s*\{\s*if\(left&&right\)/);
+ assert.match(device,/bridge_\.pushSilence\(frames\);\s*substitutedFrames_\.fetch_add/);
+ assert.match(device,/bridge_\.resetStopped\(\);[^\n]*\n\s*substitutedFrames_\.store\(0/);
+ assert.match(bridge,/int pushSilence\(int frames\)[\s\S]*?return push\(zero,1,frames\)/);
+ assert.match(lab,/const auto silence=\[&\]\(\) noexcept \{[\s\S]*?if\(actualOutputPair\)\*actualOutputPair=\{\{-1,-1\}\};[\s\S]*?if\(secondaryMainTap\)\*secondaryMainTap=\{\{nullptr,nullptr\}\};/);
+ assert.match(engine,/"secondaryOutputSubstitutedFrames"/);
+});

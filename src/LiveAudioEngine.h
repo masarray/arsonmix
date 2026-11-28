@@ -3539,6 +3539,7 @@ public:
         o->setProperty ("secondaryOutputUnderflow",static_cast<double>(streamFifo.underflowFrames));
         o->setProperty ("secondaryOutputPriming",static_cast<double>(streamFifo.primingFrames));
         o->setProperty ("secondaryOutputOverflow",static_cast<double>(streamFifo.overflowFrames));
+        o->setProperty ("secondaryOutputSubstitutedFrames",static_cast<double>(secondaryOutput_.substitutedFrames()));
         o->setProperty ("adaptiveClockActive", dual);
         o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
         o->setProperty ("adaptiveClockMode", dual ? "INDEPENDENT_WASAPI_RENDER_MASTER" : "DIRECT");
@@ -4604,8 +4605,15 @@ private:
             // PCM once. The virtual endpoint never invokes MIX/VST3 again.
             // Hardware monitor mute remains INDEPENDENT: streaming may run
             // while every physical output on the current device is silent.
-            if(routed && outputGate.secondary && nativeMain[0] && nativeMain[1])
-                secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples);
+            if(outputGate.secondary) {
+                if(routed&&nativeMain[0]&&nativeMain[1])
+                    secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples);
+                else
+                    // A verified callback interval still elapsed. A missing
+                    // native tap may not replay a stale block or starve ASRC.
+                    // The original generation ticket fences both paths.
+                    secondaryOutput_.publish(secondaryTicket,nullptr,nullptr,samples);
+            }
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};

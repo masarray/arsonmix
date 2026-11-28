@@ -4435,6 +4435,12 @@ public:
         // erase aliased JUCE/driver input PCM before the CH strips consume it.
         // Every failed/unpatched/MUTED route still uses this fail-silent gate.
         const auto silence=[&]() noexcept {
+            // Revoke callback-local receipts too, not just driver samples.
+            // A rejected native render must not appear as an applied pair
+            // or let the secondary producer consume a partial MAIN block.
+            if(actualOutputPair)*actualOutputPair={{-1,-1}};
+            if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
+            if(secondaryMainTap)*secondaryMainTap={{nullptr,nullptr}};
             nativePublisher_.revokePfl();
             nativeMeterEpoch_.store(0,std::memory_order_release);
             if(!outputs)return;

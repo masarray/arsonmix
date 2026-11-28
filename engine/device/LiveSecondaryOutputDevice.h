@@ -156,6 +156,7 @@ public:
             return false; // an explicit STOP superseded this re-arm
         }
         bridge_.resetStopped(); // ONLY when both callbacks are quiescent
+        substitutedFrames_.store(0,std::memory_order_relaxed);
         if(faulted())return false;
         ready_.store(true,std::memory_order_release);
         return admission_.authorize(ticket)&&!faulted();
@@ -175,11 +176,20 @@ public:
     }
     bool armed() const noexcept {return captureProducerTicket()!=0;}
     void publish(Ticket ticket,const float* left,const float* right,int frames) noexcept {
-        if(!ticket||frames<=0||!left||!right)return;
+        if(!ticket||frames<=0)return;
         publishers_.fetch_add(1);
         if(ticketValid(ticket)) {
-            const float* pair[2]={left,right};
-            bridge_.push(pair,2,frames);
+            if(left&&right) {
+                const float* pair[2]={left,right};
+                bridge_.push(pair,2,frames);
+            } else {
+                // Never send a partial or stale pair. Keep the authorized
+                // sink clock fed for this real primary callback interval.
+                // Count substitutions separately from actual FIFO loss.
+                bridge_.pushSilence(frames);
+                substitutedFrames_.fetch_add(static_cast<std::uint64_t>(frames),
+                                             std::memory_order_relaxed);
+            }
         }
         publishers_.fetch_sub(1);
     }
@@ -188,6 +198,9 @@ public:
     std::wstring endpointId() const {return endpointId_;} // CONTROL only, never exported to GUI
     double rate() const noexcept{return renderRate_;}
     double targetMs() const noexcept{return targetMs_;}
+    std::uint64_t substitutedFrames() const noexcept {
+        return ready()?substitutedFrames_.load(std::memory_order_relaxed):0;
+    }
     AdaptiveClockBridge::Status status() const noexcept {
         return ready()?bridge_.status():AdaptiveClockBridge::Status{};
     }
@@ -210,5 +223,6 @@ private:
     std::atomic<bool> ready_{false},fault_{false},expectedRunning_{false};
     SecondaryOutputGeneration admission_;
     std::atomic<unsigned> publishers_{0},consumers_{0};
+    std::atomic<std::uint64_t> substitutedFrames_{0};
 };
 } // namespace armix::device

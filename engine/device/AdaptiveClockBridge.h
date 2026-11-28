@@ -147,6 +147,15 @@ public:
         return accepted;
     }
 
+    // A known producer time interval with no permitted PCM is silence, not
+    // missing clock frames. Reuse the same bounded SPSC ingress; never reset
+    // FIR history or the consumer clock to represent an intentional gap.
+    int pushSilence(int frames) noexcept
+    {
+        const float* zero[]={nullptr};
+        return push(zero,1,frames);
+    }
+
     // Render-clock consumer, sample-accurate bounded streaming polyphase FIR.
     void pull (float* const* render, int outputChannels, int frames) noexcept
     {
