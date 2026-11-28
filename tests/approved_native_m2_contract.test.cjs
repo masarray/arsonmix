@@ -8803,3 +8803,23 @@ test("Split MAIN can return to verified ASIO after Windows STOP or endpoint loss
  assert.match(section,/ack->setProperty\("resumeSecondary",resumeSecondary\)/);
  assert.match(bridge,/extraPending\.resumeSecondary=ack\.resumeSecondary/);
 });
+
+
+test("PFL readback requires verified independent MONITOR pair and exact native callback receipt",()=>{
+ const p={available:true,deviceEpoch:"17",graphRevision:"19",eligible:["3"],requested:"3",applied:"3",settled:true};
+ const s={admitted:true,device:{epoch:"17",outputArmed:true,enabledOutputs:[0,1,2,3]},
+   graph:{revision:"19",channels:[{id:"3",role:"INPUT"},{id:"5",role:"MAIN"},{id:"8",role:"MONITOR"}]},
+   raw:{workspaceGeneration:"0",physicalBusOutputObserved:true,physicalMainOutputs:[0,1],physicalMonitorOutputs:[2,3],nativePfl:p}};
+ const view=(raw=s.raw,device=s.device)=>protocol.nativePflView({...s,raw,device});
+ assert.equal(view().applied,"3");
+ assert.equal(view({...s.raw,nativePfl:{...p,settled:false,applied:""}}).settled,false);
+ assert.equal(view({...s.raw,nativePfl:{...p,settled:false}}).available,false);
+ assert.equal(view({...s.raw,nativePfl:{...p,graphRevision:"18"}}).available,false);
+ assert.equal(view({...s.raw,physicalMonitorOutputs:[0,1]}).available,false);
+ assert.equal(view({...s.raw,physicalBusOutputObserved:false}).available,false);
+ assert.equal(view({...s.raw,nativePfl:{...p,eligible:["8"],requested:"8",applied:"8"}}).available,false);
+ assert.equal(view(s.raw,{...s.device,outputArmed:false}).available,false);
+ assert.equal(view({...s.raw,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1]},
+   {...s.device,enabledOutputs:[0,1]}).applied,"3");
+ assert.equal(protocol.nativePflView({...s,retained:true}).available,false);
+});

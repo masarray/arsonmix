@@ -987,6 +987,9 @@
       t.pan=ch.controls.pan*100;
       t.mute=ch.controls.mute;
       t.solo=ch.controls.solo;
+      const pfl=protocol.nativePflView(native);
+      t.nativePflAvailable=pfl.available&&pfl.eligible.includes(ch.id)&&!pendingNativePfl;
+      t.cue=t.nativePflApplied=pfl.available&&pfl.applied===ch.id;
       // Derive SOURCE/PRIMARY OUT labels only from the native installed readback.
       const labels=stripVM.readbackBindings({native,channel:ch,
         channels:accepted.channels,
@@ -5948,6 +5951,54 @@
       "Audio connection changed · old control gestures discarded":
       "Mixer authority changed · old control gestures discarded");
   }
+  let pendingNativePfl=null,nativePflSerial=0,nativePflObservation=0;
+  function paintNativePfl(next,observed=false){
+    if(observed)++nativePflObservation;
+    const view=protocol.nativePflView(flags.acceptedGraphConnected&&!logicalView&&hardware===next?next:null);
+    const p=pendingNativePfl;
+    if(p){
+      if(!view.available||view.epoch!==p.epoch||view.revision!==p.revision||
+         view.workspace!==p.workspace||next?.hardwareConfiguration!==p.config)
+        pendingNativePfl=null;
+      else if(p.acked&&nativePflObservation>p.observation&&view.settled&&
+              view.requested===(p.enabled?p.channelId:"")&&view.applied===(p.enabled?p.channelId:""))
+        pendingNativePfl=null;
+    }
+    for(const t of scope?.tracks||[]){
+      const id=nativeIdFor(t),available=view.available&&view.eligible.includes(id)&&!pendingNativePfl;
+      const on=view.available&&view.applied===id;
+      if(t.nativePflAvailable===available&&!!t.nativePflApplied===on)continue;
+      t.nativePflAvailable=available;t.cue=t.nativePflApplied=on;
+      const key=document.querySelector('.strip[data-id="'+t.id+'"] [data-action="cue"]');
+      if(key){
+        key.disabled=!available;key.setAttribute("aria-pressed",String(on));
+        key.title=available?"PFL · private pre-fader MONITOR audition":
+          "PFL unavailable · independent native MONITOR L/R not admitted";
+        key.setAttribute("aria-label",t.name+" "+key.title);
+      }
+    }
+  }
+  function requestNativePfl(t){
+    const next=controller?.state()?.current;
+    const view=protocol.nativePflView(flags.acceptedGraphConnected&&!logicalView&&hardware===next?next:null);
+    const id=nativeIdFor(t);
+    if(pendingNativePfl||!view.available||!view.eligible.includes(id)||deviceBusy()){
+      nativeToast("PFL requires a separate MONITOR L/R pair and prepared channel");
+      return true;
+    }
+    const requestId="pfl-"+(++nativePflSerial),enabled=view.requested!==id;
+    pendingNativePfl={requestId,channelId:id,enabled,epoch:view.epoch,revision:view.revision,
+      workspace:view.workspace,config:next.hardwareConfiguration,observation:nativePflObservation,acked:false};
+    paintNativePfl(next);
+    backend.emitEvent("arMixAction",{action:"routingNativePfl",requestId,channelId:id,enabled,
+      deviceEpoch:view.epoch,graphRevision:view.revision,workspaceGeneration:view.workspace});
+    window.setTimeout(()=>{
+      if(pendingNativePfl?.requestId!==requestId)return;
+      pendingNativePfl=null;paintNativePfl(hardware);
+      nativeToast("PFL response not verified · check current monitor routing");
+    },4000);
+    return true;
+  }
   function onNativeReadback(next,confirmed) {
     settleWireGainVisuals(next,confirmed);
     // This callback is invoked only by the existing schema-v6 reconciler.
@@ -6302,6 +6353,7 @@
           }
         }
         onNativeReadback(next,confirmed);
+        paintNativePfl(next,true);
         if(confirmed?.operation==="SET_WIRE_GAIN")paintSofGainReadback(next);
         const accepted=controller?.state()?.current;
         if(fxRackVM.nativeEditorAckResult(pendingFxEditorAck,null,accepted,{
@@ -6428,6 +6480,13 @@
       if(inventory.error)extraError=String(inventory.error);
       paintAdditionalOutput();
       paintPhysicalOutputs(hardware);
+    });
+    backend.addEventListener("arMixNativePflAck",ack=>{
+      if(!pendingNativePfl||ack?.requestId!==pendingNativePfl.requestId)return;
+      if(ack.ok!==true){
+        pendingNativePfl=null;nativeToast(ack?.error||"PFL rejected");
+      }else pendingNativePfl.acked=true;
+      paintNativePfl(hardware);
     });
     backend.addEventListener("arMixSecondaryOutputAck",ack=>{
       if(!extraPending||ack?.requestId!==extraPending.requestId||ack.action!==extraPending.action)return;
@@ -7361,13 +7420,7 @@
       if(action==="format"&&t?.kind==="audio"){
         requestProcessingFormat(t);return true;
       }
-      if(action==="cue"){
-        // PFL must use a separate physical pre-fader monitor bus; do not
-        // make a GUI-only toggle or mix a cue into audience MAIN.
-        nativeToast("PFL requires a separate MONITOR L/R pair; MAIN unchanged");
-        status("PFL not armed · independent physical MONITOR output required");
-        return true;
-      }
+      if(action==="cue")return requestNativePfl(t);
       if(action==="mute"||action==="solo"){
         dispatchControlCommand(action==="mute"?"SET_MUTE":"SET_SOLO",
           t,{value:!t[action],enabled:!t[action]});

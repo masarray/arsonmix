@@ -296,6 +296,29 @@
         raw.physicalBusSecondaryArmed===false&&d.outputArmed===false,
       epoch:d.epoch,revision:snapshot.graph.revision,rosterRevision:snapshot.graph.rosterRevision};
   }
+  // Transient PFL is a callback receipt, not a persisted WIRE or GUI solo.
+  function nativePflView(snapshot) {
+    const off={available:false,eligible:[],requested:"",applied:"",settled:false};
+    const raw=snapshot?.raw,p=raw?.nativePfl,d=snapshot?.device,g=snapshot?.graph;
+    if(!snapshot?.admitted||snapshot.retained||p?.available!==true||
+       raw?.physicalBusOutputObserved!==true||d?.outputArmed!==true||
+       p.deviceEpoch!==d.epoch||p.graphRevision!==g?.revision||
+       [d.epoch,g?.revision,raw.workspaceGeneration].some(v=>decimal(v)===null)||
+       typeof p.settled!=="boolean"||!Array.isArray(p.eligible)||!unique(p.eligible)||
+       !Array.isArray(raw.physicalMainOutputs)||!Array.isArray(raw.physicalMonitorOutputs)||
+       !Array.isArray(d.enabledOutputs))return off;
+    const main=raw.physicalMainOutputs,mon=raw.physicalMonitorOutputs;
+    if(mon.length!==2||!unique(mon)||!mon.every(n=>Number.isInteger(n)&&d.enabledOutputs.includes(n))||
+       (raw.secondaryMainOnly===true?main.length!==0:
+         main.length!==2||!unique([...main,...mon])||!main.every(n=>Number.isInteger(n)&&d.enabledOutputs.includes(n))))
+      return off;
+    const eligible=new Set(g.channels.filter(c=>["INPUT","GROUP","FX_RETURN"].includes(c.role)).map(c=>c.id));
+    if(!p.eligible.every(id=>decimal(id)!==null&&eligible.has(id))||
+       ![p.requested,p.applied].every(id=>id===""||p.eligible.includes(id))||
+       (p.applied!==""&&p.applied!==p.requested)||(!p.settled&&p.applied!==""))return off;
+    return {available:true,eligible:p.eligible,requested:p.requested,applied:p.applied,
+      settled:p.settled,epoch:d.epoch,revision:g.revision,workspace:raw.workspaceGeneration};
+  }
   // One secondary destination projection for the quick output controller and
   // unified workspace. No ACK, friendly name or browser draft proves PCM.
   function secondaryMixMode(snapshot,live) {
@@ -1285,5 +1308,5 @@
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
     logicalReadbackProves,firstSoundPlan,diagnoseFirstSound,outputHoldPresentation,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
-    operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,mainMonitorPreference,secondaryOutputView,secondaryOutputRow,secondaryOutputSettlement,monitorTimingView});
+    operatorMessage,physicalOutputOverview,nativePflView,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,mainMonitorPreference,secondaryOutputView,secondaryOutputRow,secondaryOutputSettlement,monitorTimingView});
 });

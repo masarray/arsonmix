@@ -846,12 +846,13 @@ function strip(t){
  // inspector (and the contextual SOF send panel), never this key row.
  const showPfl=t.kind!=='master';
  const isNative=!!window.__JUCE__?.backend;
- const pflTitle=isNative?'PFL unavailable · independent native MONITOR L/R not admitted':
+ const pflTitle=isNative?(t.nativePflAvailable?'PFL · private pre-fader MONITOR audition':
+   'PFL unavailable · independent native MONITOR L/R not admitted'):
    'PFL · visual audition request only; no monitoring audio in browser preview';
  code+='<div class="section switch-section mx-hw-row" role="group" data-tap-applicable="false" data-pfl-applicable="'+showPfl+'" aria-label="Channel Mute Solo'+(showPfl?' and PFL':'')+'">'
    +'<button type="button" class="mx-hw-key" data-hw-kind="mute" data-action="mute" title="Mute channel" aria-label="Mute channel" aria-pressed="'+t.mute+'"><span class="mx-hw-fallback">MUTE</span></button>'
    +'<button type="button" class="mx-hw-key" data-hw-kind="solo" data-action="solo" title="Solo channel" aria-label="Solo channel" aria-pressed="'+t.solo+'"><span class="mx-hw-fallback">SOLO</span></button>';
- if(showPfl)code+='<button type="button" class="mx-hw-key" data-hw-kind="pfl" data-action="cue" title="'+escapeHtml(pflTitle)+'" aria-label="'+escapeHtml(t.name+' '+pflTitle)+'" aria-pressed="'+Boolean(t.cue&&!isNative)+'" '+(isNative?'disabled':'')+'><span class="mx-hw-fallback">PFL</span></button>';
+ if(showPfl)code+='<button type="button" class="mx-hw-key" data-hw-kind="pfl" data-action="cue" title="'+escapeHtml(pflTitle)+'" aria-label="'+escapeHtml(t.name+' '+pflTitle)+'" aria-pressed="'+Boolean(isNative?t.nativePflApplied:t.cue)+'" '+(isNative&&!t.nativePflAvailable?'disabled':'')+'><span class="mx-hw-fallback">PFL</span></button>';
  code+='</div>';
   code+=sectionFader(t);
  code+='<div class="bottom-section"><div class="db-value">'+(sofEnabled&&isSofSource(t)?'S ': '')+formatDb(sofEnabled&&isSofSource(t)?getSofLevel(t):t.level)+'</div><div class="footer-label '+(t.kind==='master'?'master-label':t.kind==='bus'?'bus-label':'')+'"><span class="name" data-action="rename" title="Double-click to edit name, icon and color · F2" tabindex="0" role="button">'+escapeHtml(t.name)+'</span><span class="footer-icon" aria-hidden="true">'+escapeHtml(iconFor(t))+'</span><div class="color-strip"></div></div></div></article>';

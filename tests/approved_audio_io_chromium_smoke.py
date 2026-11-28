@@ -886,6 +886,7 @@ def verify_independent_output(page,out,legacy_empty=False):
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     state=snapshot()
+    state["workspaceGeneration"]="0"
     state["productionCallbackLive"]=True
     state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
         outputArmed=True,enabledOutputs=[0,1],
@@ -980,6 +981,26 @@ def verify_independent_output(page,out,legacy_empty=False):
     # with no injected telemetry, timeout, or synthetic native action.
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
+    pfl=page.locator('#tracks .strip[data-id="1"] [data-action="cue"]')
+    assert pfl.is_disabled()
+    state["nativePfl"]={"available":True,"deviceEpoch":state["device"]["epoch"],
+        "graphRevision":state["graph"]["revision"],"eligible":[SOURCE],
+        "requested":"","applied":"","settled":True}
+    emit(page,"arMixConsoleSnapshot",state)
+    assert pfl.is_enabled() and pfl.get_attribute("aria-pressed")=="false"
+    pfl.click()
+    cue=page.evaluate("()=>window.__actions.at(-1)")
+    assert cue["action"]=="routingNativePfl" and cue["channelId"]==SOURCE and cue["enabled"] is True
+    assert pfl.is_disabled() and pfl.get_attribute("aria-pressed")=="false"
+    emit(page,"arMixNativePflAck",{"requestId":cue["requestId"],"ok":True})
+    assert pfl.is_disabled() and pfl.get_attribute("aria-pressed")=="false"
+    state["nativePfl"].update(requested=SOURCE,settled=False)
+    emit(page,"arMixConsoleSnapshot",state)
+    assert pfl.is_disabled() and pfl.get_attribute("aria-pressed")=="false"
+    state["nativePfl"].update(applied=SOURCE,settled=True)
+    emit(page,"arMixConsoleSnapshot",state)
+    assert pfl.is_enabled() and pfl.get_attribute("aria-pressed")=="true"
+    before=page.evaluate("()=>window.__actions.length")
     select_ribbon_workflow(page,"mixer")
     # Reproduce a transient admission lock on the entry button while SOF is
     # active. The real visible Return to Main must still escape locally.
@@ -992,6 +1013,16 @@ def verify_independent_output(page,out,legacy_empty=False):
     page.locator("#sofToggle").evaluate("el=>el.disabled=false")
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
+    assert pfl.is_enabled() and pfl.get_attribute("aria-pressed")=="true"
+    pfl.click()
+    clear=page.evaluate("()=>window.__actions.at(-1)")
+    assert clear["action"]=="routingNativePfl" and clear["enabled"] is False
+    # Readback-before-ACK must also settle without sending another intent.
+    state["nativePfl"].update(requested="",applied="",settled=True)
+    emit(page,"arMixConsoleSnapshot",state)
+    assert pfl.is_disabled()
+    emit(page,"arMixNativePflAck",{"requestId":clear["requestId"],"ok":True})
+    assert pfl.is_enabled() and pfl.get_attribute("aria-pressed")=="false"
     mon.select_option("__armix_settings__")
     panel.get_by_role("button",name="Use same mix").click()
     same=page.evaluate("()=>window.__actions.at(-1)")
@@ -1006,6 +1037,7 @@ def verify_independent_output(page,out,legacy_empty=False):
     emit(page,"arMixStatus",live)
     assert panel.get_by_role("button",name="Separate headphone mix").is_enabled()
     assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
+    assert pfl.is_disabled() and pfl.get_attribute("aria-pressed")=="false"
     # Re-enter Separate: no starter transaction and no change to the authored send.
     panel.get_by_role("button",name="Separate headphone mix").click()
     again=page.evaluate("()=>window.__actions.at(-1)")

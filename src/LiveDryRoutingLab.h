@@ -1907,6 +1907,7 @@ public:
         out->setProperty("deviceEpoch",id(ep));out->setProperty("graphRevision",id(rev));
         out->setProperty("requested",id(state.requested.value));
         out->setProperty("applied",id(state.applied.value));
+        out->setProperty("settled",state.settled);
         juce::Array<juce::var> eligible;
         for(const auto& row:nativeAccepted_.graph.roster.channels())
             if(nativePublisher_.pflEligible(ep,rev,row.id))eligible.add(id(row.id.value));

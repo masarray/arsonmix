@@ -12,7 +12,7 @@ public:
         std::uint64_t epoch=0,revision=0,route=0;
         ChannelId channel{};
     };
-    struct State {ChannelId requested{},applied{};};
+    struct State {ChannelId requested{},applied{};bool settled=true;};
     bool select(Key key) noexcept {
         if(!key.epoch||!key.revision||!key.route||
            nextTicket_==std::numeric_limits<std::uint64_t>::max())return false;
@@ -30,7 +30,8 @@ public:
     State state(std::uint64_t epoch,std::uint64_t revision,std::uint64_t route) const noexcept {
         Request r;
         if(!read(r)||!matches(r.key,epoch,revision,route))return {};
-        return {r.key.channel,applied_.load()==r.ticket?r.key.channel:ChannelId{}};
+        const bool settled=applied_.load()==r.ticket;
+        return {r.key.channel,settled?r.key.channel:ChannelId{},settled};
     }
     DynamicPflCapture* begin(std::uint64_t epoch,std::uint64_t revision,
                             std::uint64_t route,int frames) noexcept {
