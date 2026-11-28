@@ -4456,6 +4456,9 @@ private:
             const bool nativePcm=dryRoutingLab_.channelIdPhysicalPcmActive();
             const bool mainOnlyMuted=nativePcm &&
                 masterMute_.load(std::memory_order_relaxed);
+            // Capture secondary permission BEFORE processing any PCM. A
+            // later stop/re-arm/reopen cannot accept this older block.
+            const auto secondaryTicket=secondaryOutput_.captureProducerTicket();
             const auto outputGate=armix::mixer::LiveOutputRouteGate::evaluate(
                 dryRoutingLab_.active(),
                 directFence_.permitted() && !independent_.active(),
@@ -4464,7 +4467,7 @@ private:
                 !masterMute_.load(std::memory_order_relaxed),
                 monitor_.load(std::memory_order_relaxed) &&
                     !topologyPublicationMute_.load(std::memory_order_acquire),
-                secondaryOutput_.armed(),nativePcm);
+                secondaryTicket!=0,nativePcm);
             const bool outputPermitted=outputGate.renderMain;
             // Native input PCM must remain observable even with safe output MUTE.
             // Scan bounded verified callback channels, no allocation or lock.
@@ -4587,7 +4590,7 @@ private:
             // Hardware monitor mute remains INDEPENDENT: streaming may run
             // while every physical output on the current device is silent.
             if(routed && outputGate.secondary && nativeMain[0] && nativeMain[1])
-                secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples);
+                secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples);
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};

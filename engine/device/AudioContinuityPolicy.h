@@ -53,6 +53,37 @@ private:
     std::atomic<bool> desired_{false}, interrupted_{false};
 };
 
+// Secondary output authorization is captured BEFORE a primary render, not
+// when its PCM eventually arrives at the independent sink. One CONTROL
+// writer prepares/authorizes; callback/device faults may revoke concurrently.
+// SC operations intentionally pair with the producer/consumer lease counts:
+// after revoke, a reader that still holds the old ticket cannot enter the
+// ring, and one that entered earlier must be visible to the reset owner.
+class SecondaryOutputGeneration final {
+public:
+    using Ticket=std::uint64_t;
+    Ticket beginRearm() noexcept {return generation_.fetch_add(1)+1;}
+    void revoke() noexcept {generation_.fetch_add(1);}
+    bool current(Ticket ticket) const noexcept {
+        return ticket!=0&&generation_.load()==ticket;
+    }
+    bool authorize(Ticket ticket) noexcept {
+        if(!current(ticket))return false;
+        authorized_.store(ticket);
+        return valid(ticket); // concurrent revoke wins, even after publication
+    }
+    bool valid(Ticket ticket) const noexcept {
+        return ticket!=0&&authorized_.load()==ticket&&generation_.load()==ticket;
+    }
+    Ticket capture() const noexcept {
+        const auto ticket=authorized_.load();
+        return current(ticket)?ticket:0;
+    }
+private:
+    static_assert(std::atomic<Ticket>::is_always_lock_free);
+    std::atomic<Ticket> generation_{1},authorized_{0};
+};
+
 // CONTROL-thread scheduler: event-driven, non-blocking and generation-safe.
 // A device can be absent for hours; never exhaust all attempts permanently,
 // spin on each 12Hz tick, or substitute the Windows default audio endpoint.

@@ -265,8 +265,8 @@ test('physical bus remap waits for AUDIO fade receipt with bounded CONTROL lease
  assert.match(p,/engine_\.beginPhysicalBusPatchFade\(\)/);
  assert.match(p,/Purpose::busOutputPatch/);
  assert.match(engine,/busPatchEnvelope_\.process\(outputs,outputChannels/);
- assert.ok(engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels')<engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)'));
- assert.ok(engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
+ assert.ok(engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels')<engine.indexOf('secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples)'));
+ assert.ok(engine.indexOf('secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
  // Service both transitions before the busy-lease return.
  assert.match(main,/servicePendingPhysicalBusPatch\(\);\s*serviceRackTransition\(\);\s*if\(deviceApply_\.busy\(\)\)return/);
 });
@@ -349,4 +349,19 @@ test('silent track and standalone AUX creation keep both output gates and existi
  assert.match(core,/renderOrder_\.size\(\)!=old\.renderOrder_\.size\(\)/);
  assert.match(core,/renderOrder_\[k\]=controlIndex_\.at\(id\.value\)/);
  assert.match(core,/channelScheduled\(n\.id\)\|\|n\.inputL>=0\|\|n\.playerDeckId/);
+});
+
+test('secondary PCM uses a render-start generation and reset waits for SC reader reservations',()=>{
+ const device=read('engine/device/LiveSecondaryOutputDevice.h');
+ const start=engine.indexOf('const auto secondaryTicket=secondaryOutput_.captureProducerTicket()');
+ const render=engine.indexOf('const bool routed=dryRoutingLab_.process(',start);
+ const publish=engine.indexOf('secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples)',render);
+ assert.ok(start>=0&&render>start&&publish>render);
+ assert.match(device,/const auto ticket=admission_\.beginRearm\(\)/);
+ assert.match(device,/while\(publishers_\.load\(\)!=0 \|\| consumers_\.load\(\)!=0\)/);
+ assert.match(device,/publishers_\.fetch_add\(1\);\s*if\(ticketValid\(ticket\)\)/);
+ assert.match(device,/consumers_\.fetch_add\(1\);\s*if\(owner\.ticketValid\(ticket\)\)/);
+ assert.match(device,/owner\.bridge_\.pull\(output,2,frames\);\s*[\s\S]*?if\(!owner\.ticketValid\(ticket\)\)/);
+ assert.match(device,/if\(owner\.expectedRunning_\.load/);
+ assert.match(policy,/authorized_\.load\(\)==ticket&&generation_\.load\(\)==ticket/);
 });
