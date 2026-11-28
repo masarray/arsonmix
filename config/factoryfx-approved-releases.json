@@ -1,4 +1,47 @@
 {
   "schemaVersion": 1,
-  "plugins": []
+  "plugins": [
+    {
+      "productId": "arson-eq",
+      "version": "0.1.0",
+      "releaseTag": "v0.1.0-m3.1-sc220-test",
+      "assetName": "ArSonEQ-v0.1.0-M3.1-Windows-x64-VST3.zip",
+      "artifactSha256": "08940083bdc40b64faedaacc647a91cdd95d707e8187084345824e9222978c06",
+      "sourceRepo": "masarray/arson-eq",
+      "sourceCommit": "1f9513d75faea306e06bafd7b68119d4b8bef276",
+      "vst3ClassId": "ABCDEF019182FAEB4172734E41724551",
+      "hostUniqueId": 2092322125,
+      "licenseReview": "approved",
+      "entitlementPolicy": "unrestricted",
+      "hostQualification": "passed"
+    },
+    {
+      "productId": "arson-comp",
+      "version": "0.2.0",
+      "releaseTag": "v0.2.0-sc220-vst3-test",
+      "assetName": "ArSonComp-v0.2.0-Windows-x64-VST3.zip",
+      "artifactSha256": "891131df39c07f4a9821db209ab19f9565d8c314ff035c58156ef6a728e46adc",
+      "sourceRepo": "masarray/arson-comp",
+      "sourceCommit": "b1a8452a238bb237215788ed71b19e6e9d6c5f68",
+      "vst3ClassId": "ABCDEF019182FAEB4172536E41724370",
+      "hostUniqueId": 2092068684,
+      "licenseReview": "approved",
+      "entitlementPolicy": "unrestricted",
+      "hostQualification": "passed"
+    },
+    {
+      "productId": "arson-verb",
+      "version": "1.0.1",
+      "releaseTag": "v1.0.1",
+      "assetName": "ArSonVerb-Windows-x64-VST3-v1.0.1.zip",
+      "artifactSha256": "41fdf9132f26e55a1671fe6f00409a5219199b245be4dbccb7615fc4dd7c3e7b",
+      "sourceRepo": "masarray/arsonverb",
+      "sourceCommit": "4c65f369348790bb6da7465deaffc2b3921fdeee",
+      "vst3ClassId": "ABCDEF019182FAEB4172737441727662",
+      "hostUniqueId": 2092335864,
+      "licenseReview": "approved",
+      "entitlementPolicy": "unrestricted",
+      "hostQualification": "passed"
+    }
+  ]
 }

@@ -167,6 +167,7 @@ try {
         throw "Installed EXE hash or storage mode differs from source"
     }
     Assert-InstalledFactoryFx "fresh-install"
+    $factoryFxScanCount=Test-InstalledFactoryFxScanner $installedExe
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
     foreach($item in @("gh.exe","verifier.json","LICENSE.txt","THIRD-PARTY-LICENSES.txt")){
@@ -297,6 +298,8 @@ try {
         certification="PREVIEW__INSTALLER_INTEGRITY_AND_UPDATE_TESTED";mode="PER_USER_NO_AUTOARM"
         updaterTest="WM_CLOSE_IN_PLACE_SHA256_AND_USER_DATA_PRESERVED"
         factoryFxInstall="VERIFIED_LOCK_AND_RESOURCE_HASHES_FRESH_AND_UPGRADE"
+        factoryFxInstalledScanCount=$factoryFxScanCount
+        factoryFxInstalledScan=if($factoryFxScanCount -gt 0){"NATIVE_INSTALLED_EXE_UID_VERSION_MATCH"}else{"NOT_APPLICABLE_CORE_ONLY"}
         guiStartup="NATIVE_WEBVIEW_READY_NO_AUDIO"
         guiStartupRunnerBuild=[Environment]::OSVersion.Version.Build
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out "INSTALLER_PROVENANCE.json") -Encoding UTF8
