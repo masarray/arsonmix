@@ -537,6 +537,34 @@
   // Retained requests prepare a control-only .smix FX editor after ACK, never
   // authorize PCM or silently rebind disconnected hardware.
   let pendingRetainedEditor=null,retainedEditorSerial=0;
+  let offlineEditButton=null;
+  function syncOfflineEditButton(next=hardware){
+    if(!offlineEditButton)return;
+    const available=next?.retained===true&&next.raw?.logicalMixer?.retainedOffline!==true;
+    offlineEditButton.hidden=!available;
+    offlineEditButton.disabled=!!pendingRetainedEditor;
+    const label=pendingRetainedEditor?"Preparing offline mixer…":"Edit mixer offline";
+    if(offlineEditButton.textContent!==label)offlineEditButton.textContent=label;
+  }
+  function requestRetainedWorkspace(){
+    const current=controller?.state()?.current;
+    if(logicalView||current?.retained!==true||pendingRetainedEditor)return false;
+    const epoch=current.device?.epoch,revision=current.graph?.revision;
+    if(protocol.decimal(epoch)===null||protocol.decimal(revision)===null)return false;
+    const requestId="retained-editor-"+(++retainedEditorSerial);
+    pendingRetainedEditor={requestId,epoch,revision,workspaceOnly:true,acknowledged:false};
+    syncOfflineEditButton();
+    status("Preparing offline mixer · audio output remains safe");
+    backend.emitEvent("arMixAction",{action:"retainedFxOfflineOpen",requestId,
+      workspaceOnly:true,deviceEpoch:epoch,graphRevision:revision});
+    window.setTimeout(()=>{
+      if(pendingRetainedEditor?.requestId!==requestId)return;
+      pendingRetainedEditor=null;syncOfflineEditButton();
+      nativeToast("Offline mixer preparation not confirmed · retry");
+      controller?.subscribe();
+    },10000);
+    return true;
+  }
   const logicalClientToken=Date.now().toString(36)+"-"+
     Math.random().toString(36).slice(2,10);
   // Human-facing presentation is isolated from native diagnostic state.
@@ -3906,6 +3934,7 @@
     const deviceOpen=Boolean(d?.backend && d.sampleRate>0 &&
       d.enabledOutputs.length>=2);
     syncEmergencyOutputControl(d);
+    syncOfflineEditButton(next);
     if(ribbonAudioSummary){
       const values=deviceOpen?[String(d.backend),String(d.playbackDevice||"Unknown output"),
         String(d.sampleRate/1000)+" kHz",String(d.bufferFrames)+" samples"]:["No device","—","—","—"];
@@ -5481,6 +5510,11 @@
       resumeOutputBtn.style.cssText="flex:none;margin:0 6px;padding:0 6px;border:1px solid #765b40;"+
         "border-radius:3px;background:#30271b;color:#f2d29d;font:inherit;cursor:pointer";
       footer.append(resumeOutputBtn);
+      offlineEditButton=item("button","native-resume-output","Edit mixer offline");
+      offlineEditButton.type="button";offlineEditButton.hidden=true;
+      offlineEditButton.style.cssText=resumeOutputBtn.style.cssText;
+      offlineEditButton.addEventListener("click",requestRetainedWorkspace);
+      footer.append(offlineEditButton);
     }
     hardwareNote=item("span","armix-device-note","Device not initialized");
     hardwareNote.style.whiteSpace="normal";
@@ -6050,6 +6084,10 @@
          pendingRetainedEditor.epoch===(offline.retainedCaptureDeviceEpoch??offline.retainedDeviceEpoch)&&
          pendingRetainedEditor.revision===(offline.retainedCaptureGraphRevision??offline.retainedGraphRevision)) {
         const held=pendingRetainedEditor;
+        if(held.workspaceOnly){
+          pendingRetainedEditor=null;
+          syncOfflineEditButton(next);
+        }else{
         const fx=staged.graph.channels.find(ch=>ch.id===held.channelId)
           ?.inserts?.[held.slot];
         const row=staged.graph.channels.find(ch=>ch.id===held.channelId);
@@ -6069,6 +6107,7 @@
         } else {
           pendingRetainedEditor=null;
           status("Retained FX slot changed before offline editor could open");
+        }
         }
       }
       for(const id of ["addBus","addFx","addGroupBus","addGroupSelected"]){
@@ -6093,6 +6132,7 @@
     logicalView=null;latestLogicalInputGains.clear();latestLogicalSendGains.clear();
     if(pendingRetainedEditor && readModel.kind!=="NEEDS_REMAP"){
       pendingRetainedEditor=null; // never follow a newly admitted PCM owner
+      syncOfflineEditButton(next);
     }
     if(pendingLogical) {
       pendingLogical=null;
@@ -6460,8 +6500,10 @@
       if(!pendingRetainedEditor||ack?.requestId!==pendingRetainedEditor.requestId)return;
       if(ack.ok!==true){
         const error=ack?.error||"Retained FX recovery rejected";
-        pendingRetainedEditor=null;
-        status("Offline FX unavailable · "+error);
+        const workspaceOnly=pendingRetainedEditor.workspaceOnly;
+        pendingRetainedEditor=null;syncOfflineEditButton();
+        status((workspaceOnly?"Offline mixer unavailable · ":"Offline FX unavailable · ")+error);
+        if(workspaceOnly)nativeToast(error);
         return;
       }
       pendingRetainedEditor.acknowledged=true;

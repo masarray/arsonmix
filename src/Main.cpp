@@ -3223,11 +3223,19 @@ private:
         const auto rawSlot=request.getProperty("slot",{});
         const int slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
         std::uint64_t channel=0,epoch=0,revision=0;
-        const bool identity=armix::console::approvedNativeId(
-                request.getProperty("channelId",{}),channel)&&
+        // An explicit workspace edit gesture can prepare the same detached
+        // document without pretending that a particular FX is being opened.
+        // It never bypasses retained identity, quiescence or recovery guards.
+        const auto workspaceOnlyValue=request.getProperty("workspaceOnly",false);
+        const bool workspaceOnly=workspaceOnlyValue.isBool()&&static_cast<bool>(workspaceOnlyValue);
+        const bool targetValid=workspaceOnly?
+            request.getProperty("channelId",{}).isVoid()&&rawSlot.isVoid()&&
+                request.getProperty("instanceId",{}).isVoid():
+            workspaceOnlyValue.isBool()&&armix::console::approvedNativeId(
+                request.getProperty("channelId",{}),channel)&&slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane;
+        const bool identity=targetValid&&
             armix::console::approvedNativeId(request.getProperty("deviceEpoch",{}),epoch)&&
             armix::console::approvedNativeId(request.getProperty("graphRevision",{}),revision)&&
-            slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane&&
             engine_.hasRetainedNativeSession()&&
             !engine_.isGraphSwitchPending()&&!deviceApply_.busy()&&
             !nativeShowBusy_&&!studioBackupBusy_&&
@@ -3239,8 +3247,8 @@ private:
             device.getProperty("epoch",{}).toString()==juce::String(epoch)&&
             graph.getProperty("revision",{}).toString()==juce::String(revision)&&
             engine_.retainedNativeEpoch()!=0;
-        bool sameInsert=false;
-        if(identity) {
+        bool sameInsert=workspaceOnly&&identity;
+        if(identity&&!workspaceOnly) {
             const auto rows=graph.getProperty("channels",{});
             if(const auto* list=rows.getArray())for(const auto& row:*list) {
                 if(row.getProperty("id",{}).toString()!=juce::String(channel))continue;
@@ -3257,7 +3265,9 @@ private:
                 }
             }
         }
-        if(!identity||!sameInsert)error="Retained FX instance changed; refresh the rack";
+        if(!identity||!sameInsert)error=workspaceOnly?
+            "Retained mixer changed; review and retry offline edit":
+            "Retained FX instance changed; refresh the rack";
         else if(retainedOfflineFxActive_ &&
                 (retainedOfflineOwnerEpoch_!=engine_.retainedNativeEpoch() ||
                  retainedOfflineEpoch_!=epoch || retainedOfflineRevision_!=revision)) {

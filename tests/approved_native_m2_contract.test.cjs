@@ -7311,6 +7311,29 @@ test("P2 offline GAIN coalesces released values until durable ACK and exact read
  assert.equal(scope.tracks[0].trim,0);
 });
 
+test("P0 detached mixer has an explicit workspace-only edit without FX target or PCM authority",()=>{
+ const src=read("web/approved-native-bridge.js"),host=read("src/Main.cpp");
+ const start=src.indexOf("  function requestRetainedWorkspace(");
+ const fn=src.slice(start,src.indexOf("  const logicalClientToken",start));
+ const sent=[],timers=[];
+ const ctx={logicalView:null,pendingRetainedEditor:null,retainedEditorSerial:0,protocol,
+   controller:{state:()=>({current:{retained:true,device:{epoch:"31"},graph:{revision:"9"}}}),subscribe(){}},
+   syncOfflineEditButton(){},status(){},nativeToast(){},
+   backend:{emitEvent:(name,payload)=>sent.push({name,payload})},
+   window:{setTimeout:fn=>timers.push(fn)}};
+ const request=require("node:vm").runInNewContext(fn+";requestRetainedWorkspace",ctx);
+ assert.equal(request(),true);assert.equal(request(),false);
+ assert.equal(sent.length,1);assert.equal(sent[0].payload.workspaceOnly,true);
+ assert.equal(sent[0].payload.deviceEpoch,"31");assert.equal(sent[0].payload.graphRevision,"9");
+ for(const key of ["channelId","slot","instanceId"])assert.equal(Object.hasOwn(sent[0].payload,key),false);
+ timers[0]();assert.equal(ctx.pendingRetainedEditor,null);assert.equal(request(),true);
+ assert.match(host,/const bool identity=targetValid&&/);
+ assert.match(host,/bool sameInsert=workspaceOnly&&identity/);
+ assert.match(host,/graph.getProperty\("bindingState",""\).toString\(\)=="NEEDS_REMAP"/);
+ assert.match(host,/startRetainedWorkspaceCapture\(epoch,revision,request.getProperty/);
+ assert.match(src,/offlineEditButton.addEventListener\("click",requestRetainedWorkspace\)/);
+ assert.match(src,/if\(held.workspaceOnly\)\{\s*pendingRetainedEditor=null;/);
+});
 test("P0 offline fader preview never enters a durable transaction on snapshot drain",()=>{
  const src=read("web/approved-native-bridge.js");
  const start=src.indexOf("  function streamFaderControl(");
