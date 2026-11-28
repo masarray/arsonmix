@@ -1,0 +1,637 @@
+ArSonMix FactoryFX — ArSonKuPik v0.5.26 Windows x64 VST3
+
+Owner written permission: https://github.com/masarray/askp-vst/issues/60#issuecomment-7230792441 (28 Nov 2026).
+Permission is limited to redistribution of the original unmodified VST3 within ArSonMix installer and portable. Original evaluation, read-only behavior and separate activation remain in force; no additional factory entitlement is granted.
+Public upstream distribution: https://github.com/masarray/vst-enhancer/releases/tag/v0.5.26
+Archive SHA256: e53287c871166bcdc945b4962d7a38b5c93ad6cb0c0fa0bdd02fa42ff47cd5b6
+The following original public v0.5.26 notices are reproduced verbatim as separate sections; their terms are not modified.
+
+========== EULA.txt ==========
+ARSONKUPIK VST ONE-YEAR FREE EVALUATION END USER LICENCE AGREEMENT
+
+Effective date: 18 July 2026
+Copyright (C) 2026 Tutorial Mas Ari / MasArray. All rights reserved.
+
+PLEASE READ THIS AGREEMENT BEFORE INSTALLING OR USING ARSONKUPIK. BY INSTALLING,
+COPYING, OR USING THE SOFTWARE, YOU ACCEPT THIS AGREEMENT. IF YOU DO NOT ACCEPT
+IT, DO NOT INSTALL OR USE THE SOFTWARE.
+
+1. PRODUCT AND LICENSOR
+
+"ArSonKuPik" or the "Software" means the ArSonKuPik Windows VST3 plug-in,
+Standalone application, presets, documentation, updates, and activation data
+supplied by Tutorial Mas Ari / MasArray (the "Licensor"). The Software is
+licensed, not sold.
+
+2. ONE-YEAR FREE EVALUATION LICENCE
+
+During the 365-day full-editing evaluation period measured from first launch on a
+computer, the Licensor grants you a limited, non-exclusive, non-transferable
+licence to install and use the Software on computers that you own or control for
+personal and commercial audio-production work. You retain all rights in audio
+and projects that you create with the Software.
+
+No payment card is required to start the evaluation. The Software does not
+collect payment and no automatic charge occurs when the evaluation period ends.
+
+3. END OF FULL-EDITING EVALUATION
+
+After the 365-day full-editing period, the Software is designed to enter
+project-safe read-only mode. Existing projects, saved parameter values, meters,
+automation playback, and audio processing may continue to operate. Preset
+selection and editing controls require a valid activation. The Software does not
+intentionally mute audio, inject noise, or force bypass solely because the
+full-editing evaluation has ended.
+
+Buying an activation is optional. A customer who does not purchase may continue
+to use the project-safe read-only behaviour described above.
+
+4. COMMERCIAL ACTIVATION
+
+A paid or otherwise authorised activation may restore editing according to the
+purchase terms offered by the Licensor and payment provider. For the v0.5
+one-year evaluation cohort, the published standard offer is an IDR 399,000
+perpetual editing activation with no subscription and no automatic renewal,
+before any tax or fee required at checkout. The complete current terms are
+supplied in PURCHASE_TERMS.txt and shown through the official product channel.
+
+One completed purchase authorises one active computer at a time. An activation
+is generated for a specific Computer Request ID and may not be shared, resold,
+forged, modified, published, or generated without authorisation. Reinstallation,
+repair, or replacement claims may require verification of the purchase email,
+payment history, previous activation history, and an abuse review. A replacement
+activation supersedes the prior active-computer record for that purchase.
+
+5. OWNERSHIP
+
+The Licensor retains all rights in the proprietary Software, including its DSP
+implementation, preset recipes, interface, artwork, activation system, and
+confidential source code. No ownership of the Software or source code is
+transferred to you. Third-party components remain owned by their respective
+copyright holders and are governed by their own licence terms.
+
+6. RESTRICTIONS
+
+Except where applicable law expressly overrides a restriction, you may not:
+
+- redistribute, upload, mirror, resell, rent, lease, sublicense, or commercially
+  provide copies of the Software;
+- include the Software in another software package, hardware product, download
+  bundle, or service without written permission;
+- reverse engineer, decompile, disassemble, bypass activation, extract protected
+  presets or code, or attempt to discover the private signing key;
+- remove or alter copyright, trademark, licence, or attribution notices; or
+- use the Software or activation system for unlawful activity.
+
+You may make reasonable backup copies solely for your own permitted use.
+
+7. UPDATES AND FUTURE RELEASES
+
+Evaluation software may change. Future versions, stable releases, upgrades,
+support plans, prices, and licence terms may differ. Installing a future version
+may require acceptance of updated terms. The Licensor is not required to provide
+updates, compatibility fixes, or support for every host, operating system, or
+hardware configuration.
+
+8. PRIVACY AND NETWORK USE
+
+No account or permanent internet connection is required for normal audio
+processing or for validating an already issued activation locally. The Software
+does not intentionally transmit audio, project data, preset state, activation
+codes, private signing material, or analytics.
+
+After a plug-in or Standalone editor is first opened, one delayed low-priority
+request may read public release metadata, no more than once in a 24-hour period
+on that computer. A manual update check may also be requested.
+
+When the customer chooses QRIS checkout or payment verification, the Software may
+send the customer name, receipt email, product ID, Computer Request ID, order ID,
+and an order-scoped capability token to the authorised MasArray licence service.
+Payment entry and QRIS processing take place through the payment provider. A
+pending order may be stored locally and checked again after the Software restarts
+so that a completed payment can be delivered without requiring payment twice.
+Hosting and payment providers may process ordinary connection and transaction
+data under their own privacy terms.
+
+9. THIRD-PARTY COMPONENTS
+
+ArSonKuPik is built with JUCE 8 under an active JUCE licence and includes
+components governed by separate terms, including the Steinberg VST3 SDK and
+Plus Jakarta Sans. The complete notices supplied with the Software are part of
+this distribution. Nothing in this Agreement grants rights to use JUCE or any
+third-party SDK separately from the Software.
+
+The DSP lineage includes material from the author's separately published
+MIT-licensed ArSonKuPik project. The required MIT notice is retained in the
+third-party notices. The separately published MIT project remains available
+under its original terms; this does not make the proprietary VST product open
+source.
+
+10. WARRANTY DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND TO THE MAXIMUM EXTENT PERMITTED BY LAW. EVALUATION SOFTWARE MAY CONTAIN
+DEFECTS OR BE INCOMPATIBLE WITH A DAW, PLUG-IN HOST, DRIVER, OR DEVICE. KEEP
+BACKUPS OF IMPORTANT PROJECTS AND VERIFY RESULTS BEFORE DELIVERY OR BROADCAST.
+
+11. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE LICENSOR SHALL NOT BE LIABLE FOR
+INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, LOST WORK,
+LOST DATA, LOST REVENUE, BUSINESS INTERRUPTION, OR LOSS OF OPPORTUNITY ARISING
+FROM USE OR INABILITY TO USE THE SOFTWARE. WHERE LIABILITY CANNOT LAWFULLY BE
+EXCLUDED, THE LICENSOR'S TOTAL LIABILITY SHALL NOT EXCEED THE AMOUNT YOU PAID
+FOR THE SOFTWARE. NOTHING IN THIS AGREEMENT EXCLUDES RIGHTS OR LIABILITY THAT
+CANNOT BE EXCLUDED UNDER APPLICABLE LAW.
+
+12. TERMINATION
+
+This licence terminates automatically if you materially breach this Agreement.
+On termination, you must stop using and delete distributed copies of the
+Software, except where applicable law provides otherwise. Sections concerning
+ownership, restrictions, warranty, liability, and third-party rights survive.
+
+13. GOVERNING LAW
+
+This Agreement is governed by the laws of the Republic of Indonesia, without
+regard to conflict-of-law principles, subject to mandatory consumer protections
+that apply in your place of residence.
+
+14. COMPLETE AGREEMENT
+
+This Agreement, PURCHASE_TERMS.txt, the applicable checkout and receipt terms,
+and the supplied third-party notices form the complete agreement for your use of
+this version of the Software. If any provision is unenforceable, the remaining
+provisions remain in effect.
+
+Product and support information:
+https://github.com/masarray/vst-enhancer
+
+
+========== THIRD_PARTY_NOTICES.txt ==========
+ARSONKUPIK THIRD-PARTY NOTICES
+
+Effective date: 17 July 2026
+Copyright (C) 2026 Tutorial Mas Ari / MasArray. All rights reserved in the
+ArSonKuPik product except for the third-party materials identified below.
+
+1. JUCE 8.0.14 FRAMEWORK
+
+ArSonKuPik is built with JUCE 8.0.14.
+Copyright (c) Raw Material Software Limited.
+
+The product owner uses JUCE under an active JUCE product licence. JUCE is
+licensed, not sold, by Raw Material Software Limited and is not relicensed to
+ArSonKuPik users under the ArSonKuPik EULA. The JUCE framework is not distributed
+as a standalone framework or SDK with ArSonKuPik.
+
+JUCE licence information:
+https://juce.com/legal/juce-8-licence/
+
+2. STEINBERG VST3 SDK
+
+ArSonKuPik proprietary builds use the MIT-licensed VST3 SDK bundled with the
+reviewed JUCE 8.0.14 dependency. The complete copyright notice and MIT licence
+are supplied in:
+
+  Steinberg-VST3-SDK-MIT.txt
+
+VST is a trademark of Steinberg Media Technologies GmbH. Use of the VST name,
+format, or trademark does not imply endorsement, sponsorship, or certification
+by Steinberg.
+
+3. PLUS JAKARTA SANS
+
+The product may embed Plus Jakarta Sans font software.
+Copyright 2020 The Plus Jakarta Sans Project Authors.
+
+The font is licensed under the SIL Open Font License, Version 1.1. The complete
+copyright notice and licence are supplied in:
+
+  Plus-Jakarta-Sans-OFL-1.1.txt
+
+4. ORIGINAL ARSONKUPIK MIT PROJECT
+
+Parts of the product lineage originate from the author's separately published
+masarray/ArSonkuPik project. That separately published project is licensed under
+the MIT License. The required notice is supplied in:
+
+  ArSonKuPik-MIT.txt
+
+The separate MIT repository remains governed by its original terms. Its
+publication does not place the proprietary ArSonKuPik VST product, DSP recipes,
+activation system, interface, or confidential source code under the MIT licence.
+
+5. PRODUCT ARTWORK, PRESETS, AND DOCUMENTATION
+
+Unless separately identified, ArSonKuPik product artwork, DSP recipes, presets,
+copy, documentation, screenshots, and interface design are proprietary materials
+of Tutorial Mas Ari / MasArray and are not covered by the third-party licences
+above.
+
+6. NO THIRD-PARTY ENDORSEMENT
+
+References to third-party products, formats, companies, or trademarks describe
+compatibility, components, or attribution only. They do not imply endorsement,
+partnership, sponsorship, or warranty by those third parties.
+
+This notice is informational and does not replace the complete licence texts
+supplied with the product.
+
+
+========== LICENSE.txt ==========
+ARSONKUPIK PUBLIC DISTRIBUTION REPOSITORY NOTICE
+
+Copyright (C) 2026 Tutorial Mas Ari / MasArray. All rights reserved.
+
+This public repository contains product documentation, website source, release
+metadata, screenshots, artwork, and distribution materials for the proprietary
+ArSonKuPik software. Publication on GitHub does not place these materials in the
+public domain and does not grant a general licence to republish, mirror, resell,
+sublicense, or create derivative commercial products from them, except for the
+limited rights necessarily granted under GitHub's applicable platform terms.
+
+Use of compiled ArSonKuPik binaries is governed by EULA.txt. Third-party
+materials identified in THIRD_PARTY_NOTICES.txt remain governed by their own
+licences.
+
+The separately published masarray/ArSonkuPik project remains available under its
+original MIT licence. Rights in that separate repository are not restricted by
+this notice.
+
+No ArSonKuPik proprietary DSP or application source code, private signing
+material, Key Activator, or customer activation records are distributed from
+this repository.
+
+
+========== PURCHASE_TERMS.txt ==========
+ARSONKUPIK COMMERCIAL ACTIVATION TERMS
+Document identifier: PURCHASE_TERMS
+
+Effective date: 18 July 2026
+Copyright (C) 2026 Tutorial Mas Ari / MasArray. All rights reserved.
+
+These terms supplement the ArSonKuPik End User Licence Agreement. The checkout,
+payment-provider, receipt, refund, and mandatory consumer-protection terms also
+apply to each purchase.
+
+1. ONE-YEAR FREE EVALUATION
+
+ArSonKuPik provides 365 days of full editing from first launch on each computer.
+No payment card is required to start the evaluation. No payment is collected and
+no automatic charge occurs when the evaluation ends.
+
+After the evaluation, existing projects, saved settings, meters, automation, and
+audio processing are designed to continue in project-safe read-only mode. A
+purchase is optional and is required only to restore editing controls.
+
+2. PRICE AND BILLING MODEL
+
+The standard local perpetual activation price for ArSonKuPik evaluation users is
+IDR 399,000 before any tax or fee required at checkout. The activation is a
+one-time purchase, not a subscription, and does not renew automatically.
+
+The final amount, applicable tax or fee, available payment methods, refund
+information, and merchant identity shown at checkout control the transaction. No
+sale is complete until the payment provider confirms payment.
+
+3. PERPETUAL EDITING ACTIVATION
+
+A valid purchase authorises perpetual editing for the purchased ArSonKuPik major
+product generation, subject to the EULA. This does not guarantee every future
+major version, operating system, DAW, feature, or compatibility update.
+
+4. ONE ACTIVE COMPUTER
+
+One purchase authorises one active computer at a time. Each activation is
+hardware-bound to one Computer Request ID. Activation codes may not be shared,
+resold, published, or used for a computer not owned or controlled by the
+customer.
+
+A replacement activation issued after reinstall, repair, or approved computer
+replacement supersedes the previous active-computer record. Because an already
+issued offline activation is validated locally, a computer that never reconnects
+may not receive a remote revocation immediately; however, it no longer qualifies
+for further activation, replacement, or support under the same purchase.
+
+5. DELIVERY AND PAYMENT RECOVERY
+
+The customer receives payment confirmation from the payment provider. The
+Computer Request ID is generated locally by ArSonKuPik and sent to the MasArray
+licence service only when the customer creates a checkout, checks a saved order,
+or requests activation.
+
+After verified payment, ArSonKuPik may receive and validate the signed activation
+automatically. The order reference is saved locally until activation succeeds or
+the payment provider confirms a terminal unpaid status. Closing the VST,
+Standalone application, DAW, or computer does not cancel a completed payment.
+When reopened, ArSonKuPik may check the saved order again and activate without
+copying an activation code. Manual offline activation remains available.
+
+If Windows is reinstalled or the saved order history is lost, the customer may
+claim the purchase using the verified purchase email and payment history. MasArray
+may also request the receipt, order reference, current Computer Request ID,
+previous activation history, and reasonable identity or abuse checks. A valid
+reinstall claim replaces the prior active-computer record; it does not create a
+second active-computer entitlement.
+
+The customer must not pay a second time solely because the licence service is
+temporarily unavailable. The payment reference and receipt should be retained for
+recovery. Normal audio processing does not require a permanent internet
+connection after activation.
+
+6. REFUNDS AND CHARGEBACKS
+
+Refund eligibility and procedure are presented at checkout or through the
+merchant support channel. A refund or chargeback may terminate the related
+commercial activation entitlement and block new activation, replacement, or
+reissue requests, to the extent permitted by applicable law.
+
+7. SUPPORT AND CONTACT
+
+Product, release, and support information:
+https://github.com/masarray/vst-enhancer
+
+These commercial terms may be updated for future purchases. Terms accepted and
+shown at the time of a completed purchase govern that transaction, subject to
+mandatory consumer rights that cannot lawfully be excluded.
+
+
+========== PRIVACY.txt ==========
+ARSONKUPIK PRIVACY NOTICE
+
+Effective date: 26 July 2026
+
+Tutorial Mas Ari / MasArray is responsible for personal information that it
+receives directly for ArSonKuPik activation, fulfilment, or support. GitHub and
+any future authorised Merchant of Record process information under their own
+privacy terms for the services they provide.
+
+1. LOCAL AUDIO PROCESSING
+
+ArSonKuPik is designed to process audio locally on the user's computer. It does
+not intentionally collect or transmit audio, DAW projects, parameter values,
+preset selections, licence codes, crash analytics, advertising identifiers, or
+usage analytics during normal operation.
+
+2. ACTIVATION AND OPTIONAL CHECKOUT
+
+The Computer Request ID is generated locally. It is not transmitted
+automatically. It is shared with the authorised MasArray licence service only
+when the user creates a checkout, checks a saved order, requests recovery, or
+chooses to copy and send it for manual activation.
+
+Optional hosted checkout may send the customer name, receipt email, product ID,
+Computer Request ID, order ID, and an order-scoped capability token. Payment
+entry and QRIS processing take place through the payment provider. A pending
+order may be stored locally until activation succeeds or the provider confirms
+a terminal unpaid state. Activation codes are validated locally and no
+permanent background licence connection is required for normal audio
+processing.
+
+3. UPDATE CHECKING
+
+After the first plug-in or Standalone editor is opened, ArSonKuPik may make one
+delayed low-priority request for public latest-release metadata. The automatic
+check waits at least 30 seconds and occurs no more than once per 24 hours on a
+computer. A manual check may bypass that cooldown.
+
+The hosting provider may receive ordinary connection information such as an IP
+address, timestamp, user agent, and request path under its own privacy terms.
+ArSonKuPik does not append audio, project, licence, preset, or analytics data to
+the request.
+
+4. WEBSITE LANGUAGE PREFERENCE
+
+The public website can store one item in the user's browser local storage:
+
+  askp-language = en or id
+
+This value remembers the selected English or Bahasa Indonesia interface. It is
+not an advertising identifier, is not sent by the website to Tutorial Mas Ari /
+MasArray, and can be removed by clearing site data in the browser. The website
+does not intentionally install advertising or analytics cookies.
+
+5. WEBSITE DOWNLOADS AND PUBLIC FEEDBACK
+
+Downloads, GitHub Pages visits, GitHub Releases, and GitHub Issues are provided
+through GitHub. GitHub may process connection, account, cookie, and activity data
+under its own privacy policy.
+
+Public issue reports are visible to other users. Do not post activation codes,
+Computer Request IDs, order records, proof-of-purchase documents, private project
+files, customer audio, personal information, or confidential material in a
+public issue. Security vulnerabilities must be reported privately according to
+SECURITY.md.
+
+6. EVALUATION DOWNLOAD AND PAYMENT SEPARATION
+
+No payment card is required for the 365-day evaluation, and ArSonKuPik cannot
+charge a user automatically when the evaluation ends. Availability of the public
+evaluation download is separate from availability of paid checkout.
+
+When a user voluntarily opens the in-app checkout, the authorised provider
+displays the seller identity, final amount and currency, applicable tax or fee,
+payment methods, refund information, privacy notice, and provider terms before
+payment.
+
+The payment provider processes payment details, fraud checks, refunds, receipts,
+and related data under its own terms and privacy notice. Tutorial Mas Ari /
+MasArray receives only information reasonably needed for fulfilment, recovery,
+support, and one-active-computer enforcement. ArSonKuPik, this website, and this
+public repository do not embed or store payment-card credentials.
+
+7. SUPPORT AND ACTIVATION RECORDS
+
+When a user voluntarily contacts the Licensor or requests activation, the
+supplied message, contact details, proof of purchase, Computer Request ID,
+activation history, and troubleshooting information may be retained as
+reasonably necessary to:
+
+- fulfil the purchase and administer the licence;
+- provide support and investigate reproducible defects;
+- prevent fraud, duplicated entitlement, and licence abuse;
+- maintain accounting and transaction records; and
+- comply with legal obligations or resolve disputes.
+
+Retention depends on the purpose, licence lifetime, support history, transaction
+status, and applicable legal or accounting requirements. Information that is no
+longer reasonably required should be deleted, anonymised, or securely archived
+as appropriate. Do not send audio, projects, identity documents, or other
+sensitive data unless specifically requested and a suitable private transfer
+method has been agreed.
+
+8. INTERNATIONAL SERVICE PROVIDERS
+
+GitHub and authorised checkout, licence-service, email, storage, or support
+providers may process
+connection or transaction information in countries other than the user's own,
+according to their infrastructure and privacy terms. Checkout must identify the
+provider and applicable privacy information before payment.
+
+9. NO AUTOMATED AUDIO PROFILING
+
+ArSonKuPik does not use uploaded audio, project content, or usage analytics to
+build advertising profiles or make automated decisions about users. A future
+Merchant of Record may perform payment-fraud checks under its own disclosed
+terms.
+
+10. USER REQUESTS AND CONTACT
+
+Product and privacy information:
+https://github.com/masarray/vst-enhancer
+
+For a non-confidential privacy question, use the official support information in
+SUPPORT.md. Do not place personal data in a public issue. If private contact is
+needed, request a private contact route without disclosing the underlying
+personal information publicly.
+
+11. CHANGES TO THIS NOTICE
+
+This notice may be updated when the product, hosting, sales, activation, or
+support process changes. Material changes will be published with a new effective
+date. Transaction-specific provider notices shown at checkout remain applicable
+to the corresponding transaction.
+
+
+========== Steinberg-VST3-SDK-MIT.txt ==========
+MIT License
+
+Copyright (c) 2025, Steinberg Media Technologies GmbH
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+========== Plus-Jakarta-Sans-OFL-1.1.txt ==========
+Copyright 2020 The Plus Jakarta Sans Project Authors (https://github.com/tokotype/PlusJakartaSans)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) shall not be
+used to promote, endorse or advertise any Modified Version, except
+to acknowledge the contribution(s) of the Copyright Holder(s) and the
+Author(s) or with their explicit written permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+
+========== ArSonKuPik-MIT.txt ==========
+MIT License
+
+Copyright (c) 2026 Tutorial Mas Ari
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+

@@ -38,7 +38,7 @@
       "assetBytes": 3752480,
       "sourceRepo": "masarray/arsonverb",
       "sourceCommit": "4c65f369348790bb6da7465deaffc2b3921fdeee",
-      "reviewNote": "AGPL-3.0-only; verify corresponding source and notices",
+      "reviewNote": "AGPL-3.0-only; exact upstream build 41247949265 and promotion 41248747185 traced to pinned binary; corresponding source and notices review pending",
       "upstreamEvidence": [
         {
           "name": "SHA256SUMS.txt",
@@ -59,7 +59,7 @@
       "assetBytes": 2662932,
       "sourceRepo": "masarray/askp-vst",
       "sourceCommit": "cc4efecd766b71b2a032d8c7fb2035b0d63f3ebb",
-      "reviewNote": "Proprietary; separate evaluation/activation; redistribution approval pending",
+      "reviewNote": "Proprietary; separate evaluation/activation; owner redistribution permission recorded in askp-vst#60 comment 7230792441; final third-party/host acceptance pending",
       "upstreamEvidence": [
         {
           "name": "SHA256SUMS-Windows.txt",
