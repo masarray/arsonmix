@@ -6531,17 +6531,30 @@ private:
         }
         // Only a CONTROL-approved installed session reaches the temporary
         // output capture fence; never move plugin capture to the audio callback.
-        const bool monitoring=engine_.isMonitorEnabled();
-        const auto epoch=engine_.dryRoutingLabEpoch();
-        // Temporary capture fence is NOT an operator MUTE. Keep the
-        // persisted MAIN desire intact across device loss during Save.
-        if(monitoring)engine_.setOutputMuted(true);
         armix::session::MixerSessionDocument doc;
         std::vector<armix::shows::BinaryState> states;
-        auto error=engine_.captureNativeMixerSession(doc,states);
-        if(monitoring && epoch==engine_.dryRoutingLabEpoch() &&
-           engine_.liveOutputArmFault(false).isEmpty())
-            engine_.setOutputMuted(false); // restore the existing operator intent
+        juce::String error;
+        {
+            // Only the capture interval owns the existing CONTROL lease.
+            // Vendor getStateInformation may pump a nested message loop.
+            // Explicit output STOP remains admitted by onAction.
+            auto lease=deviceApply_.tryBegin(
+                armix::device::NativeDeviceApplyCoordinator::Purpose::mixerSessionCapture);
+            if(!lease)return "Audio configuration is finishing. Retry Save.";
+            const bool monitoring=engine_.isMonitorEnabled();
+            const auto epoch=engine_.dryRoutingLabEpoch();
+            const auto revision=engine_.outputArmRevision();
+            if(monitoring)engine_.setOutputMuted(true);
+            error=engine_.captureNativeMixerSession(doc,states);
+            const auto mayResume=[&]{
+                return engine_.mayResumeCapturedMain(monitoring,epoch,revision,operatorOutputMuted_) &&
+                       !engine_.hasRuntimeFxFault();
+            };
+            if(mayResume() && engine_.liveOutputArmFault(false).isEmpty() && mayResume())
+                engine_.setOutputMuted(false); // restore only the still-valid operator intent
+            else if(monitoring && !operatorOutputMuted_ && engine_.wantsMainContinuation())
+                emitNotice("MAIN remains muted after session capture. Check Audio I/O before Resume.",true);
+        }
         if(error.isNotEmpty())return error;
         // The periodic autosave caller passes false because speakers must
         // be gated for snapshot capture. That does NOT mean the operator

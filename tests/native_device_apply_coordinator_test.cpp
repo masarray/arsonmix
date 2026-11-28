@@ -70,7 +70,8 @@ static void verifyBusyCommandReceipts() {
     for(auto purpose : {Coordinator::Purpose::explicitApply,Coordinator::Purpose::setupDialog,
             Coordinator::Purpose::asioRecovery,Coordinator::Purpose::wasapiRecovery,
             Coordinator::Purpose::offlineFxCapture,Coordinator::Purpose::secondaryOutput,
-            Coordinator::Purpose::busOutputPatch,Coordinator::Purpose::fxRackFile}){
+            Coordinator::Purpose::busOutputPatch,Coordinator::Purpose::fxRackFile,
+            Coordinator::Purpose::mixerSessionCapture}){
         auto lease=owner.tryBegin(purpose);
         assert(lease);
         const std::pair<const char*,const char*> expected[]={
