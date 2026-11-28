@@ -1456,6 +1456,10 @@ static void verifySameRevisionPhysicalSwitchReceipt() {
     assert(block.setPhysicalSource(a,1,-1,false,&first)&&first);
     assert(block.appliedPhysicalSourceTicket(a)==0);
     assert(render(16));assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(block.requestedPhysicalSourceTicket(a)==first);
+    std::uint64_t retry=0;
+    assert(block.setPhysicalSource(a,1,-1,false,&retry)&&retry==first);
+    assert(block.appliedPhysicalSourceTicket(a)==0);
     assert(l[0]>baseline&&l[15]>l[0]);
     assert(block.setPhysicalSource(a,0,-1,false,&second)&&second>first);
     assert(render(48));assert(block.appliedPhysicalSourceTicket(a)==0);
@@ -1464,7 +1468,16 @@ static void verifySameRevisionPhysicalSwitchReceipt() {
     assert(block.setPhysicalSource(a,1,-1,false,&third)&&third>second);
     assert(block.appliedPhysicalSourceTicket(a)==0);
     assert(render(64));assert(block.appliedPhysicalSourceTicket(a)==third);
+    assert(block.requestedPhysicalSourceTicket(a)==third);
+    assert(block.setPhysicalSource(a,1,-1,false,&retry)&&retry==third);
+    assert(block.appliedPhysicalSourceTicket(a)==third);
+    const float installed=l[63];
+    assert(render(64));
+    for(int i=0;i<64;++i)assert(near(l[i],installed));
+    assert(!block.setPhysicalSource(a,3,-1,false,&retry));
+    assert(block.requestedPhysicalSourceTicket(a)==third&&block.appliedPhysicalSourceTicket(a)==third);
     assert(l[63]>baseline);
+    std::puts("PHYSICAL_SOURCE_IDEMPOTENT_RETRY_PASS");
     std::puts("LIVE_PHYSICAL_SOURCE_RECEIPT_PCM_PASS same graph, 64-sample fade, A-B-A generations");
 }
 

@@ -303,6 +303,12 @@ test("G-MV23 ChannelId SOURCE queue skips an already installed choice after time
  assert.deepEqual(check(),{kind:"SKIP_INSTALLED",key:id},
    "native source already installed after first in-flight patch: do not send twice");
  assert.equal(q.size,1,"pure VM must not mutate the bridge-owned pending queue");
+ const retryView=(requested,applied)=>({...installed,graph:{...installed.graph,channels:[{
+   id,role:"INPUT",source:{sourceFormat:"MONO",portId:"in:0",
+     requestedSwitchTicket:requested,appliedSwitchTicket:applied}}]}});
+ assert.equal(check(retryView("2",undefined)).kind,"SEND","requested pin is not a completed crossfade");
+ assert.equal(check(retryView("2","1")).kind,"SEND","stale receipt cannot skip a retry");
+ assert.equal(check(retryView("2","2")).kind,"SKIP_INSTALLED","exact receipt is a true no-op");
  assert.deepEqual(check(installed,hardware,queued,{requestId:"source-native-7"}),
    {kind:"IDLE"},"never skip while a source request is still in flight");
  const firstRejected={...installed,graph:{...installed.graph,revision:"71",

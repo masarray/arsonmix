@@ -4147,6 +4147,10 @@ public:
                 } else physical->setProperty(
                     "sourceFormat",source.stereo?"STEREO":"MONO");
                 if(!retained&&source.kind==armix::mixer::DynamicSourceKind::physical) {
+                    const auto requested=nativePublisher_.requestedPhysicalSourceTicket(
+                        nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,ch.id);
+                    if(requested)physical->setProperty("requestedSwitchTicket",
+                        juce::String(std::to_string(requested)));
                     const auto ticket=nativePublisher_.appliedPhysicalSourceTicket(
                         nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,ch.id);
                     if(ticket)physical->setProperty("appliedSwitchTicket",

@@ -425,3 +425,14 @@ test('custom secondary programme preserves generation, whole callback, and indep
  assert.match(callback,/else if\(routed&&nativeMain\[0\]&&nativeMain\[1\]\)/);
  assert.match(main,/if\(engine_\.hasSecondaryProgrammeSource\(\)\)autoResume=false/);
 });
+
+
+test('physical source validation precedes secondary continuity and requested receipt is explicit',()=>{
+ const source=main.split('if(action=="routingNativeSourcePatch"){').at(-1).split('if(action=="routingNativeBusCreate"')[0];
+ assert.ok(source.indexOf('const bool validPins=')>=0&&source.indexOf('validPins&&')<source.indexOf('withNativeTopologyContinuity('));
+ assert.match(source,/verifiedPin\(left\)&&verifiedPin\(right\)/);
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ const lab=read('src/LiveDryRoutingLab.h');
+ assert.match(core,/if\(ticket\)\*ticket=previous>>32/);
+ assert.match(lab,/"requestedSwitchTicket"/);
+});

@@ -532,6 +532,11 @@ public:
         return p&&!p->inputMap&&p->graph->channelScheduled(id)&&
             p->graph->canSwitchPhysicalSource(id,inputL,inputR,stereo);
     }
+    std::uint64_t requestedPhysicalSourceTicket(std::uint64_t epoch,std::uint64_t revision,
+                                                ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&!p->inputMap?p->graph->requestedPhysicalSourceTicket(id):0;
+    }
     std::uint64_t appliedPhysicalSourceTicket(std::uint64_t epoch,std::uint64_t revision,
                                               ChannelId id) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);

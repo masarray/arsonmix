@@ -10296,11 +10296,25 @@ private:
             const auto mode=args.getProperty("mode",{}).toString();
             const auto deck=args.getProperty("deckId","").toString();
             const bool player=mode=="PLAYER";
-            const int left=static_cast<int>(args.getProperty("left",-1));
-            const int right=static_cast<int>(args.getProperty("right",-1));
+            const auto leftValue=args.getProperty("left",{}),rightValue=args.getProperty("right",{});
+            const int left=static_cast<int>(leftValue),right=static_cast<int>(rightValue);
             std::uint64_t id=0,ep=0,rev=0,roster=0;
             const auto snap=approvedNativeSnapshot();
             const auto graph=snap.getProperty("graph",{});
+            // Reject malformed/unavailable physical pins BEFORE the
+            // topology continuity owner can disarm a healthy secondary sink.
+            const auto enabledInputs=snap.getProperty("device",{}).getProperty("enabledInputs",{});
+            const auto verifiedPin=[&](int pin){
+                if(pin<0)return false;
+                if(const auto* pins=enabledInputs.getArray())
+                    for(const auto& value:*pins)
+                        if(value.isInt()&&static_cast<int>(value)==pin)return true;
+                return false;
+            };
+            const bool validPins=leftValue.isInt()&&rightValue.isInt()&&
+                ((mode=="NONE"||player)?left==-1&&right==-1:
+                    mode=="MONO"?verifiedPin(left)&&right==-1:
+                    mode=="STEREO"&&left!=right&&verifiedPin(left)&&verifiedPin(right));
             bool input=false;
             const auto channels=graph.getProperty("channels",{});
             if(const auto* rows=channels.getArray())
@@ -10315,9 +10329,8 @@ private:
                 armix::console::approvedNativeId(rawRev,rev)&&
                 armix::console::approvedNativeId(rawRoster,roster)&&
                 (mode=="NONE"||mode=="MONO"||mode=="STEREO"||player)&&
-                (mode!="NONE"||(left==-1&&right==-1))&&
-                (mode!="MONO"||right==-1)&&
-                (player?(left==-1&&right==-1&&deck=="1"):deck.isEmpty())&&
+                validPins&&
+                (player?deck=="1":deck.isEmpty())&&
                 input&&
                 snap.getProperty("device",{}).getProperty("epoch","").toString()==rawEp.toString()&&
                 graph.getProperty("revision","").toString()==rawRev.toString()&&

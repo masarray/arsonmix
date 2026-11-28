@@ -533,6 +533,12 @@
           source?.sourceFormat==="PLAYER"&&source?.playerDeckId==="1";
       if(!source||source.bindingState==="NEEDS_REMAP"||
          source.portId!=="in:"+choice.left)return false;
+      // Native intent is visible before the crossfade receipt. A queued
+      // repeat after timeout cannot be dropped as installed until both
+      // generations agree. Legacy snapshots without this field still work.
+      if(source.requestedSwitchTicket!==undefined&&
+         (!positiveCounter(source.requestedSwitchTicket)||
+          source.requestedSwitchTicket!==source.appliedSwitchTicket))return false;
       if(choice.mode==="MONO")
         return source.sourceFormat==="MONO"&&source.portIdRight===undefined;
       return source.sourceFormat==="STEREO"&&

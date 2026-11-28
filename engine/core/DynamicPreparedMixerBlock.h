@@ -383,12 +383,23 @@ public:
         if(!canSwitchPhysicalSource(id,inputL,inputR,stereo))return false;
         const auto i=controlIndex_.find(id.value)->second;
         const auto previous=sourceTargets_[i].load(std::memory_order_relaxed);
+        // Retrying the exact same target after a lost ACK/timeout must
+        // retain its receipt, not restart or supersede an in-flight ramp.
+        if((previous>>32)!=0&&static_cast<std::uint32_t>(previous)==packPhysical(inputL,inputR)){
+            if(ticket)*ticket=previous>>32;
+            return true;
+        }
         const auto sequence=(previous>>32)+1;
         if(sequence>0xffffffffull)return false;
         const auto target=(sequence<<32)|packPhysical(inputL,inputR);
         sourceTargets_[i].store(target,std::memory_order_release);
         if(ticket)*ticket=sequence;
         return true;
+    }
+    std::uint64_t requestedPhysicalSourceTicket(ChannelId id) const noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end()||lanes_[it->second].inputL<0)return 0;
+        return sourceTargets_[it->second].load(std::memory_order_acquire)>>32;
     }
     std::uint64_t appliedPhysicalSourceTicket(ChannelId id) const noexcept {
         const auto it=controlIndex_.find(id.value);
