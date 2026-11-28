@@ -8757,3 +8757,49 @@ test("Offline WIRE shares native translation, compacts a draft SEND and keeps ca
  assert.match(body,/logicalIntent\("WIRE_TRANSACTION",source,\{changes\}\)/);
  assert.doesNotMatch(body,/Math\.pow\(/);
 });
+
+
+test("Split MAIN can return to verified ASIO after Windows STOP or endpoint loss, without stream ARM",()=>{
+ const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[4,5]},
+   hardwareConfiguration:"hw",graph:{revision:"19",rosterRevision:"23"},
+   raw:{physicalBusOutputObserved:true,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[4,5],externalOutputs:[]}};
+ const off={secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputName:"",
+   dryRoutingLab:{secondaryMainOnly:true,dmxDeviceEpoch:"17"}};
+ const mode=protocol.secondaryMixMode(s,off);
+ assert.equal(mode.available,true);
+ assert.equal(mode.value.enabled,false);
+ assert.match(mode.reason,/Windows output stays off/);
+ assert.equal(protocol.secondaryMixMode(s,{...off,secondaryOutputFault:true}).available,true);
+ assert.equal(protocol.secondaryMixMode(s,{...off,secondaryOutputRecovering:true}).available,false);
+ const same={...s,raw:{...s.raw,secondaryMainOnly:false,physicalMainOutputs:[4,5],physicalMonitorOutputs:[]}};
+ assert.equal(protocol.secondaryMixMode(same,{...off,dryRoutingLab:{secondaryMainOnly:false}}).available,false);
+ assert.equal(protocol.secondaryMixMode({...s,raw:{...s.raw,physicalBusOutputObserved:false}},off).available,false);
+ assert.equal(protocol.secondaryMixMode({...s,raw:{...s.raw,externalOutputs:[{}]}},off).available,false);
+ const p={action:"secondaryOutputSplit",acked:true,statusSerial:8,epoch:"17",config:"hw",
+   endpoint:"",pair:[4,5],value:mode.value,ackRevision:"20",resumeSecondary:false};
+ const applied={...same,graph:{...same.graph,revision:"20"}};
+ const live={...off,dryRoutingLab:{secondaryMainOnly:false,dmxDeviceEpoch:"17",
+   nativeBus:{graphRevision:"20"},busOutputObserved:true}};
+ const settle=(q=p,h=applied,l=live,serial=9)=>protocol.secondaryOutputSettlement(q,h,l,serial);
+ assert.equal(settle(),"SETTLED");
+ assert.equal(settle({...p,acked:false}),"WAIT");
+ assert.equal(settle(p,applied,live,8),"WAIT");
+ assert.equal(settle({...p,resumeSecondary:undefined}),"WAIT");
+ assert.equal(settle({...p,resumeSecondary:true}),"WAIT");
+ assert.equal(settle(p,applied,{...live,secondaryOutputArmed:true}),"WAIT");
+ assert.equal(settle(p,applied,{...live,secondaryOutputRecovering:true}),"WAIT");
+ assert.equal(settle(p,{...applied,raw:{...applied.raw,physicalMainOutputs:[5,4]}}),"WAIT");
+ assert.equal(settle(p,{...applied,device:{...applied.device,epoch:"18"}}),"STALE");
+ assert.equal(settle(p,{...applied,graph:{revision:"21"}}),"STALE");
+ assert.equal(settle(p,applied,{...live,dryRoutingLab:{...live.dryRoutingLab,busOutputObserved:false}}),"WAIT");
+ assert.equal(settle({...p,value:{...p.value,enabled:true}}),"WAIT");
+ const native=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ const section=native.slice(native.indexOf('if(action=="secondaryOutputSplit"){'),native.indexOf('if(action=="secondaryOutputEnable" || action=="secondaryOutputConnect"'));
+ assert.match(section,/resumeSecondary=intent\.has_value\(\)/);
+ assert.match(section,/\(bool\(enable\)&&!intent\)/);
+ assert.match(section,/\(engine_\.secondaryArmed\(\)&&!intent\)/);
+ assert.match(section,/if\(intent\)pendingVendorStream_=PendingVendorStream/);
+ assert.match(section,/if\(resumeHardware\)requestAutomaticMain\(false\)/);
+ assert.match(section,/ack->setProperty\("resumeSecondary",resumeSecondary\)/);
+ assert.match(bridge,/extraPending\.resumeSecondary=ack\.resumeSecondary/);
+});

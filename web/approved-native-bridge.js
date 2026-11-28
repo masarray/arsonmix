@@ -4280,7 +4280,7 @@
     const modeButton=extraField("mix");
     modeButton.hidden=!mix.available&&!split;
     modeButton.disabled=busy||!allowed||!mix.available;
-    const modeLabel=split?"Use same mix":"Separate headphone mix";
+    const modeLabel=split?(armed?"Use same mix":"Restore MAIN to ASIO"):"Separate headphone mix";
     if(modeButton.textContent!==modeLabel)modeButton.textContent=modeLabel;
     const starter=protocol.secondaryMonitorStarter(hardware,live);
     const starterButton=extraField("starter");
@@ -4299,7 +4299,7 @@
     const surfaceState=extraPending?"PENDING":destination.state;
     if(extraControls.dataset.state!==surfaceState)extraControls.dataset.state=surfaceState;
     const message=extraPending?(extraPending.action==="secondaryOutputSplit"?
-      (extraPending.acked?"Restoring audio in the selected mix…":"Changing headphone mix…"):
+      (extraPending.acked?"Verifying output mapping…":"Changing headphone mix…"):
       (extraPending.acked?"Verifying output…":"Applying output…")):
       busy?"Audio device is applying…":!live?"Reading audio engine status…":
       recovering?"Reconnecting to "+name+" automatically · Disconnect to stop":
@@ -6451,8 +6451,11 @@
         // Native memory already reflects the newest choice while disk
         // persistence retries. Refresh actual inventory, never paint old MON.
         if(ack.preferenceSaved===false)refreshAdditionalInventory(true);
-        if(extraPending.action==="secondaryMonitorStarter"||extraPending.action==="secondaryOutputSplit")
+        if(extraPending.action==="secondaryMonitorStarter"||extraPending.action==="secondaryOutputSplit"){
           extraPending.ackRevision=String(ack.graphRevision||"");
+          if(extraPending.action==="secondaryOutputSplit")
+            extraPending.resumeSecondary=ack.resumeSecondary;
+        }
         // A fresh status and accepted graph may already have arrived while
         // the native action was in flight; never wait for an extra packet.
         settleAdditionalOutput(extraLive);

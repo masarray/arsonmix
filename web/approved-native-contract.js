@@ -318,9 +318,16 @@
       return {available:false,split,reason:"Existing monitor mapping is preserved."};
     // Returning to Same mix unbinds the physical MONITOR sink but preserves
     // the authored native graph/FX. It is not a destructive channel edit.
-    if(!output.armed||output.recovering)
-      return {available:false,split,reason:"Enable the additional output first."};
-    return {available:true,split,reason:split?"Secondary playback receives MAIN. Your headphone routing and effects are preserved when you select Same mix.":"Separate mix creates a quiet PRE-fader starter on first use; existing headphone settings are preserved.",
+    // An armed secondary is mandatory only when MAIN moves to Windows.
+    // An explicit return to the verified ASIO pair remains possible after
+    // STOP/fault, without authorizing a new Windows playback stream.
+    if(output.recovering||(!split&&!output.armed))
+      return {available:false,split,reason:output.recovering?
+        "Disconnect the recovering output first.":"Enable the additional output first."};
+    return {available:true,split,reason:split?
+      (output.armed?"Secondary playback receives MAIN. Your headphone routing and effects are preserved when you select Same mix.":
+        "Restore MAIN to the verified ASIO pair. Headphone routing and effects are preserved; Windows output stays off."):
+      "Separate mix creates a quiet PRE-fader starter on first use; existing headphone settings are preserved.",
       value:{enabled:!split,smart:true,deviceEpoch:d.epoch,graphRevision:g.revision,rosterRevision:g.rosterRevision}};
   }
   function secondaryMonitorStarter(snapshot,live) {
@@ -356,8 +363,13 @@
       if(cmp(snapshot.graph.revision,p.ackRevision)>0)return "STALE";
       if(reportedEpoch!==p.epoch||snapshot.graph.revision!==p.ackRevision||
          route?.nativeBus?.graphRevision!==p.ackRevision||
-         route?.busOutputObserved!==true||!armed||live.secondaryOutputName!==p.endpoint)
+         route?.busOutputObserved!==true)
         return "WAIT";
+      const returningWithoutStream=p.action==="secondaryOutputSplit"&&
+        p.value.enabled===false&&p.resumeSecondary===false;
+      if(returningWithoutStream){
+        if(live.secondaryOutputArmed!==false||live.secondaryOutputRecovering===true)return "WAIT";
+      }else if(!armed||live.secondaryOutputName!==p.endpoint)return "WAIT";
       if(p.action==="secondaryMonitorStarter"){
         const monitor=snapshot.graph.channels.find(c=>c.role==="MONITOR");
         return snapshot.raw?.secondaryMainOnly===true&&route.secondaryMainOnly===true&&monitor&&

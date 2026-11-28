@@ -11476,6 +11476,7 @@ private:
         }
         if(action=="secondaryOutputSplit"){
             juce::String error;
+            bool resumeSecondary=true; // legacy explicit mode keeps its existing receipt
             std::uint64_t ep=0,rev=0,roster=0;
             const auto enable=value.getProperty("enabled",{});
             if(studioBackupBusy_||nativeShowBusy_||!enable.isBool()||
@@ -11493,11 +11494,18 @@ private:
                 const bool resumeHardware=!operatorOutputMuted_&&
                     (engine_.isMonitorEnabled()||engine_.wantsMainContinuation());
                 const auto generation=secondaryRetry_.generation();
-                if(!lease||!intent||!engine_.secondarySourceMatches(*intent)||
+                // Entering split requires a verified armed Windows MAIN sink.
+                // Returning MAIN to the original ASIO pair does not: STOP,
+                // unplug or endpoint failure must not trap the operator in split.
+                resumeSecondary=intent.has_value();
+                if(!lease||(bool(enable)&&!intent)||
+                   (engine_.secondaryArmed()&&!intent)||
+                   (intent&&!engine_.secondarySourceMatches(*intent))||
                    !engine_.secondaryResumeReady()||ep!=engine_.dryRoutingLabEpoch()||
                    !engine_.nativeTopologyMatches(ep,rev)||mixerSessionWorker_.busy()||
                    pendingSecondaryStop_||pendingRetainedFxCapture_||retainedOfflineFxActive_||engine_.hasRuntimeFxFault())
-                    error="Connect the additional output and wait for audio to be ready";
+                    error=bool(enable)?"Connect the additional output and wait for audio to be ready":
+                        "Wait for the verified ASIO route before restoring MAIN";
                 else {
                     autoMainEpoch_=0;
                     engine_.setMonitorEnabled(false);
@@ -11510,7 +11518,7 @@ private:
                         // On rejection restore the prior verified route; on
                         // success wait for callback mapping before restoring.
                         if(resumeHardware)requestAutomaticMain(false);
-                        pendingVendorStream_=PendingVendorStream{*intent,ep,acceptedRevision,
+                        if(intent)pendingVendorStream_=PendingVendorStream{*intent,ep,acceptedRevision,
                             static_cast<std::uint64_t>(monotonicMilliseconds()+5000),
                             resumeHardware};
                     }
@@ -11524,6 +11532,7 @@ private:
             ack->setProperty("error",error);
             const auto route=engine_.status().getProperty("dryRoutingLab",{});
             ack->setProperty("secondaryMainOnly",route.getProperty("secondaryMainOnly",false));
+            ack->setProperty("resumeSecondary",resumeSecondary);
             // The ACK names the exact installed PCM revision, not controlRevision.
             // The GUI separately verifies the observed physical mapping and endpoint.
             ack->setProperty("graphRevision",route.getProperty("nativeBus",{}).getProperty("graphRevision",{}));
