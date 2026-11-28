@@ -2934,6 +2934,20 @@ public:
             fail.error="NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION";return fail;
         }
     }
+    bool canSwitchNativePhysicalSource(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t roster,armix::mixer::ChannelId id,int l,int r,bool stereo) const noexcept {
+        return dormantAdditionReady(ep,rev)&&
+            dryRoutingLab_.livePhysicalSourceCandidate(ep,rev,roster,id,l,r,stereo).has_value();
+    }
+    LiveDryRoutingLab::NativeBusResult switchNativePhysicalSource(std::uint64_t ep,
+            std::uint64_t rev,std::uint64_t roster,armix::mixer::ChannelId id,
+            int l,int r,bool stereo) noexcept {
+        if(!canSwitchNativePhysicalSource(ep,rev,roster,id,l,r,stereo)){
+            LiveDryRoutingLab::NativeBusResult rejected;
+            rejected.error="NATIVE_LIVE_SOURCE_NOT_VERIFIED";return rejected;
+        }
+        return dryRoutingLab_.switchNativePhysicalSource(ep,rev,roster,id,l,r,stereo);
+    }
     LiveDryRoutingLab::NativeBusResult patchNativeInputSource(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId channel,

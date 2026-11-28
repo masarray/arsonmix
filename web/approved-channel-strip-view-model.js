@@ -653,11 +653,17 @@
 
   function sourceAckResult(pending,ack,authority) {
     if(!pending||ack?.requestId!==pending.requestId)return "IGNORE";
-    if(authority==="CHANNEL_ID")
-      return ack?.ok===true && ack?.channelId===pending.id &&
-        decimalId(pending.beforeRevision) && decimalId(ack.graphRevision) &&
-        BigInt(ack.graphRevision)>BigInt(pending.beforeRevision)?
-          "ACKED":"REJECTED";
+    if(authority==="CHANNEL_ID") {
+      if(ack?.ok!==true||ack.channelId!==pending.id||
+         !decimalId(pending.beforeRevision)||!decimalId(ack.graphRevision))return "REJECTED";
+      if(ack.sourceSwitchTicket!==undefined)
+        return decimalId(ack.sourceSwitchTicket)&&ack.sourceSwitchTicket!=="0"&&
+          BigInt(ack.sourceSwitchTicket)<=0xffffffffn&&
+          ack.graphRevision===pending.beforeRevision&&
+          ["MONO","STEREO"].includes(pending.choice?.mode)?"ACKED":"REJECTED";
+      return BigInt(ack.graphRevision)>BigInt(pending.beforeRevision)?
+        "ACKED":"REJECTED";
+    }
     if(authority!=="M4")return "REJECTED";
     const next=ack?.state||{},row=next.acceptedRoute?.channels?.[pending.channel];
     return ack?.ok===true&&next.ready===true&&
@@ -681,7 +687,9 @@
     if(verdict!=="ACKED")return {kind:"REJECTED",pending:null};
     const ackRevision=authority==="CHANNEL_ID"?
       ack.graphRevision:String(ack.state.revision);
-    return {kind:"ACKED",pending:{...pending,acked:true,ackRevision}};
+    const sourceSwitchTicket=authority==="CHANNEL_ID"?ack.sourceSwitchTicket:undefined;
+    return {kind:"ACKED",pending:{...pending,acked:true,ackRevision,
+      ...(sourceSwitchTicket!==undefined?{sourceSwitchTicket}:{})}};
   }
 
   // MV-7: ACK is only a correlated native acceptance, never proof of PCM.
@@ -700,6 +708,15 @@
     const channel=rows.find(row=>row?.id===pending.id);
     if(!channel||channel.role!=="INPUT")return "STALE";
     if(pending.acked!==true)return "PENDING_ACK";
+    if(pending.sourceSwitchTicket!==undefined) {
+      if(!decimalId(pending.sourceSwitchTicket)||pending.sourceSwitchTicket==="0"||
+         BigInt(pending.sourceSwitchTicket)>0xffffffffn||
+         pending.ackRevision!==pending.beforeRevision)return "PENDING";
+      if(next.graph.revision!==pending.ackRevision)return "STALE";
+      return channel.source?.appliedSwitchTicket===pending.sourceSwitchTicket&&
+        installedSourceMatches("CHANNEL_ID",pending.choice,channel.source)?
+        "CONFIRMED":"PENDING";
+    }
     if(!decimalId(pending.beforeRevision)||
        !decimalId(pending.ackRevision)||
        !decimalId(next.graph.revision)||

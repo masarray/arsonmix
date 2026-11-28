@@ -8823,3 +8823,22 @@ test("PFL readback requires verified independent MONITOR pair and exact native c
    {...s.device,enabledOutputs:[0,1]}).applied,"3");
  assert.equal(protocol.nativePflView({...s,retained:true}).available,false);
 });
+
+test("live same-revision physical source ACK needs exact callback ticket and pins",()=>{
+ const p={requestId:"source-native-99",id:"9",epoch:"8",beforeRevision:"7",
+  choice:{label:"Mic B",mode:"MONO",left:2,right:-1},acked:false};
+ const ack={requestId:p.requestId,channelId:p.id,ok:true,graphRevision:"7",sourceSwitchTicket:"2"};
+ const accepted=stripVM.sourceQueueAckTransition({authority:"CHANNEL_ID",pending:p,ack});
+ assert.equal(accepted.kind,"ACKED");
+ const view={admitted:true,retained:false,device:{epoch:"8"},graph:{revision:"7",channels:[
+  {id:"9",role:"INPUT",source:{portId:"in:2",sourceFormat:"MONO"}}]}};
+ const settle=()=>stripVM.sourceReadbackSettlement(accepted.pending,view);
+ assert.equal(settle(),"PENDING");
+ view.graph.channels[0].source.appliedSwitchTicket="1";assert.equal(settle(),"PENDING");
+ view.graph.channels[0].source.appliedSwitchTicket="2";assert.equal(settle(),"CONFIRMED");
+ view.graph.channels[0].source.portId="in:3";assert.equal(settle(),"PENDING");
+ view.graph.channels[0].source.portId="in:2";view.graph.revision="8";assert.equal(settle(),"STALE");
+ for(const bad of [{sourceSwitchTicket:"0"},{sourceSwitchTicket:"4294967296"},{graphRevision:"8"}])
+  assert.equal(stripVM.sourceAckResult(p,{...ack,...bad},"CHANNEL_ID"),"REJECTED");
+ assert.equal(stripVM.sourceAckResult({...p,choice:{mode:"PLAYER"}},ack,"CHANNEL_ID"),"REJECTED");
+});

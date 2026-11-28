@@ -395,3 +395,16 @@ test('authorized secondary callback without a complete native tap emits clocked 
  assert.match(stop,/admission_\.revoke\(\);[\s\S]*?while\(publishers_\.load\(\)!=0\)[\s\S]*?substitutedFrames_\.store\(0/);
  assert.match(main,/"secondaryOutputPriming", "secondaryOutputSubstitutedFrames"/);
 });
+
+test('same-format physical source retarget preserves output generation and requires callback receipt',()=>{
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ const lab=read('src/LiveDryRoutingLab.h');
+ const vm=read('web/approved-channel-strip-view-model.js');
+ assert.match(core,/const auto target=\(sequence<<32\)\|packPhysical/);
+ assert.match(core,/sourceAppliedTargets_\[i\]\.store\(target,std::memory_order_release\)/);
+ assert.match(lab,/nativePublisher_\.setPhysicalSource\(ep,rev,id,[\s\S]*?&reply.sourceTicket/);
+ assert.match(lab,/rememberLiveSourceChange\(\)/);
+ assert.match(main,/if\(liveSwitch\)return engine_\.switchNativePhysicalSource\([\s\S]*?\},liveSwitch\);/);
+ assert.match(main,/"sourceSwitchTicket"/);
+ assert.match(vm,/channel.source\?\.appliedSwitchTicket===pending.sourceSwitchTicket/);
+});

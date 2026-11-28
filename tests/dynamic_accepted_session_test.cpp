@@ -1430,7 +1430,46 @@ static void verifyDormantRosterAdditionContinuity() {
     std::puts("DORMANT_ROSTER_CONTINUITY_PCM_PASS track/AUX add/delete, exact MAIN/MONITOR/EXT, in-flight slew, independent policy, unsafe edit rejected");
 }
 
+static void verifySameRevisionPhysicalSwitchReceipt() {
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,3> create{
+        add(0,ChannelRole::input,"SWITCH"),add(1,ChannelRole::input,"KEEP"),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)};
+    const auto created=roster.edit(0,create);assert(created.ok());
+    const auto a=created.createdIds[0],b=created.createdIds[1],main=created.createdIds[2];
+    const std::array<ChannelEdit,2> links{output(a,main),output(b,main)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest request;request.physicalInputs=3;request.maxFrames=64;
+    request.sources={{a,0,-1,false},{b,2,-1,false}};
+    DynamicPreparedMixerBlock block;DynamicGraphError fault;
+    assert(DynamicPreparedMixerBlock::compile(roster,request,block,fault));
+    std::array<float,64> old{},next{},keep{},l{},r{};
+    old.fill(.1f);next.fill(.3f);keep.fill(.2f);
+    const float* pins[]{old.data(),next.data(),keep.data()};
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&](int n){return block.process(pins,3,l.data(),r.data(),n,fx);};
+    assert(render(64));const float baseline=l[63];
+    assert(baseline>.1f);
+    std::uint64_t first=0,second=0,third=0;
+    assert(!block.setPhysicalSource(a,3,-1,false,&first));
+    assert(!block.setPhysicalSource(a,0,1,true,&first));
+    assert(block.setPhysicalSource(a,1,-1,false,&first)&&first);
+    assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(render(16));assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(l[0]>baseline&&l[15]>l[0]);
+    assert(block.setPhysicalSource(a,0,-1,false,&second)&&second>first);
+    assert(render(48));assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(render(64));assert(block.appliedPhysicalSourceTicket(a)==second);
+    assert(near(l[63],baseline));
+    assert(block.setPhysicalSource(a,1,-1,false,&third)&&third>second);
+    assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(render(64));assert(block.appliedPhysicalSourceTicket(a)==third);
+    assert(l[63]>baseline);
+    std::puts("LIVE_PHYSICAL_SOURCE_RECEIPT_PCM_PASS same graph, 64-sample fade, A-B-A generations");
+}
+
 int main() {
+    verifySameRevisionPhysicalSwitchReceipt();
     verifyDormantRosterAdditionContinuity();
     verifyPrivatePflCapturePcm();
     armix::ducker_test::run(); // same standalone core cases in existing fast CI

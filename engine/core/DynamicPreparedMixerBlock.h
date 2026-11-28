@@ -266,19 +266,38 @@ public:
     // instance never change; retain one latest target, no command FIFO.
     // A new source request during the 64-sample crossfade is coalesced and
     // starts only after the current ramp completes, avoiding a click.
-    bool setPhysicalSource(ChannelId id,int inputL,int inputR,
-                           bool stereo) noexcept {
+    bool canSwitchPhysicalSource(ChannelId id,int inputL,int inputR,
+                                 bool stereo) const noexcept {
         if(!id.value ||
            !validPhysicalPatch(physicalInputs_,inputL,inputR,stereo))
             return false;
         const auto it=controlIndex_.find(id.value);
         if(it==controlIndex_.end())return false;
         const auto& lane=lanes_[it->second];
-        if(lane.role!=ChannelRole::input || lane.inputL<0 ||
-           lane.playerDeckId!=0 || lane.inputStereo!=stereo)return false; // physical-only
-        sourceTargets_[it->second].store(packPhysical(inputL,inputR),
-                                          std::memory_order_release);
+        return lane.role==ChannelRole::input && lane.inputL>=0 &&
+           !lane.playerDeckId && lane.inputStereo==stereo;
+    }
+    // One lock-free word binds the pin pair to its request generation.
+    // A -> B -> A cannot settle on a receipt from the original A.
+    bool setPhysicalSource(ChannelId id,int inputL,int inputR,bool stereo,
+                           std::uint64_t* ticket=nullptr) noexcept {
+        if(!canSwitchPhysicalSource(id,inputL,inputR,stereo))return false;
+        const auto i=controlIndex_.find(id.value)->second;
+        const auto previous=sourceTargets_[i].load(std::memory_order_relaxed);
+        const auto sequence=(previous>>32)+1;
+        if(sequence>0xffffffffull)return false;
+        const auto target=(sequence<<32)|packPhysical(inputL,inputR);
+        sourceTargets_[i].store(target,std::memory_order_release);
+        if(ticket)*ticket=sequence;
         return true;
+    }
+    std::uint64_t appliedPhysicalSourceTicket(ChannelId id) const noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end()||lanes_[it->second].inputL<0)return 0;
+        const auto i=it->second;
+        const auto target=sourceTargets_[i].load(std::memory_order_acquire);
+        return sourceAppliedTargets_[i].load(std::memory_order_acquire)==target?
+            target>>32:0;
     }
     bool setChannelMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
         if(!id.value)return false;
@@ -569,7 +588,12 @@ public:
                !delayEqual(physicalDelays_,i,old.physicalDelays_,j)||
                !delayEqual(sinkDelays_,i,old.sinkDelays_,j)||
                !delayEqual(externalDelays_,i,old.externalDelays_,j))return false;
-            if(n.inputL>=0 && sourceTargets_[i].load()!=old.sourceTargets_[j].load())return false;
+            if(n.inputL>=0) {
+                const auto previous=old.sourceTargets_[j].load();
+                if(static_cast<std::uint32_t>(sourceTargets_[i].load())!=
+                   static_cast<std::uint32_t>(previous))return false;
+                sourceTargets_[i].store(previous);
+            }
             if(channelTargets_[i].state.load()!=old.channelTargets_[j].state.load()||
                channelTargets_[i].inputGain.load()!=old.channelTargets_[j].inputGain.load()||
                channelTargets_[i].wireSumGain.load()!=old.channelTargets_[j].wireSumGain.load())return false;
@@ -615,6 +639,8 @@ public:
             n.retireGain=o.retireGain;n.retireGoal=o.retireGoal;n.retireStep=o.retireStep;
             n.retireRemaining=o.retireRemaining;n.retireDuration=o.retireDuration;
             sourceFades_[i]=old.sourceFades_[j];externalFades_[i]=old.externalFades_[j];
+            sourceAppliedTargets_[i].store(old.sourceAppliedTargets_[j].load(std::memory_order_acquire),
+                                           std::memory_order_release);
             externalAppliedTargets_[i].store(old.externalAppliedTargets_[j].load(std::memory_order_acquire),
                                              std::memory_order_release);
             physicalDelays_[i].swapHistory(old.physicalDelays_[j]);
@@ -900,7 +926,8 @@ public:
         std::size_t slot=0;
         for(auto i:next.renderOrder_)next.lanes_[i].slot=slot++;
         next.scratch_.assign(active*2*frame,0.f);
-        next.sourceTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
+        next.sourceTargets_=std::make_unique<std::atomic<std::uint64_t>[]>(rows.size());
+        next.sourceAppliedTargets_=std::make_unique<std::atomic<std::uint64_t>[]>(rows.size());
         next.sourceFades_=std::make_unique<SourceFade[]>(rows.size());
         next.sourceBlockTargets_.resize(rows.size());
         for(std::size_t i=0;i<rows.size();++i){
@@ -1034,8 +1061,9 @@ public:
         for(auto& entry:duckerKeys_){
             const auto i=entry.laneIndex;
             const auto& lane=lanes_[i];
-            const auto pair=sourceTargets_[i].load(std::memory_order_acquire);
-            sourceBlockTargets_[i]=pair;
+            const auto target=sourceTargets_[i].load(std::memory_order_acquire);
+            const auto pair=static_cast<std::uint32_t>(target);
+            sourceBlockTargets_[i]=target;
             entry.key={};
             const auto& fade=sourceFades_[i];
             const bool audible=!blockTargets_[i].mute &&
@@ -1070,7 +1098,7 @@ public:
             sum.wireSumApplied.applyStereo(l,r,frames);
             if(lane.inputL>=0 && physical) {
                 auto& fade=sourceFades_[i];
-                const auto desired=sourceBlockTargets_[i];
+                const auto desired=static_cast<std::uint32_t>(sourceBlockTargets_[i]);
                 if(fade.remaining==0 && desired!=fade.current) {
                     fade.next=desired;fade.remaining=armix::dsp::RealtimeSlew64::samples;
                 }
@@ -1388,6 +1416,19 @@ public:
         // A completion receipt follows successful delivery, including PDC
         // drain and physical taps. A cancelled request never authorizes removal.
         for(const auto i:renderOrder_){
+            // Receipt for a completed physical crossfade, never a null
+            // capture pair or an unrendered request. Same loop as retirement.
+            const auto& lane=lanes_[i];
+            if(lane.inputL>=0){
+                const auto target=sourceBlockTargets_[i];
+                const auto pair=static_cast<std::uint32_t>(target);
+                const auto& fade=sourceFades_[i];
+                const int a=physicalLeft(pair),b=physicalRight(pair);
+                if(physical&&a>=0&&a<physicalCount&&physical[a]&&
+                   (!lane.inputStereo||(b>=0&&b<physicalCount&&physical[b]))&&
+                   !fade.remaining&&fade.current==pair)
+                    sourceAppliedTargets_[i].store(target,std::memory_order_release);
+            }
             auto& t=channelTargets_[i];
             if(t.retireFrames.load(std::memory_order_acquire)>0&&t.retireGain==0.f&&
                t.retireRemaining==0&&t.retireDrain==0&&
@@ -1407,14 +1448,15 @@ private:
     std::vector<AutoDuckerKeyEntry> postKeys_;
     std::vector<std::vector<std::size_t>> postKeyPublish_;
     std::vector<AutoDuckerKeyEntry> duckerKeys_; // preallocated, callback-local views
-    std::vector<std::uint32_t> sourceBlockTargets_;
+    std::vector<std::uint64_t> sourceBlockTargets_;
     std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
     std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;
     LatencyPlanSummary latencyPlan_{};
     MonitorLatencyPolicy monitorLatencyPolicy_=MonitorLatencyPolicy::aligned;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
-    std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
+    std::unique_ptr<std::atomic<std::uint64_t>[]> sourceTargets_,sourceAppliedTargets_;
     std::unique_ptr<SourceFade[]> sourceFades_;
     std::unique_ptr<SendTarget[]> sendTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> externalTargets_;

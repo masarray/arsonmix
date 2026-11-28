@@ -10253,11 +10253,15 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
+                const armix::mixer::ChannelId target{id};
+                const bool liveSwitch=(mode=="MONO"||mode=="STEREO")&&
+                    engine_.canSwitchNativePhysicalSource(ep,rev,roster,target,left,right,mode=="STEREO");
                 result=withNativeTopologyContinuity(ep,rev,mode!="NONE",[&]{
-                    return engine_.patchNativeInputSource(ep,rev,roster,
-                        armix::mixer::ChannelId{id},left,right,
+                    if(liveSwitch)return engine_.switchNativePhysicalSource(
+                        ep,rev,roster,target,left,right,mode=="STEREO");
+                    return engine_.patchNativeInputSource(ep,rev,roster,target,left,right,
                         mode=="STEREO"||player,player);
-                });
+                },liveSwitch);
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
@@ -10266,6 +10270,8 @@ private:
             ack->setProperty("error",result.error?result.error:"NATIVE_SOURCE_UNKNOWN");
             ack->setProperty("graphRevision",
                 juce::String(std::to_string(result.pcmRevision)));
+            if(result.accepted&&result.sourceTicket)
+                ack->setProperty("sourceSwitchTicket",juce::String(std::to_string(result.sourceTicket)));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixNativeSourceAck",juce::var(ack.release()));
             if(valid&&result.accepted)

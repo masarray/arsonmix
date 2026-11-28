@@ -524,8 +524,20 @@ public:
     // M3C realtime parameters on the accepted ChannelId graph ONLY.
     // Caller must propagate the real device epoch and native ACK revision.
     // Rejected/stale edits leave the last accepted PCM unchanged.
+    bool canSwitchPhysicalSource(std::uint64_t epoch,std::uint64_t revision,
+                                 ChannelId id,int inputL,int inputR,bool stereo) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&!p->inputMap&&p->graph->channelScheduled(id)&&
+            p->graph->canSwitchPhysicalSource(id,inputL,inputR,stereo);
+    }
+    std::uint64_t appliedPhysicalSourceTicket(std::uint64_t epoch,std::uint64_t revision,
+                                              ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&!p->inputMap?p->graph->appliedPhysicalSourceTicket(id):0;
+    }
     bool setPhysicalSource(std::uint64_t epoch,std::uint64_t revision,
-                           ChannelId id,int inputL,int inputR,bool stereo) noexcept {
+                           ChannelId id,int inputL,int inputR,bool stereo,
+                           std::uint64_t* ticket=nullptr) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
                 // An installed qualified virtual namespace must never accept
@@ -533,7 +545,7 @@ public:
                 // and physical pin attestation. Recompile/publish the full
                 // detached map+graph on CONTROL instead.
                 if(active.inputMap)return false;
-                return active.graph->setPhysicalSource(id,inputL,inputR,stereo);
+                return active.graph->setPhysicalSource(id,inputL,inputR,stereo,ticket);
             });
     }
     bool setChannelMix(std::uint64_t epoch,std::uint64_t revision,

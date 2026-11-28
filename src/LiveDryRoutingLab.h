@@ -1296,6 +1296,7 @@ public:
         armix::mixer::ChannelId created{};
         std::uint64_t pcmRevision=0,rosterRevision=0;
         const char* error="NATIVE_GRAPH_NOT_READY";
+        std::uint64_t sourceTicket=0;
     };
     // A real VST3 instance is prepared in LiveAudioEngine on CONTROL before
     // this call. ChannelId roster, actual processor lease and the one PCM
@@ -2393,6 +2394,51 @@ public:
         }catch(...){
             reply.error="NATIVE_TRACK_DELETE_PREPARE_FAILED";return reply;
         }
+    }
+
+    // Same-format physical-to-physical source retarget: no new graph,
+    // owner, clock, VST3 preparation or output authorization.
+    std::optional<std::pair<int,int>> livePhysicalSourceCandidate(
+            std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId id,int left,int right,bool stereo) const noexcept {
+        using namespace armix::mixer;
+        if(!nativeTopologyMatches(ep,rev)||roster!=nativeAccepted_.graph.roster.revision()||
+           !registryValid_.load(std::memory_order_acquire)||left<0||
+           (stereo?(right<0||left==right):right!=-1))return {};
+        const auto& sources=nativeAccepted_.graph.request.sources;
+        const auto found=std::find_if(sources.begin(),sources.end(),[id](const auto& p){return p.id==id;});
+        if(found==sources.end()||found->kind!=DynamicSourceKind::physical||
+           found->stereo!=stereo)return {};
+        int l=-1,r=-1;
+        for(int i=0;i<portCount_.load(std::memory_order_acquire);++i){
+            const int pin=enabledPorts_[i].load(std::memory_order_relaxed);
+            if(pin==left)l=i;
+            if(pin==right)r=i;
+        }
+        if(l<0||(stereo&&(r<0||l==r))||
+           !nativePublisher_.canSwitchPhysicalSource(ep,rev,id,l,r,stereo))return {};
+        return std::pair<int,int>{l,r};
+    }
+    NativeBusResult switchNativePhysicalSource(
+            std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId id,int left,int right,bool stereo) noexcept {
+        NativeBusResult reply;reply.pcmRevision=rev;reply.rosterRevision=roster;
+        reply.error="NATIVE_LIVE_SOURCE_NOT_VERIFIED";
+        const auto pins=livePhysicalSourceCandidate(ep,rev,roster,id,left,right,stereo);
+        if(!pins)return reply;
+        auto& sources=nativeAccepted_.graph.request.sources;
+        const auto found=std::find_if(sources.begin(),sources.end(),[id](const auto& p){return p.id==id;});
+        if(found==sources.end()||!nativePublisher_.setPhysicalSource(ep,rev,id,
+            pins->first,pins->second,stereo,&reply.sourceTicket))return reply;
+        if(found->inputL!=pins->first||found->inputR!=pins->second)
+            nativeAccepted_.graph.roster.rememberLiveSourceChange();
+        found->inputL=pins->first;found->inputR=pins->second;
+        std::erase_if(waitingAsioInputs_,[id](const auto& pin){return pin.id==id;});
+        if(logicalInputs_.assignedPort(id.value)){
+            (void)logicalInputs_.assign(id.value,0);++logicalInputRevision_;
+        }
+        nativeStructureLive_=true;nativeControlDirty_=true;
+        reply.accepted=true;reply.error="";return reply;
     }
 
     // Wire a verified physical capture pin to a dynamically CREATED input.
@@ -4098,6 +4144,12 @@ public:
                         juce::String(std::to_string(source.deckId)));
                 } else physical->setProperty(
                     "sourceFormat",source.stereo?"STEREO":"MONO");
+                if(!retained&&source.kind==armix::mixer::DynamicSourceKind::physical) {
+                    const auto ticket=nativePublisher_.appliedPhysicalSourceTicket(
+                        nativeAccepted_.deviceEpoch,nativeAccepted_.pcmRevision,ch.id);
+                    if(ticket)physical->setProperty("appliedSwitchTicket",
+                        juce::String(std::to_string(ticket)));
+                }
                 row->setProperty("source",juce::var(physical.release()));
                 break;
             }

@@ -6291,7 +6291,7 @@
     // bypassing every FX repaints each mounted rack without rebuilding DOM.
     const signature=next.identity+"|"+JSON.stringify(caps.supportedOps)+"|"+String(next.raw?.globalFxBypassed)+"|"+
       JSON.stringify(next.graph.channels.map(ch=>[
-      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId]))+"|"+
+      ch.id,ch.controls,ch.inserts,ch.fxRackBypassed,ch.primaryOutId,ch.source]))+"|"+
       JSON.stringify(next.graph.edges)+"|"+appearanceRevision;
     if (signature===lastPaintedSignature) {
       // A capability/readiness transition may retain the structural
