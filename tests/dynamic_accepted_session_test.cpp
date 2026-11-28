@@ -1556,7 +1556,89 @@ static void verifyStereoPhysicalSwitchAcrossSinks() {
     std::puts("STEREO_RETARGET_ALL_SINKS_PCM_PASS");
 }
 
+// Exercise the native publisher's real retirement receipt across a live
+// independent MONITOR and surviving EXT/programme sink. The control
+// transaction waits for AUDIO, never the other way round.
+static void verifyActiveTrackRetirementAcrossSinks() {
+    constexpr std::uint64_t epoch=9605;
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"DELETE",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"KEEP",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto made=roster.edit(0,create);assert(made.ok());
+    const auto gone=made.createdIds[0],keep=made.createdIds[1],
+        main=made.createdIds[2],monitor=made.createdIds[3];
+    const std::array<ChannelEdit,4> links{
+        output(gone,main),output(keep,main),send(gone,monitor,.5f,true),send(keep,monitor,.25f,true)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=64;
+    req.sources={{gone,0,1,true},{keep,2,3,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher p;
+    assert(p.commit(roster,req,0,epoch,epoch,true).ok());
+    assert(p.setExternalOutput(epoch,1,keep,2,3,4));
+    std::array<std::array<float,64>,4> in{};
+    std::array<std::array<float,64>,6> out{};
+    const std::array<float,4> values{.20f,.10f,.07f,.13f};
+    std::array<const float*,4> pins{};
+    for(int i=0;i<4;++i){in[i].fill(values[i]);pins[i]=in[i].data();}
+    float* hardware[]{out[0].data(),out[1].data(),out[4].data(),out[5].data()};
+    DynamicProgrammeTap tap;tap.requested=keep;
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&]{
+        assert(p.render(epoch,pins.data(),4,out[0].data(),out[1].data(),64,false,fx,
+            out[2].data(),out[3].data(),{},{},{},hardware,4,{},0,nullptr,nullptr,false,nullptr,0,&tap));
+    };
+    render();render();
+    auto candidate=roster;assert(candidate.removeInputAndDisconnect(roster.revision(),gone).ok());
+    auto next=req;next.sources.erase(next.sources.begin());
+    // No timing-policy change may use the live exception.
+    auto wrong=next;wrong.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
+    assert(!p.commit(candidate,wrong,1,epoch,epoch,false,{},false,false,nullptr,nullptr,
+        false,gone,128).ok());
+    assert(p.acceptedRevision()==1);
+    // Without AUDIO receipt, bounded timeout leaves the original graph.
+    auto timeout=p.commit(candidate,next,1,epoch,epoch,false,{},false,false,nullptr,nullptr,
+        false,gone,128);
+    assert(timeout.fault==DynamicNativeSessionPublisher::Fault::retirementTimeout);
+    assert(p.acceptedRevision()==1);
+    render();assert(near(out[0][63],.27f));
+    std::atomic<bool> done{false};
+    DynamicNativeSessionPublisher::CommitResult result;
+    std::thread control([&]{
+        result=p.commit(candidate,next,1,epoch,epoch,false,{},false,false,nullptr,nullptr,
+            false,gone,128);
+        done.store(true,std::memory_order_release);
+    });
+    bool sawFade=false;float previous=values[0];
+    do {
+        render();
+        for(int i=0;i<64;++i){
+            assert(tap.captured()==keep&&near(tap.left()[i],values[2])&&near(tap.right()[i],values[3]));
+            assert(near(out[4][i],values[2])&&near(out[5][i],values[3]));
+            const float contribution=out[0][i]-values[2];
+            assert(contribution>=-3e-5f&&contribution<=previous+3e-5f);
+            assert(near(out[1][i]-values[3],contribution*.5f));
+            assert(near(out[2][i]-values[2]*.25f,contribution*.5f));
+            assert(near(out[3][i]-values[3]*.25f,contribution*.25f));
+            if(contribution>1e-5f&&contribution<values[0]-1e-5f)sawFade=true;
+            previous=contribution;
+        }
+        std::this_thread::yield();
+    }while(!done.load(std::memory_order_acquire));
+    control.join();assert(result.ok()&&sawFade&&p.acceptedRevision()==2);
+    render();
+    assert(near(out[0][63],values[2])&&near(out[1][63],values[3]));
+    assert(near(out[2][63],values[2]*.25f)&&near(out[3][63],values[3]*.25f));
+    assert(p.appliedExternalOutput(epoch,2,keep)==(std::pair<int,int>{2,3}));
+    tap.requested=gone;render();assert(tap.state()==DynamicProgrammeTap::State::unavailable);
+    std::puts("ACTIVE_TRACK_RETIREMENT_ALL_SINKS_PCM_PASS");
+}
+
 int main() {
+    verifyActiveTrackRetirementAcrossSinks();
     verifyStereoPhysicalSwitchAcrossSinks();
     verifySameRevisionPhysicalSwitchReceipt();
     verifyDormantRosterAdditionContinuity();

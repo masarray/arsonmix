@@ -652,6 +652,13 @@ public:
         // same scheduled lane set, edges, keys and delays below, then reuse
         // the previous audible order (including floating-point summation).
         if(dormantRosterEdit&&renderOrder_.size()!=old.renderOrder_.size())return false;
+        // A live track retirement may keep independent MONITOR and secondary
+        // clocks armed ONLY when every surviving scheduled dependency, delay
+        // and processing order is unchanged. A downstream dormancy change
+        // or a changed post-fader key requires the ordinary gated edit.
+        const bool activeRemoval=removed.value&&!dormantRosterEdit;
+        if(activeRemoval&&(!old.channelScheduled(removed)||
+           renderOrder_.size()+1!=old.renderOrder_.size()))return false;
         if(removed.value){
             const auto found=old.controlIndex_.find(removed.value);
             if(found==old.controlIndex_.end()||controlIndex_.contains(removed.value))return false;
@@ -687,7 +694,7 @@ public:
             // A downstream lane which becomes dormant has no physical/player
             // source or FX by compiler construction. Its removed contribution
             // has drained before publication; no live processor tail is lost.
-            if(dormantRosterEdit){
+            if(dormantRosterEdit||activeRemoval){
                 if(wasScheduled!=nowScheduled||n.keyLast-n.keyFirst!=o.keyLast-o.keyFirst)return false;
                 for(std::size_t k=0;k<n.keyLast-n.keyFirst;++k)
                     if(postKeys_[n.keyFirst+k].id!=old.postKeys_[o.keyFirst+k].id)return false;
@@ -736,6 +743,18 @@ public:
                 const auto id=old.lanes_[old.renderOrder_[k]].id;
                 renderOrder_[k]=controlIndex_.at(id.value);
             }
+        }else if(activeRemoval){
+            // The old execution order minus the fully faded track is still
+            // a valid topological order: surviving edges and keys matched.
+            // Avoid reordering floating-point accumulation of unaffected PCM.
+            std::size_t k=0;
+            for(const auto index:old.renderOrder_){
+                const auto id=old.lanes_[index].id;
+                if(id==removed)continue;
+                if(k>=renderOrder_.size())return false;
+                renderOrder_[k++]=controlIndex_.at(id.value);
+            }
+            if(k!=renderOrder_.size())return false;
         }
         return true;
     }

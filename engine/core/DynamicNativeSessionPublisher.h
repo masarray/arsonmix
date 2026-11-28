@@ -124,18 +124,20 @@ public:
         if(verifiedInternalFxOnly && !fx.owner) {
             report.fault=Fault::invalidCandidate;return report;
         }
-        // A monitor timing-domain change cannot be hidden in the existing
-        // live WIRE/FX exceptions. While independent monitoring is active,
-        // even rebuilding the same policy requires an explicit disarm:
-        // fan-in changes can otherwise change the singer's delay mid-note.
+        // A monitor timing-domain change cannot be hidden in live WIRE/FX.
+        // A track retirement is different: prepareContinuity proves the
+        // same surviving schedule, key topology, delay history and policy
+        // BEFORE starting a channel-local fade. No general live exception.
         if(dormantRosterEdit&&(fadeFrames!=0||continuousFx||verifiedInternalWireOnly||
                             verifiedInternalFxOnly||initialExternal)){
             report.fault=Fault::invalidCandidate;return report;
         }
+        const bool verifiedRetirement=retiring.value!=0&&fadeFrames>0&&
+            !continuousFx&&!verifiedInternalWireOnly&&!verifiedInternalFxOnly;
         if(!allOutputsDisarmed && !dormantRosterEdit &&
-           (independentMonitorPublished_ ||
-            request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned ||
-            (!verifiedInternalWireOnly && !verifiedInternalFxOnly && !retiring.value))) {
+           ((!verifiedRetirement&&(independentMonitorPublished_ ||
+             request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned)) ||
+            (!verifiedInternalWireOnly && !verifiedInternalFxOnly && !verifiedRetirement))) {
             report.fault=Fault::outputArmed;return report;
         }
         // CONTROL: validate every physical source against ONE actual

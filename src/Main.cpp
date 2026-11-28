@@ -4931,8 +4931,11 @@ private:
             // Only a native continuity-proof rejection may enter the ordinary
             // gated path, under the SAME device-apply lease. Never retry an
             // accepted edit, a stale revision, or an unrelated device fault.
-            if(result.accepted||!gatedFallback||
-               juce::String(result.error?result.error:"")!="SILENT_REMOVE_CONTINUITY_NOT_VERIFIED"||
+            const juce::String reason(result.error?result.error:"");
+            const bool continuityRejected=reason=="SILENT_REMOVE_CONTINUITY_NOT_VERIFIED"||
+                reason=="DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"||
+                reason=="ACTIVE_REMOVE_CONTINUITY_NOT_VERIFIED";
+            if(result.accepted||!gatedFallback||!continuityRejected||
                engine_.dryRoutingLabEpoch()!=ep||
                engine_.outputArmRevision()!=beforeControlRevision||
                !engine_.nativeTopologyMatches(ep,rev))return result;
@@ -10543,8 +10546,9 @@ private:
                 const armix::mixer::ChannelId target{id};
                 const bool silentRemoval=engine_.nativeStripDormant(ep,rev,target);
                 result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                    return engine_.removeNativeInputChannel(ep,rev,roster,target,true);
-                },silentRemoval,[&]{
+                    if(silentRemoval)return engine_.removeNativeInputChannel(ep,rev,roster,target,true);
+                    return engine_.removeNativeInputChannelLive(ep,rev,roster,target);
+                },true,[&]{
                     return engine_.removeNativeInputChannel(ep,rev,roster,target);
                 });
             }

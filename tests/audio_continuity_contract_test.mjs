@@ -436,3 +436,16 @@ test('physical source validation precedes secondary continuity and requested rec
  assert.match(core,/if\(ticket\)\*ticket=previous>>32/);
  assert.match(lab,/"requestedSwitchTicket"/);
 });
+
+
+test('active track retirement attempts channel-local continuity before secondary disarm',()=>{
+ const source=main.split('if(action=="routingNativeTrackDelete") {').at(-1).split('auto ack=')[0];
+ assert.match(source,/removeNativeInputChannelLive\(ep,rev,roster,target\)/);
+ assert.match(source,/\},true,\[&\]\{[\s\S]*?removeNativeInputChannel\(ep,rev,roster,target\)/);
+ const attempt=engine.split('LiveDryRoutingLab::NativeBusResult removeNativeInputChannelLive(')[1].split('LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(')[0];
+ assert.match(attempt,/secondaryOutput_\.captureProducerTicket\(\)==ticket/);
+ assert.doesNotMatch(attempt,/disarmSecondaryOutput|secondaryOutput_\.disarm|topologyPublicationMute_\.store/);
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ assert.match(core,/dormantRosterEdit\|\|activeRemoval/);
+ assert.match(core,/if\(id==removed\)continue/);
+});

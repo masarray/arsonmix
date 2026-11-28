@@ -2918,6 +2918,32 @@ public:
                     epoch,pcmRevision,rosterRevision,name,format,true,beforePublish);
             });
     }
+    // CONTROL only: prefer the existing channel-local retirement without
+    // revoking the independently clocked output. A native proof rejection
+    // permits the caller's ordinary gated fallback; a timeout/device change
+    // never silently replays the edit.
+    LiveDryRoutingLab::NativeBusResult removeNativeInputChannelLive(
+            std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId id) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="ACTIVE_REMOVE_CONTINUITY_NOT_VERIFIED";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        const auto ticket=secondaryOutput_.captureProducerTicket();
+        const auto valid=[&]{
+            return device&&deviceManager_.getCurrentAudioDevice()==device&&device->isOpen()&&
+                dormantAdditionReady(ep,rev)&&
+                secondaryOutput_.captureProducerTicket()==ticket;
+        };
+        if(!valid())return fail;
+        try{
+            const auto rate=device->getCurrentSampleRate();
+            if(!std::isfinite(rate)||rate<8000.||rate>384000.)return fail;
+            return dryRoutingLab_.removeNativeInputChannel(ep,rev,roster,id,false,{}, 
+                static_cast<int>(std::ceil(rate*.008)),valid);
+        }catch(...){
+            fail.error="NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION";return fail;
+        }
+    }
     LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,armix::mixer::ChannelId id,bool silentRemoval=false) {
