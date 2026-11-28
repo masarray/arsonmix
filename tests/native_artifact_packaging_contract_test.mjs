@@ -229,3 +229,15 @@ test('FAT collector requires an exact rate and real endpoints before timers, plu
   assert.match(verifier,/FAT tool ZIP payload digest differs/);
   assert.doesNotMatch(verifier,/\n\) \{\n\s*throw "M3-E evidence tool hash missing/);
 });
+
+test('nested FactoryFX ZIP inventory uses Windows-safe single-character normalization and real archive verification',()=>{
+  const helper=read('scripts/windows_zip_member_paths.ps1');
+  assert.match(helper,/GetRelativePath\(\$Root,\$File\)\.Replace\(\[char\]92,\[char\]47\)/);
+  assert.match(helper,/Compare-Object[^\n]*-CaseSensitive/);
+  assert.match(helper,/Duplicate ZIP member/);
+  assert.match(verify,/Get-ArSonMixZipRelativePath \$distRoot \$file\.FullName/);
+  assert.match(verify,/Assert-ArSonMixZipFileSet \$zip \$expectedZipFiles/);
+  assert.match(read('scripts/test_inno_graceful_update_windows.ps1'),/FACTORYFX_NESTED_WINDOWS_ZIP_INVENTORY_PASS/);
+  const publish=read('.github/workflows/alpha-preview-publish.yml');
+  assert.match(publish,/Assert-ArSonMixZipPayload \$portableZip \$distRoot/);
+});

@@ -38,6 +38,36 @@ if($LASTEXITCODE -ne 0 -or $startupOutput -notcontains 'ARSONMIX_STARTUP_DIAGNOS
 Write-Host "ARSONMIX_STARTUP_DIAGNOSTIC_POLICY_PASS"
 
 $ErrorActionPreference="Stop"
+# Exercise the same distribution verifier on an actual Windows nested archive.
+. (Join-Path $PSScriptRoot "windows_zip_member_paths.ps1")
+$zipWork=Join-Path $env:RUNNER_TEMP ("armix-zip-fixture-"+[guid]::NewGuid().ToString("N"))
+try{
+    $zipRoot=Join-Path $zipWork 'dist'
+    $moduleDir=Join-Path $zipRoot 'FactoryFX/ArSonEQ/ArSonEQ.vst3/Contents/x86_64-win'
+    New-Item -ItemType Directory -Force -Path $moduleDir | Out-Null
+    Set-Content -LiteralPath (Join-Path $zipRoot 'README.md') -Value 'fixture'
+    $module=Join-Path $moduleDir 'ArSonEQ.vst3'
+    Set-Content -LiteralPath $module -Value 'fixture module bytes'
+    $relative=Get-ArSonMixZipRelativePath $zipRoot $module
+    if($relative -cne 'FactoryFX/ArSonEQ/ArSonEQ.vst3/Contents/x86_64-win/ArSonEQ.vst3'){throw "Windows nested path normalization failed: $relative"}
+    $zipPath=Join-Path $zipWork 'portable.zip'
+    Compress-Archive -Path (Join-Path $zipRoot '*') -DestinationPath $zipPath -Force
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip=[IO.Compression.ZipFile]::OpenRead($zipPath)
+    try{
+        Assert-ArSonMixZipPayload $zip $zipRoot
+        Set-Content -LiteralPath $module -Value 'tampered module bytes'
+        $rejected=$false
+        try{Assert-ArSonMixZipPayload $zip $zipRoot}catch{if($_.Exception.Message -like 'ZIP payload SHA256 mismatch:*'){$rejected=$true}else{throw}}
+        if(-not $rejected){throw 'ZIP tamper regression not rejected'}
+        Remove-Item -LiteralPath $module
+        $rejected=$false
+        try{Assert-ArSonMixZipPayload $zip $zipRoot}catch{if($_.Exception.Message -like 'ZIP does not contain exactly*'){$rejected=$true}else{throw}}
+        if(-not $rejected){throw 'ZIP extra member regression not rejected'}
+    }finally{$zip.Dispose()}
+    Write-Host 'FACTORYFX_NESTED_WINDOWS_ZIP_INVENTORY_PASS'
+}finally{if(Test-Path -LiteralPath $zipWork){Remove-Item -LiteralPath $zipWork -Recurse -Force}}
+
 $root=(Resolve-Path .).Path
 $work=Join-Path $env:RUNNER_TEMP ("arsonmix-inno-smoke-"+[guid]::NewGuid().ToString("N"))
 $stage=Join-Path $work "stage"

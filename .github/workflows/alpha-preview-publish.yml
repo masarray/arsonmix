@@ -192,6 +192,14 @@ jobs:
           python scripts/verify_release_setup_zip.py --exe $releasedExe --zip $releasedZip
           if ($LASTEXITCODE -ne 0) { throw "Installer ZIP failed byte-for-byte verification" }
           Compress-Archive -Path 'dist/*' -DestinationPath "release/ArSonMix-$tag-Windows-x64-Portable.zip" -CompressionLevel Fastest
+          # Compare actual public ZIP (not only the temporary audit ZIP) to
+          # every verified distribution file, including nested VST3 resources.
+          . ./scripts/windows_zip_member_paths.ps1
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $distRoot=(Resolve-Path -LiteralPath 'dist').Path
+          $portableZip=[IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath "release/ArSonMix-$tag-Windows-x64-Portable.zip").Path)
+          try{Assert-ArSonMixZipPayload $portableZip $distRoot}finally{$portableZip.Dispose()}
+
           Copy-Item -LiteralPath dist/BUILD_PROVENANCE.json -Destination release/BUILD_PROVENANCE.json
           Copy-Item -LiteralPath dist/FACTORYFX_STAGE_REPORT.json -Destination release/FACTORYFX_STAGE_REPORT.json
           Copy-Item -LiteralPath installer-output/INSTALLER_PROVENANCE.json -Destination release/INSTALLER_PROVENANCE.json
