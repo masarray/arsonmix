@@ -102,7 +102,7 @@ public:
                         const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr,
                         const InitialExternalPlan* initialExternal=nullptr,
                         bool continuousFx=false,ChannelId retiring={},int fadeFrames=0,
-                        const std::function<bool()>& stillValid={},bool dormantRosterEdit=false) {
+                        const std::function<bool()>& stillValid={},bool dormantRosterEdit=false,bool wireAddition=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -132,10 +132,14 @@ public:
                             verifiedInternalFxOnly||initialExternal)){
             report.fault=Fault::invalidCandidate;return report;
         }
+        if(wireAddition&&(!verifiedInternalWireOnly||verifiedInternalFxOnly||continuousFx||
+                          retiring.value||fadeFrames||dormantRosterEdit||initialExternal)){
+            report.fault=Fault::invalidCandidate;return report;
+        }
         const bool verifiedRetirement=retiring.value!=0&&fadeFrames>0&&
             !continuousFx&&!verifiedInternalWireOnly&&!verifiedInternalFxOnly;
         if(!allOutputsDisarmed && !dormantRosterEdit &&
-           ((!verifiedRetirement&&(independentMonitorPublished_ ||
+           ((!verifiedRetirement&&!wireAddition&&(independentMonitorPublished_ ||
              request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned)) ||
             (!verifiedInternalWireOnly && !verifiedInternalFxOnly && !verifiedRetirement))) {
             report.fault=Fault::outputArmed;return report;
@@ -252,12 +256,12 @@ public:
           roster.channels().end(),[](const ChannelStripDefinition& row) {
               return row.role==ChannelRole::monitor;
           });
-        const bool continuous=continuousFx||retiring.value!=0||dormantRosterEdit;
+        const bool continuous=continuousFx||retiring.value!=0||dormantRosterEdit||wireAddition;
         const auto* previous=continuous?publisher_.controlPrepared(proposedDeviceEpoch,expectedRevision):nullptr;
         if(continuous){
             if(!previous||!previous->adopted.load(std::memory_order_acquire)||
                previous->inputMap||qualifiedInputMap||initialExternal||
-               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity,dormantRosterEdit)){
+               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity,dormantRosterEdit,wireAddition)){
                 report.fault=Fault::continuityUnavailable;return report;
             }
             prepared->predecessor=previous->graph;

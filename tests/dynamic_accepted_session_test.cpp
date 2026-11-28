@@ -1725,7 +1725,78 @@ void verifyLiveParallelBusRetirement() {
     std::puts("LIVE_PARALLEL_BUS_FX_RETIREMENT_PCM_PASS");
 }
 
+// Add a parallel SEND while a surviving fader is mid-ramp.
+void verifyLiveWireAdditionContinuity(){
+    constexpr std::uint64_t epoch=9607;
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"KEEP",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"ADD SEND",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MON",ProcessingFormat::stereo)};
+    auto made=roster.edit(0,create);assert(made.ok());
+    const auto keep=made.createdIds[0],src=made.createdIds[1],
+        main=made.createdIds[2],mon=made.createdIds[3];
+    const std::array<ChannelEdit,3> links{output(keep,main),output(src,main),send(keep,mon,.25f,true)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=64;
+    req.sources={{keep,0,1,true},{src,2,3,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher p;
+    assert(p.commit(roster,req,0,epoch,epoch,true).ok());
+    assert(p.setExternalOutput(epoch,1,keep,2,3,4));
+    std::array<std::array<float,64>,4> in{};
+    in[0].fill(.2f);in[1].fill(.1f);in[2].fill(.08f);in[3].fill(.04f);
+    const float* pins[]{in[0].data(),in[1].data(),in[2].data(),in[3].data()};
+    std::array<std::array<float,64>,6> out{};
+    float* hw[]{out[0].data(),out[1].data(),out[4].data(),out[5].data()};
+    DynamicProgrammeTap tap;tap.requested=keep;
+    int calls=0;
+    const auto fx=[&](ChannelId id,float*,float*,int) noexcept {if(id==keep)++calls;};
+    const auto render=[&](int frames){
+        const auto before=calls;
+        assert(p.render(epoch,pins,4,out[0].data(),out[1].data(),frames,false,fx,
+            out[2].data(),out[3].data(),{},{},{},hw,4,{},0,nullptr,nullptr,false,nullptr,0,&tap));
+        assert(calls==before+1);
+    };
+    render(64);render(64);
+    assert(near(out[2][63],.05f)&&near(out[4][63],.2f));
+    assert(p.setChannelMix(epoch,1,keep,.5f,0.f));
+    assert(roster.rememberLiveMix(keep,.5f,0.f));
+    render(16);
+    auto next=roster;
+    WireChange connect;connect.kind=WireChange::Kind::connect;connect.from=src;
+    connect.to=mon;connect.gain=.5f;connect.preFader=true;
+    const std::array<WireChange,1> changes{connect};
+    assert(next.wireTransaction(roster.revision(),changes).ok());
+    assert(p.commit(next,req,1,epoch,epoch,false,{},true,false,nullptr,nullptr,false,{},0,{},false,true).ok());
+    int samples=0;
+    for(int frames:{8,24,32}){
+        render(frames);
+        for(int f=0;f<frames;++f){
+            ++samples;
+            const float dry=.2f*(1.f-.5f*std::min(64,16+samples)/64.f);
+            const float cue=.05f+.04f*samples/64.f;
+            assert(near(out[0][f],dry+.08f)&&near(out[1][f],dry*.5f+.04f));
+            assert(near(out[2][f],cue)&&near(out[3][f],cue*.5f));
+            assert(near(out[4][f],dry)&&near(out[5][f],dry*.5f));
+            assert(tap.captured()==keep&&near(tap.left()[f],dry)&&near(tap.right()[f],dry*.5f));
+        }
+    }
+    assert(p.appliedExternalOutput(epoch,2,keep)==(std::pair<int,int>{2,3}));
+    auto removed=next;
+    WireChange unplug;unplug.kind=WireChange::Kind::remove;unplug.from=src;
+    unplug.edgeId=next.find(src)->sends.back().edgeId;
+    const std::array<WireChange,1> removals{unplug};
+    assert(removed.wireTransaction(next.revision(),removals).ok());
+    auto rejected=p.commit(removed,req,2,epoch,epoch,false,{},true,false,nullptr,nullptr,false,{},0,{},false,true);
+    assert(rejected.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable&&p.acceptedRevision()==2);
+    render(64);assert(near(out[2][63],.09f)&&near(out[4][63],.1f));
+    std::puts("LIVE_WIRE_ADDITION_CONTINUITY_PCM_PASS");
+}
+
 int main() {
+    verifyLiveWireAdditionContinuity();
     verifyLiveParallelBusRetirement();
     verifyActiveTrackRetirementAcrossSinks();
     verifyStereoPhysicalSwitchAcrossSinks();

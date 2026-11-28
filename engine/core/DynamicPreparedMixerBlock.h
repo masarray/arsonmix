@@ -641,7 +641,10 @@ public:
     // Inbound wires may be removed with their already faded destination;
     // live SOLO topology and changed PDC still require an explicit stopped edit.
     bool prepareContinuity(const DynamicPreparedMixerBlock& old,ChannelId removed,
-                           ContinuityPlan& plan,bool dormantRosterEdit=false) {
+                           ContinuityPlan& plan,bool dormantRosterEdit=false,bool wireAddition=false) {
+        if(wireAddition&&(removed.value||dormantRosterEdit||renderOrder_.size()!=old.renderOrder_.size()))return false;
+        if(wireAddition)for(std::size_t i=0;i<old.lanes_.size();++i)
+            if(Word::decode(old.channelTargets_[i].state.load(std::memory_order_acquire)).solo)return false;
         if(capacity_!=old.capacity_||physicalInputs_!=old.physicalInputs_||
            mainMonoAfterFx_!=old.mainMonoAfterFx_||
            monitorLatencyPolicy_!=old.monitorLatencyPolicy_||
@@ -688,13 +691,13 @@ public:
             const bool wasScheduled=old.channelScheduled(n.id),nowScheduled=channelScheduled(n.id);
             if(n.role!=o.role||n.format!=o.format||n.monoPan!=o.monoPan||
                n.inputStereo!=o.inputStereo||n.playerDeckId!=o.playerDeckId||
-               (n.inputL>=0)!=(o.inputL>=0))return false;
+               (n.inputL>=0)!=(o.inputL>=0)||(wireAddition&&n.enabled!=o.enabled))return false;
             // A fresh zero-latency Compressor may activate an unpatched
             // dormant lane. It has no physical/player input or prior history.
             // A downstream lane which becomes dormant has no physical/player
             // source or FX by compiler construction. Its removed contribution
             // has drained before publication; no live processor tail is lost.
-            if(dormantRosterEdit||activeRemoval){
+            if(dormantRosterEdit||activeRemoval||wireAddition){
                 if(wasScheduled!=nowScheduled||n.keyLast-n.keyFirst!=o.keyLast-o.keyFirst)return false;
                 for(std::size_t k=0;k<n.keyLast-n.keyFirst;++k)
                     if(postKeys_[n.keyFirst+k].id!=old.postKeys_[o.keyFirst+k].id)return false;
@@ -717,7 +720,8 @@ public:
             std::size_t survivingEdges=0;
             for(std::size_t k=o.first;k<o.last;++k)
                 if(old.lanes_[old.edges_[k].destination].id!=removed)++survivingEdges;
-            if(n.last-n.first!=survivingEdges)return false;
+            if(wireAddition?n.last-n.first<survivingEdges:n.last-n.first!=survivingEdges)return false;
+            std::size_t matchedEdges=0;
             plan.lanes.emplace_back(i,j);
             externalTargets_[i].store(old.externalTargets_[j].load(std::memory_order_acquire));
             for(std::size_t e=n.first;e<n.last;++e){
@@ -725,7 +729,14 @@ public:
                 const auto prior=std::find_if(old.edges_.begin()+o.first,old.edges_.begin()+o.last,
                     [&](const Edge& x){return x.id==edge.id&&
                         old.lanes_[x.destination].id==lanes_[edge.destination].id;});
-                if(prior==old.edges_.begin()+o.last)return false;
+                if(prior==old.edges_.begin()+o.last){
+                    if(!wireAddition||edge.primary)return false;
+                    // New SEND starts silent; its own 64-sample slew and
+                    // zero-initialized delay run in the existing renderer.
+                    sendTargets_[e].applied.reset(0.f);
+                    continue;
+                }
+                ++matchedEdges;
                 const auto k=static_cast<std::size_t>(prior-old.edges_.begin());
                 if(edge.pre!=prior->pre||edge.primary!=prior->primary||
                    edge.panL!=prior->panL||edge.panR!=prior->panR||
@@ -734,8 +745,19 @@ public:
                    !delayEqual(edgeDelays_,e,old.edgeDelays_,k))return false;
                 plan.edges.emplace_back(e,k);
             }
+            if(wireAddition&&matchedEdges!=survivingEdges)return false;
         }
-        if(dormantRosterEdit){
+        if(wireAddition){
+            // Preserve audible accumulation order only if every new edge
+            // respects it. Post-fader key identities were verified above.
+            std::vector<std::size_t> position(lanes_.size(),lanes_.size());
+            for(std::size_t k=0;k<old.renderOrder_.size();++k){
+                const auto i=controlIndex_.at(old.lanes_[old.renderOrder_[k]].id.value);
+                position[i]=k;renderOrder_[k]=i;
+            }
+            for(auto i:renderOrder_)for(auto e=lanes_[i].first;e<lanes_[i].last;++e)
+                if(position[i]>=position[edges_[e].destination])return false;
+        }else if(dormantRosterEdit){
             // All scheduled dependencies are already proven equivalent.
             // Scratch slots and delay state are lane-indexed, not tied to
             // this ordering; only the callback execution order is restored.

@@ -2929,9 +2929,21 @@ public:
             };
             fx.deviceEpoch=ep;
             fx.graphRevision=expectedPcmRev+1;
-            const auto published=nativePublisher_.commit(
+            // New parallel SENDs may inherit existing PCM history. Other
+            // edits retain their established publication policy.
+            const bool addition=std::all_of(changes.begin(),changes.end(),
+                [](const auto& w){return w.kind==WireChange::Kind::connect;});
+            const auto valid=[&]{return ready()&&ep==epoch()&&nativeTopologyMatches(ep,expectedPcmRev);};
+            auto published=addition?nativePublisher_.commit(
                 roster,nativeAccepted_.graph.request,expectedPcmRev,
-                ep,epoch(),false,std::move(fx),true);
+                ep,epoch(),false,fx,true,false,nullptr,nullptr,false,{},0,valid,false,true):
+                nativePublisher_.commit(roster,nativeAccepted_.graph.request,expectedPcmRev,
+                ep,epoch(),false,fx,true);
+            // Preserve legacy aligned routing support when the new schedule
+            // or PDC cannot adopt history. Never bypass independent policy.
+            if(addition&&published.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable&&valid())
+                published=nativePublisher_.commit(roster,nativeAccepted_.graph.request,expectedPcmRev,
+                    ep,epoch(),false,std::move(fx),true);
             if(!published.ok()){
                 r.error=published.graphError.fault==DynamicGraphFault::cycle
                     ?"NATIVE_WIRE_FEEDBACK_CYCLE":"NATIVE_WIRE_PCM_GRAPH_REJECTED";

@@ -462,3 +462,15 @@ test('BUS and FX return removal first attempts proved local retirement',()=>{
  assert.match(lab,/\(dormantRemoval\|\|liveRemoval\)\?remove:ChannelId\{\},liveFadeFrames/);
  assert.match(lab,/"ACTIVE_REMOVE_CONTINUITY_NOT_VERIFIED"/);
 });
+
+
+test('parallel WIRE additions attempt state adoption before ordinary publication',()=>{
+ const lab=read('src/LiveDryRoutingLab.h');
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ const publisher=read('engine/core/DynamicNativeSessionPublisher.h');
+ assert.match(lab,/w.kind==WireChange::Kind::connect/);
+ assert.match(lab,/false,\{\},0,valid,false,true/);
+ assert.match(core,/sendTargets_\[e\]\.applied\.reset\(0.f\)/);
+ assert.match(core,/wireAddition&&matchedEdges!=survivingEdges/);
+ assert.match(publisher,/continuousFx\|\|retiring.value!=0\|\|dormantRosterEdit\|\|wireAddition/);
+});
