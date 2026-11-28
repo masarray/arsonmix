@@ -141,3 +141,20 @@ test('startup handoff raises mixer once after splash, without permanent topmost 
  assert.doesNotMatch(handoff,/startTimer|engine_\.start|setAlwaysOnTop\s*\(/);
  assert.match(app,/if \(isAutoUpdateHealthProbe\(\)\)\s*\{\s*if \(window_\) window_->setVisible \(false\);/);
 });
+
+test('native startup splash uses embedded product PNG and one responsive centre transform',()=>{
+ const splash=read('src/ArSonMixStartupSplash.h');
+ const cmake=read('CMakeLists.txt');
+ assert.match(cmake,/ARMIX_BRAND_DIR\}\/arsonmix-256\.png/);
+ assert.match(splash,/BinaryData::arsonmix256_png,/);
+ assert.match(splash,/BinaryData::arsonmix256_pngSize/);
+ assert.match(splash,/juce::ImageFileFormat::loadFrom/);
+ assert.match(splash,/g\.drawImageWithin \(brand_, 174, 24, 100, 100,/);
+ assert.match(splash,/juce::RectanglePlacement::centred/);
+ assert.match(splash,/g\.drawText \("ArSonMix", 24, 136, 400, 40, juce::Justification::centred\)/);
+ assert.match(splash,/width \/ \(cardWidth \+ 24\.0f\), height \/ \(cardHeight \+ 24\.0f\)/);
+ assert.match(splash,/\(width - cardWidth \* scale\) \* 0\.5f,\s*\(height - cardHeight \* scale\) \* 0\.5f/);
+ assert.match(splash,/g\.fillAll \(juce::Colour \(0xff0b1823\)\)/);
+ assert.doesNotMatch(splash,/centredRight|centredLeft|ColourGradient|g\.drawText \("Ar",|g\.drawText \("SonMix",/);
+ assert.doesNotMatch(splash.slice(splash.indexOf('void paint')),/loadFrom|ImageCache|startTimer|repaint\(\)/);
+});
