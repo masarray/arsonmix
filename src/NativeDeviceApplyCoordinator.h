@@ -44,6 +44,49 @@ public:
         return Lease(this);
     }
 
+    // A blocked correlated command still requires a terminal NACK. This
+    // path is CONTROL-only and deliberately cannot inspect or mutate a driver,
+    // graph, or accepted revision during a nested vendor modal loop.
+    struct BusyReceipt {
+        const char* event=nullptr;
+        juce::var payload;
+    };
+    BusyReceipt busyCommandReceipt(const juce::String& action,const juce::var& args) const {
+        if(!busy())return {};
+        const char* event=nullptr;
+        if(action=="routingExternalOutput")event="arMixExternalOutputAck";
+        else if(action=="routingMonitorTiming")event="arMixMonitorTimingAck";
+        else if(action=="routingLogicalInputEdit")event="arMixLogicalInputAck";
+        else if(action=="routingLogicalOutputEdit")event="arMixLogicalOutputAck";
+        else if(action=="audioIoDefaults")event="arMixIoDefaultsAck";
+        else if(action=="audioNamedPatchEdit")event="arMixNamedPatchAck";
+        else if(action=="routingNativeFxRackBypass")event="arMixNativeFxPowerAck";
+        else if(action=="routingNativeFxInsertBypass")event="arMixNativeFxPowerAck";
+        else if(action=="routingM4Control")event="arMixM4ControlAck";
+        else if(action=="routingChannelPatch")event="arMixChannelPatchAck";
+        else if(action=="routingSourceSwitch")event="arMixSourceSwitchAck";
+        else if(action=="routingFxRackBypass")event="arMixRoutingFxRackAck";
+        else if(action=="routingGlobalFxBypass")event="arMixGlobalFxAck";
+        if(!event)return {};
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",args.getProperty("requestId",{}));
+        ack->setProperty("ok",false);
+        ack->setProperty("error","Audio configuration is finishing. Retry when ready.");
+        // Echo request identity only, not authoritative installed state.
+        if(action=="routingExternalOutput"){
+            ack->setProperty("channelId",args.getProperty("channelId",{}).toString());
+            ack->setProperty("deviceEpoch",args.getProperty("deviceEpoch",{}));
+            ack->setProperty("graphRevision",args.getProperty("revision",{}));
+        }else if(action=="routingNativeFxRackBypass"||action=="routingNativeFxInsertBypass"){
+            ack->setProperty("channelId",args.getProperty("channelId",{}));
+            ack->setProperty("bypassed",args.getProperty("value",{}));
+        }else if(action=="routingM4Control"||action=="routingChannelPatch"||
+                 action=="routingSourceSwitch"||action=="routingFxRackBypass"){
+            ack->setProperty("channel",args.getProperty("channel",-1));
+        }
+        return {event,juce::var(ack.release())};
+    }
+
     struct Request {
         juce::String backend,capture,playback;
         double rate=0.,block=0.;

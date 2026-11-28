@@ -7977,6 +7977,10 @@ private:
                 emitNotice("Audio device is busy · try again",true);
             else if(action=="routingPhysicalBusOutput")
                 emitPhysicalBusOutputAck(args,"BUS OUTPUT: audio transaction busy");
+            else if(const auto receipt=deviceApply_.busyCommandReceipt(action,args);receipt.event){
+                if(browser_.loaded)
+                    browser_.emitEventIfBrowserIsVisible(receipt.event,receipt.payload);
+            }
             else if(action=="routingNativeSourcePatch"){
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("requestId",args.getProperty("requestId",{}));
