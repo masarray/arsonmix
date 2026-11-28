@@ -59,6 +59,14 @@ def browser_check(page):
     assert page.title() == "ArSonMix — Free Open Source Digital Mixer for Windows"
     assert page.locator("h1").count() == 1
     assert page.locator(".os-card").count() == 3
+    requirements = page.locator("#system-requirements")
+    assert requirements.is_visible()
+    assert requirements.locator("tbody tr").count() == 10
+    assert "8 GB" in requirements.inner_text() and "16 GB" in requirements.inner_text()
+    assert page.locator('.hero a[href="#system-requirements"]').is_visible()
+    assert requirements.evaluate("el => el.scrollWidth <= el.clientWidth + 2")
+    assert requirements.evaluate("el => el.getBoundingClientRect().bottom <= document.querySelector('.os-grid').getBoundingClientRect().top")
+
     assert page.locator(".app-shot img").count() == 1
     assert page.locator(".gallery img").count() == 3
     hero_image = page.locator(".app-shot img")

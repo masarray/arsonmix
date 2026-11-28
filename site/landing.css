@@ -126,3 +126,17 @@ a{color:inherit;text-decoration:none}button,input{font:inherit}img,svg{display:b
 .fx-explore-link{display:block;font-size:10px;color:#72d3e0;margin-top:10px}
 .fx-list article a:hover .fx-explore-link{color:#e1faff}
 .fx-native-heading{margin-top:28px}
+
+/* Windows hardware guidance: visible before platform downloads, no JS required. */
+.requirements-link{display:inline-block;margin-top:8px;color:var(--cyan);font-size:12px;text-decoration:underline;text-underline-offset:3px}
+.system-requirements{max-width:960px;margin:0 auto 32px;border:1px solid var(--line);border-radius:7px;background:var(--panel);padding:20px 24px;scroll-margin-top:12px}
+.system-requirements h3{font-size:19px;letter-spacing:-.025em;margin:0 0 4px}
+.requirements-intro,.requirements-use,.requirements-note{font-size:12px;line-height:1.65;margin:0}
+.requirements-table{width:100%;table-layout:fixed;border-collapse:collapse;margin:14px 0;font-size:12px;line-height:1.5}
+.requirements-table th,.requirements-table td{text-align:left;vertical-align:top;border-bottom:1px solid var(--line);padding:8px 10px;overflow-wrap:anywhere}
+.requirements-table thead th{color:var(--cyan);font-weight:640;background:var(--panel2)}
+.requirements-table th:first-child{width:24%}
+.requirements-table tbody th{font-weight:570;color:var(--text)}
+.requirements-table td{color:var(--muted)}
+.requirements-use{margin-bottom:8px;color:var(--text)}
+@media(max-width:760px){.system-requirements{padding:15px 12px}.requirements-table{font-size:11px}.requirements-table th,.requirements-table td{padding:7px 5px}.requirements-table th:first-child{width:24%}}
