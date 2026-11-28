@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <BinaryData.h>
+#include "StartupSplashProgress.h"
 
 // Native opaque first-paint guard. Both images are embedded and decoded once.
 // Background blur, colour grading and vignette are baked into the small JPEG.
@@ -17,6 +18,7 @@ public:
               BinaryData::arsonmix256_png,
               static_cast<size_t> (BinaryData::arsonmix256_pngSize)))
     {
+        progress_.markAssetsDecoded (elapsedMs());
         setName ("ArSonMix loading");
         setOpaque (true);
         setSize (740, 420);
@@ -28,13 +30,19 @@ public:
 
     void setStage (int stage)
     {
-        // 3 is the caller's failure/dismissal event, not success.
-        // Ignore duplicates, stale events and invalid states.
-        if (stage > stage_ && stage <= 2)
-        {
-            stage_ = stage;
+        if (progress_.advance (stage, elapsedMs()))
             repaint();
-        }
+    }
+
+    // Read once at the existing native handoff diagnostic. All values are
+    // milliseconds from splash construction, not OS process launch.
+    juce::String timingSummary() const
+    {
+        return "Splash timings (ms from construction; -1 = unobserved): assets="
+            + juce::String (progress_.assetsDecodedMs(), 2)
+            + ", paint=" + juce::String (progress_.firstPaintMs(), 2)
+            + ", gui_handshake=" + juce::String (progress_.guiHandshakeMs(), 2)
+            + ", native_handoff=" + juce::String (progress_.handoffMs(), 2);
     }
 
     void paint (juce::Graphics& g) override
@@ -83,8 +91,9 @@ public:
         g.drawText ("LIVE DIGITAL MIXER  /  NATIVE VST3 HOST", 24, 169, 572, 22,
                     juce::Justification::centred);
 
-        const juce::String status = stage_ == 0 ? "Loading mixer interface..."
-                                 : stage_ == 1 ? "Initializing audio device..."
+        const auto stage = progress_.stage();
+        const juce::String status = stage == 0 ? "Loading mixer interface..."
+                                 : stage == 1 ? "Preparing audio device..."
                                                : "Opening mixer...";
         g.setColour (juce::Colour (0xffd9ebf2));
         g.setFont (juce::FontOptions (15.0f));
@@ -93,18 +102,27 @@ public:
         // Aurora Glass Linear: first paint, authenticated GUI handshake,
         // and native startup handoff are three equal *checkpoints*, not
         // measured time or device/session readiness. No timer or fake %.
-        drawAuroraProgress (g, stage_);
+        drawAuroraProgress (g, progress_.fraction());
 
         g.setFont (juce::FontOptions (11.0f));
         g.setColour (juce::Colour (0xff92aab9));
         g.drawText ("STARTUP CHECKPOINTS", 100, 269, 238, 18,
                     juce::Justification::centredLeft);
-        g.drawText (juce::String (stage_ + 1) + " / 3", 350, 269, 170, 18,
+        g.drawText (juce::String (stage + 1) + " / 3", 350, 269, 170, 18,
                     juce::Justification::centredRight);
+
+        // This is the first completed JUCE paint, not compositor presentation.
+        if (progress_.firstPaintMs() < 0.0)
+            progress_.markFirstPaint (elapsedMs());
     }
 
 private:
-    static void drawAuroraProgress (juce::Graphics& g, int stage)
+    double elapsedMs() const noexcept
+    {
+        return juce::Time::getMillisecondCounterHiRes() - startedMs_;
+    }
+
+    static void drawAuroraProgress (juce::Graphics& g, float fraction)
     {
         // Keep a fixed optical centre and a slim hardware-like recessed track.
         const juce::Rectangle<float> track (100.0f, 240.0f, 420.0f, 14.0f);
@@ -116,7 +134,6 @@ private:
         g.setColour (juce::Colour (0xff51626e));
         g.drawRoundedRectangle (track.reduced (0.5f), 6.5f, 0.7f);
 
-        const float fraction = static_cast<float> (stage + 1) / 3.0f;
         const auto fill = inner.withWidth (inner.getWidth() * fraction);
         const float radius = juce::jmin (fill.getHeight() * 0.5f, fill.getWidth() * 0.5f);
         juce::ColourGradient aurora (
@@ -138,7 +155,9 @@ private:
         g.fillRoundedRectangle (fill, radius);
     }
 
+    // Declaration order deliberately timestamps before embedded image decode.
+    const double startedMs_ = juce::Time::getMillisecondCounterHiRes();
     const juce::Image background_;
     const juce::Image brand_;
-    int stage_ = 0;
+    armix::startup::SplashProgress progress_;
 };

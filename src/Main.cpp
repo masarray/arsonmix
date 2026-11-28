@@ -13643,7 +13643,8 @@ public:
             if (splash_) splash_->setStage (stage);
             if (stage >= 2)
             {
-                if (stage==2) writeStartupDiagnostic("GUI_READY");
+                if (stage==2) writeStartupDiagnostic("GUI_READY",
+                    splash_ ? splash_->timingSummary() : juce::String{});
                 splash_.reset(); // no overlay over live mixer after engine init
 #if defined(_WIN32)
                 // A real JUCE/WebView ready acknowledgement, not simply

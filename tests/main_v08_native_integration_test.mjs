@@ -196,17 +196,18 @@ test('native splash embeds preblurred JPEG and product PNG, preserves guard and 
 
 test('Aurora Glass Linear uses actual checkpoints, not elapsed time or false audio readiness',()=>{
  const splash=read('src/ArSonMixStartupSplash.h');
- const setStage=splash.slice(splash.indexOf('void setStage'),splash.indexOf('void paint'));
- assert.match(setStage,/if \(stage > stage_ && stage <= 2\)/);
- assert.match(setStage,/stage_ = stage;\s*repaint\(\);/);
+ const model=read('src/StartupSplashProgress.h');
+ const setStage=splash.slice(splash.indexOf('void setStage'),splash.indexOf('juce::String timingSummary'));
+ assert.match(model,/if \(stage <= stage_ \|\| stage > 2\)/);
+ assert.match(setStage,/if \(progress_\.advance \(stage, elapsedMs\(\)\)\)\s*repaint\(\);/);
  assert.doesNotMatch(setStage,/jlimit|clamp/);
- assert.match(splash,/int stage_ = 0;/);
- assert.match(splash,/drawAuroraProgress \(g, stage_\);/);
- assert.match(splash,/static_cast<float> \(stage \+ 1\) \/ 3\.0f/);
- assert.match(splash,/juce::String \(stage_ \+ 1\) \+ " \/ 3"/);
+ assert.match(model,/int stage_ = 0;/);
+ assert.match(splash,/drawAuroraProgress \(g, progress_\.fraction\(\)\);/);
+ assert.match(model,/static_cast<float> \(stage_ \+ 1\) \/ 3\.0f/);
+ assert.match(splash,/juce::String \(stage \+ 1\) \+ " \/ 3"/);
  assert.match(splash,/STARTUP CHECKPOINTS/);
  assert.match(splash,/"Loading mixer interface\.\.\."/);
- assert.match(splash,/"Initializing audio device\.\.\."/);
+ assert.match(splash,/"Preparing audio device\.\.\."/);
  assert.match(splash,/"Opening mixer\.\.\."/);
  assert.doesNotMatch(splash,/Mixer interface ready|Ready mixer layout|drawEllipse|startTimer|Timer::|sleep|ImageConvolutionKernel|GaussianBlur/);
  assert.match(splash,/juce::ColourGradient aurora/);
@@ -231,4 +232,21 @@ test('Aurora Glass Linear uses actual checkpoints, not elapsed time or false aud
    assert.ok(width>0 && width<=w-6);
    assert.ok(x+3+width<=x+w-3);
  }
+});
+
+test('splash phase profiling reuses the existing diagnostic without polling or new disk writes',()=>{
+ const splash=read('src/ArSonMixStartupSplash.h');
+ const model=read('src/StartupSplashProgress.h');
+ assert.ok(splash.indexOf('const double startedMs_')<splash.indexOf('const juce::Image background_'));
+ assert.match(splash,/progress_\.markAssetsDecoded \(elapsedMs\(\)\);/);
+ assert.match(splash,/if \(progress_\.firstPaintMs\(\) < 0\.0\)\s*progress_\.markFirstPaint \(elapsedMs\(\)\);/);
+ assert.match(splash,/getMillisecondCounterHiRes\(\) - startedMs_/);
+ assert.match(model,/if \(firstPaintMs_ < 0\.0\)/);
+ assert.match(model,/if \(assetsDecodedMs_ < 0\.0\)/);
+ assert.match(model,/guiHandshakeMs_ = elapsedMs;/);
+ assert.match(model,/handoffMs_ = elapsedMs;/);
+ assert.match(main,/writeStartupDiagnostic\("GUI_READY",\s*splash_ \? splash_->timingSummary\(\) : juce::String\{\}\);/);
+ assert.doesNotMatch(splash,/juce::File|replaceWithText|startTimer|callAsync/);
+ assert.doesNotMatch(model,/juce::|#include|std::thread/);
+ assert.match(read('CMakeLists.txt'),/add_test\(NAME StartupSplashCheckpointTiming COMMAND ARMixStartupSplashProgressTests\)/);
 });
