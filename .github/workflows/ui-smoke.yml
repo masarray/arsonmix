@@ -430,6 +430,9 @@ jobs:
       - name: Systemic live-ops Player optical and desktop parity
         if: ${{ github.head_ref == 'fix/systemic-live-ops-20261128' }}
         run: python tests/approved_player_v4_chromium_smoke.py
+      - name: Systemic live-ops offline document roster and routing readback
+        if: ${{ !cancelled() && github.head_ref == 'fix/systemic-live-ops-20261128' }}
+        run: python tests/approved_native_offline_logical_smoke.py
       - name: Production CSS parity — exact composed baseline before optimization
         if: ${{ github.head_ref == 'feature/io-atomic-output-readback-profile-20261127' }}
         run: |
