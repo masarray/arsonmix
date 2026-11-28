@@ -8,7 +8,8 @@
   <a href="https://masarray.github.io/arsonmix/#download"><strong>Download ArSonMix</strong></a> ·
   <a href="https://masarray.github.io/arsonmix/preview/">Explore the mixer</a> ·
   <a href="https://masarray.github.io/arsonmix/#effects">Built-in effects</a> ·
-  <a href="https://masarray.github.io/arsonmix/#feedback">Share feedback</a>
+  <a href="https://masarray.github.io/arsonmix/#feedback">Share feedback</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 <p align="center"><a href="https://masarray.github.io/arsonmix/"><img src="site/media/console-overview.jpg" alt="Native ArSonMix Windows digital mixer screenshot with 10 channels, live input gain knobs and color-coded WIRE routing" width="1100"></a></p>

@@ -1,6 +1,8 @@
 # Systemic GUI stabilization — consolidated defect register
 
-Owner-approved scope GUI-01–26, UX-01–12. Public alpha.33 **HOLD**. This file is a checkpoint, not a release certificate. Each row is OPEN until required evidence is collected on the same integrated candidate. Reproduction scenarios are owner reports / approved regression scenarios, not a claim each was reproduced locally. No physical hardware verification in this session.
+Owner-approved scope GUI-01–26, UX-01–12. The rows preserve the evidence and follow-up coverage for individual scenarios.
+
+**Release disposition, 28 November 2026.** Windows x64 alpha.33 was published at `213d2a4b861cd592c41c3ce6a4b318bf347b9e7b` after protected integration of PR #899. The release tree matches RC `21b709b2ed05902856609e41c882f14cf7fdba1b`, which passed 131 native CTests, full Chromium and the installer FAT. The owner accepted the tested FIELD configuration for primary ASIO, live FX Rack save/restore, External Output/WASAPI and VST3 scan/editor reopen. Later source changes are limited to startup presentation and diagnostics, tests and documentation. Retain row-level follow-up for untested device combinations and scenarios. [Coordination and qualification receipts](https://github.com/masarray/arsonmix/issues/837#issuecomment-7234742596) · [Public release](https://github.com/masarray/arsonmix/releases/tag/v0.5.0-alpha.33).
 
 Canonical PR [#899](https://github.com/masarray/arsonmix/pull/899), baseline `7e72085095e8dedc8008402389b4d04bd279d7b6`. Working PR [#1010](https://github.com/masarray/arsonmix/pull/1010), source commit `f985d3f70bc7de82503b656cf8552ba7ab11fc42` plus this checkpoint's selective retired-editor cleanup. #1010 merged to canonical at `0647b5744a5cf44f23f2a43d8ff8d7eb837c0709`; canonical subsequently advanced to `eace22f0202be5f8e7caa151d173851b82978f28`. Existing FactoryFX EQ/Comp/Verb unchanged; KuPik deferred.
 
