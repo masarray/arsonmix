@@ -325,6 +325,8 @@
     const raw=snapshot?.raw,d=snapshot?.device,g=snapshot?.graph;
     const output=secondaryOutputView(snapshot,live);
     const split=output.split;
+    if(!split&&output.programmeSourceId&&output.programmeSourceId!=="0")
+      return {available:false,split,reason:"Choose MAIN as programme source before changing headphone mode."};
     if(!snapshot?.admitted||snapshot.retained||d?.backend!=="ASIO"||
        d.enabledOutputs?.length!==2||raw?.physicalBusOutputObserved!==true||
        [d.epoch,g?.revision,g?.rosterRevision].some(v=>decimal(v)===null)||
@@ -406,6 +408,12 @@
         Array.isArray(p.pair)&&active.length===2&&active.every((port,i)=>port===p.pair[i])?
         "SETTLED":"WAIT";
     }
+    if(p.action==="secondaryOutputSource"){
+      if(!snapshot?.admitted||snapshot.retained||!p.value)return "STALE";
+      if(live.secondaryProgrammeSourceId!==p.value.channelId||
+         live.secondaryProgrammeSourceValid!==true)return "WAIT";
+      return !armed||live.secondaryProgrammeSourceApplied===true?"SETTLED":"WAIT";
+    }
     if(p.action==="secondaryOutputEnable")return armed&&live.secondaryOutputName===p.value?"SETTLED":"WAIT";
     if(p.action==="secondaryOutputArm")return ready&&live.secondaryOutputArmed===p.value?"SETTLED":"WAIT";
     if(p.action==="secondaryOutputStop")return live.secondaryOutputReady===false&&
@@ -444,13 +452,27 @@
     const recoveryName=String((current?live.secondaryOutputRecoveryName:raw?.secondaryOutputRecoveryName)||"");
     const state=recovering&&!armed?"RECOVERING":fault?"FAULT":!ready||!name?(split?"NEEDS_REMAP":"DISCONNECTED"):
       armed?"ENABLED":"MUTED";
-    return {split,name:name||recoveryName,ready:ready&&!fault,armed:ready&&!fault&&!!name&&armed,fault:!!fault,recovering:recovering&&!armed,state};
+    const programme=current&&decimal(live.secondaryProgrammeSourceId)!==null&&
+      typeof live.secondaryProgrammeSourceValid==="boolean"&&typeof live.secondaryProgrammeSourceApplied==="boolean";
+    const sourceId=programme?live.secondaryProgrammeSourceId:null;
+    const source=sourceId&&sourceId!=="0"?snapshot?.graph?.channels?.find(ch=>ch.id===sourceId&&
+      ["INPUT","GROUP","FX_RETURN"].includes(ch.role)):null;
+    const sourceValid=programme&&live.secondaryProgrammeSourceValid===true&&
+      (sourceId==="0"||!!source);
+    return {split,name:name||recoveryName,ready:ready&&!fault,armed:ready&&!fault&&!!name&&armed,fault:!!fault,recovering:recovering&&!armed,state,
+      ...(programme?{programmeSourceId:sourceId,programmeSourceValid:sourceValid,
+        programmeSourceApplied:sourceValid&&live.secondaryProgrammeSourceApplied===true,
+        programmeSourceName:sourceId==="0"?"MAIN":sourceValid?source.name:"Source unavailable"}:{})};
   }
   function secondaryOutputRow(snapshot,live) {
     const v=secondaryOutputView(snapshot,live);
     if(!v.split&&v.state==="DISCONNECTED")return null;
+    const custom=v.programmeSourceId&&v.programmeSourceId!=="0";
     return {pair:"STREAM",pins:v.name||"Windows playback endpoint disconnected",
-      role:v.split?"MAIN":"MAIN MIRROR",owners:"MAIN",status:v.state,shared:0};
+      role:custom?"PROGRAMME":v.split?"MAIN":"MAIN MIRROR",
+      owners:custom?v.programmeSourceName:"MAIN",
+      status:custom&&!v.programmeSourceValid?"NEEDS_REMAP":
+        custom&&v.armed&&!v.programmeSourceApplied?"PENDING":v.state,shared:0};
   }
   function physicalOutputOverview(snapshot) {
     const d=snapshot?.device,raw=snapshot?.raw;

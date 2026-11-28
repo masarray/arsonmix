@@ -4725,6 +4725,9 @@ private:
         return false;
     }
     bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true,bool autoResume=false) {
+        // Custom programme selection is session-local until .smix source
+        // persistence is introduced. Never auto-resume MAIN on next launch.
+        if(engine_.hasSecondaryProgrammeSource())autoResume=false;
         loadSecondaryPreference();
         if(name.isEmpty()||name.length()>240||endpointId.empty()||endpointId.size()>2048)return false;
         if(secondaryPreference_&&secondaryPreference_->name==name&&
@@ -8060,6 +8063,50 @@ private:
            action=="audioDeviceApply"||action=="audioSetup"||action=="audioDriverPanel"))
             cancelPendingFxRackTransition("Superseded by operator action");
         if(action=="secondaryOutputInventory")return requestSecondaryInventory(args);
+        if(action=="secondaryOutputSource"){
+            const auto value=args.getProperty("value",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            std::uint64_t ep=0,rev=0,roster=0,id=0;
+            const auto source=value.getProperty("channelId",{});
+            auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
+            juce::String error="Programme source request stale or audio configuration is busy";
+            if(lease&&request.isNotEmpty()&&request.length()<=64&&
+               !nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !retainedOfflineFxActive_&&!pendingRetainedFxCapture_&&!vendorSafeRecoveryActive()&&
+               !pendingPhysicalBusPatch_&&!pendingRackTransition_&&!pendingSecondaryStop_&&
+               !secondaryRecoveryPending()&&!engine_.hasRuntimeFxFault()&&
+               value.getProperty("workspaceGeneration",{}).toString()==juce::String(std::to_string(workspaceGeneration_))&&
+               armix::console::approvedNativeId(value.getProperty("deviceEpoch",{}),ep)&&
+               armix::console::approvedNativeId(value.getProperty("graphRevision",{}),rev)&&
+               armix::console::approvedNativeId(value.getProperty("rosterRevision",{}),roster)&&
+               source.isString()&&(source.toString()=="0"||armix::console::approvedNativeId(source,id))&&
+               engine_.nativeTopologyMatches(ep,rev)){
+                loadSecondaryPreference();
+                // Disable persisted automatic MAIN before choosing an
+                // unpersisted custom source. A failed durable update must
+                // not leave a misleading automatic broadcast intent.
+                bool saved=true;
+                if(id&&secondaryPreference_&&secondaryPreference_->autoResume)
+                    saved=rememberSecondaryPreference(secondaryPreference_->name,secondaryPreference_->id,
+                        secondaryPreference_->prepare,false);
+                if(!saved)error="Cannot save safe startup output preference";
+                else {
+                    cancelPhysicalLoopback();
+                    pendingVendorStream_.reset();
+                    cancelSecondaryContinuity();
+                    cancelStartupSecondaryPreparation();
+                    error=engine_.selectSecondaryProgramme(ep,rev,roster,armix::mixer::ChannelId{id});
+                    if(auto intent=engine_.captureSecondaryResumeIntent())
+                        if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
+                            secondaryContinuity_=SecondaryContinuity{*intent,engine_.dryRoutingLabEpoch(),engine_.outputArmRevision()};
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);ack->setProperty("action",action);
+            ack->setProperty("ok",error.isEmpty());ack->setProperty("error",error);
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputAck",juce::var(ack.release()));
+            return emitNotice(error.isEmpty()?"Programme source selected · waiting for audio readback":error,error.isNotEmpty());
+        }
         if(action=="routingNativePfl"){
             std::uint64_t ep=0,rev=0,id=0;
             const auto enabled=args.getProperty("enabled",{});
@@ -11587,6 +11634,8 @@ private:
                !armix::console::approvedNativeId(value.getProperty("graphRevision",{}),rev)||
                !armix::console::approvedNativeId(value.getProperty("rosterRevision",{}),roster))
                 error="DMX: stale request or mixer operation in progress";
+            else if(bool(enable)&&engine_.hasSecondaryProgrammeSource())
+                error="Choose MAIN as the secondary programme source before changing headphone mode";
             else if(!bool(value.getProperty("smart",false)))
                 error=engine_.patchDmxSplitOutput(ep,rev,roster,bool(enable));
             else {

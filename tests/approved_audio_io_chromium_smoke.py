@@ -906,6 +906,39 @@ def verify_independent_output(page,out,legacy_empty=False):
     panel=page.get_by_role("dialog",name="Additional Output")
     req=page.evaluate("()=>window.__actions.at(-1)")
     emit(page,"arMixSecondaryOutputInventory",{"requestId":req["requestId"],"outputs":["CABLE Input"]})
+    if not legacy_empty:
+        # Actual GUI source assignment is independent of the physical pair,
+        # uses the accepted ChannelId, and waits for callback readback.
+        live.update(secondaryProgrammeSourceId="0",secondaryProgrammeSourceValid=True,
+                    secondaryProgrammeSourceApplied=True)
+        emit(page,"arMixStatus",live)
+        source=panel.get_by_label("Secondary programme source")
+        channel=next(ch for ch in state["graph"]["channels"] if ch["role"] in ("INPUT","GROUP","FX_RETURN"))
+        assert source.is_visible() and source.is_enabled() and source.input_value()=="0"
+        source.select_option(channel["id"])
+        source_req=page.evaluate("()=>window.__actions.at(-1)")
+        assert source_req["action"]=="secondaryOutputSource"
+        assert source_req["value"]=={"channelId":channel["id"],"deviceEpoch":state["device"]["epoch"],
+            "graphRevision":"2","rosterRevision":"2","workspaceGeneration":"0"}
+        assert source.input_value()=="0" and source.is_disabled()
+        emit(page,"arMixSecondaryOutputAck",{"requestId":source_req["requestId"],"action":source_req["action"],"ok":True})
+        assert source.is_disabled()
+        live.update(secondaryProgrammeSourceId=channel["id"],secondaryProgrammeSourceApplied=False)
+        emit(page,"arMixStatus",live)
+        assert source.input_value()==channel["id"] and source.is_disabled()
+        live["secondaryProgrammeSourceApplied"]=True
+        emit(page,"arMixStatus",live)
+        assert source.is_enabled() and source.input_value()==channel["id"]
+        assert panel.locator("[data-extra-mode]").inner_text()=="Independent programme"
+        assert panel.locator("[data-extra-mix]").is_disabled()
+        source.select_option("0")
+        restore=page.evaluate("()=>window.__actions.at(-1)")
+        assert restore["action"]=="secondaryOutputSource" and restore["value"]["channelId"]=="0"
+        emit(page,"arMixSecondaryOutputAck",{"requestId":restore["requestId"],"action":restore["action"],"ok":True})
+        live.update(secondaryProgrammeSourceId="0",secondaryProgrammeSourceApplied=True)
+        emit(page,"arMixStatus",live)
+        assert source.is_enabled() and source.input_value()=="0"
+        print("SECONDARY_PROGRAMME_SOURCE_READBACK_PASS",flush=True)
     button=panel.get_by_role("button",name="Separate headphone mix")
     assert button.is_enabled()
     button.click()

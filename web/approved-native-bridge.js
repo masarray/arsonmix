@@ -4246,7 +4246,7 @@
       v.fault?"Secondary output fault · select endpoint to retry or Disconnect.":
       active?"Secondary output "+v.state+" · choose None before switching devices.":
       !mainMonitorAllowed()?"Configure the primary audio device and mixer route first.":
-      "Choose a compatible Windows playback endpoint to mirror MAIN. Primary OUT is unchanged.");
+      "Choose a compatible Windows playback endpoint to send "+(v.programmeSourceName||"MAIN")+". Primary OUT is unchanged.");
     if(select.title!==title)select.title=title;
     }
   }
@@ -4296,7 +4296,30 @@
     extraField("stop").disabled=extraPending?.action==="secondaryOutputStop"||
       (!ready&&!fault&&!name&&!recovering&&!extraHasSaved&&extraPending?.action!=="secondaryOutputEnable");
     extraField("repair").hidden=!live||allowed||busy||armed||recovering;
-    const mode=split?"Separate headphone mix":"Same mix";
+    const source=extraField("source");
+    const programme=destination.programmeSourceId!==undefined;
+    const custom=programme&&destination.programmeSourceId!=="0";
+    source.closest("label").hidden=!programme;
+    if(programme){
+      const validGraph=hardware?.admitted===true&&!hardware.retained&&
+        protocol.decimal(hardware.raw?.workspaceGeneration)!==null;
+      const sourceOptions=[["0","MAIN"]];
+      if(validGraph&&!split)
+        for(const ch of hardware.graph.channels)
+          if(["INPUT","GROUP","FX_RETURN"].includes(ch.role))
+            sourceOptions.push([ch.id,ch.name+" · "+(ch.role==="GROUP"?"BUS":ch.role==="FX_RETURN"?"FX Return":"Track")]);
+      const stale=custom&&!destination.programmeSourceValid;
+      if(stale)sourceOptions.unshift(["__reselect__","Source unavailable · select again"]);
+      const sourceSig=JSON.stringify(sourceOptions);
+      if(source.dataset.signature!==sourceSig){
+        source.replaceChildren(...sourceOptions.map(([id,label])=>new Option(label,id)));
+        source.dataset.signature=sourceSig;
+      }
+      const sourceValue=stale?"__reselect__":destination.programmeSourceId;
+      if(source.value!==sourceValue)source.value=sourceValue;
+      source.disabled=busy||!allowed||!validGraph||recovering||(split&&!custom);
+    }
+    const mode=split?"Separate headphone mix":custom?"Independent programme":"Same mix";
     if(extraField("mode").textContent!==mode)extraField("mode").textContent=mode;
     const mix=protocol.secondaryMixMode(hardware,live);
     const modeButton=extraField("mix");
@@ -4314,7 +4337,8 @@
     editButton.disabled=busy||!edit;
     const mixHint=extraField("mix-hint");
     mixHint.hidden=modeButton.hidden&&starterButton.hidden&&editButton.hidden&&!armed;
-    const hint=starter?"Headphones have no sends. Create a quiet PRE-fader mix, or edit existing routing in the mixer.":
+    const hint=custom?"Secondary playback receives the selected channel after FX and fader. Primary OUT stays unchanged.":
+      starter?"Headphones have no sends. Create a quiet PRE-fader mix, or edit existing routing in the mixer.":
       split?mix.reason+(edit?" · Edit headphone mix to adjust sends. PRE sends ignore the source channel fader.":""):
       mix.available?"Primary and secondary playback receive the same mix. "+mix.reason:mix.reason;
     if(mixHint.textContent!==hint)mixHint.textContent=hint;
@@ -4326,8 +4350,10 @@
       busy?"Audio device is applying…":!live?"Reading audio engine status…":
       recovering?"Reconnecting to "+name+" automatically · Disconnect to stop":
       fault?"Output disconnected unexpectedly. Enable the selected device again or disconnect.":
-      armed?"Enabled · "+name+" · check audio in receiving app":
-      ready?"Connected · "+name+" · Enable to send MAIN":
+      custom&&!destination.programmeSourceValid?"Source unavailable · output silent; select a programme source":
+      armed&&custom&&!destination.programmeSourceApplied?"Waiting for programme PCM readback…":
+      armed?"Enabled · "+name+(custom?" · "+destination.programmeSourceName:"")+" · check audio in receiving app":
+      ready?"Connected · "+name+" · Enable to send "+(custom?destination.programmeSourceName:"MAIN"):
       !allowed?"Audio device or mixer routing is not ready. Check Audio I/O.":
       extraInventoryPending?"Reading Windows playback devices…":
       !extraInventoryKnown?"Waiting for Windows playback devices…":
@@ -4402,10 +4428,11 @@
     content.setAttribute("aria-label","Additional Output controls");
     content.innerHTML=`<div class="armix-stream-heading"><strong>Secondary playback output (MON)</strong><span class="armix-stream-mode" data-extra-mode></span></div>
       <label>Windows playback device<select data-extra-device aria-label="Windows playback device"></select></label>
+      <label hidden>Programme source<select data-extra-source aria-label="Secondary programme source"></select></label>
       <div class="armix-stream-actions"><button type="button" data-extra-connect>Enable output</button><button type="button" data-extra-stop>Disconnect</button><button type="button" data-extra-refresh>Refresh</button><button type="button" data-extra-repair hidden>Set up audio</button></div>
       <div data-extra-status role="status" aria-live="polite"></div><div data-extra-error role="alert" hidden></div>
       <div class="armix-stream-actions"><button type="button" data-extra-mix hidden>Separate headphone mix</button><button type="button" data-extra-starter hidden>Create headphone mix</button><button type="button" data-extra-edit-mix hidden>Edit headphone mix</button><span class="armix-stream-hint" data-extra-mix-hint hidden></span></div>
-      <div class="armix-stream-hint">Mirrors MAIN to a separate compatible Windows playback device. Primary OUT stays unchanged in Same mix mode. For virtual cables, select the matching recording endpoint in the receiving application.</div>`;
+      <div class="armix-stream-hint">Send MAIN or an assigned programme to a separate Windows playback device. Primary OUT stays unchanged unless headphone mode is changed. For virtual cables, choose the matching recording endpoint in the receiving application.</div>`;
     panel.append(content);extraPanel=panel;extraControls=content;document.body.appendChild(panel);
     extraField("refresh").onclick=()=>refreshAdditionalInventory(true);
     extraField("repair").onclick=()=>{
@@ -4414,6 +4441,15 @@
       selectAudioSetupPage("device");
     };
     extraField("device").onchange=()=>{extraSelected=extraField("device").value;paintAdditionalOutput();};
+    extraField("source").onchange=()=>{
+      const control=extraField("source"),channelId=control.value,snapshot=hardware;
+      if(control.disabled||protocol.decimal(channelId)===null||!snapshot?.admitted||snapshot.retained){
+        paintAdditionalOutput();return;
+      }
+      requestAdditionalOutput("secondaryOutputSource",{channelId,deviceEpoch:snapshot.device.epoch,
+        graphRevision:snapshot.graph.revision,rosterRevision:snapshot.graph.rosterRevision,
+        workspaceGeneration:snapshot.raw.workspaceGeneration});
+    };
     extraField("connect").onclick=()=>requestAdditionalOutput("secondaryOutputEnable",extraField("device").value);
     extraField("stop").onclick=()=>requestAdditionalOutput("secondaryOutputStop",null);
     extraField("mix").onclick=()=>{
