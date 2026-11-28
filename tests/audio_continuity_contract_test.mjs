@@ -408,3 +408,20 @@ test('same-format physical source retarget preserves output generation and requi
  assert.match(main,/"sourceSwitchTicket"/);
  assert.match(vm,/channel.source\?\.appliedSwitchTicket===pending.sourceSwitchTicket/);
 });
+
+
+test('custom secondary programme preserves generation, whole callback, and independent MAIN',()=>{
+ const start=engine.indexOf('const auto secondaryTicket=secondaryOutput_.captureProducerTicket()');
+ const render=engine.indexOf('const bool routed=dryRoutingLab_.process(',start);
+ const envelope=engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels',render);
+ const publish=engine.indexOf('secondaryOutput_.publish(secondaryTicket,programmePcm[0],programmePcm[1],samples)',envelope);
+ const acknowledge=engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)',publish);
+ assert.ok(start>=0&&render>start&&envelope>render&&publish>envelope&&acknowledge>publish);
+ const selection=engine.split('juce::String selectSecondaryProgramme(')[1].split('juce::String armSecondaryOutput(')[0];
+ assert.ok(selection.indexOf('secondaryOutput_.disarm()')<selection.indexOf('secondaryProgrammeSource_.store'));
+ assert.match(selection,/if\(armed\)return armSecondaryOutput\(true\)/);
+ const callback=engine.split('if(outputGate.secondary) {').at(-1).split('secondaryProgrammeAppliedTicket_.store')[0];
+ assert.match(callback,/if\(programmeId\)[\s\S]*?if\(valid\)[\s\S]*?publish\(secondaryTicket,programmePcm\[0\],programmePcm\[1\],samples\)[\s\S]*?else[\s\S]*?publish\(secondaryTicket,nullptr,nullptr,samples\)/);
+ assert.match(callback,/else if\(routed&&nativeMain\[0\]&&nativeMain\[1\]\)/);
+ assert.match(main,/if\(engine_\.hasSecondaryProgrammeSource\(\)\)autoResume=false/);
+});

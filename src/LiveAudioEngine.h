@@ -4679,14 +4679,21 @@ private:
             // Hardware monitor mute remains INDEPENDENT: streaming may run
             // while every physical output on the current device is silent.
             if(outputGate.secondary) {
-                const auto selected=programmeId?programmePcm:nativeMain;
-                const bool valid=routed&&selected[0]&&selected[1]&&
-                    (!programmeId||programmeWorkspace==dryRoutingLab_.programmeWorkspace());
-                if(valid)
-                    secondaryOutput_.publish(secondaryTicket,selected[0],selected[1],samples);
-                else
-                    // Preserve the complete primary clock interval, never
-                    // replay stale or unrelated programme PCM into Windows.
+                bool valid=false;
+                if(programmeId) {
+                    valid=routed&&programmePcm[0]&&programmePcm[1]&&
+                        programmeWorkspace==dryRoutingLab_.programmeWorkspace();
+                    if(valid)
+                        secondaryOutput_.publish(secondaryTicket,programmePcm[0],programmePcm[1],samples);
+                    else
+                        secondaryOutput_.publish(secondaryTicket,nullptr,nullptr,samples);
+                }else if(routed&&nativeMain[0]&&nativeMain[1]) {
+                    // Preserve the original MAIN path independently of the
+                    // optional programme feature and its workspace lifetime.
+                    secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples);
+                    valid=true;
+                }else
+                    // A complete clock interval, never stale/partial PCM.
                     secondaryOutput_.publish(secondaryTicket,nullptr,nullptr,samples);
                 secondaryProgrammeAppliedTicket_.store(valid?secondaryTicket:0,std::memory_order_release);
             }
