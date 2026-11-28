@@ -208,7 +208,20 @@ class BundleTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest))
         with self.assertRaises(ValueError):
             bundle.verify(locked, self.output, self.notices)
-        self.assertEqual(bundle.distribution_for(releases[:3]), "engineering-partial")
+        self.assertEqual(bundle.distribution_for(releases[:3]), "production-three")
+        # Scope reduction is explicit, never a four-to-three fallback.
+        three = self.root / "three"
+        three.mkdir()
+        self.save_lock(*releases[:3])
+        with patch.object(bundle, "download_release",
+                          side_effect=lambda p, target: shutil.copyfile(archives[p["productId"]], target)):
+            with patch.object(sys, "argv", ["bundle", "stage", "--require", "three", "--lock", str(self.lock), "--notices", str(self.notices), "--output", str(three)]):
+                bundle.main()
+        bundle.verify(releases[:3], three, self.notices)
+        self.assertEqual(bundle.read_best_effort_report(releases[:3], three), releases[:3])
+        self.assertEqual(json.loads((three / "FactoryFX/factoryfx-manifest.json").read_text())["distribution"], "production-three")
+        self.assertFalse((three / "FactoryFX/ArSonKuPik").exists())
+        self.assertFalse((three / "FactoryFX/licenses/arsonkupik-enhancer.txt").exists())
 
     def test_failed_second_artifact_never_publishes_partial_factory(self):
         p = dict(self.approved, productId="arson-verb",
@@ -316,6 +329,31 @@ class BundleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bundle.read_best_effort_report(records, self.output)
 
+
+    def test_three_scope_rejects_missing_extra_wrong_identity_and_supplier_failure(self):
+        records = [dict(self.approved, productId=pid, sourceRepo=bundle.OWNED[pid][0])
+                   for pid in sorted(bundle.THREE_IDS)]
+        args = ["bundle", "preflight", "--lock", str(self.lock),
+                "--notices", str(self.notices), "--require", "three"]
+        for p in records:
+            (self.notices / (p["productId"] + ".txt")).write_text("fixture")
+        for invalid in (records[:2], records + [dict(self.approved, productId="arsonkupik-enhancer", sourceRepo="masarray/askp-vst")],
+                        records[:2] + [dict(self.approved, productId="arson-color", sourceRepo="masarray/arson-color")]):
+            self.save_lock(*invalid)
+            with patch.object(sys, "argv", args), self.assertRaisesRegex(ValueError, "Three-FX"):
+                bundle.main()
+        self.save_lock(*records)
+        with patch.object(sys, "argv", args):
+            bundle.main()
+        with patch.object(bundle, "download_release", side_effect=OSError("supplier offline")):
+            with self.assertRaises(OSError):
+                bundle.stage(records, self.output, self.notices, best_effort=True)
+        self.assertFalse((self.output / "FactoryFX").exists())
+        self.assertFalse((self.output / "FACTORYFX_STAGE_REPORT.json").exists())
+        included = [{"productId": p["productId"], "artifactSha256": p["artifactSha256"]} for p in records]
+        (self.output / "FACTORYFX_STAGE_REPORT.json").write_text(json.dumps(dict(schemaVersion=1, mode="standard-three", included=included[:-1], omitted=[{"productId": records[-1]["productId"], "reason": "OSError"}])))
+        with self.assertRaises(ValueError):
+            bundle.read_best_effort_report(records, self.output)
 
     def test_release_preflight_requires_exact_four_and_complete_notices(self):
         records = [dict(self.approved, productId=pid,

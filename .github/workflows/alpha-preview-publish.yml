@@ -97,10 +97,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Reject incomplete Standard FactoryFX before native build
+      - name: Reject incomplete or extra alpha.33 FactoryFX before native build
         shell: pwsh
         run: |
-          python scripts/factoryfx_release_bundle.py preflight --lock config/factoryfx-approved-releases.json --require four
+          python scripts/factoryfx_release_bundle.py preflight --lock config/factoryfx-approved-releases.json --require three
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Checkout pinned JUCE 8.0.15
@@ -145,12 +145,12 @@ jobs:
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Stage all four independently approved Standard FactoryFX
+      - name: Stage all three independently approved FactoryFX (alpha.33)
         shell: pwsh
         run: |
-          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --require four
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --require three
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output dist --require four
+          python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output dist --require three
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Independently audit exact native executable and portable package

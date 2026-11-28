@@ -25,11 +25,19 @@ OWNED = {
     "arson-harmony": ("masarray/arson-harmony", "ArSonHarmony", "ArSonHarmony.vst3", "HARMONY"),
     "arson-color": ("masarray/arson-color", "ArSonColor", "ArSonColor.vst3", "COLOR"),
 }
+THREE_IDS = frozenset(("arson-eq", "arson-comp", "arson-verb"))
 FOUR_IDS = frozenset(("arson-eq", "arson-comp", "arson-verb", "arsonkupik-enhancer"))
 
 
 def standard_ready(plugins):
-    return FOUR_IDS.issubset({p["productId"] for p in plugins})
+    ids = {p["productId"] for p in plugins}
+    return ids == THREE_IDS or FOUR_IDS.issubset(ids)
+
+
+def stage_mode(plugins):
+    if distribution_for(plugins) == "production-three":
+        return "standard-three"
+    return "standard-four" if standard_ready(plugins) else "best-effort"
 
 
 def distribution_for(plugins):
@@ -38,6 +46,8 @@ def distribution_for(plugins):
         return "production-six"
     if len(ids) == 4 and set(ids) == FOUR_IDS:
         return "production-four"
+    if len(ids) == 3 and set(ids) == THREE_IDS:
+        return "production-three"
     return "engineering-partial"
 
 
@@ -193,7 +203,7 @@ def stage(plugins, output, notices, best_effort=False):
     are on the same filesystem so the final directory rename is atomic.
     """
     # Existing reviewed Windows workflow invokes --best-effort. Once the
-    # four-product lock is complete, a supplier failure is a distribution
+    # exact three-product or complete four-product lock is present, a supplier failure is a distribution
     # failure, not permission to silently downgrade a Standard package.
     standard = standard_ready(plugins)
     output = Path(output)
@@ -266,7 +276,7 @@ def stage(plugins, output, notices, best_effort=False):
             factory.rename(destination)
     if best_effort:
         report = {
-            "schemaVersion": 1, "mode": "standard-four" if standard else "best-effort",
+            "schemaVersion": 1, "mode": stage_mode(plugins),
             "included": [{"productId": row["productId"],
                           "artifactSha256": row["artifactSha256"]} for row in rows],
             "omitted": omitted,
@@ -341,7 +351,7 @@ def read_best_effort_report(plugins, output):
     if (not isinstance(report, dict) or set(report) !=
             {"schemaVersion", "mode", "included", "omitted"} or
             report["schemaVersion"] != 1 or
-            report["mode"] != ("standard-four" if standard_ready(plugins) else "best-effort") or
+            report["mode"] != stage_mode(plugins) or
             not isinstance(report["included"], list) or
             not isinstance(report["omitted"], list)):
         fail("invalid optional FactoryFX stage report")
@@ -379,7 +389,7 @@ def main():
     parser.add_argument("--lock", default="config/factoryfx-approved-releases.json")
     parser.add_argument("--notices", default="config/factoryfx-notices")
     parser.add_argument("--output", default="dist")
-    parser.add_argument("--require", choices=["none", "factory", "four", "six"], default="none")
+    parser.add_argument("--require", choices=["none", "factory", "three", "four", "six"], default="none")
     parser.add_argument("--best-effort", action="store_true",
                         help="Include each approved, retrievable plugin; never block core mixer")
     args = parser.parse_args()
@@ -388,6 +398,8 @@ def main():
         fail("--best-effort cannot bypass an explicit --require gate")
     if args.require == "factory" and not plugins:
         fail("Factory FX required but no approved release")
+    if args.require == "three" and distribution_for(plugins) != "production-three":
+        fail("Three-FX release requires exactly EQ, Comp and Verb — all approved")
     if args.require == "four" and distribution_for(plugins) != "production-four":
         fail("Four-FX release requires EQ, Comp, Verb and KuPik — all approved")
     if args.require == "six" and distribution_for(plugins) != "production-six":
@@ -403,8 +415,8 @@ def main():
         stage(plugins, Path(args.output), Path(args.notices), args.best_effort)
         # The normal Windows distribution verifier consumes a report even
         # when a strict CLI gate was selected explicitly.
-        if args.require == "four" or args.require == "six":
-            report = {"schemaVersion": 1, "mode": "standard-four",
+        if args.require in ("three", "four", "six"):
+            report = {"schemaVersion": 1, "mode": stage_mode(plugins),
                       "included": [{"productId": p["productId"],
                                     "artifactSha256": p["artifactSha256"].lower()} for p in plugins],
                       "omitted": []}

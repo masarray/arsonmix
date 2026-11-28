@@ -4,7 +4,7 @@ Release history and immutable public packages: [GitHub Releases](https://github.
 
 ## Unreleased — v0.5.0-alpha.33 candidate
 - Consolidate the approved FIELD mixer, routing, persistence, Plugin Manager and built-in effect updates.
-- Require the complete independently approved Standard four-plugin inventory for public Windows packages; verify installer and portable content.
+- Require exactly three independently approved AGPL FactoryFX (EQ, Comp, Verb) for alpha.33 Windows packages; KuPik deferred; verify installer and portable content.
 - Preserve existing UI, FX authority and session compatibility. See [candidate release notes](docs/releases/v0.5.0-alpha.33.md). Publication and hardware qualification are not implied by this entry.
 
 ## v0.5.0-alpha.32

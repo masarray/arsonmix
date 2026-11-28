@@ -800,6 +800,7 @@ test('FactoryFX installation proves native discovery using the same verified ins
   assert.match(scan,/GetAttribute\('path'\)/);
   assert.match(scan,/\[Convert\]::ToInt32\(\$uid,16\) -eq \[int\]\$row\.hostUniqueId/);
   assert.match(scan,/GetAttribute\('version'\) -ceq \[string\]\$row\.pluginVersion/);
+  assert.match(scan,/production-three.*\$count -ne 3/);
   assert.match(scan,/production-four.*\$count -ne 4/);
   assert.match(build,/Assert-InstalledFactoryFx "fresh-install"\s+\$factoryFxScanCount=Test-InstalledFactoryFxScanner \$installedExe/);
   assert.match(build,/factoryFxInstalledScanCount=\$factoryFxScanCount/);

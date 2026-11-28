@@ -126,6 +126,9 @@ function Test-InstalledFactoryFxScanner([string]$Application) {
             Remove-Item -LiteralPath $receiptDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+    if($fxManifest.distribution -ceq 'production-three' -and $count -ne 3){
+        throw "Alpha.33 FactoryFX installed scanner did not find all three modules"
+    }
     if($fxManifest.distribution -ceq 'production-four' -and $count -ne 4){
         throw "Standard FactoryFX installed scanner did not find all four modules"
     }

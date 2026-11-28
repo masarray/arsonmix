@@ -345,11 +345,11 @@ test('verified Windows release refreshes GitHub and optional Cloudflare static c
 });
 
 
-test("Standard Windows public release cannot silently omit FactoryFX",()=>{
+test("Alpha.33 Windows public release requires the exact three FactoryFX",()=>{
   const workflow=readFileSync(new URL("../.github/workflows/alpha-preview-publish.yml",import.meta.url),"utf8");
-  const preflight=workflow.indexOf("factoryfx_release_bundle.py preflight --lock config/factoryfx-approved-releases.json --require four");
+  const preflight=workflow.indexOf("factoryfx_release_bundle.py preflight --lock config/factoryfx-approved-releases.json --require three");
   assert.ok(preflight>=0 && preflight<workflow.indexOf("Configure release application"));
-  assert.match(workflow,/factoryfx_release_bundle\.py stage --lock config\/factoryfx-approved-releases\.json --output dist --require four/);
-  assert.match(workflow,/factoryfx_release_bundle\.py verify --lock config\/factoryfx-approved-releases\.json --output dist --require four/);
+  assert.match(workflow,/factoryfx_release_bundle\.py stage --lock config\/factoryfx-approved-releases\.json --output dist --require three/);
+  assert.match(workflow,/factoryfx_release_bundle\.py verify --lock config\/factoryfx-approved-releases\.json --output dist --require three/);
   assert.doesNotMatch(workflow,/factoryfx_release_bundle\.py stage[^\n]*--best-effort/);
 });
