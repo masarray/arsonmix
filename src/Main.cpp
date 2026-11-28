@@ -359,16 +359,21 @@ public:
             setUsingNativeTitleBar(false);
             setTitleBarButtonsRequired(0,false);
             setTitleBarHeight(0);
-        } else setUsingNativeTitleBar (true);
+        } else {
+            setUsingNativeTitleBar (true);
+            if(!editor->isResizable())
+                setTitleBarButtonsRequired(closeButton|minimiseButton,false);
+        }
         setIcon (approvedAppIcon());
+        // Configure host frame BEFORE installing content. JUCE fits the
+        // window to the plugin's requested client size, including borders.
+        // Never resize a fixed VST3 just to satisfy an arbitrary host minimum.
+        setResizable (editor->isResizable(), false);
         // The RAII owner notifies the processor before deletion, including
         // exceptions during construction. JUCE window is presentation only.
         setContentNonOwned (editor, true);
         editor->addMouseListener(this,true); // descendant JUCE controls, not a new editor owner
-        // Do not offer false host resizing for fixed-geometry built-in FX.
-        setResizable (editor->isResizable(), false);
-        if(reverbFaceplate)centreWithSize(getWidth(),getHeight());
-        else centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
+        centreWithSize(getWidth(),getHeight());
         // A Win32-owned floating editor stays above THIS mixer, not every app.
         // Attach after bounds are set (JUCE 8 native owned-popup coordinates).
         (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
@@ -385,6 +390,9 @@ public:
                                         centreOnMixer && !everPresented_);
         everPresented_=true;
         if (!isVisible()) setVisible (true);
+        // Reopen after native style/peer changes with the current mixer
+        // HWND, not the owner captured by the first constructor call.
+        (void)armix::ui::attachOwnedFloatingWindow(*this,mixer_);
         toFront (true);
     }
     void mouseDown(const juce::MouseEvent& event) override {
@@ -960,6 +968,10 @@ public:
             setTitleBarHeight(ribbonChromeActive_ ? 0 : 31);
         }
         operatorFullscreen_=entering;
+        // Native fullscreen/kiosk transitions can change peer styles or
+        // handles. Repair existing visible popups without moving them,
+        // reopening hidden editors or transferring keyboard focus.
+        refreshVisibleFloatingOwners();
         publishRibbonWindowState();
         if(browser_.isShowing())browser_.resized();
         auto reply=std::make_unique<juce::DynamicObject>();
@@ -1920,6 +1932,23 @@ private:
                 ui->synchronizeHostPower();
 #endif
     }
+    void refreshVisibleFloatingOwners() noexcept {
+        const auto repair=[this](juce::Component* window) noexcept {
+            if(window&&window->isVisible())
+                (void)armix::ui::attachOwnedFloatingWindow(*window,*this);
+        };
+        repair(editorWindow_.get());
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        repair(immersibEditorWindow_.get());
+#endif
+        if(logicalVendorEditor_)repair(logicalVendorEditor_->window.get());
+        for(const auto& item:additionalFxEditors_)
+            if(item)repair(item->window.get());
+        for(const auto& item:floatingBuiltinFx_)
+            if(item)repair(item->window.get());
+        repair(playerWindow_.get());
+    }
+
     void closePluginEditor() noexcept {
         // Dispose the native UI BEFORE dropping the graph/processor lease.
         editorWindow_.reset();

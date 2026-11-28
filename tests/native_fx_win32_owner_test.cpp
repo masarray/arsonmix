@@ -92,6 +92,27 @@ int main(){
         assert(!armix::ui::win32::raiseOwnedPopup(popup,mixer));
         std::puts("LIMITATION: runner denied foreground; only foreign-app refusal verified");
     }
+    // Simulate an owner peer change while a popup is open. The same
+    // editor HWND keeps geometry/visibility; no new TOPMOST or focus policy.
+    auto newMixer=::CreateWindowExW(0,cls.lpszClassName,L"Replacement mixer",style,
+                                    110,110,650,470,nullptr,nullptr,instance,nullptr);
+    assert(newMixer);
+    ::ShowWindow(newMixer,SW_SHOWNOACTIVATE);
+    RECT initial{};assert(::GetWindowRect(popup,&initial));
+    const auto beforeOwnerChange=::GetForegroundWindow();
+    assert(armix::ui::win32::attachOwnedPopup(popup,newMixer));
+    assert(::GetWindow(popup,GW_OWNER)==newMixer);
+    RECT afterOwnerChange{};
+    assert(::GetWindowRect(popup,&afterOwnerChange)&&::EqualRect(&initial,&afterOwnerChange));
+    assert(::IsWindowVisible(popup));
+    assert(::GetForegroundWindow()==beforeOwnerChange);
+    assert((::GetWindowLongPtrW(popup,GWL_EXSTYLE)&WS_EX_TOPMOST)==0);
+    ::ShowWindow(popup,SW_HIDE);
+    assert(armix::ui::win32::attachOwnedPopup(popup,mixer));
+    assert(!::IsWindowVisible(popup)); // ownership repair does not reopen hidden FX
+    ::DestroyWindow(newMixer);
+    assert(armix::ui::win32::ensureOwnedPopupVisible(popup,mixer));
+    std::puts("PASS: popup owner rebinding preserves geometry and hidden state");
     ::ShowWindow(mixer,SW_MINIMIZE);
     assert(!armix::ui::win32::ensureOwnedPopupVisible(popup,mixer));
     ::ShowWindow(mixer,SW_RESTORE);
