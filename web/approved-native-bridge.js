@@ -2727,18 +2727,18 @@
   // everyday header toggle. Temporary driver mute is not a panic latch.
   function syncEmergencyOutputControl(d) {
     if(!muteBtn)return;
-    const panic=hardware?.raw?.operatorOutputMuted===true;
-    muteBtn.dataset.emergencyMode=panic?"resume":"stop";
-    const label=panic?"Resume after emergency stop":"Emergency stop audio";
+    const hold=protocol.outputHoldPresentation(hardware?.raw);
+    muteBtn.dataset.emergencyMode=hold?"resume":"stop";
+    const label=hold?.button||"Emergency stop audio";
     if(muteBtn.textContent!==label)muteBtn.textContent=label;
-    muteBtn.disabled=panic?!deviceReady():d?.outputArmed!==true;
+    muteBtn.disabled=hold?!deviceReady():d?.outputArmed!==true;
     if(resumeOutputBtn){
-      resumeOutputBtn.hidden=!panic;
+      resumeOutputBtn.hidden=!hold;
       resumeOutputBtn.disabled=!deviceReady();
       resumeOutputBtn.title=resumeOutputBtn.disabled?"Verify the device and routing in Audio I/O":
         "Resume the verified MAIN output";
     }
-    muteBtn.title=panic?"Resume only the verified native route":
+    muteBtn.title=hold?hold.action:
       "Emergency stop · normal device recovery is automatic";
   }
   // Output patching is rendered from physical native readback, never a
@@ -3778,14 +3778,15 @@
     if(label && label.title!==(activeOutput?latencyHint:transport))
       label.title=activeOutput?latencyHint:transport;
     const warning=document.querySelector?.(".status-bar .warning");
+    const hold=protocol.outputHoldPresentation(next?.raw);
     const warningText=next?.retained?"PLAYBACK UNAVAILABLE · MIXER SAVED":
       !deviceOpen?"NO VERIFIED AUDIO DEVICE":
+      !d.outputArmed&&hold?hold.warning:
       next?.raw?.waitingAsioInputs>0?"INPUT TEMPORARILY UNAVAILABLE · AUTO-RECONNECT":
       d.outputArmed?(next.admitted?"OUTPUT ENABLED":
         "CHECK AUDIO CONNECTION"):
       !d.enabledInputs?.length?(next.admitted?"NO ACTIVE CAPTURE PINS · AUDIO I/O":
         "CHECK AUDIO I/O SETTINGS"):
-      next?.raw?.operatorOutputMuted===true?"EMERGENCY STOP · MORE → RESUME":
       protocol.firstSoundPlan(next)?"SELECT CHANNEL IN":
       legacy()?.routeAccepted||next?.admitted?"OUTPUT RECOVERING · CHECK AUDIO I/O":
       deviceReady()?"SELECT CHANNEL IN · NATIVE MONITOR AFTER ACK":
@@ -5435,8 +5436,8 @@
     muteBtn=item("button","tool","Emergency stop audio");
     muteBtn.dataset.nativeEmergencyOutput="true";
     muteBtn.addEventListener("click",()=>{
-      const panic=hardware?.raw?.operatorOutputMuted===true;
-      if(!panic){
+      const hold=protocol.outputHoldPresentation(hardware?.raw);
+      if(!hold){
         backend.emitEvent("arMixAction",{action:"monitor",value:false});
         status("Emergency stop requested");
         return;
@@ -5449,7 +5450,7 @@
       backend.emitEvent("arMixAction",{action:"monitor",value:true,
         requestId:"emergency-resume-"+(++m4RequestSerial),
         expectedEpoch:ep,expectedRevision:rev});
-      status("Verifying audio route after emergency stop");
+      status("Verifying audio route before resuming");
     });
     const footer=document.querySelector("footer.status-bar");
     if(footer){

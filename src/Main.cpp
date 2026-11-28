@@ -3089,7 +3089,7 @@ private:
     void fireNativeHotkey(const armix::hotkey::Mapping& mapping) {
         if(mapping.operation=="PANIC_MUTE") {
             // PANIC is explicit user intent, unlike device stop/restart.
-            operatorOutputMuted_=true;
+            setOutputHoldReason("OPERATOR_STOP");
             pendingVendorStream_.reset();
             cancelSecondaryContinuity();
             cancelStartupSecondaryPreparation();
@@ -3472,7 +3472,7 @@ private:
             return emitMixerSessionAck("NEW_LIVE","Finish current operations and refresh the admitted mixer");
         // Explicit New Project is an operator-authorized stop, not a temporary
         // capture mute. Never resume the old output intent on failure.
-        autoMainEpoch_=0;operatorOutputMuted_=true;
+        autoMainEpoch_=0;setOutputHoldReason("NEW_SESSION");
         engine_.setMonitorEnabled(false);
         engine_.cancelAsioResetMonitorIntent();
         engine_.disconnectSecondaryOutput();
@@ -3570,7 +3570,7 @@ private:
             if(safe==nullptr || safe->sessionLifecycleShuttingDown_)return;
             if(error.isEmpty()){
                 safe->autoMainEpoch_=0;
-                safe->operatorOutputMuted_=true;
+                safe->setOutputHoldReason(reset?"IO_RESET":"NEW_SESSION");
                 safe->closeAllPluginEditors();
                 safe->stopOrbit();
                 if(!reset){
@@ -3653,6 +3653,7 @@ private:
             obj->setProperty("workspaceGeneration",juce::String(std::to_string(workspaceGeneration_)));
             obj->setProperty("retainedOfflineFxPending",retainedOfflineFxActive_);
             obj->setProperty("operatorOutputMuted",operatorOutputMuted_);
+            obj->setProperty("outputHoldReason",outputHoldReason_);
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
             obj->setProperty("externalOutputs",
@@ -4348,7 +4349,14 @@ private:
     bool autoMainRequiresInput_=true;
     // Operator's explicit OUTPUT MUTE must survive later input/FX/EXT edits.
     // This control-thread intent is NOT a new callback gate or device lock.
+    // The existing hold gate remains authoritative for resume safety. Its
+    // provenance is committed together with the gate on CONTROL only.
     bool operatorOutputMuted_=false;
+    juce::String outputHoldReason_="NONE";
+    void setOutputHoldReason(const char* reason) {
+        operatorOutputMuted_=reason!=nullptr;
+        outputHoldReason_=reason!=nullptr?reason:"NONE";
+    }
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
         if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
@@ -4973,7 +4981,7 @@ private:
                         static_cast<std::uint64_t>(monotonicMilliseconds())+5000,resumeMain};
                 } else if(resumeMain||stream) {
                     // Failure stays safely muted; never guess a destination.
-                    operatorOutputMuted_=true;
+                    setOutputHoldReason("BUS_REMAP_FAILED");
                     diagnostics_.record("OUTPUT_MUTE","ON | bus remap rejected");
                 }
             }
@@ -6458,7 +6466,7 @@ private:
         mixerSessionRecoveryPending_=false;
         acceptSessionIdentity();
         if(holdMain) {
-            operatorOutputMuted_=true;
+            setOutputHoldReason(usedPrevious?"CHECKPOINT_RECOVERY":"SAVED_MUTED");
             autoMainEpoch_=0;
             engine_.setMonitorEnabled(false);
             diagnostics_.record("OUTPUT_MUTE",usedPrevious?
@@ -6706,7 +6714,7 @@ private:
                         safe->mixerSessionStatus_="LOGICAL_SESSION_OPENED_UNBOUND";
                         safe->lastMixerFile_=archived?juce::File{}:file;
                         if(archived){
-                            safe->operatorOutputMuted_=true;
+                            safe->setOutputHoldReason("SESSION_ARCHIVED");
                             safe->engine_.setMonitorEnabled(false);
                             safe->closeAllPluginEditors();
                             safe->stopOrbit();
@@ -6872,7 +6880,7 @@ private:
            engine_.hasRuntimeFxFault()){
             if(job.committed){
                 if(!engine_.allOutputsDisarmed()){
-                    operatorOutputMuted_=true;
+                    setOutputHoldReason("FX_PLAYBACK_UNVERIFIED");
                     autoMainEpoch_=0;
                     cancelSecondaryContinuity();
                     engine_.setMonitorEnabled(false);
@@ -12167,7 +12175,7 @@ private:
                 fault=engine_.liveOutputArmFault();
             if (fault.isNotEmpty())protectKnownFeedbackLoop(fault);
             if (fault.isEmpty()) {
-                operatorOutputMuted_=!arm; // an explicit user control, not setup mute
+                setOutputHoldReason(arm?nullptr:"OPERATOR_STOP"); // explicit user control, not setup mute
                 autoMainEpoch_=0;
                 if(!arm)engine_.cancelAsioResetMonitorIntent();
                 engine_.setMonitorEnabled(arm);

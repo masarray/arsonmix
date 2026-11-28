@@ -1684,7 +1684,7 @@ test("First Sound evidence maps sparse physical pins to actual callback ordinals
   const muted=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
   assert.match(muted.nextAction,/Output recovering automatically/);
   assert.doesNotMatch(muted.nextAction,/ARM output|Resume after emergency stop/);
-  g0.operatorOutputMuted=true;
+  g0.operatorOutputMuted=true;g0.outputHoldReason="OPERATOR_STOP";
   const panic=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
   assert.match(panic.nextAction,/Emergency stop active; use More > Resume after emergency stop/);
   assert.doesNotMatch(panic.nextAction,/recovering automatically/);
@@ -3618,7 +3618,7 @@ test("native Windows operator can explicitly patch first physical input, arm and
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
  assert.match(js,/AUDIO \/ SAFETY/);
- assert.match(js,/function openNativeAudioIO\(trigger=null\)/);
+ assert.match(js,/function openNativeAudioIO\(trigger=null,startup=false\)/);
  assert.match(js,/action:"audioDeviceInventory"/);
  assert.match(read("web/approved-device-view-model.js"),/action:"audioDeviceApply"/);
  assert.match(js,/backend\.emitEvent\("arMixAction",begun\.request\)/);
@@ -3978,7 +3978,7 @@ test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Moni
  assert.match(control,/error=engine_\.setPhysicalExternalOutput/);
  assert.match(control,/if\(left>=0 && !operatorOutputMuted_ && !engine_\.isMonitorEnabled\(\)\)\s*requestAutomaticMain\(false\)/);
  assert.match(control,/emitApprovedNativeSnapshot\(\); \/\/ callback readback proves LIVE/);
- assert.match(native,/operatorOutputMuted_=!arm; \/\/ an explicit user control/);
+ assert.match(native,/setOutputHoldReason\(arm\?nullptr:"OPERATOR_STOP"\); \/\/ explicit user control/);
  assert.match(native,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
  assert.match(native,/autoMainRequiresInput_ &&\s*!engine_\.hasVerifiedExternalOutputIntent\(\)/);
  assert.match(engine,/bool hasVerifiedExternalOutputIntent\(\) const noexcept/);
@@ -7305,6 +7305,20 @@ test("P2 offline GAIN coalesces released values until durable ACK and exact read
  assert.equal(scope.tracks[0].trim,0);
 });
 
+test("P0 output hold reasons distinguish emergency from safe project/recovery holds",()=>{
+ assert.equal(protocol.outputHoldPresentation({operatorOutputMuted:false,outputHoldReason:"OPERATOR_STOP"}),null);
+ const panic=protocol.outputHoldPresentation({operatorOutputMuted:true,outputHoldReason:"OPERATOR_STOP"});
+ assert.match(panic.warning,/EMERGENCY STOP/);
+ for(const reason of ["NEW_SESSION","IO_RESET","SESSION_ARCHIVED","SAVED_MUTED","CHECKPOINT_RECOVERY","BUS_REMAP_FAILED","FX_PLAYBACK_UNVERIFIED",undefined,"__proto__"]){
+   const hold=protocol.outputHoldPresentation({operatorOutputMuted:true,outputHoldReason:reason});
+   assert.equal(hold.button,"Resume audio output");
+   assert.doesNotMatch(hold.warning,/EMERGENCY STOP/i);
+ }
+ const host=read("src/Main.cpp");
+ assert.match(host,/setProperty\("outputHoldReason",outputHoldReason_\)/);
+ assert.equal((host.match(/operatorOutputMuted_\s*=/g)||[]).length,2,
+   "Every native hold transition must update reason through its single owner");
+});
 test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop is separate",()=>{
  const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp");
  assert.doesNotMatch(bridge,/dataset\.nativeMonitor|data-native-monitor|toolbar\.insertBefore\(monitor/);
@@ -7312,8 +7326,10 @@ test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop
  assert.match(bridge,/audioDiagnosticTools\.append\(hardwareNote,inspect,tone,mark,report,advanced\)/);
  assert.match(bridge,/querySelector\("\.armix-audio-diagnostics"\)\.append\(audioDiagnosticTools\)/);
  assert.doesNotMatch(bridge,/menu\.append\([^;]*(?:hardwareNote|healthTitle|tone,mark,report|advanced)/);
- assert.match(bridge,/Resume after emergency stop/);
- assert.match(bridge,/EMERGENCY STOP · MORE → RESUME/);
+ const p=read("web/approved-native-contract.js");
+ assert.match(p,/Resume after emergency stop/);
+ assert.match(p,/EMERGENCY STOP · MORE → RESUME/);
+ assert.match(bridge,/protocol\.outputHoldPresentation/);
  const start=native.indexOf("void serviceAutomaticMain()"),end=native.indexOf("void requestAutomaticMain",start);
  const control=native.slice(start,end);
  assert.match(control,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
@@ -7380,7 +7396,7 @@ test("P0 native busy guard and all physical presentations produce explicit recei
  assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply" && !outputIntent\)\{/);
  const monitor=m.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
  assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
- assert.match(monitor,/operatorOutputMuted_=!arm/);
+ assert.match(monitor,/setOutputHoldReason\(arm\?nullptr:"OPERATOR_STOP"\)/);
  assert.match(monitor,/arMixAudioArmAck/);
  assert.match(m,/emitRoutingFxEditorReceipt\(args,false,true,"FX editor unavailable: Audio I\/O is applying"\)/);
  assert.match(m,/opened=shownWindow->presentationConfirmed\(\)/);

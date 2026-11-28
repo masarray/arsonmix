@@ -155,7 +155,7 @@ test('saved ASIO cold-open retries are bounded, exact-registration and single-ca
 test('last saved MAIN mute and previous-generation recovery remain muted after restore',()=>{
  const s=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
  assert.match(s,/const bool holdMain=usedPrevious\|\|\(doc.resumeMain.has_value\(\)&&!doc.resumeMain.value\(\)\)/);
- assert.match(s,/if\(holdMain\)\s*\{\s*operatorOutputMuted_=true;\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
+ assert.match(s,/if\(holdMain\)\s*\{\s*setOutputHoldReason\(usedPrevious\?"CHECKPOINT_RECOVERY":"SAVED_MUTED"\);\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
  assert.match(main,/if\(mixerSessionRecoveryPending_\)return; \/\/ saved session has not been restored/);
 });
 
@@ -225,7 +225,7 @@ test('ASIO vendor panel preserves operator desire and only resumes the same veri
  assert.match(p,/sameDriver && finishAudioSetupAndRecoverMixer\(\)/);
  assert.match(p,/resume&&!operatorOutputMuted_&&!panelError\)requestAutomaticMain\(false\)/);
  assert.match(p,/ASIO_PANEL_BEGIN/);
- assert.doesNotMatch(p,/operatorOutputMuted_\s*=|setMonitorEnabled\(true\)/);
+ assert.doesNotMatch(p,/setOutputHoldReason|operatorOutputMuted_\s*=|setMonitorEnabled\(true\)/);
  const restore=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
  assert.match(restore,/if\(operatorOutputMuted_\)retainedDoc\.resumeMain=false/);
  assert.match(restore,/else if\(engine_\.wantsMainContinuation\(\)\)retainedDoc\.resumeMain=true/);
@@ -238,7 +238,7 @@ test('nested device transaction permits explicit STOP but rejects ARM with nativ
  assert.match(a,/action!="audioDeviceApply" && !outputIntent/);
  const monitor=a.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
  assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
- assert.match(monitor,/if \(fault.isEmpty\(\)\) \{\s*operatorOutputMuted_=!arm/);
+ assert.match(monitor,/if \(fault.isEmpty\(\)\) \{\s*setOutputHoldReason\(arm\?nullptr:"OPERATOR_STOP"\)/);
  assert.match(monitor,/arMixAudioArmAck/);
 });
 
@@ -251,7 +251,7 @@ test('smart bus remap uses native temporary stop and verified continuation, not 
  assert.match(p,/if\(resumeMain&&!operatorOutputMuted_\) \{[\s\S]*?engine_\.retainMainIntentAfterBusPatch\(\);\s*requestAutomaticMain\(false\)/);
  assert.match(engine,/void retainMainIntentAfterBusPatch\(\) noexcept \{mainOutputIntent_\.operatorRequested\(true\);\}/);
  assert.match(p,/if\(stream\)pendingVendorStream_=PendingVendorStream/);
- assert.match(p,/operatorOutputMuted_=true;\s*diagnostics_\.record\("OUTPUT_MUTE","ON \| bus remap rejected"\)/);
+ assert.match(p,/setOutputHoldReason\("BUS_REMAP_FAILED"\);\s*diagnostics_\.record\("OUTPUT_MUTE","ON \| bus remap rejected"\)/);
  const panic=main.split('if(mapping.operation=="PANIC_MUTE")')[1].split('// Existing control-thread guards')[0];
  assert.match(panic,/pendingVendorStream_\.reset\(\)/);
  assert.match(panic,/cancelStartupSecondaryPreparation\(\)/);
@@ -295,7 +295,7 @@ test('FX file transition preserves the operator gates and the callback verifies 
  assert.match(capture,/rackSupportsLiveSnapshot/);
  assert.match(capture,/\(!live&&!rackFileAllowed/);
  const choose=main.split('void chooseFxRackFile(')[1].split('void chooseNamedIoProfile(')[0];
- assert.doesNotMatch(choose,/operatorOutputMuted_\s*=|setMonitorEnabled\(/);
+ assert.doesNotMatch(choose,/setOutputHoldReason|operatorOutputMuted_\s*=|setMonitorEnabled\(/);
  assert.match(choose,/rackArchive\(\[file,rack\]\{return Archive::save/);
 });
 

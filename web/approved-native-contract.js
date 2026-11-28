@@ -664,6 +664,26 @@
   // UI-only: this routine cannot patch, ARM, create PCM or certify speakers.
   // A novice shortcut is offered only for an empty physical input graph.
   // Do not take over a saved logical input, PLAYER, or authored source.
+  // Presentation only: the existing native hold bit still controls every
+  // authorization. Missing/unknown provenance is a generic hold, never panic.
+  function outputHoldPresentation(raw){
+    if(raw?.operatorOutputMuted!==true)return null;
+    const reason=raw.outputHoldReason;
+    if(reason==="OPERATOR_STOP")return {reason,button:"Resume after emergency stop",
+      warning:"EMERGENCY STOP · MORE → RESUME",action:"Emergency stop active; use More > Resume after emergency stop."};
+    const descriptions={
+      NEW_SESSION:"New project · output held",
+      IO_RESET:"I/O reset · output held",
+      SESSION_ARCHIVED:"Session archived · output held",
+      SAVED_MUTED:"Saved output is muted",
+      CHECKPOINT_RECOVERY:"Recovered checkpoint · output held",
+      BUS_REMAP_FAILED:"Output remap not verified",
+      FX_PLAYBACK_UNVERIFIED:"FX playback not verified"
+    };
+    const text=Object.hasOwn(descriptions,reason)?descriptions[reason]:"Output held";
+    return {reason,button:"Resume audio output",warning:text+" · RESUME",
+      action:text+". Verify Audio I/O, then Resume audio output."};
+  }
   function firstSoundPlan(snapshot) {
     const d=snapshot?.device,g=snapshot?.graph,raw=snapshot?.raw;
     if(!snapshot?.admitted||snapshot.retained||raw?.mixerSession?.authority!=="CHANNEL_ID"||
@@ -708,8 +728,7 @@
     else if(pin && raw===0)nextAction="Selected input is silent; check physical source and input gain.";
     else if(raw===null)nextAction="Capture peak unavailable; do not assume an active source.";
     else if(m4.routeAccepted!==true)nextAction="PATCH CH1 to the selected hardware input.";
-    else if(d.outputArmed!==true)nextAction=snapshot?.raw?.operatorOutputMuted===true?
-      "Emergency stop active; use More > Resume after emergency stop.":
+    else if(d.outputArmed!==true)nextAction=outputHoldPresentation(snapshot?.raw)?.action||
       "Output recovering automatically; if unavailable, check Audio I/O and MAIN route.";
     else if(!mainObserved)nextAction="No MAIN PCM measurement; check routing and output state.";
     else if(main===0)nextAction="MAIN PCM silent; check CH1 fader/MUTE and MASTER MUTE.";
@@ -1251,7 +1270,7 @@
 
   return Object.freeze({smartPerformanceView,footerHealthFromLive,decimal,cmp,normalizeSnapshot,
     nativeHardwareConfiguration,selectNativeReadModel,readbackProvesIntent,
-    logicalReadbackProves,firstSoundPlan,diagnoseFirstSound,createController,
+    logicalReadbackProves,firstSoundPlan,diagnoseFirstSound,outputHoldPresentation,createController,
     validPresentationName,validPresentationColor,validPresentationIcon,
     operatorMessage,physicalOutputOverview,secondaryMixMode,secondaryMonitorStarter,secondaryOutputSelection,mainMonitorPreference,secondaryOutputView,secondaryOutputRow,secondaryOutputSettlement,monitorTimingView});
 });
