@@ -2626,7 +2626,11 @@ public:
     juce::String captureRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId target,int slot,const juce::String& token,
             armix::storage::FxRackFile& rack) {
-        if(!rackFileAllowed(ep,rev,roster,target))return "Disarm MAIN and STREAM; refresh FX rack";
+        // Capture needs processor exclusion and a confirmed quiet PCM
+        // boundary, not a permanent change to operator output intent.
+        if(!rackFileTargetAvailable(ep,rev,roster,target)||
+           (!allOutputsDisarmed()&&!physicalBusPatchFadeReady()))
+            return "Audio transition not quiet; retry FX rack";
         return dryRoutingLab_.captureRackFile(ep,rev,roster,target,slot,token,rack);
     }
     juce::String applyRackFile(std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,

@@ -8189,8 +8189,13 @@ test("Channel context menu exposes non-destructive FX save and real native recei
  assert.match(b,/action:"fxRackFileReadback",\.\.\.rackFilePending/);
  assert.match(b,/window\.clearTimeout\(rackFileReadbackTimer\)/);
  assert.match(n,/rackFileTargetAvailable\(ep,rev,roster,channel\)/);
- assert.match(n,/fxRackConsent_=std::make_unique<ArSonRecoveryNotice>/);
- assert.match(n,/if\(accepted\)perform\(true\)/);
+ const rackOperation=n.slice(n.indexOf("const auto perform=[safe,finish,current,ep,rev,roster,channel"),n.indexOf("void chooseNamedIoProfile("));
+ assert.doesNotMatch(rackOperation,/operatorOutputMuted_=true|Mute & continue/);
+ assert.match(rackOperation,/if\(!deactivate\|\|error\.isNotEmpty\(\)\)resumeFade\(\)/);
+ assert.match(rackOperation,/withNativeTopologyContinuity\(ep,rev,false/);
+ assert.match(n,/if\(!engine_\.physicalBusPatchFadeReady\(\)\)return;/);
+ assert.match(n,/servicePendingFxRackTransition\(\);/);
+ assert.match(n,/cancelPendingFxRackTransition\("Cancelled by emergency stop"\)/);
  assert.equal(protocol.operatorMessage("FX rack file: Disarm MAIN and STREAM; use a current native rack"),"FX rack file: Disarm MAIN and STREAM; use a current native rack");
  assert.equal(protocol.operatorMessage("FX rack file: Opening file dialog…"),"FX rack file: Opening file dialog…");
  assert.match(n,/if\(archived&&deactivate\)/);
