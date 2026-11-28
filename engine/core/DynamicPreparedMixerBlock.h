@@ -512,21 +512,26 @@ public:
     // Inbound wires may be removed with their already faded destination;
     // live SOLO topology and changed PDC still require an explicit stopped edit.
     bool prepareContinuity(const DynamicPreparedMixerBlock& old,ChannelId removed,
-                           ContinuityPlan& plan,bool dormantAddition=false) {
-        if(dormantAddition&&removed.value)return false;
+                           ContinuityPlan& plan,bool dormantRosterEdit=false) {
         if(capacity_!=old.capacity_||physicalInputs_!=old.physicalInputs_||
            mainMonoAfterFx_!=old.mainMonoAfterFx_||
            monitorLatencyPolicy_!=old.monitorLatencyPolicy_||
            latencySamples_!=old.latencySamples_||
-           lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size()+(dormantAddition?1u:0u))return false;
+           lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size()+(dormantRosterEdit&&!removed.value?1u:0u))return false;
         // A silent descriptor can change Kahn's tie-breaking through its
         // default MAIN edge even though it has no scheduled PCM. Prove the
         // same scheduled lane set, edges, keys and delays below, then reuse
         // the previous audible order (including floating-point summation).
-        if(dormantAddition&&renderOrder_.size()!=old.renderOrder_.size())return false;
+        if(dormantRosterEdit&&renderOrder_.size()!=old.renderOrder_.size())return false;
         if(removed.value){
             const auto found=old.controlIndex_.find(removed.value);
             if(found==old.controlIndex_.end()||controlIndex_.contains(removed.value))return false;
+            if(dormantRosterEdit){
+                const auto& retired=old.lanes_[found->second];
+                if(old.channelScheduled(removed)||retired.inputL>=0||retired.playerDeckId||
+                   (retired.role!=ChannelRole::input&&retired.role!=ChannelRole::group)||
+                   Word::decode(old.channelTargets_[found->second].state.load()).solo)return false;
+            }
             for(std::size_t i=0;i<old.lanes_.size();++i)
                 if(Word::decode(old.channelTargets_[i].state.load(std::memory_order_acquire)).solo)
                     return false;
@@ -537,7 +542,7 @@ public:
         for(std::size_t i=0;i<lanes_.size();++i){
             const auto& n=lanes_[i];const auto found=old.controlIndex_.find(n.id.value);
             if(found==old.controlIndex_.end()){
-                if(!dormantAddition||channelScheduled(n.id)||n.inputL>=0||n.playerDeckId||
+                if(!dormantRosterEdit||removed.value||channelScheduled(n.id)||n.inputL>=0||n.playerDeckId||
                    (n.role!=ChannelRole::input&&n.role!=ChannelRole::group)||
                    n.first!=n.last||n.keyFirst!=n.keyLast||
                    Word::decode(channelTargets_[i].state.load()).solo)return false;
@@ -553,7 +558,7 @@ public:
             // A downstream lane which becomes dormant has no physical/player
             // source or FX by compiler construction. Its removed contribution
             // has drained before publication; no live processor tail is lost.
-            if(dormantAddition){
+            if(dormantRosterEdit){
                 if(wasScheduled!=nowScheduled||n.keyLast-n.keyFirst!=o.keyLast-o.keyFirst)return false;
                 for(std::size_t k=0;k<n.keyLast-n.keyFirst;++k)
                     if(postKeys_[n.keyFirst+k].id!=old.postKeys_[o.keyFirst+k].id)return false;
@@ -589,7 +594,7 @@ public:
                 plan.edges.emplace_back(e,k);
             }
         }
-        if(dormantAddition){
+        if(dormantRosterEdit){
             // All scheduled dependencies are already proven equivalent.
             // Scratch slots and delay state are lane-indexed, not tied to
             // this ordering; only the callback execution order is restored.

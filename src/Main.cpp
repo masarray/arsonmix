@@ -10436,10 +10436,17 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
-                result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                    return engine_.removeNativeInputChannel(ep,rev,roster,
-                        armix::mixer::ChannelId{id});
-                });
+                const armix::mixer::ChannelId target{id};
+                const bool silentRemoval=engine_.nativeStripDormant(ep,rev,target);
+                if(silentRemoval)
+                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                        return engine_.removeNativeInputChannel(ep,rev,roster,target,true);
+                    },true);
+                if(!silentRemoval||(!result.accepted&&
+                   juce::String(result.error?result.error:"")=="SILENT_REMOVE_CONTINUITY_NOT_VERIFIED"))
+                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                        return engine_.removeNativeInputChannel(ep,rev,roster,target);
+                    });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
@@ -10509,11 +10516,20 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
-                result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                    return engine_.editNativeBus(ep,rev,roster,role,
-                        std::span<const armix::mixer::ChannelId>{},"",1.f,
-                        armix::mixer::ChannelId{id});
-                });
+                const armix::mixer::ChannelId target{id};
+                const bool silentRemoval=role==armix::mixer::ChannelRole::group&&
+                    engine_.nativeStripDormant(ep,rev,target);
+                if(silentRemoval)
+                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                        return engine_.editNativeBus(ep,rev,roster,role,
+                            std::span<const armix::mixer::ChannelId>{},"",1.f,target,true,false,true);
+                    },true);
+                if(!silentRemoval||(!result.accepted&&
+                   juce::String(result.error?result.error:"")=="SILENT_REMOVE_CONTINUITY_NOT_VERIFIED"))
+                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                        return engine_.editNativeBus(ep,rev,roster,role,
+                            std::span<const armix::mixer::ChannelId>{},"",1.f,target);
+                    });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);

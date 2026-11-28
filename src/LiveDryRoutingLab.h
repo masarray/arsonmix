@@ -1925,7 +1925,7 @@ public:
                   bool outputsDisarmed=false,
                   const std::function<void()>& beforePublish={},bool connectMain=true,
                   armix::mixer::DynamicChannelFxLeaseBank::Lease wetReturn={},bool dormantAddition=false,
-                  const std::function<bool()>& stillValid={}) {
+                  const std::function<bool()>& stillValid={},bool dormantRemoval=false) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1939,7 +1939,10 @@ public:
         if(dormantAddition&&(remove.value||role!=ChannelRole::group||!selection.empty()||wetReturn)){
             reply.error="INVALID_DORMANT_BUS_ADDITION";return reply;
         }
-        if(!outputsDisarmed&&!dormantAddition) {
+        if(dormantRemoval&&(!remove.value||dormantAddition||role!=ChannelRole::group||!selection.empty()||wetReturn)){
+            reply.error="INVALID_DORMANT_BUS_REMOVAL";return reply;
+        }
+        if(!outputsDisarmed&&!dormantAddition&&!dormantRemoval) {
             reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
         }
         // Require a prepared, independently owned wet-only processor.
@@ -2013,9 +2016,10 @@ public:
             const auto published=nativePublisher_.commit(
                 next,nativeAccepted_.graph.request,expectedPcmRevision,
                 expectedEpoch,epoch(),outputsDisarmed,std::move(fx),false,false,nullptr,nullptr,
-                false,{},0,stillValid,dormantAddition);
+                false,dormantRemoval?remove:ChannelId{},0,stillValid,dormantAddition||dormantRemoval);
             if(!published.ok()) {
-                reply.error=dormantAddition?"SILENT_BUS_CONTINUITY_NOT_VERIFIED":"NATIVE_PCM_COMMIT_REJECTED";return reply;
+                reply.error=dormantRemoval&&published.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable?
+                    "SILENT_REMOVE_CONTINUITY_NOT_VERIFIED":dormantAddition?"SILENT_BUS_CONTINUITY_NOT_VERIFIED":"NATIVE_PCM_COMMIT_REJECTED";return reply;
             }
             nativeAccepted_.graph.roster=std::move(next);
             nativeAccepted_.fxOwners=std::move(owner);
@@ -2309,12 +2313,12 @@ public:
             std::uint64_t expectedPcmRevision,std::uint64_t expectedRosterRevision,
             armix::mixer::ChannelId id,bool outputsDisarmed=false,
             const std::function<void()>& beforePublish={},int liveFadeFrames=0,
-            const std::function<bool()>& stillValid={}) {
+            const std::function<bool()>& stillValid={},bool dormantRemoval=false) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
         reply.rosterRevision=nativeAccepted_.graph.roster.revision();
-        if(!outputsDisarmed&&liveFadeFrames<=0){reply.error="OUTPUT_MUST_BE_DISARMED";return reply;}
+        if(!outputsDisarmed&&!dormantRemoval&&liveFadeFrames<=0){reply.error="OUTPUT_MUST_BE_DISARMED";return reply;}
         if(!channelIdPhysicalPcmActive()||!ready()||
            expectedEpoch!=epoch()||nativeAccepted_.deviceEpoch!=expectedEpoch||
            !nativeAccepted_.fxOwners||
@@ -2364,10 +2368,10 @@ public:
             const auto published=nativePublisher_.commit(
                 roster,request,expectedPcmRevision,
                 expectedEpoch,epoch(),outputsDisarmed,std::move(fx),false,false,nullptr,nullptr,
-                false,outputsDisarmed?ChannelId{}:id,liveFadeFrames,stillValid);
+                false,outputsDisarmed&&!dormantRemoval?ChannelId{}:id,liveFadeFrames,stillValid,dormantRemoval);
             if(!published.ok()){
                 reply.error=published.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable?
-                    "DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING":
+                    (dormantRemoval?"SILENT_REMOVE_CONTINUITY_NOT_VERIFIED":"DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"):
                     published.fault==DynamicNativeSessionPublisher::Fault::retirementTimeout?
                     "DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED":"NATIVE_TRACK_PCM_COMMIT_REJECTED";return reply;
             }
@@ -4160,6 +4164,9 @@ public:
     bool nativeTopologyMatches(std::uint64_t ep,std::uint64_t rev) const noexcept {
         return ready()&&channelIdPhysicalPcmActive()&&
             nativeAccepted_.matches(nativePublisher_,ep,rev);
+    }
+    bool nativeStripDormant(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId id) const noexcept {
+        return nativeTopologyMatches(ep,rev)&&nativePublisher_.externalOutputDormant(ep,rev,id);
     }
     std::uint64_t sessionLiveControlRevision() const noexcept {
         return nativeAccepted_.graph.roster.liveStateRevision();

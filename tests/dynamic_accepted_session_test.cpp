@@ -1399,17 +1399,35 @@ static void verifyDormantRosterAdditionContinuity() {
     render(live,actual,57);render(reference,expected,57);equal(57);
     assert(live.appliedExternalOutput(epoch,2,voice)==(std::pair<int,int>{2,3}));
     auto bus=add(2,ChannelRole::group,"EMPTY AUX",ProcessingFormat::stereo);
-    assert(next.edit(3,std::span<const ChannelEdit>(&bus,1)).ok());
+    const auto busAdded=next.edit(3,std::span<const ChannelEdit>(&bus,1));assert(busAdded.ok());
+    const auto aux=busAdded.createdIds[0];
     assert(publish(next,req,2).ok());
     render(live,actual,64);render(reference,expected,64);equal(64);
     assert(live.acceptedRevision()==3&&actual.l[63]>.05f&&actual.xl[63]>.05f);
     assert(!publish(next,req,3).ok());
+    auto deletion=next;
     auto changed=req;changed.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
     auto extra=add(3,ChannelRole::input,"MORE");
     assert(next.edit(4,std::span<const ChannelEdit>(&extra,1)).ok());
     assert(!publish(next,changed,3).ok()&&live.acceptedRevision()==3);
     render(live,actual,64);render(reference,expected,64);equal(64);
-    std::puts("DORMANT_ROSTER_CONTINUITY_PCM_PASS track/AUX, exact MAIN/MONITOR/EXT, in-flight slew, independent policy, unsafe edit rejected");
+    const auto erase=[&](const DynamicChannelRoster& candidate,const DynamicGraphRequest& request,
+                         std::uint64_t revision,ChannelId id){
+        return live.commit(candidate,request,revision,epoch,epoch,false,
+            {},false,false,nullptr,nullptr,false,id,0,{},true);
+    };
+    auto unsafe=deletion;auto noSource=req;noSource.sources.clear();
+    assert(unsafe.removeInputAndDisconnect(4,voice).ok());
+    assert(!erase(unsafe,noSource,3,voice).ok()&&live.acceptedRevision()==3);
+    assert(deletion.removeInputAndDisconnect(4,empty).ok());
+    assert(erase(deletion,req,3,empty).ok());
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    assert(deletion.removeBusAndRestoreSources(5,aux).ok());
+    assert(!erase(deletion,req,3,aux).ok()); // stale
+    assert(erase(deletion,req,4,aux).ok());
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    assert(live.appliedExternalOutput(epoch,5,voice)==(std::pair<int,int>{2,3}));
+    std::puts("DORMANT_ROSTER_CONTINUITY_PCM_PASS track/AUX add/delete, exact MAIN/MONITOR/EXT, in-flight slew, independent policy, unsafe edit rejected");
 }
 
 int main() {

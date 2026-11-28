@@ -2407,15 +2407,25 @@ public:
             diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal&&
             !handoff_.busy()&&fxMovePhase_.load(std::memory_order_acquire)==0;
     }
+    bool nativeStripDormant(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId id) const noexcept {
+        return dormantAdditionReady(ep,rev)&&dryRoutingLab_.nativeStripDormant(ep,rev,id);
+    }
     LiveDryRoutingLab::NativeBusResult editNativeBus(
            std::uint64_t epoch,std::uint64_t pcmRevision,
            std::uint64_t rosterRevision,
            armix::mixer::ChannelRole role,
            std::span<const armix::mixer::ChannelId> selected,
            const std::string& name,float gain,
-           armix::mixer::ChannelId remove={},bool connectMain=true,bool silentAddition=false) {
+           armix::mixer::ChannelId remove={},bool connectMain=true,bool silentAddition=false,bool silentRemoval=false) {
         LiveDryRoutingLab::NativeBusResult rejected;
         rejected.error="NATIVE_BUS_DEVICE_UNAVAILABLE";
+        if(silentRemoval&&!allOutputsDisarmed()){
+            if(silentAddition||!remove.value||role!=armix::mixer::ChannelRole::group||!selected.empty()||
+               !nativeStripDormant(epoch,pcmRevision,remove))return rejected;
+            return dryRoutingLab_.editNativeBus(epoch,pcmRevision,rosterRevision,role,
+                selected,name,gain,remove,false,{},connectMain,{},false,
+                [&]{return nativeStripDormant(epoch,pcmRevision,remove);},true);
+        }
         if(silentAddition&&!allOutputsDisarmed()){
             if(remove.value||role!=armix::mixer::ChannelRole::group||!selected.empty()||
                !dormantAdditionReady(epoch,pcmRevision))return rejected;
@@ -2878,9 +2888,14 @@ public:
     }
     LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
-            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
+            std::uint64_t rosterRevision,armix::mixer::ChannelId id,bool silentRemoval=false) {
         LiveDryRoutingLab::NativeBusResult fail;
         fail.error="NATIVE_TRACK_DEVICE_UNAVAILABLE";
+        if(silentRemoval&&!allOutputsDisarmed()){
+            if(!nativeStripDormant(epoch,pcmRevision,id))return fail;
+            return dryRoutingLab_.removeNativeInputChannel(epoch,pcmRevision,rosterRevision,id,false,{},0,
+                [&]{return nativeStripDormant(epoch,pcmRevision,id);},true);
+        }
         auto* device=deviceManager_.getCurrentAudioDevice();
         const auto valid=[&]{
             return device&&deviceManager_.getCurrentAudioDevice()==device&&

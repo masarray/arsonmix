@@ -102,7 +102,7 @@ public:
                         const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr,
                         const InitialExternalPlan* initialExternal=nullptr,
                         bool continuousFx=false,ChannelId retiring={},int fadeFrames=0,
-                        const std::function<bool()>& stillValid={},bool dormantAddition=false) {
+                        const std::function<bool()>& stillValid={},bool dormantRosterEdit=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -128,11 +128,11 @@ public:
         // live WIRE/FX exceptions. While independent monitoring is active,
         // even rebuilding the same policy requires an explicit disarm:
         // fan-in changes can otherwise change the singer's delay mid-note.
-        if(dormantAddition&&(retiring.value||continuousFx||verifiedInternalWireOnly||
+        if(dormantRosterEdit&&(fadeFrames!=0||continuousFx||verifiedInternalWireOnly||
                             verifiedInternalFxOnly||initialExternal)){
             report.fault=Fault::invalidCandidate;return report;
         }
-        if(!allOutputsDisarmed && !dormantAddition &&
+        if(!allOutputsDisarmed && !dormantRosterEdit &&
            (independentMonitorPublished_ ||
             request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned ||
             (!verifiedInternalWireOnly && !verifiedInternalFxOnly && !retiring.value))) {
@@ -250,12 +250,12 @@ public:
           roster.channels().end(),[](const ChannelStripDefinition& row) {
               return row.role==ChannelRole::monitor;
           });
-        const bool continuous=continuousFx||retiring.value!=0||dormantAddition;
+        const bool continuous=continuousFx||retiring.value!=0||dormantRosterEdit;
         const auto* previous=continuous?publisher_.controlPrepared(proposedDeviceEpoch,expectedRevision):nullptr;
         if(continuous){
             if(!previous||!previous->adopted.load(std::memory_order_acquire)||
                previous->inputMap||qualifiedInputMap||initialExternal||
-               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity,dormantAddition)){
+               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity,dormantRosterEdit)){
                 report.fault=Fault::continuityUnavailable;return report;
             }
             prepared->predecessor=previous->graph;
@@ -263,7 +263,7 @@ public:
         }
         // Prepare everything BEFORE starting the channel-local ramp. CONTROL
         // waits only for a bounded callback receipt; AUDIO never waits.
-        auto* fading=retiring.value&&previous&&previous->graph->channelScheduled(retiring)?
+        auto* fading=!dormantRosterEdit&&retiring.value&&previous&&previous->graph->channelScheduled(retiring)?
             previous->graph.get():nullptr;
         if(fading){
             if(!fading->beginRetirement(retiring,fadeFrames)){

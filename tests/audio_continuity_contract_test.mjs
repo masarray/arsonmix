@@ -365,3 +365,17 @@ test('secondary PCM uses a render-start generation and reset waits for SC reader
  assert.match(device,/if\(owner\.expectedRunning_\.load/);
  assert.match(policy,/authorized_\.load\(\)==ticket&&generation_\.load\(\)==ticket/);
 });
+
+
+test('silent removal is native-verified before avoiding secondary disarm; active deletion retains ordinary path',()=>{
+ const lab=read('src/LiveDryRoutingLab.h');
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ const publisher=read('engine/core/DynamicNativeSessionPublisher.h');
+ assert.match(core,/old\.channelScheduled\(removed\)\|\|retired\.inputL>=0/);
+ assert.match(publisher,/!dormantRosterEdit&&retiring\.value&&previous/);
+ assert.match(lab,/nativePublisher_\.externalOutputDormant\(ep,rev,id\)/);
+ assert.match(engine,/if\(silentRemoval&&!allOutputsDisarmed\(\)\)/);
+ assert.match(main,/engine_\.removeNativeInputChannel\(ep,rev,roster,target,true\)/);
+ assert.match(main,/target,true,false,true\)/);
+ assert.match(main,/SILENT_REMOVE_CONTINUITY_NOT_VERIFIED/);
+});
