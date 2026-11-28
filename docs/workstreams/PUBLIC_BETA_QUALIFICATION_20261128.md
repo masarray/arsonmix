@@ -1,0 +1,18 @@
+# Windows Public Beta qualification — feature freeze
+
+Status: candidate infrastructure only; NOT released. Baseline: protected main 1d2011c25c4e26426dd472844f7211e7e333dbac; published Alpha.33 source 213d2a4b861cd592c41c3ce6a4b318bf347b9e7b. Main after release differs by four documentation paths only. Canonical #899 merged, #837 holds owner acceptance and qualification, #450 remains owner-authenticated.
+
+## Reuse and mandatory gates
+- Owner FIELD c568c963 accepted primary ASIO, FX Rack save/restore, External Output/WASAPI, VST3 scan/reopen for exercised configuration. No independent dual-ASIO proof. Alpha.33 RC 131/131 CTest and full Chromium, install/upgrade/uninstall/rollback, three FactoryFX and publisher eight-subject attestation recorded in #837. No reopen of accepted DSP or GUI; no blanket row-level physical claim.
+- Candidate changes only release stage parsing/version stamping, updater proof policy, public catalog/docs and regression tests; exact protected checks, one native/FAT qualification as required by CMake/updater changes, and exact release packaging mandatory. Verify Alpha.33 -> Beta manual install, new updater Beta/Alpha proof selection and rollback; old Alpha updater may fail closed for Beta.
+- Verify exact source, all three locked FactoryFX, matching installer/portable version, integrity/checksums, eight assets and signature provenance; both GitHub and Cloudflare public catalogs and independently downloaded binaries. Previous Alpha.33 remains rollback. No public beta Linux/macOS claims.
+- Security: existing main ruleset active; dedicated release branch/tag rules not observed (prior documented admin-only hardening). Updated import recipe covers beta. Do not claim recipe is applied; owner administrative review and existing protected pipeline preserved. No signing/trust bypass.
+- Cloudflare deployment hook not configured in prior publisher; verify actual catalog parity, not just a source commit.
+- Old defect register entries without a confirmed current regression are evidence gaps, not automatic new development. Any reproducible P0/P1 safety, core workflow, corruption or trust defect blocks promotion.
+
+## Proposed Stable acceptance criteria (not Beta blockers)
+- 0 unresolved P0/P1; exact mandatory automated suites pass and clean update/rollback from Beta; no unexpected PCM, session loss, unsafe output auto-arm or state divergence.
+- Windows 10/11 x64 supported matrix; >=3 representative primary ASIO hardware/driver families plus WASAPI external output; report actual versions, 44.1/48/96 kHz where supported and 64/128/256/512 frame buffers; unsupported configurations explicit.
+- >=12 representative VST3 plugins across vendors/categories; scan, instantiate, editor, bypass, remove, session restart and failure isolation.
+- >=3 independent 8-hour sessions: zero crashes, deadlocks, unexpected output or session corruption; report driver xruns, peak/p99 callback time and CPU under documented load; zero application-caused underruns at declared supported operating points. Measure loopback latency, preserve no added FIFO on primary ASIO; <=10% relative callback budget regression on controlled hardware, not universal zero latency.
+- >=10 independent beta users with recorded OS/device/driver, workflow and defects; >=90% completion of defined core tasks, no unresolved P0/P1, all remaining limitations disclosed. No universal VST3 or dual-ASIO claims.

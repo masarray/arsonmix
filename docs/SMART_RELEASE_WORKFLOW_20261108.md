@@ -27,12 +27,16 @@ to other workflows via release.published).
 2. Meaningful mixer/engine milestone: use existing
    `/arsonmix-ci native <exact PR HEAD SHA>` or `fat` on the PR, never both for
    the same SHA; existing CI evidence must be reused.
-3. Deliberate release: create a `releases/alpha/vX.Y.Z-alpha.N` branch from
+3. Deliberate Windows prerelease: create a `releases/alpha/vX.Y.Z-alpha.N` or `releases/beta/vX.Y.Z-beta.N` branch from
    **already reviewed main**, at most one immutable release candidate.
    Do not push this branch to trigger builders. Check that its latest HEAD,
    corresponding CMake version, and packaging notes match. Use the connected
    GitHub app to post one comment to internal issue #450:
-   `/arsonmix-release vX.Y.Z-alpha.N <full 40-character candidate SHA>`.
+   `/arsonmix-release vX.Y.Z-alpha.N <full 40-character candidate SHA>` or
+   `/arsonmix-release vX.Y.Z-beta.N <full 40-character candidate SHA>`.
+   Beta requires exact protected main, approved scope and prior mandatory qualification.
+   The same publisher workflow identity is retained for existing updater attestations.
+   Public Linux/macOS commands remain alpha-only until separately qualified.
    The owner-only dispatcher checks issue, identity, branch/SHA, earlier
    comment, already-published tags and same-SHA runs before dispatching
    the release workflow ONE TIME. No manual Actions UI.

@@ -46,6 +46,7 @@ export function evaluate({repository, main, rulesets}) {
   }
   releaseCheck('RELEASE_TAGS','tag','refs/tags/v*',['deletion','update']);
   releaseCheck('RELEASE_BRANCHES','branch','refs/heads/releases/alpha/*',['deletion','non_fast_forward']);
+  releaseCheck('BETA_RELEASE_BRANCHES','branch','refs/heads/releases/beta/*',['deletion','non_fast_forward']);
   const settings = repository.security_and_analysis;
   for (const [key,id] of [['secret_scanning','SECRET_SCANNING'],['secret_scanning_push_protection','PUSH_PROTECTION']]) {
     const value=settings?.[key]?.status;

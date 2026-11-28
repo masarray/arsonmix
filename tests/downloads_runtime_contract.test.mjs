@@ -15,7 +15,7 @@ const sidecar = (t,name) => ({
   browser_download_url:'https://github.com/masarray/arsonmix/releases/download/'+t+'/'+name
 });
 const release = (n, files=['Windows-x64-Setup.exe']) => {
-  const t=tag(n);
+  const t=typeof n==='string'?n:tag(n);
   return { tag_name:t, target_commitish:'f'.repeat(40), prerelease:true,
     published_at:'2026-11-08T02:00:00Z', draft:false,
     assets:[sidecar(t,'SHA256SUMS.txt'),sidecar(t,'INSTALLER_PROVENANCE.json'),
@@ -170,3 +170,10 @@ test('untrusted HTML seed is ignored rather than becoming a live download',async
   assert.equal(result.cards[0].nodes['[data-release-link]'].attr['aria-disabled'],'true');
 });
 
+
+test('verified Windows beta wins over stale alpha and is labeled correctly',async()=>{
+  const result=await render(local(33),[release('v0.5.0-beta.1'),release(33)]);
+  const card=result.cards[0].nodes;
+  assert.match(card['[data-release-note]'].textContent,/Public Beta/);
+  assert.match(card['[data-release-link]'].href,/v0\.5\.0-beta\.1/);
+});

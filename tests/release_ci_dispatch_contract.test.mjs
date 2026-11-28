@@ -353,3 +353,27 @@ test("Alpha.33 Windows public release requires the exact three FactoryFX",()=>{
   assert.match(workflow,/factoryfx_release_bundle\.py verify --lock config\/factoryfx-approved-releases\.json --output dist --require three/);
   assert.doesNotMatch(workflow,/factoryfx_release_bundle\.py stage[^\n]*--best-effort/);
 });
+
+test('Windows beta requires exact protected main and existing owner-only publisher',async()=>{
+  const tag='v0.5.0-beta.1',branch='releases/beta/'+tag,body='/arsonmix-release '+tag+' '+SHA;
+  assert.deepEqual(parseReleaseCommand(body),{tag,sha:SHA,branch});
+  assert.equal(parseReleaseCommand(body.replace('-beta.1','-rc.1')),null);
+  assert.equal(parsePublicPortCommand('/arsonmix-publish linux '+tag+' '+SHA),null);
+  const candidate=(exact=false)=>{
+    const x=fakeApi({compareStatus:exact?'identical':'ahead',compareAhead:exact?0:1});
+    return {calls:x.calls,api:async(path,method,data)=>{
+      if(path==='/git/ref/heads/'+branch){x.calls.push({path,method,data});return {ref:'refs/heads/'+branch,object:{sha:SHA}};}
+      return x.api(path.replace(tag,TAG),method,data);
+    }};
+  };
+  const ahead=candidate();
+  await assert.rejects(releaseDispatch({event:ev(body),api:ahead.api}),/BETA_CANDIDATE_NOT_EXACT_MAIN/);
+  assert.equal(ahead.calls.filter(c=>c.method==='POST').length,0);
+  const exact=candidate(true);
+  assert.equal((await releaseDispatch({event:ev(body),api:exact.api})).kind,'dispatched');
+  assert.deepEqual(exact.calls.filter(c=>c.method==='POST').map(c=>c.data),[{ref:branch,inputs:{release_tag:tag,expected_sha:SHA}}]);
+  const untrusted=ev(body);untrusted.comment.author_association='MEMBER';
+  const denied=candidate(true);
+  assert.equal((await releaseDispatch({event:untrusted,api:denied.api})).kind,'ignored');
+  assert.equal(denied.calls.length,0);
+});

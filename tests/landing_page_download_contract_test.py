@@ -94,11 +94,11 @@ class LandingReleaseContract(unittest.TestCase):
             self.assertIn("Free to download", html)
             for feature in ("Vocal Delay", "8D-SonKu", "ImmerSIB", "Concert Front Row XL", "P9.9", "Guitar FX", "Harmonice", "WIRE"):
                 self.assertIn(feature, html)
-            self.assertIn("latest verified Windows alpha preview", html)
+            self.assertIn("latest verified Windows prerelease", html)
             self.assertIn("updates automatically after an approved public release", html)
             self.assertIn("latest verified downloads.", html.lower())
             self.assertIn("Earlier Linux/macOS builds", html)
-            self.assertIn("latest verified Windows alpha preview", html)
+            self.assertIn("latest verified Windows prerelease", html)
             self.assertFalse(bool(re.search(r"Windows alpha\.\d+", html)),
                              "Marketing copy must not hardcode a current alpha version")
             self.assertIn("Extract ZIP, run Setup", js)

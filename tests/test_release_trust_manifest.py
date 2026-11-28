@@ -21,8 +21,8 @@ class TrustTests(unittest.TestCase):
     def write(self, name, data):
         (self.root / name).write_text(json.dumps(data), encoding="utf-8")
 
-    def fixture(self, platform):
-        binaries, meta, sums = trust.layout(platform, TAG)
+    def fixture(self, platform, tag=TAG):
+        binaries, meta, sums = trust.layout(platform, tag)
         if platform == "windows":
             (self.root / binaries[0]).write_bytes(b"synthetic installer")
             with zipfile.ZipFile(self.root / binaries[1], "w") as z:
@@ -36,7 +36,7 @@ class TrustTests(unittest.TestCase):
             self.write(meta[2], {"test": True})
         else:
             (self.root / binaries[0]).write_bytes(b"synthetic package")
-            self.write(meta[0], {"sourceCommit": SHA, "tag": TAG, "platform": platform, "asset": binaries[0],
+            self.write(meta[0], {"sourceCommit": SHA, "tag": tag, "platform": platform, "asset": binaries[0],
                                  "assetSha256": trust.file_hash(self.root / binaries[0])})
         (self.root / sums).write_text("".join(f"{trust.file_hash(self.root / n)}  {n}\n" for n in binaries))
         return binaries, meta, sums
@@ -48,6 +48,16 @@ class TrustTests(unittest.TestCase):
         self.assertEqual(m["portableFileInventory"][0]["path"], "ArSonMix.exe")
         self.write("RELEASE_TRUST-windows.json", m)
         self.assertEqual(trust.calculate(self.root, "windows", TAG, SHA, True), m)
+
+    def test_beta_windows_manifest_preserves_alpha_trust_contract(self):
+        tag = 'v0.5.0-beta.1'
+        self.fixture('windows', tag)
+        manifest = trust.calculate(self.root, 'windows', tag, SHA)
+        self.assertEqual(len(manifest['assets']), 7)
+        self.write('RELEASE_TRUST-windows.json', manifest)
+        self.assertEqual(trust.calculate(self.root, 'windows', tag, SHA, True), manifest)
+        with self.assertRaises(ValueError):
+            trust.calculate(self.root, 'windows', 'v0.5.0-rc.1', SHA)
 
     def test_linux_and_macos(self):
         for platform in ("linux", "macos"):
