@@ -167,7 +167,7 @@ def hydrate_landing(html_source, verified):
                  "Download Windows installer" if platform == "windows" else
                  "Download for " + {"linux": "Linux", "macos": "macOS"}[platform])
         note = (tag + " · " + format(size / 1048576, ".1f") + " MB" +
-                (" · Alpha preview" if item["prerelease"] else "") +
+                ((" · Public Beta" if "-beta." in tag else " · Alpha preview" if "-alpha." in tag else " · Prerelease") if item["prerelease"] else "") +
                 (" · Extract ZIP, run Setup" if label == "Download installer ZIP" else ""))
         changes = [
             ('data-release-state>CHECKING</span>',

@@ -140,7 +140,7 @@
     link.setAttribute("aria-label", "Download verified " + item.name);
     card.querySelector("[data-release-note]").textContent =
       item.tag + " · " + (item.size / 1048576).toFixed(1) + " MB" +
-      (item.prerelease ? " · Alpha preview" : "") +
+      (item.prerelease ? (item.tag.includes("-beta.") ? " · Public Beta" : item.tag.includes("-alpha.") ? " · Alpha preview" : " · Prerelease") : "") +
       (zipped ? " · Extract ZIP, run Setup" : "");
   }
   function render(selected, source) {

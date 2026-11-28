@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 SHA = re.compile(r"[0-9a-f]{40}")
-TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+")
+TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+-(?:alpha|beta)\.[0-9]+")
 HEX = re.compile(r"[0-9a-f]{64}")
 BLOCK = 1024 * 1024
 MAX_METADATA = 4 * 1024 * 1024

@@ -427,18 +427,18 @@ endif()
 # artifact. The release controller validates and passes ARMIX_RELEASE_TAG
 # BEFORE the tag is published; an existing checkout of a release tag is also
 # supported. All other builds are visibly marked dev, never as a release.
-set(ARMIX_RELEASE_TAG "" CACHE STRING "Verified release tag (vX.Y.Z-alpha.N)")
+set(ARMIX_RELEASE_TAG "" CACHE STRING "Verified release tag (vX.Y.Z-alpha.N or vX.Y.Z-beta.N)")
 string(REPLACE "." "\\." ARMIX_ESCAPED_PROJECT_VERSION "${PROJECT_VERSION}")
-set(ARMIX_RELEASE_TAG_PATTERN "^v${ARMIX_ESCAPED_PROJECT_VERSION}-alpha\\.[0-9]+$")
+set(ARMIX_RELEASE_TAG_PATTERN "^v${ARMIX_ESCAPED_PROJECT_VERSION}-(alpha|beta)\\.[0-9]+$")
 set(ARMIX_APP_VERSION "${PROJECT_VERSION}-dev")
 if(ARMIX_RELEASE_TAG)
   if(NOT ARMIX_RELEASE_TAG MATCHES "${ARMIX_RELEASE_TAG_PATTERN}")
-    message(FATAL_ERROR "ARMIX_RELEASE_TAG must match v${PROJECT_VERSION}-alpha.N")
+    message(FATAL_ERROR "ARMIX_RELEASE_TAG must match v${PROJECT_VERSION}-alpha.N or v${PROJECT_VERSION}-beta.N")
   endif()
   string(SUBSTRING "${ARMIX_RELEASE_TAG}" 1 -1 ARMIX_APP_VERSION)
 else()
   execute_process(
-    COMMAND git describe --tags --exact-match --match "v${PROJECT_VERSION}-alpha.*" HEAD
+    COMMAND git describe --tags --exact-match --match "v${PROJECT_VERSION}-alpha.*" --match "v${PROJECT_VERSION}-beta.*" HEAD
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     OUTPUT_VARIABLE ARMIX_EXACT_SOURCE_TAG
     OUTPUT_STRIP_TRAILING_WHITESPACE
