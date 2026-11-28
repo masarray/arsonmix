@@ -2018,9 +2018,12 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  const host=read("src/Main.cpp");
  const bridge=read("web/approved-native-bridge.js");
  const guard=read("src/NativeTopologyEditSafety.h");
- // First ARM remains strict, including inactive hardware and known VB-Cable loops.
- assert.match(engine,/juce::String liveOutputArmFault\(\)\s*\{\s*return liveOutputArmFault\(true\);\s*\}/,
-   "manual MONITOR always uses strict source verification");
+ // Explicit ARM of the verified ChannelId graph is independent of capture.
+ // Legacy M4 and all actual device/output/feedback fences stay strict.
+ assert.match(engine,/juce::String liveOutputArmFault\(\)\s*\{\s*return liveOutputArmFault\(!dryRoutingLab_\.channelIdPhysicalPcmActive\(\)\);\s*\}/,
+   "explicit ARM of accepted native SOURCE NONE graph must be allowed");
+ assert.match(engine,/device->getActiveOutputChannels\(\)\.countNumberOfSetBits\(\)<2/);
+ assert.match(engine,/if\(dryRoutingLab_\.nativeBusPatchAwaitingCallback\(\)\)/);
  assert.match(engine,/juce::String liveOutputArmFault\(bool requirePhysicalSource\)/,
    "previously-authorized silent MAIN may resume without a physical IN");
  assert.match(engine,/if \(!physicalSource && requirePhysicalSource\)/);
@@ -4532,11 +4535,11 @@ test("GUI-1 Channel Strip input and PRIMARY OUT require installed native readbac
   assert.equal(invalid.input,"None");
 });
 
-test("MV-5 EXTERNAL OUT preflight preserves exact native channel identity and warns on shared ASIO pins",()=>{
+test("MV-5 EXTERNAL OUT preflight preserves exact native channel identity and works with no input assigned",()=>{
  const id="9007199254740993",other="9007199254741000";
  const native={admitted:true,retained:false,device:{epoch:"31"},
-  graph:{channels:[{id,role:"INPUT"}]}};
- const hardware={device:{epoch:"31",backend:"ASIO",enabledOutputs:[2,3,4,5],
+  graph:{channels:[{id,role:"INPUT",source:null}]}};
+ const hardware={device:{epoch:"31",backend:"ASIO",enabledInputs:[],enabledOutputs:[2,3,4,5],
   outputEndpoints:[2,3,4,5].map(port=>({port,active:true}))},
   raw:{externalRevision:"9",physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
    externalOutputs:[{channelId:other,physicalLeft:2,physicalRight:3}]}};

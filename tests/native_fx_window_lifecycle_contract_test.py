@@ -156,6 +156,11 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('withEventListener ("arMixWindowFullscreen"',HOST)
         self.assertIn('toggleOperatorFullscreen();',HOST)
         self.assertIn('maximisedBeforeOperatorFullscreen_=isFullScreen()',HOST)
+        fullscreen=HOST.split("void toggleOperatorFullscreen()",1)[1].split("void ",1)[0]
+        self.assertIn("setKioskModeComponent(this,false)",fullscreen)
+        self.assertIn("setAlwaysOnTop(false);",fullscreen)
+        self.assertNotIn("setAlwaysOnTop(true);",fullscreen)
+        self.assertIn("setAlwaysOnTop(topmostBeforeOperatorFullscreen_);",fullscreen)
         self.assertIn('setTitleBarHeight(0);',HOST)
         self.assertIn('setFullScreen(true);',HOST)
         self.assertIn('setFullScreen(false);',HOST)

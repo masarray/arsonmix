@@ -944,8 +944,10 @@ public:
             // workArea. JUCE kiosk instead takes the display totalArea and
             // suppresses taskbar/dock without a second topmost HWND.
             juce::Desktop::getInstance().setKioskModeComponent(this,false);
-            // Fullscreen only: retain shell coverage during owned FX focus.
-            setAlwaysOnTop(true);
+            // Kiosk owns fullscreen geometry; mixer must remain in the
+            // ordinary z-order band with its owned FX HWNDs. A topmost mixer
+            // can obscure non-topmost editors and steal the desktop.
+            setAlwaysOnTop(false);
         } else {
             juce::Desktop::getInstance().setKioskModeComponent(nullptr,false);
             setAlwaysOnTop(topmostBeforeOperatorFullscreen_);

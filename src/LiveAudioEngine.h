@@ -482,15 +482,14 @@ public:
                in.contains("cable output") && out.contains("cable input");
     }
 
-    // First-time output authorization requires a verified capture source.
-    // Restoring an ALREADY-ARMED MAIN after a structural input edit instead
-    // verifies the existing destination/route even when every source is NONE:
-    // silence is safe and the user must not have to re-press MONITOR after
-    // NONE -> STEREO on the same device. Epoch/feedback/STREAM fences remain.
-    // Manual MONITOR arming always requires a verified source. An already
-    // authorized MAIN may remain safely armed while an input is temporarily
-    // NONE; this overload NEVER relaxes the explicit arm safety contract.
-    juce::String liveOutputArmFault() { return liveOutputArmFault(true); }
+    // Explicit operator ARM/Resume authorizes the verified output on an
+    // accepted ChannelId PCM graph, independently of physical input patches.
+    // SOURCE NONE is valid silence (or internal PLAYER/WIRE/FX processing).
+    // Keep the legacy M4 source requirement and all device, feedback,
+    // mapping/readback and transition safety fences below.
+    juce::String liveOutputArmFault() {
+        return liveOutputArmFault(!dryRoutingLab_.channelIdPhysicalPcmActive());
+    }
     juce::String liveOutputArmFault(bool requirePhysicalSource)
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
