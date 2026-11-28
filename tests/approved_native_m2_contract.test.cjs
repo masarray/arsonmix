@@ -3821,6 +3821,17 @@ test("M5 logical-only editor proves the exact ACK revision and full FX/WIRE effe
  assert.equal(proves(sendPending("SET_SEND_ENABLED",{edgeId:"102",enabled:true}),g),false);
  assert.equal(proves(sendPending("SET_SEND_ENABLED",{edgeId:"101",enabled:false}),g),false,
    "primary output power is not a SEND ON/OFF command");
+ g=next();g.edges.push({...send,gainLinear:.25});
+ assert.equal(proves(sendPending("SET_WIRE_GAIN",{edgeId:"102",gainLinear:.25}),g),true);
+ assert.equal(proves(sendPending("SET_WIRE_GAIN",{edgeId:"101",gainLinear:1}),g),false);
+ assert.equal(proves(sendPending("SET_WIRE_GAIN",{edgeId:"102",gainLinear:.5}),g),false);
+ for(const change of [{sendEnabled:false},{tapStage:"PRE_FADER"},{to:main},{gainLinear:-1},{gainLinear:3}]){
+   g=next();g.edges.push({...send,gainLinear:.25,...change});
+   assert.equal(proves(sendPending("SET_WIRE_GAIN",{edgeId:"102",gainLinear:change.gainLinear??.25}),g),false);
+ }
+ g=next();g.edges.push({...send,gainLinear:0,sendEnabled:false});
+ assert.equal(proves(pending("SET_WIRE_GAIN",{edgeId:"102",gainLinear:0},
+   {beforeEdges:[...beforeEdges,{...send,sendEnabled:false}]}),g),true);
  g=next();g.channels.push({id:"9007199254740995",role:"GROUP"});
  assert.equal(proves(pending("CREATE_GROUP",{},{
    channelId:null,createdId:"9007199254740995"}),g),true);
@@ -3891,6 +3902,8 @@ test("M5 native operator status renders useful actions without exposing internal
   ["FAT PENDING; output muted","Output muted"],
   ["FAT FAILED; output enabled","Output enabled"],
   ["DEVICE_DISCONNECTED","Audio device unavailable · Open Audio I/O"],
+  ["Recall rejected: DEVICE_REBIND_REQUIRED","Change not applied · Open Audio I/O and rebind the device"],
+  ["Change not applied · Open Audio I/O and rebind the device","Change not applied · Open Audio I/O and rebind the device"],
   ["Native routing rejected","Routing not changed · Check the connection and try again"],
   ["NATIVE: STALE_NATIVE_WIRE_GRAPH","Routing not changed · Check the connection and try again"],
   ["Native routing failed","Routing not changed · Check the connection and try again"],
@@ -3923,7 +3936,7 @@ test("O2 independent per-track external ASIO transactions and clear rejected ACK
  assert.match(src,/pendingExternal\.set\(id,/);
  assert.match(src,/pendingExternal\.delete\(id\)/);
  assert.match(src,/select\?\.removeAttribute\("aria-busy"\)/);
- assert.match(src,/if\(!pendingExternal\.has\(id\)\)select\.removeAttribute/);
+ assert.match(src,/if\(!pendingExternal\.has\(id\)&&select\.hasAttribute\?\.\("aria-busy"\)!==false\)\s*select\.removeAttribute\("aria-busy"\)/);
  const vm=read("web/approved-channel-strip-view-model.js");
  assert.match(vm,/SHARED with /);
  assert.match(vm,/signals SUM/);
@@ -4570,6 +4583,20 @@ test("MV-5 EXTERNAL OUT preflight fails closed on stale, ambiguous or prohibited
  ])assert.equal(plan(invalid).kind,"UNAVAILABLE",JSON.stringify(invalid));
 });
 
+test("Output matrix external route preserves uint64 epoch and revision without Number conversion",()=>{
+ const id="9007199254740993",epoch="9007199254740997",revision="18446744073709551615";
+ const native={admitted:true,device:{epoch},graph:{revision,channels:[{id,role:"INPUT"}]}};
+ const hardware={device:{epoch,backend:"ASIO",enabledOutputs:[2,3],
+   outputEndpoints:[{port:2,active:true},{port:3,active:true}]},
+   raw:{externalRevision:revision,physicalMainOutputs:[0,1],physicalMonitorOutputs:[],externalOutputs:[]}};
+ const plan=stripVM.externalOutputPlan({native,hardware,channelId:id,selectedLabel:"OUT 3/4",
+   currentLabel:"None",choices:[{label:"OUT 3/4",left:2,right:3}]});
+ assert.equal(plan.kind,"READY");
+ assert.equal(plan.epoch,epoch);assert.equal(plan.revision,revision);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.ok(bridge.includes("await requestExternalOutput(null,label,null,id,directClick)"));
+ assert.ok(bridge.includes("for(const [id,pending] of pendingExternal)"));
+});
 test("GUI-1 external OUT pending waits for matching ACK and later readback",()=>{
   const p={requestId:"ext-1",epoch:"19",left:2,right:3,acked:false};
   const row={physicalLeft:2,physicalRight:3};
@@ -7570,8 +7597,11 @@ test("RTR integration preserves monitor timing, Additional Output, performance a
   assert.match(b,/data-audio-extra-output/);
   assert.match(b,/data-audio-tab="performance"/);
   const rack=b.slice(b.indexOf("function requestRackFile("),b.indexOf("const nativeHooks="));
-  assert.ok(rack.indexOf('inlineFxClip?.closeRackEditors([identity.channelId])')>=0);
-  assert.ok(rack.indexOf('inlineFxClip?.closeRackEditors([identity.channelId])')<rack.indexOf('action:"fxRackFile"'));
+  assert.doesNotMatch(rack,/closeRackEditors|retirePendingRackEditor/);
+  const receipt=b.slice(b.indexOf('backend.addEventListener("arMixFxRackFileResult"'),b.indexOf('backend.addEventListener("arMixNotice"'));
+  assert.ok(receipt.indexOf('inlineFxClip?.closeRackEditors([pending.channelId])')>receipt.indexOf('receipt.phase==="COMPLETED"'));
+  assert.match(receipt,/receipt\?\.requestId!==pending\.requestId/);
+  assert.match(receipt,/receipt\.channelId!==pending\.channelId/);
   const live=m.slice(m.indexOf("bool canCreateLiveSession("),m.indexOf("bool liveNewSessionLeaseMatches("));
   assert.match(live,/!fxRackFileChooser_/);
 });
@@ -7586,7 +7616,7 @@ test("intentional rack edits retire only affected pending native HWND feedback",
  const edit=b.slice(b.indexOf("function editNativeFx("),b.indexOf("function requestM4FxPower("));
  assert.ok(edit.indexOf("retirePendingRackEditor(")>edit.indexOf('decision.kind!=="READY"'));
  assert.ok(edit.indexOf("retirePendingRackEditor(")<edit.indexOf("controller.intent("));
- assert.match(b,/retirePendingRackEditor\(\[identity.channelId\]\)/);
+ assert.match(b,/retirePendingRackEditor\(\[pending.channelId\]\)/);
  assert.match(b,/retirePendingRackEditor\(\);\s*inlineFxClip\?\.closeRackEditors\(\)/);
 });
 
@@ -7876,9 +7906,12 @@ test("U5 first sound uses the ordinary verified ChannelId input selector",()=>{
  assert.equal(protocol.firstSoundPlan({...s,raw:{...s.raw,logicalInputRegistry:{references:[{}]}}}),null);
  assert.equal(protocol.firstSoundPlan({...s,graph:{...s.graph,channels:[{...s.graph.channels[0],source:{sourceFormat:"PLAYER"}}]}}),null);
  assert.equal(protocol.firstSoundPlan({...s,device:{...s.device,enabledInputs:[]}}),null);
- const b=read("web/approved-native-bridge.js"),n=read("src/Main.cpp");
- const f=b.slice(b.indexOf('if(field==="input"){\n        // Input selection'),b.indexOf('if(field==="external"){\n        if(event.type!=="change")return true;',b.indexOf('// Input selection is independent')));
- assert.ok(f.length>0);
+ // Git's Windows checkout may use CRLF; source boundaries are logical lines.
+ const b=read("web/approved-native-bridge.js").replace(/\r\n/g,"\n"),n=read("src/Main.cpp");
+ const begin=b.indexOf('if(field==="input"){\n        // Input selection');
+ const end=b.indexOf('if(field==="external"){\n        if(event.type!=="change")return true;',begin);
+ assert.ok(begin>=0&&end>begin);
+ const f=b.slice(begin,end);
  assert.match(f,/pendingNativeSources.set/);assert.match(f,/dispatchNativeSource/);assert.doesNotMatch(f,/emitEvent/);
  const h=n.slice(n.indexOf('if(action=="routingNativeSourcePatch"){',n.indexOf('if(action=="routingNativeSourcePatch"){')+1),n.indexOf('if(action=="routingNativeBusCreate"'));
  assert.match(h,/withNativeTopologyContinuity/);assert.match(h,/engine_.patchNativeInputSource/);
@@ -8026,6 +8059,7 @@ test("LIVE-OPS + Smart I/O: restored workspace retires old output transaction ev
  assert.match(f,/const lease=ioConfirmationLease\(\)/);
  assert.match(f,/await confirmArson/);assert.match(f,/lease!==ioConfirmationLease\(\)/);
  assert.equal((b.match(/await confirmIo\(/g)||[]).length,7);
+ assert.match(b,/await confirmIo\("Remap bus output"/);
  });
 
 test("FX Return creation requires prepared wet processor and exact independent readback",()=>{
@@ -8134,7 +8168,7 @@ test("Session MON retains verified preference without implying output ARM",()=>{
  assert.deepEqual(pick(["Other"],"Speakers",true),{value:"__armix_saved_missing__",label:"Saved device unavailable · off",endpoint:""});
  assert.equal(pick(["CABLE Input"],"",false).value,"");
  const n=read("src/Main.cpp"), b=read("web/approved-native-bridge.js");
- assert.match(n,/preferenceSaved=rememberSecondaryPreference\(name,engine_\.secondarySelectedEndpointId\(\)\)/);
+ assert.match(n,/preferenceSaved=rememberSecondaryPreference\(name,engine_\.secondarySelectedEndpointId\(\),true,engine_\.secondaryArmed\(\)\)/);
  assert.match(b,/active&&v\.name\?v\.name:saved\.value/);
  assert.match(b,/value==="__armix_saved__"\|\|value==="__armix_saved_missing__"\)return/);
 });
@@ -8142,7 +8176,23 @@ test("Channel context menu exposes non-destructive FX save and real native recei
  const menu=read("web/approved-native-context-menu.js"), b=read("web/approved-native-bridge.js"), n=read("src/Main.cpp");
  assert.match(menu,/"rack-save-single":"SAVE_SINGLE"/);
  assert.match(b,/const single=operation==="DEACTIVATE"\|\|operation==="SAVE_SINGLE"/);
- assert.match(b,/operation!=="SAVE"&&operation!=="SAVE_SINGLE"/);
+ assert.match(b,/receipt\.phase==="COMPLETED"&&!\["SAVE","SAVE_SINGLE"\]\.includes\(pending\.operation\)/);
+ assert.match(b,/arMixFxRackFileResult/);
+ assert.match(n,/emitFxRackFileResult\(args,"CHOOSER"/);
+ assert.match(n,/fxRackActiveReceipt_,fxRackLastReceipt_/);
+ const replay=n.slice(n.indexOf("void readFxRackFileResult("),n.indexOf("bool rackFileOperationBusy()"));
+ assert.match(replay,/matchesFxRackFileReceipt\(fxRackActiveReceipt_,args\)\)return/);
+ assert.match(replay,/publishFxRackFileReceipt\(fxRackLastReceipt_\)/);
+ assert.match(replay,/setProperty\("phase","UNKNOWN"\)/);
+ assert.doesNotMatch(replay,/chooseFxRackFile|applyRackFile|captureRackFile|NativeFxRackArchive::save/);
+ assert.match(n,/if\(action=="fxRackFileReadback"\)return readFxRackFileResult\(args\)/);
+ assert.match(b,/action:"fxRackFileReadback",\.\.\.rackFilePending/);
+ assert.match(b,/window\.clearTimeout\(rackFileReadbackTimer\)/);
+ assert.match(n,/rackFileTargetAvailable\(ep,rev,roster,channel\)/);
+ assert.match(n,/fxRackConsent_=std::make_unique<ArSonRecoveryNotice>/);
+ assert.match(n,/if\(accepted\)perform\(true\)/);
+ assert.equal(protocol.operatorMessage("FX rack file: Disarm MAIN and STREAM; use a current native rack"),"FX rack file: Disarm MAIN and STREAM; use a current native rack");
+ assert.equal(protocol.operatorMessage("FX rack file: Opening file dialog…"),"FX rack file: Opening file dialog…");
  assert.match(n,/if\(archived&&deactivate\)/);
  assert.match(n,/file=file\.withFileExtension\("\.arfx"\)/);
  assert.match(b,/notice\?\.error===true\|\|rackReceipt/);
@@ -8189,4 +8239,272 @@ test("V6 Player window owns only desktop presentation, never another player engi
  assert.match(native,/if\(playerWindow_\)playerWindow_->emit\(event,payload\)/);
  assert.match(js,/if\(desktopAvailable&&!desktopChild\)\{if\(visible\)windowCommand\("OPEN"\);return;\}/);
  assert.match(bundle,/player-window\.html/);
+});
+
+
+test("WIRE telemetry projects only mounted controls and never rewrites unchanged accessibility state",()=>{
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("  function paintNativeMeters(next) {");
+ const end=source.indexOf("    if (!scope?.displayMeterDbfs)return;",start);
+ assert.ok(start>=0&&end>start);
+ 
+function profile(source,count=48,visible=12,ticks=120){
+ const ops={queries:0,ariaWrites:0,classToggles:0};
+ const uiByWireId=new Map(Array.from({length:count},(_,i)=>[String(i),i+1]));
+ const graph={edges:Array.from({length:count},(_,i)=>({edgeId:String(i),primaryOutput:i%2===0})),channels:[]};
+ const controls=Array.from({length:visible},(_,i)=>{
+   const id=String(i+1);let aria=null,primary=false;
+   const label={textContent:""};
+   return {disabled:false,title:"",parentElement:{querySelector:()=>label,classList:{
+     contains:()=>primary,toggle:(k,v)=>{ops.classToggles++;primary=v}}},
+     getAttribute:k=>k==="data-wire-id"?id:k==="aria-label"?aria:null,
+     setAttribute:(k,v)=>{ops.ariaWrites++;aria=v}};
+ });
+ const document={querySelectorAll(s){ops.queries++;const m=s.match(/="([^"]+)"/);return m?controls.filter(c=>c.getAttribute("data-wire-id")===m[1]):controls;}};
+ const scope=null;
+ const paint=new Function("scope","document","uiByWireId",source+"\nreturn paintNativeMeters")(scope,document,uiByWireId);
+ paint({graph,retained:false});const cold={...ops};Object.keys(ops).forEach(k=>ops[k]=0);
+ for(let i=0;i<ticks;i++)paint({graph,retained:false});
+ const steady={...ops};
+ paint({graph,retained:true});
+ const retained=controls.map(c=>[c.disabled,c.title,c.getAttribute("aria-label"),c.parentElement.querySelector().textContent,c.parentElement.classList.contains()]);
+ paint({graph,retained:false});
+ const live=controls.map(c=>[c.disabled,c.title,c.getAttribute("aria-label"),c.parentElement.querySelector().textContent,c.parentElement.classList.contains()]);
+ return {cold,steady,retained,live};
+}
+ const fragment=source.slice(start,end)+"    if (!scope?.displayMeterDbfs)return;\n  }";
+ const result=profile(fragment);
+ assert.deepEqual(result.steady,{queries:120,ariaWrites:0,classToggles:0});
+ for(let i=0;i<12;i++){
+   const fixed=i%2===0;
+   assert.equal(result.live[i][0],fixed);
+   assert.equal(result.retained[i][0],true);
+   assert.equal(result.live[i][1],result.live[i][2]);
+   assert.equal(result.retained[i][1],result.retained[i][2]);
+   assert.equal(result.live[i][3],fixed?"UNITY":"LVL");
+   assert.equal(result.live[i][4],fixed);
+ }
+ const hidden=profile(fragment,48,0,120);
+ assert.deepEqual(hidden.steady,{queries:120,ariaWrites:0,classToggles:0});
+});
+
+
+// Execute actual production fragment with real device/strip VMs. Counters
+// measure source work, not browser wall time or audio CPU.
+function profileExternalProjection(fragment,deviceVM,stripVM){
+ const ops={rowIdReads:0,domWrites:0}, tracks=Array.from({length:24},(_,i)=>({id:i+1}));
+ const idFor=t=>String(9007199254740993n+BigInt(t.id));
+ const rows=tracks.map((t,i)=>({get channelId(){ops.rowIdReads++;return idFor(t)},
+   physicalLeft:i%2?6:4,physicalRight:i%2?7:5,status:"LIVE"}));
+ const next={device:{epoch:"17",backend:"ASIO",outputArmed:true,
+   enabledOutputs:[0,1,2,3,4,5,6,7],outputEndpoints:Array.from({length:8},(_,i)=>({port:i,label:"Pin "+i,active:true}))},
+   raw:{externalOutputs:rows,physicalMainOutputs:[0,1],physicalMonitorOutputs:[2,3]},
+   graph:{channels:tracks.map(t=>({id:idFor(t),name:"CH "+t.id}))}};
+ const pendingExternal=new Map(), messages=[];
+ const dataset=()=>new Proxy({}, {set(o,k,v){ops.domWrites++;o[k]=v;return true}});
+ const selectFor=()=>{let text="",title="",value="",busy=false,options=[];
+   const marker={dataset:dataset(),get textContent(){return text},set textContent(v){ops.domWrites++;text=v}};
+   return {dataset:dataset(),parentElement:{querySelector:()=>marker},marker,
+     get value(){return value},set value(v){ops.domWrites++;value=v},
+     get title(){return title},set title(v){ops.domWrites++;title=v},
+     replaceChildren(...nodes){ops.domWrites++;options=nodes.map(n=>n.value)},
+     hasAttribute(k){return busy},removeAttribute(k){ops.domWrites++;busy=false},
+     armBusy(){busy=true},snapshot(){return [value,title,{...this.dataset},text,{...marker.dataset},options,busy]}};
+ };
+ let nodes=new Map(tracks.slice(0,12).map(t=>[t.id,selectFor()]));
+ const document={querySelector:s=>nodes.get(Number(s.match(/data-id="(\d+)"/)[1])),createElement:()=>({})};
+ const scope={tracks};
+ const paint=new Function("deviceVM","stripVM","hardwareOutputPairs","stripNamedChoices","pendingExternal","scope","nativeIdFor","document","status",fragment+"\nreturn paintExternalReadback")(
+   deviceVM,stripVM,()=>deviceVM.outputChoices(next),()=>[{label:"Preset · A"}],pendingExternal,scope,idFor,document,m=>messages.push(m));
+ const snapshot=()=>({tracks:tracks.map(t=>t.externalOutput),nodes:[...nodes].map(([id,n])=>[id,n.snapshot()]),pending:[...pendingExternal.keys()],messages:[...messages]});
+ paint(next);const live=snapshot();ops.rowIdReads=ops.domWrites=0;
+ for(let n=0;n<120;n++)paint(next);
+ const steady={...ops};
+ next.device.outputArmed=false;paint(next);const muted=snapshot();
+ const unseen=idFor(tracks[23]);pendingExternal.set(unseen,{epoch:"17",acked:true,left:6,right:7});
+ const stale=idFor(tracks[22]);pendingExternal.set(stale,{epoch:"16",acked:true,left:4,right:5});
+ const waiting=idFor(tracks[0]);pendingExternal.set(waiting,{epoch:"17",acked:false,left:4,right:5});
+ nodes.get(1).armBusy();paint(next);const waitingState=snapshot();
+ pendingExternal.delete(waiting);paint(next);const settled=snapshot();
+ // Rebuild a different bank and remove one physical assignment.
+ nodes=new Map(tracks.slice(12).map(t=>[t.id,selectFor()]));
+ next.raw.externalOutputs=rows.slice(0,23);paint(next);const rebuilt=snapshot();
+ next.device.outputArmed=true;paint(next);const restored=snapshot();
+ return {steady,live,muted,waitingState,settled,rebuilt,restored};
+}
+
+test("External OUT steady readback indexes exact ChannelId and avoids unchanged DOM writes",()=>{
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("  const paintExternalReadback=(next)=>{"),end=source.indexOf("  const inputChoicesFor=",start);
+ assert.ok(start>=0&&end>start);
+ const p=profileExternalProjection(source.slice(start,end),deviceVM,stripVM);
+ assert.deepEqual(p.steady,{rowIdReads:2880,domWrites:0});
+ assert.equal(p.live.nodes[0][1][2].status,"LIVE");
+ assert.equal(p.muted.nodes[0][1][2].status,"MUTED");
+ assert.equal(p.waitingState.nodes[0][1][6],true,"unacknowledged request must stay busy");
+ assert.equal(p.waitingState.pending.length,1);
+ assert.deepEqual(p.settled.pending,[]);
+ assert.equal(p.settled.messages.length,1);
+ assert.equal(p.settled.nodes[0][1][6],false);
+ assert.equal(p.rebuilt.tracks[23],"None");
+ assert.equal(p.rebuilt.nodes[11][1][2].status,"NONE");
+ assert.equal(p.restored.nodes[0][1][2].status,"LIVE");
+});
+
+
+test("WIRE gain readback indexes accepted primary sources once per snapshot",()=>{
+  const main="18446744073709551615";
+  for(const n of [12,24,64,128]){
+    let reads=0;
+    const channels=Array.from({length:n},(_,i)=>{
+      const id=String(9007199254740993n+BigInt(i));
+      return {get id(){reads++;return id;},primaryOutId:main,controls:{faderDb:-3}};
+    });
+    const edges=channels.flatMap((ch,i)=>[
+      {edgeId:"p"+i,from:ch.id,to:main,enabled:true,primaryOutput:true,gainLinear:1},
+      {edgeId:"s"+i,from:ch.id,to:main,enabled:true,primaryOutput:false,gainLinear:.5}
+    ]);
+    const ids=new Map(edges.map((e,i)=>[e.edgeId,i]));
+    const pending=new Map([["s1",true],["p1",true]]);
+    const expected=edges.map((e,id)=>({id,pending:e.edgeId==="s1",
+      levelDb:e.primaryOutput?0:-6}));
+    reads=0;
+    for(let i=0;i<120;i++)assert.deepEqual(wireVM.gainReadback(edges,ids,pending,channels),expected);
+    assert.equal(reads,2*n*120,"one index build and one exact identity check per primary");
+  }
+});
+test("WIRE indexed gain readback preserves rejection, exact pair cardinality and fresh snapshots",()=>{
+  const source="9007199254740993",other="9007199254740994",main="18446744073709551615";
+  const ch={id:source,primaryOutId:main,controls:{faderDb:-60}};
+  const edge={edgeId:"11",from:source,to:main,enabled:true,primaryOutput:true,gainLinear:1};
+  const ids=new Map([["11",0],["12",1]]),pending=new Map([["11",true],["12",true]]);
+  const primary=[{id:0,pending:false,levelDb:0}];
+  const readback=(channels,e=edge)=>wireVM.gainReadback([e],ids,pending,channels);
+  assert.deepEqual(readback([ch]),primary);
+  assert.deepEqual(readback([ch,{...ch}]),[]);
+  assert.deepEqual(readback([ch,{...ch,primaryOutId:other}]),primary);
+  assert.deepEqual(readback([{...ch,id:other}]),[]);
+  assert.deepEqual(readback([{...ch,id:Number(source)}]),[]);
+  assert.deepEqual(readback([{...ch,controls:{faderDb:NaN}}]),[]);
+  assert.deepEqual(readback([{...ch,primaryOutId:other}]),[]);
+  assert.deepEqual(readback([ch],{...edge,gainLinear:.99}),[]);
+  assert.deepEqual(readback([ch],{...edge,enabled:false}),[]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"unmapped"}),[]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"12",primaryOutput:false,gainLinear:0}),
+    [{id:1,pending:true,levelDb:-60}]);
+  assert.deepEqual(readback([ch],{...edge,edgeId:"12",primaryOutput:false,gainLinear:-1}),[]);
+  const changed=[ch];
+  assert.deepEqual(readback(changed),primary);
+  changed[0]={...ch,primaryOutId:other};
+  assert.deepEqual(readback(changed),[],"no stale cross-snapshot index");
+  assert.deepEqual(readback([,ch]),primary);
+});
+
+
+test("I/O input choice projection scans physical inventory once, preserves custom pairs and fresh readback",()=>{
+  const count=64;
+  let reads=0;
+  const endpoints=Array.from({length:count},(_,port)=>({
+    port,label:"Input "+(port+1),get active(){reads++;return true;}
+  }));
+  const hardware={device:{backend:"ASIO",inputEndpoints:endpoints,
+    enabledInputs:Array.from({length:count},(_,i)=>i)},
+    admitted:true,retained:false,graph:{channels:[
+      {source:{sourceFormat:"STEREO",portId:"in:63",portIdRight:"in:0"}},
+      {source:{sourceFormat:"STEREO",portId:"in:0",portIdRight:"in:63"}},
+      {source:{sourceFormat:"STEREO",portId:"in:63",portIdRight:"in:0"}},
+      {source:{sourceFormat:"STEREO",portId:"in:9",portIdRight:"in:9"}},
+      {source:{sourceFormat:"STEREO",portId:"in:3",portIdRight:"in:64"}},
+      {source:{sourceFormat:"STEREO",portId:"in:5",portIdRight:"in:8",bindingState:"NEEDS_REMAP"}}
+    ]}};
+  const choices=deviceVM.inputChoices(hardware);
+  assert.equal(reads,count,"one inventory scan regardless of choice count");
+  assert.equal(choices.length,1+64+63+2);
+  assert.deepEqual(choices.slice(-2),[
+    deviceVM.physicalInputChoice(hardware,"STEREO",63,0),
+    deviceVM.physicalInputChoice(hardware,"STEREO",0,63)]);
+  for(const choice of choices)
+    assert.deepEqual(choice,deviceVM.physicalInputChoice(hardware,choice.mode,choice.left,choice.right));
+  // Same JS object, changed inventory: no cache, no phantom stale choices.
+  hardware.device.enabledInputs=hardware.device.enabledInputs.filter(p=>p!==63);
+  endpoints[0].label="Renamed input";
+  reads=0;
+  const changed=deviceVM.inputChoices(hardware);
+  assert.equal(reads,count);
+  assert.ok(changed.every(x=>x.left!==63&&x.right!==63));
+  assert.equal(changed[1].label,"Mono · Renamed input [IN 1]");
+  assert.equal(deviceVM.inputChoices({...hardware,retained:true}).length,1+63+62);
+  const legacy={...hardware,admitted:false,raw:{mixerSession:{authority:"M4",channels:[
+    {source:{mode:"STEREO",left:7,right:2}},
+    {source:{mode:"STEREO",left:2.5,right:7}},
+    {source:{mode:"STEREO",left:7,right:63}}
+  ]}}};
+  assert.deepEqual(deviceVM.inputChoices(legacy).at(-1),
+    deviceVM.physicalInputChoice(legacy,"STEREO",7,2));
+  assert.equal(deviceVM.inputChoices(legacy).length,1+63+62+1);
+  const duplicate={device:{enabledInputs:[0,1],inputEndpoints:[
+    {port:1,label:"Input 2",active:true},{port:0,label:"First",active:true},
+    {port:0,label:"Second",active:true}]}};
+  assert.deepEqual(deviceVM.inputChoices(duplicate),[
+    deviceVM.physicalInputChoice(duplicate,"NONE",-1,-1),
+    deviceVM.physicalInputChoice(duplicate,"MONO",0,-1),
+    deviceVM.physicalInputChoice(duplicate,"MONO",1,-1),
+    deviceVM.physicalInputChoice(duplicate,"STEREO",0,1)]);
+});
+
+
+test("One synchronous input-label resolver per projection preserves exact choices and fresh remaps",()=>{
+  let reads=0;
+  const count=64;
+  const endpoints=Array.from({length:count},(_,port)=>({
+    port,label:"Input "+(port+1),get active(){reads++;return true;}
+  }));
+  const snapshot={device:{inputEndpoints:endpoints,enabledInputs:Array.from({length:count},(_,i)=>i)},
+    admitted:true,graph:{channels:[{source:{sourceFormat:"STEREO",portId:"in:63",portIdRight:"in:0"}},
+      {source:{sourceFormat:"STEREO",portId:"in:5",portIdRight:"in:8",bindingState:"NEEDS_REMAP"}}]}};
+  const rows=[null,{mode:"NONE"},{mode:"BUS"},{mode:"STEREO",left:63,right:0},
+    {mode:"STEREO",left:0,right:63},{mode:"STEREO",left:5,right:8},
+    {mode:"STEREO",left:0,right:1},{mode:"MONO",left:0,right:-1},
+    {mode:"MONO",left:"0",right:-1},{mode:"PLAYER"},...Array.from({length:24},(_,left)=>({mode:"MONO",left,right:-1}))];
+  for(const state of [snapshot,{...snapshot,retained:true},{...snapshot,admitted:false,
+    raw:{mixerSession:{authority:"M4",channels:[{source:{mode:"STEREO",left:0,right:63}}]}}}]){
+    const expected=rows.map(row=>deviceVM.inputLabel(state,row));
+    reads=0;
+    const resolve=deviceVM.inputLabelResolver(state);
+    assert.equal(reads,0);
+    assert.deepEqual(rows.slice(0,3).map(resolve),expected.slice(0,3));
+    assert.equal(reads,0,"no scan for unpatched, None or BUS-only passes");
+    assert.deepEqual(rows.map(resolve),expected);
+    assert.equal(reads,count,"one inventory scan per synchronous presentation pass");
+  }
+  snapshot.device.enabledInputs=snapshot.device.enabledInputs.filter(p=>p!==63);
+  endpoints[0].label="Renamed input";
+  reads=0;
+  const fresh=deviceVM.inputLabelResolver(snapshot);
+  assert.equal(fresh({mode:"STEREO",left:63,right:0}),"None");
+  assert.equal(fresh({mode:"MONO",left:0,right:-1}),"Mono · Renamed input [IN 1]");
+  assert.equal(reads,count);
+  const source=read("web/approved-native-bridge.js");
+  for(const name of ["projection(native)","refreshRealM4Inputs(next)"]){
+    const start=source.indexOf("function "+name);
+    assert.ok(start>=0);
+    assert.match(source.slice(start,start+2500),/const resolveInputLabel=deviceVM\.inputLabelResolver\(hardware\)/);
+  }
+  assert.match(source,/inputLabel:resolveInputLabel/);
+  assert.match(source,/t\.input=resolveInputLabel\(row\)/);
+});
+
+
+test("Offline SOF unity reset uses the saved SEND path, not admitted PCM",()=>{
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("consumeDoubleClick(event,t) {");
+ const end=source.indexOf("applyIdentity:",start);
+ assert.ok(start>=0&&end>start);
+ const reset=source.slice(start,end);
+ const a=reset.indexOf("if(scope?.sofEnabled");
+ const z=reset.indexOf("if(!streamFaderControl",a);
+ assert.ok(a>=0&&z>a);
+ assert.match(reset.slice(a,z),/logicalView\?queueLogicalSendGain\(edge,0,true\)/);
+ assert.match(reset.slice(a,z),/requestWireGain\(\{sourceId:t.id,edgeId:id,levelDb:0\}\)/);
+ assert.doesNotMatch(reset.slice(a,z),/SET_FADER/);
 });

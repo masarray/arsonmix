@@ -40,14 +40,21 @@ SPLIT_BOOTSTRAP = """
     // Favor a taller physical fader by borrowing at most 48px of genuinely
     // spare FX space. Retain at least 125px for insert controls, and never
     // change the synchronized source/MASTER/rail mechanical alignment.
-    const half=Math.round(h/2);
+    // The fixed upper rows can exceed the old 680px floor after ribbon /
+    // routing changes. Preserve the existing 125px FX reserve AND a
+    // balanced lower deck by allowing only the necessary vertical scroll.
+    // Reuse this measured rail and existing resize/fold observer; no new reads.
+    const bothExpanded=!root.classList.contains('collapsed-send')&&!root.classList.contains('collapsed-fx');
+    const minExpanded=bothExpanded?Math.max(680,Math.ceil(2*(identity+route+send+125))):0;
+    const half=Math.round(Math.max(h,minExpanded)/2);
     const fxBase=Math.max(125,Math.round(half-identity-route-send));
     const boost=Math.min(48,Math.max(0,fxBase-125));
     const fader=Math.max(130,Math.round(half-pan-switches-footer+boost));
     const fx=fxBase-boost;
-    const signature=fader+':'+fx;
+    const signature=fader+':'+fx+':'+minExpanded;
     if(signature===previous)return;
     previous=signature;
+    root.style.setProperty('--ux-expanded-min-h',minExpanded+'px');
     root.style.setProperty('--v13-fader-h',fader+'px','important');
     root.style.setProperty('--ux-fx-balanced-h',fx+'px','important');
   }
@@ -70,7 +77,7 @@ OPERATOR_CSS = """
   --v13-fader-h:max(130px,calc(50% - var(--pan-h) - var(--switch-h) - var(--footer-h)))!important;
   --ux-fx-balanced-h:max(125px,calc(50% - var(--identity-h) - var(--route-h) - var(--send-h)));
 }
-.console-body:not(.collapsed-send):not(.collapsed-fx){min-height:680px!important}
+.console-body:not(.collapsed-send):not(.collapsed-fx){min-height:max(680px,var(--ux-expanded-min-h,680px))!important}
 .console-body.collapsed-route{--route-h:23px!important}
 .console-body:not(.collapsed-fx) .strip .fx-section,
 .console-body:not(.collapsed-fx) .section-rail>.rail-cell.fx{
@@ -102,6 +109,186 @@ def once(source: str, before: str, after: str, label: str) -> str:
     if source.count(before) != 1:
         raise ValueError("Operator UX anchor drift: " + label)
     return source.replace(before, after, 1)
+
+
+# V7 Plugin Manager: explicit desktop catalog and scanner workspace. The immutable
+# historical HTML remains untouched; both native and Pages consume this composition.
+PLUGIN_WORKSPACE_CSS = r"""/* Professional Plugin Manager: one compact desktop workspace, not mixer keys. */
+.plugin-browser{position:fixed!important;z-index:90!important;top:76px!important;right:max(14px,calc((100vw - 1000px)/2))!important;left:auto;bottom:auto!important;width:min(1000px,calc(100vw - 28px))!important;height:min(620px,calc(100dvh - 90px))!important;max-width:calc(100vw - 28px)!important;max-height:calc(100dvh - 48px)!important;min-width:min(740px,calc(100vw - 28px))!important;min-height:300px!important;display:flex;flex-direction:column;box-sizing:border-box;resize:both!important;overflow:hidden!important;background:#1a2b35!important;color:#c6d6df;border:1px solid #49616f!important;border-radius:5px!important;box-shadow:0 12px 32px #0009!important;pointer-events:auto!important;font-size:11px;font-weight:400;--plugin-control-height:34px;--plugin-control-radius:calc(var(--plugin-control-height) / 2)}
+.plugin-browser[hidden]{display:none!important}
+.plugin-browser[style*="left:"]{right:auto!important}
+.plugin-browser:not([hidden]) .plugin-head{cursor:move!important;touch-action:none!important;user-select:none!important}
+.plugin-head{height:44px;flex:none;display:flex;align-items:center;padding:6px 12px;background:#233743!important;border-bottom:1px solid #405663;gap:8px}
+.plugin-head-title{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;font-size:13px;font-weight:500;letter-spacing:.01em;pointer-events:none!important;color:#edf4f8}
+.plugin-target{font-size:10px;color:#a3becd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400}
+/* Close has no local face, icon, hover or pressed rule. Shared contextual owner only. */
+.plugin-workspace{display:grid;grid-template-columns:246px minmax(0,1fr);flex:1;min-height:0;overflow:hidden}
+.plugin-sidebar{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto;background:#1d303b;border-right:1px solid #3b515e;padding:12px;gap:12px}
+.plugin-sidebar-title{font-size:10px;color:#a7beca;letter-spacing:.055em;text-transform:uppercase;font-weight:500}
+.plugin-library-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+/* V6 pill material, taller manager controls; radius follows height. */
+.plugin-browser :is(.plugin-library-actions,.scan-add) button{display:inline-flex!important;align-items:center;justify-content:center;gap:5px;box-sizing:border-box!important;height:var(--plugin-control-height)!important;min-height:var(--plugin-control-height)!important;max-height:var(--plugin-control-height)!important;padding:0 10px!important;background:#78c8d514!important;background-image:none!important;border:1px solid #83c7d344!important;border-radius:var(--plugin-control-radius)!important;box-shadow:none!important;color:#b6edf6!important;font:400 11px/1 "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important;text-shadow:none!important;white-space:nowrap;cursor:pointer}
+.plugin-browser :is(.plugin-library-actions,.scan-add) button:hover:not(:disabled){background:#9abccb19!important;border-color:#93b5c22b!important;color:#f1f8fb!important}
+.plugin-browser :is(.plugin-library-actions,.scan-add) button:active:not(:disabled){background:#4bb6ce26!important;border-color:#62b9cb56!important;color:#9ce8f4!important}
+.plugin-browser :is(.plugin-library-actions,.scan-add) button:disabled{opacity:.45!important;cursor:not-allowed}
+.plugin-scan-settings{display:flex;flex-direction:column;min-width:0;gap:8px;padding:0;background:transparent;border:0}
+.scan-add{display:flex;gap:6px}
+.scan-add button{width:100%}
+.scan-status{font-size:10px;color:#b1c4cf;line-height:1.5;overflow-wrap:anywhere;padding:8px 9px;border-left:2px solid #567b8c;background:#172b36;border-radius:0 3px 3px 0}
+.scan-status:empty{display:none!important}
+.plugin-catalog{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;background:#142630}
+.plugin-catalog-tools{display:flex;flex:none;gap:8px;align-items:center;padding:9px 10px;border-bottom:1px solid #3b515e;background:#1b303b}
+.plugin-browser .plugin-search-row{position:relative;display:flex;align-items:center;min-width:0;flex:1;height:var(--plugin-control-height);padding:0;margin:0}
+.plugin-search-row::before{content:"";position:absolute;left:10px;top:calc(50% - 6px);width:9px;height:9px;border:1.5px solid #8eacbc;border-radius:50%;pointer-events:none}
+.plugin-search-row::after{content:"";position:absolute;left:19px;top:calc(50% + 5px);width:5px;height:1.5px;border-radius:1px;background:#8eacbc;transform:rotate(45deg);pointer-events:none}
+.plugin-browser .plugin-filters{display:flex;align-items:center;gap:6px;min-width:0;height:var(--plugin-control-height);padding:0;margin:0}
+.plugin-browser :is(.plugin-search-row input,.plugin-filters select){box-sizing:border-box!important;height:var(--plugin-control-height)!important;min-height:var(--plugin-control-height)!important;max-height:var(--plugin-control-height)!important;min-width:0;margin:0!important;border:1px solid #83a6b42e!important;border-radius:var(--plugin-control-radius)!important;background-color:#0d202a!important;color:#d2e2e9!important;box-shadow:none!important;font:400 11px "Segoe UI",Arial,sans-serif!important;letter-spacing:0!important;text-transform:none!important}
+.plugin-browser .plugin-search-row input{width:100%;padding:0 9px 0 31px!important;background-image:none!important}
+.plugin-browser .plugin-filters select{width:112px;appearance:none!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4 3 3 3-3' stroke='%239db5c2' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")!important;background-position:right 8px center!important;background-repeat:no-repeat!important;background-size:12px 12px!important;padding:0 24px 0 10px!important;cursor:pointer}
+.plugin-browser :is(.plugin-search-row input,.plugin-filters select):hover:not(:disabled){border-color:#93b5c280!important;color:#f1f8fb!important}
+.plugin-catalog{--plugin-columns:minmax(0,1fr) 112px 25px 25px;--plugin-identity:minmax(0,1.55fr) minmax(0,1fr) minmax(0,.75fr)}
+.plugin-headings,.plugin-item{display:grid;grid-template-columns:var(--plugin-columns);gap:0;align-items:center;min-width:0;width:100%;box-sizing:border-box}
+.plugin-headings{height:28px;flex:none;background:#233b49;color:#bdd0db;font-size:10px;font-weight:500;border-bottom:1px solid #4a6473;padding:0 6px}
+.plugin-heading-identity,.plugin-browser .plugin-choose{display:grid!important;grid-template-columns:var(--plugin-identity);gap:0;align-items:center;min-width:0;width:100%;box-sizing:border-box;text-align:left!important;justify-content:stretch!important}
+.plugin-heading-identity>span,.plugin-choose>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 7px;box-sizing:border-box;text-align:left}
+.plugin-heading-status,.plugin-labels{display:grid;grid-template-columns:48px 64px;align-items:center;min-width:0;width:100%;box-sizing:border-box}
+.plugin-heading-status>span,.plugin-labels>span{padding:0 4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;text-align:left}
+/* Lucide star/ban, ISC; notice in workstream doc. Shared mask per icon,
+   no emoji/font baseline, no extra SVG nodes per catalog entry. */
+.plugin-browser{--plugin-star:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11.525%202.295a.53.53%200%200%201%20.95%200l2.31%204.679a2.123%202.123%200%200%200%201.595%201.16l5.166.756a.53.53%200%200%201%20.294.904l-3.736%203.638a2.123%202.123%200%200%200-.611%201.878l.882%205.14a.53.53%200%200%201-.771.56l-4.618-2.428a2.122%202.122%200%200%200-1.973%200L6.396%2021.01a.53.53%200%200%201-.77-.56l.881-5.139a2.122%202.122%200%200%200-.611-1.879L2.16%209.795a.53.53%200%200%201%20.294-.906l5.165-.755a2.122%202.122%200%200%200%201.597-1.16z%22%2F%3E%3C%2Fsvg%3E");--plugin-star-on:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22black%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M11.525%202.295a.53.53%200%200%201%20.95%200l2.31%204.679a2.123%202.123%200%200%200%201.595%201.16l5.166.756a.53.53%200%200%201%20.294.904l-3.736%203.638a2.123%202.123%200%200%200-.611%201.878l.882%205.14a.53.53%200%200%201-.771.56l-4.618-2.428a2.122%202.122%200%200%200-1.973%200L6.396%2021.01a.53.53%200%200%201-.77-.56l.881-5.139a2.122%202.122%200%200%200-.611-1.879L2.16%209.795a.53.53%200%200%201%20.294-.906l5.165-.755a2.122%202.122%200%200%200%201.597-1.16z%22%2F%3E%3C%2Fsvg%3E");--plugin-ban:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%2210%22%2F%3E%3Cpath%20d%3D%22m4.929%204.929%2014.142%2014.142%22%2F%3E%3C%2Fsvg%3E")}
+.plugin-heading-icon,.plugin-browser .plugin-flag{display:grid!important;place-items:center;justify-self:center;box-sizing:border-box;width:24px!important;height:24px!important;color:#96b0be;font-size:0!important;line-height:1!important}
+.plugin-heading-icon::before,.plugin-browser .plugin-flag::before{content:"";display:block;width:16px;height:16px;background:currentColor;mask:var(--plugin-glyph) center/contain no-repeat;pointer-events:none}
+.plugin-heading-icon[data-plugin-icon="star"],.plugin-browser .plugin-flag[data-plugin-action="fav"]{--plugin-glyph:var(--plugin-star)}
+.plugin-heading-icon[data-plugin-icon="ban"],.plugin-browser .plugin-flag[data-plugin-action="hide"]{--plugin-glyph:var(--plugin-ban)}
+.plugin-browser .plugin-flag[data-plugin-action="fav"][aria-pressed="true"]{--plugin-glyph:var(--plugin-star-on);color:#e4bf70!important}
+.plugin-browser .plugin-flag[data-plugin-action="hide"][aria-pressed="true"]{color:#f0a39e!important;background:#d66c6a20!important}
+.plugin-browser .plugin-flag:hover{background:#9abccb19!important;color:#f1f8fb!important}
+.plugin-browser .plugin-flag[aria-pressed="true"]:hover{color:#fff!important}
+
+.plugin-results{min-height:0;background:#142630}
+.plugin-table-scroll{flex:1;min-height:0;overflow:auto;scrollbar-gutter:stable;background:#142630;overscroll-behavior:contain}
+.plugin-headings{position:sticky;top:0;z-index:2;box-sizing:border-box}
+.plugin-item{height:27px;min-height:27px;padding:0 6px;border-bottom:1px solid #29404b;background:#182b35;box-sizing:border-box}
+.plugin-item:nth-child(even){background:#1a2e39}
+.plugin-item:hover,.plugin-item:focus-within{background:#264553;box-shadow:inset 2px 0 #74b9ce}
+.plugin-browser .plugin-choose{height:26px!important;min-height:26px!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;background-image:none!important;box-shadow:none!important;align-items:center;cursor:pointer;color:#d9e6ee;font-size:11px}
+.plugin-item.disabled .plugin-choose{opacity:.52}
+.plugin-name{font-size:11px;color:#e2edf3;font-weight:400;letter-spacing:0}
+.plugin-meta,.plugin-category{font-size:11px;color:#a9bfcc;font-weight:400;letter-spacing:0}
+.plugin-labels{font-size:10px;color:#a7bdca;letter-spacing:0}
+.plugin-pill{color:#b6cbd8;border:0;border-radius:0;background:none}
+.plugin-pill.problem,.plugin-item.disabled .plugin-labels{color:#e2a49b}
+.plugin-browser .plugin-flag{min-width:0!important;padding:0!important;border:0!important;border-radius:4px!important;background:transparent!important;background-image:none!important;box-shadow:none!important;cursor:pointer;color:#96b0be}
+.plugin-empty{padding:24px 12px;text-align:center;color:#9cb4c2;font-size:11px}
+.plugin-footer{display:flex;align-items:center;min-height:30px!important;height:auto!important;flex:none;padding:5px 12px!important;border-top:1px solid #3b515e;background:#1c303b;color:#a7bdca;font-size:10px;gap:8px}
+.plugin-footer #pluginCount{flex:1;color:#afc4cf;font-variant-numeric:tabular-nums;letter-spacing:0}
+.plugin-browser button:not(#pluginClose):focus-visible,.plugin-browser input:focus-visible,.plugin-browser select:focus-visible{outline:2px solid #9ad9ed!important;outline-offset:-2px}
+.console-body.plugin-open #viewport{margin-right:0!important}
+.plugin-browser[hidden],.fast-picker[hidden]{display:none!important}
+@media(max-width:760px){
+ .plugin-browser{min-width:min(310px,calc(100vw - 28px))!important;min-height:230px!important;top:55px!important;height:min(620px,calc(100dvh - 70px))!important}
+ .plugin-workspace{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+ .plugin-sidebar{grid-row:2;max-height:145px;border-right:0;border-top:1px solid #3b515e;padding:8px;gap:7px}
+ .plugin-catalog{grid-row:1;--plugin-identity:minmax(0,1fr) minmax(0,.75fr);--plugin-columns:minmax(0,1fr) 84px 23px 23px}
+ .plugin-heading-status,.plugin-labels{grid-template-columns:38px 46px}
+ .plugin-category,.plugin-heading-category{display:none}
+ .plugin-catalog-tools{flex-wrap:wrap;gap:5px;padding:6px}
+ .plugin-browser .plugin-search-row{flex-basis:100%}
+ .plugin-browser .plugin-filters{flex:1}.plugin-browser .plugin-filters select{width:auto;flex:1}
+}
+"""
+
+def apply_plugin_workspace(html: str, plugin: str) -> tuple[str, str]:
+    start = html.index('    <aside id="pluginBrowser"')
+    end = html.index('    </aside>', start) + len('    </aside>')
+    original = html[start:end]
+    # Retain exact controls, IDs, existing native event handlers and file input.
+    def line(marker):
+        matches = [s.strip() for s in original.splitlines() if marker in s]
+        if len(matches) != 1:
+            raise ValueError("Plugin workspace anchor drift: " + marker)
+        return matches[0]
+    head = line('id="pluginDragHandle"')
+    head = once(head, 'PLUGIN MANAGER', 'Plugin Manager', 'manager title')
+    head = once(head, 'class="plugin-close"', 'class="plugin-close armix-floating-close"', 'shared Close semantic owner')
+    search = line('class="plugin-search-row"')
+    filters = line('class="plugin-filters"').replace('★ Favorites', 'Favorites')
+    results = line('id="pluginResults"')
+    footer = line('id="pluginCount"')
+    footer_match = re.fullmatch(r'<div class="plugin-footer">(<span id="pluginCount">.*?</span>)(.*)</div>', footer)
+    if not footer_match:
+        raise ValueError("Plugin Manager footer drift")
+    count, actions = footer_match.groups()
+    actions = once(actions, 'Import list…', 'Import…', 'import label')
+    actions = once(actions, 'Import plugin metadata from a JSON registry exported by a scanner', 'Import VST3 in native host; import metadata in browser reference', 'import tooltip')
+    # Native Add folder already opens a JUCE chooser. Do not surface the
+    # historical reference path editor, fabricated default paths or demo copy.
+    add_folder = re.search(r'<button id="pluginAddPath">.*?</button>', line('id="pluginAddPath"'))
+    if not add_folder:
+        raise ValueError("Plugin folder chooser anchor drift")
+    scan = ('<div class="plugin-scan-settings"><div class="scan-add">'
+            + add_folder.group().replace('+ Add folder', 'Add folder…') + '</div>'
+            + '<div class="scan-status" id="pluginScanStatus" role="status" aria-live="polite"></div></div>')
+    headings = ('<div class="plugin-headings"><div class="plugin-heading-identity">'
+                '<span>Name</span><span>Vendor</span><span class="plugin-heading-category">Category</span></div>'
+                '<div class="plugin-heading-status"><span>Format</span><span>Status</span></div>'
+                '<span class="plugin-heading-icon" data-plugin-icon="star" title="Favorites" aria-label="Favorite"></span>'
+                '<span class="plugin-heading-icon" data-plugin-icon="ban" title="Hide or show effect" aria-label="Visibility"></span></div>')
+    markup = ('    <aside id="pluginBrowser" class="plugin-browser" aria-label="Effects plugin manager" hidden>\n'
+              + head + '\n<div class="plugin-workspace"><section class="plugin-sidebar" aria-label="Plugin management">'
+              + '<div class="plugin-sidebar-title">Library actions</div><div class="plugin-library-actions">' + actions + '</div>'
+              + scan + '</section><section class="plugin-catalog" aria-label="Plugin catalog">'
+              + '<div class="plugin-catalog-tools">' + search + filters + '</div>'
+              + '<div class="plugin-table-scroll">' + headings + results + '</div><div class="plugin-footer">' + count
+              + '</div></section></div>\n    </aside>')
+    html = html[:start] + markup + html[end:]
+    html = once(html,
+        """<span class="plugin-meta">'+escapeHtml(p.vendor)+' · '+escapeHtml(p.category)+(latency?' · '+escapeHtml(latency):'')+(usedBy.length?' · Used '+usedBy.length:'')+'</span>""",
+        """<span class="plugin-meta" title="'+escapeHtml(p.vendor)+'">'+escapeHtml(p.vendor)+'</span><span class="plugin-category" title="'+escapeHtml([p.category,latency,usedBy.length?'Used '+usedBy.length:''].filter(Boolean).join(' · '))+'">'+escapeHtml(p.category)+'</span>""",
+        "plugin row column layout")
+    # The native bridge intercepts Add folder and invokes chooseFolder().
+    # In the reference, fail honestly on request instead of editing fake paths.
+    html = once(html, " const container=plugEl('pluginPaths');",
+        " const container=plugEl('pluginPaths');if(!container)return;", "retire reference path rendering")
+    add_start = html.index("plugEl('pluginAddPath').addEventListener('click',()=>{")
+    add_end = html.index("plugEl('pluginScan').addEventListener('click',()=>{", add_start)
+    html = html[:add_start] + """plugEl('pluginAddPath').addEventListener('click',()=>{
+ plugEl('pluginScanStatus').textContent='Folder selection requires the desktop app.';
+});
+""" + html[add_end:]
+    html = once(html, 'Windows VST3 scan requires installed native host · GitHub Pages cannot access local plugin files',
+        'VST3 scanning requires the desktop app.', 'concise reference scan feedback')
+    # Keep existing IDs/handlers and preference state; change only presentation.
+    html = once(html, """title="Toggle favorite">★</button>""",
+        """aria-pressed="'+String(!!p.favorite)+'" title="Toggle favorite"></button>""", "favorite vector")
+    html = once(html, """title="Hide or show effect">'+(p.hidden?'◉':'⊘')+'</button>""",
+        """aria-pressed="'+String(!!p.hidden)+'" title="Hide or show effect"></button>""", "visibility vector")
+    # On resize/open, clamp actual fixed bounds including prior drag or native
+    # first-show centering. No polling or meter work.
+    html = once(html, "function setBrowser(open){", """function fitPluginWindow(){
+ const panel=plugEl('pluginBrowser');
+ if(panel.hidden)return;
+ const r=panel.getBoundingClientRect(),cs=getComputedStyle(panel),gap=4;
+ const x=Math.max(gap,Math.min(innerWidth-r.width-gap,r.left));
+ const y=Math.max(gap,Math.min(innerHeight-r.height-gap,r.top));
+ if(Math.abs(x-r.left)>.5){
+  const left=parseFloat(cs.left);
+  panel.style.setProperty('left',((Number.isFinite(left)?left:panel.offsetLeft)+x-r.left)+'px','important');
+  panel.style.setProperty('right','auto','important');
+ }
+ if(Math.abs(y-r.top)>.5){
+  const top=parseFloat(cs.top);
+  panel.style.setProperty('top',((Number.isFinite(top)?top:panel.offsetTop)+y-r.top)+'px','important');
+ }
+}
+window.addEventListener('resize',()=>{if(!plugEl('pluginBrowser').hidden)requestAnimationFrame(fitPluginWindow)},{passive:true});
+function setBrowser(open){""", "bounded manager viewport")
+    html = once(html, "renderPluginCatalog();renderScanPaths();", 
+        "renderPluginCatalog();renderScanPaths();fitPluginWindow();", "fit open manager")
+    # Replace only the manager portion of its existing CSS owner. Quick Picker
+    # keeps its existing implementation, CSS and interactions.
+    fast = plugin.index('.fast-picker{position:absolute;')
+    return html, PLUGIN_WORKSPACE_CSS + "\n" + plugin[fast:]
 
 def apply_operator_ux(html: str, assets: Path) -> str:
     """Evolve only the deployed HTML and two existing CSS owners, fail-closed."""
@@ -305,6 +492,7 @@ function openChannelIdentity(t,anchor){""",
         raise ValueError("Plugin Manager hardware key selector inventory drift")
     chrome_path.write_text(chrome.rstrip()+"\n"+OPERATOR_CSS+"\n",encoding="utf-8")
     # V9: unified modal close material is compiled from its sole CSS owner.
+    html, plugin = apply_plugin_workspace(html, plugin)
     plugin_path.write_text(plugin,encoding="utf-8")
     html = once(html, "restorePluginPreferences();init();", SPLIT_BOOTSTRAP+"\nrestorePluginPreferences();init();", "startup geometry bootstrap")
     if html.count('id="trackCount"')!=1 or 'id="pluginMinimize"' in html:

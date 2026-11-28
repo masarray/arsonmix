@@ -39,8 +39,11 @@
   function physicalInputChoice(snapshot,mode,left,right){
     if(mode==="NONE"&&left===-1&&right===-1)return {label:"None",mode,left,right};
     if(!Number.isInteger(left)||!Number.isInteger(right))return null;
-    const pins=activeInputPins(snapshot),a=pins.find(p=>p.port===left),
-      b=pins.find(p=>p.port===right);
+    const pins=activeInputPins(snapshot);
+    return physicalInputChoiceFromPins(pins.find(p=>p.port===left),
+      pins.find(p=>p.port===right),mode,left,right);
+  }
+  function physicalInputChoiceFromPins(a,b,mode,left,right){
     if(!a)return null;
     if(mode==="MONO"&&right===-1)return {
       label:"Mono · "+a.label+" [IN "+(left+1)+"]",mode,left,right};
@@ -53,12 +56,17 @@
   }
   function inputChoices(snapshot) {
     const pins=activeInputPins(snapshot).slice().sort((a,b)=>a.port-b.port);
+    // One call-local index of this accepted inventory; never cache across
+    // native snapshots, device epochs or remaps. Preserve first match.
+    const pinByPort=new Map();
+    for(const pin of pins)if(!pinByPort.has(pin.port))pinByPort.set(pin.port,pin);
     const entries=[{label:"None",mode:"NONE",left:-1,right:-1}];
     const keys=new Set(["NONE:-1:-1"]);
     const add=(mode,left,right)=>{
       const key=mode+":"+left+":"+right;
       if(keys.has(key))return;
-      const choice=physicalInputChoice(snapshot,mode,left,right);
+      if(!Number.isInteger(left)||!Number.isInteger(right))return;
+      const choice=physicalInputChoiceFromPins(pinByPort.get(left),pinByPort.get(right),mode,left,right);
       if(choice){entries.push(choice);keys.add(key);}
     };
     for(const p of pins)add("MONO",p.port,-1);
@@ -105,6 +113,18 @@
     }
     return result;
   }
+  function matrixCrosspointChoice(row,candidates,port,side){
+    if(!row?.editable||!Array.isArray(candidates)||!Number.isInteger(port))return null;
+    const installed=candidates.find(x=>x.label===row.selected);
+    const hits=x=>x.left===port||x.right===port;
+    if(installed&&hits(installed)){
+      if(row.bus)return null; // MAIN / admitted physical monitor cannot be removed here
+      return candidates.find(x=>x.left===-1&&x.right===-1)||null;
+    }
+    const stereo=side==="output"||installed?.mode==="STEREO"||
+      ((!installed||installed.mode==="NONE")&&row.format==="STEREO");
+    return candidates.find(x=>(side==="output"||x.mode===(stereo?"STEREO":"MONO"))&&hits(x))||null;
+  }
   function patchMatrix(snapshot,side) {
     const input=side==="input", d=snapshot?.device;
     const names=input?d?.inputEndpoints:d?.outputEndpoints;
@@ -137,23 +157,21 @@
         const logical=snapshot.raw?.logicalOutputRegistry;
         const ref=logical?.references?.find?.(r=>r.role===name);
         const port=logical?.ports?.find?.(p=>p.id===ref?.portId);
-        const editable=!port&&busChoices.length>1&&snapshot.raw.operatorOutputMuted===true&&
-          snapshot.device.outputArmed===false&&snapshot.raw.physicalBusSecondaryArmed===false&&
-          snapshot.raw.physicalBusOutputObserved===true;
+        const editable=!port&&busChoices.length>1&&snapshot.raw.physicalBusOutputObserved===true;
         const pending=snapshot.raw.physicalBusPatchSupported===true&&
           snapshot.raw.physicalBusOutputObserved!==true;
         rows.push({id:key,name,bus:true,editable,pending,choices:busChoices,
           pair:pair.slice(),cells:map(pair[0],pair[1]),selected:busChoices[0]?.label||"",
-          state:port?port.name+" · Logical output":pending?"Awaiting callback":editable?"Muted · remap available":
+          state:port?port.name+" · Logical output":pending?"Awaiting callback":editable?"Remap available · verified pair":
             !pair.every(p=>pins.some(q=>q.port===p))?"Needs remap":
-            busChoices.length>1?"Mute MAIN and STREAM to remap":"Fixed bus"});
+            busChoices.length>1?"Awaiting verified routing":"Fixed bus"});
       }
     }
     if(!input&&live&&snapshot.raw.physicalBusPatchSupported===true&&
        Array.isArray(snapshot.raw.physicalMonitorOutputs)&&snapshot.raw.physicalMonitorOutputs.length===0)
       rows.push({id:"physicalMonitorOutputs",name:"MONITOR",bus:true,editable:false,pending:false,
         choices:[],pair:[],cells:pins.map(()=>""),selected:"",
-        state:"Not assigned · independent monitor setup required"});
+        state:"No separate ASIO MON bus · see MON / STREAM endpoint"});
     if(!input&&live&&snapshot.raw.secondaryMainOnly===true&&
        snapshot.raw.physicalMainOutputs?.length===0&&snapshot.raw.physicalMonitorOutputs?.length===2)
       rows.push({id:"secondaryMainOnly",name:"MAIN",bus:true,editable:false,pending:false,
@@ -203,12 +221,21 @@
       roster:live?snapshot.graph?.rosterRevision:"",
       pins,rows,choices};
   }
-  function inputLabel(snapshot,row) {
+  function inputLabel(snapshot,row,choices) {
     if(!row||row.mode==="NONE")return "None";
     if(row.mode==="BUS")return INTERNAL_BUS;
-    const found=inputChoices(snapshot).find(x=>x.mode===row.mode &&
+    const found=(choices??inputChoices(snapshot)).find(x=>x.mode===row.mode &&
       x.left===row.left && x.right===row.right);
     return found?.label||"None";
+  }
+  // A resolver belongs to ONE synchronous presentation pass only. Lazy so
+  // unpatched / BUS-only passes do not enumerate any physical choices.
+  function inputLabelResolver(snapshot) {
+    let choices;
+    return row=>{
+      if(!row||row.mode==="NONE"||row.mode==="BUS")return inputLabel(snapshot,row);
+      return inputLabel(snapshot,row,choices??=inputChoices(snapshot));
+    };
   }
   // The installed route and new assignment are different views of the
   // same physical inventory; reserved ports must remain visible in readback.
@@ -776,7 +803,7 @@
     }
     return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
   }
-  return Object.freeze({activeInputPins,inputChoices,inputLabel,outputChoices,patchMatrix,physicalInputChoice,namedPatchChoices,busOutputChoices,
+  return Object.freeze({activeInputPins,inputChoices,inputLabel,inputLabelResolver,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
     externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,

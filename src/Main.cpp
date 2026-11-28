@@ -208,8 +208,9 @@ class ArSonRecoveryNotice final : public juce::DocumentWindow
 {
 public:
     ArSonRecoveryNotice(const juce::String& title,const juce::String& message,
-            const juce::String& primary,const juce::String& cancel,std::function<void(bool)> onChoice)
-        : DocumentWindow("ArSonMix recovery",juce::Colour(0xff101921),closeButton),
+            const juce::String& primary,const juce::String& cancel,std::function<void(bool)> onChoice,
+            const juce::String& windowName="ArSonMix recovery")
+        : DocumentWindow(windowName,juce::Colour(0xff101921),closeButton),
           panel_(title,message,primary,cancel),onChoice_(std::move(onChoice))
     {
         setLookAndFeel(&caption_);
@@ -676,13 +677,15 @@ static bool isAutoUpdateHealthProbe()
 class ConsoleWindow final : public juce::DocumentWindow, private juce::Timer, private juce::ChangeListener
 {
 public:
-    explicit ConsoleWindow (std::function<void(int)> onStartupStage)
+    explicit ConsoleWindow (std::function<void(int)> onStartupStage,
+                            std::function<juce::var(const juce::var&)> onUpdateCenter)
         : DocumentWindow ("ArSonMiX — Native Mixer",
                          juce::Colour (0xff101921), allButtons),
           catalog_ (settingsDirectory()),
           diagnostics_ (settingsDirectory().getChildFile ("diagnostics")),
           presets_ (settingsDirectory().getChildFile ("presets"), settingsDirectory()),
           onStartupStage_ (std::move (onStartupStage)),
+          onUpdateCenter_ (std::move (onUpdateCenter)),
           browser_ (webViewOptions()
               .withNativeIntegrationEnabled()
               .withEventListener ("arMixGuiReady", [this] (juce::var ready)
@@ -766,6 +769,12 @@ public:
               .withEventListener ("arMixParameter", [this] (juce::var args) { onParameter (args); })
               .withEventListener ("arMixAction", [this] (juce::var args) { onAction (args); })
               .withEventListener ("arMixPlayerWindow", [this] (juce::var args) { handlePlayerWindow(args); })
+              .withEventListener ("arMixUpdateCenterIntent", [this] (juce::var args) {
+                  // Update control is presentation-only; do not pass through
+                  // onAction (which owns audio/device transactions).
+                  if(browser_.loaded && !updaterProbeMode_ && onUpdateCenter_)
+                      browser_.emitEventIfBrowserIsVisible("arMixUpdateCenterState",onUpdateCenter_(args));
+              })
               .withEventListener ("arMixOpenLegalSource", [] (juce::var)
               {
                   // Exact source for this *binary*; open only on user request,
@@ -1122,9 +1131,12 @@ private:
     armix::session::NativeIoDefaults ioDefaults_{machineSettingsDirectory()};
     std::unique_ptr<juce::FileChooser> namedIoFileChooser_;
     std::unique_ptr<juce::FileChooser> fxRackFileChooser_;
+    std::unique_ptr<ArSonRecoveryNotice> fxRackConsent_;
+    juce::var fxRackActiveReceipt_,fxRackLastReceipt_; // control-thread only, bounded to two records
     armix::storage::NativePresetArchive presets_;
     armix::storage::BuiltInFxUserPresetStore builtinFxUserPresets_{settingsDirectory()};
     std::function<void(int)> onStartupStage_;
+    std::function<juce::var(const juce::var&)> onUpdateCenter_;
     Browser browser_;
     armix::hotkey::Registry hotkeys_{settingsDirectory()};
     juce::StringArray consumedHotkeyRequests_;
@@ -3008,7 +3020,11 @@ private:
         if(mapping.operation=="PANIC_MUTE") {
             // PANIC is explicit user intent, unlike device stop/restart.
             operatorOutputMuted_=true;
+            pendingVendorStream_.reset();
+            cancelSecondaryContinuity();
+            cancelStartupSecondaryPreparation();
             engine_.setMonitorEnabled(false);
+            cancelPendingPhysicalBusPatch("BUS OUTPUT: emergency stop");
             engine_.cancelAsioResetMonitorIntent();
             autoMainEpoch_=0;
             diagnostics_.record("OUTPUT_MUTE","ON | PANIC_MUTE hotkey");
@@ -4530,7 +4546,7 @@ private:
     std::optional<PendingVendorStream> pendingVendorStream_;
     // Machine-local preference is NOT ARM authority. Endpoint ID never leaves
     // native control. A portable show cannot silently select a different PC's sink.
-    struct SecondaryPreference { juce::String name; std::wstring id; bool prepare=true; };
+    struct SecondaryPreference { juce::String name; std::wstring id; bool prepare=true,autoResume=false; };
     std::optional<SecondaryPreference> secondaryPreference_;
     bool secondaryPreferenceLoaded_=false;
     bool secondaryPreferenceDirty_=false;
@@ -4547,12 +4563,17 @@ private:
         if(!file.existsAsFile()||file.getSize()<=0||file.getSize()>16384)return;
         const auto data=juce::JSON::parse(file.loadFileAsString());
         const auto name=data.getProperty("name",{}),id=data.getProperty("endpointId",{});
-        if(data.getProperty("version",{})!=juce::var(1)||!name.isString()||!id.isString())return;
+        const auto version=data.getProperty("version",{});
+        if((version!=juce::var(1)&&version!=juce::var(2))||!name.isString()||!id.isString())return;
         const auto label=name.toString(),identity=id.toString();
         if(label.isEmpty()||label.length()>240||identity.isEmpty()||identity.length()>2048)return;
         const auto prepare=data.getProperty("prepareOnStartup",true); // migrate existing v1 preferences
         if(!prepare.isBool())return;
-        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer()),bool(prepare)};
+        // Owner's 27 Nov policy: existing selected MON resumes with a
+        // verified running MAIN. v2 records explicit connect/disarm as off.
+        const auto resume=data.getProperty("autoResume",version==juce::var(1)&&bool(prepare));
+        if(!resume.isBool())return;
+        secondaryPreference_=SecondaryPreference{label,std::wstring(identity.toWideCharPointer()),bool(prepare),bool(prepare)&&bool(resume)};
     }
     bool persistSecondaryPreference(bool immediate=false) {
         if(!secondaryPreferenceDirty_)return true;
@@ -4560,7 +4581,8 @@ private:
         if(!immediate&&now<secondaryPreferenceRetryAt_)return false;
         const auto& wanted=*secondaryPreference_;
         auto data=std::make_unique<juce::DynamicObject>();
-        data->setProperty("version",1);
+        data->setProperty("version",2);
+        data->setProperty("autoResume",wanted.autoResume);
         data->setProperty("name",wanted.name);
         data->setProperty("endpointId",juce::String(wanted.id.c_str()));
         data->setProperty("prepareOnStartup",wanted.prepare);
@@ -4576,16 +4598,17 @@ private:
         secondaryPreferenceRetryAt_=now+5000;
         return false;
     }
-    bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true) {
+    bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true,bool autoResume=false) {
         loadSecondaryPreference();
         if(name.isEmpty()||name.length()>240||endpointId.empty()||endpointId.size()>2048)return false;
         if(secondaryPreference_&&secondaryPreference_->name==name&&
-           secondaryPreference_->id==endpointId&&secondaryPreference_->prepare==prepare)
+           secondaryPreference_->id==endpointId&&secondaryPreference_->prepare==prepare&&
+           secondaryPreference_->autoResume==(prepare&&autoResume))
             return persistSecondaryPreference(true);
         // The accepted operator intent changes immediately even if disk is
         // temporarily unavailable. Never resurrect the old selection in
         // this process, and retain the newest value for bounded retry.
-        SecondaryPreference next{name,endpointId,prepare};
+        SecondaryPreference next{name,endpointId,prepare,prepare&&autoResume};
         secondaryPreference_=std::move(next);
         secondaryPreferenceDirty_=true;
         secondaryPreferenceRetryAt_=0;
@@ -4668,9 +4691,9 @@ private:
         secondaryInventoryAt_=static_cast<std::uint64_t>(monotonicMilliseconds());
         emitSecondaryInventory();
     }
-    // Cold-start preparation is intentionally separate from same-process ARM
-    // continuity. Only the existing secondary sink is opened; never arm it.
-    // Wait for the accepted restored graph and healthy primary callback.
+    // Cold-start preparation and requested continuation share one endpoint
+    // owner. Restore exact endpoint only after verified MAIN is running;
+    // a saved name is not evidence of an active sink.
     void serviceStartupSecondaryPreparation() {
         if(!startupSecondaryPending_||!audioEngineStarted_||!mixerSessionStartupInspected_)return;
         loadSecondaryPreference();
@@ -4683,7 +4706,9 @@ private:
            !engine_.hasBoundMixerRoute())return;
         if(engine_.secondaryArmed()) {cancelStartupSecondaryPreparation();return;}
         const auto wanted=*secondaryPreference_;
-        if(engine_.secondarySelectedEndpointId()==wanted.id) {
+        const bool resume=wanted.autoResume&&!operatorOutputMuted_;
+        if(resume&&!engine_.isMonitorEnabled())return;
+        if(engine_.secondarySelectedEndpointId()==wanted.id&&!resume) {
             cancelStartupSecondaryPreparation();return;
         }
         const auto now=monotonicMilliseconds();
@@ -4700,15 +4725,18 @@ private:
             return;
         }
         if(generation!=startupSecondaryRetry_.generation())return;
-        const auto error=current.ok()?engine_.connectSecondaryOutput(wanted.name,wanted.id):current.error;
+        const auto error=current.ok()?(resume?engine_.enableSecondaryOutput(wanted.name,wanted.id):
+            engine_.connectSecondaryOutput(wanted.name,wanted.id)):current.error;
         if(generation!=startupSecondaryRetry_.generation()||pendingSecondaryStop_||
-           epoch!=engine_.dryRoutingLabEpoch()||revision!=engine_.outputArmRevision()) {
+           epoch!=engine_.dryRoutingLabEpoch()||revision!=engine_.outputArmRevision()||
+           (resume&&(operatorOutputMuted_||!engine_.isMonitorEnabled()))) {
             engine_.disconnectSecondaryOutput();
             cancelStartupSecondaryPreparation();
             return;
         }
-        if(error.isEmpty()&&!engine_.secondaryArmed()&&engine_.secondarySelectedEndpointId()==wanted.id) {
-            diagnostics_.record("SECONDARY_STARTUP_PREPARED","Verified MON connected; output remains disarmed");
+        if(error.isEmpty()&&engine_.secondaryArmed()==resume&&engine_.secondarySelectedEndpointId()==wanted.id) {
+            diagnostics_.record(resume?"SECONDARY_STARTUP_RESUMED":"SECONDARY_STARTUP_PREPARED",
+                resume?"Verified saved MON enabled":"Verified MON connected; output remains disarmed");
             cancelStartupSecondaryPreparation();
             return;
         }
@@ -4779,6 +4807,107 @@ private:
                     static_cast<std::uint64_t>(monotonicMilliseconds()+5000),hardwareWanted};
         }
         return result;
+    }
+    struct PendingPhysicalBusPatch {
+        juce::var args;
+        std::uint64_t epoch,revision,deadline;
+        armix::device::NativeDeviceApplyCoordinator::Lease lease;
+    };
+    std::optional<PendingPhysicalBusPatch> pendingPhysicalBusPatch_;
+    void emitPhysicalBusOutputAck(const juce::var& args,const juce::String& error) {
+        auto ack=std::make_unique<juce::DynamicObject>();
+        ack->setProperty("requestId",args.getProperty("requestId",{}));
+        ack->setProperty("ok",error.isEmpty());ack->setProperty("error",error);
+        if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPhysicalBusOutputAck",juce::var(ack.release()));
+        if(error.isNotEmpty())emitNotice(error,true);
+        emitApprovedNativeSnapshot();
+    }
+    void cancelPendingPhysicalBusPatch(const juce::String& reason) {
+        if(!pendingPhysicalBusPatch_)return;
+        auto args=pendingPhysicalBusPatch_->args;
+        pendingPhysicalBusPatch_.reset();
+        engine_.finishPhysicalBusPatchFade(true); // return to OLD route only, never arm
+        emitPhysicalBusOutputAck(args,reason);
+    }
+    void servicePendingPhysicalBusPatch() {
+        if(!pendingPhysicalBusPatch_)return;
+        const auto& p=*pendingPhysicalBusPatch_;
+        if(engine_.dryRoutingLabEpoch()!=p.epoch||engine_.outputArmRevision()!=p.revision||
+           static_cast<std::uint64_t>(monotonicMilliseconds())>=p.deadline||
+           !engine_.secondaryResumeReady()) {
+            cancelPendingPhysicalBusPatch("BUS OUTPUT: callback fade or route verification expired");return;
+        }
+        if(!engine_.physicalBusPatchFadeReady())return;
+        auto args=p.args;
+        pendingPhysicalBusPatch_.reset(); // release CONTROL lease before same-thread patch
+        handlePhysicalBusOutput(args,true);
+    }
+    void handlePhysicalBusOutput(const juce::var& args,bool afterFade=false) {
+            const auto id=args.getProperty("requestId",{}).toString();
+            const auto bus=args.getProperty("bus",{}).toString();
+            const auto ep=args.getProperty("deviceEpoch",{}),rv=args.getProperty("revision",{});
+            const auto left=args.getProperty("left",{}),right=args.getProperty("right",{});
+            const auto oldL=args.getProperty("previousLeft",{}),oldR=args.getProperty("previousRight",{});
+            const auto leftName=args.getProperty("leftName",{}),rightName=args.getProperty("rightName",{});
+            const auto confirmed=args.getProperty("confirmed",{});
+            const auto status=engine_.status().getProperty("dryRoutingLab",{});
+            const auto native=status.getProperty("nativeBus",{});
+            juce::String error="BUS OUTPUT: invalid/stale request or audio transaction busy";
+            bool attempted=false;
+            if(id.startsWith("bus-out-")&&id.length()<=64&&(bus=="MAIN"||bus=="MONITOR")&&
+               !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !pendingVendorStream_&&!secondaryRetry_.pending()&&!pendingSecondaryStop_&&
+               !pendingRetainedFxCapture_&&!retainedOfflineFxActive_&&!engine_.hasRuntimeFxFault()&&
+               !directCallbackStalled_&&engine_.devices().getCurrentAudioDeviceType()=="ASIO"&&
+               engine_.secondaryResumeReady()&&engine_.hasBoundMixerRoute()&&
+               confirmed.isBool()&&static_cast<bool>(confirmed)&&
+               left.isInt()&&right.isInt()&&oldL.isInt()&&oldR.isInt()&&
+               leftName.isString()&&rightName.isString()&&
+               armix::console::nativeSessionTokenMatches(ep,status.getProperty("epoch",{}))&&
+               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{}))) {
+                const bool active=engine_.isMonitorEnabled()||engine_.secondaryArmed();
+                if(active&&!afterFade) {
+                    auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::busOutputPatch);
+                    if(lease&&engine_.beginPhysicalBusPatchFade()) {
+                        pendingPhysicalBusPatch_.emplace(PendingPhysicalBusPatch{args,
+                            engine_.dryRoutingLabEpoch(),engine_.outputArmRevision(),
+                            static_cast<std::uint64_t>(monotonicMilliseconds())+2000,std::move(lease)});
+                        return; // correlated ACK only after AUDIO fade-out and patch
+                    }
+                    return emitPhysicalBusOutputAck(args,"BUS OUTPUT: output transition busy");
+                }
+                attempted=true;
+                const bool resumeMain=engine_.isMonitorEnabled()&&!operatorOutputMuted_;
+                const auto stream=engine_.captureSecondaryResumeIntent();
+                // Temporary control transaction, not an operator emergency stop.
+                // Existing physical output lease fences a callback using the old pair.
+                autoMainEpoch_=0;
+                cancelSecondaryContinuity();
+                engine_.setMonitorEnabled(false);
+                engine_.disarmSecondaryOutput();
+                error=engine_.patchPhysicalBusOutput(
+                    armix::console::nativeSessionTokenValue(ep),armix::console::nativeSessionTokenValue(rv),
+                    bus=="MONITOR",{static_cast<int>(oldL),static_cast<int>(oldR)},
+                    {static_cast<int>(left),static_cast<int>(right)},leftName.toString(),rightName.toString());
+                if(afterFade)engine_.finishPhysicalBusPatchFade(error.isEmpty()&&(resumeMain||stream.has_value()));
+                if(error.isEmpty()) {
+                    if(resumeMain&&!operatorOutputMuted_) {
+                        // Restore desire immediately, not the physical gate:
+                        // a session checkpoint must not save transient STOP.
+                        engine_.retainMainIntentAfterBusPatch();
+                        requestAutomaticMain(false);
+                    }
+                    if(stream)pendingVendorStream_=PendingVendorStream{*stream,
+                        engine_.dryRoutingLabEpoch(),engine_.outputArmRevision(),
+                        static_cast<std::uint64_t>(monotonicMilliseconds())+5000,resumeMain};
+                } else if(resumeMain||stream) {
+                    // Failure stays safely muted; never guess a destination.
+                    operatorOutputMuted_=true;
+                    diagnostics_.record("OUTPUT_MUTE","ON | bus remap rejected");
+                }
+            }
+            if(afterFade&&!attempted)engine_.finishPhysicalBusPatchFade(true);
+            emitPhysicalBusOutputAck(args,error);
     }
     void serviceSecondaryContinuity() {
         if(pendingVendorStream_||deviceApply_.busy())return; // existing transaction owns recovery
@@ -6571,81 +6700,185 @@ private:
         }
         return {};
     }
+    static bool matchesFxRackFileReceipt(const juce::var& receipt,const juce::var& args) {
+        return receipt.isObject()&&
+            receipt.getProperty("requestId",{})==args.getProperty("requestId",{})&&
+            receipt.getProperty("operation",{})==args.getProperty("operation",{})&&
+            receipt.getProperty("channelId",{})==args.getProperty("channelId",{});
+    }
+    void publishFxRackFileReceipt(const juce::var& receipt) {
+        if(browser_.loaded)
+            browser_.emitEventIfBrowserIsVisible("arMixFxRackFileResult",receipt);
+    }
+    void emitFxRackFileResult(const juce::var& args,const juce::String& phase,
+                              const juce::String& message) {
+        auto receipt=std::make_unique<juce::DynamicObject>();
+        receipt->setProperty("requestId",args.getProperty("requestId",{}));
+        receipt->setProperty("operation",args.getProperty("operation",{}));
+        receipt->setProperty("channelId",args.getProperty("channelId",{}));
+        receipt->setProperty("phase",phase);
+        receipt->setProperty("message",message);
+        const juce::var result(receipt.release());
+        // WebView2 may be hidden when the native picker finishes. Preserve the
+        // exact terminal result independently of best-effort event delivery.
+        if(phase=="CHOOSER")fxRackActiveReceipt_=result;
+        else {
+            if(matchesFxRackFileReceipt(fxRackActiveReceipt_,args))fxRackActiveReceipt_=juce::var{};
+            fxRackLastReceipt_=result;
+        }
+        publishFxRackFileReceipt(result);
+    }
+    void readFxRackFileResult(const juce::var& args) {
+        const auto request=args.getProperty("requestId",{}).toString();
+        if(!request.startsWith("fx-rack-file-")||request.length()>64)return;
+        if(matchesFxRackFileReceipt(fxRackActiveReceipt_,args))return; // still active; never retry a write
+        if(matchesFxRackFileReceipt(fxRackLastReceipt_,args))
+            return publishFxRackFileReceipt(fxRackLastReceipt_);
+        // Unknown is not failure/success and must not erase another receipt.
+        auto receipt=std::make_unique<juce::DynamicObject>();
+        for(const auto* key:{"requestId","operation","channelId"})
+            receipt->setProperty(key,args.getProperty(key,{}));
+        receipt->setProperty("phase","UNKNOWN");
+        receipt->setProperty("message","FX rack file: Result unavailable; verify the file and rack before retrying");
+        publishFxRackFileReceipt(juce::var(receipt.release()));
+    }
+    bool rackFileOperationBusy() const {
+        return sessionLifecycleShuttingDown_||namedIoFileChooser_||mixerFileDialogOpen_||
+            playerFileChooser_||deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||
+            mixerSessionWorker_.busy()||catalog_.busy()||logicalVendorEditor_||
+            pendingSecondaryStop_||pendingRetainedFxCapture_||retainedOfflineFxActive_;
+    }
     void chooseFxRackFile(const juce::var& args) {
         const auto op=args.getProperty("operation",{}).toString();
+        const auto request=args.getProperty("requestId",{}).toString();
         const bool deactivate=op=="DEACTIVATE",single=op=="SAVE_SINGLE"||deactivate;
         const bool save=op=="SAVE"||single,append=op=="INSERT";
         const auto token=args.getProperty("instanceId",{}).toString();
         const auto slotValue=args.getProperty("slot",{});
         const int slot=single&&slotValue.isInt()?static_cast<int>(slotValue):-1;
         std::uint64_t ep=0,rev=0,roster=0,id=0;
-        if((!save&&!append&&op!="OPEN")||(single&&(slot<0||slot>=8||token.isEmpty()))||
+        if(!request.startsWith("fx-rack-file-")||request.length()>64||
+           (!save&&!append&&op!="OPEN")||(single&&(slot<0||slot>=8||token.isEmpty()))||
            !armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)||
            !armix::console::approvedNativeId(args.getProperty("graphRevision",{}),rev)||
            !armix::console::approvedNativeId(args.getProperty("rosterRevision",{}),roster)||
            !armix::console::approvedNativeId(args.getProperty("channelId",{}),id))
-            return emitNotice("FX rack request invalid; refresh rack",true);
+            return emitFxRackFileResult(args,"FAILED","FX rack file: Invalid request; reopen rack menu");
         const armix::mixer::ChannelId channel{id};
-        if(fxRackFileChooser_||namedIoFileChooser_||mixerFileDialogOpen_||
-           deviceApply_.busy()||nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
-           catalog_.busy()||logicalVendorEditor_||!engine_.rackFileAllowed(ep,rev,roster,channel))
-            return emitNotice("FX rack file: disarm MAIN and STREAM; use a current native rack",true);
+        if(fxRackFileChooser_||rackFileOperationBusy())
+            return emitFxRackFileResult(args,"FAILED","FX rack file: Finish the current dialog or audio operation first");
+        if(!engine_.rackFileTargetAvailable(ep,rev,roster,channel))
+            return emitFxRackFileResult(args,"FAILED","FX rack file: Rack is unavailable or changed; refresh mixer");
         auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
         if(save)start=start.getChildFile(single?"Saved-FX.arfx":"Vocal-Rack.arfx");
         fxRackFileChooser_=std::make_unique<juce::FileChooser>(
-            deactivate?"Deactivate and save FX":single?"Save FX":save?"Save FX Rack":append?
-                "Insert saved FX":"Open FX Rack (replace)",start,"*.arfx",true);
+            deactivate?"Deactivate and save FX":single?"Save FX":save?"Save FX Rack As":append?
+                "Insert saved FX":"Open FX Rack (replace)",start,"*.arfx",true,false,this);
         using Flags=juce::FileBrowserComponent;
+        emitFxRackFileResult(args,"CHOOSER","FX rack file: Choose a .arfx file");
         fxRackFileChooser_->launchAsync(Flags::canSelectFiles|
             (save?(Flags::saveMode|Flags::warnAboutOverwriting):Flags::openMode),
-            [safe=juce::Component::SafePointer<ConsoleWindow>(this),ep,rev,roster,channel,
+            [safe=juce::Component::SafePointer<ConsoleWindow>(this),args,ep,rev,roster,channel,
              token,slot,save,deactivate,append](const juce::FileChooser& picker){
                 if(!safe)return;
-                auto file=picker.getResult();
-                juce::String error;
-                if(save&&file!=juce::File{}&&file.getFileExtension().isEmpty()) {
-                    file=file.withFileExtension(".arfx");
-                    // The chooser may have confirmed a different path. Never
-                    // overwrite the normalized name without explicit consent.
-                    if(file.exists())error="Choose the existing .arfx file explicitly to overwrite it";
-                }
-                bool archived=false;
-                if(file!=juce::File{}){
-                    try{
-                        if(error.isNotEmpty()){} // preserve the file-name rejection
-                        else if(safe->deviceApply_.busy()||safe->nativeShowBusy_||safe->studioBackupBusy_||
-                           safe->mixerSessionWorker_.busy()||safe->catalog_.busy()||safe->logicalVendorEditor_||
-                           !safe->engine_.rackFileAllowed(ep,rev,roster,channel))
-                            error="Device or rack changed; retry";
-                        else{
-                            armix::storage::FxRackFile rack;
+                const auto selected=picker.getResult();
+                // Exit the OS picker callback before starting a confirmation
+                // or touching the graph. Keep the chooser lease until terminal.
+                juce::MessageManager::callAsync([safe,args,ep,rev,roster,channel,token,slot,save,deactivate,append,selected]{
+                    if(!safe||safe->sessionLifecycleShuttingDown_)return;
+                    const auto finish=[safe,args](const juce::String& phase,const juce::String& message){
+                        if(!safe)return;
+                        safe->fxRackConsent_.reset();
+                        safe->fxRackFileChooser_.reset();
+                        safe->emitFxRackFileResult(args,phase,message);
+                    };
+                    if(selected==juce::File{})
+                        return finish("CANCELLED","FX rack file: Cancelled; rack unchanged");
+                    auto file=selected;
+                    if(save&&file.getFileExtension().isEmpty()){
+                        file=file.withFileExtension(".arfx");
+                        if(file.exists())return finish("FAILED","FX rack file: Select the existing .arfx file explicitly to overwrite it");
+                    }
+                    if(!file.hasFileExtension("arfx"))
+                        return finish("FAILED","FX rack file: Use the .arfx file extension");
+                    const auto current=[safe,ep,rev,roster,channel]{
+                        return safe&&!safe->rackFileOperationBusy()&&
+                            safe->engine_.rackFileTargetAvailable(ep,rev,roster,channel);
+                    };
+                    if(!current())return finish("FAILED","FX rack file: Device or rack changed; retry");
+                    // Decode and verify catalog BEFORE asking to interrupt live
+                    // sound. Invalid/missing plugins never cause a mute.
+                    auto rack=std::make_shared<armix::storage::FxRackFile>();
+                    if(!save){
+                        juce::String error;
+                        try{
+                            error=armix::storage::NativeFxRackArchive::load(file,*rack);
+                            if(error.isEmpty())error=safe->resolveRackFileCatalog(*rack,false);
+                            if(error.isEmpty()&&rack->single!=append)
+                                error="Choose matching rack or single FX file";
+                        }catch(...){error="FX rack read failed";}
+                        if(error.isNotEmpty())return finish("FAILED","FX rack file: "+error+"; rack unchanged");
+                    }
+                    const auto perform=[safe,finish,current,ep,rev,roster,channel,token,slot,save,deactivate,append,file,rack](bool consent){
+                        if(!safe)return;
+                        if(!current())return finish("FAILED","FX rack file: Device or rack changed; retry");
+                        if(consent){
+                            // An explicit operator choice, not implicit mute
+                            // from a context-menu click; never auto-resume.
+                            safe->pendingVendorStream_.reset();
+                            safe->cancelSecondaryContinuity();
+                            safe->cancelStartupSecondaryPreparation();
+                            safe->operatorOutputMuted_=true;
+                            safe->autoMainEpoch_=0;
+                            safe->engine_.cancelAsioResetMonitorIntent();
+                            safe->engine_.setMonitorEnabled(false);
+                            safe->engine_.disarmSecondaryOutput();
+                            safe->diagnostics_.record("OUTPUT_MUTE","ON | FX rack file confirmation");
+                            safe->emitApprovedNativeSnapshot();
+                        }
+                        if(!safe->engine_.rackFileAllowed(ep,rev,roster,channel))
+                            return finish("FAILED","FX rack file: Mute MAIN and additional output, then retry; rack unchanged");
+                        juce::String error;
+                        bool archived=false;
+                        try{
                             if(save){
-                                error=safe->engine_.captureRackFile(ep,rev,roster,channel,slot,token,rack);
-                                if(error.isEmpty())error=safe->resolveRackFileCatalog(rack,true);
-                                if(error.isEmpty())error=armix::storage::NativeFxRackArchive::save(file,rack);
+                                error=safe->engine_.captureRackFile(ep,rev,roster,channel,slot,token,*rack);
+                                if(error.isEmpty())error=safe->resolveRackFileCatalog(*rack,true);
+                                if(error.isEmpty())error=armix::storage::NativeFxRackArchive::save(file,*rack);
                                 archived=error.isEmpty();
                                 if(archived&&deactivate)
-                                    error=safe->engine_.applyRackFile(ep,rev,roster,channel,rack,false,slot,token);
-                            }else{
-                                error=armix::storage::NativeFxRackArchive::load(file,rack);
-                                if(error.isEmpty())error=safe->resolveRackFileCatalog(rack,false);
-                                if(error.isEmpty())error=safe->engine_.applyRackFile(ep,rev,roster,channel,rack,append);
-                            }
-                        }
-                    }catch(...){error="FX rack file operation failed";}
-                    if(error.isEmpty()){
+                                    error=safe->engine_.applyRackFile(ep,rev,roster,channel,*rack,false,slot,token);
+                            }else error=safe->engine_.applyRackFile(ep,rev,roster,channel,*rack,append);
+                        }catch(...){error="FX rack file operation failed";}
+                        if(error.isNotEmpty())return finish("FAILED",
+                            (archived?juce::String("FX rack file: File saved; deactivation rejected: "):
+                                juce::String("FX rack file: Rack unchanged: "))+error);
                         if(!save||deactivate){
                             safe->stopOrbit();
                             safe->closeAllPluginEditors();
                             safe->emitApprovedNativeSnapshot();
                         }
-                        safe->emitNotice(deactivate?"FX saved and deactivated; latency plan rebuilt. MAIN/STREAM remain disarmed.":
-                            save?(slot>=0?"FX saved":"FX Rack saved"):append?"Saved FX inserted; output remains disarmed":
-                            "FX Rack opened; output remains disarmed");
-                    }else safe->emitNotice((archived?juce::String("FX saved; deactivation rejected: "):
-                        juce::String("FX rack unchanged: "))+error,true);
-                }else safe->emitNotice("FX rack file operation cancelled");
-                juce::MessageManager::callAsync([safe]{if(safe)safe->fxRackFileChooser_.reset();});
+                        finish("COMPLETED","FX rack file: "+(deactivate?juce::String("Saved and deactivated "):
+                            save?juce::String("Saved "):append?juce::String("Inserted "):juce::String("Opened "))+
+                            file.getFileName()+"; MAIN and additional output remain muted until you Resume");
+                    };
+                    if(safe->engine_.rackFileAllowed(ep,rev,roster,channel))return perform(false);
+                    if(safe->engine_.allOutputsDisarmed()&&!safe->engine_.wantsMainContinuation())
+                        return finish("FAILED","FX rack file: Audio configuration is not ready; retry");
+                    // File picker is already closed. Cancel leaves audio and rack
+                    // unchanged. An explicit OK is required to disarm both outputs.
+                    safe->fxRackConsent_=std::make_unique<ArSonRecoveryNotice>(
+                        "Save / Open FX Rack",
+                        "MAIN and additional playback output must be muted to safely save or restore FX state. They will stay muted until you explicitly Resume. Continue?",
+                        "Mute & continue","Cancel",[perform,finish](bool accepted){
+                            if(accepted)perform(true);
+                            else finish("CANCELLED","FX rack file: Cancelled; rack unchanged");
+                        },"ArSonMix · FX Rack");
+#if JUCE_WINDOWS
+                    if(!armix::ui::attachOwnedFloatingWindow(*safe->fxRackConsent_,*safe.getComponent()))
+                        return finish("FAILED","FX rack file: Could not attach safety confirmation");
+#endif
+                });
             });
     }
 
@@ -6660,7 +6893,7 @@ private:
             result->setProperty("ok",false);result->setProperty("error",error);
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNamedProfileFileResult",juce::var(result.release()));
         };
-        if((!save&&op!="OPEN")||namedIoFileChooser_||mixerFileDialogOpen_||
+        if((!save&&op!="OPEN")||namedIoFileChooser_||mixerFileDialogOpen_||fxRackFileChooser_||
            nativeShowBusy_||studioBackupBusy_||mixerSessionWorker_.busy()||
            engine_.independentClockActive()||engine_.hasTemporaryDiagnosticDevice()||
            !namedPatches_.fileLease(args,currentDeviceSnapshot())){
@@ -6718,7 +6951,7 @@ private:
         const auto archiveRevision=logicalMixer_.workspace().revision();
         if(logicalVendorEditor_)return emitMixerSessionAck(save?"SAVE":"OPEN",
             "Close the vendor FX editor to save its settings first");
-        if(mixerFileDialogOpen_)return;
+        if(mixerFileDialogOpen_||fxRackFileChooser_)return;
         const auto operation=archived?"ARCHIVE":save?"SAVE":"OPEN";
         if(mixerSessionWorker_.busy()||nativeShowBusy_||studioBackupBusy_)
             return emitMixerSessionAck(operation,"Mixer file operation already in progress");
@@ -7558,8 +7791,15 @@ private:
     void onAction (const juce::var& args)
     {
         auto action = args.getProperty ("action", {}).toString();
+        if(pendingPhysicalBusPatch_&&(action=="monitor"||action=="secondaryOutputArm"||
+           action=="secondaryOutputStop"||action=="audioDeviceApply"||action=="audioSetup"||
+           action=="audioDriverPanel") &&
+           ((action!="monitor"&&action!="secondaryOutputArm")||
+            (args.getProperty("value",{}).isBool()&&!bool(args.getProperty("value",{})))))
+            cancelPendingPhysicalBusPatch("BUS OUTPUT: superseded by operator action");
         if(action=="secondaryOutputInventory")return requestSecondaryInventory(args);
         if(action=="fxRackFile")return chooseFxRackFile(args);
+        if(action=="fxRackFileReadback")return readFxRackFileResult(args);
         if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
         if (action=="audioLoopbackRead" || action=="audioLoopbackMeasure") {
             if (!deviceApply_.busy())
@@ -7614,6 +7854,8 @@ private:
                 emitNotice("FX editor unavailable: Audio I/O is applying",true);
             else if(action=="audioDriverPanel")
                 emitNotice("Audio device is busy · try again",true);
+            else if(action=="routingPhysicalBusOutput")
+                emitPhysicalBusOutputAck(args,"BUS OUTPUT: audio transaction busy");
             else if(action=="routingNativeSourcePatch"){
                 auto ack=std::make_unique<juce::DynamicObject>();
                 ack->setProperty("requestId",args.getProperty("requestId",{}));
@@ -9145,38 +9387,7 @@ private:
             if(error.isEmpty())emitApprovedNativeSnapshot();else emitNotice(error,true);
             return;
         }
-        if(action=="routingPhysicalBusOutput") {
-            const auto id=args.getProperty("requestId",{}).toString();
-            const auto bus=args.getProperty("bus",{}).toString();
-            const auto ep=args.getProperty("deviceEpoch",{}),rv=args.getProperty("revision",{});
-            const auto left=args.getProperty("left",{}),right=args.getProperty("right",{});
-            const auto oldL=args.getProperty("previousLeft",{}),oldR=args.getProperty("previousRight",{});
-            const auto leftName=args.getProperty("leftName",{}),rightName=args.getProperty("rightName",{});
-            const auto confirmed=args.getProperty("confirmed",{});
-            const auto status=engine_.status().getProperty("dryRoutingLab",{});
-            const auto native=status.getProperty("nativeBus",{});
-            juce::String error="BUS OUTPUT: invalid/stale request or output not explicitly muted";
-            if(id.startsWith("bus-out-")&&id.length()<=64&&(bus=="MAIN"||bus=="MONITOR")&&
-               operatorOutputMuted_&&!deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&
-               confirmed.isBool()&&static_cast<bool>(confirmed)&&
-               left.isInt()&&right.isInt()&&oldL.isInt()&&oldR.isInt()&&
-               leftName.isString()&&rightName.isString()&&
-               armix::console::nativeSessionTokenMatches(ep,status.getProperty("epoch",{}))&&
-               armix::console::nativeSessionTokenMatches(rv,native.getProperty("graphRevision",{})))
-                error=engine_.patchPhysicalBusOutput(
-                    armix::console::nativeSessionTokenValue(ep),armix::console::nativeSessionTokenValue(rv),
-                    bus=="MONITOR",{static_cast<int>(oldL),static_cast<int>(oldR)},
-                    {static_cast<int>(left),static_cast<int>(right)},leftName.toString(),rightName.toString());
-            auto ack=std::make_unique<juce::DynamicObject>();
-            ack->setProperty("requestId",id);ack->setProperty("ok",error.isEmpty());
-            ack->setProperty("error",error);
-            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixPhysicalBusOutputAck",juce::var(ack.release()));
-            if(error.isEmpty()){
-                autoMainEpoch_=0;engine_.cancelAsioResetMonitorIntent();
-                emitApprovedNativeSnapshot();
-            }else emitNotice(error,true);
-            return;
-        }
+        if(action=="routingPhysicalBusOutput")return handlePhysicalBusOutput(args);
         if(action=="routingExternalOutput") {
             const auto requestId=args.getProperty("requestId",{}).toString();
             const auto channelText=args.getProperty("channelId",{}).toString();
@@ -11141,13 +11352,18 @@ private:
                     if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
                         secondaryContinuity_=SecondaryContinuity{*intent,engine_.dryRoutingLabEpoch(),engine_.outputArmRevision()};
                 }
-            // Persist the verified selection on CONNECT as well as ENABLE/ARM.
-            // STOP/disarm never turns a saved preference into startup ARM consent.
+            // Persist desired playback separately from the saved identity.
+            // CONNECT and explicit disarm must remain off on future startup.
             bool preferenceSaved=true;
             if(error.isEmpty()&&(action=="secondaryOutputConnect"||action=="secondaryOutputEnable"||
-               (action=="secondaryOutputArm"&&bool(value)))) {
+               action=="secondaryOutputArm")) {
                 const auto name=engine_.status().getProperty("secondaryOutputName","").toString();
-                preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId());
+                const auto identity=engine_.secondarySelectedEndpointId();
+                if(action=="secondaryOutputArm"&&!bool(value)&&identity.empty()) {
+                    loadSecondaryPreference();
+                    if(secondaryPreference_)preferenceSaved=rememberSecondaryPreference(
+                        secondaryPreference_->name,secondaryPreference_->id,secondaryPreference_->prepare,false);
+                } else preferenceSaved=rememberSecondaryPreference(name,engine_.secondarySelectedEndpointId(),true,engine_.secondaryArmed());
                 if(!preferenceSaved)emitNotice("Output changed, but MON selection could not be saved. Check settings folder permissions.",true);
             }
             if(error.isEmpty()&&action=="secondaryOutputStop") {
@@ -12409,6 +12625,7 @@ private:
                 attachAudioPowerNotifications(peer->getNativeHandle());
             }
 #endif
+        servicePendingPhysicalBusPatch();
         if(deviceApply_.busy())return; // a vendor modal loop may re-enter JUCE
         if(pendingSecondaryStop_) {
             auto stop=std::move(*pendingSecondaryStop_);
@@ -13088,6 +13305,15 @@ public:
     void initialise (const juce::String& commandLine) override
     {
         const auto args=getCommandLineParameterArray();
+        const auto appFolder=armix::storage::PortableWorkspace::executableDirectory();
+        if(armix::storage::PortableWorkspace::hasManagedPayloadShape(appFolder) &&
+           armix::storage::PortableWorkspace::portableRootFor(appFolder)==juce::File()){
+            // Unqualified staged binaries must never start with an empty or
+            // unintended workspace. No audio, WebView or session IO yet.
+            setApplicationReturnValue(1);
+            quit();
+            return;
+        }
         if (armix::vst::ScanIsolation::isWorker(args)) {
             scanWorkerMode_=true;
 #if defined(_WIN32)
@@ -13103,6 +13329,27 @@ public:
             return;
         }
 #if defined(_WIN32)
+        const bool supervised=juce::SystemStats::getEnvironmentVariable("ARSONMIX_PORTABLE_SUPERVISED",{})=="1";
+        if(!supervised && !isAutoUpdateHealthProbe() &&
+           armix::storage::PortableWorkspace::hasManagedPayloadShape(appFolder)){
+            setApplicationReturnValue(1);quit();return;
+        }
+        if(!supervised && !isAutoUpdateHealthProbe() &&
+           armix::storage::PortableWorkspace::launcherEnabledAt(appFolder)){
+            const auto shell=juce::File::getSpecialLocation(juce::File::windowsSystemDirectory)
+                .getChildFile("WindowsPowerShell/v1.0/powershell.exe");
+            const auto script=appFolder.getChildFile("ArSonMixAutoUpdate.ps1");
+            juce::StringArray command {shell.getFullPathName(),"-NoLogo","-NoProfile","-NonInteractive",
+                "-ExecutionPolicy","Bypass","-WindowStyle","Hidden","-File",script.getFullPathName(),
+                "-LaunchPortable","-OwnerProcessId",juce::String(static_cast<int>(::GetCurrentProcessId()))};
+            if(commandLine.trim()=="--archive-mixer-session" || commandLine.trim()=="--safe-webview-profile"){
+                command.add("-PortableLaunchArgument");command.add(commandLine.trim());
+            }
+            juce::ChildProcess launcher;
+            if(!shell.existsAsFile()||!script.existsAsFile()||!launcher.start(command,0))
+                setApplicationReturnValue(1);
+            quit();return;
+        }
         // Per-user-session installer handshake. An Inno update requests the
         // ordinary JUCE quit path on the MESSAGE thread: the native mixer
         // persists accepted .smix state before the installer replaces the PE.
@@ -13165,7 +13412,15 @@ public:
                 }
             }
             else if (++updatePromptTicks_ % 40 == 0)
+            {
                 serviceSmartUpdateAcknowledgement();
+                // Long-running live sessions also discover releases. This
+                // existing message-thread timer launches only a throttled
+                // independent checker, never downloads or installs here.
+                if (window_ && startupMixerPresented_ &&
+                    juce::Time::getMillisecondCounter() - lastSmartUpdateCheckTick_ >= 6u * 60u * 60u * 1000u)
+                    launchSmartUpdater (false);
+            }
 #endif
             return;
         }
@@ -13238,7 +13493,7 @@ public:
                 else if (stage == 2)
                     presentMixerOnStartup();
             }
-        });
+        }, [this] (const juce::var& intent) { return serviceUpdateCenter(intent); });
 #if defined(_WIN32)
         if (!isAutoUpdateHealthProbe())
             launchSmartUpdater (false);
@@ -13326,31 +13581,167 @@ private:
     bool startupMixerPresented_ = false;
     bool recoveryOnly_ = false;
 
+    juce::var serviceUpdateCenter(const juce::var& intent)
+    {
+        const auto requestId=intent.getProperty("requestId",{}).toString();
+        const auto operation=intent.getProperty("operation",{}).toString();
+        if(requestId.isEmpty()||requestId.length()>18||!requestId.containsOnly("0123456789")||
+           (operation!="QUERY"&&operation!="CHECK"&&operation!="REVIEW"&&operation!="OPEN_DOWNLOADS"))return {};
+        juce::DynamicObject::Ptr response(new juce::DynamicObject());
+        response->setProperty("requestId",requestId);
+        response->setProperty("version",juce::String(JUCE_APPLICATION_VERSION_STRING));
+        response->setProperty("supported",false);
+        response->setProperty("manualAllowed",false);
+        response->setProperty("status","UNAVAILABLE");
 #if defined(_WIN32)
-    void serviceSmartUpdateAcknowledgement()
+        const auto installDir=juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
+        const auto local=juce::SystemStats::getEnvironmentVariable("LOCALAPPDATA",{});
+        const bool portable=smartUpdaterPortableEligible();
+        response->setProperty("portable",portable);
+        const bool managedPortable=portable&&armix::storage::PortableWorkspace::launcherEnabledAt(armix::storage::PortableWorkspace::portableRootFor(installDir));
+        response->setProperty("managedPortable",managedPortable);
+        const bool eligible=(smartUpdaterInstallEligible()||portable)&&local.isNotEmpty()&&
+            installDir.getChildFile("UpdateVerifier").getChildFile("gh.exe").existsAsFile()&&
+            installDir.getChildFile("UpdateVerifier").getChildFile("verifier.json").existsAsFile();
+        response->setProperty("supported",eligible);
+        if(!eligible)return juce::var(response.get());
+        const auto elapsed=juce::Time::getMillisecondCounter()-lastSmartUpdateCheckTick_;
+        response->setProperty("manualAllowed",elapsed>=60000u);
+        if(operation=="CHECK"){
+            if(elapsed<60000u)
+                response->setProperty("notice","A recent check was requested. Try again in one minute.");
+            else {
+                const bool started=launchSmartUpdater(false,true);
+                response->setProperty("notice",started?"Check requested. The updater will report its result.":"Unable to start the update checker.");
+                response->setProperty("manualAllowed",false);
+            }
+        }
+        const auto folder=portable?armix::storage::PortableWorkspace::updateRootFor(installDir):
+            juce::File(local).getChildFile("ArSonMix").getChildFile("Updates");
+        if(folder==juce::File())return juce::var(response.get());
+        const auto stateFile=folder.getChildFile("state.json");
+        const auto approvalFile=folder.getChildFile("approved.json");
+        const auto logFile=folder.getChildFile("last-result.txt");
+        const auto smallText=[](const juce::File& file,juce::int64 limit){
+            if(!file.existsAsFile()||file.getSize()>limit)return juce::String{};
+            juce::FileInputStream stream(file);
+            if(!stream.openedOk())return juce::String{};
+            juce::MemoryBlock bytes;
+            stream.readIntoMemoryBlock(bytes,static_cast<int>(limit+1));
+            if(bytes.getSize()>static_cast<size_t>(limit))return juce::String{};
+            return bytes.toString();
+        };
+        const auto state=juce::JSON::parse(smallText(stateFile,8192));
+        const auto phase=state.getProperty("phase",{}).toString();
+        const auto tag=state.getProperty("candidateTag",{}).toString();
+        const auto checked=state.getProperty("lastCheckUtc",{}).toString();
+        if(checked.length()<=60)response->setProperty("lastCheckUtc",checked);
+        if(tag.startsWith("v")&&tag.length()<=60)response->setProperty("candidateTag",tag);
+        const auto log=smallText(logFile,8192).trim().fromFirstOccurrenceOf(" ",false,false);
+        juce::String status="IDLE";
+        if(log.startsWith("UP_TO_DATE"))status="UP_TO_DATE";
+        else if(log.startsWith("CHECKING_FOR_UPDATES"))status="CHECKING";
+        else if(log.startsWith("DOWNLOADING_VERIFIED_UPDATE")||log.startsWith("RESUMING_VERIFIED_DOWNLOAD")||log.startsWith("STAGING_VERIFIED_SAME_VERSION_REPAIR"))status="DOWNLOADING";
+        else if(log.startsWith("NO_MATCHING_PUBLISHED_BASELINE"))status="BASELINE_UNAVAILABLE";
+        else if(log.startsWith("ROLLED_BACK"))status="ROLLED_BACK";
+        else if(log.startsWith("HEALTHY")||log.startsWith("REPAIRED"))status="HEALTHY";
+        else if(log.startsWith("FAIL_CLOSED")||log.startsWith("RECOVERY_FAILED")||
+                log.startsWith("RELEASE_REVOKED")||log.startsWith("ROLLBACK_RELEASE_UNAVAILABLE")||
+                log.startsWith("PREVIOUS_FAILURE_BLOCKED")||log.startsWith("INSTALLER_BYTES_CHANGED"))status="DEFERRED";
+        // A checker may have crashed after its last progress report. Never
+        // leave the UI claiming a live transfer indefinitely.
+        if((status=="CHECKING"||status=="DOWNLOADING")&&
+           juce::Time::getCurrentTime().toMilliseconds()-logFile.getLastModificationTime().toMilliseconds()>20*60*1000)
+            status="DEFERRED";
+        if(portable && phase=="portable-ready" && tag.startsWith("v") &&
+           tag.containsOnly("v0123456789.alpha-") && tag.length()<=60)
+        {
+            const auto downloads=folder.getChildFile("downloads");
+            const auto archive=downloads.getChildFile("ArSonMix-"+tag+"-Windows-x64-Portable.zip");
+            if(archive.existsAsFile() && archive.getSize()==static_cast<juce::int64>(state.getProperty("newAsset",{}).getProperty("size",0)))
+            {
+                status="PORTABLE_READY";
+                if(managedPortable){
+                    const auto approval=juce::JSON::parse(smallText(approvalFile,2048));
+                    const auto digest=state.getProperty("newAsset",{}).getProperty("digest",{}).toString();
+                    const bool approved=approval.getProperty("candidateTag",{}).toString()==tag &&
+                        approval.getProperty("candidateSha",{})==state.getProperty("candidateSha",{}) &&
+                        approval.getProperty("previousSha",{})==state.getProperty("previousSha",{}) &&
+                        digest.length()==71 && approval.getProperty("digest",{}).toString()==digest;
+                    status=approved?"APPROVED":"READY";
+                    if(operation=="REVIEW"&&!approved)serviceSmartUpdateAcknowledgement(true);
+                }else if(operation=="OPEN_DOWNLOADS")downloads.revealToUser();
+            }
+            else status="DEFERRED";
+        }
+        if(!portable && phase=="staged"){
+            if(state.getProperty("operation",{}).toString()=="repair")status="REPAIR_READY";
+            else {
+                const auto approval=juce::JSON::parse(smallText(approvalFile,2048));
+                const bool approved=tag.isNotEmpty()&&approval.getProperty("candidateTag",{}).toString()==tag&&
+                    state.getProperty("candidateSha",{}).toString().length()==40&&
+                    approval.getProperty("candidateSha",{})==state.getProperty("candidateSha",{})&&
+                    approval.getProperty("previousSha",{})==state.getProperty("previousSha",{});
+                status=approved?"APPROVED":"READY";
+                if(operation=="REVIEW"&&!approved)serviceSmartUpdateAcknowledgement(true);
+            }
+        }
+        response->setProperty("status",status);
+#endif
+        return juce::var(response.get());
+    }
+#if defined(_WIN32)
+    bool smartUpdaterPortableEligible() const
+    {
+        const auto exe=juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        const auto dir=exe.getParentDirectory();
+        return exe.getFileName().equalsIgnoreCase("ArSonMix-GUI10CH-P012-Windows-x64.exe") &&
+            dir.getChildFile("portable_mode.txt").existsAsFile() &&
+            dir.getChildFile("ArSonMixAutoUpdate.ps1").existsAsFile() &&
+            dir.getChildFile("BUILD_PROVENANCE.json").existsAsFile() &&
+            dir.getChildFile("UpdateVerifier").getChildFile("gh.exe").existsAsFile() &&
+            dir.getChildFile("UpdateVerifier").getChildFile("verifier.json").existsAsFile();
+    }
+    bool smartUpdaterInstallEligible() const
+    {
+        const auto installedExe=juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+        const auto installDir=installedExe.getParentDirectory();
+        return installedExe.getFileName().equalsIgnoreCase("ArSonMix.exe") &&
+            installDir.getChildFile("ArSonMixAutoUpdate.ps1").existsAsFile() &&
+            installDir.getChildFile("BUILD_PROVENANCE.json").existsAsFile() &&
+            !installDir.getChildFile("portable_mode.txt").exists();
+    }
+    void serviceSmartUpdateAcknowledgement(bool explicitReview=false)
     {
         // The separately running updater has already staged and SHA-checked
         // both packages. Never claim a prompt can validate publisher identity.
-        if (!window_)
-            return;
+        if (!window_) return;
+        const auto installDir=armix::storage::PortableWorkspace::executableDirectory();
+        const bool portable=armix::storage::PortableWorkspace::isPortableAt(installDir);
+        const auto stable=armix::storage::PortableWorkspace::portableRootFor(installDir);
+        if(portable && (stable==juce::File() || !armix::storage::PortableWorkspace::launcherEnabledAt(stable)))return;
         const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
         if (local.isEmpty())
             return;
-        const auto folder = juce::File (local).getChildFile ("ArSonMix")
-                                               .getChildFile ("Updates");
+        const auto folder = portable?armix::storage::PortableWorkspace::updateRootFor(installDir):
+            juce::File (local).getChildFile ("ArSonMix").getChildFile ("Updates");
         const auto stateFile = folder.getChildFile ("state.json");
         if (!stateFile.existsAsFile() || stateFile.getSize() > 8192)
             return;
         const auto state = juce::JSON::parse (stateFile.loadFileAsString());
         const auto* object = state.getDynamicObject();
-        if (object == nullptr || object->getProperty ("phase").toString() != "staged"
-            || object->getProperty ("operation").toString() != "upgrade")
+        if (object == nullptr || object->getProperty ("phase").toString() != (portable?"portable-ready":"staged")
+            || (!portable && object->getProperty ("operation").toString() != "upgrade"))
             return;
+        const auto digest=portable?state.getProperty("newAsset",{}).getProperty("digest",{}).toString():juce::String{};
+        if(portable && (digest.length()!=71 || !digest.startsWith("sha256:") ||
+            !digest.substring(7).containsOnly("0123456789abcdef")))return;
         const auto tag = object->getProperty ("candidateTag").toString();
         const auto candidate = object->getProperty ("candidateSha").toString();
         const auto previous = object->getProperty ("previousSha").toString();
         if (tag.length() > 60 || !tag.startsWith ("v")
             || candidate.length() != 40 || previous.length() != 40
+            || previous != juce::String(ARMIX_BUILD_SOURCE_SHA)
             || !candidate.containsOnly ("0123456789abcdef")
             || !previous.containsOnly ("0123456789abcdef"))
             return;
@@ -13361,10 +13752,11 @@ private:
             if (const auto* ack = saved.getDynamicObject())
                 if (ack->getProperty ("candidateTag").toString() == tag
                     && ack->getProperty ("candidateSha").toString() == candidate
-                    && ack->getProperty ("previousSha").toString() == previous)
+                    && ack->getProperty ("previousSha").toString() == previous
+                    && (!portable || ack->getProperty("digest").toString()==digest))
                     return; // Already acknowledged; no repeat dialog.
         }
-        if (lastUpdatePromptedSha_ == candidate)
+        if (!explicitReview && lastUpdatePromptedSha_ == candidate)
             return; // Never nag during one mixer session.
         if (updateNotice_ && updateNotice_->isVisible())
             return; // Do not open another notice over a currently visible one.
@@ -13373,20 +13765,22 @@ private:
         // This branded floating notice is NON-modal:
         // a performer can still move faders or patch WIRE during a live session.
         updateNotice_ = std::make_unique<ArSonMixUpdateNotice> (tag,
-            [approvalFile, tag, candidate, previous]
+            [approvalFile, tag, candidate, previous, digest]
             {
                 auto approval = juce::DynamicObject::Ptr (new juce::DynamicObject());
                 approval->setProperty ("candidateTag", tag);
                 approval->setProperty ("candidateSha", candidate);
                 approval->setProperty ("previousSha", previous);
+                if(digest.isNotEmpty())approval->setProperty("digest",digest);
                 // A usability acknowledgement only. PowerShell verifies the
                 // published release, both installer hashes and process locks.
                 return approvalFile.replaceWithText (
                     juce::JSON::toString (juce::var (approval.get()), false));
             });
     }
-    void launchSmartUpdater (bool applyStaged)
+    bool launchSmartUpdater (bool applyStaged,bool checkNow=false)
     {
+        if(!applyStaged)lastSmartUpdateCheckTick_=juce::Time::getMillisecondCounter();
         // Windows per-user installation only: independent updater process.
         // On normal exit, apply only a previously prepared transaction.
         // No audio callback, router or plugin operation.
@@ -13398,10 +13792,12 @@ private:
         const auto powerShell = systemFolder.getChildFile ("WindowsPowerShell")
                                            .getChildFile ("v1.0")
                                            .getChildFile ("powershell.exe");
-        if (installedExe.getFileName().equalsIgnoreCase ("ArSonMix.exe")
+        const bool portable=smartUpdaterPortableEligible();
+        // Managed portable exits qualify a candidate after normal teardown
+        // and exact approval; legacy portable remains staging-only.
+        if ((smartUpdaterInstallEligible() || portable)
             && updaterScript.existsAsFile() && provenance.existsAsFile()
-            && powerShell.existsAsFile()
-            && !installDir.getChildFile ("portable_mode.txt").exists())
+            && powerShell.existsAsFile())
         {
             juce::StringArray command { powerShell.getFullPathName(),
                 "-NoLogo", "-NoProfile", "-NonInteractive",
@@ -13409,13 +13805,49 @@ private:
                 "-File", updaterScript.getFullPathName(),
                 "-OwnerProcessId", juce::String (static_cast<int> (::GetCurrentProcessId())) };
             if (applyStaged)
-                command.add ("-ApplyStaged");
+            {
+                command.add (portable ? "-PreparePortable" : "-ApplyStaged");
+                const auto stable=armix::storage::PortableWorkspace::portableRootFor(installDir);
+                if(portable && armix::storage::PortableWorkspace::launcherEnabledAt(stable)){
+                    const auto folder=armix::storage::PortableWorkspace::updateRootFor(installDir);
+                    juce::String stateText,approvalText;
+                    if(!armix::storage::BoundedDataInput::text(folder.getChildFile("state.json"),8192,stateText) ||
+                       !armix::storage::BoundedDataInput::text(folder.getChildFile("approved.json"),2048,approvalText))return false;
+                    const auto state=juce::JSON::parse(stateText),approval=juce::JSON::parse(approvalText);
+                    const auto previous=state.getProperty("previousSha",{}).toString();
+                    const auto candidate=state.getProperty("candidateSha",{}).toString();
+                    const auto tag=state.getProperty("candidateTag",{}).toString();
+                    const auto digest=state.getProperty("newAsset",{}).getProperty("digest",{}).toString();
+                    if(state.getProperty("phase",{}).toString()!="portable-ready" ||
+                       previous!=juce::String(ARMIX_BUILD_SOURCE_SHA) || candidate.length()!=40 ||
+                       !candidate.containsOnly("0123456789abcdef") || tag.length()>60 ||
+                       digest.length()!=71 || !digest.startsWith("sha256:") || !digest.substring(7).containsOnly("0123456789abcdef") ||
+                       approval.getProperty("previousSha",{}).toString()!=previous ||
+                       approval.getProperty("candidateSha",{}).toString()!=candidate ||
+                       approval.getProperty("candidateTag",{}).toString()!=tag ||
+                       approval.getProperty("digest",{}).toString()!=digest)return false;
+                    const auto token=juce::Uuid().toString();
+                    juce::DynamicObject::Ptr receipt(new juce::DynamicObject());
+                    receipt->setProperty("token",token);
+                    receipt->setProperty("ownerPid",static_cast<int>(::GetCurrentProcessId()));
+                    receipt->setProperty("createdMs",juce::Time::getCurrentTime().toMilliseconds());
+                    receipt->setProperty("previousSha",previous);receipt->setProperty("candidateSha",candidate);
+                    receipt->setProperty("candidateTag",tag);receipt->setProperty("digest",digest);
+                    const auto file=folder.getChildFile("normal-exit.json");
+                    if(!armix::storage::BoundedDataInput::managedPath(folder,file) ||
+                       !file.replaceWithText(juce::JSON::toString(juce::var(receipt.get()),false)))return false;
+                    command.add("-ExitReceipt");command.add(token);
+                }
+            }
+            else if(checkNow)
+                command.add ("-CheckNow");
             juce::ChildProcess supervisor;
             // The supervisor is detached from the mixing lifecycle. If it
             // cannot start, the GUI still operates normally; updates are
             // optional and never a reason to lose the live session.
-            supervisor.start (command, 0);
+            return supervisor.start (command, 0);
         }
+        return false;
     }
 #endif
     bool startupAttempted_ = false;
@@ -13423,6 +13855,7 @@ private:
     HANDLE updateRunningMutex_ = nullptr;
     HANDLE installerShutdownEvent_ = nullptr;
     int updatePromptTicks_ = 0;
+    juce::uint32 lastSmartUpdateCheckTick_=0;
     std::unique_ptr<ArSonMixUpdateNotice> updateNotice_;
     juce::uint32 updateProbeCompleteTick_ = 0;
     juce::String lastUpdatePromptedSha_;

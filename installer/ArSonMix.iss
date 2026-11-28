@@ -70,6 +70,11 @@ Source: "ArSonMixWebView2Prerequisite.ps1"; DestDir: "{app}"; Flags: ignoreversi
 Source: "ArSonMixUpdateShutdown.ps1"; Flags: dontcopy
 ; The updater runs outside JUCE, never in the realtime audio callback.
 Source: "ArSonMixAutoUpdate.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; First-party updater uses the pinned, independently staged upstream verifier.
+Source: "{#SourceRoot}\UpdateVerifier\gh.exe"; DestDir: "{app}\UpdateVerifier"; Flags: ignoreversion
+Source: "{#SourceRoot}\UpdateVerifier\verifier.json"; DestDir: "{app}\UpdateVerifier"; Flags: ignoreversion
+Source: "{#SourceRoot}\UpdateVerifier\LICENSE.txt"; DestDir: "{app}\UpdateVerifier"; Flags: ignoreversion
+Source: "{#SourceRoot}\UpdateVerifier\THIRD-PARTY-LICENSES.txt"; DestDir: "{app}\UpdateVerifier"; Flags: ignoreversion
 Source: "ArSonMixStartupDiagnostics.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\verified-gui.exe"; DestDir: "{app}"; DestName: "ArSonMix.exe"; Flags: ignoreversion
 Source: "{#SourceRoot}\BUILD_PROVENANCE.json"; DestDir: "{app}"; Flags: ignoreversion

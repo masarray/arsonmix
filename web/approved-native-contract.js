@@ -45,6 +45,11 @@
   const operatorMessage = message => {
     const raw=String(message??"").trim();
     if(!raw)return "";
+    // File-operation receipts are already truthful, operator-facing text.
+    // Never infer success from a rack filename, native identity or "FX".
+    if(/^FX rack file:|^FX rack request invalid|^FX rack unchanged:|^FX saved; deactivation rejected:/i.test(raw))return raw;
+    if(/\bDEVICE_REBIND_REQUIRED\b/.test(raw))
+      return "Change not applied · Open Audio I/O and rebind the device";
     if(raw.includes("DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"))
       return "Delete not applied · Mute outputs before changing this routing";
     if(raw.includes("DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED"))
@@ -800,7 +805,12 @@
           e.from===p.channelId && e.primaryOutput===false && e.enabled!==false);
         if(old.length!==1 || updated.length!==1 ||
            old[0].to!==updated[0].to)return false;
-        if(p.operation==="SET_WIRE_GAIN")return Number.isFinite(v.gainLinear)&&Number.isFinite(updated[0].gainLinear)&&Math.abs(updated[0].gainLinear-v.gainLinear)<=0.0001;
+        if(p.operation==="SET_WIRE_GAIN")
+          return Number.isFinite(v.gainLinear)&&v.gainLinear>=0&&v.gainLinear<=2&&
+            Number.isFinite(updated[0].gainLinear)&&updated[0].gainLinear>=0&&updated[0].gainLinear<=2&&
+            Math.abs(updated[0].gainLinear-v.gainLinear)<=0.0001&&
+            updated[0].sendEnabled===old[0].sendEnabled&&
+            (updated[0].tapStage||updated[0].tap)===(old[0].tapStage||old[0].tap);
         if(p.operation==="SET_SEND_TAP")
           return ["PRE_FADER","POST_FADER"].includes(v.tap) &&
             (old[0].tapStage||old[0].tap)!==v.tap &&

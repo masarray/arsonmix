@@ -10,7 +10,7 @@ html .app .window-title.armix-ribbon-nav>.logo,html .app .window-title.armix-rib
 .armix-ribbon-tab svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:-1;overflow:visible;filter:drop-shadow(-1px 1px 1px #0005)}
 .armix-ribbon-tab path{stroke:#657580;stroke-width:.5;vector-effect:non-scaling-stroke}
 .armix-ribbon-tab:hover:not([aria-selected=true]){--tab-top:#627988;--tab-mid:#425867;--tab-bottom:#314550}
-.armix-ribbon-tab[aria-selected=true]{--tab-top:#36b8da;--tab-mid:#20a1c3;--tab-bottom:#087f9f}
+.armix-ribbon-tab[aria-selected=true]{--tab-top:#36b8da;--tab-mid:#20a1c3;--tab-bottom:#087f9f;color:#071b24!important;text-shadow:none!important}
 .armix-ribbon-tab:focus-visible{outline:1px solid #a8e9ff;outline-offset:-4px}
 html .app #armix-ribbon-commands.command-bar.armix-ribbon{height:42px!important;min-height:42px!important;max-height:42px!important;flex:0 0 42px!important;gap:8px!important;padding:0 8px 2px!important;background:linear-gradient(#233541,#14232e)!important;border:1px solid #59717e!important;border-top:0!important;border-radius:0 0 5px 5px!important;box-shadow:none!important;overflow:visible!important}
 html .app #armix-ribbon-commands.armix-ribbon>#moreTools{position:absolute!important;left:8px!important;top:calc(-1 * (var(--armix-tab-height) + var(--armix-tab-rail)))!important;width:151px!important;height:var(--armix-tab-height)!important;min-height:var(--armix-tab-height)!important;max-height:var(--armix-tab-height)!important;box-sizing:border-box;min-width:0!important;margin:0!important;z-index:8!important}
@@ -35,12 +35,45 @@ html .app #armix-ribbon-commands.armix-ribbon .tool::before,html .app #armix-rib
 html .app #armix-ribbon-commands.armix-ribbon .tool:hover:not(:disabled){background:#9abccb19!important;border-color:#93b5c22b!important;color:#f1f8fb!important}
 html .app #armix-ribbon-commands.armix-ribbon .tool:is(.active,[aria-pressed=true],[aria-expanded=true]){background:#4bb6ce26!important;border-color:#62b9cb56!important;color:#9ce8f4!important}
 html .app #armix-ribbon-commands.armix-ribbon #globalFxToggle[aria-pressed=true]{background:#46b78920!important;border-color:#6ac89b48!important;color:#a6e7ca!important}
+/* Momentary ribbon commands need a visible pressed state without a geometry
+   change. Preserve the dedicated FX safety and bank navigation palettes. */
+html .app #armix-ribbon-commands.armix-ribbon>button.tool:not(.bank-arrow):not(#globalFxToggle):active:not(:disabled){background:#4bb6ce26!important;border-color:#62b9cb56!important;color:#9ce8f4!important}
+/* Ribbon caption inherits the current V6 owner rather than legacy Inter ink. */
+html .app #armix-ribbon-commands.armix-ribbon #globalFxToggle .global-fx-label{font:inherit!important;color:inherit!important}
+html .app #armix-ribbon-commands.armix-ribbon #globalFxToggle .global-fx-power-icon{color:inherit!important}
 html .app #armix-ribbon-commands.armix-ribbon .toolbar-select{border:1px solid #83a6b42e!important;border-radius:14px!important;background-color:#0d202a!important;color:#d2e2e9!important;box-shadow:none!important;height:25px!important;min-height:25px!important;max-height:25px!important}
 html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch{display:inline-flex!important;align-items:center;flex:none;gap:2px!important;padding:2px!important;height:30px!important;min-height:30px!important;max-height:30px!important;border:1px solid #688b9b!important;border-radius:999px!important;background:#0d202a!important;box-sizing:border-box!important}
 html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool{height:24px!important;min-height:24px!important;max-height:24px!important;padding:0 10px!important;border-radius:999px!important;justify-content:center!important;align-items:center!important}
 html .app #armix-ribbon-commands.armix-ribbon .strip-view-switch>button.tool[aria-pressed=true]{background:#416776!important;color:#f2fcff!important;border-color:#78a7b5!important;box-shadow:inset 0 1px #c3e5ed20!important}
-html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow{width:25px!important;min-width:25px!important;max-width:25px!important;height:25px!important;min-height:25px!important;padding:0!important;border-radius:50%!important}
-html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow svg{width:18px!important;height:18px!important}
+/* Bank navigation: dark V6 toolbar, not the historical silver button.
+   Keep both directions discoverable even when only one bank exists.
+   Single static face and centered vector; no additional state or render work. */
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):not([data-ribbon-hidden=true]){
+ display:grid!important;place-items:center!important;position:relative!important;box-sizing:border-box!important;flex:0 0 28px!important;
+ width:28px!important;min-width:28px!important;max-width:28px!important;height:28px!important;min-height:28px!important;max-height:28px!important;
+ padding:0!important;margin:0!important;border-radius:50%!important;border:1px solid #557585!important;background:#233e4c!important;color:#e0f3fa!important;
+ opacity:1!important;filter:none!important;box-shadow:none!important;transform:none!important;cursor:pointer;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext)>svg{
+ display:block!important;position:absolute!important;inset:0!important;margin:auto!important;width:18px!important;height:18px!important;
+ min-width:18px!important;max-width:18px!important;min-height:18px!important;max-height:18px!important;
+ color:inherit!important;fill:none!important;opacity:1!important;transform:none!important;pointer-events:none!important;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext)>svg>path{
+ fill:none!important;stroke:currentColor!important;stroke-width:2.5!important;stroke-linecap:round!important;stroke-linejoin:round!important;opacity:1!important;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):hover:not(:disabled){
+ background:#315363!important;border-color:#80b6c7!important;color:#f1fbff!important;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):active:not(:disabled){
+ background:#416776!important;border-color:#9ad8e4!important;color:#fff!important;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):disabled{
+ background:#1b2e39!important;border-color:#405a67!important;color:#859daa!important;opacity:1!important;cursor:default;
+}
+html .app #armix-ribbon-commands.armix-ribbon>button.bank-arrow:is(#bankPrev,#bankNext):focus-visible{
+ outline:2px solid #83dbea!important;outline-offset:1px!important;
+}
 html .app #armix-ribbon-commands.armix-ribbon>.sep,html .app #armix-ribbon-commands.armix-ribbon>.armix-toolbar-divider,html .app #armix-ribbon-commands.armix-ribbon>.toolbar-label{display:none!important}
 html .app #armix-ribbon-commands.armix-ribbon>[data-ribbon-hidden=true]{display:none!important;position:absolute!important;visibility:hidden!important;pointer-events:none!important}
 html .app #armix-ribbon-commands.armix-ribbon[data-ribbon-tab=routing]>:is(#wireNavigatorToggle,#wireMatrixToggle,#wireConfigToggle):not([hidden]){display:inline-flex!important}
@@ -250,3 +283,24 @@ html .app #armix-ribbon-commands .armix-ribbon-scene button{letter-spacing:0!imp
 /* Local V6 Main Mix indicator: thin mixer glyph on the left. */
 html .app #armix-ribbon-commands.armix-ribbon>#mixContext{display:flex!important;align-items:center;gap:6px}
 html .app #armix-ribbon-commands.armix-ribbon>#mixContext::before{content:"";display:inline-block;width:13px;height:13px;flex:0 0 13px;background:currentColor;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%3E%3Cpath%20d%3D%22M5%203v18M12%203v18M19%203v18M3%209h4m3%207h4m3-9h4%22%2F%3E%3C%2Fsvg%3E") center/contain no-repeat}
+
+/* Public touch ribbon: the command strip scrolls independently of the
+   application disclosure. A viewport-fixed menu escapes that scroll clip.
+   Keep native desktop and the single approved hardware/CSS owner unchanged. */
+@media(max-width:640px){
+ html:not(.armix-native-desktop) .app #armix-ribbon-commands.command-bar.armix-ribbon{
+   overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:none;overscroll-behavior-x:contain;
+ }
+ html:not(.armix-native-desktop) .app #armix-ribbon-commands.command-bar.armix-ribbon::-webkit-scrollbar{display:none}
+ html:not(.armix-native-desktop) .app #armix-ribbon-commands.armix-ribbon>#moreTools{
+   position:fixed!important;top:5px!important;left:8px!important;
+ }
+ html:not(.armix-native-desktop) .app #armix-ribbon-commands.armix-ribbon>#moreTools>.more-tools-panel{
+   position:fixed!important;top:40px!important;left:8px!important;right:auto!important;
+ }
+ /* The public browser cannot operate native window captions; reclaim their
+    narrow-screen space for the real workflow tab scroller. */
+ html:not(.armix-native-desktop) .app .armix-ribbon-window-controls{display:none!important}
+}
+
+html .app #armix-ribbon-commands [data-ribbon-audio-summary] select[data-audio-value=buffer]{background:#172d38;color:#e0edf3;border:1px solid #577686;border-radius:3px;font:inherit;padding:2px 5px;max-width:115px;min-width:76px}

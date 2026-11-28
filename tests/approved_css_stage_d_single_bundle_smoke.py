@@ -86,7 +86,11 @@ async def main():
                     assert await page.locator("#wireConfigToggle").is_hidden()
                     await page.locator("#moreTools summary").click()
                     assert await page.locator("#moreTools").get_attribute("open") is not None
-                    await page.locator('#moreTools [data-wire-open="config"]').click()
+                    settings=page.locator('#moreTools [data-menu-category="settings"]')
+                    await settings.click()
+                    assert await settings.get_attribute("aria-expanded")=="true"
+                    await page.locator('#armix-menu-settings [data-wire-open="config"]').click()
+                    assert await page.locator("#moreTools").get_attribute("open") is None
                     assert await page.locator("#wireConfigWindow").is_visible()
                     await page.locator("#wireMode").select_option("split")
                     await page.locator("#wireConfigClose").click()

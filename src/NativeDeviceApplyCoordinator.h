@@ -19,7 +19,7 @@ class NativeDeviceApplyCoordinator final {
 public:
     // Every possible JUCE driver mutation uses the same control-thread gate:
     // explicit custom UI Apply, explicit vendor ASIO panel, and bounded recovery.
-    enum class Purpose : std::uint8_t { none, explicitApply, setupDialog, asioRecovery, wasapiRecovery, offlineFxCapture, secondaryOutput };
+    enum class Purpose : std::uint8_t { none, explicitApply, setupDialog, asioRecovery, wasapiRecovery, offlineFxCapture, secondaryOutput, busOutputPatch };
 
     class Lease final {
     public:

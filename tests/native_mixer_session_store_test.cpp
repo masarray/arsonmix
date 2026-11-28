@@ -982,12 +982,25 @@ static void verifyOfflineLogicalSessionAndFile() {
     enabled.getDynamicObject()->setProperty("enabled",false);
     assert(workspace.apply(command("SET_SEND_ENABLED",enabled,track)).accepted);
     assert(!workspace.document().roster.find(offlineTrackId)->sends.back().enabled);
-    // Reopen must retain both OFF and PRE without inventing a LIVE PCM graph.
+    // Gain is also a saved parallel EdgeId edit, even with the SEND OFF.
+    auto gain=juce::var(new juce::DynamicObject());
+    gain.getDynamicObject()->setProperty("edgeId",juce::String(std::to_string(parallelEdge)));
+    gain.getDynamicObject()->setProperty("gainLinear",0.25);
+    assert(workspace.apply(command("SET_WIRE_GAIN",gain,track)).accepted);
+    assert(workspace.document().roster.find(offlineTrackId)->sends.back().gain==.25f);
+    const auto stableGainRevision=workspace.revision();
+    const auto stableGainDocument=Codec::encode(workspace.document());
+    gain.getDynamicObject()->setProperty("edgeId",juce::String(std::to_string(planned.front().edgeId)));
+    assert(!workspace.apply(command("SET_WIRE_GAIN",gain,track)).accepted);
+    assert(workspace.revision()==stableGainRevision);
+    assert(Codec::encode(workspace.document())==stableGainDocument);
+    // Reopen must retain OFF, PRE and gain without inventing a LIVE PCM graph.
     NativeLogicalMixerWorkspace offlineCopy;
     assert(offlineCopy.load(workspace.document(),workspace.states()));
     const auto* copied=offlineCopy.document().roster.find(offlineTrackId);
     assert(copied && copied->sends.size()==2 && copied->sends.back().preFader &&
-           !copied->sends.back().enabled && copied->sends.front().primaryOutput);
+           !copied->sends.back().enabled && copied->sends.front().primaryOutput &&
+           copied->sends.back().gain==.25f);
     assert(!static_cast<bool>(offlineCopy.snapshot().getProperty("physicalOutputAdmitted",true)));
     // Replacing the document invalidates pending intents even if its exact
     // revision (or even the saved document ID) is the same.
@@ -1041,6 +1054,11 @@ static void verifyOfflineLogicalSessionAndFile() {
     NativeLogicalMixerWorkspace reopened;
     assert(reopened.load(restored));
     assert(reopened.revision()==workspace.revision());
+    const auto* persistedSend=reopened.document().roster.find(offlineTrackId);
+    assert(persistedSend && persistedSend->sends.size()==2 &&
+           persistedSend->sends.back().edgeId==parallelEdge &&
+           persistedSend->sends.back().gain==.25f &&
+           !persistedSend->sends.back().enabled && persistedSend->sends.back().preFader);
     assert(reopened.snapshot().getProperty("graph",{}).getProperty(
         "channels",{}).getArray()->size()==16);
     // A failed disk transaction must leave both the live snapshot and the
@@ -2721,7 +2739,9 @@ static void checkLiveControlsCheckpoint() {
     live.masterGain=.21f;
     live.resumeMain=false;
     assert(live.roster.rememberLiveMix({1},.32f,.4f));
-    assert(store.commitLiveControls(live).isEmpty());
+    const auto liveError=store.commitLiveControls(live);
+    if(liveError.isNotEmpty())std::cerr<<"LIVE_CHECKPOINT_ERROR "<<liveError.toStdString()<<"\n";
+    assert(liveError.isEmpty());
     assert(head.loadFileAsString()==generation);
     MixerSessionDocument loaded;
     std::vector<BinaryState> states;
@@ -2730,7 +2750,18 @@ static void checkLiveControlsCheckpoint() {
     assert(states.size()==1&&states[0].bytes==blob.bytes);
     assert(loaded.roster.find({1})->faderLinear==.32f);
     const auto overlay=studio.getChildFile("MixerSession").getChildFile("LIVE_CONTROLS");
-    const auto durable=overlay.loadFileAsString();
+    juce::String durable;
+    assert(NativeMixerSessionStore::Input::text(overlay,NativeMixerSessionStore::maxJson+128,durable));
+    auto expectedLive=live;
+    expectedLive.inserts[0].sha256=blob.sha256;
+    const auto expectedJson=Codec::encode(expectedLive);
+    const auto expectedHash=juce::SHA256(expectedJson.toRawUTF8(),expectedJson.getNumBytesAsUTF8()).toHexString();
+    // Fixed LF header plus exact hashed JSON, including JUCE's CRLF and
+    // byte length; no text conversion or extra header bytes are allowed.
+    assert(durable==generation.trim()+"\n"+expectedHash+"\n"+expectedJson);
+    assert(overlay.getSize()==static_cast<juce::int64>(durable.getNumBytesAsUTF8()));
+    assert(store.commitLiveControls(live).isEmpty());
+    assert(overlay.loadFileAsString()==durable && head.loadFileAsString()==generation);
     live.inserts[0].instanceId="g5c-43"; // same vendor, wrong instance
     assert(store.commitLiveControls(live).isNotEmpty());
     assert(overlay.loadFileAsString()==durable);
@@ -2740,7 +2771,9 @@ static void checkLiveControlsCheckpoint() {
     assert(overlay.loadFileAsString()==durable);
     assert(overlay.appendText("CORRUPT"));
     assert(store.load(loaded,states).isEmpty()&&loaded.masterGain==doc.masterGain&&loaded.resumeMain==false);
-    assert(overlay.replaceWithText(durable,false,false,"\n"));
+    assert(overlay.replaceWithData(durable.toRawUTF8(),durable.getNumBytesAsUTF8()));
+    assert(store.load(loaded,states).isEmpty() && loaded.masterGain==.21f &&
+           loaded.resumeMain==false && states.size()==1 && states[0].bytes==blob.bytes);
     doc.masterGain=.81f;
     assert(store.commit(doc,{blob}).isEmpty());
     assert(store.load(loaded,states).isEmpty()&&loaded.masterGain==.81f);

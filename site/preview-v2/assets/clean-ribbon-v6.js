@@ -109,6 +109,11 @@ function installCompactMenu(more){
      e.preventDefault();items[next].focus({preventScroll:true});
    }
  },true);
+ // Demo metering is a momentary View command; release the overlay so
+ // the operator can immediately use the physical mixer controls.
+ more.addEventListener('click',e=>{
+   if(e.target.closest?.('#preview'))more.open=false;
+ });
  document.addEventListener('pointerdown',e=>{if(more.open&&!more.contains(e.target))more.open=false;},true);
  window.addEventListener('resize',position);
  // A Show list/readback may add rows after opening. Observe only the five
@@ -298,15 +303,20 @@ function install(){
    sofToggle:'mixer routing',sofTarget:'mixer routing',clearCue:'mixer routing',
    wireNavigatorToggle:'routing',wireMatrixToggle:'routing',wireConfigToggle:'routing',
    sceneSelect:'scenes',saveScene:'scenes',recallScene:'scenes',addTrack:'mixer routing',
+   addBus:'routing',addFx:'routing',addGroupBus:'routing',addGroupSelected:'routing',
    playerMini:'mixer',playerToggle:'player',moreTools:'all',mixContext:'all',ribbonEmergency:'all'
  };
  function orderCommands(){
    // Maintain a single native command per action. DOM order also defines keyboard order.
+   // Move existing commands, never clone listeners or add a second owner.
+   if(native)for(const id of ['addBus','addFx','addGroupBus','addGroupSelected']){
+     const node=$(id);if(node&&node.parentElement!==bar)bar.append(node);
+   }
    const io=bar.querySelector(':scope > [data-native-io]');
    const preferred=[more,$('bankPrev'),$('bankSelect'),$('bankNext'),$('densitySelect'),
      bar.querySelector(':scope > .strip-view-switch'),$('globalFxToggle'),$('wireNavigatorToggle'),
      $('wireMatrixToggle'),$('wireConfigToggle'),$('sofToggle'),$('sofTarget'),$('clearCue'),$('viewFilter'),
-     $('sceneSelect'),$('recallScene'),$('saveScene'),scene,$('addTrack'),$('pluginsButton'),
+     $('sceneSelect'),$('recallScene'),$('saveScene'),scene,$('addTrack'),$('addBus'),$('addFx'),$('addGroupBus'),$('addGroupSelected'),$('pluginsButton'),
      player,$('playerToggle'),$('playerMini'),bar.querySelector(':scope > [data-ribbon-audio-summary]'),io,$('ribbonMainMix')].filter(el=>el?.parentElement===bar);
    const known=new Set([...preferred,panicShortcut]),context=$('mixContext');
    const wanted=[...preferred,...Array.from(bar.children).filter(el=>!known.has(el)&&el!==context)];

@@ -160,10 +160,29 @@ def inspect_page(page, width, height, scale, label):
     assert moved['x']>=-2 and moved['y']>=-2 and moved['x']+moved['width']<=width+4,(
         "plugin escaped viewport",width,height,moved)
     page.screenshot(path=str(ROOT/f'operator-ux-drag-{width}x{height}-{scale}.png'))
-    # Outside-click on the mixer is now an intentional transient utility
-    # dismissal. Verify it, reopen, then verify the actual visible Close key.
+    # The moved manager may cover CH01 at narrow viewports. Exercise a real
+    # exposed mixer point (never click through the overlay), assert dismissal,
+    # then measure CH01 independently with the utility closed.
+    point=page.evaluate("""() => {
+      const mixer=document.querySelector('.console-body');
+      const panel=document.getElementById('pluginBrowser');
+      const r=mixer.getBoundingClientRect();
+      const left=Math.max(0,Math.ceil(r.left)),right=Math.min(innerWidth,Math.floor(r.right));
+      const top=Math.max(0,Math.ceil(r.top)),bottom=Math.min(innerHeight,Math.floor(r.bottom));
+      let fallback=null;
+      for(let y=top+4;y<bottom;y+=8)for(let x=left+4;x<right;x+=8){
+        const hit=document.elementFromPoint(x,y);
+        if(!hit||!mixer.contains(hit)||panel.contains(hit))continue;
+        if(hit.closest('.strip-identity-top'))return {x,y,target:'strip identity'};
+        if(!fallback&&!hit.closest('button,input,select,textarea,a,[role="button"],[data-action],[data-field],canvas,svg,.wire-node,.wire-gain,.gain-dial'))
+          fallback={x,y,target:'exposed mixer surface'};
+      }
+      return fallback;
+    }""")
+    assert point,("no exposed mixer target outside Plugin Manager",width,height,moved)
+    page.mouse.click(point['x'],point['y'])
+    assert win.is_hidden(),("plugin manager should dismiss on outside mixer click",width,height,point)
     check_identity_zero_reflow(page,width,height,scale,1)
-    assert win.is_hidden(),("plugin manager should dismiss on outside mixer click",width,height)
     page.locator('#pluginsButton').click()
     assert win.is_visible()
     assert_key(page,'#pluginClose')

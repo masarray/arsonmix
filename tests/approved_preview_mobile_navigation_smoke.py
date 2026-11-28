@@ -96,7 +96,12 @@ async def verify_phone(browser, width: int, height: int):
         await page.locator(".command-bar").evaluate("(bar)=>{bar.scrollLeft=bar.scrollWidth;}")
         scroll = await page.locator(".command-bar").evaluate("(bar)=>bar.scrollLeft")
         assert scroll > 90, ("toolbar overflow locked against touch scrolling", scroll)
-        await page.locator("#moreTools > summary").click()
+        menu = page.locator("#moreTools > summary")
+        anchor = await menu.bounding_box()
+        assert anchor and 0 <= anchor["x"] and anchor["x"] + anchor["width"] <= width
+        assert 0 <= anchor["y"] and anchor["y"] + anchor["height"] <= 40, anchor
+        # The fixed disclosure must actually receive touch after the bar scrolls.
+        await menu.tap()
         panel = page.locator("#moreTools .more-tools-panel")
         await panel.wait_for(state="visible")
         position = await panel.evaluate("""el => {
@@ -108,13 +113,32 @@ async def verify_phone(browser, width: int, height: int):
         assert position["position"] == "fixed", position
         assert 0 <= position["left"] <= position["right"] <= width, position
         assert position["top"] >= 40 and position["bottom"] <= height + 1, position
-        assert await panel.locator("#addTrack").is_visible()
+        category = panel.locator('[data-menu-category="channel"]')
+        await category.tap()
+        child = panel.locator("#armix-menu-channel")
+        await child.wait_for(state="visible")
+        assert await category.get_attribute("aria-expanded") == "true"
+        assert await panel.locator(".armix-menu-flyout:visible").count() == 1
+        assert await child.locator("#addTrack").is_visible()
+        child_bounds = await child.bounding_box()
+        assert child_bounds and child_bounds["x"] >= position["right"] - 2
+        assert child_bounds["x"] + child_bounds["width"] <= width + 1
+        assert child_bounds["y"] >= 0 and child_bounds["y"] + child_bounds["height"] <= height + 1
+        # Verify hit testing, not merely visibility behind a scroll clip.
+        assert await child.locator("#addTrack").evaluate("""el => {
+          const r=el.getBoundingClientRect();
+          const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+          return hit===el||el.contains(hit);
+        }""")
         await page.screenshot(path=f"pages-mobile-toolbar-more-{width}.png")
-        await page.locator("#moreTools > summary").click()
+        await menu.tap()
+        await panel.wait_for(state="hidden")
 
-        # Player is a contextual module on the ONE approved /preview/.
-        # No second runtime CSS, no second mixer or browser audio.
-        await page.locator("#playerToggle").click()
+        # Player is now reached through its V6 workflow tab, not a hidden
+        # Mixer command. No second runtime CSS, mixer or browser audio.
+        await page.locator("#ribbon-tab-player").tap()
+        assert await page.locator("#ribbon-tab-player").get_attribute("aria-selected") == "true"
+        await page.locator("#playerToggle").tap()
         player = page.locator("#arsonPlayer")
         await player.wait_for(state="visible")
         bounds = await player.bounding_box()
@@ -154,7 +178,7 @@ async def verify_phone(browser, width: int, height: int):
         assert await player.is_hidden()
         assert not errors, errors
         print(f"PASS {width}x{height} mobile: one CSS, no orphan > marker, "
-              f"swipe toolbar + real channel banks, fixed More popup, PNG MUTE")
+              f"swipe toolbar + real channel banks, fixed cascading menu, PNG MUTE")
     finally:
         await context.close()
 

@@ -337,7 +337,6 @@ def main():
             assert add_track.is_enabled()
             # Native-only Studio controls must use real JUCE Show I/O; the
             # public Pages scene model must never acknowledge a persisted Show.
-            show_panel = "#moreTools .more-tools-panel"
             show_id = "11111111-2222-4333-8444-555555555555"
             corrupt_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
             def show_click(text):
@@ -405,7 +404,14 @@ def main():
             recalled=page.evaluate("()=>window.__events.at(-1).payload")
             assert recalled=={"action":"routingDryShowRecall","value":corrupt_id}
             emit(page,"arMixNativeShowRecallAck",{"ok":False,"error":"DEVICE_REBIND_REQUIRED"})
-            assert "DEVICE_REBIND_REQUIRED" in page.locator(show_panel).text_content()
+            # Clean menu omits operation status; rejection must remain actionable.
+            rejected_text="Change not applied · Open Audio I/O and rebind the device"
+            assert page.locator("#info").inner_text()==rejected_text
+            toast=page.locator("#armixNativeToast")
+            assert toast.is_visible() and toast.inner_text()==rejected_text
+            assert "DEVICE_REBIND_REQUIRED" not in page.locator("#moreTools").inner_text()
+            assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
+            assert show_select(corrupt_id)=={"recall":True,"recover":True}
             show_click("Save New Version")
             assert page.evaluate("()=>window.__events.at(-1).payload")=={
                 "action":"routingDryShowSave","value":corrupt_id}
@@ -417,7 +423,13 @@ def main():
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowSave"
             emit(page,"arMixNativeShowSaveAck",{"ok":True,"showId":show_id})
             assert page.evaluate("()=>window.__events.at(-1).payload.action")=="routingDryShowList"
+            emit(page,"arMixNativeShowListAck",{"ok":False,"error":"Show storage unavailable"})
+            assert page.locator("#info").inner_text()=="Browse rejected: Show storage unavailable"
+            assert page.locator("#armixNativeToast").is_visible()
+            assert show_select("")=={"recall":False,"recover":False}
+            show_click("Browse Shows")
             emit(page,"arMixNativeShowListAck",{"ok":True,"items":[]})
+            assert page.locator("#info").inner_text()=="0 saved Shows"
             assert not page.evaluate("()=>window.__events.some(e=>e.payload?.action==='monitor')")
             select_ribbon_workflow(page,"mixer")
             # Failed preflight and an unbound audio device must not blank the
