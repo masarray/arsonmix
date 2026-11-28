@@ -53,7 +53,7 @@ These six screenshots use the original approved JUCE WebView editor HTML/CSS/JS 
 
 | 8D-SonKu | Vocal Delay |
 |:--:|:--:|
-| [<img src="site/media/fx-editor-8d-sonku.jpg" alt="8D-SonKu spatial audio editor with binaural orbit map" width="460">](https://masarray.github.io/arsonmix/effects/8d-sonku/) | [<img src="site/media/fx-editor-vocal-delay.jpg" alt="Vocal Delay editor with THROW and timing controls" width="460">](https://masarray.github.io/arsonmix/effects/vocal-delay/) |
+| [<img src="site/media/fx-editor-8d-sonku.jpg" alt="8D-SonKu built-in spatial audio editor with binaural orbit map and headphone controls" width="460">](https://masarray.github.io/arsonmix/effects/8d-sonku/) | [<img src="site/media/fx-editor-vocal-delay.jpg" alt="Vocal Delay editor with THROW and timing controls" width="460">](https://masarray.github.io/arsonmix/effects/vocal-delay/) |
 | **Harmonice** | **Parametric EQ** |
 | [<img src="site/media/fx-editor-harmonice.jpg" alt="Harmonice vocal harmony editor with key wheel" width="460">](https://masarray.github.io/arsonmix/effects/harmonice/) | [<img src="site/media/fx-editor-channel-eq.jpg" alt="Parametric EQ editor with frequency response curve" width="460">](https://masarray.github.io/arsonmix/effects/channel-eq/) |
 | **Compressor** | **Graphic EQ 31** |
