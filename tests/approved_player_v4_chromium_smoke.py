@@ -164,10 +164,19 @@ def main():
             finally:
                 probe_style.evaluate("e=>e.remove()")
             # Real composed corner clipping, including header, bezel and coat.
-            # Compare with the exact same scene without the panel. Disable only
-            # the intentional external shadow during this geometry probe.
+            # Compare the actual assembled panel against a calibrated stationary
+            # substrate: the live mixer underneath has animated/hoverable
+            # controls and is not a reliable two-screenshot pixel reference.
+            # Disable only the intentional external shadow of the Player.
             rect=panel.bounding_box()
             corner_style=page.add_style_tag(content="#arsonPlayer{box-shadow:none!important}")
+            panel.evaluate("""e=>{
+                const reference=document.createElement('div');
+                reference.id='playerCornerReference';
+                Object.assign(reference.style,{position:'fixed',inset:'0',background:'#203040',
+                  zIndex:getComputedStyle(e).zIndex,pointerEvents:'none'});
+                e.before(reference);
+            }""")
             try:
                 shown=page.screenshot(clip=rect,scale="css",animations="disabled")
                 hidden_style=page.add_style_tag(content="#arsonPlayer{visibility:hidden!important}")
@@ -181,17 +190,25 @@ def main():
                         const ctx=c.getContext('2d');ctx.drawImage(bmp,0,0);bmp.close();
                         return {w:c.width,h:c.height,data:ctx.getImageData(0,0,c.width,c.height).data};};
                     const [x,y]=await Promise.all([pixels(a),pixels(b)]);
+                    // Verify the reference rather than assume it covered the
+                    // underlying scene. Keep the existing clipping tolerance.
+                    const calibration=[32,48,64];
                     const delta=(px,py)=>{const i=(py*x.w+px)*4;return Math.max(...[0,1,2].map(k=>Math.abs(x.data[i+k]-y.data[i+k])));};
+                    const referenceError=(px,py)=>{const i=(py*y.w+px)*4;return Math.max(...[0,1,2].map(k=>Math.abs(y.data[i+k]-calibration[k])));};
                     return [[false,false],[true,false],[true,true],[false,true]].map(([right,bottom])=>{
                         const dx=n=>right?x.w-1-n:n,dy=n=>bottom?x.h-1-n:n;
                         const outside=[0,1,2].flatMap(i=>[0,1,2].map(j=>delta(dx(i),dy(j))));
                         const inside=[r-2,r-1,r].flatMap(i=>[r-2,r-1,r].map(j=>delta(dx(i),dy(j))));
-                        return {outside:Math.max(...outside),inside:Math.max(...inside)};
+                        const reference=[0,1,2,r-2,r-1,r].flatMap(i=>[0,1,2,r-2,r-1,r].map(j=>referenceError(dx(i),dy(j))));
+                        return {outside:Math.max(...outside),inside:Math.max(...inside),
+                            reference:Math.max(...reference)};
                     });
                 }""",[base64.b64encode(v).decode("ascii") for v in (shown,behind)]+[outer])
+                assert all(c["reference"]<=1 for c in corners),("invalid stationary reference",corners)
                 assert all(c["outside"]<=3 and c["inside"]>=8 for c in corners),corners
                 print("PLAYER_CONCENTRIC_CORNERS_PASS",width,corners,flush=True)
             finally:
+                page.locator("#playerCornerReference").evaluate("e=>e.remove()")
                 corner_style.evaluate("e=>e.remove()")
             def hit(control):
                 control.scroll_into_view_if_needed()
