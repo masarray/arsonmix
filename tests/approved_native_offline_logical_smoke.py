@@ -257,6 +257,11 @@ def main():
         assert event["operation"]=="CREATE_CHANNEL"
         assert event["baseRevision"]=="1"
         assert event["workspaceToken"]=="workspace-a"
+        roster_controls=["addTrack","addBus","addFx","addGroupBus","addGroupSelected"]
+        def assert_roster_enabled(enabled):
+            for ident in roster_controls:
+                assert page.locator("#"+ident).is_enabled()==enabled, (ident,enabled)
+        assert_roster_enabled(False)
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
@@ -267,12 +272,13 @@ def main():
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14, "ACK alone changed UI"
+        assert_roster_enabled(False)
         state=snapshot("2",True)
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_function("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length===15""")
         new_track=page.locator("#tracks .strip").filter(has_text="Track 16").first
         assert new_track.count()==1
-        assert page.locator("#addTrack").is_enabled()
+        assert_roster_enabled(True)
         assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")=="logical-editable"
         assert page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixConsoleIntent').length""")==0
@@ -284,6 +290,7 @@ def main():
         wire=page.evaluate("""()=>window.__events.filter(
             e=>e.name==='arMixLogicalIntent').at(-1).payload""")
         assert wire["operation"]=="WIRE_TRANSACTION"
+        assert_roster_enabled(False)
         assert wire["payload"]["changes"][0]["op"]=="DISCONNECT"
         assert page.evaluate("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(
             t=>t.name==='Track 16')?.output""")=="Master", "Pages model changed before native readback"
@@ -313,9 +320,11 @@ def main():
         fresh=page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixLogicalIntent').at(-1).payload""")
         assert fresh["workspaceToken"]=="workspace-b"
+        assert_roster_enabled(False)
         emit(page,"arMixLogicalAck",{"requestId":fresh["requestId"],
             "status":"REJECTED","errorCode":"TEST_DISK_WRITE_FAILED","revision":"3"})
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
+        assert_roster_enabled(True)
         # Now assert actual selection dispatches the correct Guitar FX id.
         # Leave pending ADD_FX_REFERENCE as the LAST edit; it must not
         # falsely advertise a physical processor or block other fixtures.

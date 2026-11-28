@@ -692,6 +692,8 @@
         edgeId:e.edgeId,to:e.to,primaryOutput:e.primaryOutput,tap:e.tap,
         tapStage:e.tapStage,sendEnabled:e.sendEnabled
       }))};
+    // Roster controls follow the saved document transaction lease immediately.
+    syncAddTrack();
     backend.emitEvent("arMixLogicalIntent",{
       requestId,workspaceToken:logicalView.workspaceToken,
       baseRevision:logicalView.graph.revision,operation,
@@ -1846,8 +1848,10 @@
   function canDeleteNativeStrip(track){
     if(logicalView){
       const row=logicalView.graph.channels.find(ch=>ch.id===nativeIdFor(track));
-      return !logicalView.readOnly&&
-        ["INPUT","GROUP","FX_RETURN"].includes(row?.role);
+      const operation=row?.role==="INPUT"?"DELETE_CHANNEL":
+        ["GROUP","FX_RETURN"].includes(row?.role)?"REMOVE_BUS":null;
+      return !!operation&&!logicalView.readOnly&&!pendingLogical&&
+        logicalView.graph.capabilities.supportedOps.includes(operation);
     }
     const operation=track?.kind==="audio"?"DELETE_CHANNEL":
       (track?.kind==="bus"||track?.kind==="fx")?"REMOVE_BUS":null;
@@ -1916,12 +1920,27 @@
   }
   function syncAddTrack(next=controller?.state()?.current){
     const button=document.getElementById("addTrack");
-    if(!button)return;
     const available=canCreateNativeTrack(next);
-    button.disabled=!available || !!pendingBusCreate ||
-      !!pendingTrackDelete || !!pendingLogical;
-    button.title=available?"Add a stereo audio track routed to MAIN":
-      "Connect a verified audio device in Audio I/O to add tracks";
+    if(button){
+      button.disabled=!available || !!pendingBusCreate ||
+        !!pendingTrackDelete || !!pendingLogical;
+      button.title=logicalView?
+        (pendingLogical?"Saving mixer edit · waiting for readback":
+          available?"Add a saved stereo audio track routed to MAIN":
+          "Track creation unavailable in this saved workspace"):
+        available?"Add a stereo audio track routed to MAIN":
+          "Connect a verified audio device in Audio I/O to add tracks";
+    }
+    if(logicalView){
+      const unavailable=!!pendingLogical||logicalView.readOnly||
+        !logicalView.graph.capabilities.supportedOps.includes("CREATE_GROUP");
+      for(const id of ["addBus","addFx","addGroupBus","addGroupSelected"]){
+        const control=document.getElementById(id);
+        if(!control)continue;
+        control.hidden=false;
+        control.disabled=unavailable;
+      }
+    }
   }
   // Both audio-track and BUS addition retain the structural lease until
   // a strictly newer independently accepted ChannelId roster proves the
@@ -6170,11 +6189,6 @@
           status("Retained FX slot changed before offline editor could open");
         }
         }
-      }
-      for(const id of ["addBus","addFx","addGroupBus","addGroupSelected"]){
-        const addBus=document.getElementById(id);if(!addBus)continue;
-        addBus.hidden=false;
-        addBus.disabled=!!pendingLogical||staged.readOnly||!staged.graph.capabilities.supportedOps.includes("CREATE_GROUP");
       }
       status(staged.readOnly?
         "Saved mixer recovery required · Open a verified .smix file":
