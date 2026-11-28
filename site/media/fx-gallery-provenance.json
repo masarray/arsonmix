@@ -57,13 +57,17 @@
       "catalogId": "armix.builtin.8d-sonku.v1",
       "editorSelector": "#mxNativeSonKu",
       "file": "fx-editor-8d-sonku.jpg",
-      "sha256": "c2248b82d366172768ffbc02886d8d11adfdfb438aac79ec677e637c60d3052f",
-      "sizeBytes": 57368,
-      "source": "approved JUCE WebView2 editor resource rendered in Chromium"
+      "height": 538,
+      "nativeBundleApprovedPagesSha256": "249e9c4f969b0ae6cb527578070ff5a31629a2926a6aca27f2b02d6999f4c7a8",
+      "sha256": "de008a7f5d491b3d971541553955d33cd714788fc21d5ce89fa5c6c88f772a87",
+      "sizeBytes": 48918,
+      "source": "approved JUCE WebView2 editor resource rendered in Chromium",
+      "sourceCommit": "213d2a4b861cd592c41c3ce6a4b318bf347b9e7b",
+      "width": 790
     }
   ],
   "nativeBundleApprovedPagesSha256": "88dd234f4d338b061c57b92a83abd8f93d5887eff8a1fbcf701848020b1b168e",
-  "notes": "Actual native editor HTML/CSS/JS pixels, not a Windows HWND or real DSP readback. No simulated JUCE controls beyond the documented test transport.",
+  "notes": "Actual native editor HTML/CSS/JS pixels, not a Windows HWND or real DSP readback. No simulated JUCE controls beyond the documented test transport. Top-level source fields describe the original gallery batch; an individual image may override them with its own exact capture source.",
   "schemaVersion": 1,
   "sourceCommit": "2e23320b4b80c279244e4b9fd0341226533c26eb"
 }
