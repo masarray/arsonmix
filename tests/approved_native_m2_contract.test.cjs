@@ -8198,7 +8198,10 @@ test("Channel context menu exposes non-destructive FX save and real native recei
  assert.match(n,/cancelPendingFxRackTransition\("Cancelled by emergency stop"\)/);
  assert.equal(protocol.operatorMessage("FX rack file: Disarm MAIN and STREAM; use a current native rack"),"FX rack file: Disarm MAIN and STREAM; use a current native rack");
  assert.equal(protocol.operatorMessage("FX rack file: Opening file dialog…"),"FX rack file: Opening file dialog…");
- assert.match(n,/if\(archived&&deactivate\)/);
+ assert.match(rackOperation,/archived=error\.isEmpty\(\)/);
+ assert.match(rackOperation,/if\(error\.isEmpty\(\)&&\(!save\|\|deactivate\)\)/);
+ assert.match(rackOperation,/if\(result\.accepted\)safe->retireStaleRoutedEditors\(\)/);
+ assert.doesNotMatch(rackOperation,/closeAllPluginEditors\(\)/);
  assert.match(n,/file=file\.withFileExtension\("\.arfx"\)/);
  assert.match(b,/notice\?\.error===true\|\|rackReceipt/);
 });

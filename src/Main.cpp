@@ -1885,6 +1885,27 @@ private:
         immersibEditorEpoch_=0;
 #endif
     }
+    void retireStaleRoutedEditors() {
+        // Guard borrowed VST parameter pointers when a native graph edit,
+        // device epoch change or Show recall retires the instance.
+        if(nativeOrbitLease_ && orbit_.active() &&
+           (!engine_.retainsRoutedFxEditor(nativeOrbitEpoch_,nativeOrbitLease_)))
+            stopOrbit();
+        if(routedEditorOwner_ &&
+           !engine_.retainsRoutedFxEditor(routedEditorEpoch_,routedEditorOwner_))
+            closePluginEditor();
+        // Reclaim every retired vendor HWND before the respective FX lease.
+        // This is message-thread O(open editors), never PCM callback work.
+        std::erase_if(additionalFxEditors_,[this](const auto& entry){
+            return !entry || !entry->owner ||
+                !engine_.retainsRoutedFxEditor(entry->epoch,entry->owner);
+        });
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        if(immersibEditorOwner_ &&
+           !engine_.retainsRoutedFxEditor(immersibEditorEpoch_,immersibEditorOwner_))
+            closeImmerSIBEditor();
+#endif
+    }
     void closeAllPluginEditors() noexcept {
         closePluginEditor();
         closeImmerSIBEditor();
@@ -6895,10 +6916,7 @@ private:
                             });
                             if(!result.accepted&&error.isEmpty())error=juce::String(result.error);
                             resumeFade();
-                            if(result.accepted){
-                                safe->stopOrbit();
-                                safe->closeAllPluginEditors();
-                            }
+                            if(result.accepted)safe->retireStaleRoutedEditors();
                             safe->emitApprovedNativeSnapshot();
                         }else if(deactivate)resumeFade();
                         const bool recovering=safe->autoMainEpoch_!=0||safe->pendingVendorStream_.has_value();
@@ -13212,25 +13230,7 @@ private:
             recordAudioPathTransition(state);
             diagnostics_.record ("AUDIO_HEALTH", juce::JSON::toString (makeAudioHealthRecord (state,evidence.memory), true));
         }
-        // Guard borrowed VST parameter pointers when a native graph edit,
-        // device epoch change or Show recall retires the instance.
-        if(nativeOrbitLease_ && orbit_.active() &&
-           (!engine_.retainsRoutedFxEditor(nativeOrbitEpoch_,nativeOrbitLease_)))
-            stopOrbit();
-        if(routedEditorOwner_ &&
-           !engine_.retainsRoutedFxEditor(routedEditorEpoch_,routedEditorOwner_))
-            closePluginEditor();
-        // Reclaim every retired vendor HWND before the respective FX lease.
-        // This is message-thread O(open editors), never PCM callback work.
-        std::erase_if(additionalFxEditors_,[this](const auto& entry){
-            return !entry || !entry->owner ||
-                !engine_.retainsRoutedFxEditor(entry->epoch,entry->owner);
-        });
-#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
-        if(immersibEditorOwner_ &&
-           !engine_.retainsRoutedFxEditor(immersibEditorEpoch_,immersibEditorOwner_))
-            closeImmerSIBEditor();
-#endif
+        retireStaleRoutedEditors();
         annotateRecovery (state);
         state.getDynamicObject()->setProperty("mixerSessionStatus",mixerSessionStatus_);
         if(mixerSessionError_.isNotEmpty())
