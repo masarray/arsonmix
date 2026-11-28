@@ -267,7 +267,7 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #playerToggle[aria-expanded="true"]{color:#8cf0d0;border-color:#358c78}
 /* ArSon Player V4.2: approved local visual master, one scoped owner. */
 #arsonPlayer[hidden],#arsonPlayer [hidden],#playerMini[hidden]{display:none!important}
-#arsonPlayer{--ap-radius:14px;--ap-rim:1px;--ap-inner-radius:calc(var(--ap-radius) - var(--ap-rim));--ap-bg:#151b20;--ap-header:#20272d;--ap-recess:#10161a;--ap-border:#303a43;--ap-ink:#e4e9ee;--ap-muted:#9badb8;--ap-mint:#67d7c1;--ap-blue:#a5bed2;position:fixed;z-index:90;top:75px;right:12px;bottom:52px;width:min(410px,calc(100vw - 24px));display:flex;flex-direction:column;isolation:isolate;background:linear-gradient(180deg,#25343e 0%,#1a2730 18%,#141e26 56%,#10171d 100%) padding-box;border:var(--ap-rim) solid #a9bbc4b8;border-radius:var(--ap-radius);overflow:hidden;box-shadow:0 1px 0 #8197a3,0 3px 0 #101b23,0 5px 8px #0007,0 18px 55px #0009;font:400 13px/1.4 "ArSonMix Inter",Inter,"Segoe UI",Arial,sans-serif;color:var(--ap-ink);color-scheme:dark}
+#arsonPlayer{--ap-radius:14px;--ap-rim:1px;--ap-inner-radius:calc(var(--ap-radius) - var(--ap-rim));--ap-bg:#151b20;--ap-header:#20272d;--ap-recess:#10161a;--ap-border:#303a43;--ap-ink:#e4e9ee;--ap-muted:#9badb8;--ap-mint:#67d7c1;--ap-blue:#a5bed2;position:fixed;z-index:90;top:75px;right:12px;bottom:52px;box-sizing:border-box;width:min(410px,calc(100vw - 24px));max-height:calc(100vh - 24px);display:flex;flex-direction:column;isolation:isolate;background:linear-gradient(180deg,#25343e 0%,#1a2730 18%,#141e26 56%,#10171d 100%) padding-box;border:var(--ap-rim) solid #a9bbc4b8;border-radius:var(--ap-radius);overflow:hidden;box-shadow:0 1px 0 #8197a3,0 3px 0 #101b23,0 5px 8px #0007,0 18px 55px #0009;font:400 13px/1.4 "ArSonMix Inter",Inter,"Segoe UI",Arial,sans-serif;color:var(--ap-ink);color-scheme:dark}
 #arsonPlayer *{box-sizing:border-box}
 /* A real front-glass paint order: chassis -> isolated scrolling screen ->
    in-device popup -> one stationary optical coat.  The coat never receives
@@ -405,7 +405,10 @@ body #mxNativeSonKu #skPower:not([data-fx-state="on"]):not(:active){
 #playerMini #playerMiniTitle,#playerMini #playerMiniTime{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #playerMini #playerMiniTime{font-size:9px;color:#a0b3bf}
 #playerMini :is(.ap-mini-play,.ap-mini-next){flex:none}
-@media(max-width:640px){#arsonPlayer{right:6px;left:6px;top:56px;bottom:12px;width:auto;--ap-radius:11px}#playerMini{flex:0 0 150px}}
+/* Keep the explicit responsive border-box width when the shared window owner
+   releases the right anchor on first open or drag. Auto width would become
+   shrink-to-fit, with content-dependent/fractional chassis geometry. */
+@media(max-width:640px){#arsonPlayer{right:12px;left:12px;top:56px;bottom:12px;--ap-radius:11px}#playerMini{flex:0 0 150px}}
 @media(max-width:440px){#arsonPlayer .ap-hero{padding-inline:10px}#arsonPlayer .ap-nowhead{grid-template-columns:62px minmax(0,1fr) auto;gap:8px}#arsonPlayer .ap-trackmark{width:62px;height:62px}#arsonPlayer .ap-columns{grid-template-columns:21px minmax(0,1fr) 30px 35px 24px}#arsonPlayer .ap-songrow .ap-song{grid-template-columns:21px minmax(0,1fr) 30px 35px}#arsonPlayer .ap-view-switch{gap:8px}}
 @media(max-height:700px){#arsonPlayer .ap-hero{padding-top:7px;padding-bottom:10px}#arsonPlayer .ap-nowhead{min-height:72px;margin-bottom:8px}#arsonPlayer .ap-waveform{height:54px}#arsonPlayer .ap-time{margin:5px 0 4px}#arsonPlayer .ap-transport{margin-bottom:5px}#arsonPlayer .ap-pitchtempo{height:58px}#arsonPlayer .ap-statusbar{margin:7px 0 6px}#arsonPlayer .ap-upnext{min-height:46px}#arsonPlayer .ap-listhead{padding-top:6px}}
 

@@ -63,6 +63,11 @@ def main():
             panel.wait_for(state="visible")
             page.evaluate("document.fonts.ready")
             box=panel.bounding_box();assert box and box["x"]>=0 and box["x"]+box["width"]<=width+2,(width,box)
+            # First-open centering must not change the authored responsive
+            # width to shrink-to-fit when the right anchor is released.
+            assert box["width"]==min(410,width-24), (width,box)
+            assert abs(box["x"]-(width-box["width"])/2)<=0.5,(width,box)
+            print("PLAYER_RESPONSIVE_BORDER_BOX_PASS",width,box,flush=True)
             play=page.locator("#playerPlay")
             geometry=play.evaluate("e=>({w:e.offsetWidth,h:e.offsetHeight,r:getComputedStyle(e).borderRadius})")
             assert geometry==dict(w=32,h=32,r="50%"),geometry
@@ -452,6 +457,14 @@ def main():
             assert panel.is_hidden() and mini.is_visible()
             page.locator("#playerMiniExpand").click()
             assert panel.is_visible() and mini.is_hidden()
+            if width==1366:
+                # Resize a centered but never dragged workspace. Its native
+                # transport and modeless lifetime must not depend on viewport.
+                page.set_viewport_size({"width":390,"height":540})
+                page.wait_for_function("""()=>{const r=document.getElementById('arsonPlayer').getBoundingClientRect();
+                    return r.width===366&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}""")
+                assert panel.is_visible()
+                print("PLAYER_CENTERED_RESIZE_CLAMP_PASS",panel.bounding_box(),flush=True)
             assert not errors,errors
             page.close()
             print("PASS Player assembled GUI",width,height,scale,flush=True)

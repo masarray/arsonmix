@@ -190,7 +190,9 @@
   window.addEventListener('pointercancel',finish);
   window.addEventListener('blur',()=>finish());
   window.addEventListener('resize',()=>{
-    document.querySelectorAll('.armix-floating-moved').forEach(panel=>{
+    // The centred Player is already a single-anchor floating window,
+    // even if it has never been dragged. Keep it inside a resized viewport.
+    document.querySelectorAll('.armix-floating-moved,#arsonPlayer[data-armix-centered-once="true"]').forEach(panel=>{
       if(isVisible(panel)){
         const rect=panel.getBoundingClientRect();
         place(panel,rect.left,rect.top);
