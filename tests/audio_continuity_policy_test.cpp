@@ -31,6 +31,22 @@ int main() {
     output.deviceRecovered();
     assert(!output.desired()); // cannot silently undo explicit MUTE
 
+    // Capture completion must not reopen MAIN after an explicit STOP,
+    // changed graph/device or physical interruption. Temporary mute itself
+    // deliberately leaves the accepted desire unchanged.
+    output.operatorRequested(true);
+    assert(output.mayResumeTemporaryMute(true,true,false));
+    assert(!output.mayResumeTemporaryMute(false,true,false));
+    assert(!output.mayResumeTemporaryMute(true,false,false));
+    assert(!output.mayResumeTemporaryMute(true,true,true));
+    output.deviceInterrupted();
+    assert(!output.mayResumeTemporaryMute(true,true,false));
+    output.deviceRecovered();
+    output.operatorRequested(false);
+    assert(!output.mayResumeTemporaryMute(true,true,false));
+    output.operatorRequested(true);
+    assert(output.mayResumeTemporaryMute(true,true,false));
+
     AudioContinuityRetry retry;
     retry.fault(100);
     const auto generation=retry.generation();

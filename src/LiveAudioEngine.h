@@ -539,6 +539,11 @@ public:
     }
     bool isMonitorEnabled() const noexcept { return monitor_.load(std::memory_order_acquire); }
     bool wantsMainContinuation() const noexcept { return mainOutputIntent_.desired(); }
+    bool mayResumeCapturedMain(bool wasArmed,std::uint64_t epoch,
+                               std::uint64_t revision,bool operatorMuted) const noexcept {
+        return mainOutputIntent_.mayResumeTemporaryMute(wasArmed,
+            epoch==dryRoutingLabEpoch() && revision==outputArmRevision(),operatorMuted);
+    }
     bool mainInterruptedByDevice() const noexcept { return mainOutputIntent_.interrupted(); }
     std::uint64_t directCallbackCount() const noexcept {
         return callbackCount_.load(std::memory_order_relaxed);
@@ -1987,9 +1992,23 @@ public:
             return "Audio device unavailable for session capture";
         if(retained && !acceptedMixerBinding_)
             return "Retained mixer device identity unavailable";
+        const auto captureEpoch=dryRoutingLabEpoch();
         auto error=dryRoutingLab_.captureNativeMixerSession(document,states,retained);
         if(error.isNotEmpty())return error;
-        document.binding=retained?*acceptedMixerBinding_:readMixerBinding(*device);
+        // Vendor state capture may re-enter CONTROL or span a driver STOP.
+        // Never dereference the pre-capture device pointer after that call.
+        if(captureEpoch!=dryRoutingLabEpoch())
+            return "Audio device changed during session capture";
+        if(retained){
+            if(!acceptedMixerBinding_ || !dryRoutingLab_.hasRetainedNativeSession())
+                return "Retained mixer changed during session capture";
+            document.binding=*acceptedMixerBinding_;
+        }else{
+            auto* current=deviceManager_.getCurrentAudioDevice();
+            if(!current || current!=device || !current->isOpen() || !directFence_.permitted())
+                return "Audio device changed during session capture";
+            document.binding=readMixerBinding(*current);
+        }
         document.masterGain=masterGain_.load(std::memory_order_acquire);
         document.masterMute=masterMute_.load(std::memory_order_acquire);
         document.masterMono=masterMono_.load(std::memory_order_acquire);

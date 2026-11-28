@@ -298,3 +298,20 @@ test('FX file transition preserves the operator gates and the callback verifies 
  assert.doesNotMatch(choose,/operatorOutputMuted_\s*=|setMonitorEnabled\(/);
  assert.match(choose,/rackArchive\(\[file,rack\]\{return Archive::save/);
 });
+
+
+test('session capture cannot reopen MAIN after a newer operator STOP or device/graph change',()=>{
+ const s=main.split('juce::String saveMixerSession(bool resumeMain')[1].split('const auto pendingId=doc.id;')[0];
+ assert.match(s,/Purpose::mixerSessionCapture/);
+ assert.ok(s.indexOf('Purpose::mixerSessionCapture')<s.indexOf('engine_.captureNativeMixerSession(doc,states)'));
+ assert.match(s,/const auto revision=engine_\.outputArmRevision\(\)/);
+ assert.match(s,/mayResumeCapturedMain\(monitoring,epoch,revision,operatorOutputMuted_\)/);
+ assert.match(s,/if\(mayResume\(\) && engine_\.liveOutputArmFault\(false\)\.isEmpty\(\) && mayResume\(\)\)/);
+ assert.match(policy,/return wasArmed && sameRoute && !operatorMuted && desired\(\) && !interrupted\(\)/);
+ const capture=engine.split('juce::String captureNativeMixerSession(')[1].split('struct MixerBindingInspection')[0];
+ assert.match(capture,/captureEpoch!=dryRoutingLabEpoch\(\)/);
+ assert.match(capture,/current=deviceManager_\.getCurrentAudioDevice\(\)/);
+ assert.match(capture,/current!=device \|\| !current->isOpen\(\)/);
+ assert.match(capture,/document\.binding=readMixerBinding\(\*current\)/);
+ assert.doesNotMatch(capture,/readMixerBinding\(\*device\)/);
+});
