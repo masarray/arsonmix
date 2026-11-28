@@ -118,7 +118,9 @@ class ApprovedNativeGuiBundleTests(unittest.TestCase):
             self.assertIn("approved-native-context-menu.js", native)
             context_menu = (out / "assets/approved-native-context-menu.js").read_text("utf-8")
             self.assertIn('document.addEventListener("contextmenu"', context_menu)
-            self.assertIn("requestDeleteTrack", context_menu)
+            self.assertIn("function deleteStrip(track)", context_menu)
+            self.assertIn("hooks.requestDeleteStrip?.(track)", context_menu)
+            self.assertIn("hooks.canDeleteStrip", context_menu)
             self.assertIn("orbitAction", context_menu)
             # H1 uses the SAME native-only /preview/ context handler. Never
             # intercept vendor HWNDs or implement a JS-only global shortcut.
