@@ -7441,20 +7441,15 @@
     consumeWire(ops,retries=0) {
       if (!connected)return false;
       if(logicalView) {
-        if(!Array.isArray(ops)||ops.length!==1){
-          nativeToast("One WIRE edit at a time");return true;
-        }
-        const op=ops[0];
-        if(op.type==="GAIN"){
+        if(Array.isArray(ops)&&ops.length===1&&ops[0]?.type==="GAIN"){
+          const op=ops[0];
           const edge=wireVM.parallelEdge(logicalView.graph,nativeByUiId.get(op.sourceId),wireByUiId.get(op.edgeId));
           if(!queueLogicalSendGain(edge,Number(op.levelDb),true))status("Select a saved parallel SEND");
           return true;
         }
-        const from=nativeByUiId.get(op.sourceId);
-        const to=op.destId===undefined?null:nativeByUiId.get(op.destId);
-        const edgeId=wireByUiId.get(op.edgeId);
-        if(!from)return true;
-        if(op.type==="MODE"){
+        if(Array.isArray(ops)&&ops.length===1&&ops[0]?.type==="MODE"){
+          const op=ops[0],from=nativeByUiId.get(op.sourceId);
+          const edgeId=wireByUiId.get(op.edgeId);
           // The same WIRE inspector gesture must remain available before
           // binding a physical interface. Exact native EdgeId/readback,
           // not a reference-renderer-only toggle or a fabricated PCM ACK.
@@ -7469,18 +7464,13 @@
           if(!ack.ok)nativeToast("PRE/POST not saved · "+ack.error);
           return true;
         }
-        const primary=(op.type==="ROUTE_ONLY" ||
-          (op.type==="CONNECT"&&op.destId===scope?.master?.id&&
-           op.mode!=="send"));
-        const kind=primary?"ROUTE_ONLY":op.type;
-        if(["CONNECT","ROUTE_ONLY","RETARGET"].includes(kind)&&!to)return true;
-        if(["REMOVE","RETARGET"].includes(kind)&&!edgeId)return true;
-        const change={op:kind,from,...(to?{to}:{}),
-          ...(edgeId?{edgeId}:{}),
-          ...(kind==="CONNECT"||kind==="ROUTE_ONLY"?
-            {gainLinear:kind==="ROUTE_ONLY"?1:
-              Math.pow(10,Math.max(-60,Math.min(6,Number(op.levelDb??0)))/20)}:{})};
-        if(!logicalIntent("WIRE_TRANSACTION",from,{changes:[change]}).ok)
+        const translated=wireVM.logicalWireTransaction(ops,nativeByUiId,wireByUiId,scope?.master?.id);
+        if(!translated.ok){
+          nativeToast("WIRE not saved · invalid or stale routing gesture");
+          return true;
+        }
+        const {source,changes}=translated;
+        if(!logicalIntent("WIRE_TRANSACTION",source,{changes}).ok)
           nativeToast("WIRE not saved · previous routing retained");
         return true;
       }

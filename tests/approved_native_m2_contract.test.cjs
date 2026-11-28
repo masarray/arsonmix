@@ -8722,3 +8722,38 @@ test("Catalog transaction rejection is terminal, retryable and preserves real sc
  assert.equal(el.textContent,"Scan finished · 0 found");
  state.open();assert.equal(calls.length,3); // legitimate zero-result scan remains terminal
 });
+
+
+test("Offline WIRE shares native translation, compacts a draft SEND and keeps canonical taps",()=>{
+ const ids=new Map([[1,"9007199254740993"],[2,"9007199254740994"],[3,"9007199254740995"]]);
+ const edges=new Map([[41,"9007199254741000"]]);
+ const connect={type:"CONNECT",sourceId:1,destId:2,mode:"send"};
+ const gain={type:"GAIN",sourceId:1,edgeId:99,levelDb:-12};
+ const translate=ops=>wireVM.logicalWireTransaction(ops,ids,edges,3);
+ assert.deepEqual(translate([connect,gain]),wireVM.nativeTransaction([{...connect,levelDb:-12}],ids,edges));
+ assert.equal(translate([connect,{...gain,edgeId:41}]).ok,false);
+ assert.equal(translate([connect,{...gain,sourceId:2}]).ok,false);
+ assert.equal(translate([{...connect,levelDb:NaN}]).ok,false);
+ assert.equal(translate([{...connect,levelDb:"-12"}]).ok,false);
+ assert.equal(translate([{...connect,edgeId:99}]).ok,false);
+ assert.equal(translate([{...connect,destId:999}]).ok,false);
+ assert.equal(translate([null]).ok,false);
+ assert.equal(translate([{...connect,destId:3,mode:"postFader"}]).changes[0].op,"ROUTE_ONLY");
+ assert.equal(translate([{...connect,destId:3}]).changes[0].op,"CONNECT");
+ assert.equal(translate([{...connect,mode:"routeOnly",levelDb:-12}]).changes[0].gainLinear,1);
+ const edge={edgeId:"9007199254741000",from:ids.get(1),to:ids.get(2),enabled:true,
+   primaryOutput:false,tap:"SPLIT_PRE",tapStage:"PRE_FADER"};
+ const offline={logical:true,readOnly:false,graph:{mainChannelId:ids.get(3),edges:[edge],
+   capabilities:{supportedOps:["SET_SEND_TAP"]}}};
+ assert.equal(wireVM.channelTapEdge(offline,{sourceId:ids.get(1)}),edge);
+ assert.equal(wireVM.channelTapEdge({...offline,readOnly:true},{sourceId:ids.get(1)}),null);
+ assert.equal(wireVM.channelTapEdge({...offline,graph:{...offline.graph,edges:[{...edge,tapStage:"PRE_FX"}]}},{sourceId:ids.get(1)}),null);
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("consumeWire(ops,retries=0)");
+ const end=source.indexOf("// The inspector's legacy MODE gesture",start);
+ assert.ok(start>=0&&end>start);
+ const body=source.slice(start,end);
+ assert.match(body,/wireVM\.logicalWireTransaction\(ops,nativeByUiId,wireByUiId,scope\?\.master\?\.id\)/);
+ assert.match(body,/logicalIntent\("WIRE_TRANSACTION",source,\{changes\}\)/);
+ assert.doesNotMatch(body,/Math\.pow\(/);
+});
