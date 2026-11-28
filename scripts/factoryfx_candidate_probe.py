@@ -117,7 +117,12 @@ def inspect_candidate(p, work, host=None):
         receipt = work / (pid + "-host.json")
         subprocess.run([str(host), str(target), str(receipt)], check=True, timeout=90)
         result["hostReceipt"] = json.loads(receipt.read_text(encoding="utf-8"))
-        result["hostStatus"] = "smoke-passed-not-full-qualification"
+        actual_cid = result["hostReceipt"].get("runtimeClassId")
+        if not bundle.HEX(actual_cid, 32):
+            raise ValueError("actual runtime VST3 class ID missing")
+        if classes and not any(c["cid"].upper() == actual_cid.upper() for c in classes):
+            raise ValueError("runtime VST3 class differs from moduleinfo")
+        result["hostStatus"] = "native-probe-passed-not-physical-qualification"
     return result
 
 def main():
