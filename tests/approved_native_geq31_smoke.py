@@ -66,11 +66,11 @@ def main():
             assert power.is_enabled(),width
             assert power.get_attribute("data-fx-state")=="on",width
             assert power.get_attribute("aria-pressed")=="true"
-            assert power.evaluate("e=>getComputedStyle(e).color")=="rgb(118, 240, 185)"
+            assert power.evaluate("e=>getComputedStyle(e).color")=="rgb(0, 186, 221)"
             power.click()
             assert power.get_attribute("data-fx-state")=="off",width
             assert power.get_attribute("aria-pressed")=="false"
-            assert power.evaluate("e=>getComputedStyle(e).color")=="rgb(233, 155, 159)"
+            assert power.evaluate("e=>getComputedStyle(e).color")=="rgb(155, 168, 174)"
             assert panel.locator(".mx-geq31-bypass-overlay.is-on").count()==1
             power.click()
             assert power.get_attribute("data-fx-state")=="on",width

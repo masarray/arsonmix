@@ -45,6 +45,8 @@ def apply_rounded_micro_keys(assets: Path) -> None:
     def palette(state="off"):
         if state == "on":
             return '--fx-led:#00b6d5;--fx-led-bright:#00c7e6;--fx-led-mid:#078ba5;--fx-led-dim:#164b55;--fx-ink:#00badd;'
+        if state == "delete":
+            return '--fx-led:#e83c48;--fx-led-bright:#ff6971;--fx-led-mid:#a52232;--fx-led-dim:#4c1920;--fx-ink:#ff737b;'
         if state == "rack-off":
             return '--fx-led:#c38b42;--fx-led-bright:#e7b86e;--fx-led-mid:#93602d;--fx-led-dim:#513b27;--fx-ink:#f0c483;'
         return '--fx-led:#34393b;--fx-led-bright:#42494c;--fx-led-mid:#292e30;--fx-led-dim:#24282a;--fx-ink:#9ba8ae;'
@@ -59,7 +61,7 @@ def apply_rounded_micro_keys(assets: Path) -> None:
 {selector}:active:not(:disabled)::after{{transform:translate(-50%,-50%) scale(.96);}}
 '''
     # Keep the existing ::before hit envelope and accessible SVG glyph.
-    # Only FX power loses the old sprite; phase, format and remove are untouched.
+    # FX power and remove share the face; phase and format retain their sprites.
     global_key = rack_key.replace('.console-body', '.console-body.global-fx-bypassed')
     css += '\n/* Recessed FX power: original 21x17 hit box, circular 17px face. */\n'
     css += f'{rack_key}{{{palette()}background:transparent;box-shadow:none;isolation:isolate;color:var(--fx-ink);}}\n'
@@ -67,6 +69,14 @@ def apply_rounded_micro_keys(assets: Path) -> None:
     css += f'{global_key}{{{palette()}color:var(--fx-ink);background:transparent;}}\n'
     css += cap(rack_key, 17)
     css += f'{rack_key} svg.mi-svg{{width:9px;height:9px;}}\n'
+    # Momentary destructive action: neutral socket at rest, red LED only
+    # during the existing native button press. Never use aria-pressed or
+    # change the SVG path, hit envelope, click action, or global FX state.
+    remove_key = '.app .console-body .strip button.mx-util-key[data-util-kind="fx-remove"]'
+    css += f'{remove_key}{{{palette()}--fx-ink:#c3777d;background:transparent;box-shadow:none;isolation:isolate;color:var(--fx-ink);}}\n'
+    css += f'{remove_key}:active:not(:disabled){{{palette("delete")}background:transparent;border:0;box-shadow:none;color:var(--fx-ink);}}\n'
+    css += cap(remove_key, 17)
+    css += f'{remove_key} svg.mi-svg{{width:10px;height:10px;}}\n'
     path.write_text(css, encoding="utf-8")
 
     # Replace only the shared editor power chrome in the composed owner.

@@ -355,7 +355,7 @@ def main():
                 assert power.get_attribute("data-fx-state")=="on"
                 assert power.get_attribute("aria-pressed")=="true"
                 assert not power.is_disabled()
-                assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(118, 240, 185)"
+                assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(0, 186, 221)"
                 page.locator('[data-guide-mode="1"]').click()
                 edit=last_action(page,"nativeHarmonySetSettings")
                 assert edit["settings"]["guideMode"]==1
@@ -549,7 +549,7 @@ def main():
                 page.wait_for_function(
                     "()=>document.querySelector('#mxHPower')?.dataset.fxState==='off'")
                 assert power.get_attribute("aria-pressed")=="false"
-                assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(233, 155, 159)"
+                assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(155, 168, 174)"
                 state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
                 state["graph"]["channels"][0]["fxRackBypassed"]=True
                 emit(page,"arMixConsoleSnapshot",state)
