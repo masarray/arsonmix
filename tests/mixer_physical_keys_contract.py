@@ -64,7 +64,10 @@ class MixerPhysicalKeysTests(unittest.TestCase):
     def test_native_cue_fails_closed(self):
         self.assertIn("PFL requires a separate MONITOR L/R pair", BRIDGE)
         self.assertIn('PFL unavailable · independent native MONITOR L/R not admitted', HTML)
-        self.assertIn("(isNative?'disabled':'')", HTML)
+        self.assertIn("(isNative&&!t.nativePflAvailable?'disabled':'')", HTML)
+        self.assertIn("Boolean(isNative?t.nativePflApplied:t.cue)", HTML)
+        self.assertIn("view.settled", BRIDGE)
+        self.assertIn("arMixNativePflAck", BRIDGE)
 
 
 if __name__ == "__main__":

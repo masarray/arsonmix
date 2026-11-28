@@ -29,7 +29,8 @@ public:
         while(!state_.compare_exchange_weak(current,nextGeneration(current),std::memory_order_acq_rel)){}
     }
     Block process(float* const* outputs,int channels,float* extraL,float* extraR,
-                  int frames,double rate,bool rendered,bool audible) noexcept {
+                  int frames,double rate,bool rendered,bool audible,
+                  float* programmeL=nullptr,float* programmeR=nullptr) noexcept {
         const auto token=state_.load(std::memory_order_acquire);
         const int phase=phaseOf(token);
         const auto generation=token&~phaseMask;
@@ -45,6 +46,8 @@ public:
             if(outputs)for(int c=0;c<channels;++c)if(outputs[c])outputs[c][i]*=gain_;
             if(extraL)extraL[i]*=gain_;
             if(extraR)extraR[i]*=gain_;
+            if(programmeL)programmeL[i]*=gain_;
+            if(programmeR)programmeR[i]*=gain_;
         }
         return {phase,(phase==fadeOut&&gain_<=0.f)||(phase==fadeIn&&audible&&gain_>=1.f),token};
     }

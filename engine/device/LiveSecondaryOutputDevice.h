@@ -2,6 +2,7 @@
 #pragma once
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "AdaptiveClockBridge.h"
+#include "AudioContinuityPolicy.h"
 #include "ClockBridgeSizing.h"
 #include "WasapiEndpointIdentityGuard.h"
 #include <atomic>
@@ -22,37 +23,43 @@ class LiveSecondaryOutputDevice final {
             if(!d || d->getCurrentSampleRate()!=owner.renderRate_ ||
                !d->getActiveInputChannels().isZero() ||
                d->getActiveOutputChannels().countNumberOfSetBits()!=2)
-                owner.fault_.store(true,std::memory_order_release);
+                owner.markFault();
         }
         void audioDeviceStopped() override {
-            if(owner.ready_.load(std::memory_order_acquire))
-                owner.fault_.store(true,std::memory_order_release);
+            // ready is temporarily false during an ASRC reset. That is not
+            // an intentional device STOP and cannot mask an unexpected loss.
+            if(owner.expectedRunning_.load(std::memory_order_acquire))
+                owner.markFault();
         }
         void audioDeviceError(const juce::String&) override {
-            owner.fault_.store(true,std::memory_order_release);
+            owner.markFault();
         }
         void audioDeviceIOCallbackWithContext(const float* const*,int,
                 float* const* output,int channels,int frames,
                 const juce::AudioIODeviceCallbackContext&) override {
             if(frames<=0)return;
+            const auto ticket=owner.captureProducerTicket();
             for(int i=0;i<channels;++i)
                 if(output && output[i])
                     juce::FloatVectorOperations::clear(output[i],frames);
             if(!output || channels!=2 || !output[0] || !output[1]){
-                owner.fault_.store(true,std::memory_order_release);
+                owner.markFault();
                 return;
             }
-            if(!owner.ready_.load(std::memory_order_acquire) ||
-               !owner.armed_.load(std::memory_order_acquire) ||
-               owner.fault_.load(std::memory_order_acquire))return;
-            // CONSUMER lease: a control-thread REARM may reset ASRC state
-            // only when neither callback accesses its ring/FIR cursor.
-            owner.consumers_.fetch_add(1,std::memory_order_acq_rel);
-            if(owner.ready_.load(std::memory_order_acquire) &&
-               owner.armed_.load(std::memory_order_acquire) &&
-               !owner.fault_.load(std::memory_order_acquire))
+            if(!ticket)return;
+            // SC reservation precedes final generation validation. The
+            // CONTROL reset sees every reader that could still use the ring.
+            owner.consumers_.fetch_add(1);
+            if(owner.ticketValid(ticket)){
                 owner.bridge_.pull(output,2,frames);
-            owner.consumers_.fetch_sub(1,std::memory_order_release);
+                // A STOP/fault racing the pull cannot leave old audio in
+                // this callback's destination after the gate was revoked.
+                if(!owner.ticketValid(ticket)){
+                    juce::FloatVectorOperations::clear(output[0],frames);
+                    juce::FloatVectorOperations::clear(output[1],frames);
+                }
+            }
+            owner.consumers_.fetch_sub(1);
         }
     };
 public:
@@ -113,6 +120,7 @@ public:
         renderRate_=rate;targetMs_=sizing.targetMs;
         fault_.store(false,std::memory_order_release);
         ready_.store(true,std::memory_order_release);
+        expectedRunning_.store(true,std::memory_order_release);
         device->start(&render_);
         if(!device->isPlaying()||faulted()){
             stop();return "Selected playback endpoint could not start";
@@ -121,67 +129,90 @@ public:
     }
 
     void stop() {
-        armed_.store(false,std::memory_order_release);
+        admission_.revoke();
+        expectedRunning_.store(false,std::memory_order_release);
         ready_.store(false,std::memory_order_release);
-        // Wait on CONTROL, never on the audio callback. The producer's short
-        // refcount gate ensures no concurrent push while bridge is reclaimed.
-        while(publishers_.load(std::memory_order_acquire)!=0)
+        // Wait on CONTROL, never on the audio callback. Reservations and
+        // revocation share an SC order, including late old-generation work.
+        while(publishers_.load()!=0)
             std::this_thread::yield();
+        substitutedFrames_.store(0,std::memory_order_relaxed);
         if(device_){device_->stop();device_->close();device_.reset();}
         type_.reset();
         name_.clear();endpointId_.clear();endpointHash_.clear();targetMs_=renderRate_=0;
         fault_.store(false,std::memory_order_release);
     }
     bool arm(bool requested) {
-        if(!requested) {
-            armed_.store(false,std::memory_order_release);
-            return true;
-        }
+        if(!requested) {disarm();return true;}
         if(!ready() || faulted())return false;
-        // Explicit re-arm is a hard session boundary. Merely pausing the
-        // SPSC cursors would replay stale live PCM after rearming.
-        // CONTROL thread closes both gates; callback readers use leases.
-        armed_.store(false,std::memory_order_release);
+        // Explicit re-arm is a new PCM generation, not merely a bool. Old
+        // primary DSP blocks and consumer callbacks cannot enter the reset ring.
+        const auto ticket=admission_.beginRearm();
         ready_.store(false,std::memory_order_release);
-        while(publishers_.load(std::memory_order_acquire)!=0 ||
-              consumers_.load(std::memory_order_acquire)!=0)
-            std::this_thread::yield(); // never on either RT callback
+        while(publishers_.load()!=0 || consumers_.load()!=0)
+            std::this_thread::yield(); // CONTROL only
+        if(faulted())return false;
+        if(!admission_.current(ticket)){
+            ready_.store(true,std::memory_order_release);
+            return false; // an explicit STOP superseded this re-arm
+        }
         bridge_.resetStopped(); // ONLY when both callbacks are quiescent
+        substitutedFrames_.store(0,std::memory_order_relaxed);
         if(faulted())return false;
         ready_.store(true,std::memory_order_release);
-        armed_.store(true,std::memory_order_release);
-        return true;
+        return admission_.authorize(ticket)&&!faulted();
     }
-    void disarm() noexcept {armed_.store(false,std::memory_order_release);}
+    void disarm() noexcept {admission_.revoke();}
     // Any direct clock restart invalidates the prepared source-rate ASRC.
     // Reconnect explicitly; never resume using stale sample-rate assumptions.
     void invalidateSource() noexcept {
-        armed_.store(false,std::memory_order_release);
+        markFault();
         ready_.store(false,std::memory_order_release);
-        fault_.store(true,std::memory_order_release);
     }
     bool ready() const noexcept {return ready_.load(std::memory_order_acquire);}
     bool faulted() const noexcept {return fault_.load(std::memory_order_acquire);}
-    bool armed() const noexcept {
-        return armed_.load(std::memory_order_acquire) && ready() && !faulted();
+    using Ticket=SecondaryOutputGeneration::Ticket;
+    Ticket captureProducerTicket() const noexcept {
+        return ready()&&!faulted()?admission_.capture():0;
     }
-    void publish(const float* left,const float* right,int frames) noexcept {
-        publishers_.fetch_add(1,std::memory_order_acq_rel);
-        if(armed() && frames>0 && left && right) {
-            const float* pair[2]={left,right};
-            bridge_.push(pair,2,frames);
+    bool armed() const noexcept {return captureProducerTicket()!=0;}
+    void publish(Ticket ticket,const float* left,const float* right,int frames) noexcept {
+        if(!ticket||frames<=0)return;
+        publishers_.fetch_add(1);
+        if(ticketValid(ticket)) {
+            if(left&&right) {
+                const float* pair[2]={left,right};
+                bridge_.push(pair,2,frames);
+            } else {
+                // Never send a partial or stale pair. Keep the authorized
+                // sink clock fed for this real primary callback interval.
+                // Count substitutions separately from actual FIFO loss.
+                bridge_.pushSilence(frames);
+                substitutedFrames_.fetch_add(static_cast<std::uint64_t>(frames),
+                                             std::memory_order_relaxed);
+            }
         }
-        publishers_.fetch_sub(1,std::memory_order_release);
+        publishers_.fetch_sub(1);
     }
     juce::String name() const {return name_;}
     juce::String endpointHash() const {return endpointHash_;}
     std::wstring endpointId() const {return endpointId_;} // CONTROL only, never exported to GUI
     double rate() const noexcept{return renderRate_;}
     double targetMs() const noexcept{return targetMs_;}
+    std::uint64_t substitutedFrames() const noexcept {
+        return ready()?substitutedFrames_.load(std::memory_order_relaxed):0;
+    }
     AdaptiveClockBridge::Status status() const noexcept {
         return ready()?bridge_.status():AdaptiveClockBridge::Status{};
     }
 private:
+    void markFault() noexcept {
+        fault_.store(true,std::memory_order_release);
+        admission_.revoke();
+    }
+    bool ticketValid(Ticket ticket) const noexcept {
+        return ready()&&!faulted()&&admission_.valid(ticket);
+    }
     // Device must be destroyed before its owning backend type.
     std::unique_ptr<juce::AudioIODeviceType> type_;
     std::unique_ptr<juce::AudioIODevice> device_;
@@ -190,7 +221,9 @@ private:
      juce::String name_,endpointHash_;
     std::wstring endpointId_;
     double renderRate_=0,targetMs_=0;
-    std::atomic<bool> ready_{false},armed_{false},fault_{false};
+    std::atomic<bool> ready_{false},fault_{false},expectedRunning_{false};
+    SecondaryOutputGeneration admission_;
     std::atomic<unsigned> publishers_{0},consumers_{0};
+    std::atomic<std::uint64_t> substitutedFrames_{0};
 };
 } // namespace armix::device

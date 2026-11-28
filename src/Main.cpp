@@ -359,16 +359,21 @@ public:
             setUsingNativeTitleBar(false);
             setTitleBarButtonsRequired(0,false);
             setTitleBarHeight(0);
-        } else setUsingNativeTitleBar (true);
+        } else {
+            setUsingNativeTitleBar (true);
+            if(!editor->isResizable())
+                setTitleBarButtonsRequired(closeButton|minimiseButton,false);
+        }
         setIcon (approvedAppIcon());
+        // Configure host frame BEFORE installing content. JUCE fits the
+        // window to the plugin's requested client size, including borders.
+        // Never resize a fixed VST3 just to satisfy an arbitrary host minimum.
+        setResizable (editor->isResizable(), false);
         // The RAII owner notifies the processor before deletion, including
         // exceptions during construction. JUCE window is presentation only.
         setContentNonOwned (editor, true);
         editor->addMouseListener(this,true); // descendant JUCE controls, not a new editor owner
-        // Do not offer false host resizing for fixed-geometry built-in FX.
-        setResizable (editor->isResizable(), false);
-        if(reverbFaceplate)centreWithSize(getWidth(),getHeight());
-        else centreWithSize (juce::jmax (380, editor->getWidth()), juce::jmax (300, editor->getHeight()));
+        centreWithSize(getWidth(),getHeight());
         // A Win32-owned floating editor stays above THIS mixer, not every app.
         // Attach after bounds are set (JUCE 8 native owned-popup coordinates).
         (void) armix::ui::attachOwnedFloatingWindow (*this, mixer);
@@ -385,6 +390,9 @@ public:
                                         centreOnMixer && !everPresented_);
         everPresented_=true;
         if (!isVisible()) setVisible (true);
+        // Reopen after native style/peer changes with the current mixer
+        // HWND, not the owner captured by the first constructor call.
+        (void)armix::ui::attachOwnedFloatingWindow(*this,mixer_);
         toFront (true);
     }
     void mouseDown(const juce::MouseEvent& event) override {
@@ -724,6 +732,10 @@ public:
                   browser_.repaint();
                   if (onStartupStage_) onStartupStage_ (1);
               })
+              .withEventListener ("arMixAudioSetupPresented", [this] (juce::var) {
+                  // Presentation acknowledgement only; no device or audio mutation.
+                  startupAudioSetupPresented_=true;
+              })
               .withEventListener ("arMixChannelIdentitySet", [this] (juce::var args) {
                   handleNativeChannelIdentitySet(args);
               })
@@ -944,8 +956,10 @@ public:
             // workArea. JUCE kiosk instead takes the display totalArea and
             // suppresses taskbar/dock without a second topmost HWND.
             juce::Desktop::getInstance().setKioskModeComponent(this,false);
-            // Fullscreen only: retain shell coverage during owned FX focus.
-            setAlwaysOnTop(true);
+            // Kiosk owns fullscreen geometry; mixer must remain in the
+            // ordinary z-order band with its owned FX HWNDs. A topmost mixer
+            // can obscure non-topmost editors and steal the desktop.
+            setAlwaysOnTop(false);
         } else {
             juce::Desktop::getInstance().setKioskModeComponent(nullptr,false);
             setAlwaysOnTop(topmostBeforeOperatorFullscreen_);
@@ -954,6 +968,10 @@ public:
             setTitleBarHeight(ribbonChromeActive_ ? 0 : 31);
         }
         operatorFullscreen_=entering;
+        // Native fullscreen/kiosk transitions can change peer styles or
+        // handles. Repair existing visible popups without moving them,
+        // reopening hidden editors or transferring keyboard focus.
+        refreshVisibleFloatingOwners();
         publishRibbonWindowState();
         if(browser_.isShowing())browser_.resized();
         auto reply=std::make_unique<juce::DynamicObject>();
@@ -1431,6 +1449,11 @@ private:
         }
     }
     bool deviceSettingsDirty_ = false;
+    // Latched once from the machine profile before automatic discovery can
+    // persist a candidate. A deliberate manual setup also satisfies onboarding.
+    bool startupAudioSetupMissingProfile_=false;
+    bool startupAudioSetupFailed_=false;
+    bool startupAudioSetupPresented_=false;
     std::uint64_t deviceSettingsRetryAt_=0;
     // P0: last verified DIRECT WASAPI profile survives missing hardware;
     // never replace it with JUCE's incidental default after hotplug.
@@ -1693,7 +1716,8 @@ private:
                  "masterAnalysisState", "masterAnalysisDroppedFramesLifetime", "masterAnalysisSegmentRestartsLifetime",
                  "backendXrunCount", "backendXrunMeaning",
                  "renderUnderrunSource", "secondaryOutputUnderflow",
-                 "secondaryOutputOverflow", "secondaryOutputFrames"})
+                 "secondaryOutputOverflow", "secondaryOutputFrames",
+                 "secondaryOutputPriming", "secondaryOutputSubstitutedFrames"})
         {
             const auto value = state.getProperty (key, {});
             if (!value.isVoid())
@@ -1908,6 +1932,23 @@ private:
                 ui->synchronizeHostPower();
 #endif
     }
+    void refreshVisibleFloatingOwners() noexcept {
+        const auto repair=[this](juce::Component* window) noexcept {
+            if(window&&window->isVisible())
+                (void)armix::ui::attachOwnedFloatingWindow(*window,*this);
+        };
+        repair(editorWindow_.get());
+#if defined(ARMIX_IMMERSIB_RELEASE_CANDIDATE) && ARMIX_IMMERSIB_RELEASE_CANDIDATE
+        repair(immersibEditorWindow_.get());
+#endif
+        if(logicalVendorEditor_)repair(logicalVendorEditor_->window.get());
+        for(const auto& item:additionalFxEditors_)
+            if(item)repair(item->window.get());
+        for(const auto& item:floatingBuiltinFx_)
+            if(item)repair(item->window.get());
+        repair(playerWindow_.get());
+    }
+
     void closePluginEditor() noexcept {
         // Dispose the native UI BEFORE dropping the graph/processor lease.
         editorWindow_.reset();
@@ -3078,7 +3119,7 @@ private:
     void fireNativeHotkey(const armix::hotkey::Mapping& mapping) {
         if(mapping.operation=="PANIC_MUTE") {
             // PANIC is explicit user intent, unlike device stop/restart.
-            operatorOutputMuted_=true;
+            setOutputHoldReason("OPERATOR_STOP");
             pendingVendorStream_.reset();
             cancelSecondaryContinuity();
             cancelStartupSecondaryPreparation();
@@ -3212,11 +3253,19 @@ private:
         const auto rawSlot=request.getProperty("slot",{});
         const int slot=rawSlot.isInt()?static_cast<int>(rawSlot):-1;
         std::uint64_t channel=0,epoch=0,revision=0;
-        const bool identity=armix::console::approvedNativeId(
-                request.getProperty("channelId",{}),channel)&&
+        // An explicit workspace edit gesture can prepare the same detached
+        // document without pretending that a particular FX is being opened.
+        // It never bypasses retained identity, quiescence or recovery guards.
+        const auto workspaceOnlyValue=request.getProperty("workspaceOnly",false);
+        const bool workspaceOnly=workspaceOnlyValue.isBool()&&static_cast<bool>(workspaceOnlyValue);
+        const bool targetValid=workspaceOnly?
+            request.getProperty("channelId",{}).isVoid()&&rawSlot.isVoid()&&
+                request.getProperty("instanceId",{}).isVoid():
+            workspaceOnlyValue.isBool()&&armix::console::approvedNativeId(
+                request.getProperty("channelId",{}),channel)&&slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane;
+        const bool identity=targetValid&&
             armix::console::approvedNativeId(request.getProperty("deviceEpoch",{}),epoch)&&
             armix::console::approvedNativeId(request.getProperty("graphRevision",{}),revision)&&
-            slot>=0&&slot<LiveDryRoutingLab::maxFxPerLane&&
             engine_.hasRetainedNativeSession()&&
             !engine_.isGraphSwitchPending()&&!deviceApply_.busy()&&
             !nativeShowBusy_&&!studioBackupBusy_&&
@@ -3228,8 +3277,8 @@ private:
             device.getProperty("epoch",{}).toString()==juce::String(epoch)&&
             graph.getProperty("revision",{}).toString()==juce::String(revision)&&
             engine_.retainedNativeEpoch()!=0;
-        bool sameInsert=false;
-        if(identity) {
+        bool sameInsert=workspaceOnly&&identity;
+        if(identity&&!workspaceOnly) {
             const auto rows=graph.getProperty("channels",{});
             if(const auto* list=rows.getArray())for(const auto& row:*list) {
                 if(row.getProperty("id",{}).toString()!=juce::String(channel))continue;
@@ -3246,7 +3295,9 @@ private:
                 }
             }
         }
-        if(!identity||!sameInsert)error="Retained FX instance changed; refresh the rack";
+        if(!identity||!sameInsert)error=workspaceOnly?
+            "Retained mixer changed; review and retry offline edit":
+            "Retained FX instance changed; refresh the rack";
         else if(retainedOfflineFxActive_ &&
                 (retainedOfflineOwnerEpoch_!=engine_.retainedNativeEpoch() ||
                  retainedOfflineEpoch_!=epoch || retainedOfflineRevision_!=revision)) {
@@ -3461,7 +3512,7 @@ private:
             return emitMixerSessionAck("NEW_LIVE","Finish current operations and refresh the admitted mixer");
         // Explicit New Project is an operator-authorized stop, not a temporary
         // capture mute. Never resume the old output intent on failure.
-        autoMainEpoch_=0;operatorOutputMuted_=true;
+        autoMainEpoch_=0;setOutputHoldReason("NEW_SESSION");
         engine_.setMonitorEnabled(false);
         engine_.cancelAsioResetMonitorIntent();
         engine_.disconnectSecondaryOutput();
@@ -3559,7 +3610,7 @@ private:
             if(safe==nullptr || safe->sessionLifecycleShuttingDown_)return;
             if(error.isEmpty()){
                 safe->autoMainEpoch_=0;
-                safe->operatorOutputMuted_=true;
+                safe->setOutputHoldReason(reset?"IO_RESET":"NEW_SESSION");
                 safe->closeAllPluginEditors();
                 safe->stopOrbit();
                 if(!reset){
@@ -3642,6 +3693,7 @@ private:
             obj->setProperty("workspaceGeneration",juce::String(std::to_string(workspaceGeneration_)));
             obj->setProperty("retainedOfflineFxPending",retainedOfflineFxActive_);
             obj->setProperty("operatorOutputMuted",operatorOutputMuted_);
+            obj->setProperty("outputHoldReason",outputHoldReason_);
             obj->setProperty("channelAppearance",channelAppearance_.snapshot(accepted.getProperty("graph",{})));
             obj->setProperty("waitingAsioInputs",live.getProperty("waitingAsioInputs",0));
             obj->setProperty("externalOutputs",
@@ -3671,6 +3723,10 @@ private:
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
             obj->setProperty("physicalBusSecondaryArmed",engine_.secondaryArmed());
+            // Transient cue is never saved into a .smix or restored after an
+            // epoch/graph change. The button uses the callback receipt only.
+            if(authority=="CHANNEL_ID"&&!retainedOfflineFxActive_)
+                obj->setProperty("nativePfl",engine_.nativePflSnapshot());
             const bool streamReady=bool(live.getProperty("secondaryOutputReady",false))&&
                 !bool(live.getProperty("secondaryOutputFault",false));
             obj->setProperty("secondaryOutputFault",live.getProperty("secondaryOutputFault",false));
@@ -4337,7 +4393,14 @@ private:
     bool autoMainRequiresInput_=true;
     // Operator's explicit OUTPUT MUTE must survive later input/FX/EXT edits.
     // This control-thread intent is NOT a new callback gate or device lock.
+    // The existing hold gate remains authoritative for resume safety. Its
+    // provenance is committed together with the gate on CONTROL only.
     bool operatorOutputMuted_=false;
+    juce::String outputHoldReason_="NONE";
+    void setOutputHoldReason(const char* reason) {
+        operatorOutputMuted_=reason!=nullptr;
+        outputHoldReason_=reason!=nullptr?reason:"NONE";
+    }
     std::optional<std::uint64_t> autoMainCheckedRevision_;
     void serviceAutomaticMain() {
         if(vendorSafeRecoveryActive()){autoMainEpoch_=0;return;}
@@ -4379,7 +4442,8 @@ private:
         autoMainCheckedRevision_=revision;
         engine_.setMonitorEnabled(true);
         autoMainEpoch_=0;
-        diagnostics_.record("MAIN_AUTO_ENABLED","Verified device, input and MAIN output");
+        diagnostics_.record("MAIN_AUTO_ENABLED",requireInput?"Verified device, input and MAIN output":
+            "Verified device and authorized MAIN output; capture not required");
     }
 
     void requestAutomaticMain(bool requireInput=true) {
@@ -4553,7 +4617,9 @@ private:
             diagnostics_.record("CUSTOM_AUDIO_APPLY_FAIL",result.error+" | rollback="+
                 (restored?"RESTORED":"RECOVERY_REQUIRED")+" | "+
                 juce::String(static_cast<int>(monotonicMilliseconds()-start))+" ms");
-            if(restored&&previousMonitor)requestAutomaticMain();
+            // Rollback has restored the previously authorized endpoint. Its
+            // output intent is not conditional on a physical capture patch.
+            if(restored&&previousMonitor)requestAutomaticMain(false);
             if(restored)resumeStream(true);
             send(false,restored?(engine_.isMonitorEnabled()?"RESTORED_LIVE":"RESTORED_MUTED"):
                 "RECOVERY_REQUIRED",result.error);
@@ -4659,6 +4725,9 @@ private:
         return false;
     }
     bool rememberSecondaryPreference(const juce::String& name,const std::wstring& endpointId,bool prepare=true,bool autoResume=false) {
+        // Custom programme selection is session-local until .smix source
+        // persistence is introduced. Never auto-resume MAIN on next launch.
+        if(engine_.hasSecondaryProgrammeSource())autoResume=false;
         loadSecondaryPreference();
         if(name.isEmpty()||name.length()>240||endpointId.empty()||endpointId.size()>2048)return false;
         if(secondaryPreference_&&secondaryPreference_->name==name&&
@@ -4830,7 +4899,9 @@ private:
     // gates, native graph validation and retirement. Do not restart ASIO.
     template<class Edit>
     LiveDryRoutingLab::NativeBusResult withNativeTopologyContinuity(
-            std::uint64_t ep,std::uint64_t rev,bool startOnSuccess,Edit&& edit) {
+            std::uint64_t ep,std::uint64_t rev,bool startOnSuccess,Edit&& edit,
+            bool silentAddition=false,
+            const std::function<LiveDryRoutingLab::NativeBusResult()>& gatedFallback={}) {
         LiveDryRoutingLab::NativeBusResult result;
         result.error="Audio configuration is finishing";
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
@@ -4839,6 +4910,36 @@ private:
            nativeShowBusy_||studioBackupBusy_||ep!=engine_.dryRoutingLabEpoch()||
            !engine_.nativeTopologyMatches(ep,rev))return result;
         const auto beforeControlRevision=engine_.outputArmRevision();
+        if(silentAddition){
+            // Carry the same authorized endpoint lease, never issue a new
+            // ARM, reset FIFO, open a device or restart the primary clock.
+            const auto generation=secondaryRetry_.generation();
+            auto stream=engine_.captureSecondaryResumeIntent();
+            result=edit();
+            if(result.accepted&&engine_.dryRoutingLabEpoch()==ep&&
+               generation==secondaryRetry_.generation()&&!pendingSecondaryStop_){
+                const auto after=engine_.outputArmRevision();
+                if(pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
+                   pendingVendorStream_->revision==beforeControlRevision)
+                    pendingVendorStream_->revision=after;
+                if(secondaryContinuity_&&secondaryContinuity_->epoch==ep&&
+                   secondaryContinuity_->revision==beforeControlRevision)
+                    secondaryContinuity_->revision=after;
+                else if(stream&&engine_.secondarySourceMatches(*stream))
+                    secondaryContinuity_=SecondaryContinuity{*stream,ep,after};
+            }
+            // Only a native continuity-proof rejection may enter the ordinary
+            // gated path, under the SAME device-apply lease. Never retry an
+            // accepted edit, a stale revision, or an unrelated device fault.
+            const juce::String reason(result.error?result.error:"");
+            const bool continuityRejected=reason=="SILENT_REMOVE_CONTINUITY_NOT_VERIFIED"||
+                reason=="DELETE_REQUIRES_MUTED_OUTPUTS_PDC_OR_ROUTING"||
+                reason=="ACTIVE_REMOVE_CONTINUITY_NOT_VERIFIED";
+            if(result.accepted||!gatedFallback||!continuityRejected||
+               engine_.dryRoutingLabEpoch()!=ep||
+               engine_.outputArmRevision()!=beforeControlRevision||
+               !engine_.nativeTopologyMatches(ep,rev))return result;
+        }
         auto stream=engine_.captureSecondaryResumeIntent();
         if(!stream&&pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
            pendingVendorStream_->revision==beforeControlRevision)stream=pendingVendorStream_->intent;
@@ -4855,7 +4956,7 @@ private:
         const bool hardwareWanted=!operatorOutputMuted_&&
             (engine_.isMonitorEnabled()||engine_.wantsMainContinuation());
         if(stream)engine_.disarmSecondaryOutput();
-        result=edit();
+        result=gatedFallback?gatedFallback():edit();
         const auto acceptedRevision=engine_.outputArmRevision();
         if(generation==secondaryRetry_.generation()&&!pendingSecondaryStop_&&
            engine_.dryRoutingLabEpoch()==ep&&(result.accepted||
@@ -4962,7 +5063,7 @@ private:
                         static_cast<std::uint64_t>(monotonicMilliseconds())+5000,resumeMain};
                 } else if(resumeMain||stream) {
                     // Failure stays safely muted; never guess a destination.
-                    operatorOutputMuted_=true;
+                    setOutputHoldReason("BUS_REMAP_FAILED");
                     diagnostics_.record("OUTPUT_MUTE","ON | bus remap rejected");
                 }
             }
@@ -6435,6 +6536,10 @@ private:
         // A saved explicit MUTE or previous-generation recovery must not be
         // undone by a later ordinary input/FX edit scheduling automatic MAIN.
         const bool holdMain=usedPrevious||(doc.resumeMain.has_value()&&!doc.resumeMain.value());
+        // Legacy checkpoints with no explicit intent retain first-sound
+        // admission. A saved affirmative MAIN intent is different: PLAYER,
+        // internal WIRE and dormant SOURCE NONE do not need a capture pin.
+        const bool savedMainRequested=doc.resumeMain.value_or(false);
         error=engine_.restoreNativeMixerSession(std::move(doc),states,
             plan.replacePristineStartup,nullptr,plan.bindingMode);
         if(error.isNotEmpty()) {
@@ -6447,14 +6552,14 @@ private:
         mixerSessionRecoveryPending_=false;
         acceptSessionIdentity();
         if(holdMain) {
-            operatorOutputMuted_=true;
+            setOutputHoldReason(usedPrevious?"CHECKPOINT_RECOVERY":"SAVED_MUTED");
             autoMainEpoch_=0;
             engine_.setMonitorEnabled(false);
             diagnostics_.record("OUTPUT_MUTE",usedPrevious?
                 "ON | previous checkpoint recovery":"ON | saved explicit MAIN mute");
         }
         if(plan.resumeMain)
-            requestAutomaticMain(plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
+            requestAutomaticMain(!savedMainRequested && plan.bindingMode!=MixerBindingMode::verifiedAsioRestart);
         mixerSessionStatus_=engine_.isMonitorEnabled()?"RESTORED_MONITORING":"RESTORED_MUTED";
         mixerSessionError_.clear();
         diagnostics_.record("DYNAMIC_MIXER_RESTORED",mixerSessionStatus_);
@@ -6695,7 +6800,7 @@ private:
                         safe->mixerSessionStatus_="LOGICAL_SESSION_OPENED_UNBOUND";
                         safe->lastMixerFile_=archived?juce::File{}:file;
                         if(archived){
-                            safe->operatorOutputMuted_=true;
+                            safe->setOutputHoldReason("SESSION_ARCHIVED");
                             safe->engine_.setMonitorEnabled(false);
                             safe->closeAllPluginEditors();
                             safe->stopOrbit();
@@ -6861,7 +6966,7 @@ private:
            engine_.hasRuntimeFxFault()){
             if(job.committed){
                 if(!engine_.allOutputsDisarmed()){
-                    operatorOutputMuted_=true;
+                    setOutputHoldReason("FX_PLAYBACK_UNVERIFIED");
                     autoMainEpoch_=0;
                     cancelSecondaryContinuity();
                     engine_.setMonitorEnabled(false);
@@ -7961,6 +8066,73 @@ private:
            action=="audioDeviceApply"||action=="audioSetup"||action=="audioDriverPanel"))
             cancelPendingFxRackTransition("Superseded by operator action");
         if(action=="secondaryOutputInventory")return requestSecondaryInventory(args);
+        if(action=="secondaryOutputSource"){
+            const auto value=args.getProperty("value",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            std::uint64_t ep=0,rev=0,roster=0,id=0;
+            const auto source=value.getProperty("channelId",{});
+            auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
+            juce::String error="Programme source request stale or audio configuration is busy";
+            if(lease&&request.isNotEmpty()&&request.length()<=64&&
+               !nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !retainedOfflineFxActive_&&!pendingRetainedFxCapture_&&!vendorSafeRecoveryActive()&&
+               !pendingPhysicalBusPatch_&&!pendingRackTransition_&&!pendingSecondaryStop_&&
+               !secondaryRecoveryPending()&&!engine_.hasRuntimeFxFault()&&
+               value.getProperty("workspaceGeneration",{}).toString()==juce::String(std::to_string(workspaceGeneration_))&&
+               armix::console::approvedNativeId(value.getProperty("deviceEpoch",{}),ep)&&
+               armix::console::approvedNativeId(value.getProperty("graphRevision",{}),rev)&&
+               armix::console::approvedNativeId(value.getProperty("rosterRevision",{}),roster)&&
+               source.isString()&&(source.toString()=="0"||armix::console::approvedNativeId(source,id))&&
+               engine_.nativeTopologyMatches(ep,rev)){
+                loadSecondaryPreference();
+                // Disable persisted automatic MAIN before choosing an
+                // unpersisted custom source. A failed durable update must
+                // not leave a misleading automatic broadcast intent.
+                bool saved=true;
+                if(id&&secondaryPreference_&&secondaryPreference_->autoResume)
+                    saved=rememberSecondaryPreference(secondaryPreference_->name,secondaryPreference_->id,
+                        secondaryPreference_->prepare,false);
+                if(!saved)error="Cannot save safe startup output preference";
+                else {
+                    cancelPhysicalLoopback();
+                    pendingVendorStream_.reset();
+                    cancelSecondaryContinuity();
+                    cancelStartupSecondaryPreparation();
+                    error=engine_.selectSecondaryProgramme(ep,rev,roster,armix::mixer::ChannelId{id});
+                    if(auto intent=engine_.captureSecondaryResumeIntent())
+                        if(engine_.devices().getCurrentAudioDeviceType()=="ASIO")
+                            secondaryContinuity_=SecondaryContinuity{*intent,engine_.dryRoutingLabEpoch(),engine_.outputArmRevision()};
+                }
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);ack->setProperty("action",action);
+            ack->setProperty("ok",error.isEmpty());ack->setProperty("error",error);
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixSecondaryOutputAck",juce::var(ack.release()));
+            return emitNotice(error.isEmpty()?"Programme source selected · waiting for audio readback":error,error.isNotEmpty());
+        }
+        if(action=="routingNativePfl"){
+            std::uint64_t ep=0,rev=0,id=0;
+            const auto enabled=args.getProperty("enabled",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            bool ok=false;
+            if(request.isNotEmpty()&&request.length()<=64&&enabled.isBool()&&
+               !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !retainedOfflineFxActive_&&!pendingRetainedFxCapture_&&!vendorSafeRecoveryActive()&&
+               args.getProperty("workspaceGeneration",{}).toString()==juce::String(std::to_string(workspaceGeneration_))&&
+               armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)&&
+               armix::console::approvedNativeId(args.getProperty("graphRevision",{}),rev)&&
+               armix::console::approvedNativeId(args.getProperty("channelId",{}),id)){
+                cancelPhysicalLoopback();
+                ok=engine_.selectPfl(ep,rev,armix::mixer::ChannelId{id},bool(enabled));
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);ack->setProperty("ok",ok);
+            ack->setProperty("error",ok?"":"PFL needs a verified independent MONITOR pair and prepared channel");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNativePflAck",juce::var(ack.release()));
+            // ACK acknowledges the transient selection only. The next real
+            // callback/snapshot, not this command, proves the blue key state.
+            return;
+        }
         if(action=="fxRackFile")return chooseFxRackFile(args);
         if(action=="fxRackFileReadback")return readFxRackFileResult(args);
         if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
@@ -10127,11 +10299,25 @@ private:
             const auto mode=args.getProperty("mode",{}).toString();
             const auto deck=args.getProperty("deckId","").toString();
             const bool player=mode=="PLAYER";
-            const int left=static_cast<int>(args.getProperty("left",-1));
-            const int right=static_cast<int>(args.getProperty("right",-1));
+            const auto leftValue=args.getProperty("left",{}),rightValue=args.getProperty("right",{});
+            const int left=static_cast<int>(leftValue),right=static_cast<int>(rightValue);
             std::uint64_t id=0,ep=0,rev=0,roster=0;
             const auto snap=approvedNativeSnapshot();
             const auto graph=snap.getProperty("graph",{});
+            // Reject malformed/unavailable physical pins BEFORE the
+            // topology continuity owner can disarm a healthy secondary sink.
+            const auto enabledInputs=snap.getProperty("device",{}).getProperty("enabledInputs",{});
+            const auto verifiedPin=[&](int pin){
+                if(pin<0)return false;
+                if(const auto* pins=enabledInputs.getArray())
+                    for(const auto& value:*pins)
+                        if(value.isInt()&&static_cast<int>(value)==pin)return true;
+                return false;
+            };
+            const bool validPins=leftValue.isInt()&&rightValue.isInt()&&
+                ((mode=="NONE"||player)?left==-1&&right==-1:
+                    mode=="MONO"?verifiedPin(left)&&right==-1:
+                    mode=="STEREO"&&left!=right&&verifiedPin(left)&&verifiedPin(right));
             bool input=false;
             const auto channels=graph.getProperty("channels",{});
             if(const auto* rows=channels.getArray())
@@ -10146,9 +10332,8 @@ private:
                 armix::console::approvedNativeId(rawRev,rev)&&
                 armix::console::approvedNativeId(rawRoster,roster)&&
                 (mode=="NONE"||mode=="MONO"||mode=="STEREO"||player)&&
-                (mode!="NONE"||(left==-1&&right==-1))&&
-                (mode!="MONO"||right==-1)&&
-                (player?(left==-1&&right==-1&&deck=="1"):deck.isEmpty())&&
+                validPins&&
+                (player?deck=="1":deck.isEmpty())&&
                 input&&
                 snap.getProperty("device",{}).getProperty("epoch","").toString()==rawEp.toString()&&
                 graph.getProperty("revision","").toString()==rawRev.toString()&&
@@ -10160,11 +10345,15 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
+                const armix::mixer::ChannelId target{id};
+                const bool liveSwitch=(mode=="MONO"||mode=="STEREO")&&
+                    engine_.canSwitchNativePhysicalSource(ep,rev,roster,target,left,right,mode=="STEREO");
                 result=withNativeTopologyContinuity(ep,rev,mode!="NONE",[&]{
-                    return engine_.patchNativeInputSource(ep,rev,roster,
-                        armix::mixer::ChannelId{id},left,right,
+                    if(liveSwitch)return engine_.switchNativePhysicalSource(
+                        ep,rev,roster,target,left,right,mode=="STEREO");
+                    return engine_.patchNativeInputSource(ep,rev,roster,target,left,right,
                         mode=="STEREO"||player,player);
-                });
+                },liveSwitch);
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
@@ -10173,6 +10362,8 @@ private:
             ack->setProperty("error",result.error?result.error:"NATIVE_SOURCE_UNKNOWN");
             ack->setProperty("graphRevision",
                 juce::String(std::to_string(result.pcmRevision)));
+            if(result.accepted&&result.sourceTicket)
+                ack->setProperty("sourceSwitchTicket",juce::String(std::to_string(result.sourceTicket)));
             if(browser_.loaded)browser_.emitEventIfBrowserIsVisible(
                 "arMixNativeSourceAck",juce::var(ack.release()));
             if(valid&&result.accepted)
@@ -10249,8 +10440,8 @@ private:
                     while(names.contains(name,true));
                     result=withNativeTopologyContinuity(ep,rev,false,[&]{
                         return engine_.createNativeInputChannel(ep,rev,roster,
-                            name.toStdString(),armix::mixer::ProcessingFormat::stereo);
-                    });
+                            name.toStdString(),armix::mixer::ProcessingFormat::stereo,true);
+                    },true);
                 } else if(!track) {
                     const auto purpose=args.getProperty("purpose","").toString();
                     const bool wet=purpose=="FX";
@@ -10279,12 +10470,15 @@ private:
                         }
                     }
                     if(!selectionValid)result.error="INVALID_GROUP_SELECTION";
-                    else result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                        return engine_.editNativeBus(ep,rev,roster,
-                            wet?armix::mixer::ChannelRole::fxReturn:armix::mixer::ChannelRole::group,
-                            std::span<const armix::mixer::ChannelId>{selection},
-                            name.toStdString(),1.f,{},purpose!="AUX");
-                    });
+                    else {
+                        const bool silentAddition=!wet&&selection.empty();
+                        result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                            return engine_.editNativeBus(ep,rev,roster,
+                                wet?armix::mixer::ChannelRole::fxReturn:armix::mixer::ChannelRole::group,
+                                std::span<const armix::mixer::ChannelId>{selection},
+                                name.toStdString(),1.f,{},purpose!="AUX",silentAddition);
+                        },silentAddition);
+                    }
                 }
             }
             auto ack=std::make_unique<juce::DynamicObject>();
@@ -10349,9 +10543,13 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
+                const armix::mixer::ChannelId target{id};
+                const bool silentRemoval=engine_.nativeStripDormant(ep,rev,target);
                 result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                    return engine_.removeNativeInputChannel(ep,rev,roster,
-                        armix::mixer::ChannelId{id});
+                    if(silentRemoval)return engine_.removeNativeInputChannel(ep,rev,roster,target,true);
+                    return engine_.removeNativeInputChannelLive(ep,rev,roster,target);
+                },true,[&]{
+                    return engine_.removeNativeInputChannel(ep,rev,roster,target);
                 });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
@@ -10422,10 +10620,16 @@ private:
                 acceptedControlRequests_.add(request);
                 if(acceptedControlRequests_.size()>512)
                     acceptedControlRequests_.remove(0);
+                const armix::mixer::ChannelId target{id};
+                const bool silentRemoval=role==armix::mixer::ChannelRole::group&&
+                    engine_.nativeStripDormant(ep,rev,target);
                 result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                    if(silentRemoval)return engine_.editNativeBus(ep,rev,roster,role,
+                        std::span<const armix::mixer::ChannelId>{},"",1.f,target,true,false,true);
+                    return engine_.removeNativeBusLive(ep,rev,roster,role,target);
+                },true,[&]{
                     return engine_.editNativeBus(ep,rev,roster,role,
-                        std::span<const armix::mixer::ChannelId>{},"",1.f,
-                        armix::mixer::ChannelId{id});
+                        std::span<const armix::mixer::ChannelId>{},"",1.f,target);
                 });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
@@ -11440,6 +11644,7 @@ private:
         }
         if(action=="secondaryOutputSplit"){
             juce::String error;
+            bool resumeSecondary=true; // legacy explicit mode keeps its existing receipt
             std::uint64_t ep=0,rev=0,roster=0;
             const auto enable=value.getProperty("enabled",{});
             if(studioBackupBusy_||nativeShowBusy_||!enable.isBool()||
@@ -11447,6 +11652,8 @@ private:
                !armix::console::approvedNativeId(value.getProperty("graphRevision",{}),rev)||
                !armix::console::approvedNativeId(value.getProperty("rosterRevision",{}),roster))
                 error="DMX: stale request or mixer operation in progress";
+            else if(bool(enable)&&engine_.hasSecondaryProgrammeSource())
+                error="Choose MAIN as the secondary programme source before changing headphone mode";
             else if(!bool(value.getProperty("smart",false)))
                 error=engine_.patchDmxSplitOutput(ep,rev,roster,bool(enable));
             else {
@@ -11457,11 +11664,18 @@ private:
                 const bool resumeHardware=!operatorOutputMuted_&&
                     (engine_.isMonitorEnabled()||engine_.wantsMainContinuation());
                 const auto generation=secondaryRetry_.generation();
-                if(!lease||!intent||!engine_.secondarySourceMatches(*intent)||
+                // Entering split requires a verified armed Windows MAIN sink.
+                // Returning MAIN to the original ASIO pair does not: STOP,
+                // unplug or endpoint failure must not trap the operator in split.
+                resumeSecondary=intent.has_value();
+                if(!lease||(bool(enable)&&!intent)||
+                   (engine_.secondaryArmed()&&!intent)||
+                   (intent&&!engine_.secondarySourceMatches(*intent))||
                    !engine_.secondaryResumeReady()||ep!=engine_.dryRoutingLabEpoch()||
                    !engine_.nativeTopologyMatches(ep,rev)||mixerSessionWorker_.busy()||
                    pendingSecondaryStop_||pendingRetainedFxCapture_||retainedOfflineFxActive_||engine_.hasRuntimeFxFault())
-                    error="Connect the additional output and wait for audio to be ready";
+                    error=bool(enable)?"Connect the additional output and wait for audio to be ready":
+                        "Wait for the verified ASIO route before restoring MAIN";
                 else {
                     autoMainEpoch_=0;
                     engine_.setMonitorEnabled(false);
@@ -11474,7 +11688,7 @@ private:
                         // On rejection restore the prior verified route; on
                         // success wait for callback mapping before restoring.
                         if(resumeHardware)requestAutomaticMain(false);
-                        pendingVendorStream_=PendingVendorStream{*intent,ep,acceptedRevision,
+                        if(intent)pendingVendorStream_=PendingVendorStream{*intent,ep,acceptedRevision,
                             static_cast<std::uint64_t>(monotonicMilliseconds()+5000),
                             resumeHardware};
                     }
@@ -11488,6 +11702,7 @@ private:
             ack->setProperty("error",error);
             const auto route=engine_.status().getProperty("dryRoutingLab",{});
             ack->setProperty("secondaryMainOnly",route.getProperty("secondaryMainOnly",false));
+            ack->setProperty("resumeSecondary",resumeSecondary);
             // The ACK names the exact installed PCM revision, not controlRevision.
             // The GUI separately verifies the observed physical mapping and endpoint.
             ack->setProperty("graphRevision",route.getProperty("nativeBus",{}).getProperty("graphRevision",{}));
@@ -12156,7 +12371,7 @@ private:
                 fault=engine_.liveOutputArmFault();
             if (fault.isNotEmpty())protectKnownFeedbackLoop(fault);
             if (fault.isEmpty()) {
-                operatorOutputMuted_=!arm; // an explicit user control, not setup mute
+                setOutputHoldReason(arm?nullptr:"OPERATOR_STOP"); // explicit user control, not setup mute
                 autoMainEpoch_=0;
                 if(!arm)engine_.cancelAsioResetMonitorIntent();
                 engine_.setMonitorEnabled(arm);
@@ -12912,8 +13127,11 @@ private:
             }
             auto saved = juce::XmlDocument::parse (
                 machineSettingsDirectory().getChildFile ("audio-devices.xml"));
+            startupAudioSetupMissingProfile_=!saved||!saved->hasTagName("DEVICESETUP")||
+                saved->getStringAttribute("deviceType").isEmpty();
             rememberSavedWasapiProfile(saved.get());
             startupError_ = engine_.start (saved.get());
+            startupAudioSetupFailed_=startupError_.isNotEmpty();
             engine_.devices().addChangeListener (this);
             if(saved&&startupError_.isNotEmpty()&&engine_.savedAsioStartupRetryAvailable()&&
                !vendorSafeRecoveryActive()) {
@@ -13364,6 +13582,16 @@ private:
             static_cast<double> (diagnostics_.truncatedRecords()));
         if (startupError_.isNotEmpty() && !bool (state.getProperty ("connected", false)))
             state.getDynamicObject()->setProperty ("error", startupError_);
+        // Reuse the status handshake until the existing GUI has actually
+        // presented Audio I/O. No popup during device/session startup or
+        // vendor safe recovery; never interpret an ordinary hotplug as first run.
+        const bool setupNeeded=!startupAudioSetupPresented_&&mixerSessionStartupInspected_&&
+            !pendingStartupAsioSettings_&&!pendingStartupWasapi_&&!deviceApply_.busy()&&
+            !mixerSessionWorker_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&
+            !startupFxGuard_&&!logicalVendorEditor_&&!vendorSafeRecoveryActive()&&
+            (startupAudioSetupMissingProfile_||
+             (startupAudioSetupFailed_&&startupError_.isNotEmpty()&&!engine_.directRouteAuthorized()));
+        state.getDynamicObject()->setProperty("startupAudioSetupRequired",setupNeeded);
         browser_.emitEventIfBrowserIsVisible ("arMixStatus", state);
         // One authoritative 12 Hz console snapshot, NOT a second 1 Hz burst.
         // Keep continuous real meters, safe native ACK/readback, PATCH/ARM,

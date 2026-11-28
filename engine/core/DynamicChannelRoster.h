@@ -109,6 +109,9 @@ public:
     std::uint64_t revision() const noexcept {return revision_;}
     // Separate persistence hint: live controls must NOT invalidate graph/ACK identity.
     std::uint64_t liveStateRevision() const noexcept {return liveStateRevision_;}
+    // The accepted graph request owns source patches; autosave needs a
+    // persistence hint without invalidating PCM topology identity.
+    void rememberLiveSourceChange() noexcept {++liveStateRevision_;}
     std::size_t size() const noexcept {return channels_.size();}
     const std::vector<ChannelStripDefinition>& channels() const noexcept {return channels_;}
     const ChannelStripDefinition* find(ChannelId id) const noexcept {

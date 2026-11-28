@@ -43,7 +43,14 @@ Neither PFL nor switching workspaces may create, remove, or retarget WIRE.
   Main Mix <-> SOF changes; there is no hidden stale cue request.
 - Native JUCE/WebView2: PFL must be visibly OFF/disabled until a genuinely
   admitted independent pre-fader MONITOR L/R path has an engine ACK/readback.
-  Native bridge `consumeAction('cue')` already fails closed.
+  The live-ops implementation uses one transient Last Cue ChannelId, post-FX
+  before the selected strip's fader/programme mute, and replaces only the
+  verified physical MONITOR pair. Conservative fixed -12 dB audition trim,
+  bounded 64-sample transition, no WIRE edits or persistence. Terminal
+  MAIN/MONITOR are not cue sources. Any route/graph/device invalidation,
+  output mute or private FX audition cancels the selection. Browser-only
+  behavior and exact key artwork remain unchanged. Native hardware acceptance
+  requires production Windows and physical testing; code alone is not FAT.
 - This change is a GUI correction only, not a claim of native PFL audio,
   Windows/ASIO FAT, or complete native SOF.
 

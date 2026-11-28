@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <cstdio>
 #include <cstdint>
 #include <limits>
 #include <vector>
@@ -271,8 +272,52 @@ static void testLiveOutputRouteGateAndIndependentClock()
     check(session.status().overflowFrames==0);
 }
 
+ // A known silent interval is not loss of the source clock. Compare the
+ // exact secondary producer path to explicitly supplied zero PCM, through
+ // the real FIR/PI clock bridge. Gaps exceed the target FIFO depth.
+static void testAuthorizedSilentIntervals()
+{
+    using armix::device::AdaptiveClockBridge;
+    for(const double renderRate:{44100.,48000.,96000.}) {
+        AdaptiveClockBridge actual,reference;
+        for(auto* b:{&actual,&reference})
+            check(b->prepare(48000.,renderRate,2,8192,50.));
+        std::array<float,48> l{},r{},zero{};
+        std::array<float,96> aL{},aR{},bL{},bR{};
+        l.fill(.23f);r.fill(-.17f);
+        const float* input[]={l.data(),r.data()};
+        const float* silent[]={zero.data(),zero.data()};
+        float* a[]={aL.data(),aR.data()},*b[]={bL.data(),bR.data()};
+        std::uint64_t presented=0,prime=0,silentSamples=0;
+        bool recovered=false;
+        for(int ms=1;ms<=2400;++ms) {
+            const bool gap=ms>=500&&ms<800||ms>=1400&&ms<1700;
+            check((gap?actual.pushSilence(48):actual.push(input,2,48))==48);
+            check(reference.push(gap?silent:input,2,48)==48);
+            const auto total=static_cast<std::uint64_t>(std::floor(renderRate*ms/1000.));
+            const int n=static_cast<int>(total-presented);presented=total;
+            actual.pull(a,2,n);reference.pull(b,2,n);
+            for(int i=0;i<n;++i) {
+                check(aL[i]==bL[i]&&aR[i]==bR[i]);
+                if(ms>=650&&ms<750) {
+                    check(std::abs(aL[i])<1e-6f&&std::abs(aR[i])<1e-6f);
+                    ++silentSamples;
+                }
+                if(ms>=1000&&ms<1300&&aL[i]>.2f&&aR[i]<-.14f)recovered=true;
+            }
+            if(ms==400)prime=actual.status().primingFrames;
+        }
+        const auto s=actual.status();
+        check(s.pushedFrames==2400*48&&s.renderedFrames==presented);
+        check(s.underflowFrames==0&&s.overflowFrames==0&&s.primingFrames==prime);
+        check(silentSamples>0&&recovered);
+    }
+    std::puts("SECONDARY_AUTHORIZED_SILENCE_PCM_PASS 3 clock pairs, repeated 300ms gaps, no re-prime, exact explicit zero PCM");
+}
+
 int main()
 {
+    testAuthorizedSilentIntervals();
     testLiveOutputRouteGateAndIndependentClock();
     testLiveBridgeContinuityFailback();
     testNonFiniteCapture();

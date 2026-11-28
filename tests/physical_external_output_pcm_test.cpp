@@ -40,7 +40,7 @@ struct Harness {
     int callsA=0,callsB=0;
     std::uint64_t epoch=9157,revision=1;
 
-    Harness(bool sourceOnly=false) {
+    Harness(bool sourceOnly=false,bool withSources=true) {
         const std::array<ChannelEdit,5> create{
             add(0,ChannelRole::input,"VOICE"),
             add(1,ChannelRole::input,"MUSIC"),
@@ -61,7 +61,7 @@ struct Harness {
             result=roster.edit(1,links);assert(result.ok());
         }
         request.physicalInputs=4;request.maxFrames=frames;
-        request.sources={{voice,0,1,true},{music,2,3,true}};
+        if(withSources)request.sources={{voice,0,1,true},{music,2,3,true}};
         for(int s=0;s<frames;++s){
             input[0][s]=.25f;input[1][s]=.10f;
             input[2][s]=.07f;input[3][s]=.04f;
@@ -71,7 +71,7 @@ struct Harness {
         const auto report=publisher.commit(roster,request,0,epoch,epoch,true);
         assert(report.ok()&&report.revision==1);
     }
-    bool render(int activePorts=8) {
+    bool render(int activePorts=8,DynamicProgrammeTap* programme=nullptr) {
         auto fx=[this](ChannelId id,float* l,float* r,int n) noexcept {
             // Native insert once per BLOCK, even with MAIN+EXTERNAL fan-out.
             if(id==busA) {
@@ -86,7 +86,7 @@ struct Harness {
         return publisher.render(epoch,inputPointers.data(),4,
             output[0].data(),output[1].data(),frames,false,fx,
             nullptr,nullptr,{},{},{},
-            outputPointers.data(),activePorts);
+            outputPointers.data(),activePorts,{},0,nullptr,nullptr,false,nullptr,0,programme);
     }
 };
 static void verifyDisconnectedZeroDelayTapThenWake() {
@@ -440,7 +440,180 @@ static void verifyRackTransitionKeepsExternalAndSecondaryPcm() {
     assert(near(tapL.back(),.71f)&&near(tapR.back(),.32f));
 }
 
+static void verifyAssignBeforeSourceAndRestore() {
+    Harness h(true,false);
+    using P=DynamicNativeSessionPublisher;
+    const auto pair=std::make_pair(2,3);
+    // Entire project has no source. Target is accepted without activating
+    // any dormant lane, and cannot pretend to have rendered PCM.
+    assert(h.publisher.externalOutputDormant(h.epoch,1,h.voice));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.voice,2,3,8));
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,4,5,8));
+    assert(h.publisher.externalOutput(h.epoch,1,h.voice)==pair);
+    assert(!h.publisher.setExternalOutput(h.epoch,1,h.main,2,3,8));
+    assert(!h.publisher.setExternalOutput(h.epoch,1,h.voice,7,8,8));
+    for(int i=0;i<3;++i)assert(h.render());
+    for(const auto& port:h.output)for(float v:port)assert(near(v,0.f));
+    assert(h.callsA==0&&h.callsB==0);
+    assert(h.publisher.appliedExternalOutput(h.epoch,1,h.voice).first==-1);
+    assert(h.publisher.setExternalOutput(h.epoch,1,h.busA,-1,-1,8));
+    assert(h.publisher.externalOutput(h.epoch,1,h.busA).first==-1);
+    // Reopening the same verified route with no source preserves assignment.
+    const std::array<int,2> reserved{0,1};
+    const std::array<P::InitialExternalTarget,1> targets{{{h.voice,2,3}}};
+    const P::InitialExternalPlan plan{8,reserved,targets};
+    assert(h.publisher.commit(h.roster,h.request,1,h.epoch,h.epoch,true,
+        {},false,false,nullptr,&plan).ok());
+    assert(h.publisher.externalOutput(h.epoch,2,h.voice)==pair);
+    assert(h.publisher.externalOutputDormant(h.epoch,2,h.voice));
+    assert(h.render()&&near(h.output[2].back(),0.f));
+    // Source added later: same persisted destination, no re-assignment.
+    h.request.sources={{h.voice,0,1,true}};
+    assert(h.publisher.commit(h.roster,h.request,2,h.epoch,h.epoch,true,
+        {},false,false,nullptr,&plan).ok());
+    assert(!h.publisher.externalOutputDormant(h.epoch,3,h.voice));
+    assert(h.publisher.appliedExternalOutput(h.epoch,3,h.voice).first==-1);
+    assert(h.render());
+    assert(near(h.output[2].back(),.25f)&&near(h.output[3].back(),.10f));
+    assert(near(h.output[0].back(),0.f)&&near(h.output[1].back(),0.f));
+    assert(h.publisher.appliedExternalOutput(h.epoch,3,h.voice)==pair);
+    // Removing the source again is not a routing deletion.
+    h.request.sources.clear();
+    assert(h.publisher.commit(h.roster,h.request,3,h.epoch,h.epoch,true,
+        {},false,false,nullptr,&plan).ok());
+    assert(h.publisher.externalOutput(h.epoch,4,h.voice)==pair);
+    assert(h.publisher.externalOutputDormant(h.epoch,4,h.voice));
+    assert(h.render());
+    for(const auto& port:h.output)for(float v:port)assert(near(v,0.f));
+}
+
+static void verifyIndependentProgrammeTap() {
+    Harness h;
+    DynamicProgrammeTap tap;
+    using State=DynamicProgrammeTap::State;
+    tap.requested=h.busA;
+    assert(h.render(2,&tap));
+    assert(tap.state()==State::rendered&&tap.captured()==h.busA);
+    assert(tap.left().size()==64&&tap.right().size()==64);
+    assert(near(tap.left().back(),.50f)&&near(tap.right().back(),.20f));
+    assert(near(h.output[0].back(),.71f)&&near(h.output[1].back(),.32f));
+    assert(h.callsA==1&&h.callsB==1); // no second render
+    tap.requested=h.busB;
+    assert(h.render(2,&tap));
+    assert(tap.captured()==h.busB&&near(tap.left().back(),.21f)&&near(tap.right().back(),.12f));
+    assert(h.callsA==2&&h.callsB==2);
+    assert(h.publisher.setChannelMix(h.epoch,1,h.busB,.5f,0.f));
+    assert(h.render(2,&tap)&&tap.state()==State::rendered);
+    assert(near(tap.left().back(),.105f)&&near(tap.right().back(),.06f));
+    assert(near(h.output[0].back(),.605f)&&near(h.output[1].back(),.26f));
+    assert(h.publisher.setChannelMuteSolo(h.epoch,1,h.busB,true,false));
+    assert(h.render(2,&tap)&&tap.state()==State::rendered);
+    assert(near(tap.left().back(),0.f)&&near(tap.right().back(),0.f));
+    assert(near(h.output[0].back(),.50f)&&near(h.output[1].back(),.20f));
+    tap.requested=ChannelId{999};
+    assert(h.render(2,&tap));
+    assert(tap.state()==State::unavailable&&tap.left().empty()&&tap.right().empty());
+    tap.requested=h.main; // MAIN stays on the existing terminal sink path
+    assert(h.render(2,&tap)&&tap.state()==State::unavailable);
+    tap.requested=h.busA;
+    assert(h.render(2,&tap)&&tap.state()==State::rendered);
+    h.outputPointers[1]=h.outputPointers[0]; // invalid hardware alias
+    assert(!h.render(2,&tap));
+    assert(tap.state()==State::unavailable&&tap.left().empty()&&tap.right().empty());
+
+    Harness dormant(true,false);
+    tap.requested=dormant.busA;
+    assert(dormant.render(2,&tap)&&tap.state()==State::dormant);
+    assert(tap.captured()==dormant.busA&&tap.left().size()==64);
+    for(float v:tap.left())assert(v==0.f);
+    for(float v:tap.right())assert(v==0.f);
+    assert(dormant.callsA==0&&dormant.callsB==0);
+    // A source added after assignment wakes the same stable ChannelId;
+    // no reassignment, hardware pair, or private audition is required.
+    const std::array<ChannelEdit,1> link{out(dormant.voice,dormant.busA)};
+    assert(dormant.roster.edit(1,link).ok());
+    dormant.request.sources={{dormant.voice,0,1,true}};
+    assert(dormant.publisher.commit(dormant.roster,dormant.request,1,
+        dormant.epoch,dormant.epoch,true).ok());
+    assert(dormant.render(2,&tap)&&tap.state()==State::rendered);
+    assert(tap.captured()==dormant.busA&&near(tap.left().back(),.50f)&&near(tap.right().back(),.20f));
+    assert(near(dormant.output[0].back(),0.f)&&near(dormant.output[1].back(),0.f));
+    assert(dormant.callsA==1&&dormant.callsB==0);
+    // Revoked/stale graph epoch cannot return the previous tap receipt.
+    ++dormant.epoch;
+    assert(!dormant.render(2,&tap)&&tap.state()==State::unavailable);
+    assert(tap.left().empty()&&tap.right().empty());
+    std::puts("INDEPENDENT_PROGRAMME_TAP_PCM_PASS");
+}
+static void verifyWholeCallbackProgramme() {
+    Harness h;
+    DynamicProgrammeBlock block;
+    block.requested=h.busA;
+    assert(block.begin(h.epoch,192));
+    assert(block.pcm()[0]==nullptr&&block.frames()==0);
+    for(int n=0;n<3;++n){
+        assert(h.render(2,block.slice()));
+        assert(block.append(n*64,64,h.epoch,1));
+        for(int i=0;i<64;++i)block.scale(n*64+i,static_cast<float>(n+1)/3.f);
+        assert(block.pcm()[0]==nullptr);
+    }
+    assert(block.finish(h.epoch)&&block.frames()==192&&block.captured()==h.busA);
+    assert(h.callsA==3&&h.callsB==3);
+    assert(near(block.pcm()[0][0],.50f/3.f));
+    assert(near(block.pcm()[0][64],.50f*2.f/3.f));
+    assert(near(block.pcm()[0][191],.50f)&&near(block.pcm()[1][191],.20f));
+    assert(near(h.output[0].back(),.71f)); // programme ramp does not alter MAIN
+    // Any partial, wrong-order, stale epoch, or mixed-revision receipt is
+    // discarded as a whole; it cannot expose previous callback storage.
+    assert(block.begin(h.epoch,128));
+    assert(h.render(2,block.slice())&&block.append(0,64,h.epoch,1));
+    assert(!block.finish(h.epoch)&&!block.pcm()[0]);
+    assert(block.begin(h.epoch,128));
+    assert(h.render(2,block.slice())&&block.append(0,64,h.epoch,1));
+    assert(h.render(2,block.slice())&&!block.append(64,64,h.epoch,2));
+    assert(!block.finish(h.epoch)&&!block.pcm()[0]);
+    assert(block.begin(h.epoch,64));
+    assert(h.render(2,block.slice())&&!block.append(1,64,h.epoch,1));
+    assert(!block.pcm()[0]);
+    assert(block.begin(h.epoch,64));
+    assert(h.render(2,block.slice())&&block.append(0,64,h.epoch,1));
+    assert(!block.finish(h.epoch+1)&&!block.pcm()[0]);
+    assert(!block.begin(h.epoch,DynamicProgrammeBlock::capacity+1));
+    // The largest admitted host quantum must not silently truncate at the
+    // old 4096-frame private PFL limit.
+    std::array<float,DynamicProgrammeBlock::capacity> longL{},longR{};
+    longL.fill(.25f);longR.fill(.125f);
+    assert(block.begin(h.epoch,DynamicProgrammeBlock::capacity));
+    block.slice()->capture(h.busA,longL.data(),longR.data(),DynamicProgrammeBlock::capacity);
+    assert(block.append(0,DynamicProgrammeBlock::capacity,h.epoch,1));
+    assert(block.finish(h.epoch)&&block.frames()==DynamicProgrammeBlock::capacity);
+    assert(near(block.pcm()[0][8191],.25f)&&near(block.pcm()[1][8191],.125f));
+    // The existing bus-patch fade must cover the independent programme
+    // in the SAME sample domain as the hardware and split MAIN outputs.
+    BusPatchEnvelope envelope;
+    assert(envelope.begin());
+    auto pair=block.pcm();
+    auto transition=envelope.process(nullptr,0,nullptr,nullptr,block.frames(),
+        48000.,true,true,pair[0],pair[1]);
+    envelope.acknowledge(transition);
+    assert(envelope.ready()&&pair[0][0]>0.f&&pair[0][8191]==0.f&&pair[1][8191]==0.f);
+    // Whole silent interval is valid for an assigned dormant channel.
+    Harness dormant(true,false);
+    block.requested=dormant.busA;
+    assert(block.begin(dormant.epoch,128));
+    for(int n=0;n<2;++n){
+        assert(dormant.render(2,block.slice()));
+        assert(block.append(n*64,64,dormant.epoch,1));
+    }
+    assert(block.finish(dormant.epoch)&&block.frames()==128);
+    for(int n=0;n<128;++n)assert(block.pcm()[0][n]==0.f&&block.pcm()[1][n]==0.f);
+    assert(dormant.callsA==0&&dormant.callsB==0);
+    std::puts("WHOLE_CALLBACK_PROGRAMME_PCM_PASS");
+}
 int main() {
+    verifyWholeCallbackProgramme();
+    verifyIndependentProgrammeTap();
+    verifyAssignBeforeSourceAndRestore();
     verifyRackTransitionKeepsExternalAndSecondaryPcm();
     verifyLogicalPairReservations();
     verifyAtomicInitialExternalPlan();

@@ -283,12 +283,14 @@
       p.right===row.physicalRight);
     const installed=row?.status==="LIVE"&&match;
     const state=installed?(snapshot?.device?.outputArmed===true?"LIVE":"MUTED"):
+      row?.status==="ASSIGNED_SILENT"&&match?"ASSIGNED_SILENT":
       row?.status==="PENDING"&&match?"PENDING":row?"NEEDS_REMAP":"NONE";
-    const value=row?((state==="LIVE"||state==="MUTED")?match.label:
+    const value=row?((state==="LIVE"||state==="MUTED"||state==="ASSIGNED_SILENT")?match.label:
       (state==="PENDING"?"Pending · ":"Needs Remap · ")+
        "OUT "+(row.physicalLeft+1)+"/"+(row.physicalRight+1)):"None";
-    const marker=state==="NONE"?"":state==="NEEDS_REMAP"?"REMAP":state;
-    const title=state==="PENDING"?"Native PCM pending · wait for audio callback":
+    const marker=state==="NONE"?"":state==="NEEDS_REMAP"?"REMAP":state==="ASSIGNED_SILENT"?"SILENT":state;
+    const title=state==="ASSIGNED_SILENT"?"Output assigned · silent until a signal path is available":
+      state==="PENDING"?"Native PCM pending · wait for audio callback":
       state==="NEEDS_REMAP"?
       "Saved physical output disarmed; choose a verified ASIO pair":
       state==="MUTED"?"ASIO pair connected · output muted, settings retained":
@@ -299,6 +301,12 @@
 
   // One transient draft for the existing Device Setup dialog. All native
   // inventory and installed PCM remain external readback, never owned here.
+  // Pure presentation policy: only a positive native startup request can
+  // open the existing Audio I/O surface. Closing or manually opening it
+  // consumes the request for this application session.
+  function startupAudioSetupDecision(live,{presented=false,busy=false,blocked=false}={}){
+    return live?.startupAudioSetupRequired===true&&!presented&&!busy&&!blocked;
+  }
   function setupSameEndpoint(active,draft) {
     return active?.open===true&&active.backend===draft?.backend&&
       active.captureDevice===draft.capture&&active.playbackDevice===draft.playback;
@@ -804,7 +812,7 @@
     return result.filter(p=>ids.get(p.id)===1&&labels.get(p.label)===1);
   }
   return Object.freeze({activeInputPins,inputChoices,inputLabel,inputLabelResolver,outputChoices,patchMatrix,matrixCrosspointChoice,physicalInputChoice,namedPatchChoices,busOutputChoices,
-    externalPresentation,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
+    externalPresentation,startupAudioSetupDecision,setupDraft,setupPresentation,setupLatencyReadback,setupEditDraft,setupRoutingReady,setupPinsApplied,setupMatrixDeviceMatches,
     pinInventory,setupSelectAllPins,setupBufferPeriod,setupHealthReadback,captureRecoveryDraft,signalPathHint,
     setupInitial,setupBegin,setupAck,setupReadback,
     setupTimeout,setupClearResult,nativeLifecycleLease,nativeLifecycleDecision,

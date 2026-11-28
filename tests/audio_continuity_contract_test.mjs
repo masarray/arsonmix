@@ -155,7 +155,7 @@ test('saved ASIO cold-open retries are bounded, exact-registration and single-ca
 test('last saved MAIN mute and previous-generation recovery remain muted after restore',()=>{
  const s=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
  assert.match(s,/const bool holdMain=usedPrevious\|\|\(doc.resumeMain.has_value\(\)&&!doc.resumeMain.value\(\)\)/);
- assert.match(s,/if\(holdMain\)\s*\{\s*operatorOutputMuted_=true;\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
+ assert.match(s,/if\(holdMain\)\s*\{\s*setOutputHoldReason\(usedPrevious\?"CHECKPOINT_RECOVERY":"SAVED_MUTED"\);\s*autoMainEpoch_=0;\s*engine_\.setMonitorEnabled\(false\)/);
  assert.match(main,/if\(mixerSessionRecoveryPending_\)return; \/\/ saved session has not been restored/);
 });
 
@@ -225,7 +225,7 @@ test('ASIO vendor panel preserves operator desire and only resumes the same veri
  assert.match(p,/sameDriver && finishAudioSetupAndRecoverMixer\(\)/);
  assert.match(p,/resume&&!operatorOutputMuted_&&!panelError\)requestAutomaticMain\(false\)/);
  assert.match(p,/ASIO_PANEL_BEGIN/);
- assert.doesNotMatch(p,/operatorOutputMuted_\s*=|setMonitorEnabled\(true\)/);
+ assert.doesNotMatch(p,/setOutputHoldReason|operatorOutputMuted_\s*=|setMonitorEnabled\(true\)/);
  const restore=main.split('juce::String restoreSavedMixerSession(')[1].split('juce::String saveMixerSession(')[0];
  assert.match(restore,/if\(operatorOutputMuted_\)retainedDoc\.resumeMain=false/);
  assert.match(restore,/else if\(engine_\.wantsMainContinuation\(\)\)retainedDoc\.resumeMain=true/);
@@ -238,7 +238,7 @@ test('nested device transaction permits explicit STOP but rejects ARM with nativ
  assert.match(a,/action!="audioDeviceApply" && !outputIntent/);
  const monitor=a.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
  assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
- assert.match(monitor,/if \(fault.isEmpty\(\)\) \{\s*operatorOutputMuted_=!arm/);
+ assert.match(monitor,/if \(fault.isEmpty\(\)\) \{\s*setOutputHoldReason\(arm\?nullptr:"OPERATOR_STOP"\)/);
  assert.match(monitor,/arMixAudioArmAck/);
 });
 
@@ -251,7 +251,7 @@ test('smart bus remap uses native temporary stop and verified continuation, not 
  assert.match(p,/if\(resumeMain&&!operatorOutputMuted_\) \{[\s\S]*?engine_\.retainMainIntentAfterBusPatch\(\);\s*requestAutomaticMain\(false\)/);
  assert.match(engine,/void retainMainIntentAfterBusPatch\(\) noexcept \{mainOutputIntent_\.operatorRequested\(true\);\}/);
  assert.match(p,/if\(stream\)pendingVendorStream_=PendingVendorStream/);
- assert.match(p,/operatorOutputMuted_=true;\s*diagnostics_\.record\("OUTPUT_MUTE","ON \| bus remap rejected"\)/);
+ assert.match(p,/setOutputHoldReason\("BUS_REMAP_FAILED"\);\s*diagnostics_\.record\("OUTPUT_MUTE","ON \| bus remap rejected"\)/);
  const panic=main.split('if(mapping.operation=="PANIC_MUTE")')[1].split('// Existing control-thread guards')[0];
  assert.match(panic,/pendingVendorStream_\.reset\(\)/);
  assert.match(panic,/cancelStartupSecondaryPreparation\(\)/);
@@ -265,8 +265,8 @@ test('physical bus remap waits for AUDIO fade receipt with bounded CONTROL lease
  assert.match(p,/engine_\.beginPhysicalBusPatchFade\(\)/);
  assert.match(p,/Purpose::busOutputPatch/);
  assert.match(engine,/busPatchEnvelope_\.process\(outputs,outputChannels/);
- assert.ok(engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels')<engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)'));
- assert.ok(engine.indexOf('secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
+ assert.ok(engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels')<engine.indexOf('secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples)'));
+ assert.ok(engine.indexOf('secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples)')<engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)'));
  // Service both transitions before the busy-lease return.
  assert.match(main,/servicePendingPhysicalBusPatch\(\);\s*serviceRackTransition\(\);\s*if\(deviceApply_\.busy\(\)\)return/);
 });
@@ -295,7 +295,7 @@ test('FX file transition preserves the operator gates and the callback verifies 
  assert.match(capture,/rackSupportsLiveSnapshot/);
  assert.match(capture,/\(!live&&!rackFileAllowed/);
  const choose=main.split('void chooseFxRackFile(')[1].split('void chooseNamedIoProfile(')[0];
- assert.doesNotMatch(choose,/operatorOutputMuted_\s*=|setMonitorEnabled\(/);
+ assert.doesNotMatch(choose,/setOutputHoldReason|operatorOutputMuted_\s*=|setMonitorEnabled\(/);
  assert.match(choose,/rackArchive\(\[file,rack\]\{return Archive::save/);
 });
 
@@ -314,4 +314,163 @@ test('session capture cannot reopen MAIN after a newer operator STOP or device/g
  assert.match(capture,/current!=device \|\| !current->isOpen\(\)/);
  assert.match(capture,/document\.binding=readMixerBinding\(\*current\)/);
  assert.doesNotMatch(capture,/readMixerBinding\(\*device\)/);
+});
+
+
+test('authorized MAIN rollback and saved explicit resume do not depend on capture pins',()=>{
+ const rollback=main.split('case Apply::Outcome::recoveryRequired: {')[1].split('// A Windows native Explorer picker')[0];
+ assert.match(rollback,/if\(restored&&previousMonitor\)requestAutomaticMain\(false\)/);
+ assert.match(rollback,/if\(restored\)resumeStream\(true\)/);
+ const start=main.indexOf('const bool holdMain=usedPrevious');
+ const end=main.indexOf('mixerSessionStatus_=engine_.isMonitorEnabled()',start);
+ const restore=main.slice(start,end);
+ assert.match(restore,/const bool savedMainRequested=doc\.resumeMain\.value_or\(false\)/);
+ assert.ok(restore.indexOf('savedMainRequested=')<restore.indexOf('std::move(doc)'));
+ assert.match(restore,/if\(plan.resumeMain\)\s*requestAutomaticMain\(!savedMainRequested && plan.bindingMode!=MixerBindingMode::verifiedAsioRestart\)/);
+ assert.match(restore,/if\(holdMain\)\s*\{[\s\S]*?engine_\.setMonitorEnabled\(false\)/);
+ const auto=main.split('void serviceAutomaticMain()')[1].split('void requestAutomaticMain')[0];
+ assert.match(auto,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
+ assert.match(auto,/autoMainEpoch_!=engine_\.dryRoutingLabEpoch\(\)/);
+ assert.match(auto,/engine_\.liveOutputArmFault\(requireInput\)/);
+});
+
+test('silent track and standalone AUX creation keep both output gates and existing secondary recovery lease',()=>{
+ const wrapper=main.split('LiveDryRoutingLab::NativeBusResult withNativeTopologyContinuity(')[1].split('struct PendingPhysicalBusPatch')[0];
+ const silent=wrapper.split('if(silentAddition){')[1].split('return result;')[0];
+ assert.match(silent,/result=edit\(\)/);
+ assert.match(silent,/pendingVendorStream_->revision=after/);
+ assert.match(silent,/secondaryContinuity_->revision=after/);
+ assert.doesNotMatch(silent,/disarmSecondaryOutput|setOutputMuted|setMonitorEnabled|requestAutomaticMain|cancelSecondaryContinuity/);
+ const track=engine.split('LiveDryRoutingLab::NativeBusResult createNativeInputChannel(')[1].split('LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(')[0];
+ assert.match(track,/if\(silentAddition&&!allOutputsDisarmed\(\)\)/);
+ assert.match(track,/dormantAdditionReady\(epoch,pcmRevision\)/);
+ assert.match(track,/name,format,false,\{\},0,false,true/);
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ assert.match(core,/renderOrder_\.size\(\)!=old\.renderOrder_\.size\(\)/);
+ assert.match(core,/renderOrder_\[k\]=controlIndex_\.at\(id\.value\)/);
+ assert.match(core,/channelScheduled\(n\.id\)\|\|n\.inputL>=0\|\|n\.playerDeckId/);
+});
+
+test('secondary PCM uses a render-start generation and reset waits for SC reader reservations',()=>{
+ const device=read('engine/device/LiveSecondaryOutputDevice.h');
+ const start=engine.indexOf('const auto secondaryTicket=secondaryOutput_.captureProducerTicket()');
+ const render=engine.indexOf('const bool routed=dryRoutingLab_.process(',start);
+ const publish=engine.indexOf('secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples)',render);
+ assert.ok(start>=0&&render>start&&publish>render);
+ assert.match(device,/const auto ticket=admission_\.beginRearm\(\)/);
+ assert.match(device,/while\(publishers_\.load\(\)!=0 \|\| consumers_\.load\(\)!=0\)/);
+ assert.match(device,/publishers_\.fetch_add\(1\);\s*if\(ticketValid\(ticket\)\)/);
+ assert.match(device,/consumers_\.fetch_add\(1\);\s*if\(owner\.ticketValid\(ticket\)\)/);
+ assert.match(device,/owner\.bridge_\.pull\(output,2,frames\);\s*[\s\S]*?if\(!owner\.ticketValid\(ticket\)\)/);
+ assert.match(device,/if\(owner\.expectedRunning_\.load/);
+ assert.match(policy,/authorized_\.load\(\)==ticket&&generation_\.load\(\)==ticket/);
+});
+
+
+test('silent removal is native-verified before avoiding secondary disarm; active deletion retains ordinary path',()=>{
+ const lab=read('src/LiveDryRoutingLab.h');
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ const publisher=read('engine/core/DynamicNativeSessionPublisher.h');
+ assert.match(core,/old\.channelScheduled\(removed\)\|\|retired\.inputL>=0/);
+ assert.match(publisher,/!dormantRosterEdit&&retiring\.value&&previous/);
+ assert.match(lab,/nativePublisher_\.externalOutputDormant\(ep,rev,id\)/);
+ assert.match(engine,/if\(silentRemoval&&!allOutputsDisarmed\(\)\)/);
+ assert.match(main,/engine_\.removeNativeInputChannel\(ep,rev,roster,target,true\)/);
+ assert.match(main,/target,true,false,true\)/);
+ assert.match(main,/SILENT_REMOVE_CONTINUITY_NOT_VERIFIED/);
+});
+
+test('authorized secondary callback without a complete native tap emits clocked silence, not stale PCM',()=>{
+ const device=read('engine/device/LiveSecondaryOutputDevice.h');
+ const lab=read('src/LiveDryRoutingLab.h');
+ const bridge=read('engine/device/AdaptiveClockBridge.h');
+ assert.match(engine,/if\(outputGate\.secondary\)\s*\{[\s\S]*?if\(routed&&nativeMain\[0\]&&nativeMain\[1\]\)[\s\S]*?secondaryOutput_\.publish\(secondaryTicket,nullptr,nullptr,samples\)/);
+ assert.match(device,/if\(ticketValid\(ticket\)\)\s*\{\s*if\(left&&right\)/);
+ assert.match(device,/bridge_\.pushSilence\(frames\);\s*substitutedFrames_\.fetch_add/);
+ assert.match(device,/bridge_\.resetStopped\(\);[^\n]*\n\s*substitutedFrames_\.store\(0/);
+ assert.match(bridge,/int pushSilence\(int frames\)[\s\S]*?return push\(zero,1,frames\)/);
+ assert.match(lab,/const auto silence=\[&\]\(\) noexcept \{[\s\S]*?if\(actualOutputPair\)\*actualOutputPair=\{\{-1,-1\}\};[\s\S]*?if\(secondaryMainTap\)\*secondaryMainTap=\{\{nullptr,nullptr\}\};/);
+ assert.match(engine,/"secondaryOutputSubstitutedFrames"/);
+ const stop=device.split('void stop() {')[1].split('bool arm(bool requested)')[0];
+ assert.match(stop,/admission_\.revoke\(\);[\s\S]*?while\(publishers_\.load\(\)!=0\)[\s\S]*?substitutedFrames_\.store\(0/);
+ assert.match(main,/"secondaryOutputPriming", "secondaryOutputSubstitutedFrames"/);
+});
+
+test('same-format physical source retarget preserves output generation and requires callback receipt',()=>{
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ const lab=read('src/LiveDryRoutingLab.h');
+ const vm=read('web/approved-channel-strip-view-model.js');
+ assert.match(core,/const auto target=\(sequence<<32\)\|packPhysical/);
+ assert.match(core,/sourceAppliedTargets_\[i\]\.store\(target,std::memory_order_release\)/);
+ assert.match(lab,/nativePublisher_\.setPhysicalSource\(ep,rev,id,[\s\S]*?&reply.sourceTicket/);
+ assert.match(lab,/rememberLiveSourceChange\(\)/);
+ assert.match(main,/if\(liveSwitch\)return engine_\.switchNativePhysicalSource\([\s\S]*?\},liveSwitch\);/);
+ assert.match(main,/"sourceSwitchTicket"/);
+ assert.match(vm,/channel.source\?\.appliedSwitchTicket===pending.sourceSwitchTicket/);
+});
+
+
+test('custom secondary programme preserves generation, whole callback, and independent MAIN',()=>{
+ const start=engine.indexOf('const auto secondaryTicket=secondaryOutput_.captureProducerTicket()');
+ const render=engine.indexOf('const bool routed=dryRoutingLab_.process(',start);
+ const envelope=engine.indexOf('busPatchEnvelope_.process(outputs,outputChannels',render);
+ const publish=engine.indexOf('secondaryOutput_.publish(secondaryTicket,programmePcm[0],programmePcm[1],samples)',envelope);
+ const acknowledge=engine.indexOf('busPatchEnvelope_.acknowledge(patchFade)',publish);
+ assert.ok(start>=0&&render>start&&envelope>render&&publish>envelope&&acknowledge>publish);
+ const selection=engine.split('juce::String selectSecondaryProgramme(')[1].split('juce::String armSecondaryOutput(')[0];
+ assert.ok(selection.indexOf('secondaryOutput_.disarm()')<selection.indexOf('secondaryProgrammeSource_.store'));
+ assert.match(selection,/if\(armed\)return armSecondaryOutput\(true\)/);
+ const callback=engine.split('if(outputGate.secondary) {').at(-1).split('secondaryProgrammeAppliedTicket_.store')[0];
+ assert.match(callback,/if\(programmeId\)[\s\S]*?if\(valid\)[\s\S]*?publish\(secondaryTicket,programmePcm\[0\],programmePcm\[1\],samples\)[\s\S]*?else[\s\S]*?publish\(secondaryTicket,nullptr,nullptr,samples\)/);
+ assert.match(callback,/else if\(routed&&nativeMain\[0\]&&nativeMain\[1\]\)/);
+ assert.match(main,/if\(engine_\.hasSecondaryProgrammeSource\(\)\)autoResume=false/);
+});
+
+
+test('physical source validation precedes secondary continuity and requested receipt is explicit',()=>{
+ const source=main.split('if(action=="routingNativeSourcePatch"){').at(-1).split('if(action=="routingNativeBusCreate"')[0];
+ assert.ok(source.indexOf('const bool validPins=')>=0&&source.indexOf('validPins&&')<source.indexOf('withNativeTopologyContinuity('));
+ assert.match(source,/verifiedPin\(left\)&&verifiedPin\(right\)/);
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ const lab=read('src/LiveDryRoutingLab.h');
+ assert.match(core,/if\(ticket\)\*ticket=previous>>32/);
+ assert.match(lab,/"requestedSwitchTicket"/);
+});
+
+
+test('active track retirement attempts channel-local continuity before secondary disarm',()=>{
+ const source=main.split('if(action=="routingNativeTrackDelete") {').at(-1).split('auto ack=')[0];
+ assert.match(source,/removeNativeInputChannelLive\(ep,rev,roster,target\)/);
+ assert.match(source,/\},true,\[&\]\{[\s\S]*?removeNativeInputChannel\(ep,rev,roster,target\)/);
+ const attempt=engine.split('LiveDryRoutingLab::NativeBusResult removeNativeInputChannelLive(')[1].split('LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(')[0];
+ assert.match(attempt,/secondaryOutput_\.captureProducerTicket\(\)==ticket/);
+ assert.doesNotMatch(attempt,/disarmSecondaryOutput|secondaryOutput_\.disarm|topologyPublicationMute_\.store/);
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ assert.match(core,/dormantRosterEdit\|\|activeRemoval/);
+ assert.match(core,/if\(id==removed\)continue/);
+});
+
+
+test('BUS and FX return removal first attempts proved local retirement',()=>{
+ const source=main.split('if(action=="routingNativeBusDelete") {').at(-1).split('auto ack=')[0];
+ assert.match(source,/removeNativeBusLive\(ep,rev,roster,role,target\)/);
+ assert.match(source,/\},true,\[&\]\{/);
+ const attempt=engine.split('LiveDryRoutingLab::NativeBusResult removeNativeBusLive(')[1].split('// Processing M/ST')[0];
+ assert.match(attempt,/secondaryOutput_\.captureProducerTicket\(\)==ticket/);
+ assert.doesNotMatch(attempt,/disarmSecondaryOutput|secondaryOutput_\.disarm|topologyPublicationMute_\.store/);
+ const lab=read('src/LiveDryRoutingLab.h');
+ assert.match(lab,/\(dormantRemoval\|\|liveRemoval\)\?remove:ChannelId\{\},liveFadeFrames/);
+ assert.match(lab,/"ACTIVE_REMOVE_CONTINUITY_NOT_VERIFIED"/);
+});
+
+
+test('parallel WIRE additions attempt state adoption before ordinary publication',()=>{
+ const lab=read('src/LiveDryRoutingLab.h');
+ const core=read('engine/core/DynamicPreparedMixerBlock.h');
+ const publisher=read('engine/core/DynamicNativeSessionPublisher.h');
+ assert.match(lab,/w.kind==WireChange::Kind::connect/);
+ assert.match(lab,/false,\{\},0,valid,false,true/);
+ assert.match(core,/sendTargets_\[e\]\.applied\.reset\(0.f\)/);
+ assert.match(core,/wireAddition&&matchedEdges!=survivingEdges/);
+ assert.match(publisher,/continuousFx\|\|retiring.value!=0\|\|dormantRosterEdit\|\|wireAddition/);
 });

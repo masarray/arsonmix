@@ -33,6 +33,34 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn("../../src/NativeFxWin32Owner.cpp",isolated)
         self.assertIn("../native_fx_win32_sdk_order_test.cpp",isolated)
 
+    def test_vendor_editor_initial_size_is_content_owned(self):
+        ctor=HOST.split("PluginEditorWindow (const juce::String& title",1)[1].split(
+            "void present (bool centreOnMixer",1)[0]
+        self.assertLess(ctor.index("setResizable (editor->isResizable(), false);"),
+                        ctor.index("setContentNonOwned (editor, true);"))
+        self.assertIn("centreWithSize(getWidth(),getHeight());",ctor)
+        self.assertNotIn("juce::jmax (380",ctor)
+        self.assertNotIn("juce::jmax (300",ctor)
+        self.assertIn("setTitleBarButtonsRequired(closeButton|minimiseButton,false);",ctor)
+        present=HOST.split("void present (bool centreOnMixer",1)[1].split("void mouseDown",1)[0]
+        self.assertLess(present.index("setVisible (true)"),
+                        present.index("attachOwnedFloatingWindow(*this,mixer_)"))
+        self.assertLess(present.index("attachOwnedFloatingWindow(*this,mixer_)"),
+                        present.index("toFront (true)"))
+
+    def test_fullscreen_rebinds_all_visible_owned_windows(self):
+        fullscreen=HOST.split("void toggleOperatorFullscreen()",1)[1].split("void ",1)[0]
+        self.assertIn("refreshVisibleFloatingOwners();",fullscreen)
+        repair=HOST.split("void refreshVisibleFloatingOwners() noexcept",1)[1].split(
+            "void closePluginEditor()",1)[0]
+        for owner in ("editorWindow_", "immersibEditorWindow_", "logicalVendorEditor_",
+                      "additionalFxEditors_", "floatingBuiltinFx_", "playerWindow_"):
+            self.assertIn(owner,repair)
+        self.assertIn("window&&window->isVisible()",repair)
+        self.assertIn("attachOwnedFloatingWindow(*window,*this)",repair)
+        for operation in ("setVisible(", "toFront(", "setSize(", "setBounds(", "present("):
+            self.assertNotIn(operation,repair)
+
     def test_mixer_owned_not_global_topmost(self):
         self.assertIn("attachOwnedFloatingWindow (*this, mixer)",HOST)
         self.assertIn("attachOwnedFloatingWindow",OWNER)
@@ -156,6 +184,11 @@ class NativeFxWindowLifecycle(unittest.TestCase):
         self.assertIn('withEventListener ("arMixWindowFullscreen"',HOST)
         self.assertIn('toggleOperatorFullscreen();',HOST)
         self.assertIn('maximisedBeforeOperatorFullscreen_=isFullScreen()',HOST)
+        fullscreen=HOST.split("void toggleOperatorFullscreen()",1)[1].split("void ",1)[0]
+        self.assertIn("setKioskModeComponent(this,false)",fullscreen)
+        self.assertIn("setAlwaysOnTop(false);",fullscreen)
+        self.assertNotIn("setAlwaysOnTop(true);",fullscreen)
+        self.assertIn("setAlwaysOnTop(topmostBeforeOperatorFullscreen_);",fullscreen)
         self.assertIn('setTitleBarHeight(0);',HOST)
         self.assertIn('setFullScreen(true);',HOST)
         self.assertIn('setFullScreen(false);',HOST)

@@ -70,6 +70,8 @@ public:
     // A device/mute gate may invalidate from a non-CONTROL thread.
     // Atomic only; no scratch, request publication or ownership mutation.
     void revokePublished() noexcept {markRevoked(published_.load(std::memory_order_acquire));}
+    // Shared private monitor arbitration; existing FX listen keeps priority.
+    bool hasPublishedRequest() const noexcept {return published_.load(std::memory_order_acquire)!=0;}
     void cancel(bool graceful) noexcept {
         if(control_.mode==FxCueMode::Mix){
             if(!graceful&&control_.ticket){control_={};publish();}

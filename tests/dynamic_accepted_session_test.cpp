@@ -1243,7 +1243,566 @@ void verifyAutoDuckerPostFaderDependencies(){
     assert(fault.fault==DynamicGraphFault::cycle);
     assert(block.process(pins,2,l.data(),r.data(),64,fx));assert(seen==2);
 }
+
+static void verifyPrivatePflCapturePcm() {
+    constexpr std::uint64_t epoch=9602;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest route;route.physicalInputs=4;route.maxFrames=64;
+    const std::array<ChannelEdit,5> creates{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"SOURCE ONLY",ProcessingFormat::stereo),
+        add(2,ChannelRole::group,"BUS",ProcessingFormat::stereo),
+        add(3,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(4,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto a=session.edit(0,0,creates,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0],source=a.edit.createdIds[1],
+        bus=a.edit.createdIds[2],main=a.edit.createdIds[3],monitor=a.edit.createdIds[4];
+    const std::array<ChannelEdit,3> links{
+        output(voice,bus),output(bus,main),send(bus,monitor,.5f,true)};
+    route.sources={{voice,0,1,true},{source,2,3,true}};
+    a=session.edit(1,1,links,route,epoch,epoch,true);assert(a.ok());
+    std::array<float,64> vL{},vR{},sL{},sR{},mL{},mR{},nL{},nR{};
+    vL.fill(.2f);vR.fill(.1f);sL.fill(.125f);sR.fill(.0625f);
+    const float* pins[]{vL.data(),vR.data(),sL.data(),sR.data()};
+    int voiceCalls=0,sourceCalls=0,busCalls=0;
+    const auto fx=[&](ChannelId id,float* l,float* r,int frames) noexcept{
+        float gain=1.f;
+        if(id==voice){++voiceCalls;gain=2.f;}
+        if(id==source){++sourceCalls;gain=2.f;}
+        if(id==bus){++busCalls;gain=.5f;}
+        for(int i=0;i<frames;++i){l[i]*=gain;r[i]*=gain;}
+    };
+    DynamicPflCapture pfl;
+    const auto render=[&](DynamicPflCapture* capture=nullptr,int frames=64,
+                          std::uint64_t e=9602,bool muted=false){
+        return session.render(e,pins,4,mL.data(),mR.data(),frames,muted,fx,
+            nL.data(),nR.data(),{},{},{},false,capture);
+    };
+    assert(render());
+    const auto baseL=mL,baseR=mR,baseNL=nL,baseNR=nR;
+    const auto unchanged=[&]{assert(mL==baseL&&mR==baseR&&nL==baseNL&&nR==baseNR);};
+    pfl.requested=voice;
+    assert(render(&pfl));unchanged();
+    assert(pfl.captured()==voice&&pfl.left().size()==64&&near(pfl.left()[63],.4f)&&near(pfl.right()[63],.2f));
+    pfl.requested=bus;
+    assert(render(&pfl));unchanged();
+    assert(pfl.captured()==bus&&near(pfl.left()[63],.2f)&&near(pfl.right()[63],.1f));
+    // Source with no output route still has its own real post-FX PCM.
+    pfl.requested=source;
+    assert(render(&pfl));unchanged();
+    assert(pfl.captured()==source&&near(pfl.left()[63],.25f)&&near(pfl.right()[63],.125f));
+    assert(voiceCalls==4&&sourceCalls==4&&busCalls==4);
+    assert(session.setLiveMix(epoch,2,voice,0.f,0.f));
+    pfl.requested=voice;
+    assert(render(&pfl,4)&&pfl.left().size()==4&&near(pfl.left()[3],.4f));
+    assert(render(&pfl,60)&&pfl.left().size()==60&&near(pfl.left()[59],.4f)&&near(mL[59],0.f));
+    assert(session.setLiveMuteSolo(epoch,2,voice,true,false));
+    assert(render(&pfl)&&near(pfl.left()[63],.4f)&&near(mL[63],0.f)&&near(nL[63],0.f));
+    for(auto rejected:{main,monitor,ChannelId{999999},ChannelId{}}){
+        pfl.requested=rejected;assert(render(&pfl));
+        assert(!pfl.captured().value&&pfl.left().empty()&&pfl.right().empty());
+    }
+    pfl.requested=voice;assert(render(&pfl)&&pfl.captured()==voice);
+    assert(!render(&pfl,64,epoch+1)&&pfl.left().empty()&&!pfl.captured().value);
+    assert(render(&pfl)&&pfl.captured()==voice);
+    assert(!render(&pfl,64,epoch,true)&&pfl.left().empty()&&!pfl.captured().value);
+    // End-to-end publisher cue: only MONITOR changes, after actual render.
+    constexpr std::uint64_t routeKey=0x1234;
+    const auto listen=[&](std::uint64_t key=0x1234,bool muted=false){
+        return session.render(epoch,pins,4,mL.data(),mR.data(),64,muted,fx,
+            nL.data(),nR.data(),{},{},{},false,nullptr,key);
+    };
+    assert(!session.selectPfl(epoch,2,routeKey,main));
+    assert(!session.selectPfl(epoch,2,routeKey,monitor));
+    assert(!session.selectPfl(epoch,2,routeKey,ChannelId{999999}));
+    assert(!session.selectPfl(epoch+1,2,routeKey,voice));
+    assert(session.selectPfl(epoch,2,routeKey,voice));
+    assert(session.pflState(epoch,2,routeKey).requested==voice);
+    assert(!session.pflState(epoch,2,routeKey).applied.value);
+    assert(listen()&&near(nL[63],.1f)&&near(nR[63],.05f)&&near(mL[63],0.f));
+    assert(session.pflState(epoch,2,routeKey).applied==voice);
+    assert(session.selectPfl(epoch,2,routeKey,source));
+    assert(listen()&&near(nL[63],.0625f)&&near(nR[63],.03125f)&&near(mL[63],0.f));
+    assert(session.pflState(epoch,2,routeKey).applied==source);
+    assert(session.selectPfl(epoch,2,routeKey,ChannelId{}));
+    assert(listen()&&near(nL[63],0.f)&&near(nR[63],0.f));
+    assert(!session.pflState(epoch,2,routeKey).requested.value);
+    assert(session.selectPfl(epoch,2,routeKey,voice));
+    assert(listen(routeKey+1)&&near(nL[63],0.f));
+    assert(!session.pflState(epoch,2,routeKey).requested.value);
+    assert(listen()&&near(nL[63],0.f)); // cannot silently rearm after rebind
+    assert(session.selectPfl(epoch,2,routeKey,voice));
+    assert(!listen(routeKey,true)&&!session.pflState(epoch,2,routeKey).requested.value);
+    assert(listen()&&near(nL[63],0.f)); // cannot silently rearm after mute
+    assert(session.acceptedGraphRevision()==2);
+    session.unpublish();session.pollRetirement();
+    std::puts("PRIVATE_PFL_CAPTURE_PCM_PASS post FX, pre fader/mute, source-only, bus, unchanged MAIN/MONITOR, stale/muted readback");
+}
+
+
+static void verifyDormantRosterAdditionContinuity() {
+    constexpr std::uint64_t epoch=9603;
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,3> create{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(2,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    const auto made=roster.edit(0,create);assert(made.ok());
+    const auto voice=made.createdIds[0],main=made.createdIds[1],monitor=made.createdIds[2];
+    const std::array<ChannelEdit,2> links{output(voice,main),send(voice,monitor,.25f,true)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=64;
+    req.sources={{voice,0,1,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher live,reference;
+    for(auto* p:{&live,&reference}){
+        assert(p->commit(roster,req,0,epoch,epoch,true).ok());
+        assert(p->setExternalOutput(epoch,1,voice,2,3,4));
+    }
+    struct Buffers {std::array<float,64> l{},r{},nl{},nr{},xl{},xr{};};
+    Buffers actual,expected;
+    std::array<float,64> inputL{},inputR{};
+    inputL.fill(.25f);inputR.fill(.125f);
+    const float* pins[]{inputL.data(),inputR.data()};
+    const auto fx=+[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&](DynamicNativeSessionPublisher& p,Buffers& b,int frames){
+        float* outputs[]{b.l.data(),b.r.data(),b.xl.data(),b.xr.data()};
+        assert(p.render(epoch,pins,2,b.l.data(),b.r.data(),frames,false,fx,
+            b.nl.data(),b.nr.data(),{},{},{},outputs,4));
+    };
+    const auto equal=[&](int n){
+        for(int i=0;i<n;++i)
+            assert(actual.l[i]==expected.l[i]&&actual.r[i]==expected.r[i]&&
+                   actual.nl[i]==expected.nl[i]&&actual.nr[i]==expected.nr[i]&&
+                   actual.xl[i]==expected.xl[i]&&actual.xr[i]==expected.xr[i]);
+    };
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    assert(actual.l[63]>.1f&&actual.nl[63]>.01f&&actual.xl[63]>.1f);
+    assert(roster.rememberLiveMix(voice,.5f,0.f));
+    assert(live.setChannelMix(epoch,1,voice,.5f,0.f));
+    assert(reference.setChannelMix(epoch,1,voice,.5f,0.f));
+    render(live,actual,7);render(reference,expected,7);equal(7);
+    auto next=roster;
+    auto track=add(1,ChannelRole::input,"EMPTY",ProcessingFormat::stereo);
+    track.connectMainOnCreate=true;
+    const auto added=next.edit(2,std::span<const ChannelEdit>(&track,1));assert(added.ok());
+    const auto empty=added.createdIds[0];
+    const auto publish=[&](const DynamicChannelRoster& candidate,const DynamicGraphRequest& request,
+                           std::uint64_t revision){
+        return live.commit(candidate,request,revision,epoch,epoch,false,
+            {},false,false,nullptr,nullptr,false,{},0,{},true);
+    };
+    auto sourced=req;sourced.sources.push_back({empty,0,1,true});
+    assert(!publish(next,sourced,1).ok()&&live.acceptedRevision()==1);
+    assert(publish(next,req,1).ok());
+    render(live,actual,57);render(reference,expected,57);equal(57);
+    assert(live.appliedExternalOutput(epoch,2,voice)==(std::pair<int,int>{2,3}));
+    auto bus=add(2,ChannelRole::group,"EMPTY AUX",ProcessingFormat::stereo);
+    const auto busAdded=next.edit(3,std::span<const ChannelEdit>(&bus,1));assert(busAdded.ok());
+    const auto aux=busAdded.createdIds[0];
+    assert(publish(next,req,2).ok());
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    assert(live.acceptedRevision()==3&&actual.l[63]>.05f&&actual.xl[63]>.05f);
+    assert(!publish(next,req,3).ok());
+    auto deletion=next;
+    auto changed=req;changed.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
+    auto extra=add(3,ChannelRole::input,"MORE");
+    assert(next.edit(4,std::span<const ChannelEdit>(&extra,1)).ok());
+    assert(!publish(next,changed,3).ok()&&live.acceptedRevision()==3);
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    const auto erase=[&](const DynamicChannelRoster& candidate,const DynamicGraphRequest& request,
+                         std::uint64_t revision,ChannelId id){
+        return live.commit(candidate,request,revision,epoch,epoch,false,
+            {},false,false,nullptr,nullptr,false,id,0,{},true);
+    };
+    auto unsafe=deletion;auto noSource=req;noSource.sources.clear();
+    assert(unsafe.removeInputAndDisconnect(4,voice).ok());
+    assert(!erase(unsafe,noSource,3,voice).ok()&&live.acceptedRevision()==3);
+    assert(deletion.removeInputAndDisconnect(4,empty).ok());
+    assert(erase(deletion,req,3,empty).ok());
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    assert(deletion.removeBusAndRestoreSources(5,aux).ok());
+    assert(!erase(deletion,req,3,aux).ok()); // stale
+    assert(erase(deletion,req,4,aux).ok());
+    render(live,actual,64);render(reference,expected,64);equal(64);
+    assert(live.appliedExternalOutput(epoch,5,voice)==(std::pair<int,int>{2,3}));
+    std::puts("DORMANT_ROSTER_CONTINUITY_PCM_PASS track/AUX add/delete, exact MAIN/MONITOR/EXT, in-flight slew, independent policy, unsafe edit rejected");
+}
+
+static void verifySameRevisionPhysicalSwitchReceipt() {
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,3> create{
+        add(0,ChannelRole::input,"SWITCH"),add(1,ChannelRole::input,"KEEP"),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo)};
+    const auto created=roster.edit(0,create);assert(created.ok());
+    const auto a=created.createdIds[0],b=created.createdIds[1],main=created.createdIds[2];
+    const std::array<ChannelEdit,2> links{output(a,main),output(b,main)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest request;request.physicalInputs=3;request.maxFrames=64;
+    request.sources={{a,0,-1,false},{b,2,-1,false}};
+    DynamicPreparedMixerBlock block;DynamicGraphError fault;
+    assert(DynamicPreparedMixerBlock::compile(roster,request,block,fault));
+    std::array<float,64> old{},next{},keep{},l{},r{};
+    old.fill(.1f);next.fill(.3f);keep.fill(.2f);
+    const float* pins[]{old.data(),next.data(),keep.data()};
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&](int n){return block.process(pins,3,l.data(),r.data(),n,fx);};
+    assert(render(64));const float baseline=l[63];
+    assert(baseline>.1f);
+    std::uint64_t first=0,second=0,third=0;
+    assert(!block.setPhysicalSource(a,3,-1,false,&first));
+    assert(!block.setPhysicalSource(a,0,1,true,&first));
+    assert(block.setPhysicalSource(a,1,-1,false,&first)&&first);
+    assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(render(16));assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(block.requestedPhysicalSourceTicket(a)==first);
+    std::uint64_t retry=0;
+    assert(block.setPhysicalSource(a,1,-1,false,&retry)&&retry==first);
+    assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(l[0]>baseline&&l[15]>l[0]);
+    assert(block.setPhysicalSource(a,0,-1,false,&second)&&second>first);
+    assert(render(48));assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(render(64));assert(block.appliedPhysicalSourceTicket(a)==second);
+    assert(near(l[63],baseline));
+    assert(block.setPhysicalSource(a,1,-1,false,&third)&&third>second);
+    assert(block.appliedPhysicalSourceTicket(a)==0);
+    assert(render(64));assert(block.appliedPhysicalSourceTicket(a)==third);
+    assert(block.requestedPhysicalSourceTicket(a)==third);
+    assert(block.setPhysicalSource(a,1,-1,false,&retry)&&retry==third);
+    assert(block.appliedPhysicalSourceTicket(a)==third);
+    const float installed=l[63];
+    assert(render(64));
+    for(int i=0;i<64;++i)assert(near(l[i],installed));
+    assert(!block.setPhysicalSource(a,3,-1,false,&retry));
+    assert(block.requestedPhysicalSourceTicket(a)==third&&block.appliedPhysicalSourceTicket(a)==third);
+    assert(l[63]>baseline);
+    std::puts("PHYSICAL_SOURCE_IDEMPOTENT_RETRY_PASS");
+    std::puts("LIVE_PHYSICAL_SOURCE_RECEIPT_PCM_PASS same graph, 64-sample fade, A-B-A generations");
+}
+
+// Stereo retarget across every production sink in one native render.
+// Distinct L/R values expose accidental mono/ordinal swaps. Independent
+// MONITOR PRE send, physical EXT and programme tap all use the same fade.
+static void verifyStereoPhysicalSwitchAcrossSinks() {
+    constexpr std::uint64_t epoch=9604;
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"KEEP",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto made=roster.edit(0,create);assert(made.ok());
+    const auto voice=made.createdIds[0],keep=made.createdIds[1],
+        main=made.createdIds[2],monitor=made.createdIds[3];
+    const std::array<ChannelEdit,3> links{
+        output(voice,main),output(keep,main),send(voice,monitor,.25f,true)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=6;req.maxFrames=64;
+    req.sources={{voice,0,1,true},{keep,4,5,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher p;
+    assert(p.commit(roster,req,0,epoch,epoch,true).ok());
+    assert(p.setExternalOutput(epoch,1,voice,2,3,4));
+    std::array<std::array<float,64>,6> in{},out{};
+    const std::array<float,6> values{.10f,.20f,.40f,.05f,.03f,.07f};
+    std::array<const float*,6> pins{};
+    for(int i=0;i<6;++i){in[i].fill(values[i]);pins[i]=in[i].data();}
+    float* hardware[]{out[0].data(),out[1].data(),out[4].data(),out[5].data()};
+    DynamicProgrammeTap tap;tap.requested=voice;
+    int voiceCalls=0,keepCalls=0;
+    const auto fx=[&](ChannelId id,float*,float*,int) noexcept {
+        if(id==voice)++voiceCalls;
+        if(id==keep)++keepCalls;
+    };
+    const auto render=[&](int n){
+        assert(p.render(epoch,pins.data(),6,out[0].data(),out[1].data(),n,false,fx,
+            out[2].data(),out[3].data(),{},{},{},hardware,4,{},0,nullptr,nullptr,false,nullptr,0,&tap));
+        assert(tap.captured()==voice&&tap.left().size()==static_cast<std::size_t>(n));
+        for(int i=0;i<n;++i){
+            const float l=tap.left()[i],r=tap.right()[i];
+            assert(near(out[0][i],l+values[4])&&near(out[1][i],r+values[5]));
+            assert(near(out[2][i],l*.25f)&&near(out[3][i],r*.25f));
+            assert(near(out[4][i],l)&&near(out[5][i],r));
+        }
+    };
+    // Settle initial EXT ramp before sample-exact comparisons.
+    assert(p.render(epoch,pins.data(),6,out[0].data(),out[1].data(),64,false,fx,
+        out[2].data(),out[3].data(),{},{},{},hardware,4));
+    render(64);
+    std::uint64_t first=0,back=0,retry=0;
+    assert(p.setPhysicalSource(epoch,1,voice,2,3,true,&first)&&first);
+    render(16);
+    assert(p.requestedPhysicalSourceTicket(epoch,1,voice)==first);
+    assert(p.appliedPhysicalSourceTicket(epoch,1,voice)==0);
+    for(int i=0;i<16;++i){
+        const float a=static_cast<float>(i+1)/64.f;
+        assert(near(tap.left()[i],values[0]+(values[2]-values[0])*a));
+        assert(near(tap.right()[i],values[1]+(values[3]-values[1])*a));
+    }
+    assert(!p.setPhysicalSource(epoch,1,voice,2,2,true,&retry));
+    assert(!p.setPhysicalSource(epoch,1,voice,2,6,true,&retry));
+    assert(!p.setPhysicalSource(epoch,1,voice,2,-1,false,&retry));
+    assert(p.setPhysicalSource(epoch,1,voice,2,3,true,&retry)&&retry==first);
+    assert(p.setPhysicalSource(epoch,1,voice,0,1,true,&back)&&back>first);
+    render(48);
+    assert(near(tap.left().back(),values[2])&&near(tap.right().back(),values[3]));
+    assert(p.appliedPhysicalSourceTicket(epoch,1,voice)==0);
+    render(64);
+    assert(near(tap.left().back(),values[0])&&near(tap.right().back(),values[1]));
+    assert(p.appliedPhysicalSourceTicket(epoch,1,voice)==back);
+    assert(p.setPhysicalSource(epoch,1,voice,0,1,true,&retry)&&retry==back);
+    assert(p.acceptedRevision()==1&&voiceCalls==5&&keepCalls==5);
+    std::puts("STEREO_RETARGET_ALL_SINKS_PCM_PASS");
+}
+
+// Exercise the native publisher's real retirement receipt across a live
+// independent MONITOR and surviving EXT/programme sink. The control
+// transaction waits for AUDIO, never the other way round.
+static void verifyActiveTrackRetirementAcrossSinks() {
+    constexpr std::uint64_t epoch=9605;
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"DELETE",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"KEEP",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto made=roster.edit(0,create);assert(made.ok());
+    const auto gone=made.createdIds[0],keep=made.createdIds[1],
+        main=made.createdIds[2],monitor=made.createdIds[3];
+    const std::array<ChannelEdit,4> links{
+        output(gone,main),output(keep,main),send(gone,monitor,.5f,true),send(keep,monitor,.25f,true)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=64;
+    req.sources={{gone,0,1,true},{keep,2,3,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher p;
+    assert(p.commit(roster,req,0,epoch,epoch,true).ok());
+    assert(p.setExternalOutput(epoch,1,keep,2,3,4));
+    std::array<std::array<float,64>,4> in{};
+    std::array<std::array<float,64>,6> out{};
+    const std::array<float,4> values{.20f,.10f,.07f,.13f};
+    std::array<const float*,4> pins{};
+    for(int i=0;i<4;++i){in[i].fill(values[i]);pins[i]=in[i].data();}
+    float* hardware[]{out[0].data(),out[1].data(),out[4].data(),out[5].data()};
+    DynamicProgrammeTap tap;tap.requested=keep;
+    const auto fx=[](ChannelId,float*,float*,int) noexcept {};
+    const auto render=[&]{
+        assert(p.render(epoch,pins.data(),4,out[0].data(),out[1].data(),64,false,fx,
+            out[2].data(),out[3].data(),{},{},{},hardware,4,{},0,nullptr,nullptr,false,nullptr,0,&tap));
+    };
+    render();render();
+    auto candidate=roster;assert(candidate.removeInputAndDisconnect(roster.revision(),gone).ok());
+    auto next=req;next.sources.erase(next.sources.begin());
+    // No timing-policy change may use the live exception.
+    auto wrong=next;wrong.monitorLatencyPolicy=MonitorLatencyPolicy::aligned;
+    assert(!p.commit(candidate,wrong,1,epoch,epoch,false,{},false,false,nullptr,nullptr,
+        false,gone,128).ok());
+    assert(p.acceptedRevision()==1);
+    // Without AUDIO receipt, bounded timeout leaves the original graph.
+    auto timeout=p.commit(candidate,next,1,epoch,epoch,false,{},false,false,nullptr,nullptr,
+        false,gone,128);
+    assert(timeout.fault==DynamicNativeSessionPublisher::Fault::retirementTimeout);
+    assert(p.acceptedRevision()==1);
+    render();assert(near(out[0][63],.27f));
+    std::atomic<bool> done{false};
+    DynamicNativeSessionPublisher::CommitResult result;
+    std::thread control([&]{
+        result=p.commit(candidate,next,1,epoch,epoch,false,{},false,false,nullptr,nullptr,
+            false,gone,128);
+        done.store(true,std::memory_order_release);
+    });
+    bool sawFade=false;float previous=values[0];
+    do {
+        render();
+        for(int i=0;i<64;++i){
+            assert(tap.captured()==keep&&near(tap.left()[i],values[2])&&near(tap.right()[i],values[3]));
+            assert(near(out[4][i],values[2])&&near(out[5][i],values[3]));
+            const float contribution=out[0][i]-values[2];
+            assert(contribution>=-3e-5f&&contribution<=previous+3e-5f);
+            assert(near(out[1][i]-values[3],contribution*.5f));
+            assert(near(out[2][i]-values[2]*.25f,contribution*.5f));
+            assert(near(out[3][i]-values[3]*.25f,contribution*.25f));
+            if(contribution>1e-5f&&contribution<values[0]-1e-5f)sawFade=true;
+            previous=contribution;
+        }
+        std::this_thread::yield();
+    }while(!done.load(std::memory_order_acquire));
+    control.join();assert(result.ok()&&sawFade&&p.acceptedRevision()==2);
+    render();
+    assert(near(out[0][63],values[2])&&near(out[1][63],values[3]));
+    assert(near(out[2][63],values[2]*.25f)&&near(out[3][63],values[3]*.25f));
+    assert(p.appliedExternalOutput(epoch,2,keep)==(std::pair<int,int>{2,3}));
+    tap.requested=gone;render();assert(tap.state()==DynamicProgrammeTap::State::unavailable);
+    std::puts("ACTIVE_TRACK_RETIREMENT_ALL_SINKS_PCM_PASS");
+}
+
+// Parallel SEND-only BUS/FX return removal uses the same single-render
+// retirement proof. Exclusive primary OUT restoration is NOT equivalent.
+void verifyLiveParallelBusRetirement() {
+    constexpr std::uint64_t epoch=9606;
+    for(auto role:{ChannelRole::group,ChannelRole::fxReturn}){
+        DynamicChannelRoster roster;
+        const std::array<ChannelEdit,4> create{
+            add(0,ChannelRole::input,"KEEP",ProcessingFormat::stereo),
+            add(1,role,"REMOVE",ProcessingFormat::stereo),
+            add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+            add(3,ChannelRole::monitor,"MON",ProcessingFormat::stereo)};
+        auto made=roster.edit(0,create);assert(made.ok());
+        const auto keep=made.createdIds[0],gone=made.createdIds[1],
+            main=made.createdIds[2],mon=made.createdIds[3];
+        const std::array<ChannelEdit,5> links{
+            output(keep,main),output(gone,main),send(keep,gone,.5f),
+            send(keep,mon,.25f,true),send(gone,mon,.25f,true)};
+        assert(roster.edit(1,links).ok());
+        DynamicGraphRequest req;req.physicalInputs=2;req.maxFrames=64;
+        req.sources={{keep,0,1,true}};
+        req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+        DynamicNativeSessionPublisher p;
+        assert(p.commit(roster,req,0,epoch,epoch,true).ok());
+        assert(p.setExternalOutput(epoch,1,keep,2,3,4));
+        std::array<float,64> inL{},inR{};inL.fill(.2f);inR.fill(.1f);
+        const float* pins[]{inL.data(),inR.data()};
+        std::array<std::array<float,64>,6> out{};
+        float* hw[]{out[0].data(),out[1].data(),out[4].data(),out[5].data()};
+        DynamicProgrammeTap tap;tap.requested=keep;
+        int keepCalls=0,returnCalls=0;
+        const auto fx=[&](ChannelId id,float* l,float* rr,int n) noexcept {
+            if(id==keep)++keepCalls;
+            if(id==gone){++returnCalls;for(int f=0;f<n;++f){l[f]*=.5f;rr[f]*=.5f;}}
+        };
+        const auto render=[&]{
+            const int before=keepCalls;
+            assert(p.render(epoch,pins,2,out[0].data(),out[1].data(),64,false,fx,
+                out[2].data(),out[3].data(),{},{},{},hw,4,{},0,nullptr,nullptr,false,nullptr,0,&tap));
+            assert(keepCalls==before+1);
+        };
+        render();render();assert(returnCalls==2&&near(out[0][63],.25f));
+        auto next=roster;assert(next.removeBusAndRestoreSources(roster.revision(),gone).ok());
+        std::atomic<bool> done{false};
+        DynamicNativeSessionPublisher::CommitResult result;
+        std::thread control([&]{
+            result=p.commit(next,req,1,epoch,epoch,false,{},false,false,nullptr,nullptr,false,gone,128);
+            done.store(true,std::memory_order_release);
+        });
+        float previous=.05f;bool sawFade=false;
+        do{
+            render();
+            for(int f=0;f<64;++f){
+                const float wet=out[0][f]-.2f;
+                assert(wet>=-3e-5f&&wet<=previous+3e-5f);
+                assert(near(out[1][f],.1f+wet*.5f));
+                assert(near(out[2][f],.05f+wet*.25f)&&near(out[3][f],.025f+wet*.125f));
+                assert(near(out[4][f],.2f)&&near(out[5][f],.1f));
+                assert(tap.captured()==keep&&near(tap.left()[f],.2f)&&near(tap.right()[f],.1f));
+                if(wet>1e-5f&&wet<.05f-1e-5f)sawFade=true;
+                previous=wet;
+            }
+            std::this_thread::yield();
+        }while(!done.load(std::memory_order_acquire));
+        control.join();assert(result.ok()&&sawFade&&p.acceptedRevision()==2);
+        render();const int after=returnCalls;render();assert(returnCalls==after);
+        assert(near(out[0][63],.2f)&&near(out[2][63],.05f));
+        tap.requested=gone;render();assert(tap.state()==DynamicProgrammeTap::State::unavailable);
+        // A primary-routed source would be reconnected to MAIN. Reject
+        // before retirement: no callback wait, no faded/altered old graph.
+        DynamicChannelRoster exclusive;
+        auto ex=exclusive.edit(0,create);assert(ex.ok());
+        const auto src=ex.createdIds[0],bus=ex.createdIds[1],dst=ex.createdIds[2];
+        const std::array<ChannelEdit,2> primary{output(src,bus),output(bus,dst)};
+        assert(exclusive.edit(1,primary).ok());
+        auto exReq=req;exReq.sources={{src,0,1,true}};
+        DynamicNativeSessionPublisher q;
+        assert(q.commit(exclusive,exReq,0,epoch,epoch,true).ok());
+        assert(q.render(epoch,pins,2,out[0].data(),out[1].data(),64,false,fx,out[2].data(),out[3].data()));
+        const float original=out[0][63];
+        auto changed=exclusive;assert(changed.removeBusAndRestoreSources(exclusive.revision(),bus).ok());
+        auto rejected=q.commit(changed,exReq,1,epoch,epoch,false,{},false,false,nullptr,nullptr,false,bus,128);
+        assert(rejected.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable&&q.acceptedRevision()==1);
+        assert(q.render(epoch,pins,2,out[0].data(),out[1].data(),64,false,fx,out[2].data(),out[3].data()));
+        assert(near(out[0][63],original));
+    }
+    std::puts("LIVE_PARALLEL_BUS_FX_RETIREMENT_PCM_PASS");
+}
+
+// Add a parallel SEND while a surviving fader is mid-ramp.
+void verifyLiveWireAdditionContinuity(){
+    constexpr std::uint64_t epoch=9607;
+    DynamicChannelRoster roster;
+    const std::array<ChannelEdit,4> create{
+        add(0,ChannelRole::input,"KEEP",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"ADD SEND",ProcessingFormat::stereo),
+        add(2,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(3,ChannelRole::monitor,"MON",ProcessingFormat::stereo)};
+    auto made=roster.edit(0,create);assert(made.ok());
+    const auto keep=made.createdIds[0],src=made.createdIds[1],
+        main=made.createdIds[2],mon=made.createdIds[3];
+    const std::array<ChannelEdit,3> links{output(keep,main),output(src,main),send(keep,mon,.25f,true)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=64;
+    req.sources={{keep,0,1,true},{src,2,3,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    DynamicNativeSessionPublisher p;
+    assert(p.commit(roster,req,0,epoch,epoch,true).ok());
+    assert(p.setExternalOutput(epoch,1,keep,2,3,4));
+    std::array<std::array<float,64>,4> in{};
+    in[0].fill(.2f);in[1].fill(.1f);in[2].fill(.08f);in[3].fill(.04f);
+    const float* pins[]{in[0].data(),in[1].data(),in[2].data(),in[3].data()};
+    std::array<std::array<float,64>,6> out{};
+    float* hw[]{out[0].data(),out[1].data(),out[4].data(),out[5].data()};
+    DynamicProgrammeTap tap;tap.requested=keep;
+    int calls=0;
+    const auto fx=[&](ChannelId id,float*,float*,int) noexcept {if(id==keep)++calls;};
+    const auto render=[&](int frames){
+        const auto before=calls;
+        assert(p.render(epoch,pins,4,out[0].data(),out[1].data(),frames,false,fx,
+            out[2].data(),out[3].data(),{},{},{},hw,4,{},0,nullptr,nullptr,false,nullptr,0,&tap));
+        assert(calls==before+1);
+    };
+    render(64);render(64);
+    assert(near(out[2][63],.05f)&&near(out[4][63],.2f));
+    assert(p.setChannelMix(epoch,1,keep,.5f,0.f));
+    assert(roster.rememberLiveMix(keep,.5f,0.f));
+    render(16);
+    auto next=roster;
+    WireChange connect;connect.kind=WireChange::Kind::connect;connect.from=src;
+    connect.to=mon;connect.gain=.5f;connect.preFader=true;
+    const std::array<WireChange,1> changes{connect};
+    assert(next.wireTransaction(roster.revision(),changes).ok());
+    assert(p.commit(next,req,1,epoch,epoch,false,{},true,false,nullptr,nullptr,false,{},0,{},false,true).ok());
+    int samples=0;
+    for(int frames:{8,24,32}){
+        render(frames);
+        for(int f=0;f<frames;++f){
+            ++samples;
+            const float dry=.2f*(1.f-.5f*std::min(64,16+samples)/64.f);
+            const float cue=.05f+.04f*samples/64.f;
+            assert(near(out[0][f],dry+.08f)&&near(out[1][f],dry*.5f+.04f));
+            assert(near(out[2][f],cue)&&near(out[3][f],cue*.5f));
+            assert(near(out[4][f],dry)&&near(out[5][f],dry*.5f));
+            assert(tap.captured()==keep&&near(tap.left()[f],dry)&&near(tap.right()[f],dry*.5f));
+        }
+    }
+    assert(p.appliedExternalOutput(epoch,2,keep)==(std::pair<int,int>{2,3}));
+    auto removed=next;
+    WireChange unplug;unplug.kind=WireChange::Kind::remove;unplug.from=src;
+    unplug.edgeId=next.find(src)->sends.back().edgeId;
+    const std::array<WireChange,1> removals{unplug};
+    assert(removed.wireTransaction(next.revision(),removals).ok());
+    auto rejected=p.commit(removed,req,2,epoch,epoch,false,{},true,false,nullptr,nullptr,false,{},0,{},false,true);
+    assert(rejected.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable&&p.acceptedRevision()==2);
+    render(64);assert(near(out[2][63],.09f)&&near(out[4][63],.1f));
+    std::puts("LIVE_WIRE_ADDITION_CONTINUITY_PCM_PASS");
+}
+
 int main() {
+    verifyLiveWireAdditionContinuity();
+    verifyLiveParallelBusRetirement();
+    verifyActiveTrackRetirementAcrossSinks();
+    verifyStereoPhysicalSwitchAcrossSinks();
+    verifySameRevisionPhysicalSwitchReceipt();
+    verifyDormantRosterAdditionContinuity();
+    verifyPrivatePflCapturePcm();
     armix::ducker_test::run(); // same standalone core cases in existing fast CI
     verifyAutoDuckerKeyScope();
     verifyAutoDuckerPostFaderDependencies();

@@ -257,6 +257,11 @@ def main():
         assert event["operation"]=="CREATE_CHANNEL"
         assert event["baseRevision"]=="1"
         assert event["workspaceToken"]=="workspace-a"
+        roster_controls=["addTrack","addBus","addFx","addGroupBus","addGroupSelected"]
+        def assert_roster_enabled(enabled):
+            for ident in roster_controls:
+                assert page.locator("#"+ident).is_enabled()==enabled, (ident,enabled)
+        assert_roster_enabled(False)
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
@@ -267,12 +272,13 @@ def main():
         # The approved mixer virtualizes/banks strips. Count native-owned
         # model channels, not only the currently mounted DOM bank.
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14, "ACK alone changed UI"
+        assert_roster_enabled(False)
         state=snapshot("2",True)
         emit(page,"arMixConsoleSnapshot",state)
         page.wait_for_function("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length===15""")
         new_track=page.locator("#tracks .strip").filter(has_text="Track 16").first
         assert new_track.count()==1
-        assert page.locator("#addTrack").is_enabled()
+        assert_roster_enabled(True)
         assert page.evaluate("""()=>document.documentElement.dataset.armixNativeAuthority""")=="logical-editable"
         assert page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixConsoleIntent').length""")==0
@@ -284,6 +290,7 @@ def main():
         wire=page.evaluate("""()=>window.__events.filter(
             e=>e.name==='arMixLogicalIntent').at(-1).payload""")
         assert wire["operation"]=="WIRE_TRANSACTION"
+        assert_roster_enabled(False)
         assert wire["payload"]["changes"][0]["op"]=="DISCONNECT"
         assert page.evaluate("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks.find(
             t=>t.name==='Track 16')?.output""")=="Master", "Pages model changed before native readback"
@@ -313,9 +320,11 @@ def main():
         fresh=page.evaluate("""()=>window.__events.filter(e=>
             e.name==='arMixLogicalIntent').at(-1).payload""")
         assert fresh["workspaceToken"]=="workspace-b"
+        assert_roster_enabled(False)
         emit(page,"arMixLogicalAck",{"requestId":fresh["requestId"],
             "status":"REJECTED","errorCode":"TEST_DISK_WRITE_FAILED","revision":"3"})
         assert page.evaluate("()=>window.__ARMIX_NATIVE_SCOPE__.tracks.length")==14
+        assert_roster_enabled(True)
         # Now assert actual selection dispatches the correct Guitar FX id.
         # Leave pending ADD_FX_REFERENCE as the LAST edit; it must not
         # falsely advertise a physical processor or block other fixtures.
@@ -497,6 +506,67 @@ def main():
         emit(page,"arMixConsoleSnapshot",applied)
         page.wait_for_function("""()=>window.__ARMIX_NATIVE_SCOPE__.tracks[0].fxOn===false""")
         assert not errors,errors
+        page.close()
+
+        # Workspace-only edit must be available without touching a vendor FX.
+        page=browser.new_page(viewport={"width":1366,"height":768})
+        page.on("pageerror",lambda error:errors.append(str(error)))
+        page.add_init_script(NATIVE_EVENTS + """window.__events=[];
+          window.__JUCE__={backend:{
+             emitEvent(name,payload){window.__events.push({name,payload});},
+             ...window.__nativeListenerMethods
+          }};""")
+        page.goto((out/"index.html").as_uri())
+        page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
+        detached=retained_snapshot(stale_scalar=True)
+        detached["graph"]["channels"][0]["inserts"]=[
+            {"id":"vendor-instance","catalogId":"vst3.fixture","name":"Vendor FX","bypassed":False}]
+        detached["mixerSession"]["channels"]=copy.deepcopy(detached["graph"]["channels"])
+        emit(page,"arMixConsoleSnapshot",detached)
+        edit=page.get_by_role("button",name="Edit mixer offline",exact=True)
+        assert edit.is_visible() and edit.is_enabled()
+        edit.click()
+        assert page.get_by_role("button",name="Preparing offline mixer…",exact=True).is_disabled()
+        req=page.evaluate("""()=>window.__events.find(e=>
+          e.payload?.action==='retainedFxOfflineOpen').payload""")
+        assert req["workspaceOnly"] is True and req["deviceEpoch"]=="69"
+        assert req["graphRevision"]=="2"
+        assert not any(k in req for k in ["channelId","slot","instanceId"])
+        emit(page,"arMixRetainedFxOfflineAck",{"requestId":req["requestId"],"ok":False,
+            "error":"Fixture: device transaction busy"})
+        assert edit.is_enabled(), "Rejected capture must unlock the workspace action"
+        edit.click()
+        req=page.evaluate("""()=>window.__events.filter(e=>
+          e.payload?.action==='retainedFxOfflineOpen').at(-1).payload""")
+        emit(page,"arMixRetainedFxOfflineAck",{"requestId":req["requestId"],"ok":True})
+        assert page.locator("#addTrack").is_disabled()
+        saved=copy.deepcopy(detached)
+        saved["logicalMixer"]["graph"]["channels"][0]["inserts"]=copy.deepcopy(
+            detached["graph"]["channels"][0]["inserts"])
+        saved["logicalMixer"]["graph"]["channels"][0]["controls"]["faderDb"]=-7
+        saved["logicalMixer"].update(retainedOffline=True,retainedDeviceEpoch="69",
+            retainedGraphRevision="2",retainedCaptureDeviceEpoch="69",
+            retainedCaptureGraphRevision="2")
+        emit(page,"arMixConsoleSnapshot",saved)
+        page.wait_for_function("()=>document.documentElement.dataset.armixNativeAuthority==='logical-editable'")
+        assert not edit.is_visible() and page.locator("#addTrack").is_enabled()
+        assert not page.evaluate("""()=>window.__events.some(e=>e.name==='arMixLogicalIntent'||
+            e.name==='arMixConsoleIntent'||e.payload?.action==='monitor')""")
+        fader=page.locator("#tracks .strip").first.locator("input.fader")
+        for value in [-12,-15,-18]:
+            fader.evaluate("(el,v)=>{el.value=String(v);el.dispatchEvent(new Event('input',{bubbles:true}));}",value)
+            emit(page,"arMixConsoleSnapshot",saved)
+        commands="()=>window.__events.filter(e=>e.name==='arMixLogicalIntent'&&e.payload.operation==='SET_FADER')"
+        assert len(page.evaluate(commands))==0, "Readback during offline drag cannot persist preview"
+        fader.evaluate("(el)=>{el.value='-18';el.dispatchEvent(new Event('change',{bubbles:true}));}")
+        page.wait_for_function(f"()=>({commands})().length===1")
+        intent=page.evaluate(commands)[0]["payload"]
+        assert intent["payload"]["valueDb"]==-18
+        emit(page,"arMixLogicalAck",{"requestId":intent["requestId"],"status":"REJECTED","errorCode":"FIXTURE"})
+        emit(page,"arMixConsoleSnapshot",saved)
+        assert float(fader.input_value())==-7, "Rejected preview must restore saved fader"
+        assert not errors,errors
+        page.close()
         browser.close()
     print("PASS native compiled GUI: offline ACK, workspace replacement, WIRE SOURCE ONLY and retained PCM isolation")
 

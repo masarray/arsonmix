@@ -183,7 +183,86 @@ static void verifyLiveDuckerCausalTiming(){
     std::puts("PASS: live causal post-fader Ducker, 1408-sample source latency, stable PDC and cycle rollback");
 }
 
+// Real nonzero PDC history must survive a live added SEND; the first
+// callback after adoption may neither allocate nor clear unaffected delay rings.
+static void verifyWireAdditionWithPdc(){
+    constexpr std::uint64_t ep=43;
+    DynamicChannelRoster roster;
+    auto add=[](int pos,ChannelRole role,const char* name){
+        ChannelEdit e;e.kind=ChannelEdit::Kind::add;e.position=pos;e.role=role;
+        e.format=ProcessingFormat::stereo;e.text=name;return e;
+    };
+    const std::array creates{add(0,ChannelRole::input,"DRY"),
+        add(1,ChannelRole::input,"LATENT"),add(2,ChannelRole::main,"MAIN"),
+        add(3,ChannelRole::monitor,"MON")};
+    const auto made=roster.edit(0,creates);assert(made.ok());
+    const auto dry=made.createdIds[0],latent=made.createdIds[1],
+        main=made.createdIds[2],mon=made.createdIds[3];
+    auto route=[](ChannelId from,ChannelId to,bool primary,float gain){
+        ChannelEdit e;e.kind=primary?ChannelEdit::Kind::setPrimaryOutput:ChannelEdit::Kind::addSendReference;
+        e.id=from;e.target=to;e.value=gain;e.preFader=!primary;return e;
+    };
+    const std::array links{route(dry,main,true,1.f),route(latent,main,true,1.f),route(latent,mon,false,.25f)};
+    assert(roster.edit(1,links).ok());
+    DynamicGraphRequest req;req.physicalInputs=4;req.maxFrames=64;
+    req.sources={{dry,0,1,true},{latent,2,3,true}};
+    req.monitorLatencyPolicy=MonitorLatencyPolicy::independent;
+    auto effects=std::make_shared<Effects>();effects->a=latent;assert(effects->delayA.prepare(7));
+    DynamicNativeSessionPublisher::FxPlan plan;
+    plan.owner=effects;plan.context=effects.get();plan.deviceEpoch=ep;plan.graphRevision=1;
+    plan.render=+[](void* p,ChannelId id,float* l,float* r,int n) noexcept {static_cast<Effects*>(p)->render(id,l,r,n);};
+    plan.latency=+[](void* p,ChannelId id) noexcept{return static_cast<Effects*>(p)->latency(id);};
+    DynamicNativeSessionPublisher pub;
+    assert(pub.commit(roster,req,0,ep,ep,true,plan).ok());
+    assert(pub.latencySamples(ep,1)==7);
+    assert(pub.setExternalOutput(ep,1,dry,2,3,4));
+    std::array<std::array<float,64>,4> in{};
+    std::array<std::array<float,64>,6> out{};
+    const float* pins[]{in[0].data(),in[1].data(),in[2].data(),in[3].data()};
+    float* hw[]{out[0].data(),out[1].data(),out[4].data(),out[5].data()};
+    DynamicProgrammeTap tap;tap.requested=dry;
+    int time=0;
+    const auto sample=[](int n){return .1f+static_cast<float>((n%31+31)%31)*.002f;};
+    const auto render=[&](int frames){
+        for(int f=0;f<frames;++f){
+            in[0][f]=sample(time+f);in[1][f]=in[0][f]*.5f;
+            in[2][f]=.08f;in[3][f]=.04f;
+        }
+        const auto before=allocations;
+        assert(pub.render(ep,pins,4,out[0].data(),out[1].data(),frames,false,
+            [](ChannelId,float*,float*,int) noexcept{},out[2].data(),out[3].data(),
+            {},{},{},hw,4,{},0,nullptr,nullptr,false,nullptr,0,&tap));
+        assert(allocations==before);
+        time+=frames;
+    };
+    render(64);render(64);
+    auto next=roster;
+    WireChange connect;connect.from=dry;connect.to=mon;connect.gain=.5f;connect.preFader=true;
+    const std::array changes{connect};
+    assert(next.wireTransaction(roster.revision(),changes).ok());
+    plan.graphRevision=2;
+    assert(pub.commit(next,req,1,ep,ep,false,plan,true,false,nullptr,nullptr,
+        false,{},0,{},false,true).ok());
+    assert(pub.latencySamples(ep,2)==7);
+    const int start=time;
+    const auto close=[](float a,float b){return std::abs(a-b)<3e-5f;};
+    for(int frames:{3,5,17,39,16}){
+        render(frames);
+        for(int f=0;f<frames;++f){
+            const int at=time-frames+f;
+            const float delayed=sample(at-7);
+            const float gain=.5f*static_cast<float>(std::clamp(at-start-7+1,0,64))/64.f;
+            assert(close(out[0][f],delayed+.08f)&&close(out[1][f],delayed*.5f+.04f));
+            assert(close(out[4][f],delayed)&&close(out[5][f],delayed*.5f));
+            assert(close(out[2][f],.02f+delayed*gain)&&close(out[3][f],.01f+delayed*gain*.5f));
+            assert(tap.captured()==dry&&close(tap.left()[f],sample(at))&&close(tap.right()[f],sample(at)*.5f));
+        }
+    }
+    std::puts("LIVE_WIRE_NONZERO_PDC_HISTORY_NO_ALLOC_PASS");
+}
+
 int main(){
+    verifyWireAdditionWithPdc();
     verifyExactHistoryAndSend();
     verifyLiveDuckerCausalTiming();
     {

@@ -47,6 +47,32 @@ int main() {
     output.operatorRequested(true);
     assert(output.mayResumeTemporaryMute(true,true,false));
 
+    // Capture before render; disarm/re-arm during the render is a hard
+    // session boundary even when the same WASAPI name/rate is selected.
+    SecondaryOutputGeneration sink;
+    assert(sink.capture()==0&&!sink.valid(0));
+    const auto first=sink.beginRearm();
+    assert(sink.capture()==0&&!sink.valid(first));
+    assert(sink.authorize(first)&&sink.capture()==first);
+    sink.revoke();
+    assert(!sink.valid(first)&&sink.capture()==0);
+    const auto second=sink.beginRearm();
+    assert(second!=first&&sink.authorize(second));
+    assert(!sink.valid(first)&&sink.valid(second));
+    // A source/device fault during reset invalidates the pending ARM.
+    const auto interrupted=sink.beginRearm();
+    sink.revoke();
+    assert(!sink.authorize(interrupted)&&sink.capture()==0);
+    const auto recovered=sink.beginRearm();
+    assert(sink.authorize(recovered)&&sink.capture()==recovered);
+    for(int i=0;i<10000;++i){
+        const auto stale=sink.capture();
+        sink.revoke();
+        const auto next=sink.beginRearm();
+        assert(!sink.valid(stale)&&sink.authorize(next)&&sink.valid(next));
+        assert(!sink.valid(stale));
+    }
+
     AudioContinuityRetry retry;
     retry.fault(100);
     const auto generation=retry.generation();

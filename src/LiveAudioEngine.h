@@ -403,7 +403,37 @@ public:
         if(armed.isNotEmpty())secondaryOutput_.stop();
         return armed;
     }
+    bool hasSecondaryProgrammeSource() const noexcept {
+        return secondaryProgrammeSource_.load(std::memory_order_acquire)!=0;
+    }
+    bool secondaryProgrammeSourceValid() const noexcept {
+        const auto id=secondaryProgrammeSource_.load(std::memory_order_acquire);
+        return !id||(secondaryProgrammeEpoch_.load(std::memory_order_acquire)==dryRoutingLab_.epoch()&&
+            secondaryProgrammeWorkspace_.load(std::memory_order_acquire)==dryRoutingLab_.programmeWorkspace()&&
+            dryRoutingLab_.programmeSourceEligible(armix::mixer::ChannelId{id}));
+    }
+    // CONTROL only. Revoke the old producer ticket BEFORE changing the
+    // source. Rearm only the existing WASAPI clock; ASIO is never detached.
+    // Invalid/deleted sources remain assigned but cannot fall back to MAIN.
+    juce::String selectSecondaryProgramme(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t roster,armix::mixer::ChannelId id) {
+        if(!secondaryResumeReady()||!attached_||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           !dryRoutingLab_.programmeSourceRequestMatches(ep,rev,roster,id))
+            return "Programme source unavailable · refresh the mixer routing";
+        const auto previous=secondaryProgrammeSource_.load(std::memory_order_acquire);
+        if(previous==id.value&&secondaryProgrammeSourceValid())return {};
+        const bool armed=secondaryOutput_.armed();
+        secondaryOutput_.disarm();
+        secondaryProgrammeAppliedTicket_.store(0,std::memory_order_release);
+        secondaryProgrammeEpoch_.store(ep,std::memory_order_release);
+        secondaryProgrammeWorkspace_.store(dryRoutingLab_.programmeWorkspace(),std::memory_order_release);
+        secondaryProgrammeSource_.store(id.value,std::memory_order_release);
+        if(armed)return armSecondaryOutput(true);
+        return {};
+    }
     juce::String armSecondaryOutput(bool wanted) {
+        if(wanted&&!secondaryProgrammeSourceValid())
+            return "Programme source changed or unavailable · select the source again";
         if(wanted&&dryRoutingLab_.nativeBusPatchAwaitingCallback())
             return "Wait for native bus mapping callback readback before arming STREAM";
         if(wanted && (independent_.active() || !directFence_.permitted() ||
@@ -482,15 +512,14 @@ public:
                in.contains("cable output") && out.contains("cable input");
     }
 
-    // First-time output authorization requires a verified capture source.
-    // Restoring an ALREADY-ARMED MAIN after a structural input edit instead
-    // verifies the existing destination/route even when every source is NONE:
-    // silence is safe and the user must not have to re-press MONITOR after
-    // NONE -> STEREO on the same device. Epoch/feedback/STREAM fences remain.
-    // Manual MONITOR arming always requires a verified source. An already
-    // authorized MAIN may remain safely armed while an input is temporarily
-    // NONE; this overload NEVER relaxes the explicit arm safety contract.
-    juce::String liveOutputArmFault() { return liveOutputArmFault(true); }
+    // Explicit operator ARM/Resume authorizes the verified output on an
+    // accepted ChannelId PCM graph, independently of physical input patches.
+    // SOURCE NONE is valid silence (or internal PLAYER/WIRE/FX processing).
+    // Keep the legacy M4 source requirement and all device, feedback,
+    // mapping/readback and transition safety fences below.
+    juce::String liveOutputArmFault() {
+        return liveOutputArmFault(!dryRoutingLab_.channelIdPhysicalPcmActive());
+    }
     juce::String liveOutputArmFault(bool requirePhysicalSource)
     {
         auto* device=deviceManager_.getCurrentAudioDevice();
@@ -535,7 +564,7 @@ public:
     void setMonitorEnabled (bool value) noexcept {
         mainOutputIntent_.operatorRequested(value);
         monitor_.store(value,std::memory_order_release);
-        if (!value) {dryRoutingLab_.deEzzerCueControl().revokePublished();resumeMainAfterAsioReset_.store(false,std::memory_order_release);}
+        if (!value) {dryRoutingLab_.deEzzerCueControl().revokePublished();dryRoutingLab_.revokePfl();resumeMainAfterAsioReset_.store(false,std::memory_order_release);}
     }
     bool isMonitorEnabled() const noexcept { return monitor_.load(std::memory_order_acquire); }
     bool wantsMainContinuation() const noexcept { return mainOutputIntent_.desired(); }
@@ -549,7 +578,7 @@ public:
         return callbackCount_.load(std::memory_order_relaxed);
     }
     // Emergency output mute, not a prerequisite for receiving audio.
-    void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); if(mute)dryRoutingLab_.deEzzerCueControl().revokePublished(); }
+    void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); if(mute){dryRoutingLab_.deEzzerCueControl().revokePublished();dryRoutingLab_.revokePfl();} }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
     bool allOutputsDisarmed() const noexcept {
         return isOutputMuted() && !secondaryOutput_.armed();
@@ -1066,7 +1095,7 @@ public:
             channelPan_.store (juce::jlimit (-1.f, 1.f, value), std::memory_order_relaxed);
     }
     void setChannelMuted (bool value) noexcept { channelMute_.store (value); }
-    void setMasterMuted (bool value) noexcept { masterMute_.store (value); if(value)dryRoutingLab_.deEzzerCueControl().revokePublished(); }
+    void setMasterMuted (bool value) noexcept { masterMute_.store (value); if(value){dryRoutingLab_.deEzzerCueControl().revokePublished();dryRoutingLab_.revokePfl();} }
     void setMasterMono (bool value) noexcept { masterMono_.store (value, std::memory_order_relaxed); }
 
     int chainSize() const noexcept { return graphOwned_->count; }
@@ -1672,6 +1701,8 @@ public:
            diagnosticRoute()!=armix::diagnostics::Route::normal||
            deviceManager_.getCurrentAudioDeviceType()!="ASIO")
             return "DMX: explicitly MUTE hardware and DISARM STREAM first";
+        if(enable&&hasSecondaryProgrammeSource())
+            return "DMX: choose MAIN as the secondary programme source first";
         if(enable&&(!secondaryOutput_.ready()||secondaryOutput_.faulted()))
             return "DMX: connect a verified Windows playback endpoint first";
         auto* device=deviceManager_.getCurrentAudioDevice();
@@ -2397,15 +2428,43 @@ public:
     // One native ChannelId bus transaction on the installed DIRECT device.
     // The GUI only obtains accepted state after successful native publisher
     // commit; no speculative UI role or second audio engine.
+    // An unchanged scheduled graph needs neither physical mute nor an
+    // ASRC reset. The native publisher proves the old PCM histories first.
+    bool dormantAdditionReady(std::uint64_t ep,std::uint64_t rev) const noexcept {
+        return attached_&&directFence_.permitted()&&!independent_.active()&&
+            dryRoutingLab_.nativeTopologyMatches(ep,rev)&&
+            !dryRoutingLab_.nativeBusPatchAwaitingCallback()&&
+            !routeReconfiguring_.load(std::memory_order_acquire)&&
+            !topologyPublicationMute_.load(std::memory_order_acquire)&&
+            diagnosticRoute_.load(std::memory_order_acquire)==armix::diagnostics::Route::normal&&
+            !handoff_.busy()&&fxMovePhase_.load(std::memory_order_acquire)==0;
+    }
+    bool nativeStripDormant(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId id) const noexcept {
+        return dormantAdditionReady(ep,rev)&&dryRoutingLab_.nativeStripDormant(ep,rev,id);
+    }
     LiveDryRoutingLab::NativeBusResult editNativeBus(
            std::uint64_t epoch,std::uint64_t pcmRevision,
            std::uint64_t rosterRevision,
            armix::mixer::ChannelRole role,
            std::span<const armix::mixer::ChannelId> selected,
            const std::string& name,float gain,
-           armix::mixer::ChannelId remove={},bool connectMain=true) {
+           armix::mixer::ChannelId remove={},bool connectMain=true,bool silentAddition=false,bool silentRemoval=false) {
         LiveDryRoutingLab::NativeBusResult rejected;
         rejected.error="NATIVE_BUS_DEVICE_UNAVAILABLE";
+        if(silentRemoval&&!allOutputsDisarmed()){
+            if(silentAddition||!remove.value||role!=armix::mixer::ChannelRole::group||!selected.empty()||
+               !nativeStripDormant(epoch,pcmRevision,remove))return rejected;
+            return dryRoutingLab_.editNativeBus(epoch,pcmRevision,rosterRevision,role,
+                selected,name,gain,remove,false,{},connectMain,{},false,
+                [&]{return nativeStripDormant(epoch,pcmRevision,remove);},true);
+        }
+        if(silentAddition&&!allOutputsDisarmed()){
+            if(remove.value||role!=armix::mixer::ChannelRole::group||!selected.empty()||
+               !dormantAdditionReady(epoch,pcmRevision))return rejected;
+            return dryRoutingLab_.editNativeBus(epoch,pcmRevision,rosterRevision,role,
+                selected,name,gain,{},false,{},connectMain,{},true,
+                [&]{return dormantAdditionReady(epoch,pcmRevision);});
+        }
         if(independent_.active() || !attached_ || secondaryOutput_.armed() ||
            !directFence_.permitted() ||
            routeReconfiguring_.load(std::memory_order_acquire) ||
@@ -2458,6 +2517,30 @@ public:
             }
             rejected.error="NATIVE_BUS_PUBLICATION_EXCEPTION";
             return rejected;
+        }
+    }
+    // Prefer a proved channel-local BUS/FX retirement. Exclusive primary
+    // reroutes or changed PDC must fail the native proof before any fade.
+    LiveDryRoutingLab::NativeBusResult removeNativeBusLive(
+            std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelRole role,armix::mixer::ChannelId id) {
+        if(allOutputsDisarmed())return editNativeBus(ep,rev,roster,role,{},"",1.f,id);
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="NATIVE_BUS_DEVICE_UNAVAILABLE";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        const auto ticket=secondaryOutput_.captureProducerTicket();
+        const auto valid=[&]{
+            return device&&deviceManager_.getCurrentAudioDevice()==device&&device->isOpen()&&
+                dormantAdditionReady(ep,rev)&&secondaryOutput_.captureProducerTicket()==ticket;
+        };
+        if(!valid())return fail;
+        try{
+            const auto rate=device->getCurrentSampleRate();
+            if(!std::isfinite(rate)||rate<8000.||rate>384000.)return fail;
+            return dryRoutingLab_.editNativeBus(ep,rev,roster,role,{},"",1.f,id,
+                false,{},true,{},false,valid,false,static_cast<int>(std::ceil(rate*.008)));
+        }catch(...){
+            fail.error="NATIVE_BUS_PUBLICATION_EXCEPTION";return fail;
         }
     }
     // Processing M/ST is an accepted ChannelId PCM topology transaction.
@@ -2833,22 +2916,71 @@ public:
         return privateDeEzzerCueAllowed()?dryRoutingLab_.deEzzerCueRoute(ep,rev,channel):0;
     }
     armix::mixer::NativeFxCueBus& deEzzerCueControl() noexcept {return dryRoutingLab_.deEzzerCueControl();}
+    bool selectPfl(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId id,bool enabled) noexcept {
+        return privateDeEzzerCueAllowed()&&dryRoutingLab_.selectPfl(ep,rev,id,enabled);
+    }
+    juce::var nativePflSnapshot() {
+        if(!privateDeEzzerCueAllowed()){dryRoutingLab_.revokePfl();return {};}
+        return dryRoutingLab_.nativePflSnapshot();
+    }
 
     LiveDryRoutingLab::NativeBusResult createNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
             std::uint64_t rosterRevision,const std::string& name,
-            armix::mixer::ProcessingFormat format) {
+            armix::mixer::ProcessingFormat format,bool silentAddition=false) {
+        if(silentAddition&&!allOutputsDisarmed()){
+            LiveDryRoutingLab::NativeBusResult rejected;
+            rejected.error="NATIVE_TRACK_DEVICE_UNAVAILABLE";
+            if(!dormantAdditionReady(epoch,pcmRevision))return rejected;
+            return dryRoutingLab_.createNativeInputChannel(epoch,pcmRevision,rosterRevision,
+                name,format,false,{},0,false,true,
+                [&]{return dormantAdditionReady(epoch,pcmRevision);});
+        }
         return editNativeInputTopology(epoch,"NATIVE_TRACK_DEVICE_UNAVAILABLE",
             "NATIVE_TRACK_PUBLICATION_EXCEPTION",[&](const auto& beforePublish){
                 return dryRoutingLab_.createNativeInputChannel(
                     epoch,pcmRevision,rosterRevision,name,format,true,beforePublish);
             });
     }
+    // CONTROL only: prefer the existing channel-local retirement without
+    // revoking the independently clocked output. A native proof rejection
+    // permits the caller's ordinary gated fallback; a timeout/device change
+    // never silently replays the edit.
+    LiveDryRoutingLab::NativeBusResult removeNativeInputChannelLive(
+            std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelId id) {
+        LiveDryRoutingLab::NativeBusResult fail;
+        // A stopped mixer has no audio receipt to wait for. Preserve the
+        // normal immediate stopped edit rather than manufacturing a timeout.
+        if(allOutputsDisarmed())return removeNativeInputChannel(ep,rev,roster,id);
+        fail.error="NATIVE_TRACK_DEVICE_UNAVAILABLE";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        const auto ticket=secondaryOutput_.captureProducerTicket();
+        const auto valid=[&]{
+            return device&&deviceManager_.getCurrentAudioDevice()==device&&device->isOpen()&&
+                dormantAdditionReady(ep,rev)&&
+                secondaryOutput_.captureProducerTicket()==ticket;
+        };
+        if(!valid())return fail;
+        try{
+            const auto rate=device->getCurrentSampleRate();
+            if(!std::isfinite(rate)||rate<8000.||rate>384000.)return fail;
+            return dryRoutingLab_.removeNativeInputChannel(ep,rev,roster,id,false,{},
+                static_cast<int>(std::ceil(rate*.008)),valid);
+        }catch(...){
+            fail.error="NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION";return fail;
+        }
+    }
     LiveDryRoutingLab::NativeBusResult removeNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,
-            std::uint64_t rosterRevision,armix::mixer::ChannelId id) {
+            std::uint64_t rosterRevision,armix::mixer::ChannelId id,bool silentRemoval=false) {
         LiveDryRoutingLab::NativeBusResult fail;
         fail.error="NATIVE_TRACK_DEVICE_UNAVAILABLE";
+        if(silentRemoval&&!allOutputsDisarmed()){
+            if(!nativeStripDormant(epoch,pcmRevision,id))return fail;
+            return dryRoutingLab_.removeNativeInputChannel(epoch,pcmRevision,rosterRevision,id,false,{},0,
+                [&]{return nativeStripDormant(epoch,pcmRevision,id);},true);
+        }
         auto* device=deviceManager_.getCurrentAudioDevice();
         const auto valid=[&]{
             return device&&deviceManager_.getCurrentAudioDevice()==device&&
@@ -2886,6 +3018,20 @@ public:
         }catch(...){
             fail.error="NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION";return fail;
         }
+    }
+    bool canSwitchNativePhysicalSource(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t roster,armix::mixer::ChannelId id,int l,int r,bool stereo) const noexcept {
+        return dormantAdditionReady(ep,rev)&&
+            dryRoutingLab_.livePhysicalSourceCandidate(ep,rev,roster,id,l,r,stereo).has_value();
+    }
+    LiveDryRoutingLab::NativeBusResult switchNativePhysicalSource(std::uint64_t ep,
+            std::uint64_t rev,std::uint64_t roster,armix::mixer::ChannelId id,
+            int l,int r,bool stereo) noexcept {
+        if(!canSwitchNativePhysicalSource(ep,rev,roster,id,l,r,stereo)){
+            LiveDryRoutingLab::NativeBusResult rejected;
+            rejected.error="NATIVE_LIVE_SOURCE_NOT_VERIFIED";return rejected;
+        }
+        return dryRoutingLab_.switchNativePhysicalSource(ep,rev,roster,id,l,r,stereo);
     }
     LiveDryRoutingLab::NativeBusResult patchNativeInputSource(
             std::uint64_t epoch,std::uint64_t pcmRevision,
@@ -3487,11 +3633,19 @@ public:
         o->setProperty ("secondaryOutputEndpointHash",secondaryOutput_.endpointHash());
         o->setProperty ("secondaryOutputRate",secondaryOutput_.rate());
         o->setProperty ("secondaryOutputBridgeMs",secondaryOutput_.targetMs());
+        o->setProperty ("secondaryProgrammeSourceId",juce::String(std::to_string(
+            secondaryProgrammeSource_.load(std::memory_order_acquire))));
+        o->setProperty ("secondaryProgrammeSourceValid",secondaryProgrammeSourceValid());
+        const auto programmeTicket=secondaryOutput_.captureProducerTicket();
+        o->setProperty ("secondaryProgrammeSourceApplied",programmeTicket!=0&&
+            secondaryProgrammeSourceValid()&&
+            secondaryProgrammeAppliedTicket_.load(std::memory_order_acquire)==programmeTicket);
         const auto streamFifo=secondaryOutput_.status();
         o->setProperty ("secondaryOutputFrames",static_cast<double>(streamFifo.renderedFrames));
         o->setProperty ("secondaryOutputUnderflow",static_cast<double>(streamFifo.underflowFrames));
         o->setProperty ("secondaryOutputPriming",static_cast<double>(streamFifo.primingFrames));
         o->setProperty ("secondaryOutputOverflow",static_cast<double>(streamFifo.overflowFrames));
+        o->setProperty ("secondaryOutputSubstitutedFrames",static_cast<double>(secondaryOutput_.substitutedFrames()));
         o->setProperty ("adaptiveClockActive", dual);
         o->setProperty ("adaptiveClockFaulted", dual && independent_.faulted());
         o->setProperty ("adaptiveClockMode", dual ? "INDEPENDENT_WASAPI_RENDER_MASTER" : "DIRECT");
@@ -3956,6 +4110,9 @@ private:
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
     armix::device::LiveSecondaryOutputDevice secondaryOutput_;
+    armix::mixer::DynamicProgrammeBlock secondaryProgrammePcm_; // primary callback lease
+    std::atomic<std::uint64_t> secondaryProgrammeSource_{0},secondaryProgrammeEpoch_{0},
+        secondaryProgrammeWorkspace_{0},secondaryProgrammeAppliedTicket_{0};
     std::atomic_flag primaryCallbackLease_=ATOMIC_FLAG_INIT;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
@@ -4424,6 +4581,9 @@ private:
             const bool nativePcm=dryRoutingLab_.channelIdPhysicalPcmActive();
             const bool mainOnlyMuted=nativePcm &&
                 masterMute_.load(std::memory_order_relaxed);
+            // Capture secondary permission BEFORE processing any PCM. A
+            // later stop/re-arm/reopen cannot accept this older block.
+            const auto secondaryTicket=secondaryOutput_.captureProducerTicket();
             const auto outputGate=armix::mixer::LiveOutputRouteGate::evaluate(
                 dryRoutingLab_.active(),
                 directFence_.permitted() && !independent_.active(),
@@ -4432,8 +4592,14 @@ private:
                 !masterMute_.load(std::memory_order_relaxed),
                 monitor_.load(std::memory_order_relaxed) &&
                     !topologyPublicationMute_.load(std::memory_order_acquire),
-                secondaryOutput_.armed(),nativePcm);
+                secondaryTicket!=0,nativePcm);
             const bool outputPermitted=outputGate.renderMain;
+            const auto programmeId=secondaryProgrammeSource_.load(std::memory_order_acquire);
+            const auto programmeWorkspace=secondaryProgrammeWorkspace_.load(std::memory_order_acquire);
+            const bool captureProgramme=outputGate.secondary&&programmeId&&nativePcm&&
+                secondaryProgrammeEpoch_.load(std::memory_order_acquire)==outputLease.epoch&&
+                programmeWorkspace==dryRoutingLab_.programmeWorkspace();
+            if(captureProgramme)secondaryProgrammePcm_.requested=armix::mixer::ChannelId{programmeId};
             // Native input PCM must remain observable even with safe output MUTE.
             // Scan bounded verified callback channels, no allocation or lock.
             const float rawCapturePeak=captureBoundary_.observe(
@@ -4476,7 +4642,12 @@ private:
                          deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease,
                      outputGate.hardware&&!mainOnlyMuted&&!cycle.fadeOut&&!cycle.fadeIn&&
                      fxMovePhase_.load(std::memory_order_acquire)==0&&privateDeEzzerCueAllowed(),
-                     &secondaryMainTap);
+                     &secondaryMainTap,captureProgramme?&secondaryProgrammePcm_:nullptr);
+            // Never use MAIN as a fallback when a custom source is missing.
+            auto programmePcm=captureProgramme&&
+                programmeWorkspace==dryRoutingLab_.programmeWorkspace()&&
+                secondaryProgrammePcm_.frames()==samples?
+                secondaryProgrammePcm_.pcm():std::array<float*,2>{nullptr,nullptr};
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const bool splitMain=secondaryMainTap[0]&&secondaryMainTap[1];
@@ -4513,6 +4684,11 @@ private:
                 if(splitMain)armix::mixer::NativeOutputTransition::apply(
                     secondaryMainTap.data(),2,samples,routedFxMove,cycle.fadeOut,cycle.fadeIn,
                     nativeMain[0],nativeMain[1],movedPeakL,movedPeakR);
+                if(programmePcm[0]&&programmePcm[1]){
+                    float ignoredL=0.f,ignoredR=0.f;
+                    armix::mixer::NativeOutputTransition::apply(programmePcm.data(),2,samples,
+                        routedFxMove,cycle.fadeOut,cycle.fadeIn,nullptr,nullptr,ignoredL,ignoredR);
+                }
                 if(routedFxMove==1 && cycle.graph) {
                     cycle.graph->orderPacked.store(
                         fxMovePendingOrder_.load(std::memory_order_acquire),
@@ -4523,7 +4699,8 @@ private:
             }
             const auto patchFade=busPatchEnvelope_.process(outputs,outputChannels,
                 splitMain?secondaryMainTap[0]:nullptr,splitMain?secondaryMainTap[1]:nullptr,
-                samples,sampleRateHz_,routed&&nativePcm,outputGate.hardware||outputGate.secondary);
+                samples,sampleRateHz_,routed&&nativePcm,outputGate.hardware||outputGate.secondary,
+                programmePcm[0],programmePcm[1]);
             if(patchFade.phase!=armix::mixer::BusPatchEnvelope::idle){
                 movedPeakL=movedPeakR=0.f;
                 for(int i=0;i<samples;++i){
@@ -4554,8 +4731,25 @@ private:
             // PCM once. The virtual endpoint never invokes MIX/VST3 again.
             // Hardware monitor mute remains INDEPENDENT: streaming may run
             // while every physical output on the current device is silent.
-            if(routed && outputGate.secondary && nativeMain[0] && nativeMain[1])
-                secondaryOutput_.publish(nativeMain[0],nativeMain[1],samples);
+            if(outputGate.secondary) {
+                bool valid=false;
+                if(programmeId) {
+                    valid=routed&&programmePcm[0]&&programmePcm[1]&&
+                        programmeWorkspace==dryRoutingLab_.programmeWorkspace();
+                    if(valid)
+                        secondaryOutput_.publish(secondaryTicket,programmePcm[0],programmePcm[1],samples);
+                    else
+                        secondaryOutput_.publish(secondaryTicket,nullptr,nullptr,samples);
+                }else if(routed&&nativeMain[0]&&nativeMain[1]) {
+                    // Preserve the original MAIN path independently of the
+                    // optional programme feature and its workspace lifetime.
+                    secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples);
+                    valid=true;
+                }else
+                    // A complete clock interval, never stale/partial PCM.
+                    secondaryOutput_.publish(secondaryTicket,nullptr,nullptr,samples);
+                secondaryProgrammeAppliedTicket_.store(valid?secondaryTicket:0,std::memory_order_release);
+            }
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.
             const float* measured[2] = {nativeMain[0],nativeMain[1]};

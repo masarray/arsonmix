@@ -84,7 +84,8 @@
   // WIRE Inspector / Sends on Faders.
   function channelSumLevelPlan(snapshot,projected,channelId,levelDb) {
     const graph=snapshot?.graph;
-    if(projected!==true||snapshot?.admitted!==true||snapshot.retained===true||
+    const offline=snapshot?.logical===true&&snapshot.readOnly===false;
+    if(projected!==true||(!offline&&(snapshot?.admitted!==true||snapshot.retained===true))||
        !Array.isArray(graph?.capabilities?.supportedOps)||
        !graph.capabilities.supportedOps.includes("SET_WIRE_SUM_GAIN")||
        !Array.isArray(graph.channels)||!Array.isArray(graph.edges)||
@@ -237,12 +238,14 @@
   // changed into an edit of another send. With no selection, exactly one
   // eligible send may be used.
   function channelTapEdge(snapshot,{sourceId,selectedEdgeId=null}={}) {
-    if(snapshot?.admitted!==true||snapshot.retained===true||
+    const offline=snapshot?.logical===true&&snapshot.readOnly===false&&
+      snapshot.graph?.capabilities?.supportedOps?.includes("SET_SEND_TAP")===true;
+    if((!offline&&(snapshot?.admitted!==true||snapshot.retained===true))||
        !nativeId(sourceId))return null;
     const graph=snapshot.graph,main=graph?.mainChannelId;
     const eligible=graph?.edges?.filter(e=>e.enabled===true&&
       e.from===sourceId&&e.primaryOutput===false&&e.to!==main&&
-      nativeId(e.edgeId)&&nativeId(e.to)&&TAPS.has(e.tap))||[];
+      nativeId(e.edgeId)&&nativeId(e.to)&&TAPS.has(offline?(e.tapStage||e.tap):e.tap))||[];
     if(selectedEdgeId!==null&&selectedEdgeId!==undefined)
       return nativeId(selectedEdgeId)?
         (eligible.some(e=>e.edgeId===selectedEdgeId)?
@@ -383,6 +386,22 @@
     return {ok:true,source,changes};
   }
 
+  // One durable WIRE transaction. CONNECT+GAIN is one operator gesture,
+  // not two disk edits. Share the validated ChannelId/EdgeId translator.
+  function logicalWireTransaction(ops,channelIds,edgeIds,mainUiId) {
+    const compact=compactSendGesture(ops,edgeIds);
+    if(!Array.isArray(compact)||compact.length!==1||!compact[0])
+      return {ok:false,error:"INVALID_WIRE_BATCH"};
+    const op=compact[0];
+    const primary=op.type==="ROUTE_ONLY" ||
+      (op.type==="CONNECT"&&(op.mode==="routeOnly"||
+        (op.destId===mainUiId&&op.mode!=="send")));
+    const translated=nativeTransaction([primary?{...op,type:"ROUTE_ONLY"}:op],channelIds,edgeIds);
+    if(!translated.ok)return translated;
+    // A primary OUT is unity, never a parallel SEND gain.
+    if(primary)translated.changes[0].gainLinear=1;
+    return translated;
+  }
 
   // MV-7: pure deferred WIRE gain projection. Installed PCM alone decides.
   function gainDispatchPlan(snapshot,edgeId,edit) {
@@ -479,6 +498,6 @@
   return Object.freeze({routeDiagnostic,gainDb,edgePresentation,parallelEdge,
     acceptedParallelEdge,primaryChannelLevelPlan,channelSumLevelPlan,gainReadback,canEditTap,gestureTap,sofAvailable,
     compactSendGesture,nativeSendEdge,nativeTapPlan,sofSendEdge,sofSourceRole,sofTargetRole,
-    channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,
+    channelTapEdge,nativeSendTogglePlan,primaryMainGesturePlan,nativeTransaction,logicalWireTransaction,
     gainDispatchPlan,nativeRecoveryPlan});
 });

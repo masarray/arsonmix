@@ -103,16 +103,15 @@ def verify_custom_input(page,out):
     right=row.get_by_label("CH03 R pin",exact=True)
     left.select_option("3")
     right.select_option("3")
-    apply=row.get_by_role("button",name="Apply",exact=True)
+    apply=row.get_by_role("button",name="Set stereo pair",exact=True,include_hidden=True)
     assert apply.is_disabled(),"same physical pin must never become stereo"
     right.select_option("0")
     assert apply.is_enabled()
-    # A named preset resolves to the exact same verified physical choice.
-    select.select_option("preset:fixture-1")
-    assert apply.is_enabled()
-    assert row.locator('[data-draft="true"]').count()==2
     assert page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').length")==0
-    apply.click()
+    # A complete named preset is applied immediately, without an extra click.
+    select.select_option("preset:fixture-1")
+    assert apply.is_hidden()
+    assert row.locator('[data-mark="L"]').count()==0
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingNativeSourcePatch').at(-1)")
     assert req and req["channelId"]==SOURCE and req["mode"]=="STEREO",req
     assert (req["left"],req["right"])==(3,0),req
@@ -312,15 +311,13 @@ def verify_bus_remap(page,out):
     assert len(choices)==2 and any(x.startswith("OUT 5/6") for x in choices),choices
     assert not any(x.startswith(("OUT 3/4","OUT 7/8")) for x in choices),choices
     select.select_option(label=next(x for x in choices if x.startswith("OUT 5/6")))
-    assert main.locator('[data-draft="true"]').count()==4
-    apply=main.get_by_role("button",name="Apply",exact=True)
-    apply.click()
+    assert main.locator('[data-draft="true"]').count()==0
     dialog=page.get_by_role("dialog",name="Remap bus output")
     assert dialog.is_visible()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
     dialog.get_by_role("button",name="Cancel",exact=True).click()
     assert not page.evaluate("()=>window.__actions.some(x=>x.action==='routingPhysicalBusOutput')")
-    apply.click()
+    select.select_option(label=next(x for x in choices if x.startswith("OUT 5/6")))
     state["device"]["outputArmed"]=False
     state["operatorOutputMuted"]=True
     emit(page,"arMixConsoleSnapshot",state)
@@ -331,7 +328,6 @@ def verify_bus_remap(page,out):
     emit(page,"arMixConsoleSnapshot",state)
     select=main.get_by_label("MAIN assignment",exact=True)
     select.select_option(label=next(x for x in select.locator("option").all_text_contents() if x.startswith("OUT 5/6")))
-    apply.click()
     dialog.get_by_role("button",name="Remap output",exact=True).click()
     req=page.evaluate("()=>window.__actions.filter(x=>x.action==='routingPhysicalBusOutput').at(-1)")
     assert req and req["bus"]=="MAIN" and req["confirmed"] is True,req
@@ -890,6 +886,7 @@ def verify_independent_output(page,out,legacy_empty=False):
     page.goto((out/"index.html").as_uri())
     page.wait_for_function("()=>window.__ARMIX_NATIVE_M2__?.enabled")
     state=snapshot()
+    state["workspaceGeneration"]="0"
     state["productionCallbackLive"]=True
     state["device"].update(backend="ASIO",captureDevice="Test ASIO",playbackDevice="Test ASIO",
         outputArmed=True,enabledOutputs=[0,1],
@@ -909,6 +906,39 @@ def verify_independent_output(page,out,legacy_empty=False):
     panel=page.get_by_role("dialog",name="Additional Output")
     req=page.evaluate("()=>window.__actions.at(-1)")
     emit(page,"arMixSecondaryOutputInventory",{"requestId":req["requestId"],"outputs":["CABLE Input"]})
+    if not legacy_empty:
+        # Actual GUI source assignment is independent of the physical pair,
+        # uses the accepted ChannelId, and waits for callback readback.
+        live.update(secondaryProgrammeSourceId="0",secondaryProgrammeSourceValid=True,
+                    secondaryProgrammeSourceApplied=True)
+        emit(page,"arMixStatus",live)
+        source=panel.get_by_label("Secondary programme source")
+        channel=next(ch for ch in state["graph"]["channels"] if ch["role"] in ("INPUT","GROUP","FX_RETURN"))
+        assert source.is_visible() and source.is_enabled() and source.input_value()=="0"
+        source.select_option(channel["id"])
+        source_req=page.evaluate("()=>window.__actions.at(-1)")
+        assert source_req["action"]=="secondaryOutputSource"
+        assert source_req["value"]=={"channelId":channel["id"],"deviceEpoch":state["device"]["epoch"],
+            "graphRevision":"2","rosterRevision":"2","workspaceGeneration":"0"}
+        assert source.input_value()=="0" and source.is_disabled()
+        emit(page,"arMixSecondaryOutputAck",{"requestId":source_req["requestId"],"action":source_req["action"],"ok":True})
+        assert source.is_disabled()
+        live.update(secondaryProgrammeSourceId=channel["id"],secondaryProgrammeSourceApplied=False)
+        emit(page,"arMixStatus",live)
+        assert source.input_value()==channel["id"] and source.is_disabled()
+        live["secondaryProgrammeSourceApplied"]=True
+        emit(page,"arMixStatus",live)
+        assert source.is_enabled() and source.input_value()==channel["id"]
+        assert panel.locator("[data-extra-mode]").inner_text()=="Independent programme"
+        assert panel.locator("[data-extra-mix]").is_disabled()
+        source.select_option("0")
+        restore=page.evaluate("()=>window.__actions.at(-1)")
+        assert restore["action"]=="secondaryOutputSource" and restore["value"]["channelId"]=="0"
+        emit(page,"arMixSecondaryOutputAck",{"requestId":restore["requestId"],"action":restore["action"],"ok":True})
+        live.update(secondaryProgrammeSourceId="0",secondaryProgrammeSourceApplied=True)
+        emit(page,"arMixStatus",live)
+        assert source.is_enabled() and source.input_value()=="0"
+        print("SECONDARY_PROGRAMME_SOURCE_READBACK_PASS",flush=True)
     button=panel.get_by_role("button",name="Separate headphone mix")
     assert button.is_enabled()
     button.click()
@@ -984,6 +1014,26 @@ def verify_independent_output(page,out,legacy_empty=False):
     # with no injected telemetry, timeout, or synthetic native action.
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
+    pfl=page.locator('#tracks .strip[data-id="1"] [data-action="cue"]')
+    assert pfl.is_disabled()
+    state["nativePfl"]={"available":True,"deviceEpoch":state["device"]["epoch"],
+        "graphRevision":state["graph"]["revision"],"eligible":[SOURCE],
+        "requested":"","applied":"","settled":True}
+    emit(page,"arMixConsoleSnapshot",state)
+    assert pfl.is_enabled() and pfl.get_attribute("aria-pressed")=="false"
+    pfl.click()
+    cue=page.evaluate("()=>window.__actions.at(-1)")
+    assert cue["action"]=="routingNativePfl" and cue["channelId"]==SOURCE and cue["enabled"] is True
+    assert pfl.is_disabled() and pfl.get_attribute("aria-pressed")=="false"
+    emit(page,"arMixNativePflAck",{"requestId":cue["requestId"],"ok":True})
+    assert pfl.is_disabled() and pfl.get_attribute("aria-pressed")=="false"
+    state["nativePfl"].update(requested=SOURCE,settled=False)
+    emit(page,"arMixConsoleSnapshot",state)
+    assert pfl.is_disabled() and pfl.get_attribute("aria-pressed")=="false"
+    state["nativePfl"].update(applied=SOURCE,settled=True)
+    emit(page,"arMixConsoleSnapshot",state)
+    assert pfl.is_enabled() and pfl.get_attribute("aria-pressed")=="true"
+    before=page.evaluate("()=>window.__actions.length")
     select_ribbon_workflow(page,"mixer")
     # Reproduce a transient admission lock on the entry button while SOF is
     # active. The real visible Return to Main must still escape locally.
@@ -996,6 +1046,16 @@ def verify_independent_output(page,out,legacy_empty=False):
     page.locator("#sofToggle").evaluate("el=>el.disabled=false")
     assert mon.is_enabled() and mon.input_value()=="__armix_split__"
     assert page.evaluate("()=>window.__actions.length")==before
+    assert pfl.is_enabled() and pfl.get_attribute("aria-pressed")=="true"
+    pfl.click()
+    clear=page.evaluate("()=>window.__actions.at(-1)")
+    assert clear["action"]=="routingNativePfl" and clear["enabled"] is False
+    # Readback-before-ACK must also settle without sending another intent.
+    state["nativePfl"].update(requested="",applied="",settled=True)
+    emit(page,"arMixConsoleSnapshot",state)
+    assert pfl.is_disabled()
+    emit(page,"arMixNativePflAck",{"requestId":clear["requestId"],"ok":True})
+    assert pfl.is_enabled() and pfl.get_attribute("aria-pressed")=="false"
     mon.select_option("__armix_settings__")
     panel.get_by_role("button",name="Use same mix").click()
     same=page.evaluate("()=>window.__actions.at(-1)")
@@ -1010,6 +1070,7 @@ def verify_independent_output(page,out,legacy_empty=False):
     emit(page,"arMixStatus",live)
     assert panel.get_by_role("button",name="Separate headphone mix").is_enabled()
     assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
+    assert pfl.is_disabled() and pfl.get_attribute("aria-pressed")=="false"
     # Re-enter Separate: no starter transaction and no change to the authored send.
     panel.get_by_role("button",name="Separate headphone mix").click()
     again=page.evaluate("()=>window.__actions.at(-1)")
@@ -1029,7 +1090,42 @@ def verify_independent_output(page,out,legacy_empty=False):
     assert panel.get_by_role("button",name="Edit headphone mix").is_enabled()
     assert any(e==monitor_edge for e in state["graph"]["edges"])
     assert page.evaluate("()=>window.__actions.filter(a=>a.action==='secondaryMonitorStarter').length")==int(legacy_empty)
-    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm'].includes(a.action)).length")==0
+    # A real operator can disconnect the Windows endpoint while split is
+    # active. MAIN must be recoverable to the original ASIO pins without
+    # re-enabling Windows or discarding the authored headphone sends.
+    panel.get_by_role("button",name="Disconnect").click()
+    stop=page.evaluate("()=>window.__actions.at(-1)")
+    assert stop["action"]=="secondaryOutputStop"
+    emit(page,"arMixSecondaryOutputAck",{"requestId":stop["requestId"],"action":stop["action"],"ok":True,"preferenceSaved":True})
+    live.update(secondaryOutputReady=False,secondaryOutputArmed=False,
+                secondaryOutputRecovering=False,secondaryOutputRecoveryName="",secondaryOutputName="")
+    emit(page,"arMixStatus",live)
+    restore=panel.get_by_role("button",name="Restore MAIN to ASIO")
+    assert restore.is_enabled()
+    restore.click()
+    recover=page.evaluate("()=>window.__actions.at(-1)")
+    assert recover["action"]=="secondaryOutputSplit" and recover["value"]["enabled"] is False
+    assert restore.is_disabled()
+    next_rev=str(int(next_rev)+1)
+    emit(page,"arMixSecondaryOutputAck",{"requestId":recover["requestId"],"action":recover["action"],
+        "ok":True,"graphRevision":next_rev,"resumeSecondary":False})
+    assert restore.is_disabled() # ACK alone cannot declare a new mapping
+    state.update(secondaryMainOnly=False,physicalMainOutputs=[0,1],
+                 physicalMonitorOutputs=[],physicalBusSecondaryArmed=False)
+    state["graph"]["revision"]=next_rev
+    state["mixerSession"]["routeRevision"]=next_rev
+    emit(page,"arMixConsoleSnapshot",state)
+    assert panel.locator("[data-extra-status]").inner_text().startswith("Verifying")
+    live["dryRoutingLab"].update(secondaryMainOnly=False,nativeBus={"graphRevision":next_rev})
+    emit(page,"arMixStatus",live)
+    # Same mix without an armed Windows destination hides the split action.
+    # Verify the real element too: hidden controls cannot be activated.
+    assert not panel.get_by_role("button",name="Separate headphone mix").is_visible()
+    assert panel.locator("[data-extra-mix]").is_disabled()
+    assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
+    assert not panel.locator("[data-extra-status]").inner_text().startswith("Verifying")
+    assert any(e==monitor_edge for e in state["graph"]["edges"])
+    assert page.evaluate("()=>window.__actions.filter(a=>['monitor','secondaryOutputArm','secondaryOutputEnable'].includes(a.action)).length")==0
     assert not errors,errors
 
 
@@ -1112,6 +1208,43 @@ def verify_custom_recovery_routes(page,out):
     assert dialog.is_visible() and dialog.count()==1
     assert not page.evaluate("()=>window.__actions.some(a=>a.action==='audioDeviceApply')")
 
+def verify_startup_audio_setup(page,out,manual=False):
+    page.add_init_script(NATIVE_EVENTS + """window.__events=[];
+      window.__JUCE__={backend:{
+        emitEvent(name,payload){window.__events.push({name,payload});},
+        ...window.__nativeListenerMethods
+      }};""")
+    page.goto((out/"index.html").as_uri())
+    page.wait_for_function("()=>document.querySelector('.command-bar > [data-native-io]')")
+    dialog=page.locator(".armix-audio-dialog")
+    emit(page,"arMixStatus",{"startupAudioSetupRequired":False})
+    assert not dialog.is_visible()
+    if manual:
+        emit(page,"arMixOpenAudioIO",True)
+        assert dialog.is_visible()
+        assert page.locator("[data-audio-startup-guide]").is_hidden()
+        page.locator("[data-audio-close]").click()
+    else:
+        page.evaluate("""()=>{const d=document.createElement('dialog');d.id='startup-block';document.body.append(d);d.showModal();}""")
+        emit(page,"arMixStatus",{"startupAudioSetupRequired":True})
+        assert not dialog.is_visible()
+        page.evaluate("()=>document.querySelector('#startup-block').remove()")
+    emit(page,"arMixStatus",{"startupAudioSetupRequired":True})
+    if not manual:
+        assert dialog.is_visible()
+        assert page.locator("[data-audio-startup-guide]").is_visible()
+        assert dialog.locator('[data-audio-tab="device"]').get_attribute("aria-selected")=="true"
+        page.locator("[data-audio-close]").click()
+    for _ in range(3):
+        emit(page,"arMixStatus",{"startupAudioSetupRequired":True})
+        assert not dialog.is_visible()
+    assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixAudioSetupPresented').length")==1
+    assert page.evaluate("()=>window.__events.filter(e=>e.name==='arMixAction'&&e.payload.action==='audioDeviceInventory').length")==1
+    assert not page.evaluate("""()=>window.__events.some(e=>e.name==='arMixAction'&&
+      ['audioDeviceApply','monitor','routingNativeSourcePatch','routingExternalOutput'].includes(e.payload.action))""")
+    emit(page,"arMixOpenAudioIO",True)
+    assert dialog.is_visible() and dialog.count()==1
+
 def main():
     with tempfile.TemporaryDirectory(prefix="armix-audio-io-") as tmp,sync_playwright() as p:
         out=Path(tmp)
@@ -1167,6 +1300,10 @@ def main():
         page=browser.new_page(viewport={"width":1366,"height":768})
         verify_custom_recovery_routes(page,out)
         page.close()
+        for manual in (False,True):
+            page=browser.new_page(viewport={"width":1024,"height":576})
+            verify_startup_audio_setup(page,out,manual)
+            page.close()
         browser.close()
     print("PASS compiled Audio I/O pin discovery, stereo draft/ACK/readback, external output, muted bus remap, logical disclosure race and defaults")
 

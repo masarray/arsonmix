@@ -63,6 +63,11 @@ def main():
             panel.wait_for(state="visible")
             page.evaluate("document.fonts.ready")
             box=panel.bounding_box();assert box and box["x"]>=0 and box["x"]+box["width"]<=width+2,(width,box)
+            # First-open centering must not change the authored responsive
+            # width to shrink-to-fit when the right anchor is released.
+            assert box["width"]==min(410,width-24), (width,box)
+            assert abs(box["x"]-(width-box["width"])/2)<=0.5,(width,box)
+            print("PLAYER_RESPONSIVE_BORDER_BOX_PASS",width,box,flush=True)
             play=page.locator("#playerPlay")
             geometry=play.evaluate("e=>({w:e.offsetWidth,h:e.offsetHeight,r:getComputedStyle(e).borderRadius})")
             assert geometry==dict(w=32,h=32,r="50%"),geometry
@@ -99,6 +104,7 @@ def main():
                     pointer:coat.pointerEvents,layer:Number(coat.zIndex),screenLayer:Number(screen.zIndex),
                     menuLayer:Number(menu.zIndex),isolation:s.isolation,filter:coat.filter,
                     backdrop:coat.backdropFilter,animation:coat.animationName,
+                    reflection:coat.backgroundImage,edge:coat.boxShadow,rimColor:s.borderTopColor,
                     radius:coat.borderRadius,panelRadius:s.borderRadius,screenRadius:screen.borderRadius,
                     rim:s.borderTopWidth, corners:[s.borderTopLeftRadius,s.borderTopRightRadius,s.borderBottomRightRadius,s.borderBottomLeftRadius],
                     overflow:s.overflowY};
@@ -108,6 +114,16 @@ def main():
             assert glass["inset"]==["0px"]*4 and glass["pointer"]=="none",glass
             assert glass["layer"]>glass["menuLayer"]>glass["screenLayer"] and glass["isolation"]=="isolate",glass
             assert glass["filter"]==glass["backdrop"]==glass["animation"]=="none",glass
+            # Verify actual composited style rather than a source-string match.
+            # Both reflective planes are clearer, and the white rim is not opaque.
+            import re
+            alphas=[float(x) for x in re.findall(r"rgba\([^)]*,\s*([\d.]+)\)",glass["reflection"])]
+            assert len(alphas)==4 and all(abs(a-b)<0.005 for a,b in zip(alphas,[41/255,41/255,11/255,11/255])),glass
+            rim_alpha=float(glass["rimColor"].rsplit(",",1)[1].rstrip(") "))
+            assert abs(rim_alpha-184/255)<0.005,glass
+            edge_alpha=float(re.findall(r"rgba\([^)]*,\s*([\d.]+)\)",glass["edge"])[0])
+            assert abs(edge_alpha-128/255)<0.005,glass
+            print("PLAYER_CLEAR_GLASS_ALPHA_PASS",width,alphas,rim_alpha,edge_alpha,flush=True)
             outer=11 if width<=640 else 14
             inner=outer-1
             assert glass["panelRadius"]==f"{outer}px" and glass["rim"]=="1px",glass
@@ -153,10 +169,19 @@ def main():
             finally:
                 probe_style.evaluate("e=>e.remove()")
             # Real composed corner clipping, including header, bezel and coat.
-            # Compare with the exact same scene without the panel. Disable only
-            # the intentional external shadow during this geometry probe.
+            # Compare the actual assembled panel against a calibrated stationary
+            # substrate: the live mixer underneath has animated/hoverable
+            # controls and is not a reliable two-screenshot pixel reference.
+            # Disable only the intentional external shadow of the Player.
             rect=panel.bounding_box()
             corner_style=page.add_style_tag(content="#arsonPlayer{box-shadow:none!important}")
+            panel.evaluate("""e=>{
+                const reference=document.createElement('div');
+                reference.id='playerCornerReference';
+                Object.assign(reference.style,{position:'fixed',inset:'0',background:'#203040',
+                  zIndex:getComputedStyle(e).zIndex,pointerEvents:'none'});
+                e.before(reference);
+            }""")
             try:
                 shown=page.screenshot(clip=rect,scale="css",animations="disabled")
                 hidden_style=page.add_style_tag(content="#arsonPlayer{visibility:hidden!important}")
@@ -170,17 +195,25 @@ def main():
                         const ctx=c.getContext('2d');ctx.drawImage(bmp,0,0);bmp.close();
                         return {w:c.width,h:c.height,data:ctx.getImageData(0,0,c.width,c.height).data};};
                     const [x,y]=await Promise.all([pixels(a),pixels(b)]);
+                    // Verify the reference rather than assume it covered the
+                    // underlying scene. Keep the existing clipping tolerance.
+                    const calibration=[32,48,64];
                     const delta=(px,py)=>{const i=(py*x.w+px)*4;return Math.max(...[0,1,2].map(k=>Math.abs(x.data[i+k]-y.data[i+k])));};
+                    const referenceError=(px,py)=>{const i=(py*y.w+px)*4;return Math.max(...[0,1,2].map(k=>Math.abs(y.data[i+k]-calibration[k])));};
                     return [[false,false],[true,false],[true,true],[false,true]].map(([right,bottom])=>{
                         const dx=n=>right?x.w-1-n:n,dy=n=>bottom?x.h-1-n:n;
                         const outside=[0,1,2].flatMap(i=>[0,1,2].map(j=>delta(dx(i),dy(j))));
                         const inside=[r-2,r-1,r].flatMap(i=>[r-2,r-1,r].map(j=>delta(dx(i),dy(j))));
-                        return {outside:Math.max(...outside),inside:Math.max(...inside)};
+                        const reference=[0,1,2,r-2,r-1,r].flatMap(i=>[0,1,2,r-2,r-1,r].map(j=>referenceError(dx(i),dy(j))));
+                        return {outside:Math.max(...outside),inside:Math.max(...inside),
+                            reference:Math.max(...reference)};
                     });
                 }""",[base64.b64encode(v).decode("ascii") for v in (shown,behind)]+[outer])
+                assert all(c["reference"]<=1 for c in corners),("invalid stationary reference",corners)
                 assert all(c["outside"]<=3 and c["inside"]>=8 for c in corners),corners
                 print("PLAYER_CONCENTRIC_CORNERS_PASS",width,corners,flush=True)
             finally:
+                page.locator("#playerCornerReference").evaluate("e=>e.remove()")
                 corner_style.evaluate("e=>e.remove()")
             def hit(control):
                 control.scroll_into_view_if_needed()
@@ -424,6 +457,14 @@ def main():
             assert panel.is_hidden() and mini.is_visible()
             page.locator("#playerMiniExpand").click()
             assert panel.is_visible() and mini.is_hidden()
+            if width==1366:
+                # Resize a centered but never dragged workspace. Its native
+                # transport and modeless lifetime must not depend on viewport.
+                page.set_viewport_size({"width":390,"height":540})
+                page.wait_for_function("""()=>{const r=document.getElementById('arsonPlayer').getBoundingClientRect();
+                    return r.width===366&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight}""")
+                assert panel.is_visible()
+                print("PLAYER_CENTERED_RESIZE_CLAMP_PASS",panel.bounding_box(),flush=True)
             assert not errors,errors
             page.close()
             print("PASS Player assembled GUI",width,height,scale,flush=True)
@@ -438,6 +479,13 @@ def main():
         assert panel.is_visible() and panel.bounding_box()==dict(x=0,y=0,width=410,height=720)
         assert child.locator("#tracks").count()==0
         assert child.locator("#playerMini").is_hidden()
+        # The native-only desktop surface must retain the very same optical
+        # coat and translucent rim, not a duplicate or opaque frame theme.
+        native_glass=panel.evaluate("""e=>({reflection:getComputedStyle(e,'::after').backgroundImage,
+          edge:getComputedStyle(e,'::after').boxShadow,rim:getComputedStyle(e).borderTopColor,
+          pointer:getComputedStyle(e,'::after').pointerEvents})""")
+        assert native_glass==dict(reflection=glass["reflection"],edge=glass["edge"],
+                                  rim=glass["rimColor"],pointer="none"),native_glass
         child.evaluate("s=>window.__nativeListeners.get('arMixPlayerState')(s)",state)
         child.locator("#playerSearch").focus()
         child.keyboard.press("Escape")

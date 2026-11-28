@@ -303,6 +303,12 @@ test("G-MV23 ChannelId SOURCE queue skips an already installed choice after time
  assert.deepEqual(check(),{kind:"SKIP_INSTALLED",key:id},
    "native source already installed after first in-flight patch: do not send twice");
  assert.equal(q.size,1,"pure VM must not mutate the bridge-owned pending queue");
+ const retryView=(requested,applied)=>({...installed,graph:{...installed.graph,channels:[{
+   id,role:"INPUT",source:{sourceFormat:"MONO",portId:"in:0",
+     requestedSwitchTicket:requested,appliedSwitchTicket:applied}}]}});
+ assert.equal(check(retryView("2",undefined)).kind,"SEND","requested pin is not a completed crossfade");
+ assert.equal(check(retryView("2","1")).kind,"SEND","stale receipt cannot skip a retry");
+ assert.equal(check(retryView("2","2")).kind,"SKIP_INSTALLED","exact receipt is a true no-op");
  assert.deepEqual(check(installed,hardware,queued,{requestId:"source-native-7"}),
    {kind:"IDLE"},"never skip while a source request is still in flight");
  const firstRejected={...installed,graph:{...installed.graph,revision:"71",
@@ -1684,7 +1690,7 @@ test("First Sound evidence maps sparse physical pins to actual callback ordinals
   const muted=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
   assert.match(muted.nextAction,/Output recovering automatically/);
   assert.doesNotMatch(muted.nextAction,/ARM output|Resume after emergency stop/);
-  g0.operatorOutputMuted=true;
+  g0.operatorOutputMuted=true;g0.outputHoldReason="OPERATOR_STOP";
   const panic=protocol.diagnoseFirstSound(protocol.normalizeSnapshot(g0),2);
   assert.match(panic.nextAction,/Emergency stop active; use More > Resume after emergency stop/);
   assert.doesNotMatch(panic.nextAction,/recovering automatically/);
@@ -2018,9 +2024,12 @@ test("P0 MAIN remains enabled through verified STEREO -> NONE -> STEREO edits",(
  const host=read("src/Main.cpp");
  const bridge=read("web/approved-native-bridge.js");
  const guard=read("src/NativeTopologyEditSafety.h");
- // First ARM remains strict, including inactive hardware and known VB-Cable loops.
- assert.match(engine,/juce::String liveOutputArmFault\(\)\s*\{\s*return liveOutputArmFault\(true\);\s*\}/,
-   "manual MONITOR always uses strict source verification");
+ // Explicit ARM of the verified ChannelId graph is independent of capture.
+ // Legacy M4 and all actual device/output/feedback fences stay strict.
+ assert.match(engine,/juce::String liveOutputArmFault\(\)\s*\{\s*return liveOutputArmFault\(!dryRoutingLab_\.channelIdPhysicalPcmActive\(\)\);\s*\}/,
+   "explicit ARM of accepted native SOURCE NONE graph must be allowed");
+ assert.match(engine,/device->getActiveOutputChannels\(\)\.countNumberOfSetBits\(\)<2/);
+ assert.match(engine,/if\(dryRoutingLab_\.nativeBusPatchAwaitingCallback\(\)\)/);
  assert.match(engine,/juce::String liveOutputArmFault\(bool requirePhysicalSource\)/,
    "previously-authorized silent MAIN may resume without a physical IN");
  assert.match(engine,/if \(!physicalSource && requirePhysicalSource\)/);
@@ -2072,16 +2081,19 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(menu,/e\.preventDefault\(\)/);
  assert.match(menu,/\.strip-identity-top/);
  assert.match(menu,/\.fxslot-row:not\(\.is-empty\)/);
- assert.doesNotMatch(menu,/Confirm Delete Track/);
- assert.match(menu,/if\(track\?\.kind==="audio"\)\{\s*dismissMenu\(\);hooks\.requestDeleteTrack\(track\);return;/);
- assert.match(menu,/Confirm Delete AUX/);
+ assert.doesNotMatch(menu,/Confirm Delete (Track|AUX|BUS)|data-menu="confirm"/);
+ assert.match(menu,/dismissMenu\(\);deleteStrip\(track\);return;/);
+ assert.match(menu,/function deleteStrip\(track\)/);
+ assert.match(menu,/if\(e\.key==="Delete"\)/);
+ assert.match(menu,/if\(selected\.length!==1\)return;/);
+ assert.match(menu,/if\(deleteStrip\(selected\[0\]\)\)/);
  assert.match(bridge,/newProject\.addEventListener\("click",\(\)=>newSessionButtons\[0\]\.click\(\)\)/);
  assert.match(bridge,/if\(value==="__armix_settings__"\)\{openAdditionalOutput\(\);return;\}/);
  assert.doesNotMatch(bridge,/nativeExtraOutput|nativeFirstSound/);
  assert.match(bridge,/if\(page==="routing"\)mountInlineAdditionalOutput\(\)/);
  assert.match(bridge,/host\.append\(extraControls\)/);
  assert.doesNotMatch(bridge,/__arMixOpenAdditionalOutput/);
- assert.match(menu,/requestDeleteTrack\(track\)/);
+ assert.match(menu,/hooks\.requestDeleteStrip\?\.\(track\)/);
  assert.match(menu,/hooks\.orbitTarget\(track,slot\)/);
  assert.ok(bridge.includes('stripVM.rosterMutationPlan('));
  assert.ok(read("web/approved-channel-strip-view-model.js").includes(
@@ -2107,6 +2119,19 @@ test("native right-click track deletion and vendor-specific Orbit are graph-auth
  assert.match(installer,/approved-native-context-menu\.js/);
 });
 
+test("single explicit delete uses the same native gate for every removable strip",()=>{
+ const menu=read("web/approved-native-context-menu.js");
+ const body=menu.match(/function deleteStrip\(track\)\{[\s\S]*?\n    \}/)?.[0];
+ assert.ok(body);
+ const calls=[];let ready=true;
+ const hooks={canDeleteStrip:()=>ready,requestDeleteStrip:t=>{calls.push(t.id);return true;}};
+ const remove=new (require("node:vm").Script)(body+";deleteStrip").runInNewContext({hooks});
+ for(const [id,kind] of ["audio","fx","bus"].entries())assert.equal(remove({id,kind}),true);
+ assert.equal(remove({id:3,kind:"master"}),false);
+ assert.equal(remove(null),false);
+ ready=false;assert.equal(remove({id:4,kind:"audio"}),false);
+ assert.deepEqual(calls,[0,1,2]);
+});
 test("all native strip menus bind true AUX/BUS deletion and persistent Rename, Orbit anchors and moves",()=>{
  const menu=read("web/approved-native-context-menu.js");
  const bridge=read("web/approved-native-bridge.js");
@@ -3599,7 +3624,7 @@ test("native Windows operator can explicitly patch first physical input, arm and
  const main=read("src/Main.cpp");
  const engine=read("src/LiveAudioEngine.h");
  assert.match(js,/AUDIO \/ SAFETY/);
- assert.match(js,/function openNativeAudioIO\(trigger=null\)/);
+ assert.match(js,/function openNativeAudioIO\(trigger=null,startup=false\)/);
  assert.match(js,/action:"audioDeviceInventory"/);
  assert.match(read("web/approved-device-view-model.js"),/action:"audioDeviceApply"/);
  assert.match(js,/backend\.emitEvent\("arMixAction",begun\.request\)/);
@@ -3959,7 +3984,7 @@ test("O2 SOURCE ONLY confirmed ASIO EXTERNAL OUT auto-arms without a second Moni
  assert.match(control,/error=engine_\.setPhysicalExternalOutput/);
  assert.match(control,/if\(left>=0 && !operatorOutputMuted_ && !engine_\.isMonitorEnabled\(\)\)\s*requestAutomaticMain\(false\)/);
  assert.match(control,/emitApprovedNativeSnapshot\(\); \/\/ callback readback proves LIVE/);
- assert.match(native,/operatorOutputMuted_=!arm; \/\/ an explicit user control/);
+ assert.match(native,/setOutputHoldReason\(arm\?nullptr:"OPERATOR_STOP"\); \/\/ explicit user control/);
  assert.match(native,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
  assert.match(native,/autoMainRequiresInput_ &&\s*!engine_\.hasVerifiedExternalOutputIntent\(\)/);
  assert.match(engine,/bool hasVerifiedExternalOutputIntent\(\) const noexcept/);
@@ -4168,6 +4193,9 @@ test("MVVM external readback needs verified pair and output-arm, never ACK-only 
     {...installed,physicalLeft:6,physicalRight:7},choices);
   assert.equal(invalid.state,"NEEDS_REMAP");
   assert.match(invalid.value,/Needs Remap/);
+  const silent=deviceVM.externalPresentation(snapshot,{...installed,status:"ASSIGNED_SILENT"},choices);
+  assert.equal(silent.state,"ASSIGNED_SILENT");assert.equal(silent.marker,"SILENT");
+  assert.equal(silent.value,choices[1].label);
   assert.equal(deviceVM.externalPresentation(snapshot,null,choices).state,"NONE");
   assert.equal(deviceVM.externalPresentation(null,installed).state,"NEEDS_REMAP");
 });
@@ -4516,11 +4544,11 @@ test("GUI-1 Channel Strip input and PRIMARY OUT require installed native readbac
   assert.equal(invalid.input,"None");
 });
 
-test("MV-5 EXTERNAL OUT preflight preserves exact native channel identity and warns on shared ASIO pins",()=>{
+test("MV-5 EXTERNAL OUT preflight preserves exact native channel identity and works with no input assigned",()=>{
  const id="9007199254740993",other="9007199254741000";
  const native={admitted:true,retained:false,device:{epoch:"31"},
-  graph:{channels:[{id,role:"INPUT"}]}};
- const hardware={device:{epoch:"31",backend:"ASIO",enabledOutputs:[2,3,4,5],
+  graph:{channels:[{id,role:"INPUT",source:null}]}};
+ const hardware={device:{epoch:"31",backend:"ASIO",enabledInputs:[],enabledOutputs:[2,3,4,5],
   outputEndpoints:[2,3,4,5].map(port=>({port,active:true}))},
   raw:{externalRevision:"9",physicalMainOutputs:[0,1],physicalMonitorOutputs:[],
    externalOutputs:[{channelId:other,physicalLeft:2,physicalRight:3}]}};
@@ -4608,6 +4636,8 @@ test("GUI-1 external OUT pending waits for matching ACK and later readback",()=>
   assert.equal(stripVM.externalPending(ack,"18","LIVE",row),"STALE",
     "new device epoch invalidates pending output");
   assert.equal(stripVM.externalPending(ack,"19","MUTED",row),"CONFIRMED");
+  assert.equal(stripVM.externalPending(p,"19","ASSIGNED_SILENT",row),"PENDING");
+  assert.equal(stripVM.externalPending(ack,"19","ASSIGNED_SILENT",row),"CONFIRMED");
   assert.equal(stripVM.externalPending(ack,"19","LIVE",null),"PENDING");
   assert.equal(stripVM.externalPending({...ack,left:-1,right:-1},
     "19","NONE",null),"CONFIRMED","remove requires observed absent row");
@@ -5878,6 +5908,14 @@ test("G-MV31 pure WIRE PRE/POST plans bind exact send identities, never PRIMARY/
    "two SENDs require explicit identity, not a guessed first match");
  assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:otherId}).edgeId,otherId);
  assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:"invalid"}),null);
+ const offline={logical:true,readOnly:false,admitted:false,retained:true,
+   graph:{...graph,capabilities:{supportedOps:["SET_SEND_TAP"]}}};
+ assert.equal(wireVM.channelTapEdge(offline,{sourceId:src}).edgeId,id);
+ assert.equal(wireVM.channelTapEdge(offline,{sourceId:src,selectedEdgeId:primaryId}),null);
+ assert.equal(wireVM.channelTapEdge({...offline,readOnly:true},{sourceId:src}),null);
+ assert.equal(wireVM.channelTapEdge({...offline,graph:{...offline.graph,capabilities:{supportedOps:[]}}},{sourceId:src}),null);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/if\(action==="tapMode"\|\|action==="sofTap"\)\{\s*const current=activeView\(\)/);
  for(const [edgeId,target,extra,state] of [
    [primaryId,"PRE_FADER",{},snap],
    [id,"NO_TAP",{},snap],
@@ -7070,6 +7108,11 @@ test("P0 WIRE LVL uses independent incoming sum scalar regardless of selected wi
     {...snapshot,graph:{...graph,edges:[]}}
   ])assert.equal(wireVM.channelSumLevelPlan(bad,true,"8",-12).kind,"UNAVAILABLE");
   assert.equal(wireVM.channelSumLevelPlan(snapshot,true,"7",3).kind,"UNAVAILABLE");
+  const offline={logical:true,readOnly:false,admitted:false,retained:true,graph};
+  assert.deepEqual(wireVM.channelSumLevelPlan(offline,true,"8",-12),
+    {kind:"READY",source:"8",levelDb:-12,wireCount:2});
+  assert.equal(wireVM.channelSumLevelPlan({...offline,readOnly:true},true,"8",-12).kind,"UNAVAILABLE");
+  assert.equal(wireVM.channelSumLevelPlan(offline,false,"8",-12).kind,"UNAVAILABLE");
   const bridge=read("web/approved-native-bridge.js");
   assert.match(bridge,/field==="wireChannelLevel"/);
   assert.match(bridge,/requestLiveWireSumGain\(t,db,event.type==="change"\)/);
@@ -7093,6 +7136,28 @@ test("P0 input GAIN sends bounded latest native intents during pointermove",()=>
 });
 
 
+test("P0 startup Audio I/O presentation is one-shot, native-owned and non-mutating",()=>{
+ const vm=read("web/approved-device-view-model.js");
+ const m={exports:{}};
+ new Function("module",vm)(m);
+ const decide=m.exports.startupAudioSetupDecision;
+ assert.equal(decide({startupAudioSetupRequired:true}),true);
+ for(const state of [{presented:true},{busy:true},{blocked:true}])
+   assert.equal(decide({startupAudioSetupRequired:true},state),false);
+ for(const live of [null,{}, {startupAudioSetupRequired:false},{startupAudioSetupRequired:"true"}])
+   assert.equal(decide(live),false);
+ const host=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ assert.match(host,/startupAudioSetupMissingProfile_=!saved/);
+ assert.match(host,/startupAudioSetupFailed_=startupError_\.isNotEmpty\(\)/);
+ assert.match(host,/!startupAudioSetupPresented_&&mixerSessionStartupInspected_/);
+ assert.match(host,/setProperty\("startupAudioSetupRequired",setupNeeded\)/);
+ assert.match(host,/withEventListener \("arMixAudioSetupPresented"/);
+ assert.match(bridge,/maybePresentStartupAudioSetup\(live\)/);
+ const handler=bridge.slice(bridge.indexOf("function maybePresentStartupAudioSetup"),bridge.indexOf("function closeNativeAudioIO"));
+ assert.match(handler,/openNativeAudioIO\(null,true\)/);
+ assert.doesNotMatch(handler,/emitEvent|sendDeviceApply|monitor\(/);
+ assert.match(bridge,/backend.emitEvent\("arMixAudioSetupPresented",\{\}\)/);
+});
 test("P0 Audio I/O help reacts to explicit failed operator intent without auto-ARM",()=>{
  const bridge=read("web/approved-native-bridge.js");
  assert.match(bridge,/function recommendAudioRepair\(context\)/);
@@ -7155,7 +7220,8 @@ test("P0 native receiver LVL re-admits only after projected device recovery",()=
  assert.match(bridge,/flags\.productionCallbackLive=next\.productLive;flags\.acceptedGraphConnected=true;\s*syncReceiverSumLevelAdmission\(next\)/);
  assert.match(bridge,/if\s*\(transientPlan\.discardRetained\)/);
  assert.match(bridge,/syncReceiverSumLevelAdmission\(next\);\s*stopDemo\(\)/);
- assert.match(bridge,/channelSumLevelPlan\(next,flags\.acceptedGraphConnected,/);
+ assert.match(bridge,/channelSumLevelPlan\(next,next\?\.logical===true\|\|flags\.acceptedGraphConnected,/);
+ assert.match(bridge,/syncReceiverSumLevelAdmission\(staged\)/);
  assert.match(cold,/['"]CREATE_CHANNEL['"], ['"]SET_FADER['"], ['"]SET_WIRE_SUM_GAIN['"]/);
  assert.match(cold,/\.wire-gain'\)\.is_disabled\(\)/);
  assert.match(cold,/\.wire-gain'\)\.is_enabled\(\)/);
@@ -7264,6 +7330,60 @@ test("P2 offline GAIN coalesces released values until durable ACK and exact read
  assert.equal(scope.tracks[0].trim,0);
 });
 
+test("P0 detached mixer has an explicit workspace-only edit without FX target or PCM authority",()=>{
+ const src=read("web/approved-native-bridge.js"),host=read("src/Main.cpp");
+ const start=src.indexOf("  function requestRetainedWorkspace(");
+ const fn=src.slice(start,src.indexOf("  const logicalClientToken",start));
+ const sent=[],timers=[];
+ const ctx={logicalView:null,pendingRetainedEditor:null,retainedEditorSerial:0,protocol,
+   controller:{state:()=>({current:{retained:true,device:{epoch:"31"},graph:{revision:"9"}}}),subscribe(){}},
+   syncOfflineEditButton(){},status(){},nativeToast(){},
+   backend:{emitEvent:(name,payload)=>sent.push({name,payload})},
+   window:{setTimeout:fn=>timers.push(fn)}};
+ const request=require("node:vm").runInNewContext(fn+";requestRetainedWorkspace",ctx);
+ assert.equal(request(),true);assert.equal(request(),false);
+ assert.equal(sent.length,1);assert.equal(sent[0].payload.workspaceOnly,true);
+ assert.equal(sent[0].payload.deviceEpoch,"31");assert.equal(sent[0].payload.graphRevision,"9");
+ for(const key of ["channelId","slot","instanceId"])assert.equal(Object.hasOwn(sent[0].payload,key),false);
+ timers[0]();assert.equal(ctx.pendingRetainedEditor,null);assert.equal(request(),true);
+ assert.match(host,/const bool identity=targetValid&&/);
+ assert.match(host,/bool sameInsert=workspaceOnly&&identity/);
+ assert.match(host,/graph.getProperty\("bindingState",""\).toString\(\)=="NEEDS_REMAP"/);
+ assert.match(host,/startRetainedWorkspaceCapture\(epoch,revision,request.getProperty/);
+ assert.match(src,/offlineEditButton.addEventListener\("click",requestRetainedWorkspace\)/);
+ assert.match(src,/if\(held.workspaceOnly\)\{\s*pendingRetainedEditor=null;/);
+});
+test("P0 offline fader preview never enters a durable transaction on snapshot drain",()=>{
+ const src=read("web/approved-native-bridge.js");
+ const start=src.indexOf("  function streamFaderControl(");
+ const fn=src.slice(start,src.indexOf("  // A queued ChannelId target",start));
+ const queue=new Map(),visuals=new Map(),writes=[];
+ const ctx={logicalView:{},pendingNativeControl:queue,liveFaderVisualTargets:visuals,
+   lastNativeControlSent:new Map(),liveScalarReady:()=>true,controlKey:(p,t)=>p+":"+t.id,
+   performance:{now:()=>0},nativeEditIdentity:t=>({channelId:t.id,authority:"LOGICAL"}),
+   stripVM,flushLiveScalars:()=>{for(const [k,v] of queue){writes.push(v.value);queue.delete(k);}},
+   queueLiveControlFlush:()=>{throw Error("offline should not use live timer");}};
+ const f=require("node:vm").runInNewContext(fn+";streamFaderControl",ctx);
+ const track={id:"8"};
+ for(const value of [-20,-15,-10]){assert.equal(f("faderDb",track,value,false),true);ctx.flushLiveScalars();}
+ assert.deepEqual(writes,[]);assert.equal(visuals.get("faderDb:8").value,-10);
+ assert.equal(f("faderDb",track,-8,true),true);assert.deepEqual(writes,[-8]);
+ assert.match(src,/function resetUnconfirmedLogicalControls\(\)\{[\s\S]*?pendingNativeControl\.clear\(\);liveFaderVisualTargets\.clear\(\)/);
+});
+test("P0 output hold reasons distinguish emergency from safe project/recovery holds",()=>{
+ assert.equal(protocol.outputHoldPresentation({operatorOutputMuted:false,outputHoldReason:"OPERATOR_STOP"}),null);
+ const panic=protocol.outputHoldPresentation({operatorOutputMuted:true,outputHoldReason:"OPERATOR_STOP"});
+ assert.match(panic.warning,/EMERGENCY STOP/);
+ for(const reason of ["NEW_SESSION","IO_RESET","SESSION_ARCHIVED","SAVED_MUTED","CHECKPOINT_RECOVERY","BUS_REMAP_FAILED","FX_PLAYBACK_UNVERIFIED",undefined,"__proto__"]){
+   const hold=protocol.outputHoldPresentation({operatorOutputMuted:true,outputHoldReason:reason});
+   assert.equal(hold.button,"Resume audio output");
+   assert.doesNotMatch(hold.warning,/EMERGENCY STOP/i);
+ }
+ const host=read("src/Main.cpp");
+ assert.match(host,/setProperty\("outputHoldReason",outputHoldReason_\)/);
+ assert.equal((host.match(/operatorOutputMuted_\s*=/g)||[]).length,2,
+   "Every native hold transition must update reason through its single owner");
+});
 test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop is separate",()=>{
  const bridge=read("web/approved-native-bridge.js"),native=read("src/Main.cpp");
  assert.doesNotMatch(bridge,/dataset\.nativeMonitor|data-native-monitor|toolbar\.insertBefore\(monitor/);
@@ -7271,8 +7391,10 @@ test("P0 automatic MAIN recovery: no header mute toggle, explicit emergency stop
  assert.match(bridge,/audioDiagnosticTools\.append\(hardwareNote,inspect,tone,mark,report,advanced\)/);
  assert.match(bridge,/querySelector\("\.armix-audio-diagnostics"\)\.append\(audioDiagnosticTools\)/);
  assert.doesNotMatch(bridge,/menu\.append\([^;]*(?:hardwareNote|healthTitle|tone,mark,report|advanced)/);
- assert.match(bridge,/Resume after emergency stop/);
- assert.match(bridge,/EMERGENCY STOP · MORE → RESUME/);
+ const p=read("web/approved-native-contract.js");
+ assert.match(p,/Resume after emergency stop/);
+ assert.match(p,/EMERGENCY STOP · MORE → RESUME/);
+ assert.match(bridge,/protocol\.outputHoldPresentation/);
  const start=native.indexOf("void serviceAutomaticMain()"),end=native.indexOf("void requestAutomaticMain",start);
  const control=native.slice(start,end);
  assert.match(control,/if\(operatorOutputMuted_\)\{autoMainEpoch_=0;return;\}/);
@@ -7339,7 +7461,7 @@ test("P0 native busy guard and all physical presentations produce explicit recei
  assert.match(m,/if\(deviceApply_\.busy\(\) && action!="audioDeviceApply" && !outputIntent\)\{/);
  const monitor=m.split('else if (action == "monitor" && value.isBool())')[1].split('else if (action == "dryTest"')[0];
  assert.match(monitor,/if \(arm && deviceApply_\.busy\(\)\)/);
- assert.match(monitor,/operatorOutputMuted_=!arm/);
+ assert.match(monitor,/setOutputHoldReason\(arm\?nullptr:"OPERATOR_STOP"\)/);
  assert.match(monitor,/arMixAudioArmAck/);
  assert.match(m,/emitRoutingFxEditorReceipt\(args,false,true,"FX editor unavailable: Audio I\/O is applying"\)/);
  assert.match(m,/opened=shownWindow->presentationConfirmed\(\)/);
@@ -8605,4 +8727,124 @@ test("Catalog transaction rejection is terminal, retryable and preserves real sc
  handle({reported:true,active:false,found:0,issues:false});
  assert.equal(el.textContent,"Scan finished · 0 found");
  state.open();assert.equal(calls.length,3); // legitimate zero-result scan remains terminal
+});
+
+
+test("Offline WIRE shares native translation, compacts a draft SEND and keeps canonical taps",()=>{
+ const ids=new Map([[1,"9007199254740993"],[2,"9007199254740994"],[3,"9007199254740995"]]);
+ const edges=new Map([[41,"9007199254741000"]]);
+ const connect={type:"CONNECT",sourceId:1,destId:2,mode:"send"};
+ const gain={type:"GAIN",sourceId:1,edgeId:99,levelDb:-12};
+ const translate=ops=>wireVM.logicalWireTransaction(ops,ids,edges,3);
+ assert.deepEqual(translate([connect,gain]),wireVM.nativeTransaction([{...connect,levelDb:-12}],ids,edges));
+ assert.equal(translate([connect,{...gain,edgeId:41}]).ok,false);
+ assert.equal(translate([connect,{...gain,sourceId:2}]).ok,false);
+ assert.equal(translate([{...connect,levelDb:NaN}]).ok,false);
+ assert.equal(translate([{...connect,levelDb:"-12"}]).ok,false);
+ assert.equal(translate([{...connect,edgeId:99}]).ok,false);
+ assert.equal(translate([{...connect,destId:999}]).ok,false);
+ assert.equal(translate([null]).ok,false);
+ assert.equal(translate([{...connect,destId:3,mode:"postFader"}]).changes[0].op,"ROUTE_ONLY");
+ assert.equal(translate([{...connect,destId:3}]).changes[0].op,"CONNECT");
+ assert.equal(translate([{...connect,mode:"routeOnly",levelDb:-12}]).changes[0].gainLinear,1);
+ const edge={edgeId:"9007199254741000",from:ids.get(1),to:ids.get(2),enabled:true,
+   primaryOutput:false,tap:"SPLIT_PRE",tapStage:"PRE_FADER"};
+ const offline={logical:true,readOnly:false,graph:{mainChannelId:ids.get(3),edges:[edge],
+   capabilities:{supportedOps:["SET_SEND_TAP"]}}};
+ assert.equal(wireVM.channelTapEdge(offline,{sourceId:ids.get(1)}),edge);
+ assert.equal(wireVM.channelTapEdge({...offline,readOnly:true},{sourceId:ids.get(1)}),null);
+ assert.equal(wireVM.channelTapEdge({...offline,graph:{...offline.graph,edges:[{...edge,tapStage:"PRE_FX"}]}},{sourceId:ids.get(1)}),null);
+ const source=read("web/approved-native-bridge.js");
+ const start=source.indexOf("consumeWire(ops,retries=0)");
+ const end=source.indexOf("// The inspector's legacy MODE gesture",start);
+ assert.ok(start>=0&&end>start);
+ const body=source.slice(start,end);
+ assert.match(body,/wireVM\.logicalWireTransaction\(ops,nativeByUiId,wireByUiId,scope\?\.master\?\.id\)/);
+ assert.match(body,/logicalIntent\("WIRE_TRANSACTION",source,\{changes\}\)/);
+ assert.doesNotMatch(body,/Math\.pow\(/);
+});
+
+
+test("Split MAIN can return to verified ASIO after Windows STOP or endpoint loss, without stream ARM",()=>{
+ const s={admitted:true,device:{backend:"ASIO",epoch:"17",enabledOutputs:[4,5]},
+   hardwareConfiguration:"hw",graph:{revision:"19",rosterRevision:"23"},
+   raw:{physicalBusOutputObserved:true,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[4,5],externalOutputs:[]}};
+ const off={secondaryOutputReady:false,secondaryOutputArmed:false,secondaryOutputName:"",
+   dryRoutingLab:{secondaryMainOnly:true,dmxDeviceEpoch:"17"}};
+ const mode=protocol.secondaryMixMode(s,off);
+ assert.equal(mode.available,true);
+ assert.equal(mode.value.enabled,false);
+ assert.match(mode.reason,/Windows output stays off/);
+ assert.equal(protocol.secondaryMixMode(s,{...off,secondaryOutputFault:true}).available,true);
+ assert.equal(protocol.secondaryMixMode(s,{...off,secondaryOutputRecovering:true}).available,false);
+ const same={...s,raw:{...s.raw,secondaryMainOnly:false,physicalMainOutputs:[4,5],physicalMonitorOutputs:[]}};
+ assert.equal(protocol.secondaryMixMode(same,{...off,dryRoutingLab:{secondaryMainOnly:false}}).available,false);
+ assert.equal(protocol.secondaryMixMode({...s,raw:{...s.raw,physicalBusOutputObserved:false}},off).available,false);
+ assert.equal(protocol.secondaryMixMode({...s,raw:{...s.raw,externalOutputs:[{}]}},off).available,false);
+ const p={action:"secondaryOutputSplit",acked:true,statusSerial:8,epoch:"17",config:"hw",
+   endpoint:"",pair:[4,5],value:mode.value,ackRevision:"20",resumeSecondary:false};
+ const applied={...same,graph:{...same.graph,revision:"20"}};
+ const live={...off,dryRoutingLab:{secondaryMainOnly:false,dmxDeviceEpoch:"17",
+   nativeBus:{graphRevision:"20"},busOutputObserved:true}};
+ const settle=(q=p,h=applied,l=live,serial=9)=>protocol.secondaryOutputSettlement(q,h,l,serial);
+ assert.equal(settle(),"SETTLED");
+ assert.equal(settle({...p,acked:false}),"WAIT");
+ assert.equal(settle(p,applied,live,8),"WAIT");
+ assert.equal(settle({...p,resumeSecondary:undefined}),"WAIT");
+ assert.equal(settle({...p,resumeSecondary:true}),"WAIT");
+ assert.equal(settle(p,applied,{...live,secondaryOutputArmed:true}),"WAIT");
+ assert.equal(settle(p,applied,{...live,secondaryOutputRecovering:true}),"WAIT");
+ assert.equal(settle(p,{...applied,raw:{...applied.raw,physicalMainOutputs:[5,4]}}),"WAIT");
+ assert.equal(settle(p,{...applied,device:{...applied.device,epoch:"18"}}),"STALE");
+ assert.equal(settle(p,{...applied,graph:{revision:"21"}}),"STALE");
+ assert.equal(settle(p,applied,{...live,dryRoutingLab:{...live.dryRoutingLab,busOutputObserved:false}}),"WAIT");
+ assert.equal(settle({...p,value:{...p.value,enabled:true}}),"WAIT");
+ const native=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ const section=native.slice(native.indexOf('if(action=="secondaryOutputSplit"){'),native.indexOf('if(action=="secondaryOutputEnable" || action=="secondaryOutputConnect"'));
+ assert.match(section,/resumeSecondary=intent\.has_value\(\)/);
+ assert.match(section,/\(bool\(enable\)&&!intent\)/);
+ assert.match(section,/\(engine_\.secondaryArmed\(\)&&!intent\)/);
+ assert.match(section,/if\(intent\)pendingVendorStream_=PendingVendorStream/);
+ assert.match(section,/if\(resumeHardware\)requestAutomaticMain\(false\)/);
+ assert.match(section,/ack->setProperty\("resumeSecondary",resumeSecondary\)/);
+ assert.match(bridge,/extraPending\.resumeSecondary=ack\.resumeSecondary/);
+});
+
+
+test("PFL readback requires verified independent MONITOR pair and exact native callback receipt",()=>{
+ const p={available:true,deviceEpoch:"17",graphRevision:"19",eligible:["3"],requested:"3",applied:"3",settled:true};
+ const s={admitted:true,device:{epoch:"17",outputArmed:true,enabledOutputs:[0,1,2,3]},
+   graph:{revision:"19",channels:[{id:"3",role:"INPUT"},{id:"5",role:"MAIN"},{id:"8",role:"MONITOR"}]},
+   raw:{workspaceGeneration:"0",physicalBusOutputObserved:true,physicalMainOutputs:[0,1],physicalMonitorOutputs:[2,3],nativePfl:p}};
+ const view=(raw=s.raw,device=s.device)=>protocol.nativePflView({...s,raw,device});
+ assert.equal(view().applied,"3");
+ assert.equal(view({...s.raw,nativePfl:{...p,settled:false,applied:""}}).settled,false);
+ assert.equal(view({...s.raw,nativePfl:{...p,settled:false}}).available,false);
+ assert.equal(view({...s.raw,nativePfl:{...p,graphRevision:"18"}}).available,false);
+ assert.equal(view({...s.raw,physicalMonitorOutputs:[0,1]}).available,false);
+ assert.equal(view({...s.raw,physicalBusOutputObserved:false}).available,false);
+ assert.equal(view({...s.raw,nativePfl:{...p,eligible:["8"],requested:"8",applied:"8"}}).available,false);
+ assert.equal(view(s.raw,{...s.device,outputArmed:false}).available,false);
+ assert.equal(view({...s.raw,secondaryMainOnly:true,physicalMainOutputs:[],physicalMonitorOutputs:[0,1]},
+   {...s.device,enabledOutputs:[0,1]}).applied,"3");
+ assert.equal(protocol.nativePflView({...s,retained:true}).available,false);
+});
+
+test("live same-revision physical source ACK needs exact callback ticket and pins",()=>{
+ const p={requestId:"source-native-99",id:"9",epoch:"8",beforeRevision:"7",
+  choice:{label:"Mic B",mode:"MONO",left:2,right:-1},acked:false};
+ const ack={requestId:p.requestId,channelId:p.id,ok:true,graphRevision:"7",sourceSwitchTicket:"2"};
+ const accepted=stripVM.sourceQueueAckTransition({authority:"CHANNEL_ID",pending:p,ack});
+ assert.equal(accepted.kind,"ACKED");
+ const view={admitted:true,retained:false,device:{epoch:"8"},graph:{revision:"7",channels:[
+  {id:"9",role:"INPUT",source:{portId:"in:2",sourceFormat:"MONO"}}]}};
+ const settle=()=>stripVM.sourceReadbackSettlement(accepted.pending,view);
+ assert.equal(settle(),"PENDING");
+ view.graph.channels[0].source.appliedSwitchTicket="1";assert.equal(settle(),"PENDING");
+ view.graph.channels[0].source.appliedSwitchTicket="2";assert.equal(settle(),"CONFIRMED");
+ view.graph.channels[0].source.portId="in:3";assert.equal(settle(),"PENDING");
+ view.graph.channels[0].source.portId="in:2";view.graph.revision="8";assert.equal(settle(),"STALE");
+ for(const bad of [{sourceSwitchTicket:"0"},{sourceSwitchTicket:"4294967296"},{graphRevision:"8"}])
+  assert.equal(stripVM.sourceAckResult(p,{...ack,...bad},"CHANNEL_ID"),"REJECTED");
+ assert.equal(stripVM.sourceAckResult({...p,choice:{mode:"PLAYER"}},ack,"CHANNEL_ID"),"REJECTED");
 });

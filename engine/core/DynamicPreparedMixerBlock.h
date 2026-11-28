@@ -6,6 +6,7 @@
 #include "StereoLatencyDelay.h"
 #include "RealtimeStereoControlWord.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <memory>
 #include <cmath>
@@ -42,6 +43,129 @@ struct DynamicPlayerPcmBlock final {
     std::uint64_t deckId=0;
     const float* left=nullptr;
     const float* right=nullptr;
+};
+// Callback-local private PFL capture. Storage belongs to the host, never
+// aliases programme/physical output. A successful graph render publishes
+// only the selected strip's post-insert, pre-fader/pre-mute PCM; no WIRE,
+// SOLO, gain, monitor mix or DSP state is changed. A missing lane/invalid
+// quantum yields an empty receipt, never the previous block's samples.
+class DynamicPflCapture final {
+public:
+    static constexpr int capacity=4096;
+    ChannelId requested{};
+    void reset() noexcept {captured_={};frames_=0;}
+    void capture(ChannelId id,const float* l,const float* r,int frames) noexcept {
+        if(!requested.value||id!=requested||frames<1||frames>capacity)return;
+        std::copy_n(l,frames,left_.data());
+        std::copy_n(r,frames,right_.data());
+        captured_=id;frames_=frames;
+    }
+    ChannelId captured() const noexcept {return captured_;}
+    std::span<const float> left() const noexcept {return {left_.data(),static_cast<std::size_t>(frames_)};}
+    std::span<const float> right() const noexcept {return {right_.data(),static_cast<std::size_t>(frames_)};}
+private:
+    ChannelId captured_{};
+    int frames_=0;
+    std::array<float,capacity> left_{},right_{};
+};
+// Optional host-owned programme tap for an independent sink. This is NOT
+// PFL: it observes the causal post-insert, post-mute/solo/fader/pan lane,
+// before terminal/physical output alignment and host output envelopes.
+// No borrowed scratch pointer can escape the render lease. A known dormant
+// channel produces explicit silence; a missing/invalid request has no receipt.
+class DynamicProgrammeTap final {
+public:
+    static constexpr int capacity=8192; // same maximum as the native host quantum
+    enum class State : std::uint8_t { unavailable, dormant, rendered };
+    ChannelId requested{};
+    void reset() noexcept {captured_={};frames_=0;state_=State::unavailable;}
+    static bool eligible(ChannelRole role) noexcept {
+        return role==ChannelRole::input||role==ChannelRole::group||
+               role==ChannelRole::fxReturn;
+    }
+    void capture(ChannelId id,const float* l,const float* r,int frames) noexcept {
+        if(!requested.value||id!=requested||frames<1||frames>capacity||!l||!r)return;
+        std::copy_n(l,frames,left_.data());std::copy_n(r,frames,right_.data());
+        captured_=id;frames_=frames;state_=State::rendered;
+    }
+    void silence(ChannelId id,int frames) noexcept {
+        if(!requested.value||id!=requested||frames<1||frames>capacity)return;
+        std::fill_n(left_.data(),frames,0.f);std::fill_n(right_.data(),frames,0.f);
+        captured_=id;frames_=frames;state_=State::dormant;
+    }
+    ChannelId captured() const noexcept {return captured_;}
+    State state() const noexcept {return state_;}
+    std::span<const float> left() const noexcept {return {left_.data(),static_cast<std::size_t>(frames_)};}
+    std::span<const float> right() const noexcept {return {right_.data(),static_cast<std::size_t>(frames_)};}
+private:
+    ChannelId captured_{};
+    State state_=State::unavailable;
+    int frames_=0;
+    std::array<float,capacity> left_{},right_{};
+};
+// Host-owned whole-callback receipt. A driver interval may be rendered in
+// several native graph quanta; no partial or mixed-generation PCM escapes.
+// Allocate once outside the callback; append only into fixed stereo storage.
+// A failed optional tap does not invalidate otherwise valid hardware PCM.
+class DynamicProgrammeBlock final {
+public:
+    static constexpr int capacity=DynamicProgrammeTap::capacity;
+    ChannelId requested{};
+    void reset() noexcept {
+        source_={};epoch_=revision_=0;frames_=written_=0;valid_=complete_=false;
+        slice_.reset();slice_.requested={};
+    }
+    bool begin(std::uint64_t epoch,int frames) noexcept {
+        reset();
+        if(!requested.value||!epoch||frames<1||frames>capacity)return false;
+        source_=requested;epoch_=epoch;frames_=frames;valid_=true;
+        slice_.requested=source_;return true;
+    }
+    DynamicProgrammeTap* slice() noexcept {
+        if(!valid_||complete_)return nullptr;
+        slice_.reset();return &slice_;
+    }
+    bool append(int offset,int frames,std::uint64_t epoch,std::uint64_t revision) noexcept {
+        if(!valid_||complete_||epoch!=epoch_||!revision||
+           (revision_&&revision_!=revision)||offset!=written_||
+           frames<=0||frames>frames_-written_||slice_.captured()!=source_||
+           slice_.state()==DynamicProgrammeTap::State::unavailable||
+           slice_.left().size()!=static_cast<std::size_t>(frames)||
+           slice_.right().size()!=static_cast<std::size_t>(frames)){
+            reset();return false;
+        }
+        revision_=revision;
+        std::copy_n(slice_.left().data(),frames,left_.data()+offset);
+        std::copy_n(slice_.right().data(),frames,right_.data()+offset);
+        written_+=frames;slice_.reset();return true;
+    }
+    // Apply the host's existing startup/output ramp to the exact sample
+    // already assembled. Invalid/absent optional tap remains a no-op.
+    void scale(int index,float gain) noexcept {
+        if(valid_&&!complete_&&index>=0&&index<written_){
+            left_[index]*=gain;right_[index]*=gain;
+        }
+    }
+    bool finish(std::uint64_t epoch) noexcept {
+        if(!valid_||complete_||epoch!=epoch_||written_!=frames_){
+            reset();return false;
+        }
+        complete_=true;return true;
+    }
+    ChannelId captured() const noexcept {return complete_?source_:ChannelId{};}
+    std::uint64_t revision() const noexcept {return complete_?revision_:0;}
+    std::array<float*,2> pcm() noexcept {
+        return complete_?std::array<float*,2>{left_.data(),right_.data()}:
+                         std::array<float*,2>{nullptr,nullptr};
+    }
+    int frames() const noexcept {return complete_?frames_:0;}
+private:
+    DynamicProgrammeTap slice_;
+    ChannelId source_{};
+    std::uint64_t epoch_=0,revision_=0;
+    int frames_=0,written_=0;
+    bool valid_=false,complete_=false;
+    std::array<float,capacity> left_{},right_{};
 };
 // Default keeps all physical buses time-aligned. Independent monitoring
 // removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
@@ -241,19 +365,49 @@ public:
     // instance never change; retain one latest target, no command FIFO.
     // A new source request during the 64-sample crossfade is coalesced and
     // starts only after the current ramp completes, avoiding a click.
-    bool setPhysicalSource(ChannelId id,int inputL,int inputR,
-                           bool stereo) noexcept {
+    bool canSwitchPhysicalSource(ChannelId id,int inputL,int inputR,
+                                 bool stereo) const noexcept {
         if(!id.value ||
            !validPhysicalPatch(physicalInputs_,inputL,inputR,stereo))
             return false;
         const auto it=controlIndex_.find(id.value);
         if(it==controlIndex_.end())return false;
         const auto& lane=lanes_[it->second];
-        if(lane.role!=ChannelRole::input || lane.inputL<0 ||
-           lane.playerDeckId!=0 || lane.inputStereo!=stereo)return false; // physical-only
-        sourceTargets_[it->second].store(packPhysical(inputL,inputR),
-                                          std::memory_order_release);
+        return lane.role==ChannelRole::input && lane.inputL>=0 &&
+           !lane.playerDeckId && lane.inputStereo==stereo;
+    }
+    // One lock-free word binds the pin pair to its request generation.
+    // A -> B -> A cannot settle on a receipt from the original A.
+    bool setPhysicalSource(ChannelId id,int inputL,int inputR,bool stereo,
+                           std::uint64_t* ticket=nullptr) noexcept {
+        if(!canSwitchPhysicalSource(id,inputL,inputR,stereo))return false;
+        const auto i=controlIndex_.find(id.value)->second;
+        const auto previous=sourceTargets_[i].load(std::memory_order_relaxed);
+        // Retrying the exact same target after a lost ACK/timeout must
+        // retain its receipt, not restart or supersede an in-flight ramp.
+        if((previous>>32)!=0&&static_cast<std::uint32_t>(previous)==packPhysical(inputL,inputR)){
+            if(ticket)*ticket=previous>>32;
+            return true;
+        }
+        const auto sequence=(previous>>32)+1;
+        if(sequence>0xffffffffull)return false;
+        const auto target=(sequence<<32)|packPhysical(inputL,inputR);
+        sourceTargets_[i].store(target,std::memory_order_release);
+        if(ticket)*ticket=sequence;
         return true;
+    }
+    std::uint64_t requestedPhysicalSourceTicket(ChannelId id) const noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end()||lanes_[it->second].inputL<0)return 0;
+        return sourceTargets_[it->second].load(std::memory_order_acquire)>>32;
+    }
+    std::uint64_t appliedPhysicalSourceTicket(ChannelId id) const noexcept {
+        const auto it=controlIndex_.find(id.value);
+        if(it==controlIndex_.end()||lanes_[it->second].inputL<0)return 0;
+        const auto i=it->second;
+        const auto target=sourceTargets_[i].load(std::memory_order_acquire);
+        return sourceAppliedTargets_[i].load(std::memory_order_acquire)==target?
+            target>>32:0;
     }
     bool setChannelMuteSolo(ChannelId id,bool mute,bool solo) noexcept {
         if(!id.value)return false;
@@ -321,7 +475,9 @@ public:
         if(it==controlIndex_.end() || outputCount<2 || outputCount>256 ||
            (left<0 ? right!=-1 :
              (right<0 || left>=outputCount || right>=outputCount ||
-              left==right)) || !channelScheduled(id))return false;
+              left==right)))return false;
+        // Dormant strips already own a preallocated target slot, but no PCM
+        // scratch. Saving a destination must not wake DSP or require a source.
         const auto role=lanes_[it->second].role;
         if(role!=ChannelRole::input && role!=ChannelRole::group &&
            role!=ChannelRole::fxReturn)return false;
@@ -485,15 +641,36 @@ public:
     // Inbound wires may be removed with their already faded destination;
     // live SOLO topology and changed PDC still require an explicit stopped edit.
     bool prepareContinuity(const DynamicPreparedMixerBlock& old,ChannelId removed,
-                           ContinuityPlan& plan) {
+                           ContinuityPlan& plan,bool dormantRosterEdit=false,bool wireAddition=false) {
+        if(wireAddition&&(removed.value||dormantRosterEdit||renderOrder_.size()!=old.renderOrder_.size()))return false;
+        if(wireAddition)for(std::size_t i=0;i<old.lanes_.size();++i)
+            if(Word::decode(old.channelTargets_[i].state.load(std::memory_order_acquire)).solo)return false;
         if(capacity_!=old.capacity_||physicalInputs_!=old.physicalInputs_||
            mainMonoAfterFx_!=old.mainMonoAfterFx_||
            monitorLatencyPolicy_!=old.monitorLatencyPolicy_||
            latencySamples_!=old.latencySamples_||
-           lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size())return false;
+           lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size()+(dormantRosterEdit&&!removed.value?1u:0u))return false;
+        // A silent descriptor can change Kahn's tie-breaking through its
+        // default MAIN edge even though it has no scheduled PCM. Prove the
+        // same scheduled lane set, edges, keys and delays below, then reuse
+        // the previous audible order (including floating-point summation).
+        if(dormantRosterEdit&&renderOrder_.size()!=old.renderOrder_.size())return false;
+        // A live track retirement may keep independent MONITOR and secondary
+        // clocks armed ONLY when every surviving scheduled dependency, delay
+        // and processing order is unchanged. A downstream dormancy change
+        // or a changed post-fader key requires the ordinary gated edit.
+        const bool activeRemoval=removed.value&&!dormantRosterEdit;
+        if(activeRemoval&&(!old.channelScheduled(removed)||
+           renderOrder_.size()+1!=old.renderOrder_.size()))return false;
         if(removed.value){
             const auto found=old.controlIndex_.find(removed.value);
             if(found==old.controlIndex_.end()||controlIndex_.contains(removed.value))return false;
+            if(dormantRosterEdit){
+                const auto& retired=old.lanes_[found->second];
+                if(old.channelScheduled(removed)||retired.inputL>=0||retired.playerDeckId||
+                   (retired.role!=ChannelRole::input&&retired.role!=ChannelRole::group)||
+                   Word::decode(old.channelTargets_[found->second].state.load()).solo)return false;
+            }
             for(std::size_t i=0;i<old.lanes_.size();++i)
                 if(Word::decode(old.channelTargets_[i].state.load(std::memory_order_acquire)).solo)
                     return false;
@@ -503,31 +680,48 @@ public:
         };
         for(std::size_t i=0;i<lanes_.size();++i){
             const auto& n=lanes_[i];const auto found=old.controlIndex_.find(n.id.value);
-            if(found==old.controlIndex_.end())return false;
+            if(found==old.controlIndex_.end()){
+                if(!dormantRosterEdit||removed.value||channelScheduled(n.id)||n.inputL>=0||n.playerDeckId||
+                   (n.role!=ChannelRole::input&&n.role!=ChannelRole::group)||
+                   n.first!=n.last||n.keyFirst!=n.keyLast||
+                   Word::decode(channelTargets_[i].state.load()).solo)return false;
+                continue;
+            }
             const auto j=found->second;const auto& o=old.lanes_[j];
             const bool wasScheduled=old.channelScheduled(n.id),nowScheduled=channelScheduled(n.id);
             if(n.role!=o.role||n.format!=o.format||n.monoPan!=o.monoPan||
                n.inputStereo!=o.inputStereo||n.playerDeckId!=o.playerDeckId||
-               (n.inputL>=0)!=(o.inputL>=0))return false;
+               (n.inputL>=0)!=(o.inputL>=0)||(wireAddition&&n.enabled!=o.enabled))return false;
             // A fresh zero-latency Compressor may activate an unpatched
             // dormant lane. It has no physical/player input or prior history.
             // A downstream lane which becomes dormant has no physical/player
             // source or FX by compiler construction. Its removed contribution
             // has drained before publication; no live processor tail is lost.
+            if(dormantRosterEdit||activeRemoval||wireAddition){
+                if(wasScheduled!=nowScheduled||n.keyLast-n.keyFirst!=o.keyLast-o.keyFirst)return false;
+                for(std::size_t k=0;k<n.keyLast-n.keyFirst;++k)
+                    if(postKeys_[n.keyFirst+k].id!=old.postKeys_[o.keyFirst+k].id)return false;
+            }
             if(!wasScheduled&&nowScheduled&&!removed.value&&n.inputL<0&&!n.playerDeckId)continue;
             if(wasScheduled&&!nowScheduled&&removed.value&&n.inputL<0&&!n.playerDeckId)continue;
             if(wasScheduled!=nowScheduled||
                !delayEqual(physicalDelays_,i,old.physicalDelays_,j)||
                !delayEqual(sinkDelays_,i,old.sinkDelays_,j)||
                !delayEqual(externalDelays_,i,old.externalDelays_,j))return false;
-            if(n.inputL>=0 && sourceTargets_[i].load()!=old.sourceTargets_[j].load())return false;
+            if(n.inputL>=0) {
+                const auto previous=old.sourceTargets_[j].load();
+                if(static_cast<std::uint32_t>(sourceTargets_[i].load())!=
+                   static_cast<std::uint32_t>(previous))return false;
+                sourceTargets_[i].store(previous);
+            }
             if(channelTargets_[i].state.load()!=old.channelTargets_[j].state.load()||
                channelTargets_[i].inputGain.load()!=old.channelTargets_[j].inputGain.load()||
                channelTargets_[i].wireSumGain.load()!=old.channelTargets_[j].wireSumGain.load())return false;
             std::size_t survivingEdges=0;
             for(std::size_t k=o.first;k<o.last;++k)
                 if(old.lanes_[old.edges_[k].destination].id!=removed)++survivingEdges;
-            if(n.last-n.first!=survivingEdges)return false;
+            if(wireAddition?n.last-n.first<survivingEdges:n.last-n.first!=survivingEdges)return false;
+            std::size_t matchedEdges=0;
             plan.lanes.emplace_back(i,j);
             externalTargets_[i].store(old.externalTargets_[j].load(std::memory_order_acquire));
             for(std::size_t e=n.first;e<n.last;++e){
@@ -535,7 +729,14 @@ public:
                 const auto prior=std::find_if(old.edges_.begin()+o.first,old.edges_.begin()+o.last,
                     [&](const Edge& x){return x.id==edge.id&&
                         old.lanes_[x.destination].id==lanes_[edge.destination].id;});
-                if(prior==old.edges_.begin()+o.last)return false;
+                if(prior==old.edges_.begin()+o.last){
+                    if(!wireAddition||edge.primary)return false;
+                    // New SEND starts silent; its own 64-sample slew and
+                    // zero-initialized delay run in the existing renderer.
+                    sendTargets_[e].applied.reset(0.f);
+                    continue;
+                }
+                ++matchedEdges;
                 const auto k=static_cast<std::size_t>(prior-old.edges_.begin());
                 if(edge.pre!=prior->pre||edge.primary!=prior->primary||
                    edge.panL!=prior->panL||edge.panR!=prior->panR||
@@ -544,6 +745,38 @@ public:
                    !delayEqual(edgeDelays_,e,old.edgeDelays_,k))return false;
                 plan.edges.emplace_back(e,k);
             }
+            if(wireAddition&&matchedEdges!=survivingEdges)return false;
+        }
+        if(wireAddition){
+            // Preserve audible accumulation order only if every new edge
+            // respects it. Post-fader key identities were verified above.
+            std::vector<std::size_t> position(lanes_.size(),lanes_.size());
+            for(std::size_t k=0;k<old.renderOrder_.size();++k){
+                const auto i=controlIndex_.at(old.lanes_[old.renderOrder_[k]].id.value);
+                position[i]=k;renderOrder_[k]=i;
+            }
+            for(auto i:renderOrder_)for(auto e=lanes_[i].first;e<lanes_[i].last;++e)
+                if(position[i]>=position[edges_[e].destination])return false;
+        }else if(dormantRosterEdit){
+            // All scheduled dependencies are already proven equivalent.
+            // Scratch slots and delay state are lane-indexed, not tied to
+            // this ordering; only the callback execution order is restored.
+            for(std::size_t k=0;k<renderOrder_.size();++k){
+                const auto id=old.lanes_[old.renderOrder_[k]].id;
+                renderOrder_[k]=controlIndex_.at(id.value);
+            }
+        }else if(activeRemoval){
+            // The old execution order minus the fully faded track is still
+            // a valid topological order: surviving edges and keys matched.
+            // Avoid reordering floating-point accumulation of unaffected PCM.
+            std::size_t k=0;
+            for(const auto index:old.renderOrder_){
+                const auto id=old.lanes_[index].id;
+                if(id==removed)continue;
+                if(k>=renderOrder_.size())return false;
+                renderOrder_[k++]=controlIndex_.at(id.value);
+            }
+            if(k!=renderOrder_.size())return false;
         }
         return true;
     }
@@ -557,6 +790,8 @@ public:
             n.retireGain=o.retireGain;n.retireGoal=o.retireGoal;n.retireStep=o.retireStep;
             n.retireRemaining=o.retireRemaining;n.retireDuration=o.retireDuration;
             sourceFades_[i]=old.sourceFades_[j];externalFades_[i]=old.externalFades_[j];
+            sourceAppliedTargets_[i].store(old.sourceAppliedTargets_[j].load(std::memory_order_acquire),
+                                           std::memory_order_release);
             externalAppliedTargets_[i].store(old.externalAppliedTargets_[j].load(std::memory_order_acquire),
                                              std::memory_order_release);
             physicalDelays_[i].swapHistory(old.physicalDelays_[j]);
@@ -842,7 +1077,8 @@ public:
         std::size_t slot=0;
         for(auto i:next.renderOrder_)next.lanes_[i].slot=slot++;
         next.scratch_.assign(active*2*frame,0.f);
-        next.sourceTargets_=std::make_unique<std::atomic<std::uint32_t>[]>(rows.size());
+        next.sourceTargets_=std::make_unique<std::atomic<std::uint64_t>[]>(rows.size());
+        next.sourceAppliedTargets_=std::make_unique<std::atomic<std::uint64_t>[]>(rows.size());
         next.sourceFades_=std::make_unique<SourceFade[]>(rows.size());
         next.sourceBlockTargets_.resize(rows.size());
         for(std::size_t i=0;i<rows.size();++i){
@@ -903,7 +1139,11 @@ public:
                  std::span<float> channelPeaksR={},
                  std::span<const DynamicPlayerPcmBlock> playerPcm={},
                  float* const* hardwareOutputs=nullptr,
-                 int hardwareOutputCount=0,bool allowUnmappedMonitor=false) noexcept {
+                 int hardwareOutputCount=0,bool allowUnmappedMonitor=false,
+                 DynamicPflCapture* pfl=nullptr,
+                 DynamicProgrammeTap* programme=nullptr) noexcept {
+        if(pfl)pfl->reset();
+        if(programme)programme->reset();
         if(frames<=0 || !outputL || !outputR)return false;
         // The physical 10CH/4AUX callback requests only the stable
         // legacy prefix of an expanded ChannelId roster. Dynamic extra
@@ -974,8 +1214,9 @@ public:
         for(auto& entry:duckerKeys_){
             const auto i=entry.laneIndex;
             const auto& lane=lanes_[i];
-            const auto pair=sourceTargets_[i].load(std::memory_order_acquire);
-            sourceBlockTargets_[i]=pair;
+            const auto target=sourceTargets_[i].load(std::memory_order_acquire);
+            const auto pair=static_cast<std::uint32_t>(target);
+            sourceBlockTargets_[i]=target;
             entry.key={};
             const auto& fade=sourceFades_[i];
             const bool audible=!blockTargets_[i].mute &&
@@ -997,6 +1238,8 @@ public:
         }
         // Incoming edges must accumulate AFTER sources have been mixed.
         // This separate clear pass is needed so later nodes keep their sends.
+        // Stage a view until the render succeeds. Copy BEFORE channel fader
+        // and mute because these scratch lanes are subsequently changed.
         for(const auto i:renderOrder_) {
             const auto& lane=lanes_[i];
             float* const l=scratch_.data()+lane.slot*2*block;
@@ -1008,7 +1251,7 @@ public:
             sum.wireSumApplied.applyStereo(l,r,frames);
             if(lane.inputL>=0 && physical) {
                 auto& fade=sourceFades_[i];
-                const auto desired=sourceBlockTargets_[i];
+                const auto desired=static_cast<std::uint32_t>(sourceBlockTargets_[i]);
                 if(fade.remaining==0 && desired!=fade.current) {
                     fade.next=desired;fade.remaining=armix::dsp::RealtimeSlew64::samples;
                 }
@@ -1079,6 +1322,14 @@ public:
                 const AutoDuckerKeyScope keyScope(duckerKeys_,lane.id.value,frames,post);
                 processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
             }
+            // PFL listens to the selected strip, including when its own
+            // fader or programme gate is closed. For a bus, incoming PCM
+            // remains exactly the authored mix; do not bypass upstream gates.
+            // Exclude terminal sinks to prevent recursive MONITOR audition.
+            if(pfl&&pfl->requested==lane.id&&
+               (lane.role==ChannelRole::input||lane.role==ChannelRole::group||
+                lane.role==ChannelRole::fxReturn))
+                pfl->capture(lane.id,l,r,frames);
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
             auto& gate=channelTargets_[i].gate;
@@ -1237,7 +1488,7 @@ public:
                 if(!hardwareOutputs[c])continue; // inactive pins cannot receive PCM
                 for(int earlier=0;earlier<c;++earlier)
                     if(hardwareOutputs[c]==hardwareOutputs[earlier])
-                        return false; // publisher clears ALL physical outputs
+                        {if(pfl)pfl->reset();return false;} // publisher clears ALL physical outputs
             }
             for(int c=0;c<hardwareOutputCount;++c) {
                 float* out=hardwareOutputs[c];
@@ -1262,7 +1513,7 @@ public:
                        hardwareOutputs[r]==outputL || hardwareOutputs[r]==outputR ||
                        hardwareOutputs[l]==monitorL || hardwareOutputs[l]==monitorR ||
                        hardwareOutputs[r]==monitorL || hardwareOutputs[r]==monitorR)
-                        return false;
+                        {if(pfl)pfl->reset();return false;}
                 }
             }
             // External tap delay advances even while the tap is disconnected,
@@ -1318,12 +1569,38 @@ public:
         // A completion receipt follows successful delivery, including PDC
         // drain and physical taps. A cancelled request never authorizes removal.
         for(const auto i:renderOrder_){
+            // Receipt for a completed physical crossfade, never a null
+            // capture pair or an unrendered request. Same loop as retirement.
+            const auto& lane=lanes_[i];
+            if(programme&&programme->requested==lane.id&&
+               DynamicProgrammeTap::eligible(lane.role)){
+                const float* const l=scratch_.data()+lane.slot*2*block;
+                programme->capture(lane.id,l,l+block,frames);
+            }
+            if(lane.inputL>=0){
+                const auto target=sourceBlockTargets_[i];
+                const auto pair=static_cast<std::uint32_t>(target);
+                const auto& fade=sourceFades_[i];
+                const int a=physicalLeft(pair),b=physicalRight(pair);
+                if(physical&&a>=0&&a<physicalCount&&physical[a]&&
+                   (!lane.inputStereo||(b>=0&&b<physicalCount&&physical[b]))&&
+                   !fade.remaining&&fade.current==pair)
+                    sourceAppliedTargets_[i].store(target,std::memory_order_release);
+            }
             auto& t=channelTargets_[i];
             if(t.retireFrames.load(std::memory_order_acquire)>0&&t.retireGain==0.f&&
                t.retireRemaining==0&&t.retireDrain==0&&
                (hardwareOutputs||externalTargets_[i].load(std::memory_order_acquire)==noExternal))
                 t.retireDone.store(true,std::memory_order_release);
         }
+        // A dormant descriptor has no scratch slot. Resolve only when
+        // explicitly requested and not rendered; no DSP wake or fake PCM.
+        if(programme&&programme->requested.value&&
+           programme->state()==DynamicProgrammeTap::State::unavailable)
+            for(const auto& lane:lanes_)
+                if(lane.id==programme->requested&&DynamicProgrammeTap::eligible(lane.role)){
+                    programme->silence(lane.id,frames);break;
+                }
         return true;
     }
 private:
@@ -1337,14 +1614,15 @@ private:
     std::vector<AutoDuckerKeyEntry> postKeys_;
     std::vector<std::vector<std::size_t>> postKeyPublish_;
     std::vector<AutoDuckerKeyEntry> duckerKeys_; // preallocated, callback-local views
-    std::vector<std::uint32_t> sourceBlockTargets_;
+    std::vector<std::uint64_t> sourceBlockTargets_;
     std::vector<armix::dsp::StereoLatencyDelay> edgeDelays_,physicalDelays_,sinkDelays_,externalDelays_;
     std::vector<std::uint32_t> externalBlockTargets_; // preallocated, AUDIO-only writes
     int latencySamples_=0;
     LatencyPlanSummary latencyPlan_{};
     MonitorLatencyPolicy monitorLatencyPolicy_=MonitorLatencyPolicy::aligned;
     std::unique_ptr<ChannelTarget[]> channelTargets_;
-    std::unique_ptr<std::atomic<std::uint32_t>[]> sourceTargets_;
+    static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
+    std::unique_ptr<std::atomic<std::uint64_t>[]> sourceTargets_,sourceAppliedTargets_;
     std::unique_ptr<SourceFade[]> sourceFades_;
     std::unique_ptr<SendTarget[]> sendTargets_;
     std::unique_ptr<std::atomic<std::uint32_t>[]> externalTargets_;

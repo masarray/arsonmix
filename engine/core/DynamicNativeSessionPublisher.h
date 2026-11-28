@@ -6,6 +6,7 @@
 #include "NativeMusicTempoMonitor.h"
 #include "NativeBeatFrameContext.h"
 #include "NativeFxCueBus.h"
+#include "NativePflMonitor.h"
 #include "RealtimeRoutePublisher.h"
 #include "RealtimeRenderPermit.h"
 #include <algorithm>
@@ -101,7 +102,7 @@ public:
                         const armix::device::MultiDeviceInputPlan* qualifiedInputMap=nullptr,
                         const InitialExternalPlan* initialExternal=nullptr,
                         bool continuousFx=false,ChannelId retiring={},int fadeFrames=0,
-                        const std::function<bool()>& stillValid={}) {
+                        const std::function<bool()>& stillValid={},bool dormantRosterEdit=false,bool wireAddition=false) {
         CommitResult report;report.revision=publisher_.lastRevision();
         if(!fx.valid() ||
            (fx.owner && (fx.deviceEpoch!=proposedDeviceEpoch ||
@@ -123,14 +124,24 @@ public:
         if(verifiedInternalFxOnly && !fx.owner) {
             report.fault=Fault::invalidCandidate;return report;
         }
-        // A monitor timing-domain change cannot be hidden in the existing
-        // live WIRE/FX exceptions. While independent monitoring is active,
-        // even rebuilding the same policy requires an explicit disarm:
-        // fan-in changes can otherwise change the singer's delay mid-note.
-        if(!allOutputsDisarmed &&
-           (independentMonitorPublished_ ||
-            request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned ||
-            (!verifiedInternalWireOnly && !verifiedInternalFxOnly && !retiring.value))) {
+        // A monitor timing-domain change cannot be hidden in live WIRE/FX.
+        // A track retirement is different: prepareContinuity proves the
+        // same surviving schedule, key topology, delay history and policy
+        // BEFORE starting a channel-local fade. No general live exception.
+        if(dormantRosterEdit&&(fadeFrames!=0||continuousFx||verifiedInternalWireOnly||
+                            verifiedInternalFxOnly||initialExternal)){
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        if(wireAddition&&(!verifiedInternalWireOnly||verifiedInternalFxOnly||continuousFx||
+                          retiring.value||fadeFrames||dormantRosterEdit||initialExternal)){
+            report.fault=Fault::invalidCandidate;return report;
+        }
+        const bool verifiedRetirement=retiring.value!=0&&fadeFrames>0&&
+            !continuousFx&&!verifiedInternalWireOnly&&!verifiedInternalFxOnly;
+        if(!allOutputsDisarmed && !dormantRosterEdit &&
+           ((!verifiedRetirement&&!wireAddition&&(independentMonitorPublished_ ||
+             request.monitorLatencyPolicy!=MonitorLatencyPolicy::aligned)) ||
+            (!verifiedInternalWireOnly && !verifiedInternalFxOnly && !verifiedRetirement))) {
             report.fault=Fault::outputArmed;return report;
         }
         // CONTROL: validate every physical source against ONE actual
@@ -224,10 +235,9 @@ public:
                     report.fault=Fault::invalidCandidate;return report;
                 }
                 pairByPin[l]=pairByPin[r]=pair; // exact ordered sharing only
-                // An intentionally unpatched lane has no render scratch.
-                // Its durable intent stays pending in the CONTROL owner.
-                if(prepared->graph->channelScheduled(target.channel)&&
-                   !prepared->graph->setExternalOutput(target.channel,l,r,initialExternal->outputCount)){
+                // A dormant strip retains a verified destination in its
+                // existing target slot; it still owns no PCM scratch.
+                if(!prepared->graph->setExternalOutput(target.channel,l,r,initialExternal->outputCount)){
                     report.fault=Fault::invalidCandidate;return report;
                 }
             }
@@ -246,12 +256,12 @@ public:
           roster.channels().end(),[](const ChannelStripDefinition& row) {
               return row.role==ChannelRole::monitor;
           });
-        const bool continuous=continuousFx||retiring.value!=0;
+        const bool continuous=continuousFx||retiring.value!=0||dormantRosterEdit||wireAddition;
         const auto* previous=continuous?publisher_.controlPrepared(proposedDeviceEpoch,expectedRevision):nullptr;
         if(continuous){
             if(!previous||!previous->adopted.load(std::memory_order_acquire)||
                previous->inputMap||qualifiedInputMap||initialExternal||
-               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity)){
+               !prepared->graph->prepareContinuity(*previous->graph,retiring,prepared->continuity,dormantRosterEdit,wireAddition)){
                 report.fault=Fault::continuityUnavailable;return report;
             }
             prepared->predecessor=previous->graph;
@@ -259,7 +269,7 @@ public:
         }
         // Prepare everything BEFORE starting the channel-local ramp. CONTROL
         // waits only for a bounded callback receipt; AUDIO never waits.
-        auto* fading=retiring.value&&previous&&previous->graph->channelScheduled(retiring)?
+        auto* fading=!dormantRosterEdit&&retiring.value&&previous&&previous->graph->channelScheduled(retiring)?
             previous->graph.get():nullptr;
         if(fading){
             if(!fading->beginRetirement(retiring,fadeFrames)){
@@ -288,6 +298,7 @@ public:
                 continuityEpoch_=proposedDeviceEpoch;
                 independentMonitorPublished_=request.monitorLatencyPolicy==MonitorLatencyPolicy::independent;
                 cueBus_.cancel(false); // new graph revision requires a new explicit listen request
+                pflMonitor_.cancel();
                 const auto source=musicTempo_.selectedSource();
                 if(source.value) {
                     const auto* published=publisher_.controlPrepared(
@@ -333,13 +344,18 @@ public:
                 std::span<const armix::device::MultiDeviceInputPlan::CaptureBlock>
                     qualifiedCaptureBlocks={},std::uint64_t cueRoute=0,
                     std::uint64_t* renderedRevision=nullptr,
-                    std::size_t* renderedMeterCount=nullptr,bool allowUnmappedMonitor=false) noexcept {
+                    std::size_t* renderedMeterCount=nullptr,bool allowUnmappedMonitor=false,
+                    DynamicPflCapture* pfl=nullptr,std::uint64_t pflRoute=0,
+                    DynamicProgrammeTap* programme=nullptr) noexcept {
+        if(pfl)pfl->reset();
+        if(programme)programme->reset();
         if(renderedRevision)*renderedRevision=0;
         if(renderedMeterCount)*renderedMeterCount=0;
         static_assert(std::is_nothrow_invocable_v<Fx,ChannelId,float*,float*,int>,
                       "Realtime VST dispatch must be noexcept");
         const auto clearOutputs=[&]() noexcept {
             cueBus_.revokePublished(); // failed/muted callback may not rearm a previous cue
+            pflMonitor_.revokePublished();
             // A rejected/stale/muted native render must silence *every*
             // ASIO destination, not only MAIN/MONITOR. Otherwise a previous
             // external tap can remain in a driver-provided output buffer.
@@ -416,6 +432,8 @@ public:
         auto* cueFrame=cueBus_.begin(deviceEpoch,snap->graphRevision,
             snap->prepared->monitor&&monitorL&&monitorR?cueRoute:0,frames);
         FxCueScope cueScope{cueFrame};
+        auto* nativePfl=pflMonitor_.begin(deviceEpoch,snap->graphRevision,
+            !pfl&&snap->prepared->monitor&&monitorL&&monitorR&&!cueBus_.hasPublishedRequest()?pflRoute:0,frames);
         // Prepared FX takes precedence over the legacy external callback.
         // NEVER invoke both: that would double-compress or double-reverb.
         // Snapshot ownership pins the M4 instance throughout this callback;
@@ -438,8 +456,10 @@ public:
         const bool ok=snap->prepared->graph->process(
              physical,physicalCount,mainL,mainR,frames,
              dispatch,monitorL,monitorR,channelPeaksL,channelPeaksR,playerPcm,
-              hardwareOutputs,hardwareOutputCount,allowUnmappedMonitor);
+              hardwareOutputs,hardwareOutputCount,allowUnmappedMonitor,pfl?pfl:nativePfl,programme);
         cueBus_.finish(ok,monitorL,monitorR,frames);
+        // Never layer two private auditions into one physical monitor.
+        pflMonitor_.finish(ok&&!cueBus_.hasPublishedRequest(),monitorL,monitorR,frames);
         if(!ok) {
             // A rejected physical callback (including aliased independent
             // amplifier buffers) emits silence, not a stale LIVE snapshot.
@@ -496,6 +516,13 @@ public:
         return p?p->graph->externalOutput(id):std::pair<int,int>{-1,-1};
     }
 
+    // CONTROL only: distinguish configured silence from a scheduled tap
+    // awaiting the audio callback. Never synthesize an APPLIED receipt.
+    bool externalOutputDormant(std::uint64_t epoch,std::uint64_t revision,
+                               ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&p->graph->contains(id)&&!p->graph->channelScheduled(id);
+    }
     std::pair<int,int> appliedExternalOutput(std::uint64_t epoch,
                 std::uint64_t revision,ChannelId id) const noexcept {
         const auto* p=publisher_.controlPrepared(epoch,revision);
@@ -505,8 +532,25 @@ public:
     // M3C realtime parameters on the accepted ChannelId graph ONLY.
     // Caller must propagate the real device epoch and native ACK revision.
     // Rejected/stale edits leave the last accepted PCM unchanged.
+    bool canSwitchPhysicalSource(std::uint64_t epoch,std::uint64_t revision,
+                                 ChannelId id,int inputL,int inputR,bool stereo) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&!p->inputMap&&p->graph->channelScheduled(id)&&
+            p->graph->canSwitchPhysicalSource(id,inputL,inputR,stereo);
+    }
+    std::uint64_t requestedPhysicalSourceTicket(std::uint64_t epoch,std::uint64_t revision,
+                                                ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&!p->inputMap?p->graph->requestedPhysicalSourceTicket(id):0;
+    }
+    std::uint64_t appliedPhysicalSourceTicket(std::uint64_t epoch,std::uint64_t revision,
+                                              ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&!p->inputMap?p->graph->appliedPhysicalSourceTicket(id):0;
+    }
     bool setPhysicalSource(std::uint64_t epoch,std::uint64_t revision,
-                           ChannelId id,int inputL,int inputR,bool stereo) noexcept {
+                           ChannelId id,int inputL,int inputR,bool stereo,
+                           std::uint64_t* ticket=nullptr) noexcept {
         return publisher_.updateActiveControl(epoch,revision,
             [&](Prepared& active) noexcept {
                 // An installed qualified virtual namespace must never accept
@@ -514,7 +558,7 @@ public:
                 // and physical pin attestation. Recompile/publish the full
                 // detached map+graph on CONTROL instead.
                 if(active.inputMap)return false;
-                return active.graph->setPhysicalSource(id,inputL,inputR,stereo);
+                return active.graph->setPhysicalSource(id,inputL,inputR,stereo,ticket);
             });
     }
     bool setChannelMix(std::uint64_t epoch,std::uint64_t revision,
@@ -628,8 +672,27 @@ public:
         return p?p->graph->latencyPlanSummary():DynamicPreparedMixerBlock::LatencyPlanSummary{};
     }
     NativeFxCueBus& cueControl() noexcept {return cueBus_;} // CONTROL only
+    bool pflEligible(std::uint64_t epoch,std::uint64_t revision,ChannelId id) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        if(!p||!p->monitor||!id.value)return false;
+        const auto* row=p->routing.find(id);
+        return row&&(row->role==ChannelRole::input||row->role==ChannelRole::group||
+                    row->role==ChannelRole::fxReturn)&&p->graph->channelScheduled(id);
+    }
+    bool pflAvailable(std::uint64_t epoch,std::uint64_t revision) const noexcept {
+        const auto* p=publisher_.controlPrepared(epoch,revision);
+        return p&&p->monitor&&!cueBus_.hasPublishedRequest();
+    }
+    bool selectPfl(std::uint64_t epoch,std::uint64_t revision,std::uint64_t route,ChannelId id) noexcept {
+        if(!route||!pflAvailable(epoch,revision)||(id.value&&!pflEligible(epoch,revision,id)))return false;
+        return pflMonitor_.select({epoch,revision,route,id});
+    }
+    NativePflMonitor::State pflState(std::uint64_t epoch,std::uint64_t revision,std::uint64_t route) const noexcept {
+        return pflMonitor_.state(epoch,revision,route);
+    }
+    void revokePfl() noexcept {pflMonitor_.revokePublished();}
     void unpublish() noexcept {
-        cueBus_.cancel(false);publisher_.unpublish();independentMonitorPublished_=false;continuityEpoch_=0;
+        cueBus_.cancel(false);pflMonitor_.cancel();publisher_.unpublish();independentMonitorPublished_=false;continuityEpoch_=0;
     }
     void pollRetirement() noexcept {
         publisher_.pollRetirement();
@@ -655,6 +718,7 @@ private:
     bool independentMonitorPublished_=false; // CONTROL-only accepted-policy fence
     NativeMusicTempoMonitor musicTempo_{};
     NativeFxCueBus cueBus_{};
+    NativePflMonitor pflMonitor_{};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT;
 };
 } // namespace armix::mixer
