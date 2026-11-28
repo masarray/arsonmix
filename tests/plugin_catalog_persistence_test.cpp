@@ -60,6 +60,20 @@ int main(){
         for(const auto& row:*rows.getArray())
             if(row.getProperty("path",{}).toString()==folder.getFullPathName())++count;
         assert(count==1);
+        // Start the next real scan directly from the previous completion.
+        // A premature idle receipt can lose a scan before JUCE retires its thread.
+        int completions=0;
+        constexpr int cycles=32;
+        catalog.onChanged=[&] {
+            if(!catalog.busy() && ++completions<cycles)
+                assert(catalog.addDirectory(folder).isEmpty());
+        };
+        assert(catalog.addDirectory(folder).isEmpty());
+        waitForScan(catalog);
+        assert(completions==cycles);
+        catalog.onChanged=nullptr;
+        assert(catalog.setFavorite(original,true));
+        assert(catalog.entries().front().favorite);
     }
     {
         PluginCatalog catalog(studio); // restart: same native persisted folder
@@ -75,12 +89,18 @@ int main(){
         const auto backup=studio.getChildFile("catalog-backup.json");
         assert(file.moveFileTo(backup));
         assert(file.createDirectory().wasOk());
+        // Favorite mutation must not ACK success or alter readback if disk fails.
+        assert(catalog.entries().front().favorite);
+        assert(!catalog.setFavorite(cached.key(),false));
+        assert(catalog.entries().front().favorite);
         assert(catalog.removeDirectory(folder.getFullPathName()).isNotEmpty());
         assert(customPath(catalog,folder.getFullPathName()));
         assert(catalog.addDirectory(second).isNotEmpty());
         assert(!customPath(catalog,second.getFullPathName())&&!catalog.busy());
         assert(file.deleteRecursively());
         assert(backup.moveFileTo(file));
+        assert(catalog.setFavorite(cached.key(),false));
+        assert(!catalog.entries().front().favorite);
         assert(catalog.removeDirectory(folder.getFullPathName()).isEmpty());
         assert(!customPath(catalog,folder.getFullPathName()));
         assert(catalog.entries().size()==1&&folder.isDirectory());
@@ -89,7 +109,8 @@ int main(){
         PluginCatalog catalog(studio);
         assert(!customPath(catalog,folder.getFullPathName()));
         assert(catalog.entries().size()==1&&catalog.entries().front().key()==cached.key());
+        assert(!catalog.entries().front().favorite);
     }
     assert(root.deleteRecursively());
-    std::cout<<"PASS: real native scan-folder add/rescan/remove/restart, failed-write rollback, retained catalog entries\n";
+    std::cout<<"PASS: real native chained scan retirement, scan-folder persistence, favorite rollback and restart\n";
 }

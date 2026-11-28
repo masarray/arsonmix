@@ -11835,7 +11835,7 @@ private:
             const auto id = args.getProperty ("id", {}).toString();
             const bool favorite = static_cast<bool> (args.getProperty ("value", false));
             if (!catalog_.setFavorite (id, favorite))
-                emitNotice ("Favorite not changed: plugin is no longer indexed.", true);
+                emitNotice ("Favorite not changed: plugin unavailable or settings could not be saved.", true);
         }
         else if (action == "addCatalog")
         {
