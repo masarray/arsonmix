@@ -293,7 +293,7 @@ def main():
             assert power.get_attribute("data-fx-state")=="on"
             assert power.get_attribute("aria-pressed")=="true"
             assert not power.is_disabled()
-            assert "rgb(118, 240, 185)" in power.evaluate("(el)=>getComputedStyle(el).color")
+            assert "rgb(0, 186, 221)" in power.evaluate("(el)=>getComputedStyle(el).color")
             # Scalar bypass readbacks must not rebuild the structural FX rack.
             state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
             state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
@@ -302,7 +302,7 @@ def main():
                 ?.dataset.fxState==='off'""")
             assert power.get_attribute("aria-pressed")=="false"
             page.wait_for_function("""()=>getComputedStyle(
-                document.querySelector('.mx-comp-power')).color==='rgb(233, 155, 159)'""")
+                document.querySelector('.mx-comp-power')).color==='rgb(155, 168, 174)'""")
             state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
             state["graph"]["channels"][0]["fxRackBypassed"]=True
             state["mixerSession"]["channels"]=copy.deepcopy(state["graph"]["channels"])
@@ -319,7 +319,7 @@ def main():
                 ?.dataset.fxState==='on'""")
             assert not power.is_disabled()
             page.wait_for_function("""()=>getComputedStyle(
-                document.querySelector('.mx-comp-power')).color==='rgb(118, 240, 185)'""")
+                document.querySelector('.mx-comp-power')).color==='rgb(0, 186, 221)'""")
             assert page.locator(".mx-comp-grvalue").inner_text()=="0.0 dB"
             assert page.locator(".mx-comp-meter-gr").get_attribute("aria-valuenow")=="0.0"
             assert page.locator(".mx-comp-invalue").inner_text()=="−∞"

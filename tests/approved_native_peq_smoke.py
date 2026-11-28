@@ -186,10 +186,10 @@ def main():
             assert page.locator(".mx-peq .mx-fxp-manage").is_disabled()
             page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
                 ?.dataset.fxState==='on'&&getComputedStyle(
-                document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
+                document.querySelector('.mx-peq-global')).color==='rgb(0, 186, 221)'""")
             assert page.locator(".mx-peq-global").get_attribute("aria-pressed")=="true"
             power=page.locator(".mx-peq-global")
-            assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(118, 240, 185)"
+            assert power.evaluate("(el)=>getComputedStyle(el).color")=="rgb(0, 186, 221)"
             # The native EQ Power must reflect accepted insertion bypass and
             # parent rack bypass; do not derive state from optimistic clicks.
             state["graph"]["channels"][0]["inserts"][0]["bypassed"]=True
@@ -197,7 +197,7 @@ def main():
             emit(page,"arMixConsoleSnapshot",state)
             page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
                 ?.dataset.fxState==='off'&&getComputedStyle(
-                document.querySelector('.mx-peq-global')).color==='rgb(233, 155, 159)'""")
+                document.querySelector('.mx-peq-global')).color==='rgb(155, 168, 174)'""")
             assert power.get_attribute("aria-pressed")=="false"
             state["graph"]["channels"][0]["inserts"][0]["bypassed"]=False
             state["graph"]["channels"][0]["fxRackBypassed"]=True
@@ -212,7 +212,7 @@ def main():
             emit(page,"arMixConsoleSnapshot",state)
             page.wait_for_function("""()=>document.querySelector('.mx-peq-global')
                 ?.dataset.fxState==='on'&&getComputedStyle(
-                document.querySelector('.mx-peq-global')).color==='rgb(118, 240, 185)'""")
+                document.querySelector('.mx-peq-global')).color==='rgb(0, 186, 221)'""")
             assert not power.is_disabled()
             # The shared overlay requires explicit native global A/B readback.
             # Prove fail-closed on missing evidence and recovery on restoration;

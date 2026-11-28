@@ -134,7 +134,7 @@ def run(page, width, height):
     assert on_face["bg"]=="rgba(70, 183, 137, 0.125)",on_face
     assert on_face["ink"]==on_face["label"]==on_face["glyph"]=="rgb(166, 231, 202)",on_face
     slot_power=page.locator('#tracks .strip[data-id="1"] [data-util-kind="fx-slot"]').first
-    assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    assert slot_power.evaluate("el=>getComputedStyle(el).getPropertyValue('--fx-led').trim()")=="#00b6d5"
     toggle.click()
     assert toggle.get_attribute("aria-pressed")=="false"
     assert toggle.get_attribute("data-fx-power-state")=="bypassed"
@@ -148,7 +148,7 @@ def run(page, width, height):
     })""")
     assert off_face["bg"]=="rgba(0, 0, 0, 0)" and off_face["bg"]!=on_face["bg"],off_face
     assert off_face["ink"]==off_face["label"]==off_face["glyph"],off_face
-    assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="0%"
+    assert slot_power.evaluate("el=>getComputedStyle(el).getPropertyValue('--fx-led').trim()")=="#34393b"
     assert page.locator(".console-body").evaluate("el=>el.classList.contains('global-fx-bypassed')")
     during=rack(page,1)
     assert during["global"]=="false"
@@ -165,14 +165,14 @@ def run(page, width, height):
     assert after==ch_before | {"global":"true"},(ch_before,after)
     assert toggle.evaluate("el=>getComputedStyle(el).backgroundColor")==on_face["bg"]
     assert power.evaluate("el=>getComputedStyle(el).color")==on_face["glyph"]
-    assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="100%"
+    assert slot_power.evaluate("el=>getComputedStyle(el).getPropertyValue('--fx-led').trim()")=="#00b6d5"
     page.screenshot(path=f"arsonmix-global-fx-{width}-enabled.png")
     # Individual OFF remains OFF across the master A/B roundtrip.
     slot_power.click()
     assert slot_power.get_attribute("aria-pressed")=="false"
     toggle.click()
     toggle.click()
-    assert slot_power.evaluate("el=>getComputedStyle(el).backgroundPositionX")=="0%"
+    assert slot_power.evaluate("el=>getComputedStyle(el).getPropertyValue('--fx-led').trim()")=="#34393b"
     assert rack(page,1)["slots"][0]["individual"]=="false"
     assert not errors,errors
     page.close()
