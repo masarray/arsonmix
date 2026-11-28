@@ -30,7 +30,7 @@ jobs:
       dsp: ${{ steps.scope.outputs.dsp }}
       ui: ${{ steps.scope.outputs.ui }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 2
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 7
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Build and run synchronous vocal fixture
@@ -99,7 +99,7 @@ jobs:
           node --input-type=module -e 'import assert from "node:assert/strict"; import {classifyVocalHarmonyChanges as c} from "./scripts/vocal_harmony_ci_scope.mjs"; for(const p of ["scripts/harmony_vocalset_qualification.py","scripts/vocal_harmony_ci_scope.mjs",".github/workflows/harmony-fast-dsp.yml"]) assert.deepEqual(c([p]),{dsp:true,ui:true}); assert.deepEqual(c(["CMakeLists.txt","src/Main.cpp"]),{dsp:false,ui:false});'
           python3 scripts/harmony_vocalset_qualification.py /tmp/arson-harmony-ab "$RUNNER_TEMP/harmony-vocalset" "$(git rev-parse HEAD)"
       - name: Publish exact-source qualification evidence (no PCM)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: harmonice-qualification-${{ github.event.pull_request.head.sha }}
           path: ${{ runner.temp }}/harmony-vocalset/evidence/
@@ -112,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Plugin editor JS and native bridge/ACK contract

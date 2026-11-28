@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 18
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
@@ -38,7 +38,7 @@ jobs:
       - name: Pinned real recorded environments (not listening approval)
         run: python3 tools/anti-noiz/recorded_environment.py "$RUNNER_TEMP/an07/anti_noiz_qualify" "$RUNNER_TEMP/an07-evidence"
       - name: Checkout frozen AN-08C.1 comparator
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: 9f87fd8430c572ac118e8d5e6710c77cbc0379bb
           path: an07-baseline
@@ -70,7 +70,7 @@ jobs:
           python3 tools/anti-noiz/compare_harmonic.py "$RUNNER_TEMP/an08c-baseline.csv" "$RUNNER_TEMP/an08c-candidate.csv" "$RUNNER_TEMP/an08c-harmonic.json"
       - name: Preserve machine-readable evidence only
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: anti-noiz-an07-recorded-environment-report
           path: |

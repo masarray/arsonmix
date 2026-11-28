@@ -18,13 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Observe pinned upstream repositories (metadata only)
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/factoryfx_upstream_watch.py
       - name: Propose upstream release intake, never silently ship
-        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
         with:
           token: ${{ github.token }}
           add-paths: config/factoryfx-upstream-candidates.json

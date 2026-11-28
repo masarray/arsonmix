@@ -35,7 +35,7 @@ jobs:
           - cxx: clang++
             flags: '-O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -76,7 +76,7 @@ jobs:
           test "$(find vd-audition -name '*.wav' | wc -l)" -eq 22
           cat vd-audition/metrics.csv
           git rev-parse HEAD > vd-audition/source-sha.txt
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: matrix.cxx == 'g++'
         with:
           name: vocal-delay-audition
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
@@ -103,11 +103,11 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 65
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: juce-framework/JUCE
           ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
@@ -138,7 +138,7 @@ jobs:
           cmake --build vd-build --parallel 2 --target CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj
           if ($LASTEXITCODE -ne 0) { throw 'VD_PRODUCTION_MAIN_COMPILE_FAILED' }
           Write-Host "VD5_SCOPED_PRODUCTION_PASS exact=$env:EXPECTED_SHA (not full FAT)"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vocal-delay-native-faceplate
           path: vd-build/**/vocal-delay-*.png
