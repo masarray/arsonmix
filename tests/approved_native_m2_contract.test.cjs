@@ -8561,3 +8561,48 @@ test("Busy native device transaction sends correlated terminal NACKs without tou
  assert.match(busy,/emitMixerSessionAck\(operation,"Audio configuration is finishing/);
  assert.doesNotMatch(receipt,/engine_|getAudioDeviceSetup|currentDeviceSnapshot|tryBegin\(/);
 });
+
+test("Catalog transaction rejection is terminal, retryable and preserves real scan progress",()=>{
+ const native=read("src/Main.cpp"),bridge=read("web/approved-native-bridge.js");
+ const helper=native.slice(native.indexOf("bool rejectPluginCatalogAction("),native.indexOf("    void emitPresets()"));
+ assert.ok(helper.startsWith("bool rejectPluginCatalogAction("));
+ assert.match(helper,/emitFxAddResult\(static_cast<int>\(args\.getProperty\("requestId",0\)\)/);
+ assert.match(helper,/if\(!catalog_\.busy\(\)\)\{[\s\S]*?setProperty\("rejected",true\)/);
+ assert.match(helper,/emitEventIfBrowserIsVisible\("arMixScanProgress",progress\)/);
+ assert.match(helper,/action=="removeScanFolder"\|\|action=="setPluginFavorite"[\s\S]*?emitCatalog\(\)/);
+ assert.doesNotMatch(helper,/scanDefaults\(|tryBegin\(|setFavorite\(|removeDirectory\(|chooseImport\(/);
+ const busy=native.slice(native.indexOf('if(deviceApply_.busy() && action!="audioDeviceApply" && !outputIntent)'),native.indexOf('// Graph/epoch checks also reject stale deferred recovery.'));
+ assert.match(busy,/else if\(rejectPluginCatalogAction\(action,args,/);
+ const studio=native.slice(native.indexOf('if ((studioBackupBusy_ || nativeShowBusy_) && (action.startsWith'),native.indexOf('// Native structural VST3 edits'));
+ assert.match(studio,/if\(rejectPluginCatalogAction\(action,args,[\s\S]*?\)\)return;/);
+ const start=bridge.indexOf("  function discoverFxOnFirstPickerOpen(){");
+ const end=bridge.indexOf("  const pendingSlotPowers=",start);
+ const listener=bridge.indexOf('    backend.addEventListener("arMixScanProgress",progress=>{');
+ const listenerEnd=bridge.indexOf('    backend.addEventListener("arMixOpenAudioIO"',listener);
+ assert.ok(start>=0&&end>start&&listener>=0&&listenerEnd>listener);
+ const create=new Function("backend","document","status",
+   "let connected=true,nativeCatalog=new Map(),nativeFxDiscoveryRequested=false,nativeFxCatalogScanning=false;\n"+
+   bridge.slice(start,end)+bridge.slice(listener,listenerEnd)+"\nreturn {open:discoverFxOnFirstPickerOpen,requested:()=>nativeFxDiscoveryRequested};");
+ const calls=[],messages=[],el={textContent:""};let handle,dom=true,syncReject=true;
+ const state=create({
+   addEventListener(name,fn){assert.equal(name,"arMixScanProgress");handle=fn;},
+   emitEvent(name,payload){calls.push([name,payload.action]);if(syncReject)handle({rejected:true,active:false,reason:"Audio busy"});}
+ },{getElementById:()=>dom?el:null},message=>messages.push(message));
+ state.open();
+ assert.equal(calls.length,1);
+ assert.equal(state.requested(),false);
+ assert.equal(el.textContent,"Scan not started · Audio busy");
+ assert.equal(messages.at(-1),"Scan not started · Audio busy");
+ assert.equal(calls.length,1); // no automatic replay
+ dom=false;state.open();
+ assert.equal(calls.length,2);
+ assert.equal(state.requested(),false); // reset even without manager DOM
+ dom=true;syncReject=false;state.open();
+ assert.equal(calls.length,3);assert.equal(state.requested(),true);
+ handle({reported:true,active:true,done:2,total:5});
+ assert.equal(el.textContent,"Scanning VST3… 2/5");
+ state.open();assert.equal(calls.length,3); // active operation not duplicated
+ handle({reported:true,active:false,found:0,issues:false});
+ assert.equal(el.textContent,"Scan finished · 0 found");
+ state.open();assert.equal(calls.length,3); // legitimate zero-result scan remains terminal
+});

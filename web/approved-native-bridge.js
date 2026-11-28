@@ -2163,8 +2163,8 @@
     if(!connected||nativeCatalog.size||nativeFxDiscoveryRequested||
        nativeFxCatalogScanning)return;
     nativeFxDiscoveryRequested=true;
-    backend.emitEvent("arMixAction",{action:"scanVst3"});
     status("FX · scanning installed VST3 on background worker; picker updates automatically");
+    backend.emitEvent("arMixAction",{action:"scanVst3"});
   }
   const pendingSlotPowers=new Map(); // ACK/readback, never demo FX flags
   // The rack header restores exact prior per-insert state, including
@@ -6677,6 +6677,16 @@
     });
     backend.addEventListener("arMixScanProgress",progress=>{
       const statusEl=document.getElementById("pluginScanStatus");
+      if(progress?.rejected===true&&progress.active===false){
+        // No worker was admitted. A later explicit picker open can retry;
+        // never replay automatically on receipt or on a timer.
+        nativeFxDiscoveryRequested=false;
+        const reason=typeof progress.reason==="string"&&progress.reason?
+          progress.reason:"Retry when ready.";
+        if(statusEl)statusEl.textContent="Scan not started · "+reason;
+        status("Scan not started · "+reason);
+        return;
+      }
       if(!statusEl||progress?.reported!==true)return;
       const text=progress.active?(progress.total>0?
         "Scanning VST3… "+progress.done+"/"+progress.total:"Finding VST3 plug-ins…"):
@@ -7634,8 +7644,8 @@
       target.id==="pluginImport"?"importVst3":
       target.id==="pluginAddPath"?"addScanFolder":null;
     if(action){
-      backend.emitEvent("arMixAction",{action});
       status(action==="scanVst3"?"Scanning plugins…":action==="importVst3"?"Choose a VST3 plugin":"Choose a scan folder");
+      backend.emitEvent("arMixAction",{action});
       return;
     }
     if(target.id==="convertSelectedReverb"){

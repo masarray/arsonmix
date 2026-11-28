@@ -1862,6 +1862,35 @@ private:
             browser_.emitEventIfBrowserIsVisible ("arMixAddResult", juce::var (response.release()));
     }
 
+    // Reject the command, not the active scanner. A refused lazy scan must
+    // get a terminal result without starting or resetting a scanner.
+    bool rejectPluginCatalogAction(const juce::String& action, const juce::var& args,
+                                   const juce::String& reason)
+    {
+        if(action=="addCatalog"){
+            const auto* plugin=catalog_.find(args.getProperty("id",{}).toString());
+            emitFxAddResult(static_cast<int>(args.getProperty("requestId",0)),
+                            plugin?plugin->name:juce::String("Unknown VST3"),reason,0);
+        } else if(action=="scanVst3"){
+            if(browser_.loaded){
+                auto progress=catalog_.progress();
+                if(!catalog_.busy()){
+                    progress.getDynamicObject()->setProperty("rejected",true);
+                    progress.getDynamicObject()->setProperty("reason",reason);
+                }
+                browser_.emitEventIfBrowserIsVisible("arMixScanProgress",progress);
+            }
+        } else if(action=="removeScanFolder"||action=="setPluginFavorite"){
+            emitCatalog(); // authoritative rollback of any optimistic presentation
+        } else if(action!="addScanFolder"&&action!="importVst3"&&
+                  action!="importVst3InPlace"&&action!="importVst3Bundle"&&
+                  action!="importVst3BundleInPlace"){
+            return false;
+        }
+        emitNotice(reason,true);
+        return true;
+    }
+
     void emitPresets()
     {
         if (browser_.loaded)
@@ -7999,6 +8028,9 @@ private:
                     args.getProperty("mode",{}).toString()=="RESET_IO"?"RESET_IO":"NEW";
                 emitMixerSessionAck(operation,"Audio configuration is finishing. Retry when ready.");
             }
+            else if(rejectPluginCatalogAction(action,args,
+                         "Audio configuration is finishing. Retry when ready."))
+                return;
             else if(action=="audioDriverPanel")
                 emitNotice("Audio device is busy · try again",true);
             else if(action=="routingPhysicalBusOutput")
@@ -8363,6 +8395,8 @@ private:
         {
             const auto reason=juce::String(
                 "Studio backup in progress. Finish backup before editing saved FX or VST library.");
+            if(rejectPluginCatalogAction(action,args,
+                 "Studio file operation in progress. Retry after it finishes."))return;
             // R1 matrix must ALWAYS get a response after APPLY, including
             // upstream rejection before the normal routing command handler.
             // No graph or device state may be mutated while Studio IO is busy.
@@ -11825,8 +11859,10 @@ private:
         }
         else if (action == "scanVst3")
         {
-            if (catalog_.busy())
-                return emitNotice ("Wait for the current VST3 scan to finish.", true);
+            if (catalog_.busy()){
+                (void)rejectPluginCatalogAction(action,args,"Wait for the current VST3 scan to finish.");
+                return;
+            }
             diagnostics_.record ("PLUGIN_SCAN", "Scan registered VST3 folders");
             catalog_.scanDefaults();
         }
