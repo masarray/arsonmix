@@ -265,8 +265,16 @@ export async function refreshOne(repo,number,api) {
     return {kind:"ignored",number};
   const sha=pr.head.sha;
   if(!/^[a-f0-9]{40}$/.test(sha))throw Error("INVALID_PR_SHA");
-  const files=(await allPages(api,"/pulls/"+number+"/files",null))
+  // GitHub exposes at most 3000 changed PR files. Read the complete
+  // inventory (including the 31st empty page at exactly 3000), never
+  // silently classify only the first 700 files of a large integration.
+  const count=pr.changed_files;
+  if(!Number.isSafeInteger(count)||count<1||count>3000)
+    throw Error("INVALID_PR_FILE_COUNT");
+  const files=(await allPages(api,"/pulls/"+number+"/files",null,31))
     .map(f=>f.filename);
+  if(files.length!==count||new Set(files).size!==count)
+    throw Error("INCOMPLETE_PR_FILE_INVENTORY");
   const lanes=requiredLanes(files);
   const allRuns=await allPages(api,"/actions/runs?head_sha="+sha,
     "workflow_runs",6);
@@ -280,6 +288,12 @@ export async function refreshOne(repo,number,api) {
   for(const run of new Set(Object.values(matched).filter(Boolean)))
     jobs[run.id]=(await allPages(api,"/actions/runs/"+run.id+"/jobs","jobs",2));
   const result=evaluate(lanes,matched,jobs);
+  // A concurrent head/base change invalidates the paginated inventory.
+  const current=await api("/pulls/"+number);
+  if(current?.state!=="open"||current.head?.sha!==sha||
+     current.base?.sha!==pr.base?.sha||current.base?.ref!=="main"||
+     current.base?.repo?.full_name!==repo||current.changed_files!==count)
+    throw Error("PR_CI_STALE_INVENTORY");
   await api("/statuses/"+sha,"POST",{
     state:result.state,context,description:result.description,
     target_url:"https://github.com/"+repo+"/pull/"+number+"/checks"
