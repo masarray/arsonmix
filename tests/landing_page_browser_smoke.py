@@ -28,7 +28,21 @@ def check_release_navigation(page):
         '.download-details a[href="https://github.com/masarray/arsonmix/releases"]'
     )
     assert notes.count() == 1
-    assert notes.inner_text() == "official release notes, portable packages and checksums"
+    # Chromium returns an empty innerText for descendants of closed <details>.
+    # Assert exact DOM text, then exercise the real disclosure (also without JS).
+    expected_label = "official release notes, portable packages and checksums"
+    assert notes.text_content() == expected_label
+    disclosure = page.locator("details.download-details")
+    assert disclosure.count() == 1
+    was_open = disclosure.get_attribute("open") is not None
+    if not was_open:
+        assert not notes.is_visible()
+        disclosure.locator("summary").click()
+    assert notes.is_visible()
+    assert notes.inner_text() == expected_label
+    if not was_open:
+        disclosure.locator("summary").click()
+        assert not notes.is_visible()
     assert notes.get_attribute("data-release-link") is None
     # No other GitHub release navigation or unverified direct asset may escape
     # the catalog-owned controls, even when downloads are unavailable.

@@ -2,7 +2,7 @@
 
 Owner-approved scope GUI-01–26, UX-01–12. Public alpha.33 **HOLD**. This file is a checkpoint, not a release certificate. Each row is OPEN until required evidence is collected on the same integrated candidate. Reproduction scenarios are owner reports / approved regression scenarios, not a claim each was reproduced locally. No physical hardware verification in this session.
 
-Canonical PR [#899](https://github.com/masarray/arsonmix/pull/899), baseline `7e72085095e8dedc8008402389b4d04bd279d7b6`. Working PR [#1010](https://github.com/masarray/arsonmix/pull/1010), source commit `f985d3f70bc7de82503b656cf8552ba7ab11fc42` plus this checkpoint's selective retired-editor cleanup. No canonical integration yet. Existing FactoryFX EQ/Comp/Verb unchanged; KuPik deferred.
+Canonical PR [#899](https://github.com/masarray/arsonmix/pull/899), baseline `7e72085095e8dedc8008402389b4d04bd279d7b6`. Working PR [#1010](https://github.com/masarray/arsonmix/pull/1010), source commit `f985d3f70bc7de82503b656cf8552ba7ab11fc42` plus this checkpoint's selective retired-editor cleanup. #1010 merged to canonical at `0647b5744a5cf44f23f2a43d8ff8d7eb837c0709`; canonical subsequently advanced to `eace22f0202be5f8e7caa151d173851b82978f28`. Existing FactoryFX EQ/Comp/Verb unchanged; KuPik deferred.
 
 ## Shared implementation / evidence keys
 
@@ -13,7 +13,7 @@ Canonical PR [#899](https://github.com/masarray/arsonmix/pull/899), baseline `7e
 - E — existing instance-owner guards in Main.cpp; selective retired-editor cleanup replaces global editor close after rack file writes. Prior head [focused Windows HWND](https://github.com/masarray/arsonmix/actions/runs/46094505661) PASS: Win32 host ownership/hide/reopen, NOT real JUCE plugin runtime. Latest selective cleanup not yet verified.
 - U — no confirmed root/fix on current evidence; open investigation. No guessed workaround.
 
-Status key: P/L/R/T are IMPLEMENTED for their stated shared path, not blanket defect closure; E historical mitigation/partial implementation; U unresolved. All are working PR only; no integrated/physical pass. Each row's evidence/remaining column is the next required verification, in addition to the evidence keys above.
+Status key: P/L/R/T are IMPLEMENTED for their stated shared path, not blanket defect closure; E historical mitigation/partial implementation; U unresolved. All stated changes are now integrated in #899 staging (not main); no physical pass. Each row's evidence/remaining column is the next required verification, in addition to the evidence keys above.
 
 | ID | Stream | Reproduction | Expected | Root cause/evidence | Implementation / status | Required remaining evidence |
 |---|---|---|---|---|---|---|
@@ -77,3 +77,10 @@ Status key: P/L/R/T are IMPLEMENTED for their stated shared path, not blanket de
 10. Integrated Windows FIELD portable with exact source/provenance/checksum: NOT AVAILABLE. Do not dispatch installer/release or mark physical FAT. No final candidate while unresolved P0/P1 remain.
 
 Next: inspect latest exact-head CI and review, fix regressions (including real capture/restore and editor harness), complete outstanding rows, reconcile #1010 to #899 only with expected-HEAD protection and required gates, qualify one FIELD candidate. Do not repeat previously qualified FactoryFX work or bypass mandatory field validation.
+
+## 28 Nov 2026 — consolidated qualification continuation
+
+- #1010 is merged into canonical, not a second active repair lane. Cross-thread changes include live-safe native FX state capture, worker-owned archive I/O outside quiet interval, prepare-before-fade restore with bounded actual PCM revision observation, folder availability and error readback, and Audio I/O dismiss/reopen while device Apply remains pending. Prior rows remain open until their specific evidence is available.
+- Exact canonical eace22f0: [automatic UI 46096844037](https://github.com/masarray/arsonmix/actions/runs/46096844037) PASS, including actual assembled Audio I/O, WIRE, Plugin Manager, FX edit, cold start, FX window focus, ribbon/Player and Update Center Chromium fixtures. These exercise production HTML and bridge against native transport fixtures, not hardware. [Main.cpp compile preflight 46096838579](https://github.com/masarray/arsonmix/actions/runs/46096838579) PASS; [native HWND ownership 46096843959](https://github.com/masarray/arsonmix/actions/runs/46096843959) PASS, not actual vendor editor field proof.
+- Full UI [46097082855/job 140830934546](https://github.com/masarray/arsonmix/actions/runs/46097082855/job/140830934546) FAIL on landing link label: Chromium innerText is empty while the enclosing details disclosure is closed. Reproduced locally in Chromium with the real disclosure markup, including JS-disabled mode. This commit preserves exact link URL/text/count, verifies opening/closing, visible label and unchanged CTA restrictions; no product changes. Before: closed innerText empty. After: textContent exact and expanded innerText exact. Full UI rerun still required.
+- [Native full 46097123965](https://github.com/masarray/arsonmix/actions/runs/46097123965) running for eace22f0 at this checkpoint; no duplicate native/installer invocation. It cannot be reported as a pass or exact evidence for a later SHA. Once terminal, inspect CTest, package and physical gaps; requalify exact canonical source using existing dispatcher. No final FIELD artifact or public release approval.
