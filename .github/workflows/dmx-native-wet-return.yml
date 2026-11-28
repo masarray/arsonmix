@@ -55,29 +55,10 @@ jobs:
           cmake -S . -B dmx-build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DJUCE_ROOT=$env:GITHUB_WORKSPACE/third_party/JUCE" "-DJUCE_WEBVIEW2_PACKAGE_LOCATION=$env:GITHUB_WORKSPACE/.deps" -DBUILD_TESTING=ON -DARMIX_IMMERSIB_RELEASE_CANDIDATE=ON -DARMIX_SONKU_APPROVED_P99_MAIN=ON
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($env:GITHUB_HEAD_REF -eq 'fix/p0-output-matrix-token-contract-20261128') {
+            # Exact native token and physical output regressions; no DSP scope expansion.
             cmake --build dmx-build --parallel 2 --target ARMixNativeDrySendTests ARMixPhysicalExternalOutputTests
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(LiveNativePrePostSendAndBusContract|O1PhysicalExternalOutputNativePcmAndFailClosedRouting)'fix/unified-send-gesture-custom-ux-20261127','fix/operator-menu-offline-sof-20261127','fix/p0-live-fx-secondary-insert-20261127','fix/rc-contract-reconciliation-20261128')) {
-            # Product routing/persistence regression only; accepted DSP freeze.
-            cmake --build dmx-build --parallel 2 --target ARMixDurableMixerSessionTests
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^P0DynamicMixerSessionDocumentAndCrashSafeRecovery$'
-          } else {
-            cmake --build dmx-build --parallel 2 --target ARMixNativeVocalReverbTests ARMixNativeFxExtensionTests ARMixDurableMixerSessionTests
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(NativeVocalReverbSourcePCMParameterAckAndState|M4NativeFxCatalogExtensionAndStatePreparation|P0DynamicMixerSessionDocumentAndCrashSafeRecovery)$'
-          }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --build dmx-build --parallel 2 --target CMakeFiles/ARMixConsole.dir/src/Main.cpp.obj
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          Write-Host "DMX_SCOPED_NATIVE_PASS exact=$env:EXPECTED_SHA (not full FAT)"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: dmx-native-ctest
-          path: dmx-build/Testing/Temporary/LastTest.log
-          if-no-files-found: ignore
-
+            ctest --test-dir dmx-build --output-on-failure --no-tests=error -R '^(LiveNativePrePostSendAndBusContract|O1PhysicalExternalOutputNativePcmAndFailClosedRouting)$'
           } elseif ($env:GITHUB_HEAD_REF -in @('fix/unified-send-gesture-custom-ux-20261127','fix/operator-menu-offline-sof-20261127','fix/p0-live-fx-secondary-insert-20261127','fix/rc-contract-reconciliation-20261128')) {
             # Product routing/persistence regression only; accepted DSP freeze.
             cmake --build dmx-build --parallel 2 --target ARMixDurableMixerSessionTests
