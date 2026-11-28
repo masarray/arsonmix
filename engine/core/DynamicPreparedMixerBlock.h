@@ -103,6 +103,70 @@ private:
     int frames_=0;
     std::array<float,capacity> left_{},right_{};
 };
+// Host-owned whole-callback receipt. A driver interval may be rendered in
+// several native graph quanta; no partial or mixed-generation PCM escapes.
+// Allocate once outside the callback; append only into fixed stereo storage.
+// A failed optional tap does not invalidate otherwise valid hardware PCM.
+class DynamicProgrammeBlock final {
+public:
+    static constexpr int capacity=8192;
+    ChannelId requested{};
+    void reset() noexcept {
+        source_={};epoch_=revision_=0;frames_=written_=0;valid_=complete_=false;
+        slice_.reset();slice_.requested={};
+    }
+    bool begin(std::uint64_t epoch,int frames) noexcept {
+        reset();
+        if(!requested.value||!epoch||frames<1||frames>capacity)return false;
+        source_=requested;epoch_=epoch;frames_=frames;valid_=true;
+        slice_.requested=source_;return true;
+    }
+    DynamicProgrammeTap* slice() noexcept {
+        if(!valid_||complete_)return nullptr;
+        slice_.reset();return &slice_;
+    }
+    bool append(int offset,int frames,std::uint64_t epoch,std::uint64_t revision) noexcept {
+        if(!valid_||complete_||epoch!=epoch_||!revision||
+           (revision_&&revision_!=revision)||offset!=written_||
+           frames<=0||frames>frames_-written_||slice_.captured()!=source_||
+           slice_.state()==DynamicProgrammeTap::State::unavailable||
+           slice_.left().size()!=static_cast<std::size_t>(frames)||
+           slice_.right().size()!=static_cast<std::size_t>(frames)){
+            reset();return false;
+        }
+        revision_=revision;
+        std::copy_n(slice_.left().data(),frames,left_.data()+offset);
+        std::copy_n(slice_.right().data(),frames,right_.data()+offset);
+        written_+=frames;slice_.reset();return true;
+    }
+    // Apply the host's existing startup/output ramp to the exact sample
+    // already assembled. Invalid/absent optional tap remains a no-op.
+    void scale(int index,float gain) noexcept {
+        if(valid_&&!complete_&&index>=0&&index<written_){
+            left_[index]*=gain;right_[index]*=gain;
+        }
+    }
+    bool finish(std::uint64_t epoch) noexcept {
+        if(!valid_||complete_||epoch!=epoch_||written_!=frames_){
+            reset();return false;
+        }
+        complete_=true;return true;
+    }
+    ChannelId captured() const noexcept {return complete_?source_:ChannelId{};}
+    std::uint64_t revision() const noexcept {return complete_?revision_:0;}
+    std::array<float*,2> pcm() noexcept {
+        return complete_?std::array<float*,2>{left_.data(),right_.data()}:
+                         std::array<float*,2>{nullptr,nullptr};
+    }
+    int frames() const noexcept {return complete_?frames_:0;}
+private:
+    DynamicProgrammeTap slice_;
+    ChannelId source_{};
+    std::uint64_t epoch_=0,revision_=0;
+    int frames_=0,written_=0;
+    bool valid_=false,complete_=false;
+    std::array<float,capacity> left_{},right_{};
+};
 // Default keeps all physical buses time-aligned. Independent monitoring
 // removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
 // This is an explicit prepared-graph policy, not a realtime control.

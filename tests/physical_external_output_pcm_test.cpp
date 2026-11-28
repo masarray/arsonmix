@@ -545,7 +545,55 @@ static void verifyIndependentProgrammeTap() {
     assert(tap.left().empty()&&tap.right().empty());
     std::puts("INDEPENDENT_PROGRAMME_TAP_PCM_PASS");
 }
+static void verifyWholeCallbackProgramme() {
+    Harness h;
+    DynamicProgrammeBlock block;
+    block.requested=h.busA;
+    assert(block.begin(h.epoch,192));
+    assert(block.pcm()[0]==nullptr&&block.frames()==0);
+    for(int n=0;n<3;++n){
+        assert(h.render(2,block.slice()));
+        assert(block.append(n*64,64,h.epoch,1));
+        for(int i=0;i<64;++i)block.scale(n*64+i,static_cast<float>(n+1)/3.f);
+        assert(block.pcm()[0]==nullptr);
+    }
+    assert(block.finish(h.epoch)&&block.frames()==192&&block.captured()==h.busA);
+    assert(h.callsA==3&&h.callsB==3);
+    assert(near(block.pcm()[0][0],.50f/3.f));
+    assert(near(block.pcm()[0][64],.50f*2.f/3.f));
+    assert(near(block.pcm()[0][191],.50f)&&near(block.pcm()[1][191],.20f));
+    assert(near(h.output[0].back(),.71f)); // programme ramp does not alter MAIN
+    // Any partial, wrong-order, stale epoch, or mixed-revision receipt is
+    // discarded as a whole; it cannot expose previous callback storage.
+    assert(block.begin(h.epoch,128));
+    assert(h.render(2,block.slice())&&block.append(0,64,h.epoch,1));
+    assert(!block.finish(h.epoch)&&!block.pcm()[0]);
+    assert(block.begin(h.epoch,128));
+    assert(h.render(2,block.slice())&&block.append(0,64,h.epoch,1));
+    assert(h.render(2,block.slice())&&!block.append(64,64,h.epoch,2));
+    assert(!block.finish(h.epoch)&&!block.pcm()[0]);
+    assert(block.begin(h.epoch,64));
+    assert(h.render(2,block.slice())&&!block.append(1,64,h.epoch,1));
+    assert(!block.pcm()[0]);
+    assert(block.begin(h.epoch,64));
+    assert(h.render(2,block.slice())&&block.append(0,64,h.epoch,1));
+    assert(!block.finish(h.epoch+1)&&!block.pcm()[0]);
+    assert(!block.begin(h.epoch,DynamicProgrammeBlock::capacity+1));
+    // Whole silent interval is valid for an assigned dormant channel.
+    Harness dormant(true,false);
+    block.requested=dormant.busA;
+    assert(block.begin(dormant.epoch,128));
+    for(int n=0;n<2;++n){
+        assert(dormant.render(2,block.slice()));
+        assert(block.append(n*64,64,dormant.epoch,1));
+    }
+    assert(block.finish(dormant.epoch)&&block.frames()==128);
+    for(int n=0;n<128;++n)assert(block.pcm()[0][n]==0.f&&block.pcm()[1][n]==0.f);
+    assert(dormant.callsA==0&&dormant.callsB==0);
+    std::puts("WHOLE_CALLBACK_PROGRAMME_PCM_PASS");
+}
 int main() {
+    verifyWholeCallbackProgramme();
     verifyIndependentProgrammeTap();
     verifyAssignBeforeSourceAndRestore();
     verifyRackTransitionKeepsExternalAndSecondaryPcm();

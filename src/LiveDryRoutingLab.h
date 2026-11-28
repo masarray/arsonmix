@@ -4455,7 +4455,9 @@ public:
                  std::span<const armix::mixer::DynamicPlayerPcmBlock> playerPcm={},
                  bool mainOnlyMuted=false,
                  const NativeOutputLease* outputLease=nullptr,bool privateCueAllowed=false,
-                 std::array<float*,2>* secondaryMainTap=nullptr) noexcept {
+                 std::array<float*,2>* secondaryMainTap=nullptr,
+                 armix::mixer::DynamicProgrammeBlock* programme=nullptr) noexcept {
+        if(programme)programme->reset();
         if(secondaryMainTap)*secondaryMainTap={{nullptr,nullptr}};
         if(actualOutputPair)*actualOutputPair={{-1,-1}};
         if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
@@ -4493,6 +4495,7 @@ public:
             if(actualOutputPair)*actualOutputPair={{-1,-1}};
             if(actualMonitorPair)*actualMonitorPair={{-1,-1}};
             if(secondaryMainTap)*secondaryMainTap={{nullptr,nullptr}};
+            if(programme)programme->reset();
             nativePublisher_.revokePfl();
             nativeMeterEpoch_.store(0,std::memory_order_release);
             if(!outputs)return;
@@ -4614,6 +4617,10 @@ public:
             topologyFault_.store(true,std::memory_order_release);
             silence();return true;
         }
+        // Optional programme capture follows the same native render and
+        // only publishes a whole callback from one device/graph generation.
+        const bool captureProgramme=programme&&channelIdRender&&!masterMuted&&
+            programme->begin(generation,frames);
         // One attempt per outer JUCE callback; a 64/256/1024-frame chunk
         // loop still owns exactly ONE native or compatibility DSP pass.
         const auto auditPath=channelIdRender?
@@ -4674,8 +4681,11 @@ public:
                      &sliceRevision,&sliceMeterCount,
                      !splitMain&&!monitorL&&nativePin(native,2)<0&&nativePin(native,3)<0&&
                          (native&nativeDormantMonitorBit)!=0,
-                     nullptr,privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0);
+                     nullptr,privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0,
+                     captureProgramme?programme->slice():nullptr);
                 if(processed) {
+                    if(captureProgramme)
+                        programme->append(offset,n,generation,sliceRevision);
                     if(completedNativeRevision&&(completedNativeRevision!=sliceRevision||
                        completedMeterCount!=sliceMeterCount))mixedNativeRevisions=true;
                     completedNativeRevision=sliceRevision;completedMeterCount=sliceMeterCount;
@@ -4732,6 +4742,7 @@ public:
                     r=fadeFromR_+(r-fadeFromR_)*busRamp;
                     --fadeRemaining_;
                 }
+                if(captureProgramme)programme->scale(offset+i,busRamp);
                 // Mute only MAIN: BUS/EXTERNAL PCM remains live post-FX.
                 if(channelIdRender) {
                     const float mainGain=mainOnlyMuteSlew_.next(mainOnlyMuted);
@@ -4789,6 +4800,10 @@ public:
         // Only completed PCM may escape. The tap is callback-local and
         // never survives a rejected render, epoch, or muted meter pass.
         if(splitMain&&!masterMuted&&secondaryMainTap)*secondaryMainTap={{mainL,mainR}};
+        if(captureProgramme){
+            if(mixedNativeRevisions||!channelIdPhysicalPcmActive())programme->reset();
+            else programme->finish(epoch());
+        }
         renderAudit_.completed(auditPath);
         return true;
     }
