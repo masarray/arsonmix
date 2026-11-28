@@ -121,9 +121,18 @@ foreach ($file in $fatBundleFiles) {
 "ARSONMIX_PORTABLE_WORKSPACE_V1" |
     Set-Content -LiteralPath (Join-Path $OutputDir "portable_mode.txt") -Encoding utf8
 
+# Official release version must be the configured native tag, not a filename label.
+$releaseTag=[string]$env:ARMIX_RELEASE_TAG
+if($releaseTag){
+    if($releaseTag -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta)\.[0-9]+$' -or
+       "ARMIX_RELEASE_TAG:STRING=$releaseTag" -cnotin @(Get-Content -LiteralPath (Join-Path $BuildDir 'CMakeCache.txt'))){
+        throw 'RELEASE_NATIVE_VERSION_CACHE_MISMATCH'
+    }
+}
 $manifest = [ordered]@{
     schema = "arsonmix.native-artifact-provenance.v1"
     sourceCommit = $gitSha
+    releaseTag = $releaseTag
     gui = "10 SOURCE CHANNELS + STEREO MASTER (PR #73)"
     engine = "R0B VERIFIED DIRECT 10CH PLUS FOUR AUX PREPARED NATIVE MIXER__PREVIEW"
     nativeDSP = "NATIVE_TEN_INPUT_CHANNELS_FOUR_DEDICATED_STEREO_AUX_RETURNS_MASTER__EXPLICIT_PATCH_ACK"

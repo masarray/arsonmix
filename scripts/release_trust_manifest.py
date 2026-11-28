@@ -134,6 +134,8 @@ def calculate(root, platform, tag, sha, existing=False):
         build, installer = [json_file(root / n) for n in metadata[:2]]
         if build.get("sourceCommit") != sha or installer.get("sourceCommit") != sha:
             raise ValueError("Windows source provenance mismatch")
+        if "-beta." in tag and (build.get("releaseTag") != tag or installer.get("appVersion") != tag[1:]):
+            raise ValueError("Beta release version provenance mismatch")
         if installer.get("installerSha256") != hashes[binary[0]]:
             raise ValueError("Installer provenance mismatch")
         with zipfile.ZipFile(root / binary[1]) as z:

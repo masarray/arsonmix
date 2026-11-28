@@ -177,6 +177,15 @@ jobs:
           & ./scripts/build_verify_windows_installer.ps1 -OutputDir dist -InstallerOutput installer-output -IncludePortableUpdater
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Verify actual Alpha.33 to Beta installation and rollback before publication
+        if: contains(inputs.release_tag, '-beta.')
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          & ./scripts/test_two_genuine_inno_releases_windows.ps1 -CandidateInstaller 'installer-output/ArSonMix-Windows-x64-Setup-Preview.exe' -CandidateProvenance 'installer-output/INSTALLER_PROVENANCE.json' -CandidateTag $env:ARMIX_RELEASE_TAG -CandidateSha $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Create release assets with checksums
         shell: pwsh
         run: |

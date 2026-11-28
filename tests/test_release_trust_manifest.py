@@ -31,8 +31,8 @@ class TrustTests(unittest.TestCase):
             with zipfile.ZipFile(self.root / binaries[2], "w") as z:
                 z.writestr("ArSonMix.exe", gui)
             h = hashlib.sha256(gui).hexdigest()
-            self.write(meta[0], {"sourceCommit": SHA, "exeSha256": h, "executable": "ArSonMix.exe"})
-            self.write(meta[1], {"sourceCommit": SHA, "guiSha256": h, "installerSha256": trust.file_hash(self.root / binaries[0])})
+            self.write(meta[0], {"sourceCommit": SHA, "exeSha256": h, "executable": "ArSonMix.exe", "releaseTag": tag})
+            self.write(meta[1], {"sourceCommit": SHA, "guiSha256": h, "appVersion": tag[1:], "installerSha256": trust.file_hash(self.root / binaries[0])})
             self.write(meta[2], {"test": True})
         else:
             (self.root / binaries[0]).write_bytes(b"synthetic package")
@@ -56,6 +56,11 @@ class TrustTests(unittest.TestCase):
         self.assertEqual(len(manifest['assets']), 7)
         self.write('RELEASE_TRUST-windows.json', manifest)
         self.assertEqual(trust.calculate(self.root, 'windows', tag, SHA, True), manifest)
+        proof = json.loads((self.root / 'INSTALLER_PROVENANCE.json').read_text())
+        proof['appVersion'] = '0.5.0'
+        self.write('INSTALLER_PROVENANCE.json', proof)
+        with self.assertRaisesRegex(ValueError, 'Beta release version provenance mismatch'):
+            trust.calculate(self.root, 'windows', tag, SHA, True)
         with self.assertRaises(ValueError):
             trust.calculate(self.root, 'windows', 'v0.5.0-rc.1', SHA)
 

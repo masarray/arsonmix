@@ -29,6 +29,14 @@ if($cmake -notmatch '(?m)^project\(ARMixConsole VERSION ([0-9]+\.[0-9]+\.[0-9]+)
     throw "Installer version does not match the native CMake project"
 }
 $appVersion=$Matches[1]
+$releaseTag=[string]$env:ARMIX_RELEASE_TAG
+if($releaseTag){
+    $pattern='^v'+[regex]::Escape($appVersion)+'-(alpha|beta)\.[0-9]+$'
+    if($releaseTag -cnotmatch $pattern -or $manifest.releaseTag -cne $releaseTag){
+        throw 'RELEASE_INSTALLER_VERSION_MISMATCH'
+    }
+    $appVersion=$releaseTag.Substring(1)
+}
 $out=Join-Path $root $InstallerOutput
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $stage=Join-Path $env:RUNNER_TEMP ("arsonmix-install-stage-"+[guid]::NewGuid().ToString("N"))
@@ -173,6 +181,12 @@ try {
     $factoryFxScanCount=Test-InstalledFactoryFxScanner $installedExe
     $installedManifest=Get-Content -LiteralPath (Join-Path $install "BUILD_PROVENANCE.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     if($installedManifest.sourceCommit -ne $sha){throw "Wrong installed provenance"}
+    if($releaseTag){
+        $arp=Get-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ArSonMix.LiveStudio_is1' -ErrorAction Stop
+        if($arp.DisplayVersion -cne $appVersion -or $installedManifest.releaseTag -cne $releaseTag){
+            throw 'RELEASE_INSTALLED_VERSION_MISMATCH'
+        }
+    }
     foreach($item in @("gh.exe","verifier.json","LICENSE.txt","THIRD-PARTY-LICENSES.txt")){
         $staged=Join-Path (Join-Path $stage "UpdateVerifier") $item
         $actual=Join-Path (Join-Path $install "UpdateVerifier") $item
