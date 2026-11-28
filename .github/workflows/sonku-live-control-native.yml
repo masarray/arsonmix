@@ -18,13 +18,13 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Verify exact acoustic source identity and control variant
         run: python scripts/verify_immersib_approved_pcm_sources.py
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: juce-framework/JUCE
           ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53
@@ -53,7 +53,7 @@ jobs:
           if (@($listing.tests).Count -ne 3) { throw 'SONKU_NATIVE_TARGETS_MISSING' }
           ctest --test-dir build -C Release -R $pattern --output-on-failure --no-tests=error --output-junit sonku-control-tests.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: SonKu-live-control-native-${{ github.event.pull_request.head.sha }}

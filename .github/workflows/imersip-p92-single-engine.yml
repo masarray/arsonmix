@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -172,7 +172,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 50
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.expected_sha || github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -184,7 +184,7 @@ jobs:
           if ((& git rev-parse HEAD).Trim() -ne $env:EXPECTED_SHA) {
             throw 'IMERSIP_P92_WRONG_SOURCE_SHA'
           }
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: juce-framework/JUCE
           ref: 91ad83ae34a81e0833b1a2b0866f54846370ae53 # JUCE 8.0.15
@@ -253,7 +253,7 @@ jobs:
           & $exe --attribution
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload actual JUCE native 100, 125, 150 and 200 percent captures
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ImerSip-P92-Native-JUCE-DPI-Captures-${{ github.run_id }}
           path: |
@@ -285,7 +285,7 @@ jobs:
           New-Item -ItemType Directory -Path field_candidate -Force | Out-Null
           Copy-Item -LiteralPath dist -Destination field_candidate/ArSonMix-Portable -Recurse
           Copy-Item -LiteralPath docs/IMERSIP_P92_SINGLE_NATIVE_ENGINE_FAT_20261116.md -Destination field_candidate/IMERSIP_P92_FIELD_FAT.md
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ImerSip-P92-Shared-Core-Windows-x64-${{ github.run_id }}
           path: field_candidate/
