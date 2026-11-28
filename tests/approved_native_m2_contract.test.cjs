@@ -5897,6 +5897,14 @@ test("G-MV31 pure WIRE PRE/POST plans bind exact send identities, never PRIMARY/
    "two SENDs require explicit identity, not a guessed first match");
  assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:otherId}).edgeId,otherId);
  assert.equal(wireVM.channelTapEdge(two,{sourceId:src,selectedEdgeId:"invalid"}),null);
+ const offline={logical:true,readOnly:false,admitted:false,retained:true,
+   graph:{...graph,capabilities:{supportedOps:["SET_SEND_TAP"]}}};
+ assert.equal(wireVM.channelTapEdge(offline,{sourceId:src}).edgeId,id);
+ assert.equal(wireVM.channelTapEdge(offline,{sourceId:src,selectedEdgeId:primaryId}),null);
+ assert.equal(wireVM.channelTapEdge({...offline,readOnly:true},{sourceId:src}),null);
+ assert.equal(wireVM.channelTapEdge({...offline,graph:{...offline.graph,capabilities:{supportedOps:[]}}},{sourceId:src}),null);
+ const bridge=read("web/approved-native-bridge.js");
+ assert.match(bridge,/if\(action==="tapMode"\|\|action==="sofTap"\)\{\s*const current=activeView\(\)/);
  for(const [edgeId,target,extra,state] of [
    [primaryId,"PRE_FADER",{},snap],
    [id,"NO_TAP",{},snap],

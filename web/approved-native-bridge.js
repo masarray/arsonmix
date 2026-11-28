@@ -662,11 +662,20 @@
     lastPaintedSignature="";lastNativeTopologySignature="";
   }
   function logicalIntent(operation,channelId,payload={}) {
-    if(!logicalView || logicalView.readOnly || pendingLogical)
-      return {ok:false,error:logicalView?.readOnly?"SAVED_MIXER_RECOVERY_REQUIRED":
-        pendingLogical?"PENDING_LOGICAL_ACK":"LOGICAL_NOT_READY"};
-    if(!logicalView.graph.capabilities.supportedOps.includes(operation))
+    if(!logicalView || logicalView.readOnly || pendingLogical){
+      // Never let a refused structural gesture look like a dead control.
+      // Scalar releases already coalesce; structural edits need a fresh
+      // explicit gesture rather than a blind replay against a new roster.
+      const error=logicalView?.readOnly?"SAVED_MIXER_RECOVERY_REQUIRED":
+        pendingLogical?"PENDING_LOGICAL_ACK":"LOGICAL_NOT_READY";
+      nativeToast(logicalView?.readOnly?"Saved mixer recovery required · open a verified project":
+        pendingLogical?"Saving previous mixer edit · retry shortly":"Mixer workspace is not ready");
+      return {ok:false,error};
+    }
+    if(!logicalView.graph.capabilities.supportedOps.includes(operation)){
+      nativeToast("This operation is unavailable in the current mixer workspace");
       return {ok:false,error:"UNSUPPORTED_LOGICAL_OPERATION"};
+    }
     const requestId="logical-"+logicalClientToken+"-"+(++logicalSerial);
     const value=["SET_FADER","SET_INPUT_GAIN","SET_WIRE_SUM_GAIN"].includes(operation)?payload.valueDb:
       operation==="SET_PAN"?payload.value:
@@ -7133,7 +7142,7 @@
       // PRE/POST is an exact EdgeId structural graph transaction, not a
       // cosmetic browser mode nor a channel-wide batch change.
       if(action==="tapMode"||action==="sofTap"){
-        const current=controller?.state()?.current,source=nativeIdFor(t);
+        const current=activeView(),source=nativeIdFor(t);
         // A SOF edit must own exactly one real SEND to the selected BUS.
         // Ordinary tapMode uses only the selected EdgeId or a unique
         // non-MAIN outgoing SEND; never guesses a sibling channel's route.

@@ -238,7 +238,9 @@
   // changed into an edit of another send. With no selection, exactly one
   // eligible send may be used.
   function channelTapEdge(snapshot,{sourceId,selectedEdgeId=null}={}) {
-    if(snapshot?.admitted!==true||snapshot.retained===true||
+    const offline=snapshot?.logical===true&&snapshot.readOnly===false&&
+      snapshot.graph?.capabilities?.supportedOps?.includes("SET_SEND_TAP")===true;
+    if((!offline&&(snapshot?.admitted!==true||snapshot.retained===true))||
        !nativeId(sourceId))return null;
     const graph=snapshot.graph,main=graph?.mainChannelId;
     const eligible=graph?.edges?.filter(e=>e.enabled===true&&
