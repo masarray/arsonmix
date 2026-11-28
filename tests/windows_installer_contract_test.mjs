@@ -785,3 +785,22 @@ test('cached executable hash is reused only while the executable read lease rema
   assert.ok(fn.indexOf('$binaryLease.Dispose()')>fn.indexOf('Portable payload provenance mismatch'));
   assert.match(read('tests/portable_verifier_profile.ps1'),/ARSONMIX_PORTABLE_PROFILE_PASS/);
 });
+
+
+test('FactoryFX installation proves native discovery using the same verified installed executable',()=>{
+  const build=read('scripts/build_verify_windows_installer.ps1');
+  const worker=read('src/Vst3ScanIsolation.h');
+  assert.match(worker,/--arsonmix-vst3-scan-worker/);
+  const scan=build.slice(build.indexOf('function Test-InstalledFactoryFxScanner'),build.indexOf('$fixtureProcess=$null'));
+  assert.match(scan,/--arsonmix-vst3-scan-worker/);
+  assert.match(scan,/\$child\.WaitForExit\(40000\)/);
+  assert.match(scan,/DtdProcessing\]::Prohibit/);
+  assert.match(scan,/ARSONMIX_VST3_SCAN_V1/);
+  assert.match(scan,/GetAttribute\('nonce'\)/);
+  assert.match(scan,/GetAttribute\('path'\)/);
+  assert.match(scan,/\[Convert\]::ToInt32\(\$uid,16\) -eq \[int\]\$row\.hostUniqueId/);
+  assert.match(scan,/GetAttribute\('version'\) -ceq \[string\]\$row\.pluginVersion/);
+  assert.match(scan,/production-four.*\$count -ne 4/);
+  assert.match(build,/Assert-InstalledFactoryFx "fresh-install"\s+\$factoryFxScanCount=Test-InstalledFactoryFxScanner \$installedExe/);
+  assert.match(build,/factoryFxInstalledScanCount=\$factoryFxScanCount/);
+});

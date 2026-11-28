@@ -62,6 +62,76 @@ function Assert-InstalledFactoryFx([string]$Phase) {
         Remove-Item -LiteralPath $receipt -Force -ErrorAction SilentlyContinue
     }
 }
+
+# GUI-only updater health deliberately suppresses vendor discovery. Exercise
+# the actual installed ArSonMix.exe's existing isolated VST3 scanner after
+# the independent installed-tree hash gate, never an external fake host.
+function Test-InstalledFactoryFxScanner([string]$Application) {
+    $manifestPath=Join-Path $install "FactoryFX/factoryfx-manifest.json"
+    if(-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)){return 0}
+    $fxManifest=Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $count=0
+    foreach($row in @($fxManifest.plugins)){
+        $module=(Resolve-Path -LiteralPath (Join-Path $install $row.bundleRelativePath)).Path
+        $nonce=[guid]::NewGuid().ToString('N')
+        $receiptDir=Join-Path ([IO.Path]::GetTempPath()) ("arsonmix-vst3-probe-"+$nonce)
+        if(Test-Path -LiteralPath $receiptDir){throw "FactoryFX scan receipt collision"}
+        $child=$null
+        try {
+            New-Item -ItemType Directory -Path $receiptDir | Out-Null
+            $info=[Diagnostics.ProcessStartInfo]::new()
+            $info.FileName=$Application
+            $info.WorkingDirectory=$install
+            $info.UseShellExecute=$false
+            $info.Arguments='--arsonmix-vst3-scan-worker "'+$module+'" '+$nonce
+            $child=[Diagnostics.Process]::Start($info)
+            if($null -eq $child -or !$child.WaitForExit(40000) -or $child.ExitCode -ne 0){
+                throw "Installed FactoryFX scanner failed: $($row.productId)"
+            }
+            $receipt=Join-Path $receiptDir "result.xml"
+            if(-not (Test-Path -LiteralPath $receipt -PathType Leaf) -or
+               (Get-Item -LiteralPath $receipt).Length -gt 1MB){
+                throw "Missing or oversized FactoryFX scanner receipt: $($row.productId)"
+            }
+            $settings=[System.Xml.XmlReaderSettings]::new()
+            $settings.DtdProcessing=[System.Xml.DtdProcessing]::Prohibit
+            $settings.XmlResolver=$null
+            $settings.MaxCharactersInDocument=1048576
+            $xml=[System.Xml.XmlDocument]::new()
+            $xml.XmlResolver=$null
+            $reader=[System.Xml.XmlReader]::Create($receipt,$settings)
+            try { $xml.Load($reader) } finally { $reader.Dispose() }
+            $node=$xml.DocumentElement
+            if($null -eq $node -or $node.Name -cne 'ARSONMIX_VST3_SCAN_V1' -or
+               $node.GetAttribute('nonce') -cne $nonce -or $node.GetAttribute('path') -cne $module){
+                throw "Invalid FactoryFX scanner receipt binding: $($row.productId)"
+            }
+            $matching=@($node.SelectNodes('PLUGIN') | Where-Object {
+                $uid=$_.GetAttribute('uniqueId')
+                $uid -match '^[0-9a-fA-F]{1,8}$' -and
+                [Convert]::ToInt32($uid,16) -eq [int]$row.hostUniqueId -and
+                $_.GetAttribute('format') -ceq 'VST3' -and
+                $_.GetAttribute('file') -ceq $module -and
+                $_.GetAttribute('version') -ceq [string]$row.pluginVersion -and
+                $_.GetAttribute('isInstrument') -in @('0','false')
+            })
+            if($matching.Count -ne 1){throw "Installed FactoryFX UID/version mismatch: $($row.productId)"}
+            ++$count
+            Write-Host "FACTORYFX_INSTALLED_NATIVE_SCAN_PASS product=$($row.productId) uid=$($row.hostUniqueId) version=$($row.pluginVersion)"
+        } finally {
+            if($null -ne $child){
+                if(!$child.HasExited){$child.Kill();[void]$child.WaitForExit(5000)}
+                $child.Dispose()
+            }
+            Remove-Item -LiteralPath $receiptDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if($fxManifest.distribution -ceq 'production-four' -and $count -ne 4){
+        throw "Standard FactoryFX installed scanner did not find all four modules"
+    }
+    return $count
+}
+
 $fixtureProcess=$null
 $probeProcess=$null
 $probeToken=[guid]::NewGuid().ToString('D')
