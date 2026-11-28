@@ -534,7 +534,7 @@ public:
     void setMonitorEnabled (bool value) noexcept {
         mainOutputIntent_.operatorRequested(value);
         monitor_.store(value,std::memory_order_release);
-        if (!value) {dryRoutingLab_.deEzzerCueControl().revokePublished();resumeMainAfterAsioReset_.store(false,std::memory_order_release);}
+        if (!value) {dryRoutingLab_.deEzzerCueControl().revokePublished();dryRoutingLab_.revokePfl();resumeMainAfterAsioReset_.store(false,std::memory_order_release);}
     }
     bool isMonitorEnabled() const noexcept { return monitor_.load(std::memory_order_acquire); }
     bool wantsMainContinuation() const noexcept { return mainOutputIntent_.desired(); }
@@ -548,7 +548,7 @@ public:
         return callbackCount_.load(std::memory_order_relaxed);
     }
     // Emergency output mute, not a prerequisite for receiving audio.
-    void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); if(mute)dryRoutingLab_.deEzzerCueControl().revokePublished(); }
+    void setOutputMuted (bool mute) noexcept { monitor_.store (!mute, std::memory_order_release); if(mute){dryRoutingLab_.deEzzerCueControl().revokePublished();dryRoutingLab_.revokePfl();} }
     bool isOutputMuted() const noexcept { return !monitor_.load (std::memory_order_acquire); }
     bool allOutputsDisarmed() const noexcept {
         return isOutputMuted() && !secondaryOutput_.armed();
@@ -1065,7 +1065,7 @@ public:
             channelPan_.store (juce::jlimit (-1.f, 1.f, value), std::memory_order_relaxed);
     }
     void setChannelMuted (bool value) noexcept { channelMute_.store (value); }
-    void setMasterMuted (bool value) noexcept { masterMute_.store (value); if(value)dryRoutingLab_.deEzzerCueControl().revokePublished(); }
+    void setMasterMuted (bool value) noexcept { masterMute_.store (value); if(value){dryRoutingLab_.deEzzerCueControl().revokePublished();dryRoutingLab_.revokePfl();} }
     void setMasterMono (bool value) noexcept { masterMono_.store (value, std::memory_order_relaxed); }
 
     int chainSize() const noexcept { return graphOwned_->count; }
@@ -2832,6 +2832,13 @@ public:
         return privateDeEzzerCueAllowed()?dryRoutingLab_.deEzzerCueRoute(ep,rev,channel):0;
     }
     armix::mixer::NativeFxCueBus& deEzzerCueControl() noexcept {return dryRoutingLab_.deEzzerCueControl();}
+    bool selectPfl(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId id,bool enabled) noexcept {
+        return privateDeEzzerCueAllowed()&&dryRoutingLab_.selectPfl(ep,rev,id,enabled);
+    }
+    juce::var nativePflSnapshot() {
+        if(!privateDeEzzerCueAllowed()){dryRoutingLab_.revokePfl();return {};}
+        return dryRoutingLab_.nativePflSnapshot();
+    }
 
     LiveDryRoutingLab::NativeBusResult createNativeInputChannel(
             std::uint64_t epoch,std::uint64_t pcmRevision,

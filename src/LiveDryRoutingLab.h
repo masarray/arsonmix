@@ -1874,6 +1874,46 @@ public:
             nativeFrames(p)<=armix::mixer::NativeFxCueBus::capacity?p:0;
     }
     armix::mixer::NativeFxCueBus& deEzzerCueControl() noexcept {return nativePublisher_.cueControl();}
+    // PFL owns neither a WIRE nor a second render. Both a four-pin physical
+    // MAIN/MONITOR pair and a two-pin split (logical MAIN to Windows) have
+    // a distinct physical MONITOR sink. Require callback-observed mapping.
+    std::uint64_t nativePflRoute(std::uint64_t ep,std::uint64_t rev) const noexcept {
+        if(!ready()||!channelIdPhysicalPcmActive()||
+           !nativeAccepted_.matches(nativePublisher_,ep,rev)||!nativeBusOutputObserved()||
+           !nativePublisher_.pflAvailable(ep,rev))return 0;
+        const auto p=nativeHardware_.load(std::memory_order_acquire);
+        const int ml=nativePin(p,2),mr=nativePin(p,3),l=nativePin(p,0),r=nativePin(p,1);
+        const bool split=nativeAccepted_.hardware.secondaryMain()&&l<0&&r<0;
+        const bool separate=l>=0&&r>=0&&l!=r&&ml!=l&&ml!=r&&mr!=l&&mr!=r;
+        return ml>=0&&mr>=0&&ml!=mr&&(split||separate)&&nativeFrames(p)>0&&
+            nativeFrames(p)<=armix::mixer::DynamicPflCapture::capacity?p:0;
+    }
+    void revokePfl() noexcept {nativePublisher_.revokePfl();}
+    bool selectPfl(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId id,bool enable) noexcept {
+        const auto route=nativePflRoute(ep,rev);
+        if(!route||!nativePublisher_.pflEligible(ep,rev,id))return false;
+        const auto state=nativePublisher_.pflState(ep,rev,route);
+        // A delayed OFF for one strip cannot cancel another strip's cue.
+        if(!enable&&state.requested!=id)return false;
+        return nativePublisher_.selectPfl(ep,rev,route,enable?id:armix::mixer::ChannelId{});
+    }
+    juce::var nativePflSnapshot() {
+        const auto ep=epoch(),rev=nativeAccepted_.pcmRevision;
+        const auto route=nativePflRoute(ep,rev);
+        if(!route){revokePfl();return {};}
+        auto out=std::make_unique<juce::DynamicObject>();
+        const auto state=nativePublisher_.pflState(ep,rev,route);
+        const auto id=[](std::uint64_t v){return v?juce::String(std::to_string(v)):juce::String{};};
+        out->setProperty("deviceEpoch",id(ep));out->setProperty("graphRevision",id(rev));
+        out->setProperty("requested",id(state.requested.value));
+        out->setProperty("applied",id(state.applied.value));
+        juce::Array<juce::var> eligible;
+        for(const auto& row:nativeAccepted_.graph.roster.channels())
+            if(nativePublisher_.pflEligible(ep,rev,row.id))eligible.add(id(row.id.value));
+        out->setProperty("eligible",juce::var(eligible));
+        out->setProperty("available",true);
+        return juce::var(out.release());
+    }
     NativeBusResult editNativeBus(std::uint64_t expectedEpoch,
                   std::uint64_t expectedPcmRevision,
                   std::uint64_t expectedRosterRevision,
@@ -4379,6 +4419,7 @@ public:
         // erase aliased JUCE/driver input PCM before the CH strips consume it.
         // Every failed/unpatched/MUTED route still uses this fail-silent gate.
         const auto silence=[&]() noexcept {
+            nativePublisher_.revokePfl();
             nativeMeterEpoch_.store(0,std::memory_order_release);
             if(!outputs)return;
             for(int c=0;c<outputCount;++c)
@@ -4558,7 +4599,8 @@ public:
                      privateCueAllowed&&!splitMain&&!masterMuted&&monitorL&&monitorR?native:0,
                      &sliceRevision,&sliceMeterCount,
                      !splitMain&&!monitorL&&nativePin(native,2)<0&&nativePin(native,3)<0&&
-                         (native&nativeDormantMonitorBit)!=0);
+                         (native&nativeDormantMonitorBit)!=0,
+                     nullptr,privateCueAllowed&&!masterMuted&&monitorL&&monitorR?native:0);
                 if(processed) {
                     if(completedNativeRevision&&(completedNativeRevision!=sliceRevision||
                        completedMeterCount!=sliceMeterCount))mixedNativeRevisions=true;
@@ -4898,6 +4940,7 @@ private:
     void installNativeHardware(std::uint64_t generation,
             const armix::mixer::VerifiedNativeOutputs& hw,int frames) noexcept {
         nativePublisher_.cueControl().cancel(false); // never retain audition across output rebinding
+        nativePublisher_.revokePfl();
         const auto dormant=nativeAccepted_.graph.ids.monitor.value&&!hw.monitorEnabled&&
             !hw.secondaryMain()?nativeDormantMonitorBit:std::uint64_t{0};
         nativeHardware_.store(dormant | (static_cast<std::uint64_t>(frames)<<36) |

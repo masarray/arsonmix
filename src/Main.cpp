@@ -3693,6 +3693,10 @@ private:
             obj->setProperty("physicalBusOutputObserved",
                 live.getProperty("dryRoutingLab",{}).getProperty("busOutputObserved",false));
             obj->setProperty("physicalBusSecondaryArmed",engine_.secondaryArmed());
+            // Transient cue is never saved into a .smix or restored after an
+            // epoch/graph change. The button uses the callback receipt only.
+            if(authority=="CHANNEL_ID"&&!retainedOfflineFxActive_)
+                obj->setProperty("nativePfl",engine_.nativePflSnapshot());
             const bool streamReady=bool(live.getProperty("secondaryOutputReady",false))&&
                 !bool(live.getProperty("secondaryOutputFault",false));
             obj->setProperty("secondaryOutputFault",live.getProperty("secondaryOutputFault",false));
@@ -7997,6 +8001,29 @@ private:
            action=="audioDeviceApply"||action=="audioSetup"||action=="audioDriverPanel"))
             cancelPendingFxRackTransition("Superseded by operator action");
         if(action=="secondaryOutputInventory")return requestSecondaryInventory(args);
+        if(action=="routingNativePfl"){
+            std::uint64_t ep=0,rev=0,id=0;
+            const auto enabled=args.getProperty("enabled",{});
+            const auto request=args.getProperty("requestId",{}).toString();
+            bool ok=false;
+            if(request.isNotEmpty()&&request.length()<=64&&enabled.isBool()&&
+               !deviceApply_.busy()&&!nativeShowBusy_&&!studioBackupBusy_&&!mixerSessionWorker_.busy()&&
+               !retainedOfflineFxActive_&&!pendingRetainedFxCapture_&&!vendorSafeRecoveryActive()&&
+               args.getProperty("workspaceGeneration",{}).toString()==juce::String(std::to_string(workspaceGeneration_))&&
+               armix::console::approvedNativeId(args.getProperty("deviceEpoch",{}),ep)&&
+               armix::console::approvedNativeId(args.getProperty("graphRevision",{}),rev)&&
+               armix::console::approvedNativeId(args.getProperty("channelId",{}),id)){
+                cancelPhysicalLoopback();
+                ok=engine_.selectPfl(ep,rev,armix::mixer::ChannelId{id},bool(enabled));
+            }
+            auto ack=std::make_unique<juce::DynamicObject>();
+            ack->setProperty("requestId",request);ack->setProperty("ok",ok);
+            ack->setProperty("error",ok?"":"PFL needs a verified independent MONITOR pair and prepared channel");
+            if(browser_.loaded)browser_.emitEventIfBrowserIsVisible("arMixNativePflAck",juce::var(ack.release()));
+            // ACK acknowledges the transient selection only. The next real
+            // callback/snapshot, not this command, proves the blue key state.
+            return;
+        }
         if(action=="fxRackFile")return chooseFxRackFile(args);
         if(action=="fxRackFileReadback")return readFxRackFileResult(args);
         if(action=="floatingBuiltinOpen")return; // retired: built-in FX stays in ONE mixer WebView
