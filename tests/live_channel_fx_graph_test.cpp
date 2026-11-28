@@ -1981,6 +1981,9 @@ static void verifyNativeFxRackTransactions() {
         assert(heapCalls.load()==count);for(int i=0;i<64;++i)assert(near(l[i],expected)&&near(l[i],r[i]));
     };
     publish();samples(1.6f);const int prepares=GainFx::prepared;
+    const auto original=bank->findEditorLocation(a,a->instanceId);
+    assert(original && original.channel==source && original.slot==0);
+    assert(!bank->findEditorLocation(a,b->instanceId)); // no token fallback
     const auto edit=[&](ChannelId from,std::size_t slot,const juce::String& token,ChannelId to,std::size_t pos){
         DynamicChannelRoster next;DynamicChannelFxLeaseBank owners;
         assert(prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,from,slot,token,to,pos,next,owners));
@@ -1994,12 +1997,19 @@ static void verifyNativeFxRackTransactions() {
     assert(!prepareNativeFxRackEdit(11,revision,roster.revision(),roster,*bank,source,0,a->instanceId,dest,9,rejected,rejectedBank));
     samples(1.6f);
     edit(source,0,a->instanceId,source,1);samples(2.6f);assert(bank->retainsEditor(a));
+    const auto movedUp=bank->findEditorLocation(a,a->instanceId);
+    assert(movedUp && movedUp.channel==source && movedUp.slot==1);
+    assert(bank->ownerForControl(source,0)->get()!=a.get());
     edit(source,1,a->instanceId,dest,0);samples(1.45f);
+    const auto movedChannel=bank->findEditorLocation(a,a->instanceId);
+    assert(movedChannel && movedChannel.channel==dest && movedChannel.slot==0);
     assert(bank->retainsEditor(a)&&(*bank->ownerForControl(dest,0)).get()==a.get());
     assert(roster.find(source)->insertCatalogIds==std::vector<std::string>{"offset"});
     assert(roster.find(dest)->insertCatalogIds==std::vector<std::string>{"gain"});
     edit(source,0,b->instanceId,{},0);samples(.45f);assert(!bank->retainsEditor(b));
+    assert(!bank->findEditorLocation(b,b->instanceId));
     edit(dest,0,a->instanceId,{},0);samples(.35f);assert(!bank->retainsEditor(a));
+    assert(!bank->findEditorLocation(a,a->instanceId));
 }
 
 // Native eight-band Parametric EQ must be the exact ordered rack lease in PCM,

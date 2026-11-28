@@ -1427,12 +1427,14 @@ public:
         if(!held || !id.value || token.isEmpty() ||
            !channelIdPhysicalPcmActive() || !nativeAccepted_.fxOwners ||
            nativeAccepted_.deviceEpoch!=epoch() || !ready())return out;
-        const auto* live=nativeAccepted_.fxOwners->ownerForControl(id,slot);
-        if(!live || !*live || live->get()!=held.get() ||
-           (*live)->instanceId!=token || !(*live)->processor)return out;
+        // MOVE may change slot or ChannelId while the same editor HWND and
+        // DSP processor remain alive. An old ordinal is NOT a new identity.
+        if(slot>=maxFxPerLane)return out;
+        const auto current=nativeAccepted_.fxOwners->findEditorLocation(held,token);
+        if(!current)return out;
         out.valid=true;
         out.slotBypassed=held->bypassRequested.load(std::memory_order_acquire);
-        out.rackBypassed=nativeAccepted_.fxOwners->rackBypassed(id);
+        out.rackBypassed=nativeAccepted_.fxOwners->rackBypassed(current.channel);
         out.globalBypassed=globalFxBypassed();
         return out;
     }
@@ -1440,8 +1442,10 @@ public:
             const FxGraph::InstanceLease& held,armix::mixer::ChannelId id,
             std::size_t slot,const juce::String& token,bool bypass) noexcept {
         if(!retainedNativeFxPower(held,id,slot,token).valid)return false;
+        const auto current=nativeAccepted_.fxOwners->findEditorLocation(held,token);
+        if(!current)return false; // deleted/replaced HWND must never control a new FX
         return nativeAccepted_.setFxBypass(nativePublisher_,epoch(),
-                 nativeAccepted_.pcmRevision,id,slot,token,bypass);
+                 nativeAccepted_.pcmRevision,current.channel,current.slot,token,bypass);
     }
     RetainedFxPowerState retainedRoutedFxPower(
             const FxGraph::InstanceLease& held,int lane,int slot,
@@ -1453,19 +1457,32 @@ public:
             return out;
         const auto ep=epoch(),rev=revision();
         const auto* current=publisher_.controlPrepared(ep,rev);
-        if(!current || current->leaseInsert(lane,slot,token)!=held)
-            return out;
-        out.valid=true;
-        out.slotBypassed=held->bypassRequested.load(std::memory_order_acquire);
-        out.rackBypassed=current->rackBypassed(lane);
-        out.globalBypassed=globalFxBypassed();
+        if(!current || held->instanceId!=token)return out;
+        // The accepted M4 graph may also move an FX to another lane/slot.
+        // Only the SAME retained processor can remain a valid editor owner.
+        for(int liveLane=0;liveLane<fxSlots;++liveLane)
+            for(int liveSlot=0;liveSlot<current->insertsOn(liveLane);++liveSlot)
+                if(current->leaseInsert(liveLane,liveSlot,token)==held) {
+                    out.valid=true;
+                    out.slotBypassed=held->bypassRequested.load(std::memory_order_acquire);
+                    out.rackBypassed=current->rackBypassed(liveLane);
+                    out.globalBypassed=globalFxBypassed();
+                    return out;
+                }
         return out;
     }
     bool bypassRetainedRoutedFx(
             const FxGraph::InstanceLease& held,int lane,int slot,
             const juce::String& token,bool bypass) noexcept {
         if(!retainedRoutedFxPower(held,lane,slot,token).valid)return false;
-        return setFxBypass(lane,slot,epoch(),revision(),token,bypass);
+        const auto ep=epoch(),rev=revision();
+        const auto* current=publisher_.controlPrepared(ep,rev);
+        if(!current)return false;
+        for(int liveLane=0;liveLane<fxSlots;++liveLane)
+            for(int liveSlot=0;liveSlot<current->insertsOn(liveLane);++liveSlot)
+                if(current->leaseInsert(liveLane,liveSlot,token)==held)
+                    return setFxBypass(liveLane,liveSlot,ep,rev,token,bypass);
+        return false;
     }
     bool bypassNativeInsert(std::uint64_t epochAtEdit,std::uint64_t pcmRevision,
             armix::mixer::ChannelId target,std::size_t slot,
