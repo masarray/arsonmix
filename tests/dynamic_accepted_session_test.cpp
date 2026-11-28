@@ -1243,7 +1243,77 @@ void verifyAutoDuckerPostFaderDependencies(){
     assert(fault.fault==DynamicGraphFault::cycle);
     assert(block.process(pins,2,l.data(),r.data(),64,fx));assert(seen==2);
 }
+
+static void verifyPrivatePflCapturePcm() {
+    constexpr std::uint64_t epoch=9602;
+    DynamicAcceptedSession session;
+    DynamicGraphRequest route;route.physicalInputs=4;route.maxFrames=64;
+    const std::array<ChannelEdit,5> creates{
+        add(0,ChannelRole::input,"VOICE",ProcessingFormat::stereo),
+        add(1,ChannelRole::input,"SOURCE ONLY",ProcessingFormat::stereo),
+        add(2,ChannelRole::group,"BUS",ProcessingFormat::stereo),
+        add(3,ChannelRole::main,"MAIN",ProcessingFormat::stereo),
+        add(4,ChannelRole::monitor,"MONITOR",ProcessingFormat::stereo)};
+    auto a=session.edit(0,0,creates,route,epoch,epoch,true);
+    assert(a.ok());
+    const auto voice=a.edit.createdIds[0],source=a.edit.createdIds[1],
+        bus=a.edit.createdIds[2],main=a.edit.createdIds[3],monitor=a.edit.createdIds[4];
+    const std::array<ChannelEdit,3> links{
+        output(voice,bus),output(bus,main),send(bus,monitor,.5f,true)};
+    route.sources={{voice,0,1,true},{source,2,3,true}};
+    a=session.edit(1,1,links,route,epoch,epoch,true);assert(a.ok());
+    std::array<float,64> vL{},vR{},sL{},sR{},mL{},mR{},nL{},nR{};
+    vL.fill(.2f);vR.fill(.1f);sL.fill(.125f);sR.fill(.0625f);
+    const float* pins[]{vL.data(),vR.data(),sL.data(),sR.data()};
+    int voiceCalls=0,sourceCalls=0,busCalls=0;
+    const auto fx=[&](ChannelId id,float* l,float* r,int frames) noexcept{
+        float gain=1.f;
+        if(id==voice){++voiceCalls;gain=2.f;}
+        if(id==source){++sourceCalls;gain=2.f;}
+        if(id==bus){++busCalls;gain=.5f;}
+        for(int i=0;i<frames;++i){l[i]*=gain;r[i]*=gain;}
+    };
+    DynamicPflCapture pfl;
+    const auto render=[&](DynamicPflCapture* capture=nullptr,int frames=64,
+                          std::uint64_t e=9602,bool muted=false){
+        return session.render(e,pins,4,mL.data(),mR.data(),frames,muted,fx,
+            nL.data(),nR.data(),{},{},{},false,capture);
+    };
+    assert(render());
+    const auto baseL=mL,baseR=mR,baseNL=nL,baseNR=nR;
+    const auto unchanged=[&]{assert(mL==baseL&&mR==baseR&&nL==baseNL&&nR==baseNR);};
+    pfl.requested=voice;
+    assert(render(&pfl));unchanged();
+    assert(pfl.captured()==voice&&pfl.left().size()==64&&near(pfl.left()[63],.4f)&&near(pfl.right()[63],.2f));
+    pfl.requested=bus;
+    assert(render(&pfl));unchanged();
+    assert(pfl.captured()==bus&&near(pfl.left()[63],.2f)&&near(pfl.right()[63],.1f));
+    // Source with no output route still has its own real post-FX PCM.
+    pfl.requested=source;
+    assert(render(&pfl));unchanged();
+    assert(pfl.captured()==source&&near(pfl.left()[63],.25f)&&near(pfl.right()[63],.125f));
+    assert(voiceCalls==4&&sourceCalls==4&&busCalls==4);
+    assert(session.setLiveMix(epoch,2,voice,0.f,0.f));
+    pfl.requested=voice;
+    assert(render(&pfl,4)&&pfl.left().size()==4&&near(pfl.left()[3],.4f));
+    assert(render(&pfl,60)&&pfl.left().size()==60&&near(pfl.left()[59],.4f)&&near(mL[59],0.f));
+    assert(session.setLiveMuteSolo(epoch,2,voice,true,false));
+    assert(render(&pfl)&&near(pfl.left()[63],.4f)&&near(mL[63],0.f)&&near(nL[63],0.f));
+    for(auto rejected:{main,monitor,ChannelId{999999},ChannelId{}}){
+        pfl.requested=rejected;assert(render(&pfl));
+        assert(!pfl.captured().value&&pfl.left().empty()&&pfl.right().empty());
+    }
+    pfl.requested=voice;assert(render(&pfl)&&pfl.captured()==voice);
+    assert(!render(&pfl,64,epoch+1)&&pfl.left().empty()&&!pfl.captured().value);
+    assert(render(&pfl)&&pfl.captured()==voice);
+    assert(!render(&pfl,64,epoch,true)&&pfl.left().empty()&&!pfl.captured().value);
+    assert(session.acceptedGraphRevision()==2);
+    session.unpublish();session.pollRetirement();
+    std::puts("PRIVATE_PFL_CAPTURE_PCM_PASS post FX, pre fader/mute, source-only, bus, unchanged MAIN/MONITOR, stale/muted readback");
+}
+
 int main() {
+    verifyPrivatePflCapturePcm();
     armix::ducker_test::run(); // same standalone core cases in existing fast CI
     verifyAutoDuckerKeyScope();
     verifyAutoDuckerPostFaderDependencies();

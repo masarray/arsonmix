@@ -398,11 +398,11 @@ public:
                 std::span<float> channelPeaksL={},
                 std::span<float> channelPeaksR={},
                 std::span<const DynamicPlayerPcmBlock> playerPcm={},
-                bool allowUnmappedMonitor=false) noexcept {
+                bool allowUnmappedMonitor=false,DynamicPflCapture* pfl=nullptr) noexcept {
         return publisher_.render(epoch,inputs,inputCount,mainL,mainR,frames,
                                  muted,std::forward<Fx>(fx),monitorL,monitorR,
                                  channelPeaksL,channelPeaksR,playerPcm,nullptr,0,{},0,nullptr,nullptr,
-                                 allowUnmappedMonitor);
+                                 allowUnmappedMonitor,pfl);
     }
     void unpublish() noexcept {publisher_.unpublish();hasHostedFx_=false;}
     void pollRetirement() noexcept {publisher_.pollRetirement();}

@@ -6,6 +6,7 @@
 #include "StereoLatencyDelay.h"
 #include "RealtimeStereoControlWord.h"
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <memory>
 #include <cmath>
@@ -42,6 +43,30 @@ struct DynamicPlayerPcmBlock final {
     std::uint64_t deckId=0;
     const float* left=nullptr;
     const float* right=nullptr;
+};
+// Callback-local private PFL capture. Storage belongs to the host, never
+// aliases programme/physical output. A successful graph render publishes
+// only the selected strip's post-insert, pre-fader/pre-mute PCM; no WIRE,
+// SOLO, gain, monitor mix or DSP state is changed. A missing lane/invalid
+// quantum yields an empty receipt, never the previous block's samples.
+class DynamicPflCapture final {
+public:
+    static constexpr int capacity=4096;
+    ChannelId requested{};
+    void reset() noexcept {captured_={};frames_=0;}
+    void capture(ChannelId id,const float* l,const float* r,int frames) noexcept {
+        if(!requested.value||id!=requested||frames<1||frames>capacity)return;
+        std::copy_n(l,frames,left_.data());
+        std::copy_n(r,frames,right_.data());
+        captured_=id;frames_=frames;
+    }
+    ChannelId captured() const noexcept {return captured_;}
+    std::span<const float> left() const noexcept {return {left_.data(),static_cast<std::size_t>(frames_)};}
+    std::span<const float> right() const noexcept {return {right_.data(),static_cast<std::size_t>(frames_)};}
+private:
+    ChannelId captured_{};
+    int frames_=0;
+    std::array<float,capacity> left_{},right_{};
 };
 // Default keeps all physical buses time-aligned. Independent monitoring
 // removes only the terminal MONITOR pad, never its own DSP or fan-in PDC.
@@ -905,7 +930,9 @@ public:
                  std::span<float> channelPeaksR={},
                  std::span<const DynamicPlayerPcmBlock> playerPcm={},
                  float* const* hardwareOutputs=nullptr,
-                 int hardwareOutputCount=0,bool allowUnmappedMonitor=false) noexcept {
+                 int hardwareOutputCount=0,bool allowUnmappedMonitor=false,
+                 DynamicPflCapture* pfl=nullptr) noexcept {
+        if(pfl)pfl->reset();
         if(frames<=0 || !outputL || !outputR)return false;
         // The physical 10CH/4AUX callback requests only the stable
         // legacy prefix of an expanded ChannelId roster. Dynamic extra
@@ -999,6 +1026,8 @@ public:
         }
         // Incoming edges must accumulate AFTER sources have been mixed.
         // This separate clear pass is needed so later nodes keep their sends.
+        // Stage a view until the render succeeds. Copy BEFORE channel fader
+        // and mute because these scratch lanes are subsequently changed.
         for(const auto i:renderOrder_) {
             const auto& lane=lanes_[i];
             float* const l=scratch_.data()+lane.slot*2*block;
@@ -1081,6 +1110,14 @@ public:
                 const AutoDuckerKeyScope keyScope(duckerKeys_,lane.id.value,frames,post);
                 processFx(lane.id,l,r,frames); // same adapter signature for CH1..N
             }
+            // PFL listens to the selected strip, including when its own
+            // fader or programme gate is closed. For a bus, incoming PCM
+            // remains exactly the authored mix; do not bypass upstream gates.
+            // Exclude terminal sinks to prevent recursive MONITOR audition.
+            if(pfl&&pfl->requested==lane.id&&
+               (lane.role==ChannelRole::input||lane.role==ChannelRole::group||
+                lane.role==ChannelRole::fxReturn))
+                pfl->capture(lane.id,l,r,frames);
             // A MUTE/SOLO transition must silence PRE and POST sends, but
             // keep the original processor alive. Ramp spans 64 real samples.
             auto& gate=channelTargets_[i].gate;
@@ -1239,7 +1276,7 @@ public:
                 if(!hardwareOutputs[c])continue; // inactive pins cannot receive PCM
                 for(int earlier=0;earlier<c;++earlier)
                     if(hardwareOutputs[c]==hardwareOutputs[earlier])
-                        return false; // publisher clears ALL physical outputs
+                        {if(pfl)pfl->reset();return false;} // publisher clears ALL physical outputs
             }
             for(int c=0;c<hardwareOutputCount;++c) {
                 float* out=hardwareOutputs[c];
@@ -1264,7 +1301,7 @@ public:
                        hardwareOutputs[r]==outputL || hardwareOutputs[r]==outputR ||
                        hardwareOutputs[l]==monitorL || hardwareOutputs[l]==monitorR ||
                        hardwareOutputs[r]==monitorL || hardwareOutputs[r]==monitorR)
-                        return false;
+                        {if(pfl)pfl->reset();return false;}
                 }
             }
             // External tap delay advances even while the tap is disconnected,

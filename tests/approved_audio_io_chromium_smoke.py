@@ -1053,7 +1053,10 @@ def verify_independent_output(page,out,legacy_empty=False):
     assert panel.locator("[data-extra-status]").inner_text().startswith("Verifying")
     live["dryRoutingLab"].update(secondaryMainOnly=False,nativeBus={"graphRevision":next_rev})
     emit(page,"arMixStatus",live)
-    assert panel.get_by_role("button",name="Separate headphone mix").is_disabled()
+    # Same mix without an armed Windows destination hides the split action.
+    # Verify the real element too: hidden controls cannot be activated.
+    assert not panel.get_by_role("button",name="Separate headphone mix").is_visible()
+    assert panel.locator("[data-extra-mix]").is_disabled()
     assert not panel.get_by_role("button",name="Edit headphone mix").is_visible()
     assert not panel.locator("[data-extra-status]").inner_text().startswith("Verifying")
     assert any(e==monitor_edge for e in state["graph"]["edges"])
