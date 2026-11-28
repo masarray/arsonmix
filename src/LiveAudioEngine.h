@@ -2926,7 +2926,10 @@ public:
             std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
             armix::mixer::ChannelId id) {
         LiveDryRoutingLab::NativeBusResult fail;
-        fail.error="ACTIVE_REMOVE_CONTINUITY_NOT_VERIFIED";
+        // A stopped mixer has no audio receipt to wait for. Preserve the
+        // normal immediate stopped edit rather than manufacturing a timeout.
+        if(allOutputsDisarmed())return removeNativeInputChannel(ep,rev,roster,id);
+        fail.error="NATIVE_TRACK_DEVICE_UNAVAILABLE";
         auto* device=deviceManager_.getCurrentAudioDevice();
         const auto ticket=secondaryOutput_.captureProducerTicket();
         const auto valid=[&]{
@@ -2938,7 +2941,7 @@ public:
         try{
             const auto rate=device->getCurrentSampleRate();
             if(!std::isfinite(rate)||rate<8000.||rate>384000.)return fail;
-            return dryRoutingLab_.removeNativeInputChannel(ep,rev,roster,id,false,{}, 
+            return dryRoutingLab_.removeNativeInputChannel(ep,rev,roster,id,false,{},
                 static_cast<int>(std::ceil(rate*.008)),valid);
         }catch(...){
             fail.error="NATIVE_TRACK_DELETE_PUBLICATION_EXCEPTION";return fail;
