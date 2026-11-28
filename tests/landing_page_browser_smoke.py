@@ -80,8 +80,11 @@ def browser_check(page):
     assert requirements.is_visible()
     assert requirements.locator("tbody tr").count() == 9
     assert "4 GB" in requirements.inner_text() and "8 GB" in requirements.inner_text()
-    assert "No dedicated GPU or SSD required" in requirements.inner_text()
-    assert "not certified minimum specifications" in requirements.inner_text()
+    assert requirements.locator("thead th").all_text_contents() == [
+        "Component", "Minimum (estimated)", "Recommended"]
+    assert "HDD or SSD" in requirements.inner_text()
+    assert "Hardware estimates have not yet been validated" in requirements.inner_text()
+    assert "no ssd required" not in page.locator("body").inner_text().lower()
     assert "Compact installer" in page.locator(".availability-note").inner_text()
     assert page.locator('.hero a[href="#system-requirements"]').is_visible()
     assert requirements.evaluate("el => el.scrollWidth <= el.clientWidth + 2")

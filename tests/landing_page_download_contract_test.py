@@ -23,16 +23,19 @@ class LandingReleaseContract(unittest.TestCase):
                       for row in re.findall(r"<tr>(.*?)</tr>", block, re.S)]
             self.assertEqual(actual, expected)
             self.assertLess(html.index('id="system-requirements"'), html.index('class="os-grid"'))
-            for phrase in ("No dedicated GPU or SSD required", "4 GB (try light sessions)",
-                           "exact Windows installer ZIP size", "not certified minimum specifications",
-                           "No guarantee of dropout-free audio"):
+            for phrase in ("Minimum (estimated)", "Recommended", "4 GB", "HDD or SSD",
+                           "Download size is shown on the Windows download card",
+                           "Hardware estimates have not yet been validated"):
                 self.assertIn(phrase, block)
                 self.assertIn(phrase, md)
             for obsolete in ("5 GB free", "10 GB free", "i5-8250U", "i5-1235U"):
                 self.assertNotIn(obsolete, block)
                 self.assertNotIn(obsolete, md)
             self.assertIn("Compact installer", html)
-            self.assertIn("No dedicated GPU or SSD required", html)
+            for phrase in ("no ssd required", "no dedicated gpu or ssd required",
+                           "try on older pcs", "try first"):
+                self.assertNotIn(phrase, html.lower())
+                self.assertNotIn(phrase, readme.lower())
 
     def test_source_and_built_assets(self):
         for base in (ROOT / "site", DIST):

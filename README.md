@@ -73,25 +73,25 @@ These are genuine owner-supplied Windows editor screenshots, not a verified DSP/
 
 ## System requirements (Windows)
 
-A lightweight native mixer with a compact download. No dedicated GPU or SSD required. Even older PCs are worth trying with a simple mix.
+ArSonMix is a lightweight digital mixer for Windows.
 
-Small download: the exact Windows installer ZIP size is shown on the download card. Installed files, temporary extraction, updates and WebView2 (if missing) need additional space.
+Download size is shown on the Windows download card. Allow additional disk space for installation and WebView2 if needed.
 
-| Component | Basic mixing (try on older PCs) | More effects / larger sessions |
+| Component | Minimum (estimated) | Recommended |
 | --- | --- | --- |
-| CPU | Older 64-bit dual-core Intel or AMD CPU (try first) | Modern quad-core or better |
-| RAM | 4 GB (try light sessions); 8 GB preferred | 8 GB or more; 16 GB helpful for streaming |
-| Storage | HDD or SSD; space for download, extraction and installation | Extra space only as needed for recordings, plugins and projects |
+| CPU | Intel or AMD 64-bit dual-core processor | Intel or AMD 64-bit quad-core processor or better |
+| RAM | 4 GB | 8 GB or more |
+| Storage | HDD or SSD | HDD or SSD |
 | Graphics | Integrated graphics | Integrated graphics |
-| Display | 1366 × 768 suggested | 1920 × 1080 or higher for more workspace |
+| Display | 1366 × 768 | 1920 × 1080 or higher |
 | Operating system | Windows 10 (1809+) / 11 x64 | Windows 11 x64 |
 | Runtime | Microsoft Edge WebView2 Runtime | Microsoft Edge WebView2 Runtime |
 | Audio driver | Compatible WASAPI or ASIO | Native ASIO driver preferred |
-| Audio setup | 48 kHz, 256–512 samples to start | 48 kHz, 128–256 samples if stable |
+| Audio setup | 48 kHz, 256–512 samples | 48 kHz, 128–256 samples |
 
-Start with karaoke, playback or a few vocal channels. Add EQ, compression and reverb as needed. More channels, Harmonice, ImmerSIB, external VST3 and video streaming can require more CPU and memory.
+Minimum guidance is for basic mixing, playback and karaoke. Larger sessions, demanding effects and video streaming may require more CPU and RAM.
 
-These are starting-point suggestions, not certified minimum specifications. Low-spec PCs have not yet been qualified across physical test machines. If audio crackles, try a larger buffer or fewer heavy effects. No guarantee of dropout-free audio on every PC.
+Hardware estimates have not yet been validated on low-spec physical PCs. Performance depends on the session, audio driver and buffer size.
 
 [View system requirements on the download page](https://masarray.github.io/arsonmix/#system-requirements).
 
