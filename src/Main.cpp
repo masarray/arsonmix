@@ -4867,7 +4867,8 @@ private:
     template<class Edit>
     LiveDryRoutingLab::NativeBusResult withNativeTopologyContinuity(
             std::uint64_t ep,std::uint64_t rev,bool startOnSuccess,Edit&& edit,
-            bool silentAddition=false) {
+            bool silentAddition=false,
+            const std::function<LiveDryRoutingLab::NativeBusResult()>& gatedFallback={}) {
         LiveDryRoutingLab::NativeBusResult result;
         result.error="Audio configuration is finishing";
         auto lease=deviceApply_.tryBegin(armix::device::NativeDeviceApplyCoordinator::Purpose::secondaryOutput);
@@ -4894,7 +4895,14 @@ private:
                 else if(stream&&engine_.secondarySourceMatches(*stream))
                     secondaryContinuity_=SecondaryContinuity{*stream,ep,after};
             }
-            return result;
+            // Only a native continuity-proof rejection may enter the ordinary
+            // gated path, under the SAME device-apply lease. Never retry an
+            // accepted edit, a stale revision, or an unrelated device fault.
+            if(result.accepted||!gatedFallback||
+               juce::String(result.error?result.error:"")!="SILENT_REMOVE_CONTINUITY_NOT_VERIFIED"||
+               engine_.dryRoutingLabEpoch()!=ep||
+               engine_.outputArmRevision()!=beforeControlRevision||
+               !engine_.nativeTopologyMatches(ep,rev))return result;
         }
         auto stream=engine_.captureSecondaryResumeIntent();
         if(!stream&&pendingVendorStream_&&pendingVendorStream_->epoch==ep&&
@@ -4912,7 +4920,7 @@ private:
         const bool hardwareWanted=!operatorOutputMuted_&&
             (engine_.isMonitorEnabled()||engine_.wantsMainContinuation());
         if(stream)engine_.disarmSecondaryOutput();
-        result=edit();
+        result=gatedFallback?gatedFallback():edit();
         const auto acceptedRevision=engine_.outputArmRevision();
         if(generation==secondaryRetry_.generation()&&!pendingSecondaryStop_&&
            engine_.dryRoutingLabEpoch()==ep&&(result.accepted||
@@ -10438,15 +10446,11 @@ private:
                     acceptedControlRequests_.remove(0);
                 const armix::mixer::ChannelId target{id};
                 const bool silentRemoval=engine_.nativeStripDormant(ep,rev,target);
-                if(silentRemoval)
-                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                        return engine_.removeNativeInputChannel(ep,rev,roster,target,true);
-                    },true);
-                if(!silentRemoval||(!result.accepted&&
-                   juce::String(result.error?result.error:"")=="SILENT_REMOVE_CONTINUITY_NOT_VERIFIED"))
-                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                        return engine_.removeNativeInputChannel(ep,rev,roster,target);
-                    });
+                result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                    return engine_.removeNativeInputChannel(ep,rev,roster,target,true);
+                },silentRemoval,[&]{
+                    return engine_.removeNativeInputChannel(ep,rev,roster,target);
+                });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
@@ -10519,17 +10523,13 @@ private:
                 const armix::mixer::ChannelId target{id};
                 const bool silentRemoval=role==armix::mixer::ChannelRole::group&&
                     engine_.nativeStripDormant(ep,rev,target);
-                if(silentRemoval)
-                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                        return engine_.editNativeBus(ep,rev,roster,role,
-                            std::span<const armix::mixer::ChannelId>{},"",1.f,target,true,false,true);
-                    },true);
-                if(!silentRemoval||(!result.accepted&&
-                   juce::String(result.error?result.error:"")=="SILENT_REMOVE_CONTINUITY_NOT_VERIFIED"))
-                    result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                        return engine_.editNativeBus(ep,rev,roster,role,
-                            std::span<const armix::mixer::ChannelId>{},"",1.f,target);
-                    });
+                result=withNativeTopologyContinuity(ep,rev,false,[&]{
+                    return engine_.editNativeBus(ep,rev,roster,role,
+                        std::span<const armix::mixer::ChannelId>{},"",1.f,target,true,false,true);
+                },silentRemoval,[&]{
+                    return engine_.editNativeBus(ep,rev,roster,role,
+                        std::span<const armix::mixer::ChannelId>{},"",1.f,target);
+                });
             }
             auto ack=std::make_unique<juce::DynamicObject>();
             ack->setProperty("requestId",request);
