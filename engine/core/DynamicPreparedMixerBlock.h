@@ -519,12 +519,11 @@ public:
            monitorLatencyPolicy_!=old.monitorLatencyPolicy_||
            latencySamples_!=old.latencySamples_||
            lanes_.size()+(removed.value?1u:0u)!=old.lanes_.size()+(dormantAddition?1u:0u))return false;
-        // A silent descriptor must leave even the old summation order intact.
-        if(dormantAddition){
-            if(renderOrder_.size()!=old.renderOrder_.size())return false;
-            for(std::size_t k=0;k<renderOrder_.size();++k)
-                if(lanes_[renderOrder_[k]].id!=old.lanes_[old.renderOrder_[k]].id)return false;
-        }
+        // A silent descriptor can change Kahn's tie-breaking through its
+        // default MAIN edge even though it has no scheduled PCM. Prove the
+        // same scheduled lane set, edges, keys and delays below, then reuse
+        // the previous audible order (including floating-point summation).
+        if(dormantAddition&&renderOrder_.size()!=old.renderOrder_.size())return false;
         if(removed.value){
             const auto found=old.controlIndex_.find(removed.value);
             if(found==old.controlIndex_.end()||controlIndex_.contains(removed.value))return false;
@@ -588,6 +587,15 @@ public:
                    sendTargets_[e].enabled.load()!=old.sendTargets_[k].enabled.load()||
                    !delayEqual(edgeDelays_,e,old.edgeDelays_,k))return false;
                 plan.edges.emplace_back(e,k);
+            }
+        }
+        if(dormantAddition){
+            // All scheduled dependencies are already proven equivalent.
+            // Scratch slots and delay state are lane-indexed, not tied to
+            // this ordering; only the callback execution order is restored.
+            for(std::size_t k=0;k<renderOrder_.size();++k){
+                const auto id=old.lanes_[old.renderOrder_[k]].id;
+                renderOrder_[k]=controlIndex_.at(id.value);
             }
         }
         return true;

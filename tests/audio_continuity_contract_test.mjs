@@ -347,5 +347,6 @@ test('silent track and standalone AUX creation keep both output gates and existi
  assert.match(track,/name,format,false,\{\},0,false,true/);
  const core=read('engine/core/DynamicPreparedMixerBlock.h');
  assert.match(core,/renderOrder_\.size\(\)!=old\.renderOrder_\.size\(\)/);
+ assert.match(core,/renderOrder_\[k\]=controlIndex_\.at\(id\.value\)/);
  assert.match(core,/channelScheduled\(n\.id\)\|\|n\.inputL>=0\|\|n\.playerDeckId/);
 });
