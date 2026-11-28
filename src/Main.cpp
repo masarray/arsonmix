@@ -10624,9 +10624,10 @@ private:
                 const bool silentRemoval=role==armix::mixer::ChannelRole::group&&
                     engine_.nativeStripDormant(ep,rev,target);
                 result=withNativeTopologyContinuity(ep,rev,false,[&]{
-                    return engine_.editNativeBus(ep,rev,roster,role,
+                    if(silentRemoval)return engine_.editNativeBus(ep,rev,roster,role,
                         std::span<const armix::mixer::ChannelId>{},"",1.f,target,true,false,true);
-                },silentRemoval,[&]{
+                    return engine_.removeNativeBusLive(ep,rev,roster,role,target);
+                },true,[&]{
                     return engine_.editNativeBus(ep,rev,roster,role,
                         std::span<const armix::mixer::ChannelId>{},"",1.f,target);
                 });

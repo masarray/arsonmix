@@ -1927,7 +1927,7 @@ public:
                   bool outputsDisarmed=false,
                   const std::function<void()>& beforePublish={},bool connectMain=true,
                   armix::mixer::DynamicChannelFxLeaseBank::Lease wetReturn={},bool dormantAddition=false,
-                  const std::function<bool()>& stillValid={},bool dormantRemoval=false) {
+                  const std::function<bool()>& stillValid={},bool dormantRemoval=false,int liveFadeFrames=0) {
         using namespace armix::mixer;
         NativeBusResult reply{};
         reply.pcmRevision=nativeAccepted_.pcmRevision;
@@ -1944,7 +1944,13 @@ public:
         if(dormantRemoval&&(!remove.value||dormantAddition||role!=ChannelRole::group||!selection.empty()||wetReturn)){
             reply.error="INVALID_DORMANT_BUS_REMOVAL";return reply;
         }
-        if(!outputsDisarmed&&!dormantAddition&&!dormantRemoval) {
+        const bool liveRemoval=liveFadeFrames>0;
+        if(liveRemoval&&(!remove.value||outputsDisarmed||dormantAddition||dormantRemoval||
+            !selection.empty()||wetReturn||!stillValid||
+            (role!=ChannelRole::group&&role!=ChannelRole::fxReturn))){
+            reply.error="INVALID_LIVE_BUS_REMOVAL";return reply;
+        }
+        if(!outputsDisarmed&&!dormantAddition&&!dormantRemoval&&!liveRemoval) {
             reply.error="OUTPUT_MUST_BE_DISARMED";return reply;
         }
         // Require a prepared, independently owned wet-only processor.
@@ -2018,10 +2024,12 @@ public:
             const auto published=nativePublisher_.commit(
                 next,nativeAccepted_.graph.request,expectedPcmRevision,
                 expectedEpoch,epoch(),outputsDisarmed,std::move(fx),false,false,nullptr,nullptr,
-                false,dormantRemoval?remove:ChannelId{},0,stillValid,dormantAddition||dormantRemoval);
+                false,(dormantRemoval||liveRemoval)?remove:ChannelId{},liveFadeFrames,stillValid,dormantAddition||dormantRemoval);
             if(!published.ok()) {
-                reply.error=dormantRemoval&&published.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable?
-                    "SILENT_REMOVE_CONTINUITY_NOT_VERIFIED":dormantAddition?"SILENT_BUS_CONTINUITY_NOT_VERIFIED":"NATIVE_PCM_COMMIT_REJECTED";return reply;
+                reply.error=published.fault==DynamicNativeSessionPublisher::Fault::continuityUnavailable?
+                    (dormantRemoval?"SILENT_REMOVE_CONTINUITY_NOT_VERIFIED":liveRemoval?"ACTIVE_REMOVE_CONTINUITY_NOT_VERIFIED":dormantAddition?"SILENT_BUS_CONTINUITY_NOT_VERIFIED":"NATIVE_PCM_COMMIT_REJECTED"):
+                    published.fault==DynamicNativeSessionPublisher::Fault::retirementTimeout?"DELETE_FADE_NOT_CONFIRMED_RETRY_MUTED":
+                    dormantAddition?"SILENT_BUS_CONTINUITY_NOT_VERIFIED":"NATIVE_PCM_COMMIT_REJECTED";return reply;
             }
             nativeAccepted_.graph.roster=std::move(next);
             nativeAccepted_.fxOwners=std::move(owner);

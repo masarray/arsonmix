@@ -449,3 +449,16 @@ test('active track retirement attempts channel-local continuity before secondary
  assert.match(core,/dormantRosterEdit\|\|activeRemoval/);
  assert.match(core,/if\(id==removed\)continue/);
 });
+
+
+test('BUS and FX return removal first attempts proved local retirement',()=>{
+ const source=main.split('if(action=="routingNativeBusDelete") {').at(-1).split('auto ack=')[0];
+ assert.match(source,/removeNativeBusLive\(ep,rev,roster,role,target\)/);
+ assert.match(source,/\},true,\[&\]\{/);
+ const attempt=engine.split('LiveDryRoutingLab::NativeBusResult removeNativeBusLive(')[1].split('// Processing M/ST')[0];
+ assert.match(attempt,/secondaryOutput_\.captureProducerTicket\(\)==ticket/);
+ assert.doesNotMatch(attempt,/disarmSecondaryOutput|secondaryOutput_\.disarm|topologyPublicationMute_\.store/);
+ const lab=read('src/LiveDryRoutingLab.h');
+ assert.match(lab,/\(dormantRemoval\|\|liveRemoval\)\?remove:ChannelId\{\},liveFadeFrames/);
+ assert.match(lab,/"ACTIVE_REMOVE_CONTINUITY_NOT_VERIFIED"/);
+});

@@ -2519,6 +2519,30 @@ public:
             return rejected;
         }
     }
+    // Prefer a proved channel-local BUS/FX retirement. Exclusive primary
+    // reroutes or changed PDC must fail the native proof before any fade.
+    LiveDryRoutingLab::NativeBusResult removeNativeBusLive(
+            std::uint64_t ep,std::uint64_t rev,std::uint64_t roster,
+            armix::mixer::ChannelRole role,armix::mixer::ChannelId id) {
+        if(allOutputsDisarmed())return editNativeBus(ep,rev,roster,role,{},"",1.f,id);
+        LiveDryRoutingLab::NativeBusResult fail;
+        fail.error="NATIVE_BUS_DEVICE_UNAVAILABLE";
+        auto* device=deviceManager_.getCurrentAudioDevice();
+        const auto ticket=secondaryOutput_.captureProducerTicket();
+        const auto valid=[&]{
+            return device&&deviceManager_.getCurrentAudioDevice()==device&&device->isOpen()&&
+                dormantAdditionReady(ep,rev)&&secondaryOutput_.captureProducerTicket()==ticket;
+        };
+        if(!valid())return fail;
+        try{
+            const auto rate=device->getCurrentSampleRate();
+            if(!std::isfinite(rate)||rate<8000.||rate>384000.)return fail;
+            return dryRoutingLab_.editNativeBus(ep,rev,roster,role,{},"",1.f,id,
+                false,{},true,{},false,valid,false,static_cast<int>(std::ceil(rate*.008)));
+        }catch(...){
+            fail.error="NATIVE_BUS_PUBLICATION_EXCEPTION";return fail;
+        }
+    }
     // Processing M/ST is an accepted ChannelId PCM topology transaction.
     // The host gates physical output only at publication, then preserves
     // the operator's original MONITOR decision on the same verified device.
