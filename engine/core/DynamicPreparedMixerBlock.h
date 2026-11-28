@@ -75,7 +75,7 @@ private:
 // channel produces explicit silence; a missing/invalid request has no receipt.
 class DynamicProgrammeTap final {
 public:
-    static constexpr int capacity=4096;
+    static constexpr int capacity=8192; // same maximum as the native host quantum
     enum class State : std::uint8_t { unavailable, dormant, rendered };
     ChannelId requested{};
     void reset() noexcept {captured_={};frames_=0;state_=State::unavailable;}
@@ -109,7 +109,7 @@ private:
 // A failed optional tap does not invalidate otherwise valid hardware PCM.
 class DynamicProgrammeBlock final {
 public:
-    static constexpr int capacity=8192;
+    static constexpr int capacity=DynamicProgrammeTap::capacity;
     ChannelId requested{};
     void reset() noexcept {
         source_={};epoch_=revision_=0;frames_=written_=0;valid_=complete_=false;

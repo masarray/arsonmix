@@ -403,7 +403,37 @@ public:
         if(armed.isNotEmpty())secondaryOutput_.stop();
         return armed;
     }
+    bool hasSecondaryProgrammeSource() const noexcept {
+        return secondaryProgrammeSource_.load(std::memory_order_acquire)!=0;
+    }
+    bool secondaryProgrammeSourceValid() const noexcept {
+        const auto id=secondaryProgrammeSource_.load(std::memory_order_acquire);
+        return !id||(secondaryProgrammeEpoch_.load(std::memory_order_acquire)==dryRoutingLab_.epoch()&&
+            secondaryProgrammeWorkspace_.load(std::memory_order_acquire)==dryRoutingLab_.programmeWorkspace()&&
+            dryRoutingLab_.programmeSourceEligible(armix::mixer::ChannelId{id}));
+    }
+    // CONTROL only. Revoke the old producer ticket BEFORE changing the
+    // source. Rearm only the existing WASAPI clock; ASIO is never detached.
+    // Invalid/deleted sources remain assigned but cannot fall back to MAIN.
+    juce::String selectSecondaryProgramme(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t roster,armix::mixer::ChannelId id) {
+        if(!secondaryResumeReady()||!attached_||fxMovePhase_.load(std::memory_order_acquire)!=0||
+           !dryRoutingLab_.programmeSourceRequestMatches(ep,rev,roster,id))
+            return "Programme source unavailable · refresh the mixer routing";
+        const auto previous=secondaryProgrammeSource_.load(std::memory_order_acquire);
+        if(previous==id.value&&secondaryProgrammeSourceValid())return {};
+        const bool armed=secondaryOutput_.armed();
+        secondaryOutput_.disarm();
+        secondaryProgrammeAppliedTicket_.store(0,std::memory_order_release);
+        secondaryProgrammeEpoch_.store(ep,std::memory_order_release);
+        secondaryProgrammeWorkspace_.store(dryRoutingLab_.programmeWorkspace(),std::memory_order_release);
+        secondaryProgrammeSource_.store(id.value,std::memory_order_release);
+        if(armed)return armSecondaryOutput(true);
+        return {};
+    }
     juce::String armSecondaryOutput(bool wanted) {
+        if(wanted&&!secondaryProgrammeSourceValid())
+            return "Programme source changed or unavailable · select the source again";
         if(wanted&&dryRoutingLab_.nativeBusPatchAwaitingCallback())
             return "Wait for native bus mapping callback readback before arming STREAM";
         if(wanted && (independent_.active() || !directFence_.permitted() ||
@@ -1671,6 +1701,8 @@ public:
            diagnosticRoute()!=armix::diagnostics::Route::normal||
            deviceManager_.getCurrentAudioDeviceType()!="ASIO")
             return "DMX: explicitly MUTE hardware and DISARM STREAM first";
+        if(enable&&hasSecondaryProgrammeSource())
+            return "DMX: choose MAIN as the secondary programme source first";
         if(enable&&(!secondaryOutput_.ready()||secondaryOutput_.faulted()))
             return "DMX: connect a verified Windows playback endpoint first";
         auto* device=deviceManager_.getCurrentAudioDevice();
@@ -3548,6 +3580,13 @@ public:
         o->setProperty ("secondaryOutputEndpointHash",secondaryOutput_.endpointHash());
         o->setProperty ("secondaryOutputRate",secondaryOutput_.rate());
         o->setProperty ("secondaryOutputBridgeMs",secondaryOutput_.targetMs());
+        o->setProperty ("secondaryProgrammeSourceId",juce::String(std::to_string(
+            secondaryProgrammeSource_.load(std::memory_order_acquire))));
+        o->setProperty ("secondaryProgrammeSourceValid",secondaryProgrammeSourceValid());
+        const auto programmeTicket=secondaryOutput_.captureProducerTicket();
+        o->setProperty ("secondaryProgrammeSourceApplied",programmeTicket!=0&&
+            secondaryProgrammeSourceValid()&&
+            secondaryProgrammeAppliedTicket_.load(std::memory_order_acquire)==programmeTicket);
         const auto streamFifo=secondaryOutput_.status();
         o->setProperty ("secondaryOutputFrames",static_cast<double>(streamFifo.renderedFrames));
         o->setProperty ("secondaryOutputUnderflow",static_cast<double>(streamFifo.underflowFrames));
@@ -4018,6 +4057,9 @@ private:
     juce::String startupFallbackReason_; // control-thread-only startup diagnostics
     armix::device::JuceIndependentClockDevice independent_;
     armix::device::LiveSecondaryOutputDevice secondaryOutput_;
+    armix::mixer::DynamicProgrammeBlock secondaryProgrammePcm_; // primary callback lease
+    std::atomic<std::uint64_t> secondaryProgrammeSource_{0},secondaryProgrammeEpoch_{0},
+        secondaryProgrammeWorkspace_{0},secondaryProgrammeAppliedTicket_{0};
     std::atomic_flag primaryCallbackLease_=ATOMIC_FLAG_INIT;
     std::optional<juce::AudioDeviceManager::AudioDeviceSetup> savedDirectSetup_;
     juce::AudioPluginFormatManager formats_;
@@ -4499,6 +4541,12 @@ private:
                     !topologyPublicationMute_.load(std::memory_order_acquire),
                 secondaryTicket!=0,nativePcm);
             const bool outputPermitted=outputGate.renderMain;
+            const auto programmeId=secondaryProgrammeSource_.load(std::memory_order_acquire);
+            const auto programmeWorkspace=secondaryProgrammeWorkspace_.load(std::memory_order_acquire);
+            const bool captureProgramme=outputGate.secondary&&programmeId&&nativePcm&&
+                secondaryProgrammeEpoch_.load(std::memory_order_acquire)==outputLease.epoch&&
+                programmeWorkspace==dryRoutingLab_.programmeWorkspace();
+            if(captureProgramme)secondaryProgrammePcm_.requested=armix::mixer::ChannelId{programmeId};
             // Native input PCM must remain observable even with safe output MUTE.
             // Scan bounded verified callback channels, no allocation or lock.
             const float rawCapturePeak=captureBoundary_.observe(
@@ -4541,7 +4589,12 @@ private:
                          deckBlocks.data(),deckCount),mainOnlyMuted,&outputLease,
                      outputGate.hardware&&!mainOnlyMuted&&!cycle.fadeOut&&!cycle.fadeIn&&
                      fxMovePhase_.load(std::memory_order_acquire)==0&&privateDeEzzerCueAllowed(),
-                     &secondaryMainTap);
+                     &secondaryMainTap,captureProgramme?&secondaryProgrammePcm_:nullptr);
+            // Never use MAIN as a fallback when a custom source is missing.
+            auto programmePcm=captureProgramme&&
+                programmeWorkspace==dryRoutingLab_.programmeWorkspace()&&
+                secondaryProgrammePcm_.frames()==samples?
+                secondaryProgrammePcm_.pcm():std::array<float*,2>{nullptr,nullptr};
             // Constant-time, callback-local physical PCM tap. Nothing is
             // reconfigured or acquired from another graph generation.
             const bool splitMain=secondaryMainTap[0]&&secondaryMainTap[1];
@@ -4578,6 +4631,11 @@ private:
                 if(splitMain)armix::mixer::NativeOutputTransition::apply(
                     secondaryMainTap.data(),2,samples,routedFxMove,cycle.fadeOut,cycle.fadeIn,
                     nativeMain[0],nativeMain[1],movedPeakL,movedPeakR);
+                if(programmePcm[0]&&programmePcm[1]){
+                    float ignoredL=0.f,ignoredR=0.f;
+                    armix::mixer::NativeOutputTransition::apply(programmePcm.data(),2,samples,
+                        routedFxMove,cycle.fadeOut,cycle.fadeIn,nullptr,nullptr,ignoredL,ignoredR);
+                }
                 if(routedFxMove==1 && cycle.graph) {
                     cycle.graph->orderPacked.store(
                         fxMovePendingOrder_.load(std::memory_order_acquire),
@@ -4588,7 +4646,8 @@ private:
             }
             const auto patchFade=busPatchEnvelope_.process(outputs,outputChannels,
                 splitMain?secondaryMainTap[0]:nullptr,splitMain?secondaryMainTap[1]:nullptr,
-                samples,sampleRateHz_,routed&&nativePcm,outputGate.hardware||outputGate.secondary);
+                samples,sampleRateHz_,routed&&nativePcm,outputGate.hardware||outputGate.secondary,
+                programmePcm[0],programmePcm[1]);
             if(patchFade.phase!=armix::mixer::BusPatchEnvelope::idle){
                 movedPeakL=movedPeakR=0.f;
                 for(int i=0;i<samples;++i){
@@ -4620,13 +4679,16 @@ private:
             // Hardware monitor mute remains INDEPENDENT: streaming may run
             // while every physical output on the current device is silent.
             if(outputGate.secondary) {
-                if(routed&&nativeMain[0]&&nativeMain[1])
-                    secondaryOutput_.publish(secondaryTicket,nativeMain[0],nativeMain[1],samples);
+                const auto selected=programmeId?programmePcm:nativeMain;
+                const bool valid=routed&&selected[0]&&selected[1]&&
+                    (!programmeId||programmeWorkspace==dryRoutingLab_.programmeWorkspace());
+                if(valid)
+                    secondaryOutput_.publish(secondaryTicket,selected[0],selected[1],samples);
                 else
-                    // A verified callback interval still elapsed. A missing
-                    // native tap may not replay a stale block or starve ASRC.
-                    // The original generation ticket fences both paths.
+                    // Preserve the complete primary clock interval, never
+                    // replay stale or unrelated programme PCM into Windows.
                     secondaryOutput_.publish(secondaryTicket,nullptr,nullptr,samples);
+                secondaryProgrammeAppliedTicket_.store(valid?secondaryTicket:0,std::memory_order_release);
             }
             // MS3A2: loudness/dBTP measure the same selected hardware
             // destination as the actual MAIN render and FX move fade.

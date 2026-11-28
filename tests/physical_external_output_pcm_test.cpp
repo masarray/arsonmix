@@ -579,6 +579,24 @@ static void verifyWholeCallbackProgramme() {
     assert(h.render(2,block.slice())&&block.append(0,64,h.epoch,1));
     assert(!block.finish(h.epoch+1)&&!block.pcm()[0]);
     assert(!block.begin(h.epoch,DynamicProgrammeBlock::capacity+1));
+    // The largest admitted host quantum must not silently truncate at the
+    // old 4096-frame private PFL limit.
+    std::array<float,DynamicProgrammeBlock::capacity> longL{},longR{};
+    longL.fill(.25f);longR.fill(.125f);
+    assert(block.begin(h.epoch,DynamicProgrammeBlock::capacity));
+    block.slice()->capture(h.busA,longL.data(),longR.data(),DynamicProgrammeBlock::capacity);
+    assert(block.append(0,DynamicProgrammeBlock::capacity,h.epoch,1));
+    assert(block.finish(h.epoch)&&block.frames()==DynamicProgrammeBlock::capacity);
+    assert(near(block.pcm()[0][8191],.25f)&&near(block.pcm()[1][8191],.125f));
+    // The existing bus-patch fade must cover the independent programme
+    // in the SAME sample domain as the hardware and split MAIN outputs.
+    BusPatchEnvelope envelope;
+    assert(envelope.begin());
+    auto pair=block.pcm();
+    auto transition=envelope.process(nullptr,0,nullptr,nullptr,block.frames(),
+        48000.,true,true,pair[0],pair[1]);
+    envelope.acknowledge(transition);
+    assert(envelope.ready()&&pair[0][0]>0.f&&pair[0][8191]==0.f&&pair[1][8191]==0.f);
     // Whole silent interval is valid for an assigned dormant channel.
     Harness dormant(true,false);
     block.requested=dormant.busA;

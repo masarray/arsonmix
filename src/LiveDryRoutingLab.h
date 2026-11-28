@@ -1269,6 +1269,7 @@ public:
             &globalFxBypassed_);
         if(!applied.ok() || generation!=epoch() || m4Revision!=revision())
             return false; // selected M4 PCM owns the safe fallback
+        programmeWorkspace_.fetch_add(1,std::memory_order_release);
         nativeControlDirty_=false; // fresh accepted legacy/native control baseline
         installNativeHardware(generation,nativeAccepted_.hardware,
                               nativeAccepted_.graph.request.maxFrames);
@@ -3871,6 +3872,7 @@ public:
             if(!published.ok())
                 return "Native ChannelId PCM rejected persisted topology: "+
                     juce::String(static_cast<int>(published.fault));
+            programmeWorkspace_.fetch_add(1,std::memory_order_release);
             nativeAccepted_.graph.roster=std::move(document.roster);
             nativeAccepted_.graph.request=std::move(document.request);
             nativeAccepted_.graph.ids=document.legacyIds;
@@ -4217,6 +4219,21 @@ public:
         return ready()&&channelIdPhysicalPcmActive()&&
             nativeAccepted_.matches(nativePublisher_,ep,rev);
     }
+    // CONTROL only: source binding follows a stable ChannelId within one
+    // workspace, not the current graph revision or a strip ordinal.
+    std::uint64_t programmeWorkspace() const noexcept {
+        return programmeWorkspace_.load(std::memory_order_acquire);
+    }
+    bool programmeSourceEligible(armix::mixer::ChannelId id) const noexcept {
+        if(!channelIdPhysicalPcmActive()||nativeAccepted_.hardware.secondaryMain())return false;
+        const auto* row=nativeAccepted_.graph.roster.find(id);
+        return row&&armix::mixer::DynamicProgrammeTap::eligible(row->role);
+    }
+    bool programmeSourceRequestMatches(std::uint64_t ep,std::uint64_t rev,
+            std::uint64_t roster,armix::mixer::ChannelId id) const noexcept {
+        return nativeTopologyMatches(ep,rev)&&nativeAccepted_.graph.roster.revision()==roster&&
+            (!id.value||programmeSourceEligible(id));
+    }
     bool nativeStripDormant(std::uint64_t ep,std::uint64_t rev,armix::mixer::ChannelId id) const noexcept {
         return nativeTopologyMatches(ep,rev)&&nativePublisher_.externalOutputDormant(ep,rev,id);
     }
@@ -4251,6 +4268,7 @@ public:
     }
 
     void disable() noexcept {
+        programmeWorkspace_.fetch_add(1,std::memory_order_release);
         channelIdPcmEpoch_.store(0,std::memory_order_release);
         nativeMeterEpoch_.store(0,std::memory_order_release);
         nativeStructureLive_=false;
@@ -5045,6 +5063,7 @@ private:
     static constexpr int mutedMeterFrames=512;
     std::array<std::array<float,mutedMeterFrames>,2> mutedMain_{},mutedMonitor_{};
     std::array<std::array<float,Block::hardFrameLimit>,2> secondaryMainPcm_{};
+    std::atomic<std::uint64_t> programmeWorkspace_{1};
     std::atomic_flag rendering_=ATOMIC_FLAG_INIT; // one AUDIO producer
     armix::rt::ProductionRenderAudit renderAudit_; // per-process, RT-only writers
     Publisher publisher_;
