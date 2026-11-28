@@ -97,6 +97,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Reject incomplete Standard FactoryFX before native build
+        shell: pwsh
+        run: |
+          python scripts/factoryfx_release_bundle.py preflight --lock config/factoryfx-approved-releases.json --require four
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Checkout pinned JUCE 8.0.15
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -139,10 +145,12 @@ jobs:
           & ./scripts/package_native_windows.ps1 -BuildDir build -OutputDir dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Stage only independently approved optional first-party VST3
+      - name: Stage all four independently approved Standard FactoryFX
         shell: pwsh
         run: |
-          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --best-effort
+          python scripts/factoryfx_release_bundle.py stage --lock config/factoryfx-approved-releases.json --output dist --require four
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/factoryfx_release_bundle.py verify --lock config/factoryfx-approved-releases.json --output dist --require four
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Independently audit exact native executable and portable package

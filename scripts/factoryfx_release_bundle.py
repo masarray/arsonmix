@@ -375,7 +375,7 @@ def read_best_effort_report(plugins, output):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["stage", "verify"])
+    parser.add_argument("action", choices=["stage", "verify", "preflight"])
     parser.add_argument("--lock", default="config/factoryfx-approved-releases.json")
     parser.add_argument("--notices", default="config/factoryfx-notices")
     parser.add_argument("--output", default="dist")
@@ -392,6 +392,13 @@ def main():
         fail("Four-FX release requires EQ, Comp, Verb and KuPik — all approved")
     if args.require == "six" and distribution_for(plugins) != "production-six":
         fail("Six-FX release requires all six approved effects")
+    if args.action == "preflight":
+        for p in plugins:
+            notice = Path(args.notices) / (p["productId"] + ".txt")
+            if not notice.is_file() or not notice.read_text(encoding="utf-8").strip():
+                fail(p["productId"] + ": reviewed redistribution/EULA notice missing")
+        print("FactoryFX reviewed inventory and notices:", distribution_for(plugins))
+        return
     if args.action == "stage":
         stage(plugins, Path(args.output), Path(args.notices), args.best_effort)
         # The normal Windows distribution verifier consumes a report even
